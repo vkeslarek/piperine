@@ -22,6 +22,7 @@ use piperine_numbers::quad::Float128;
 use super::floats::Ieee754;
 use super::integers::DynamicInteger;
 use super::{ConstEval, ConstFault};
+use crate::refusal::RefusedForm;
 use crate::msl::lexer;
 use crate::pom::{BinOp, ExprId, LitKind, UnOp};
 use crate::types::{FloatText, Method, Ty};
@@ -84,7 +85,7 @@ impl ConstEval<'_, '_> {
     }
 
     fn unsupported(expr: ExprId, what: &str) -> ConstFault {
-        ConstFault::Unsupported { expr, what: what.to_string() }
+        ConstFault::refused(expr, RefusedForm::Text(what.to_string()))
     }
 
     fn panic(expr: ExprId, what: &str) -> ConstFault {

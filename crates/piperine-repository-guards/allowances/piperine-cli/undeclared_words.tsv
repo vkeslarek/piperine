@@ -6,7 +6,6 @@ crates/piperine-cli/tests/analyses.rs::stdout_of	1
 crates/piperine-cli/tests/book.rs::attr	1
 crates/piperine-cli/tests/book.rs::attrs	1
 crates/piperine-cli/tests/book.rs::blinky_runs_to_its_stop_in_the_book	1
-crates/piperine-cli/tests/book.rs::no_book_listing_prints_p0002	1
 crates/piperine-cli/tests/book.rs::repo	1
 crates/piperine-cli/tests/book.rs::the_chapter_shows_the_rc_project_file_for_file	1
 crates/piperine-cli/tests/book.rs::the_rc_output_blocks_are_what_the_binary_prints	1
@@ -54,14 +53,12 @@ crates/piperine-cli/tests/docs.rs::the_buck_readme_says_when_to_run_the_buck_on_
 crates/piperine-cli/tests/docs.rs::the_roadmap_is_forward_looking	1
 crates/piperine-cli/tests/docs.rs::transient_performance_closes_v12	1
 crates/piperine-cli/tests/integrated.rs::dir	1
-crates/piperine-cli/tests/options.rs::a_simparam_entry_naming_an_option_is_p0010	1
 crates/piperine-cli/tests/options.rs::a_tnom_flag_is_refused	1
 crates/piperine-cli/tests/options.rs::an_unwritable_csv_names_the_path_and_exits_1	1
 crates/piperine-cli/tests/options.rs::an_unwritable_plot_names_the_path_and_exits_1	1
 crates/piperine-cli/tests/options.rs::rc	1
 crates/piperine-cli/tests/options.rs::rc_copy	1
 crates/piperine-cli/tests/options.rs::records_go_to_the_file_as_json_lines_and_not_to_stdout	1
-crates/piperine-cli/tests/options.rs::simparam_flag_is_repeatable_and_a_non_number_is_p0010	1
 crates/piperine-cli/tests/options.rs::stdout_of	1
 crates/piperine-cli/tests/options.rs::the_divider_with_r2_at_1k_gives_5	1
 crates/piperine-cli/tests/run.rs::a_closed_stdout_ends_with_exit_1_and_no_panic	1

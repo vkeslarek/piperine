@@ -109,3 +109,5 @@ usize	unsigned pointer-sized integer type, Appendix H's `usize`
 isize	signed pointer-sized integer type, Appendix H's `isize`
 eval	evaluate, the ABI contract's own word
 spec	specification, as the ABI's descriptions are named
+p	the letter of the P0001 diagnostic code (a form Piperine refuses); the naming guard drops digits, so `p0001` reads as `p`
+worded	given its words: the one place a diagnostic's text is worded (`P0001`)

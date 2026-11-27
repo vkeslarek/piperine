@@ -74,7 +74,6 @@ crates/piperine-parity/tests/run_errors.rs::a_nan_contribution_from_source_is_e0
 crates/piperine-parity/tests/run_errors.rs::an_unwrap_of_none_under_known_control_fails_the_run_with_e0105	1
 crates/piperine-parity/tests/source/widths.rs::ty	1
 crates/piperine-parity/tests/source_aggregates.rs::Msg	2
-crates/piperine-parity/tests/source_aggregates.rs::P	2
 crates/piperine-parity/tests/source_aggregates.rs::Rect	1
 crates/piperine-parity/tests/source_aggregates.rs::Tx	1
 crates/piperine-parity/tests/source_aggregates.rs::_x	1

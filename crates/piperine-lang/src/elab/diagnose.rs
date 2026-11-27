@@ -3,6 +3,7 @@
 use super::consts::ConstFault;
 use super::elaborator::Elaboration;
 use crate::msl::Diagnostic;
+use crate::refusal::Refusal;
 
 impl Elaboration<'_, '_> {
     /// The name of the `const` item `fault` sits in and what is wrong with it, when the fault is
@@ -57,7 +58,7 @@ impl Elaboration<'_, '_> {
                 let message = format!("{position} is not an expression over params and constants: it reads {what}");
                 self.report(file, Diagnostic::new("E0321", message, span, "not constant"));
             }
-            ConstFault::Unsupported { what, .. } => self.unsupported(file, span, &format!("{what} in {position}")),
+            ConstFault::Refused { refusal, .. } => self.report(file, Refusal::clone(refusal).in_position(position).diagnostic(span)),
             ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
             ConstFault::Ungenerated { message, .. } => self.report(file, Diagnostic::new("E0342", message.clone(), span, "no such generated item")),
             ConstFault::Leaves { .. } => self.unsupported(file, span, &format!("a `break`, `continue` or `return` outside the loop or function it leaves in {position}")),

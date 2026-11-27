@@ -22,8 +22,6 @@ crates/piperine-api/src/recorder.rs::k	1
 crates/piperine-api/src/recorder.rs::kmax	1
 crates/piperine-api/src/recorder.rs::q	1
 crates/piperine-api/src/request.rs::Sens	1
-crates/piperine-api/src/request.rs::a_key_outside_its_analysis_is_p0010	1
-crates/piperine-api/src/request.rs::an_unknown_key_or_a_wrong_type_is_p0010_at_its_span	1
 crates/piperine-api/src/request.rs::i64_of	1
 crates/piperine-api/src/request.rs::maxmicro	3
 crates/piperine-api/src/request.rs::maxrounds	3
@@ -77,22 +75,17 @@ crates/piperine-api/tests/host_sources.rs::an_undriven_node_port_is_e0810	1
 crates/piperine-api/tests/host_sources.rs::corners_that_do_not_increase_are_e0802_and_need_a_transient	1
 crates/piperine-api/tests/metadata.rs::a_flow_of_several_contributions_is_e0801	1
 crates/piperine-api/tests/natures.rs::natures_with_different_flow_names_at_a_port_are_e0251	1
-crates/piperine-api/tests/noise.rs::a_key_of_another_analysis_is_p0010_in_a_noise_run	1
 crates/piperine-api/tests/noise.rs::a_noise_run_prints_freq_onoise_and_the_total	1
-crates/piperine-api/tests/noise.rs::a_noise_run_without_output_or_sweep_is_p0010	1
 crates/piperine-api/tests/noise.rs::an_input_adds_inoise_and_its_total	1
 crates/piperine-api/tests/noise.rs::an_output_or_input_that_names_nothing_is_e0801	1
 crates/piperine-api/tests/option_reach.rs::sens	1
 crates/piperine-api/tests/options.rs::a_nodeset_naming_nothing_is_e0801	1
 crates/piperine-api/tests/options.rs::a_run_key_tnom_is_refused	1
-crates/piperine-api/tests/options.rs::a_simparam_entry_naming_an_option_is_p0010	1
 crates/piperine-api/tests/options.rs::maxmicro_bounds_an_instant	1
 crates/piperine-api/tests/options.rs::maxrounds_bounds_the_operating_point	1
-crates/piperine-api/tests/options.rs::simparam_flag_is_repeatable_and_a_non_number_is_p0010	1
 crates/piperine-api/tests/options.rs::tran_rc_with_budget	1
 crates/piperine-api/tests/probes.rs::an_entry_that_names_nothing_is_e0801_before_any_analysis	1
 crates/piperine-api/tests/project.rs::a_file_under_src_is_refused_with_p0010	1
-crates/piperine-api/tests/project.rs::a_missing_bench_file_is_p0010_at_the_value	1
 crates/piperine-api/tests/project.rs::rc_with_parts	1
 crates/piperine-api/tests/project.rs::typeck_codes	1
 crates/piperine-api/tests/records.rs::a_filter_entry_that_matches_nothing_is_e0801	1
@@ -103,5 +96,3 @@ crates/piperine-api/tests/session.rs::an_integer_out_of_range_is_e0802	1
 crates/piperine-api/tests/session.rs::an_undriven_top_port_without_default_refuses_the_analysis	1
 crates/piperine-api/tests/session.rs::an_unknown_variant_is_e0802_listing_the_variants	1
 crates/piperine-api/tests/session.rs::examples_rc	1
-crates/piperine-api/tests/session.rs::no_top_or_several_is_p0011_with_candidates	1
-crates/piperine-api/tests/session.rs::p0011	1

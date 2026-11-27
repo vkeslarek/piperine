@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
@@ -417,7 +418,7 @@ impl<'d> Checker<'d> {
 
     /// `P0001`: a construct outside the M1 subset, named.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
-        self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
+        self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
     }
 
     fn unsupported_decl(&mut self, decl: DeclId, what: &str) {

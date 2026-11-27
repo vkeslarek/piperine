@@ -10,6 +10,7 @@ use piperine_ir::{AggregateData, Constant, Expr, ExprId as LoweredExpr, Origin, 
 use super::super::elaborator::Elaboration;
 use super::super::lower::Scope;
 use super::{Bindings, CompositeKind, ConstFault, ConstTree};
+use crate::refusal::RefusedForm;
 use crate::pom::ExprId;
 
 impl Elaboration<'_, '_> {
@@ -18,7 +19,7 @@ impl Elaboration<'_, '_> {
     pub(in crate::elab) fn composite_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let tree = self.consts.tree(expr, bindings)?;
         let Some(ty) = self.typed(expr).and_then(|t| self.stored_type(&t)) else {
-            return Err(ConstFault::Unsupported { expr, what: "a composite value of a type that has no value type".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a composite value of a type that has no value type".to_string())));
         };
         self.import_tree(expr, &tree, &ty)
     }
@@ -142,7 +143,7 @@ impl Elaboration<'_, '_> {
     pub(in crate::elab) fn implicit_some_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let payload = self.consts.tree(expr, bindings)?;
         let Some(held) = self.typed(expr).and_then(|ty| self.stored_type(&ty)) else {
-            return Err(ConstFault::Unsupported { expr, what: "an implicit `Some` of a value with no value type".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("an implicit `Some` of a value with no value type".to_string())));
         };
         self.import_tree(expr, &ConstTree::Composite { kind: CompositeKind::Option, parts: vec![payload] }, &ValueType::Option(Box::new(held)))
     }
@@ -160,10 +161,10 @@ impl Elaboration<'_, '_> {
                     (CompositeKind::Struct, ValueType::Struct(id)) => (None, self.type_arena.field_types(*id).to_vec()),
                     (CompositeKind::Variant(position), ValueType::Enum(id)) => (Some(*position), self.type_arena.variant_field_types(*id, *position).to_vec()),
                     (CompositeKind::Option, ValueType::Option(inner)) => (None, vec![(**inner).clone(); parts.len()]),
-                    _ => return Err(ConstFault::Unsupported { expr, what: "a composite value that does not have the type its position needs".to_string() }),
+                    _ => return Err(ConstFault::refused(expr, RefusedForm::Text("a composite value that does not have the type its position needs".to_string()))),
                 };
                 if wanted.len() != parts.len() {
-                    return Err(ConstFault::Unsupported { expr, what: "a composite value with a different number of parts than its type".to_string() });
+                    return Err(ConstFault::refused(expr, RefusedForm::Text("a composite value with a different number of parts than its type".to_string())));
                 }
                 let mut constants = Vec::with_capacity(parts.len());
                 for (part, part_ty) in parts.iter().zip(&wanted) {

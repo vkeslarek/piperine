@@ -8,6 +8,7 @@ use piperine_ir::{Constant, Real};
 
 use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault, Width};
+use crate::refusal::RefusedForm;
 use crate::elab::tables::{HexText, TableFault, TableText};
 use crate::pom::{ConstData, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::{Intrinsic, Length, Ty};
@@ -17,15 +18,15 @@ impl ConstEval<'_, '_> {
     /// fit that type, `E0706` when it is not in the format (`ConstFault::Table`).
     pub(super) fn parse_array(&mut self, expr: ExprId, intrinsic: Intrinsic, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
         let [text_expr] = args else {
-            return Err(ConstFault::Unsupported { expr, what: "a parser called with other than one text".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a parser called with other than one text".to_string())));
         };
         let Some(Ty::Array(element, length)) = self.typed(expr) else {
-            return Err(ConstFault::Unsupported { expr, what: "a parser whose array type the checker did not give".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a parser whose array type the checker did not give".to_string())));
         };
         let (source, text) = self.text_of(*text_expr, bindings)?;
         let count = match length {
-            Length::Fixed(length) => usize::try_from(length).map_err(|_| ConstFault::Unsupported { expr, what: "an array too long to parse".to_string() })?,
-            Length::Generic(_) => return Err(ConstFault::Unsupported { expr, what: "a parsed array whose length is a generic argument".to_string() }),
+            Length::Fixed(length) => usize::try_from(length).map_err(|_| ConstFault::refused(expr, RefusedForm::Text("an array too long to parse".to_string())))?,
+            Length::Generic(_) => return Err(ConstFault::refused(expr, RefusedForm::Text("a parsed array whose length is a generic argument".to_string()))),
         };
         let table = |fault: TableFault| ConstFault::Table { expr, code: fault.code, message: fault.message };
         let elements: Vec<Constant> = match (intrinsic, &*element) {
@@ -36,11 +37,11 @@ impl ConstEval<'_, '_> {
             }
             (Intrinsic::ParseHex, ty) => {
                 let Some(width) = Width::of(ty) else {
-                    return Err(ConstFault::Unsupported { expr, what: "a hex image of other than integers".to_string() });
+                    return Err(ConstFault::refused(expr, RefusedForm::Text("a hex image of other than integers".to_string())));
                 };
                 HexText::new(&source, &text).words(count, width.bits, width.signed).map_err(table)?.into_iter().map(Constant::Int).collect()
             }
-            _ => return Err(ConstFault::Unsupported { expr, what: "this parser over this element type".to_string() }),
+            _ => return Err(ConstFault::refused(expr, RefusedForm::Text("this parser over this element type".to_string()))),
         };
         Ok(self.make(CompositeKind::Array, elements))
     }
@@ -57,11 +58,11 @@ impl ConstEval<'_, '_> {
             ExprKind::Paren(inner) => self.text_of(inner, bindings),
             ExprKind::Lit(lit) => match lit.str_value() {
                 Some(text) => Ok(("a string literal".to_string(), Arc::from(text))),
-                None => Err(ConstFault::Unsupported { expr, what: "a string with an undefined escape".to_string() }),
+                None => Err(ConstFault::refused(expr, RefusedForm::Text("a string with an undefined escape".to_string()))),
             },
             ExprKind::IncludeStr(literal) => {
                 let Some(path) = literal.str_value() else {
-                    return Err(ConstFault::Unsupported { expr, what: "an `include_str!` path with an undefined escape".to_string() });
+                    return Err(ConstFault::refused(expr, RefusedForm::Text("an `include_str!` path with an undefined escape".to_string())));
                 };
                 let owner = self.design.decl_data(self.design.expr_node(expr).owner).file;
                 let source = self.design.file_data(owner).path.clone();
@@ -76,9 +77,9 @@ impl ConstEval<'_, '_> {
                     let value = *value;
                     self.text_of(value, bindings)
                 }
-                _ => Err(ConstFault::Unsupported { expr, what: "a text that is no `include_str!` or `const` of one".to_string() }),
+                _ => Err(ConstFault::refused(expr, RefusedForm::Text("a text that is no `include_str!` or `const` of one".to_string()))),
             },
-            _ => Err(ConstFault::Unsupported { expr, what: "a text that is no `include_str!` or `const` of one".to_string() }),
+            _ => Err(ConstFault::refused(expr, RefusedForm::Text("a text that is no `include_str!` or `const` of one".to_string()))),
         }
     }
 

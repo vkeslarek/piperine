@@ -15,6 +15,7 @@ use super::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
 use super::unroll::CallCycles;
 use super::variants::Variants;
+use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
 use crate::types::Types;
@@ -342,7 +343,7 @@ impl<'d, 't> Elaboration<'d, 't> {
 
     /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
-        self.report(file, Diagnostic::new("P0001", format!("{what} is not supported yet"), span, format!("{what} is outside the M1 subset")));
+        self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
     }
 
     /// [`unsupported`](Self::unsupported) unless the read through the frame `frame` passes through a module refused for its own

@@ -9,11 +9,8 @@ tests/book/analog.rs::e0507_a_non_finite_contribution_is_a_run_error_naming_it	1
 tests/book/analog.rs::e0603_checks_are_decided_by_reactions	1
 tests/book/cheatsheet.rs::an_array_of_bits_with_no_initial_value_is_e0187	1
 tests/book/cli.rs::RcProject	1
-tests/book/cli.rs::a_bench_with_no_top_or_with_several_is_p0011_and_the_candidates_are_listed	1
-tests/book/cli.rs::a_dc_run_of_a_design_that_writes_records_is_p0010	1
 tests/book/cli.rs::a_path_that_names_nothing_is_e0801_before_any_analysis	1
 tests/book/cli.rs::a_value_the_design_refuses_is_e0802_and_no_analysis_runs	1
-tests/book/cli.rs::each_mistake_of_the_run_table_is_p0010	1
 tests/book/cli.rs::ran	1
 tests/book/cli.rs::sens_gives_the_derivative_of_each_printed_signal_with_respect_to_each_param	1
 tests/book/cli.rs::the_rc_project_of_the_chapter_runs_its_operating_point_and_its_step_response	1
@@ -84,10 +81,8 @@ tests/book/errors.rs::e0602_is_an_emit_without_a_literal_stream_name	1
 tests/book/errors.rs::e0603_is_a_check_reached_from_analog	1
 tests/book/errors.rs::e0900_is_a_syntax_error_that_names_the_token	1
 tests/book/errors.rs::e0901_is_a_macro_other_than_emit	1
-tests/book/generics.rs::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	1
 tests/book/generics.rs::e0101_e0905_and_e0903_no_dyn_no_lifetime_and_no_type_alias	1
 tests/book/generics.rs::e0900_a_bound_is_not_a_where_an_impl_type_or_a_qualified_path	1
-tests/book/language.rs::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	1
 tests/book/language.rs::blocks_ifs_and_matches_are_expressions_with_one_value	1
 tests/book/language.rs::e0903_mut_is_not_a_word_of_the_language	1
 tests/book/language.rs::e0909_e0905_and_e0903_a_literal_too_large_a_character_and_a_keyword_as_a_name	1
@@ -131,7 +126,6 @@ tests/book/simulation.rs::a_circuit_with_no_operating_point_stops_with_e0505_nam
 tests/book/simulation.rs::the_crossing_is_reported_where_the_node_passes_2_v_to_the_accuracy_of_the_waveform	1
 tests/book/simulation.rs::the_divider_rests_at_four_fifths_of_its_source_and_the_source_delivers_1_ma	1
 tests/book/solver.rs::a_loop_of_undelayed_definitions_is_refused_when_the_design_is_built_naming_its_functions	1
-tests/book/solver.rs::a_value_outside_its_range_and_a_key_outside_its_analysis_are_p0010	1
 tests/book/solver.rs::an_instant_that_never_goes_quiet_stops_after_1000_microsteps_with_e0501_naming_its_nets	1
 tests/book/solver.rs::an_operating_point_that_never_settles_stops_after_20_rounds_with_e0506_naming_its_nets	1
 tests/book/solver.rs::every_default_the_chapter_states_is_the_solver_s_own	1
@@ -140,7 +134,6 @@ tests/book/solver.rs::the_bound_on_the_rounds_of_an_operating_point_is_the_run_s
 tests/book/support/inventory.rs::Unraised	1
 tests/book/support/model.rs::Ran	1
 tests/book/support/value_file.rs::int	1
-tests/book/types.rs::a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	1
 tests/book/types.rs::e0101_nothing_is_lent	1
 tests/book/types.rs::e0140_a_named_argument_must_name_an_optional_parameter	1
 tests/book/types.rs::e0142_a_positional_argument_cannot_follow_a_named_one	1

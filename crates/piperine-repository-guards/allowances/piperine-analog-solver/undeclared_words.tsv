@@ -31,7 +31,6 @@ crates/piperine-analog-solver/src/device/ddt.rs::q	1
 crates/piperine-analog-solver/src/device/flow.rs::v	1
 crates/piperine-analog-solver/src/device/plan.rs::im	1
 crates/piperine-analog-solver/src/device/plan.rs::k	1
-crates/piperine-analog-solver/src/device/plan.rs::p	1
 crates/piperine-analog-solver/src/device/plan.rs::re	1
 crates/piperine-analog-solver/src/device/plan.rs::stim	1
 crates/piperine-analog-solver/src/device/plan.rs::td	1

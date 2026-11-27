@@ -46,6 +46,7 @@ use piperine_ir::{Constant, Real};
 
 use super::compound::EnumLayout;
 use super::files::{FileFault, IncludedFiles};
+use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::lexer;
 use crate::pom::{BinOp, ConstData, Design, DeclId, DeclKind, ExprId, ExprKind, LitKind, PatKind, Resolution, StructClass, TypeId, UnOp};
 use crate::types::{Callee, ConstTerm, GenericValue, Intrinsic, Length, Method, Nominal, Ty, Types};
@@ -135,8 +136,8 @@ pub enum ConstFault {
     UnboundParam { expr: ExprId, param: DeclId },
     /// Something only a run can give: a probe, an environment function, a node, a module.
     Dynamic { expr: ExprId, what: String },
-    /// A form of the subset the evaluator does not fold.
-    Unsupported { expr: ExprId, what: String },
+    /// A form of the subset the evaluator does not fold: `P0001` naming `refusal`.
+    Refused { expr: ExprId, refusal: Box<Refusal> },
     /// A `const` item with no value (a declaration in a trait): nothing to fold.
     NoValue { decl: DeclId },
     /// A panic of the evaluation (§1 rule 11): an integer division or remainder by zero, a shift
@@ -172,10 +173,16 @@ pub enum Exit {
 }
 
 impl ConstFault {
+    /// The fault of a form the evaluator does not fold: `P0001` naming `form` at `expr`. The refusal is boxed so the fault stays
+    /// small: a fault travels in every `Result` of the recursive evaluator.
+    pub fn refused(expr: ExprId, form: RefusedForm) -> ConstFault {
+        ConstFault::Refused { expr, refusal: Box::new(Refusal::of(form)) }
+    }
+
     /// The expression the fault sits on; none for a `const` item without a value.
     pub fn expr(&self) -> Option<ExprId> {
         match self {
-            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Unsupported { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Ungenerated { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
+            ConstFault::UnboundParam { expr, .. } | ConstFault::Dynamic { expr, .. } | ConstFault::Refused { expr, .. } | ConstFault::Panic { expr, .. } | ConstFault::Cyclic { expr, .. } | ConstFault::NotConstant { expr, .. } | ConstFault::File { expr, .. } | ConstFault::Table { expr, .. } | ConstFault::Ungenerated { expr, .. } | ConstFault::Leaves { expr, .. } => Some(*expr),
             ConstFault::NoValue { .. } => None,
         }
     }
@@ -342,7 +349,7 @@ impl<'d, 't> ConstEval<'d, 't> {
 
     /// The text of the `const` item `decl` whose initializer is `include_str!("path")`: the file
     /// beside the source that holds the `const`, read the first time (§20 rules 1 to 4). An
-    /// initializer of another form is [`ConstFault::Unsupported`]: the subset has no other text.
+    /// initializer of another form is [`ConstFault::Refused`]: the subset has no other text.
     pub fn text(&mut self, decl: DeclId) -> Result<Arc<str>, ConstFault> {
         let data = self.design.decl_data(decl);
         let DeclKind::Const(ConstData { value: Some(expr), .. }) = &data.kind else {
@@ -350,10 +357,10 @@ impl<'d, 't> ConstEval<'d, 't> {
         };
         let expr = *expr;
         let ExprKind::IncludeStr(literal) = &self.design.expr_node(expr).kind else {
-            return Err(ConstFault::Unsupported { expr, what: "a text value other than `include_str!`".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a text value other than `include_str!`".to_string())));
         };
         let Some(path) = literal.str_value() else {
-            return Err(ConstFault::Unsupported { expr, what: "an `include_str!` path with an undefined escape".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("an `include_str!` path with an undefined escape".to_string())));
         };
         let source = self.design.file_data(data.file).path.clone();
         self.files.text(source.as_deref(), &path).map_err(|fault| ConstFault::File { expr, fault })
@@ -364,7 +371,7 @@ impl<'d, 't> ConstEval<'d, 't> {
         let value = self.fold_constant(decl)?;
         if self.composite_of(value).is_some() {
             return Err(match &self.design.decl_data(decl).kind {
-                DeclKind::Const(ConstData { value: Some(expr), .. }) => ConstFault::Unsupported { expr: *expr, what: "a composite value where a scalar is required".to_string() },
+                DeclKind::Const(ConstData { value: Some(expr), .. }) => ConstFault::refused(*expr, RefusedForm::Text("a composite value where a scalar is required".to_string())),
                 _ => ConstFault::NoValue { decl },
             });
         }
@@ -400,7 +407,7 @@ impl<'d, 't> ConstEval<'d, 't> {
     /// evaluator and means nothing outside it (`tree` gives a composite out).
     fn scalar(&self, expr: ExprId, value: Constant) -> Result<Constant, ConstFault> {
         match self.composite_of(value) {
-            Some(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where a scalar is required".to_string() }),
+            Some(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a composite value where a scalar is required".to_string()))),
             None => Ok(value),
         }
     }
@@ -439,7 +446,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             ExprKind::Call { args, .. } => self.call(expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), bindings),
             ExprKind::MethodCall { recv, args, .. } => self.method(expr, *recv, &args.iter().map(|a| a.value).collect::<Vec<_>>(), bindings),
             ExprKind::Cast { expr: operand, .. } => self.cast(expr, *operand, bindings),
-            _ => Err(ConstFault::Unsupported { expr, what: "this form in a const expression".to_string() }),
+            _ => Err(ConstFault::refused(expr, RefusedForm::Text("this form in a const expression".to_string()))),
         }
     }
 
@@ -447,20 +454,20 @@ impl<'d, 't> ConstEval<'d, 't> {
     fn real(expr: ExprId, value: Constant) -> Result<f64, ConstFault> {
         match value {
             Constant::Real(r) => Ok(r.get()),
-            Constant::Bool(_) => Err(ConstFault::Unsupported { expr, what: "a `bool` where an `f64` is required".to_string() }),
-            Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where an `f64` is required".to_string() }),
-            Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where an `f64` is required".to_string() }),
-            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::Unsupported { expr, what: "a number-width value where an `f64` is required".to_string() }),
+            Constant::Bool(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a `bool` where an `f64` is required".to_string()))),
+            Constant::Int(_) => Err(ConstFault::refused(expr, RefusedForm::Text("an integer where an `f64` is required".to_string()))),
+            Constant::Aggregate(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a composite value where an `f64` is required".to_string()))),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a number-width value where an `f64` is required".to_string()))),
         }
     }
 
     fn boolean(expr: ExprId, value: Constant) -> Result<bool, ConstFault> {
         match value {
             Constant::Bool(b) => Ok(b),
-            Constant::Real(_) => Err(ConstFault::Unsupported { expr, what: "an `f64` where a `bool` is required".to_string() }),
-            Constant::Int(_) => Err(ConstFault::Unsupported { expr, what: "an integer where a `bool` is required".to_string() }),
-            Constant::Aggregate(_) => Err(ConstFault::Unsupported { expr, what: "a composite value where a `bool` is required".to_string() }),
-            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::Unsupported { expr, what: "a number-width value where a `bool` is required".to_string() }),
+            Constant::Real(_) => Err(ConstFault::refused(expr, RefusedForm::Text("an `f64` where a `bool` is required".to_string()))),
+            Constant::Int(_) => Err(ConstFault::refused(expr, RefusedForm::Text("an integer where a `bool` is required".to_string()))),
+            Constant::Aggregate(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a composite value where a `bool` is required".to_string()))),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a number-width value where a `bool` is required".to_string()))),
         }
     }
 
@@ -482,16 +489,16 @@ impl<'d, 't> ConstEval<'d, 't> {
                 let digits: String = text.trim_end_matches("f64").chars().filter(|c| *c != '_').collect();
                 match digits.parse::<f64>() {
                     Ok(value) => known(Constant::Real(Real::new(value))),
-                    Err(_) => Err(ConstFault::Unsupported { expr, what: "an integer literal".to_string() }),
+                    Err(_) => Err(ConstFault::refused(expr, RefusedForm::Text("an integer literal".to_string()))),
                 }
             }
             LitKind::Int(text) => match (self.width(expr), lexer::int_value(text)) {
                 // An `i8` literal `128` is the operand of a unary `-` (the checker allowed it): it
                 // wraps to -128 here and the minus wraps it back.
                 (Some(width), Some(value)) => known(width.wrap(value as i128)),
-                _ => Err(ConstFault::Unsupported { expr, what: "an integer literal".to_string() }),
+                _ => Err(ConstFault::refused(expr, RefusedForm::Text("an integer literal".to_string()))),
             },
-            LitKind::Str { .. } => Err(ConstFault::Unsupported { expr, what: "this literal".to_string() }),
+            LitKind::Str { .. } => Err(ConstFault::refused(expr, RefusedForm::Text("this literal".to_string()))),
         }
     }
 
@@ -524,7 +531,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             return Ok(Constant::Int(i128::from(levels)));
         }
         let ExprKind::Path(path) = &self.design.expr_node(expr).kind else {
-            return Err(ConstFault::Unsupported { expr, what: "a name".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a name".to_string())));
         };
         let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
         let Resolution::Decl(decl) = res else {
@@ -534,7 +541,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             DeclKind::Const(_) if self.open_constants.contains(&decl) => Err(ConstFault::Cyclic { expr, constant: decl }),
             DeclKind::Const(_) => self.fold_constant(decl).map_err(|fault| match fault {
                 // A trait's `const` without a value is outside the subset; anywhere else it is `E0188`.
-                ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::Unsupported { expr, what: "a `const` without a value".to_string() },
+                ConstFault::NoValue { decl } if self.is_trait_item(decl) => ConstFault::refused(expr, RefusedForm::Text("a `const` without a value".to_string())),
                 other => other,
             }),
             // a const parameter of the generic item being instantiated is bound to its argument (generics T33)
@@ -549,7 +556,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 // a composite param is an IR constant, which this evaluator's composites are not (`composite.rs`)
                 Some(Constant::Aggregate(_)) => match bindings.tree(decl).cloned() {
                     Some(tree) => Ok(self.adopt(&tree)),
-                    None => Err(ConstFault::Unsupported { expr, what: "a composite param in a const expression".to_string() }),
+                    None => Err(ConstFault::refused(expr, RefusedForm::Text("a composite param in a const expression".to_string()))),
                 },
                 Some(value) => Ok(value),
                 None => Err(ConstFault::UnboundParam { expr, param: decl }),
@@ -559,21 +566,21 @@ impl<'d, 't> ConstEval<'d, 't> {
             // A unit struct, and a unit variant of an enum with fields, are held with their parts (`composite.rs`).
             DeclKind::Struct(_) | DeclKind::Variant(_) if let Some(value) = self.unit_value(decl) => Ok(value),
             // A unit variant is its tag (§2 rule 5).
-            DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Constant::Int(tag)).ok_or(ConstFault::Unsupported { expr, what: "a variant outside its enum".to_string() }),
+            DeclKind::Variant(_) => EnumLayout::variant_tag(self.design, decl).map(|tag| Constant::Int(tag)).ok_or(ConstFault::refused(expr, RefusedForm::Text("a variant outside its enum".to_string()))),
             DeclKind::FnParam(_) | DeclKind::Binding(_) => match (self.locals.get(&decl).copied(), bindings.get(decl)) {
                 (Some(value), _) => Ok(value),
                 // the loop variable of an unrolled analog loop, or the parameter of an unrolled
                 // recursion, bound to its constant for this iteration or call (`unroll.rs`)
-                (None, Some(Constant::Aggregate(_))) => Err(ConstFault::Unsupported { expr, what: "a composite value bound from outside the evaluation".to_string() }),
+                (None, Some(Constant::Aggregate(_))) => Err(ConstFault::refused(expr, RefusedForm::Text("a composite value bound from outside the evaluation".to_string()))),
                 (None, Some(value)) => Ok(value),
                 (None, None) => self.body_let(expr, decl, bindings),
             },
             // A value input the caller binds to a constant (`structural.rs`, a selector through an input).
-            DeclKind::Port(_) if let Some(Constant::Aggregate(_)) = bindings.get(decl) => Err(ConstFault::Unsupported { expr, what: "a composite value input in a const expression".to_string() }),
+            DeclKind::Port(_) if let Some(Constant::Aggregate(_)) = bindings.get(decl) => Err(ConstFault::refused(expr, RefusedForm::Text("a composite value input in a const expression".to_string()))),
             DeclKind::Port(_) if let Some(value) = bindings.get(decl) => Ok(value),
             DeclKind::Port(_) | DeclKind::Signal(_) if self.types.carrier(decl).is_some() => Err(ConstFault::Dynamic { expr, what: "a carrier".to_string() }),
             DeclKind::Port(_) | DeclKind::Signal(_) => Err(ConstFault::Dynamic { expr, what: "a node".to_string() }),
-            _ => Err(ConstFault::Unsupported { expr, what: "this name in a const expression".to_string() }),
+            _ => Err(ConstFault::refused(expr, RefusedForm::Text("this name in a const expression".to_string()))),
         }
     }
 
@@ -689,7 +696,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 let equal = match (left, right) {
                     (Constant::Real(a), Constant::Real(b)) => a.get() == b.get(),
                     (Constant::Bool(a), Constant::Bool(b)) => a == b,
-                    _ => return Err(ConstFault::Unsupported { expr, what: "a comparison of an `f64` and a `bool`".to_string() }),
+                    _ => return Err(ConstFault::refused(expr, RefusedForm::Text("a comparison of an `f64` and a `bool`".to_string()))),
                 };
                 Ok(Constant::Bool(equal == (op == BinOp::Eq)))
             }
@@ -704,7 +711,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                     BinOp::Le => Ok(Constant::Bool(a <= b)),
                     BinOp::Gt => Ok(Constant::Bool(a > b)),
                     BinOp::Ge => Ok(Constant::Bool(a >= b)),
-                    _ => Err(ConstFault::Unsupported { expr, what: "this operator".to_string() }),
+                    _ => Err(ConstFault::refused(expr, RefusedForm::Text("this operator".to_string()))),
                 }
             }
         }
@@ -724,7 +731,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             _ => {}
         }
         let Some(width) = self.width(expr) else {
-            return Err(ConstFault::Unsupported { expr, what: "an integer operator outside an integer type".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("an integer operator outside an integer type".to_string())));
         };
         let panic = |what: &str| Err(ConstFault::Panic { expr, what: what.to_string() });
         let value = match op {
@@ -752,7 +759,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             // `a` is held sign-extended, so `>>` is arithmetic for a signed type and logical for
             // an unsigned one (whose value is never negative).
             BinOp::Shr => a >> b,
-            _ => return Err(ConstFault::Unsupported { expr, what: "this operator on integers".to_string() }),
+            _ => return Err(ConstFault::refused(expr, RefusedForm::Text("this operator on integers".to_string()))),
         };
         Ok(width.wrap(value))
     }
@@ -766,14 +773,14 @@ impl<'d, 't> ConstEval<'d, 't> {
         let value = match value {
             Constant::Aggregate(_) => match self.composite_of(value).map(|c| c.kind) {
                 Some(CompositeKind::Variant(position)) => Constant::Int(i128::from(position)),
-                _ => return Err(ConstFault::Unsupported { expr, what: "a cast of a composite value".to_string() }),
+                _ => return Err(ConstFault::refused(expr, RefusedForm::Text("a cast of a composite value".to_string()))),
             },
             other => other,
         };
         let value = match (self.typed(operand), value) {
             (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(decl).and_then(|t| t.discriminants.get(position as usize)) {
                 Some(discriminant) => Constant::Int(*discriminant),
-                None => return Err(ConstFault::Unsupported { expr, what: "a cast of a variant outside its enum".to_string() }),
+                None => return Err(ConstFault::refused(expr, RefusedForm::Text("a cast of a variant outside its enum".to_string()))),
             },
             (_, value) => value,
         };
@@ -789,9 +796,9 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Some(width), Constant::Int(v)) => width.wrap(v),
                 (Some(width), Constant::Real(r)) => width.saturate(r.get()),
                 (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),
-                (None, _) | (Some(_), Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
+                (None, _) | (Some(_), Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => return Err(ConstFault::refused(expr, RefusedForm::Text("this cast".to_string()))),
             },
-            (None, _) => return Err(ConstFault::Unsupported { expr, what: "this cast".to_string() }),
+            (None, _) => return Err(ConstFault::refused(expr, RefusedForm::Text("this cast".to_string()))),
         };
         Ok(converted)
     }
@@ -862,10 +869,10 @@ impl<'d, 't> ConstEval<'d, 't> {
     fn apply_function(&mut self, expr: ExprId, function: DeclId, arguments: Vec<Argument>) -> Result<Constant, ConstFault> {
         let data = self.design.decl_data(function);
         let DeclKind::Fn(f) = &data.kind else {
-            return Err(ConstFault::Unsupported { expr, what: "a call of a name that is not a function".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a call of a name that is not a function".to_string())));
         };
         let Some(body) = &f.body else {
-            return Err(ConstFault::Unsupported { expr, what: "a function without a body".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a function without a body".to_string())));
         };
         self.enter(expr)?;
         let params = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
@@ -925,10 +932,10 @@ impl<'d, 't> ConstEval<'d, 't> {
             values.push(self.fold(*arg, bindings));
         }
         if self.types.builtin(expr).is_some() {
-            return Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("this method in a const expression".to_string())));
         }
         let Some(method) = self.types.method(expr) else {
-            return Err(ConstFault::Unsupported { expr, what: "a method outside the catalogue".to_string() });
+            return Err(ConstFault::refused(expr, RefusedForm::Text("a method outside the catalogue".to_string())));
         };
         let (receiver, values) = (receiver?, values.into_iter().collect::<Result<Vec<_>, _>>()?);
         self.known_method(expr, recv, args, method, receiver, values)
@@ -951,7 +958,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             Ok(Constant::Bool(high)) => i128::from(high),
             Ok(Constant::Int(value)) => value,
             Ok(Constant::Real(real)) => i128::from(real.get().to_bits()),
-            Ok(_) => return Some(Err(ConstFault::Unsupported { expr, what: "an `encode` of a value that is no scalar".to_string() })),
+            Ok(_) => return Some(Err(ConstFault::refused(expr, RefusedForm::Text("an `encode` of a value that is no scalar".to_string())))),
             Err(fault) => return Some(Err(fault)),
         };
         let levels = (0..width).map(|level| Constant::Bool((word >> level) & 1 == 1)).collect();
@@ -974,7 +981,7 @@ impl<'d, 't> ConstEval<'d, 't> {
                 (Method::RemEuclid, [0]) => Err(ConstFault::Panic { expr, what: "a `rem_euclid` by zero".to_string() }),
                 (Method::RemEuclid, [d]) => Ok(Constant::Int(x.rem_euclid(*d))),
                 (Method::IntAbs | Method::Signum | Method::Pow | Method::SaturatingAdd | Method::SaturatingSub | Method::SaturatingMul, _) => {
-                    let Some(width) = self.width(expr) else { return Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }) };
+                    let Some(width) = self.width(expr) else { return Err(ConstFault::refused(expr, RefusedForm::Text("this method of an integer".to_string()))) };
                     match (method, ints.as_slice()) {
                         // Arithmetic wraps (§1): `(-128i8).abs()` is `-128`, `2u8.pow(9)` is 0.
                         (Method::IntAbs, []) => Ok(width.wrap(x.abs())),
@@ -993,10 +1000,10 @@ impl<'d, 't> ConstEval<'d, 't> {
                         (Method::SaturatingAdd, [y]) => Ok(Constant::Int(width.clamp(x + *y))),
                         (Method::SaturatingSub, [y]) => Ok(Constant::Int(width.clamp(x - *y))),
                         (Method::SaturatingMul, [y]) => Ok(Constant::Int(width.clamp(x.saturating_mul(*y)))),
-                        _ => Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }),
+                        _ => Err(ConstFault::refused(expr, RefusedForm::Text("this method of an integer".to_string()))),
                     }
                 }
-                _ => Err(ConstFault::Unsupported { expr, what: "this method of an integer".to_string() }),
+                _ => Err(ConstFault::refused(expr, RefusedForm::Text("this method of an integer".to_string()))),
             };
         }
         let x = Self::real(recv, receiver)?;
@@ -1016,7 +1023,7 @@ impl<'d, 't> ConstEval<'d, 't> {
             (Method::Clamp, [lo, hi]) if lo.is_nan() || hi.is_nan() || lo > hi => return crossed(),
             (Method::Clamp, [lo, hi]) => x.clamp(*lo, *hi),
             // Constant from msl-digital T27 on, with the `Option` pair.
-            _ => return Err(ConstFault::Unsupported { expr, what: "this method in a const expression".to_string() }),
+            _ => return Err(ConstFault::refused(expr, RefusedForm::Text("this method in a const expression".to_string()))),
         };
         Ok(Constant::Real(Real::new(result)))
     }

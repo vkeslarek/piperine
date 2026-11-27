@@ -576,7 +576,6 @@ crates/piperine-lang/tests/elab_analog.rs::a_branch_is_one_unordered_pair_with_i
 crates/piperine-lang/tests/elab_analog.rs::a_non_positive_abstol_is_e0204	1
 crates/piperine-lang/tests/elab_analog.rs::a_quantity_attribute_outside_the_three_is_e0204	1
 crates/piperine-lang/tests/elab_analog.rs::a_site_under_an_if_is_refused_not_mis_lowered	1
-crates/piperine-lang/tests/elab_analog.rs::bound_step_under_an_if_is_p0001	1
 crates/piperine-lang/tests/elab_analog.rs::equal_access_names_are_e0205	1
 crates/piperine-lang/tests/elab_analog.rs::freq_analysis_and_bound_step_lower	1
 crates/piperine-lang/tests/elab_analog.rs::potential_and_flow_on_one_branch_is_e0415	1
@@ -595,7 +594,6 @@ crates/piperine-lang/tests/elab_carrier_arrays.rs::arrays_of_carriers_and_nodes_
 crates/piperine-lang/tests/elab_control.rs::a_contributing_analog_loop_without_a_constant_trip_count_is_e0416	1
 crates/piperine-lang/tests/elab_control.rs::an_unfoldable_recursion_from_analog_is_e0126	1
 crates/piperine-lang/tests/elab_control.rs::elab_forms	1
-crates/piperine-lang/tests/elab_digital.rs::a_cross_tolerance_that_is_not_constant_is_p0001	1
 crates/piperine-lang/tests/elab_digital.rs::a_net_takes_the_init_of_its_declaring_carrier	1
 crates/piperine-lang/tests/elab_digital.rs::an_event_function_may_recurse_while_its_decisions_fold	1
 crates/piperine-lang/tests/elab_digital.rs::the_m1_goldens_are_unchanged	1
@@ -637,7 +635,6 @@ crates/piperine-lang/tests/elab_instances.rs::a_node_init_that_reads_a_param_is_
 crates/piperine-lang/tests/elab_instances.rs::a_template_leaving_a_required_param_unbound_is_e0319	1
 crates/piperine-lang/tests/elab_instances.rs::an_unnamed_placement_is_module_hash_k	1
 crates/piperine-lang/tests/elab_instances.rs::instances_come_in_pre_order	1
-crates/piperine-lang/tests/elab_mixed.rs::a_flow_probe_of_a_branch_without_a_potential_contribution_is_p0001	1
 crates/piperine-lang/tests/elab_natures.rs::a_loop_through_a_one_driver_carrier_across_instances_is_e0339	1
 crates/piperine-lang/tests/elab_natures.rs::a_resolved_drive_without_default_or_initial_value_is_e0187	1
 crates/piperine-lang/tests/elab_natures.rs::a_signal_flow_node_with_no_or_two_drivers_is_e0242	1
@@ -647,13 +644,11 @@ crates/piperine-lang/tests/elab_number_widths.rs::elab_forms	1
 crates/piperine-lang/tests/elab_operators.rs::a_definition_or_an_at_argument_reaching_freq_through_a_fn_is_refused_by_the_checker	1
 crates/piperine-lang/tests/elab_operators.rs::a_delay_without_max_whose_td_varies_is_e0452	1
 crates/piperine-lang/tests/elab_operators.rs::a_field_type_conflict_across_trace_sites_is_e0605	1
-crates/piperine-lang/tests/elab_operators.rs::a_fn_form_with_no_finite_symbolic_reading_is_p0001_naming_it_inside_a_ddx	1
 crates/piperine-lang/tests/elab_params.rs::a_default_that_reads_itself_or_a_later_param_is_e0321	1
 crates/piperine-lang/tests/elab_params.rs::a_false_where_is_e0317_with_the_path	1
 crates/piperine-lang/tests/elab_params.rs::a_required_param_left_out_is_e0319	1
 crates/piperine-lang/tests/elab_params.rs::division_by_zero_is_inf_not_an_error	1
 crates/piperine-lang/tests/elab_params.rs::n_as_f64_reaches_the_contribution	1
-crates/piperine-lang/tests/elab_results.rs::a_text_field_that_is_not_a_literal_is_p0001	1
 crates/piperine-lang/tests/elab_results.rs::analog_exprs	1
 crates/piperine-lang/tests/elab_results.rs::ps_children_are_empty	1
 crates/piperine-lang/tests/elab_results.rs::reaction_exprs	1
@@ -673,8 +668,6 @@ crates/piperine-lang/tests/elab_templates.rs::an_unread_let_of_a_template_item_i
 crates/piperine-lang/tests/elab_templates.rs::inst_name_in_the_module_that_places_the_template_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_templates.rs::inst_name_through_a_template_param_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_templates.rs::templates_fold_from_consts_functions_and_two_levels_of_params	1
-crates/piperine-lang/tests/elab_unlowered.rs::a_site_or_contribution_under_if_is_p0001	1
-crates/piperine-lang/tests/elab_unlowered.rs::ddt_off_the_top_of_a_flow_contribution_is_p0001	1
 crates/piperine-lang/tests/elab_unlowered.rs::m_dtemp_or_extern_at_a_placement_is_p0001	1
 crates/piperine-lang/tests/elab_unlowered.rs::src	1
 crates/piperine-lang/tests/elab_values.rs::a_const_reading_a_run_value_is_e0188	1
@@ -851,8 +844,6 @@ crates/piperine-lang/tests/pom_resolve.rs::unresolved_path_is_one_e0161	1
 crates/piperine-lang/tests/pom_tree.rs::doc_comments_reach_docs	1
 crates/piperine-lang/tests/pom_tree.rs::fn_abi_params_ret_body	1
 crates/piperine-lang/tests/pom_tree.rs::signal_pub_type_init	1
-crates/piperine-lang/tests/spec_codes.rs::no_source_spells_p0002	1
-crates/piperine-lang/tests/spec_text.rs::a_bound_combines_a_trait_and_fn_p_in_the_spec	1
 crates/piperine-lang/tests/spec_text.rs::a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules	1
 crates/piperine-lang/tests/spec_text.rs::a_loop_that_does_not_settle_is_e0511	1
 crates/piperine-lang/tests/spec_text.rs::a_module_type_takes_trait_and_inherent_impls_in_the_spec	1
@@ -1006,7 +997,6 @@ crates/piperine-lang/tests/types_analog.rs::the_std_vt_checks_clean	1
 crates/piperine-lang/tests/types_analog_operators.rs::a_site_reached_from_analog_writing_sim_or_checks_is_e0603	1
 crates/piperine-lang/tests/types_analog_operators.rs::ddx_against_a_non_probe_is_e0451	1
 crates/piperine-lang/tests/types_analog_operators.rs::ddx_outside_analog_or_read_by_a_definition_is_e0450	1
-crates/piperine-lang/tests/types_buck.rs::what_stays_outside_is_p0001_by_name	1
 crates/piperine-lang/tests/types_bundles.rs::a_literal_field_of_another_nature_is_e0263	1
 crates/piperine-lang/tests/types_bundles.rs::a_literal_outside_a_connection_or_a_bundle_operand_is_e0264	1
 crates/piperine-lang/tests/types_bundles.rs::a_template_of_another_view_than_the_bound_is_e0360_naming_the_port	1
@@ -1040,7 +1030,6 @@ crates/piperine-lang/tests/types_compound.rs::a_match_that_is_not_exhaustive_is_
 crates/piperine-lang/tests/types_compound.rs::a_method_outside_h3_h4_is_e0161	1
 crates/piperine-lang/tests/types_compound.rs::a_tuple_let_names_each_component	1
 crates/piperine-lang/tests/types_compound.rs::decl	1
-crates/piperine-lang/tests/types_compound.rs::expect_with_a_non_literal_message_is_p0001	1
 crates/piperine-lang/tests/types_compound.rs::match_is_typed_over_enums_bools_integers_and_options	1
 crates/piperine-lang/tests/types_compound.rs::unit_enums_and_their_variants_are_typed	1
 crates/piperine-lang/tests/types_control.rs::a_closure_called_outside_its_class_is_e0122	1
@@ -1107,7 +1096,6 @@ crates/piperine-lang/tests/types_integers.rs::abs_and_signum_on_an_unsigned_inte
 crates/piperine-lang/tests/types_integers.rs::an_uncatalogued_method_is_e0161_by_name	1
 crates/piperine-lang/tests/types_integers.rs::as_goes_between_integers_and_f64	1
 crates/piperine-lang/tests/types_integers.rs::every_h1_row_types_with_its_signature	1
-crates/piperine-lang/tests/types_integers.rs::mixed_integer_operands_are_p0002	1
 crates/piperine-lang/tests/types_model.rs::an_unplaced_module_calling_ddt_from_a_function_is_e0350	1
 crates/piperine-lang/tests/types_model.rs::an_unreached_function_with_an_error_fails_the_model_check	1
 crates/piperine-lang/tests/types_model.rs::an_unreached_generic_module_with_an_error_fails_the_model_check	1
@@ -1163,14 +1151,10 @@ crates/piperine-lang/tests/types_structure.rs::inflow_of_a_node_that_is_not_a_po
 crates/piperine-lang/tests/types_structure.rs::inflow_on_the_left_of_a_contribution_is_e0410	1
 crates/piperine-lang/tests/types_structure.rs::inst_name_of_an_item_that_is_not_pub_is_e0343	1
 crates/piperine-lang/tests/types_structure.rs::inst_name_types_as_the_pub_item	1
-crates/piperine-lang/tests/types_subset.rs::a_construct_outside_the_subset_is_p0001	1
-crates/piperine-lang/tests/types_subset.rs::p0001_names_the_construct	1
-crates/piperine-lang/tests/types_subset.rs::std_types_outside_the_subset_are_p0001	1
 crates/piperine-lang/tests/types_subset.rs::unreached_items_are_not_reported	1
 crates/piperine-lang/tests/types_templates.rs::a_cast_of_a_template_item_is_e0181	1
 crates/piperine-lang/tests/types_templates.rs::a_choice_of_two_modules_is_one_e0180_and_its_call_adds_none	1
 crates/piperine-lang/tests/types_templates.rs::a_module_whose_ports_differ_is_e0360_naming_the_first	1
-crates/piperine-lang/tests/types_templates.rs::a_module_whose_ports_match_fits_fn_p_names_not_counting	1
 crates/piperine-lang/tests/types_templates.rs::a_param_block_on_a_template_placement_is_e0361	1
 crates/piperine-lang/tests/types_templates.rs::a_template_is_never_carried_e0112	1
 crates/piperine-lang/tests/types_templates.rs::a_template_leaving_a_required_param_is_e0319	1
