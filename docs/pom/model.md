@@ -263,11 +263,11 @@ The crates of a build in insertion order; the first is the root crate.
 | Method | Meaning |
 | --- | --- |
 | `new() -> CrateGraph` | An empty graph. |
-| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `is_crate_name(name)`. |
+| `add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError>` | Add a crate; `InvalidName` unless `CrateGraph::is_crate_name(name)`. |
 | `add_dependency(&mut self, from: CrateId, name: &str, to: CrateId) -> Result<(), GraphError>` | Give `from` a dependency called `name` on `to`; `UnknownCrate`, `InvalidName`, `DuplicateDependency` or `Cycle`. |
 | `crates(&self) -> &[CrateNode]` | The crates in insertion order. |
 
-`is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
+`CrateGraph::is_crate_name(name: &str) -> bool` is true for one identifier that is no keyword and not `std`.
 
 ### `CrateNode`
 

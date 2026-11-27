@@ -989,7 +989,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The 8 back-end items of the 12 are gone and the workspace builds
-- [ ] The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48 (their Done-when lines)
+- [x] The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48 (their Done-when lines)
 - [x] Every back-end row of the worklist has a verdict
 - [x] Gate check passes: Ledger
 
@@ -1035,7 +1035,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**`
-- [ ] no open row: `lang::In` (T43) and `numbers::Limbs` (T51) are closed by their Done-when lines
+- [x] no open row: `lang::In` (T43) and `numbers::Limbs` (T51) are closed by their Done-when lines
 - [x] Gate check passes: Quick for abi, numbers, analog-solver and solver
 
 **Tests**: integration
@@ -1409,7 +1409,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the hygiene registry entry of `resolve/mod.rs` in the guards' `suite_hygiene.rs`, removed with the exemption)
 - [x] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
 - [x] Gate check passes: Quick
 
@@ -1433,7 +1433,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `is_crate_name`, now `CrateGraph::is_crate_name`, in `lang/tests/pom_crates.rs`, `piperine-cli` and `piperine-project`; and the hygiene registry entry of `lower/mod.rs`)
 - [x] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
 - [x] Gate check passes: Quick
 

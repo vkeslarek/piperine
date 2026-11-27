@@ -7,6 +7,8 @@
 use core::cmp::Ordering;
 
 /// Arithmetic on a magnitude held as little-endian `u64` limbs.
+///
+/// Kept as a trait with one implementor, `[u64]`: the methods extend a slice, a foreign type that takes no inherent method.
 pub trait Limbs {
     /// The limbs without high zero limbs (zero is the empty vector).
     fn trimmed(&self) -> Vec<u64>;

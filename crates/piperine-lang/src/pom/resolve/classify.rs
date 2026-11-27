@@ -186,7 +186,7 @@ impl<'design> Classifier<'design> {
         table
     }
 
-        /// Classify a design whose names are resolved.
+    /// Classify a design whose names are resolved.
     pub(super) fn run(&self) -> Classified {
         let bundles = self.bundle_structs();
         let mut out = Classified::default();

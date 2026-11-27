@@ -522,7 +522,7 @@ crates/piperine-lang/tests/elab_structure.rs::the_stdlib_idt_is_the_generic_modu
 crates/piperine-lang/tests/elab_templates.rs::inst_name_in_the_module_that_places_the_template_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_templates.rs::inst_name_through_a_template_param_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_templates.rs::templates_fold_from_consts_functions_and_two_levels_of_params	1
-crates/piperine-lang/tests/elab_unlowered.rs::m_dtemp_or_extern_at_a_placement_is_p0001	1
+crates/piperine-lang/tests/elab_unlowered.rs::m_or_dtemp_at_a_placement_is_e0320	1
 crates/piperine-lang/tests/elab_unlowered.rs::src	1
 crates/piperine-lang/tests/elab_values.rs::numeric_rows_lower_to_methods_and_checked_ops_to_pairs	1
 crates/piperine-lang/tests/elab_values.rs::ty	1

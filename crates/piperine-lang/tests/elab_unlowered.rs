@@ -78,11 +78,8 @@ impl DdtSource {
 }
 
 #[test]
-fn m_dtemp_or_extern_at_a_placement_is_p0001() {
-    // ELAB-06 AC 3 is met earlier than written (msl-elab spec, amendment (d)): the front end resolves a placement's field against the
-    // module's params only, so `m` and `dtemp` are `E0320` there, before elaboration runs; the
-    // model is still rejected at the field with no `Ir`, but the code is not `P0001`. The `P0001`
-    // arm in `children.rs` stays for the day the POM resolves implicit params (M2).
+fn m_or_dtemp_at_a_placement_is_e0320() {
+    // ELAB-06 AC 3: `m` and `dtemp` in a placement are `E0320` at the field.
     for field in ["m: 2.0", "dtemp: 5.0"] {
         let src = format!("module R(p: Electrical, n: Electrical) {{ r: f64 = 1.0; }}\nmodule Top() {{ signal s: Electrical; let r = R {{ r: 1.0, {field} }}(s, gnd); }}");
         let design = Elab::design(&src);
