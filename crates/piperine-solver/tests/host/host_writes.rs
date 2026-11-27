@@ -4,6 +4,7 @@
 //! output is unknown while its input is, so a write is seen at the output.
 
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_digital_solver::net::NetId;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions};
@@ -53,7 +54,7 @@ impl HostWritesCases {
     /// The inverter circuit helper `inverter_circuit`.
     fn inverter_circuit() -> CircuitInstance {
         let mut b = CircuitBuilder::new("inverter");
-        b.device(mixed::Inverter::module(), "inv", &[], &[HostWritesCases::net("a"), HostWritesCases::net("y")]);
+        b.device(digital::Inverter::module(), "inv", &[], &[HostWritesCases::net("a"), HostWritesCases::net("y")]);
         b.build().expect("build")
     }
 
@@ -67,7 +68,7 @@ impl HostWritesCases {
     /// A rising-edge counter on `clk`, held low by the host from the start; `n` counts the edges.
     fn counted(stop: f64, rise_at: f64) -> u32 {
         let mut b = CircuitBuilder::new("counter");
-        b.device(mixed::Counter::module(), "cnt", &[], &[HostWritesCases::net("clk"), HostWritesCases::net("n")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[HostWritesCases::net("clk"), HostWritesCases::net("n")]);
         let mut circuit = b.build().expect("build");
         circuit.write_net("clk", ParamValue::Bool(false)).expect("clk low");
         let mut solver = circuit.transient(TransientAnalysisOptions::new(stop, 1.0e-7), Context::default()).expect("tran");

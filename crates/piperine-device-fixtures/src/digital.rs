@@ -72,9 +72,6 @@ impl Device for Inverter {
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 // ─── And2 ───────────────────────────────────────────────────────────────────
@@ -119,9 +116,6 @@ impl Device for And2 {
         let y = DeviceParts::bit(a[0] != 0 && b[0] != 0);
         cx.out_bytes(0).copy_from_slice(&y);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -354,9 +348,6 @@ impl Device for Resolver {
         cx.out_bytes(0).copy_from_slice(&DeviceParts::bit(value));
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 // ─── Succ ───────────────────────────────────────────────────────────────────
@@ -403,22 +394,19 @@ impl Device for Successor {
         cx.set(0, next);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
-// ─── Recorder ───────────────────────────────────────────────────────────────
+// ─── MultiRecorder ───────────────────────────────────────────────────────────────
 
 /// Emits eight records through one statement when `go` fires.
 ///
 /// pins: go=0 (PORT event); log=1 (PORT BYTE, RECORD)
 /// reaction 0: on [go]  writes [S0 {log}]; commits `[i]` for i = 1 to 8, no delay
-pub struct Recorder;
+pub struct MultiRecorder;
 static RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RECORDER: OnceLock<Module> = OnceLock::new();
 
-impl Recorder {
+impl MultiRecorder {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -430,21 +418,21 @@ impl Recorder {
 
     /// The module of the device.
     pub fn module() -> &'static Module {
-        DeviceParts::module_of::<Recorder>(&RECORDER, "recorder")
+        DeviceParts::module_of::<MultiRecorder>(&RECORDER, "recorder")
     }
 
     /// An instance of the device.
     pub fn handle() -> Handle {
-        DeviceParts::make::<Recorder>(&RECORDER, "recorder")
+        DeviceParts::make::<MultiRecorder>(&RECORDER, "recorder")
     }
 }
 
-impl Device for Recorder {
+impl Device for MultiRecorder {
     fn prototype() -> &'static Shape<'static> {
-        DeviceParts::shared(&RECORDER_SHAPE, Recorder::shape).shape()
+        DeviceParts::shared(&RECORDER_SHAPE, MultiRecorder::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Recorder, Arc::clone(DeviceParts::shared(&RECORDER_SHAPE, Recorder::shape))))
+        Ok((MultiRecorder, Arc::clone(DeviceParts::shared(&RECORDER_SHAPE, MultiRecorder::shape))))
     }
     fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
         Ok(())
@@ -506,19 +494,19 @@ impl Device for SettleRecorder {
     }
 }
 
-// ─── Checked ────────────────────────────────────────────────────────────────
+// ─── CheckedParameter ────────────────────────────────────────────────────────────────
 
 /// A parameter with a `where r > 0` check, and a setup function that asks for another
 /// shape above 100 (abi.md §3.1 P6, §9).
 ///
 /// pins: r=0 (PARAM F64, default 1.0, check -> ok); ok=1 (PRIVATE BIT)
 /// fn 0 "setup": reads [r] writes [ok]; `RESHAPE` when r > 100
-pub struct Checked;
+pub struct CheckedParameter;
 static CHECKED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static CHECKED: OnceLock<Module> = OnceLock::new();
 const ONE: [u8; 8] = 1.0f64.to_le_bytes();
 
-impl Checked {
+impl CheckedParameter {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -535,21 +523,21 @@ impl Checked {
 
     /// The module of the device.
     pub fn module() -> &'static Module {
-        DeviceParts::module_of::<Checked>(&CHECKED, "checked")
+        DeviceParts::module_of::<CheckedParameter>(&CHECKED, "checked")
     }
 
     /// An instance of the device.
     pub fn handle() -> Handle {
-        DeviceParts::make::<Checked>(&CHECKED, "checked")
+        DeviceParts::make::<CheckedParameter>(&CHECKED, "checked")
     }
 }
 
-impl Device for Checked {
+impl Device for CheckedParameter {
     fn prototype() -> &'static Shape<'static> {
-        DeviceParts::shared(&CHECKED_SHAPE, Checked::shape).shape()
+        DeviceParts::shared(&CHECKED_SHAPE, CheckedParameter::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Checked, Arc::clone(DeviceParts::shared(&CHECKED_SHAPE, Checked::shape))))
+        Ok((CheckedParameter, Arc::clone(DeviceParts::shared(&CHECKED_SHAPE, CheckedParameter::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         CallCounts::bump("checked", false);
@@ -560,22 +548,19 @@ impl Device for Checked {
         cx.out_bytes(0).copy_from_slice(&DeviceParts::bit(r > 0.0));
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
-// ─── Faulty ─────────────────────────────────────────────────────────────────
+// ─── BitFaulty ─────────────────────────────────────────────────────────────────
 
 /// A function that fails on demand: a known high `a` is a `FAULT` (code 7, "boom"), a known low
 /// `a` is a `RESHAPE`. Used outside the parameter cone, where both are faults.
 ///
 /// pins: a=0, y=1 (PORT BIT)   fn 0 "fail": reads [a] writes [y]
-pub struct Faulty;
+pub struct BitFaulty;
 static FAULTY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static FAULTY: OnceLock<Module> = OnceLock::new();
 
-impl Faulty {
+impl BitFaulty {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -587,21 +572,21 @@ impl Faulty {
 
     /// The module of the device.
     pub fn module() -> &'static Module {
-        DeviceParts::module_of::<Faulty>(&FAULTY, "faulty")
+        DeviceParts::module_of::<BitFaulty>(&FAULTY, "faulty")
     }
 
     /// An instance of the device.
     pub fn handle() -> Handle {
-        DeviceParts::make::<Faulty>(&FAULTY, "faulty")
+        DeviceParts::make::<BitFaulty>(&FAULTY, "faulty")
     }
 }
 
-impl Device for Faulty {
+impl Device for BitFaulty {
     fn prototype() -> &'static Shape<'static> {
-        DeviceParts::shared(&FAULTY_SHAPE, Faulty::shape).shape()
+        DeviceParts::shared(&FAULTY_SHAPE, BitFaulty::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Faulty, Arc::clone(DeviceParts::shared(&FAULTY_SHAPE, Faulty::shape))))
+        Ok((BitFaulty, Arc::clone(DeviceParts::shared(&FAULTY_SHAPE, BitFaulty::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         CallCounts::bump("faulty", false);
@@ -610,9 +595,6 @@ impl Device for Faulty {
             [0] => Err(Fault::reshape("another shape")),
             _ => Ok(()),
         }
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -1080,17 +1062,17 @@ impl Device for SettleEvent {
     }
 }
 
-// ─── Delayed ────────────────────────────────────────────────────────────────
+// ─── LaterDelayed ────────────────────────────────────────────────────────────────
 
 /// A statement that promises a delay of at least 1 ns (`LATER`) and commits after 2 ns.
 ///
 /// pins: go=0 (PORT event); out=1 (PORT BIT)
 /// reaction 0: on [go] writes [S0 {out, LATER, min_after 1 ns}]; out <- HIGH after 2 ns
-pub struct Delayed;
+pub struct LaterDelayed;
 static DELAYED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static DELAYED: OnceLock<Module> = OnceLock::new();
 
-impl Delayed {
+impl LaterDelayed {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -1107,21 +1089,21 @@ impl Delayed {
 
     /// The module of the device.
     pub fn module() -> &'static Module {
-        DeviceParts::module_of::<Delayed>(&DELAYED, "delayed")
+        DeviceParts::module_of::<LaterDelayed>(&DELAYED, "delayed")
     }
 
     /// An instance of the device.
     pub fn handle() -> Handle {
-        DeviceParts::make::<Delayed>(&DELAYED, "delayed")
+        DeviceParts::make::<LaterDelayed>(&DELAYED, "delayed")
     }
 }
 
-impl Device for Delayed {
+impl Device for LaterDelayed {
     fn prototype() -> &'static Shape<'static> {
-        DeviceParts::shared(&DELAYED_SHAPE, Delayed::shape).shape()
+        DeviceParts::shared(&DELAYED_SHAPE, LaterDelayed::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Delayed, Arc::clone(DeviceParts::shared(&DELAYED_SHAPE, Delayed::shape))))
+        Ok((LaterDelayed, Arc::clone(DeviceParts::shared(&DELAYED_SHAPE, LaterDelayed::shape))))
     }
     fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
         Ok(())
@@ -1304,7 +1286,7 @@ pub struct CallCounts;
 
 impl CallCounts {
     /// The bump helper `bump`.
-    fn bump(device: &'static str, react: bool) {
+    pub(crate) fn bump(device: &'static str, react: bool) {
         CALLS.with(|c| {
             let mut c = c.borrow_mut();
             let e = c.entry(device).or_default();

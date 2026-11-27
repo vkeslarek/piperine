@@ -6,7 +6,7 @@
 //!
 //! Numerically sensitive: each weight is computed here by hand.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use std::f64::consts::PI;
@@ -17,7 +17,7 @@ use piperine_analog_solver::device::{AnalogPlan, Assembly};
 
 #[test]
 fn small_signal_weights_each_operator() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(3, &[]);
     let t = Circuits::instance("t3", m.trio, vec![Discrete(0), Discrete(1), Discrete(2), Discrete(3), Circuits::at(&n[0]), Circuits::at(&n[1]), Circuits::at(&n[2])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![t], &net).expect("bind"));
@@ -39,7 +39,7 @@ fn small_signal_weights_each_operator() {
 
 #[test]
 fn a_stim_input_is_the_right_side() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &["v1.f"]);
     let v = Circuits::instance("v1", m.ac_voltage_source, vec![Discrete(0), Discrete(1), Discrete(2), Circuits::at(&n[0]), Ground, Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![v], &net).expect("bind"));
@@ -57,7 +57,7 @@ fn a_stim_input_is_the_right_side() {
 
 #[test]
 fn an_rc_low_pass_has_its_corner() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (inp, out, f) = (&n[0], &n[1], &n[2]);
     let (r, c) = (1.0e3, 1.0e-6);

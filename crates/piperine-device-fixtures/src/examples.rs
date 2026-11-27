@@ -1,17 +1,17 @@
-//! The worked examples of abi.md §11.1 to §11.6 as `impl Device`, constant for
-//! constant: resistor, diode with limiting and noise, capacitor, D flip-flop,
-//! comparator and DAC. Each shape is built as its comment states, `PARAM`
+//! The worked examples of abi.md §11.2 and §11.6 as `impl Device`, constant for
+//! constant: the diode with limiting and noise and the DAC (the other four examples are the
+//! `circuit` resistor and capacitor, the `digital` flip-flop and the `mixed` comparator). Each shape is built as its comment states, `PARAM`
 //! pins first (P5); the shape is shared by every instance (abi.md §9).
 
 use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
+use piperine_abi::device::{Device, Eval, Fault, Values};
+use piperine_abi::layout::{BYTE, F64};
 use piperine_abi::raw::{
-    Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, ambient, cell, global, input, op, part, pin_flag, role,
+    Cell, DEFAULT, GROUND, Module, Partial, Shape, ambient, cell, global, input, op, part, role,
     watch,
 };
-use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
+use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::thunk::module;
 
 /// Boltzmann's constant, in joules per kelvin.
@@ -22,53 +22,7 @@ pub const Q: f64 = 1.602176634e-19;
 pub const KF: f64 = 1e-16;
 const SQRT_2: f64 = std::f64::consts::SQRT_2;
 
-// ─── 11.1 Resistor ──────────────────────────────────────────────────────────
-
-/// pins: r=0 (PARAM F64, default 1e3); p=1, n=2 (PORT continuous)
-/// terms: T0 FLOW {p, n} "i"
-/// fn 0 "i": reads [p, n, r] writes [T0] partials (0←0) (0←1) (0←2)
-pub struct Resistor;
-static RESISTOR: OnceLock<ShapeRef> = OnceLock::new();
-const R_DEFAULT: [u8; 8] = [0, 0, 0, 0, 0, 0x40, 0x8f, 0x40]; // 1e3
-
-impl Resistor {
-    /// The shape every instance of this device shares.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let r = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &R_DEFAULT, ..ShapeParts::param("r") });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(ShapeParts::flow("i", op::FLOW, p, n));
-        s.function(FunctionSpec {
-            name: "i",
-            reads: vec![ShapeParts::pin(p), ShapeParts::pin(n), ShapeParts::pin(r)],
-            writes: vec![ShapeParts::term(t0)],
-            partials: vec![ShapeParts::partial(0, 0), ShapeParts::partial(0, 1), ShapeParts::partial(0, 2)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for Resistor {
-    fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&RESISTOR, Resistor::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Resistor, Arc::clone(ShapeParts::shared(&RESISTOR, Resistor::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
-        cx.set(0, v / r);
-        cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]); // the last matters only when seeded
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-// ─── 11.2 Diode with limiting and noise ─────────────────────────────────────
+// ─── 11.2 LimitingDiode with limiting and noise ─────────────────────────────────────
 
 /// pins:    is=0, n=1, cj0=2 (PARAM F64); a=3, k=4 (PORT); temperature=5 (GLOBAL TEMPERATURE)
 /// inputs:  I0 LIMIT "vd", I1 NOISE "shot", I2 NOISE "flicker"        (ambient: FREQ, STATIC)
@@ -80,10 +34,10 @@ impl Device for Resistor {
 /// fn 2 "shot":    reads [I0, is, n, temperature]        writes [I1.PSD]
 /// fn 3 "flicker": reads [I0, is, n, temperature, FREQ]  writes [I2.PSD]
 /// fn 4 "op":      reads [I0, is, n, temperature]        writes [W0]
-pub struct Diode;
+pub struct LimitingDiode;
 static DIODE: OnceLock<ShapeRef> = OnceLock::new();
 
-impl Diode {
+impl LimitingDiode {
     /// The shape every instance of this device shares.
     pub fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -170,12 +124,12 @@ impl Diode {
     }
 }
 
-impl Device for Diode {
+impl Device for LimitingDiode {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&DIODE, Diode::shape).shape()
+        ShapeParts::shared(&DIODE, LimitingDiode::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Diode, Arc::clone(ShapeParts::shared(&DIODE, Diode::shape))))
+        Ok((LimitingDiode, Arc::clone(ShapeParts::shared(&DIODE, LimitingDiode::shape))))
     }
     fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
         match k {
@@ -186,7 +140,7 @@ impl Device for Diode {
                 let (age, is_static) = (cx.u8(6), cx.bool(7));
                 let old = if age == 0 || (is_static && age == 1) { vcrit } else { cx.f64(5) }; // the seed
                 cx.set(0, v);
-                cx.set(1, Diode::limit_junction(v, old, nvt, vcrit));
+                cx.set(1, LimitingDiode::limit_junction(v, old, nvt, vcrit));
                 cx.jac().copy_from_slice(&[1.0, -1.0]);
             }
             1 => {
@@ -197,177 +151,11 @@ impl Device for Diode {
                 cx.set(1, cj * vd);
                 cx.jac().copy_from_slice(&[is * e / nvt, cj, 1.0, 1.0]);
             }
-            2 => cx.set(0, 2.0 * Q * Diode::current(cx).abs()),
-            3 => cx.set(0, KF * Diode::current(cx).abs() / cx.f64(4)), // needed, hence run, only in a Noise sweep
-            _ => cx.set(0, Diode::conductance(cx)),
+            2 => cx.set(0, 2.0 * Q * LimitingDiode::current(cx).abs()),
+            3 => cx.set(0, KF * LimitingDiode::current(cx).abs() / cx.f64(4)), // needed, hence run, only in a Noise sweep
+            _ => cx.set(0, LimitingDiode::conductance(cx)),
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-// ─── 11.3 Capacitor ─────────────────────────────────────────────────────────
-
-/// pins: c=0 (PARAM F64); p=1, n=2 (PORT)      terms: T0 DDT{p,n} "q"
-/// fn 0: reads [p, n, c]  writes [T0]  partials (0←0) (0←1) (0←2)
-pub struct Capacitor;
-static CAPACITOR: OnceLock<ShapeRef> = OnceLock::new();
-
-impl Capacitor {
-    /// The shape every instance of this device shares.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let c = s.pin(ShapeParts::param("c"));
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(ShapeParts::flow("q", op::DDT, p, n));
-        s.function(FunctionSpec {
-            name: "q",
-            reads: vec![ShapeParts::pin(p), ShapeParts::pin(n), ShapeParts::pin(c)],
-            writes: vec![ShapeParts::term(t0)],
-            partials: vec![ShapeParts::partial(0, 0), ShapeParts::partial(0, 1), ShapeParts::partial(0, 2)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for Capacitor {
-    fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&CAPACITOR, Capacitor::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Capacitor, Arc::clone(ShapeParts::shared(&CAPACITOR, Capacitor::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (v, c) = (cx.f64(0) - cx.f64(1), cx.f64(2));
-        cx.set(0, c * v);
-        cx.jac().copy_from_slice(&[c, -c, v]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-// ─── 11.4 D flip-flop ───────────────────────────────────────────────────────
-
-/// pins: clk=0, d=1 (PORT BIT);  q=2 (PORT BIT, init LOW);  rise=3 (PRIVATE event)
-/// fn 0 "rise":  reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED]   writes [rise]
-/// reaction 0:   on [rise]   reads [d]   writes [S0 {q}]
-pub struct FlipFlop;
-static FLIP_FLOP: OnceLock<ShapeRef> = OnceLock::new();
-
-impl FlipFlop {
-    /// The shape every instance of this device shares.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
-        let d = s.pin(PinSpec::discrete("d", role::PORT, &BIT));
-        let q = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("q", role::PORT, &BIT) });
-        let rise = s.pin(PinSpec::event("rise", role::PRIVATE));
-        s.function(FunctionSpec {
-            name: "rise",
-            reads: vec![ShapeParts::pin(clk), ShapeParts::pin_part(clk, part::PREVIOUS), ShapeParts::pin_part(clk, part::CHANGED)],
-            writes: vec![ShapeParts::pin_part(rise, part::CHANGED)],
-            ..FunctionSpec::default()
-        });
-        s.reaction(ReactionSpec {
-            name: "sample",
-            on: vec![rise],
-            reads: vec![ShapeParts::pin(d)],
-            writes: vec![Statement { pin: q, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-            ..ReactionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for FlipFlop {
-    fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&FLIP_FLOP, FlipFlop::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((FlipFlop, Arc::clone(ShapeParts::shared(&FLIP_FLOP, FlipFlop::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        cx.set(0, (cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW) as u8);
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        cx.commit(0, cx.bytes(0), 0.0)?; // q <- d : applies at (t, n+1)
-        Ok(Flow::Continue)
-    }
-}
-
-// ─── 11.5 Comparator ────────────────────────────────────────────────────────
-
-/// pins: inp=0, inn=1 (PORT continuous);  out=2 (PORT BIT, init LOW);  up=3, down=4 (PRIVATE event)
-/// watches: W0 CROSS → up, W1 CROSS → down
-/// fn 0: reads [inp, inn]  writes [W0, W1]  partials (0←0) (0←1) (1←0) (1←1)
-/// reaction 0: on [up] writes [S0 {out}]        reaction 1: on [down] writes [S0 {out}]
-pub struct Comparator;
-static COMPARATOR: OnceLock<ShapeRef> = OnceLock::new();
-
-impl Comparator {
-    /// The shape every instance of this device shares.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let inp_ = s.pin(PinSpec::continuous("inp", role::PORT));
-        let inn = s.pin(PinSpec::continuous("inn", role::PORT));
-        let out = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("out", role::PORT, &BIT) });
-        let up = s.pin(PinSpec::event("up", role::PRIVATE));
-        let down = s.pin(PinSpec::event("down", role::PRIVATE));
-        let cross = |name, event| WatchSpec {
-            name,
-            origin: "abi.md:11.5",
-            kind: watch::CROSS,
-            layout: &F64,
-            event,
-            ttol: DEFAULT,
-            etol: DEFAULT,
-        };
-        let w0 = s.watch(cross("up", up));
-        let w1 = s.watch(cross("down", down));
-        let w = |index| Cell { kind: cell::WATCH, index, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "e",
-            reads: vec![ShapeParts::pin(inp_), ShapeParts::pin(inn)],
-            writes: vec![w(w0), w(w1)],
-            partials: vec![ShapeParts::partial(0, 0), ShapeParts::partial(0, 1), ShapeParts::partial(1, 0), ShapeParts::partial(1, 1)],
-            ..FunctionSpec::default()
-        });
-        for (name, on) in [("up", up), ("down", down)] {
-            s.reaction(ReactionSpec {
-                name,
-                on: vec![on],
-                writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-                ..ReactionSpec::default()
-            });
-        }
-        s.freeze()
-    }
-}
-
-impl Device for Comparator {
-    fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&COMPARATOR, Comparator::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Comparator, Arc::clone(ShapeParts::shared(&COMPARATOR, Comparator::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let e = cx.f64(0) - cx.f64(1);
-        cx.set(0, e);
-        cx.set(1, -e);
-        cx.jac().copy_from_slice(&[1.0, -1.0, -1.0, 1.0]);
-        Ok(())
-    }
-    fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        cx.commit(0, if k == 0 { &HIGH } else { &LOW }, 0.0)?;
-        Ok(Flow::Continue)
     }
 }
 
@@ -413,9 +201,6 @@ impl Device for DigitalToAnalog {
         cx.set(1, cx.f64(1) - k * cx.f64(3)); // v(out) = k·vref
         cx.jac().copy_from_slice(&[1.0, 1.0, -k]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 

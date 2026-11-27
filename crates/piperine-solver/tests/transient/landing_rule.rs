@@ -9,6 +9,7 @@
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -48,11 +49,11 @@ impl Circuits {
         let gnd = b.ground();
         let o = b.node("o");
         let c = b.node("c");
-        b.device(mixed::Timer::module(), "osc", &[("half", ParamValue::Real(HALF_PERIOD))], &[Circuits::net("clk")]);
-        b.device(mixed::Counter::module(), "cnt", &[], &[Circuits::net("clk"), Circuits::net("n")]);
-        b.device(mixed::Timer::module(), "slow", &[("half", ParamValue::Real(HALF_PERIOD * EDGES_PER_CHANGE))], &[Circuits::net("d")]);
-        b.device(mixed::DataFlipFlop::module(), "ff", &[], &[Circuits::net("clk"), Circuits::net("d"), Circuits::net("q")]);
-        b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[Circuits::net("q"), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), "osc", &[("half", ParamValue::Real(HALF_PERIOD))], &[Circuits::net("clk")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[Circuits::net("clk"), Circuits::net("n")]);
+        b.device(digital::Timer::module(), "slow", &[("half", ParamValue::Real(HALF_PERIOD * EDGES_PER_CHANGE))], &[Circuits::net("d")]);
+        b.device(digital::DataFlipFlop::module(), "ff", &[], &[Circuits::net("clk"), Circuits::net("d"), Circuits::net("q")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[Circuits::net("q"), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
         b

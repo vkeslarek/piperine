@@ -2,7 +2,7 @@
 //! each hand-written device agrees with its central difference at two generic points.
 
 use piperine_abi::raw::Module;
-use piperine_device_fixtures::analog::Modules;
+use piperine_device_fixtures::analog::FixtureModules;
 use piperine_device_fixtures::analyses;
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::digital;
@@ -15,7 +15,7 @@ struct EveryDevice;
 impl EveryDevice {
     /// The modules of the analog assembly's fixtures.
     fn analog() -> Vec<(&'static str, &'static Module)> {
-        let modules = Modules::all();
+        let modules = FixtureModules::all();
         vec![
             ("analog::resistor", modules.resistor),
             ("analog::diode", modules.diode),
@@ -70,20 +70,20 @@ impl EveryDevice {
     fn mixed() -> Vec<(&'static str, &'static Module)> {
         vec![
             ("mixed::Comparator", mixed::Comparator::module()),
-            ("mixed::DataFlipFlop", mixed::DataFlipFlop::module()),
-            ("mixed::Inverter", mixed::Inverter::module()),
-            ("mixed::Dac", mixed::DigitalToAnalog::module()),
+            ("digital::DataFlipFlop", digital::DataFlipFlop::module()),
+            ("digital::Inverter", digital::Inverter::module()),
+            ("mixed::Dac", mixed::BitDigitalToAnalog::module()),
             ("mixed::SettleCount", mixed::SettleCount::module()),
             ("mixed::Globals", mixed::Globals::module()),
-            ("mixed::Timer", mixed::Timer::module()),
-            ("mixed::Recorder", mixed::Recorder::module()),
-            ("mixed::Sampler", mixed::Sampler::module()),
-            ("mixed::Stub", mixed::Stub::module()),
-            ("mixed::Counter", mixed::Counter::module()),
+            ("digital::Timer", digital::Timer::module()),
+            ("digital::MultiRecorder", digital::MultiRecorder::module()),
+            ("digital::Sampler", digital::Sampler::module()),
+            ("digital::Stub", digital::Stub::module()),
+            ("digital::Counter", digital::Counter::module()),
             ("mixed::SettleTime", mixed::SettleTime::module()),
             ("mixed::Delay", mixed::Delay::module()),
             ("mixed::Finisher", mixed::Finisher::module()),
-            ("mixed::Tracer", mixed::Tracer::module()),
+            ("mixed::ConductanceTracer", mixed::ConductanceTracer::module()),
             ("mixed::FlakyConductance", mixed::FlakyConductance::module()),
             ("mixed::Capped", mixed::Capped::module()),
             ("mixed::ClockSource", mixed::ClockSource::module()),
@@ -94,12 +94,8 @@ impl EveryDevice {
     /// The modules of the `analyses` fixtures.
     fn analyses() -> Vec<(&'static str, &'static Module)> {
         vec![
-            ("analyses::Resistor", analyses::Resistor::module()),
-            ("analyses::Capacitor", analyses::Capacitor::module()),
             ("analyses::Bias", analyses::Bias::module()),
             ("analyses::Wire", analyses::Wire::module()),
-            ("analyses::VoltageSource", analyses::VoltageSource::module()),
-            ("analyses::Inductor", analyses::Inductor::module()),
             ("analyses::Quadratic", analyses::Quadratic::module()),
         ]
     }
@@ -114,17 +110,17 @@ impl EveryDevice {
             ("digital::Counter", digital::Counter::module()),
             ("digital::Resolver", digital::Resolver::module()),
             ("digital::Succ", digital::Successor::module()),
-            ("digital::Recorder", digital::Recorder::module()),
+            ("digital::MultiRecorder", digital::MultiRecorder::module()),
             ("digital::SettleRecorder", digital::SettleRecorder::module()),
-            ("digital::Checked", digital::Checked::module()),
-            ("digital::Faulty", digital::Faulty::module()),
+            ("digital::CheckedParameter", digital::CheckedParameter::module()),
+            ("digital::BitFaulty", digital::BitFaulty::module()),
             ("digital::Sampler", digital::Sampler::module()),
             ("digital::Stub", digital::Stub::module()),
             ("digital::Odd", digital::Odd::module()),
             ("digital::Setter", digital::Setter::module()),
             ("digital::Settler", digital::Settler::module()),
             ("digital::SettleEvent", digital::SettleEvent::module()),
-            ("digital::Delayed", digital::Delayed::module()),
+            ("digital::LaterDelayed", digital::LaterDelayed::module()),
             ("digital::Lagged", digital::Lagged::module()),
             ("digital::Clockwatch", digital::ClockWatch::module()),
             ("digital::Rearm", digital::Rearm::module()),
@@ -136,7 +132,7 @@ impl EveryDevice {
     fn exemption(name: &str) -> Option<&'static str> {
         match name {
             "analog::bad_limit" => Some("breaks abi.md A3 on purpose"),
-            "digital::Faulty" => Some("faults on purpose"),
+            "digital::BitFaulty" => Some("faults on purpose"),
             "analog::diode" | "analog::charge_diode" => Some("its exponential overflows at the generic points; its tests set their own"),
             "analog::clamp" | "analog::owner" => Some("a limit it owns: the partials against the limit input are meaningful only at the held iterate its tests set"),
             _ => None,

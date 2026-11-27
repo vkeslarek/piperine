@@ -7,7 +7,7 @@
 //! Numerically sensitive: stamps are compared with values computed here by
 //! hand, never by the code under test.
 
-use piperine_device_fixtures::analog::{Modules, VT};
+use piperine_device_fixtures::analog::{FixtureModules, VT};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
@@ -15,7 +15,7 @@ use piperine_analog_solver::device::{AnalogPlan, Assembly};
 
 #[test]
 fn a_flow_term_stamps_its_norton_form() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let is = 1e-14;
     let d = Circuits::instance("d1", m.plain_diode, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
@@ -54,7 +54,7 @@ fn a_flow_term_stamps_its_norton_form() {
 
 #[test]
 fn a_potential_source_stamps_through_its_private_pin() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (p, q, f) = (0, 1, 2);
     let v = Circuits::instance("v1", m.voltage_source, vec![Discrete(0), Circuits::at(&n[p]), Circuits::at(&n[q]), Circuits::at(&n[f])]);
@@ -77,7 +77,7 @@ fn a_potential_source_stamps_through_its_private_pin() {
 
 #[test]
 fn a_divider_solves_to_its_ratio() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (top, mid, f) = (&n[0], &n[1], &n[2]);
     let v = Circuits::instance("v1", m.voltage_source, vec![Discrete(0), Circuits::at(top), Ground, Circuits::at(f)]);
@@ -95,7 +95,7 @@ fn a_divider_solves_to_its_ratio() {
 
 #[test]
 fn a_diode_satisfies_its_own_equation() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (vin, r, is) = (1.0, 1.0e3, 1.0e-14);
     let (top, mid, f) = (&n[0], &n[1], &n[2]);

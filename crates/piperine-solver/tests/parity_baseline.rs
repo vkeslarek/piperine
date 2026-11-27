@@ -12,7 +12,7 @@
 
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::sync::{Arc, OnceLock};
 
@@ -358,8 +358,8 @@ fn parity_digital_scheduler_snapshot() {
     let mut b = CircuitBuilder::new("dig");
     let n = |i: usize| Port::Net(format!("net{i}"));
     b.device(SRC.get_or_init(|| module::<DigitalSource>("DigitalSource")), "src", &[], &[n(0)]);
-    b.device(mixed::Inverter::module(), "inv0", &[], &[n(0), n(1)]);
-    b.device(mixed::Inverter::module(), "inv1", &[], &[n(1), n(2)]);
+    b.device(digital::Inverter::module(), "inv0", &[], &[n(0), n(1)]);
+    b.device(digital::Inverter::module(), "inv1", &[], &[n(1), n(2)]);
     b.device(AND.get_or_init(|| module::<And2>("And2")), "and", &[], &[n(1), n(2), n(3)]);
     let mut solver = Solver::new(b.build().unwrap()).build();
     solver.dc().unwrap().solve().unwrap();

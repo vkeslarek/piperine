@@ -3,7 +3,7 @@
 //! in the levelized order, relaxation of cycles through `RELAX` nets, and a
 //! device fault carried with its code, tick and instance.
 
-use piperine_device_fixtures::digital::{And2, CallCounts, DataFlipFlop, Faulty, Inverter, Resolver, Successor};
+use piperine_device_fixtures::digital::{And2, CallCounts, DataFlipFlop, BitFaulty, Inverter, Resolver, Successor};
 use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::net::NetId;
@@ -185,10 +185,10 @@ fn a_counter_that_always_moves_is_e0511() {
 
 #[test]
 fn a_function_fault_carries_code_tick_and_instance() {
-    // C25: Faulty sits behind an inverter, outside the parameter cone
+    // C25: BitFaulty sits behind an inverter, outside the parameter cone
     let mut e = Env::new(FunctionCases::plan(vec![
         ("front", Inverter::handle(), vec![("a", "x"), ("y", "m")]),
-        ("f", Faulty::handle(), vec![("a", "m"), ("y", "out")]),
+        ("f", BitFaulty::handle(), vec![("a", "m"), ("y", "out")]),
     ]))
     .all_dirty();
     e.write("x", &LOW); // m = high: a FAULT
@@ -201,7 +201,7 @@ fn a_function_fault_carries_code_tick_and_instance() {
     // RESHAPE outside the cone is the same error
     let mut e = Env::new(FunctionCases::plan(vec![
         ("front", Inverter::handle(), vec![("a", "x"), ("y", "m")]),
-        ("f", Faulty::handle(), vec![("a", "m"), ("y", "out")]),
+        ("f", BitFaulty::handle(), vec![("a", "m"), ("y", "out")]),
     ]))
     .all_dirty();
     e.write("x", &HIGH); // m = low: a RESHAPE

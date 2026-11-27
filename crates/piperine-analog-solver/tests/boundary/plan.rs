@@ -6,7 +6,7 @@
 //! the contract: every shape validates and every declared partial agrees with
 //! the finite-difference verifier of abi.md §8.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::{Circuits, AssemblySolves};
 use std::collections::HashSet;
 
@@ -20,7 +20,7 @@ use piperine_analog_solver::netlist::AnalogReference;
 
 #[test]
 fn the_pattern_is_terms_times_partials() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(4, &[]);
     // The diode reaches its pins only through the limit's PROPOSED partials.
     let diode = Circuits::instance(
@@ -61,7 +61,7 @@ fn the_pattern_is_terms_times_partials() {
 
 #[test]
 fn a_discrete_function_is_not_taken() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let ff = Circuits::instance("ff", m.flip_flop, vec![Discrete(0), Discrete(1), Discrete(2), Absent]);
     let cmp = Circuits::instance("cmp", m.comparator, vec![Circuits::at(&n[0]), Circuits::at(&n[1]), Discrete(2), Absent, Absent]);
@@ -77,7 +77,7 @@ fn a_discrete_function_is_not_taken() {
 
 #[test]
 fn a_term_to_ground_has_one_row() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &["dac.f"]);
     let (out, f) = (PlanCircuits::idx(&n[0]), PlanCircuits::idx(&n[1]));
     let dac = Circuits::instance("dac", m.digital_to_analog, vec![Discrete(0), Discrete(1), Circuits::at(&n[0]), Circuits::at(&n[1])]);
@@ -93,7 +93,7 @@ fn a_term_to_ground_has_one_row() {
 
 #[test]
 fn an_analog_bind_error_names_its_entry() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     // A term target bound to a discrete net.
     let r = Circuits::instance("top.r1", m.resistor, vec![Discrete(0), Discrete(1), Circuits::at(&n[0])]);
@@ -112,7 +112,7 @@ fn an_analog_bind_error_names_its_entry() {
 
 #[test]
 fn every_fixture_shape_is_valid() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     for (name, module) in PlanCircuits::valid(&m) {
         let h = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create {name}: {e}"));
         validate(h.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -123,7 +123,7 @@ fn every_fixture_shape_is_valid() {
 
 #[test]
 fn every_fixture_function_passes_the_partials_verifier() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let t = 300.15;
     // (fixture, function, the bytes of each read cell): points where no limit is active.
     let points: Vec<(&str, &'static Module, u32, Vec<Vec<u8>>)> = vec![
@@ -184,7 +184,7 @@ impl PlanCircuits {
     }
 
     /// The fixtures that must pass every rule (all but `bad_limit`).
-    fn valid(m: &Modules) -> [(&'static str, &'static Module); 26] {
+    fn valid(m: &FixtureModules) -> [(&'static str, &'static Module); 26] {
         [
             ("resistor", m.resistor),
             ("diode", m.diode),

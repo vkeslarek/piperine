@@ -6,6 +6,7 @@
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_solver::abi::{AnalogReference, Bound, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context};
@@ -95,10 +96,10 @@ impl OperatingPointCases {
         let a = b.node("a");
         let r = b.node("r");
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-        b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[OperatingPointCases::net("code"), Port::Node(a.clone())]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[OperatingPointCases::net("code"), Port::Node(a.clone())]);
         b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), OperatingPointCases::net("cmp")]);
-        b.device(mixed::DataFlipFlop::module(), "ff", &[], &[OperatingPointCases::net("cmp"), OperatingPointCases::net("code"), OperatingPointCases::net("q")]);
-        b.device(mixed::Inverter::module(), "inv", &[], &[OperatingPointCases::net(code_from), OperatingPointCases::net("code")]);
+        b.device(digital::DataFlipFlop::module(), "ff", &[], &[OperatingPointCases::net("cmp"), OperatingPointCases::net("code"), OperatingPointCases::net("q")]);
+        b.device(digital::Inverter::module(), "inv", &[], &[OperatingPointCases::net(code_from), OperatingPointCases::net("code")]);
         b.device(mixed::SettleCount::module(), "settle", &[], &[]);
         (b, a, r)
     }

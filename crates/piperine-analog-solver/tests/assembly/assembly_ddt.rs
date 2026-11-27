@@ -10,7 +10,7 @@
 //! `stage_coeffs` and `phase_coeffs`, as `C::load_transient` of
 //! `piperine-solver/tests/helpers/devices.rs` reads `states.view(k)`.
 
-use piperine_device_fixtures::analog::{Call, Modules, VT};
+use piperine_device_fixtures::analog::{RecordedCall, FixtureModules, VT};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{Solver, AssemblySolves, Tran};
 use piperine_device_fixtures::examples::{K_B, Q};
@@ -84,7 +84,7 @@ fn a_ddt_term_stamps_the_capacitor_companion() {
 
 #[test]
 fn an_rc_step_reads_one_minus_exp() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (top, out, f) = (&n[0], &n[1], &n[2]);
     let (r, c) = (1.0e3, 1.0e-6);
@@ -148,7 +148,7 @@ fn a_restore_returns_histories_and_limit_state() {
     assert_eq!(AssemblySolves::dense(&again, 2), AssemblySolves::dense(&before, 2), "restoring twice gives the same stamps");
 
     // The limit half: LAST and AGE come back to their values at the snapshot.
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let tr = Circuits::tagged("tr", m.tracker, 502, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![tr], &net).expect("bind"));
@@ -159,8 +159,8 @@ fn a_restore_returns_histories_and_limit_state() {
     assembly.evaluate(&[1.25, 0.25], AssemblySolves::at_time(1e-9)).expect("evaluate");
     assembly.restore(&snap);
     assembly.evaluate(&[1.25, 0.25], AssemblySolves::at_time(2e-9)).expect("evaluate");
-    let c = Call::recorded(502);
-    let held = |c: &Call| (Circuits::real_of(&c.reads[2]), c.reads[3][0]);
+    let c = RecordedCall::recorded(502);
+    let held = |c: &RecordedCall| (Circuits::real_of(&c.reads[2]), c.reads[3][0]);
     assert_eq!(held(&c[2]), (0.75, 2), "the rejected iteration advanced LAST");
     assert_eq!(held(&c[3]), (0.5, 1), "restored: LAST from the accepted solution, AGE 1");
 }
@@ -197,7 +197,7 @@ fn a_nonlinear_charge_through_a_limit_keeps_the_operating_point() {
 
 #[test]
 fn the_ddt_history_holds_the_charge_at_the_solution() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-7, prev_h: 0.0, jump: JumpPosition::None };
     let diode = || {
         let (net, n) = Circuits::netlist(1, &[]);
@@ -271,7 +271,7 @@ pub struct DdtCircuits;
 impl DdtCircuits {
     /// A capacitor between unknowns 0 and 1.
     fn capacitor() -> Assembly {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &[]);
         let c = Circuits::instance("c1", m.capacitor, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
         let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -282,7 +282,7 @@ impl DdtCircuits {
     /// 1 V through 1 kOhm into a `ChargeDiode` (`tt` = 1 us, n·k·T/q = VT): a node `a` at about 0.63 V
     /// whose only dynamics is `ddt(tt·id)`, a nonlinear function of a limited voltage.
     fn charge_diode_circuit() -> (Assembly, piperine_analog_solver::netlist::Netlist, Vec<piperine_analog_solver::netlist::AnalogReference>) {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &["v1.f"]);
         let (top, a, f) = (&n[0], &n[1], &n[2]);
         let v = Circuits::instance("v1", m.voltage_source, vec![Discrete(0), Circuits::at(top), Ground, Circuits::at(f)]);
@@ -297,7 +297,7 @@ impl DdtCircuits {
 
     /// A capacitor with its own `abstol` of 2e-12 (pin 1) between unknowns 0 and 1.
     fn tight_capacitor() -> Assembly {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &[]);
         let c = Circuits::instance("c1", m.tight_capacitor, vec![Discrete(0), Discrete(1), Circuits::at(&n[0]), Circuits::at(&n[1])]);
         let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));

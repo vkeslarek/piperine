@@ -2,7 +2,7 @@
 //! SAD-06 and SAD-08): each passes the ABI's shape validation, and a timer, a
 //! flip-flop and an inverter bind into a plan by net name.
 
-use piperine_device_fixtures::digital::{And2, Checked, ClockWatch, Counter, DataFlipFlop, Delayed, Faulty, Inverter, Odd, Rearm, Recorder, Resolver, Rogue, Sampler, Setter, Settler, Stub, Successor, Timer};
+use piperine_device_fixtures::digital::{And2, CheckedParameter, ClockWatch, Counter, DataFlipFlop, LaterDelayed, BitFaulty, Inverter, Odd, Rearm, MultiRecorder, Resolver, Rogue, Sampler, Setter, Settler, Stub, Successor, Timer};
 use piperine_device_fixtures::binding::{PlanBinding};
 use piperine_abi::validate::validate;
 use piperine_digital_solver::dag::Step;
@@ -19,9 +19,9 @@ fn every_fixture_shape_is_valid() {
         ("counter", Counter::handle()),
         ("resolver", Resolver::handle()),
         ("succ", Successor::handle()),
-        ("recorder", Recorder::handle()),
-        ("checked", Checked::handle()),
-        ("faulty", Faulty::handle()),
+        ("recorder", MultiRecorder::handle()),
+        ("checked", CheckedParameter::handle()),
+        ("faulty", BitFaulty::handle()),
         ("sampler", Sampler::handle()),
         ("stub", Stub::handle()),
         ("odd", Odd::handle()),
@@ -29,7 +29,7 @@ fn every_fixture_shape_is_valid() {
         ("rearm", Rearm::handle()),
         ("setter", Setter::handle()),
         ("settler", Settler::handle()),
-        ("delayed", Delayed::handle()),
+        ("delayed", LaterDelayed::handle()),
         ("clockwatch", ClockWatch::handle()),
     ];
     for (name, handle) in &all {

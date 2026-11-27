@@ -8,6 +8,7 @@
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::circuits::Counting;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::sync::{Arc, OnceLock};
 
@@ -488,8 +489,8 @@ impl AbiTranCases {
         let o = b.node(&format!("{name}_o"));
         let c = b.node(&format!("{name}_c"));
         let code = || Port::Net(format!("{name}_code"));
-        b.device(mixed::Timer::module(), &format!("clk_{name}"), &[("half", ParamValue::Real(half))], &[code()]);
-        b.device(mixed::DigitalToAnalog::module(), &format!("dac_{name}"), &[("vref", ParamValue::Real(1.0))], &[code(), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), &format!("clk_{name}"), &[("half", ParamValue::Real(half))], &[code()]);
+        b.device(mixed::BitDigitalToAnalog::module(), &format!("dac_{name}"), &[("vref", ParamValue::Real(1.0))], &[code(), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(b, &format!("r_{name}"), 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(b, &format!("c_{name}"), 1.0e-9, &c, &gnd);
     }

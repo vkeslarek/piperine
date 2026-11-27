@@ -1,116 +1,14 @@
-//! The two-terminal doubles the `tf`, `pz` and `sp` unit tests build their
-//! circuits from, as `Device`s: a resistor, a capacitor, a DC-only bias
-//! conductance, an ideal wire, a DC voltage source, an inductor and a device
-//! whose AC stamp is quadratic in frequency. Each is added to a
-//! `CircuitBuilder` by a plain function.
+//! The doubles the `tf`, `pz` and `sp` unit tests of the solver build their circuits from beside the
+//! `circuit` resistor, capacitor, voltage source and inductor: a DC-only bias conductance, an ideal wire
+//! and a device whose AC stamp is quadratic in frequency.
 
 use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::device::{Device, Eval, Fault, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Partial, Shape, ambient, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
-
-// ── R: `I(p, n) <+ V(p, n) / r` ─────────────────────────────────────────
-
-/// A resistor `I(p, n) <+ V(p, n) / r`.
-pub struct Resistor;
-static R_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static R_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Resistor {
-    /// The module of a resistor `I(p, n) <+ V(p, n) / r`.
-    pub fn module() -> &'static Module {
-        AnalysisParts::module_of::<Resistor>(&R_MODULE, "Resistor")
-    }
-
-    /// The shape helper `shape`.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(AnalysisParts::param("r"));
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(AnalysisParts::flow("i", op::FLOW, p, n));
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "test_devices.rs",
-            reads: vec![AnalysisParts::pin(p), AnalysisParts::pin(n), AnalysisParts::pin(0)],
-            writes: vec![AnalysisParts::term(t0)],
-            partials: vec![AnalysisParts::partial(0, 0), AnalysisParts::partial(0, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for Resistor {
-    fn prototype() -> &'static Shape<'static> {
-        AnalysisParts::shared(&R_SHAPE, Resistor::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Resistor, Arc::clone(AnalysisParts::shared(&R_SHAPE, Resistor::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, g) = (cx.f64(0), cx.f64(1), 1.0 / cx.f64(2));
-        cx.set(0, g * vp - g * vn);
-        cx.jac().copy_from_slice(&[g, -g]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-// ── C: `I(p, n) <+ c * ddt(V(p, n))` ────────────────────────────────────
-
-/// A capacitor `I(p, n) <+ c * ddt(V(p, n))`.
-pub struct Capacitor;
-static C_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static C_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Capacitor {
-    /// The module of a capacitor `I(p, n) <+ c * ddt(V(p, n))`.
-    pub fn module() -> &'static Module {
-        AnalysisParts::module_of::<Capacitor>(&C_MODULE, "Capacitor")
-    }
-
-    /// The shape helper `shape`.
-    pub fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(AnalysisParts::param("c"));
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(AnalysisParts::flow("q", op::DDT, p, n));
-        s.function(FunctionSpec {
-            name: "q",
-            origin: "test_devices.rs",
-            reads: vec![AnalysisParts::pin(p), AnalysisParts::pin(n), AnalysisParts::pin(0)],
-            writes: vec![AnalysisParts::term(t0)],
-            partials: vec![AnalysisParts::partial(0, 0), AnalysisParts::partial(0, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for Capacitor {
-    fn prototype() -> &'static Shape<'static> {
-        AnalysisParts::shared(&C_SHAPE, Capacitor::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Capacitor, Arc::clone(AnalysisParts::shared(&C_SHAPE, Capacitor::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, c) = (cx.f64(0), cx.f64(1), cx.f64(2));
-        cx.set(0, c * vp - c * vn);
-        cx.jac().copy_from_slice(&[c, -c]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 // ── Bias: a 1 nS conductance to ground that exists at DC only ───────────
 
@@ -156,9 +54,6 @@ impl Device for Bias {
         cx.jac().copy_from_slice(&[g]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// An ideal wire between two nodes.
@@ -171,14 +66,34 @@ impl Wire {
     pub fn module() -> &'static Module {
         AnalysisParts::module_of::<Wire>(&WIRE_MODULE, "Wire")
     }
+
+    /// The shape of a wire: a private branch current `f`, a FLOW term {p, n} of value `f` and a FLOW term
+    /// {f, GROUND} of `V(p) - V(n)`.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let p = s.pin(PinSpec::continuous("p", role::PORT));
+        let n = s.pin(PinSpec::continuous("n", role::PORT));
+        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
+        let t0 = s.term(AnalysisParts::flow("i", op::FLOW, p, n));
+        let t1 = s.term(AnalysisParts::flow("eq", op::FLOW, f, GROUND));
+        s.function(FunctionSpec {
+            name: "branch",
+            origin: "test_devices.rs",
+            reads: vec![AnalysisParts::pin(p), AnalysisParts::pin(n), AnalysisParts::pin(f)],
+            writes: vec![AnalysisParts::term(t0), AnalysisParts::term(t1)],
+            partials: vec![AnalysisParts::partial(0, 2), AnalysisParts::partial(1, 0), AnalysisParts::partial(1, 1)],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
 }
 
 impl Device for Wire {
     fn prototype() -> &'static Shape<'static> {
-        AnalysisParts::shared(&WIRE_SHAPE, || BranchShape::of(None)).shape()
+        AnalysisParts::shared(&WIRE_SHAPE, Wire::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Wire, Arc::clone(AnalysisParts::shared(&WIRE_SHAPE, || BranchShape::of(None)))))
+        Ok((Wire, Arc::clone(AnalysisParts::shared(&WIRE_SHAPE, Wire::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let (vp, vn, f) = (cx.f64(0), cx.f64(1), cx.f64(2));
@@ -187,74 +102,7 @@ impl Device for Wire {
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
-
-/// A DC voltage source.
-pub struct VoltageSource;
-static VSRC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static VSRC_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl VoltageSource {
-    /// The module of a DC voltage source.
-    pub fn module() -> &'static Module {
-        AnalysisParts::module_of::<VoltageSource>(&VSRC_MODULE, "VoltageSource")
-    }
-}
-
-impl Device for VoltageSource {
-    fn prototype() -> &'static Shape<'static> {
-        AnalysisParts::shared(&VSRC_SHAPE, || BranchShape::of(Some(("dc", false)))).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((VoltageSource, Arc::clone(AnalysisParts::shared(&VSRC_SHAPE, || BranchShape::of(Some(("dc", false)))))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, f, dc) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
-        cx.set(0, f);
-        cx.set(1, vp - vn - dc);
-        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// An ideal inductor: a DC short whose AC branch row adds `-jωL`.
-pub struct Inductor;
-static L_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static L_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Inductor {
-    /// The module of an ideal inductor: a DC short whose AC branch row adds `-jωL`.
-    pub fn module() -> &'static Module {
-        AnalysisParts::module_of::<Inductor>(&L_MODULE, "Inductor")
-    }
-}
-
-impl Device for Inductor {
-    fn prototype() -> &'static Shape<'static> {
-        AnalysisParts::shared(&L_SHAPE, || BranchShape::of(Some(("l", true)))).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Inductor, Arc::clone(AnalysisParts::shared(&L_SHAPE, || BranchShape::of(Some(("l", true)))))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, f, l) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
-        cx.set(0, f);
-        cx.set(1, vp - vn);
-        cx.set(2, -l * f);
-        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -l, -f]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 // ── Quadratic: an AC stamp `jω²k` at (n1, n2) ───────────────────────────
 
 /// A device whose AC stamp is `jω²k`, not affine in `jω`.
@@ -303,9 +151,6 @@ impl Device for Quadratic {
         cx.jac().copy_from_slice(&[g]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// The cells, specs and shared shapes every analysis fixture device builds its shape from.
@@ -345,47 +190,5 @@ impl AnalysisParts {
     /// The module of helper `module_of`.
     fn module_of<Kind: Device>(slot: &'static OnceLock<Module>, name: &'static str) -> &'static Module {
         slot.get_or_init(|| module::<Kind>(name))
-    }
-}
-
-/// The shape of the devices that own a private branch current.
-pub struct BranchShape;
-
-impl BranchShape {
-    // ── Branch devices: wire, voltage source, inductor ──────────────────────
-    //
-    // Each owns a private branch current `f`: a FLOW term {p, n} of value `f` and
-    // a FLOW term {f, GROUND} of `V(p) - V(n) - value`; the inductor adds a DDT
-    // term {f, GROUND} of `-l * f`.
-
-    /// The of helper `of`.
-    pub fn of(extra: Option<(&'static str, bool)>) -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        if let Some((name, _)) = extra {
-            s.pin(AnalysisParts::param(name));
-        }
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
-        let t0 = s.term(AnalysisParts::flow("i", op::FLOW, p, n));
-        let t1 = s.term(AnalysisParts::flow("eq", op::FLOW, f, GROUND));
-        let mut writes = vec![AnalysisParts::term(t0), AnalysisParts::term(t1)];
-        let mut partials = vec![AnalysisParts::partial(0, 2), AnalysisParts::partial(1, 0), AnalysisParts::partial(1, 1)];
-        let mut reads = vec![AnalysisParts::pin(p), AnalysisParts::pin(n), AnalysisParts::pin(f)];
-        if let Some((_, reactive)) = extra {
-            reads.push(AnalysisParts::pin(0));
-            if reactive {
-                // The inductor: flux `-l * f`.
-                let t2 = s.term(AnalysisParts::flow("flux", op::DDT, f, GROUND));
-                writes.push(AnalysisParts::term(t2));
-                partials.push(AnalysisParts::partial(2, 2));
-                partials.push(AnalysisParts::partial(2, 3));
-            } else {
-                // The source: its value enters `eq` with partial -1.
-                partials.push(AnalysisParts::partial(1, 3));
-            }
-        }
-        s.function(FunctionSpec { name: "branch", origin: "test_devices.rs", reads, writes, partials, ..FunctionSpec::default() });
-        s.freeze()
     }
 }

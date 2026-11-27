@@ -1,7 +1,7 @@
 //! The numerics the noise analysis rests on (feature `analog-operators`, AO-05): the power-law
 //! integral of a noise density over a band, ngspice's quadrature, against closed forms.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_analog_solver::math::integration::Integrator;
@@ -92,7 +92,7 @@ fn a_stimulus_column_carries_its_partials_and_phase() {
     // An `AcVSource` (dc 0, re 1, im 1) from node 0 to ground: its `STIM` input "ac" enters the
     // branch row `f` of `eq = v(p) − v(n) − dc − I0` with partial −1, at unit magnitude, so the
     // column is one row (the branch unknown, 2) of −1, and the phasor 1 + j has phase π/4.
-    let library = Modules::all();
+    let library = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &["f"]);
     let source = Circuits::instance("top.v1", library.ac_voltage_source, vec![Discrete(0), Discrete(1), Discrete(2), Circuits::at(&n[0]), Ground, Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![source], &net).expect("bind"));
@@ -116,7 +116,7 @@ fn a_term_linearization_carries_its_unknown_and_noise_partials() {
     // `NoisyResistor` term `i = (v(p) − v(n))/r + I0` at r = 2 kΩ: ∂/∂v(p) = 1/r, ∂/∂v(n) = −1/r,
     // and a direct partial of 1 against its one NOISE input (position 0); the response of a
     // FLOW term is 1.
-    let library = Modules::all();
+    let library = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let r = 2.0e3;
     let res = Circuits::instance("r1", library.noisy, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);

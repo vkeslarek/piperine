@@ -14,6 +14,7 @@ use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::circuits::NodeMap;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_solver::abi::{AnalogReference, InitialValue, ParamValue, Port};
 use piperine_solver::prelude::{
@@ -459,9 +460,9 @@ impl TransientReentryCases {
         let gnd = b.ground();
         let o = b.node("o");
         let c = b.node("c");
-        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[TransientReentryCases::net("code")]);
-        b.device(mixed::Counter::module(), "cnt", &[], &[TransientReentryCases::net("code"), TransientReentryCases::net("n")]);
-        b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[TransientReentryCases::net("code"), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[TransientReentryCases::net("code")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[TransientReentryCases::net("code"), TransientReentryCases::net("n")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[TransientReentryCases::net("code"), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-7, &c, &gnd);
         (b.build().expect("build"), c)

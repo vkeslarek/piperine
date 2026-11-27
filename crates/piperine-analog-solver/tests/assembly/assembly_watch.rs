@@ -5,7 +5,7 @@
 //! Newton iteration and survives a restore (C19); `samples` reads the
 //! continuous pins reactions read.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_device_fixtures::examples::{K_B, Q};
@@ -22,7 +22,7 @@ use piperine_abi::thunk::module;
 
 #[test]
 fn a_var_watch_is_readable_at_an_accepted_solution() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let d = Circuits::instance("top.d1", m.diode, vec![Discrete(0), Discrete(1), Discrete(2), Circuits::at(&n[0]), Ground, Discrete(3)]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![d], &net).expect("bind"));
@@ -43,7 +43,7 @@ fn a_var_watch_is_readable_at_an_accepted_solution() {
 
 #[test]
 fn an_instance_lists_its_terms_and_var_watches_and_reads_a_term() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let d = Circuits::instance("top.d1", m.diode, vec![Discrete(0), Discrete(1), Discrete(2), Circuits::at(&n[0]), Ground, Discrete(3)]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![d], &net).expect("bind"));
@@ -64,7 +64,7 @@ fn an_instance_lists_its_terms_and_var_watches_and_reads_a_term() {
 
 #[test]
 fn a_cross_watch_fires_on_a_rising_sign_change() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let c = Circuits::instance("cmp", m.comparator, vec![Circuits::at(&n[0]), Circuits::at(&n[1]), Discrete(0), Absent, Absent]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -86,7 +86,7 @@ fn a_cross_watch_fires_on_a_rising_sign_change() {
 
 #[test]
 fn accept_reports_the_smallest_cap() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let c = Circuits::instance("cap", m.cap_watch_device, vec![Discrete(0), Discrete(1), Circuits::at(&n[0])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -103,7 +103,7 @@ fn accept_reports_the_smallest_cap() {
 
 #[test]
 fn a_trace_record_survives_a_rejected_step() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let t = Circuits::instance("top.tr", m.tracer, vec![Circuits::at(&n[0])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![t], &net).expect("bind"));
@@ -128,7 +128,7 @@ fn a_trace_record_survives_a_rejected_step() {
 
 #[test]
 fn samples_are_the_continuous_pins_reactions_read() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(3, &[]);
     let s1 = Circuits::instance("sh1", m.sample_hold, vec![Circuits::at(&n[2]), Absent, Discrete(0)]);
     let r = Circuits::instance("r1", m.resistor, vec![Discrete(1), Circuits::at(&n[0]), Ground]);
@@ -142,7 +142,7 @@ fn samples_are_the_continuous_pins_reactions_read() {
 fn accept_fails_with_e0509_on_an_invalid_cap() {
     // SCX-03 AC 9 (§17.2 rule 5 and its resolution): a step cap that is not finite and positive
     // fails the accept with E0509, naming the instance and the watch. W1 "b" = c2.
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     // (`+∞` is no longer one of them: it caps nothing, see `a_cap_of_infinity_caps_nothing`)
     for bad in [0.0, -1e-9, f64::NAN] {
@@ -167,7 +167,7 @@ fn a_cap_of_infinity_caps_nothing() {
     // caps nothing and fails nothing. The capper's watches are W0 = a·(1 + v) and W1 = b (pins 0
     // and 1): with `a = 2e-6`, `b = +∞` and `v = 0.5` only W0 binds, 2e-6·1.5 = 3e-6; with both
     // infinite no watch binds and the cap stays the identity of the minimum, `+∞`.
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let c = Circuits::instance("top.cap", m.cap_watch_device, vec![Discrete(0), Discrete(1), Circuits::at(&n[0])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -182,7 +182,7 @@ fn a_cap_of_infinity_caps_nothing() {
 fn a_cap_of_minus_infinity_or_nan_is_e0509() {
     // Only `+∞` caps nothing: `-∞`, NaN, zero and a negative value stay `E0509` (§17.2 rule 5),
     // naming the instance and the watch.
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     for bad in [f64::NEG_INFINITY, f64::NAN, 0.0, -1e-9] {
         let c = Circuits::instance("top.cap", m.cap_watch_device, vec![Discrete(0), Discrete(1), Circuits::at(&n[0])]);
@@ -253,7 +253,7 @@ fn rising_reports_a_sign_change_without_accepting() {
     // goes from −0.1 to 0.2: rising, with both values and the DEFAULT tolerances; W1 = −W0 falls:
     // not rising. Nothing is accepted: asked twice, it answers the same, and the accept at 0.2
     // still fires `up`
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let c = Circuits::instance("cmp", m.comparator, vec![Circuits::at(&n[0]), Circuits::at(&n[1]), Discrete(0), Absent, Absent]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -285,7 +285,7 @@ fn rising_reports_a_sign_change_without_accepting() {
 #[test]
 fn a_nan_cross_watch_is_unknown_and_never_fires() {
     // FIX-05 AC 3 (abi.md A4): an unknown value fires neither at its solution nor at the next.
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let c = Circuits::instance("cmp", m.comparator, vec![Circuits::at(&n[0]), Circuits::at(&n[1]), Discrete(0), Absent, Absent]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));
@@ -307,7 +307,7 @@ fn a_nan_cross_watch_is_unknown_and_never_fires() {
 #[test]
 fn an_infinite_cross_watch_fails_the_solve() {
     // FIX-05 AC 4: plus or minus infinity fails the solve naming the watch (abi.md A4).
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     for inf in [f64::INFINITY, f64::NEG_INFINITY] {
         let c = Circuits::instance("cmp", m.comparator, vec![Circuits::at(&n[0]), Circuits::at(&n[1]), Discrete(0), Absent, Absent]);

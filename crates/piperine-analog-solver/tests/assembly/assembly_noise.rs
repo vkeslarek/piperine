@@ -7,7 +7,7 @@
 //! Numerically sensitive: the output density `Σ |H·b|²·PSD` is formed here
 //! with this crate's sparse LU and compared with `4kTR`.
 
-use piperine_device_fixtures::analog::{Call, Modules, T_NOISE};
+use piperine_device_fixtures::analog::{RecordedCall, FixtureModules, T_NOISE};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_device_fixtures::examples::{KF, K_B};
@@ -19,7 +19,7 @@ use piperine_analog_solver::math::linear::Stamp;
 
 #[test]
 fn a_noise_input_is_one_column_with_its_psd() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let r = 2.0e3;
     let res = Circuits::instance("r1", m.noisy, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
@@ -36,7 +36,7 @@ fn a_noise_input_is_one_column_with_its_psd() {
 
 #[test]
 fn one_noise_input_on_two_terms_is_correlated() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let r = 1.0e3;
     for (shared, want) in [(1.0, 0.0), (0.0, 4.0 * K_B * T_NOISE * r)] {
@@ -59,7 +59,7 @@ fn one_noise_input_on_two_terms_is_correlated() {
 
 #[test]
 fn a_psd_that_reads_freq_is_evaluated_per_frequency() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let fl = Circuits::tagged("fl", m.flicker, 701, vec![Discrete(0), Circuits::at(&n[0])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![fl], &net).expect("bind"));
@@ -67,13 +67,13 @@ fn a_psd_that_reads_freq_is_evaluated_per_frequency() {
     let stage = Stage { phase: TrBdf2Phase::Trapezoidal, h: 1e-9, prev_h: 0.0, jump: JumpPosition::None };
     assembly.assemble_tran(&[0.2], AssemblySolves::at_time(1e-9), stage).expect("tran");
     assembly.assemble_ac(&[0.2], AssemblySolves::at_frequency(1e3)).expect("ac");
-    assert!(Call::recorded(701).is_empty(), "KF/freq is not evaluated outside a noise sweep (at FREQ = 0 it is not finite)");
+    assert!(RecordedCall::recorded(701).is_empty(), "KF/freq is not evaluated outside a noise sweep (at FREQ = 0 it is not finite)");
 
     for freq in [10.0, 100.0, 100.0] {
         let cols = assembly.noise_sources(&[0.2], AssemblySolves::at_frequency(freq)).expect("noise");
         AssemblySolves::close(cols[0].psd, KF / freq, 1e-15, "KF/f");
     }
-    let c = Call::recorded(701);
+    let c = RecordedCall::recorded(701);
     assert_eq!(c.len(), 2, "once per new frequency");
     assert_eq!((Circuits::real_of(&c[0].reads[0]), Circuits::real_of(&c[1].reads[0])), (10.0, 100.0));
 }

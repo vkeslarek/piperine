@@ -9,6 +9,7 @@
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -82,7 +83,7 @@ fn a_reaction_reads_the_accepted_solution() {
     let mut b = CircuitBuilder::new("sampler");
     let top = ProtocolCrossingsCases::sine(&mut b);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[ProtocolCrossingsCases::net("go")]);
-    b.device(mixed::Sampler::module(), "smp", &[], &[Port::Node(top.clone()), ProtocolCrossingsCases::net("go"), ProtocolCrossingsCases::net("s")]);
+    b.device(digital::Sampler::module(), "smp", &[], &[Port::Node(top.clone()), ProtocolCrossingsCases::net("go"), ProtocolCrossingsCases::net("s")]);
     let mut solver = Solver::new(b.build().expect("build")).with_tran_opts(TransientAnalysisOptions::new(5.0e-4, 1.0e-5)).build();
     let result = solver.tran().expect("tran").solve().expect("solve");
 

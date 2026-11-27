@@ -7,6 +7,7 @@
 
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
@@ -49,20 +50,20 @@ fn every_helper_device_passes_at_generic_points() {
         ("Rn", circuit::NoisyResistor::module()),
         ("Pair", circuit::NoisePair::module()),
         ("Comparator", mixed::Comparator::module()),
-        ("Dff", mixed::DataFlipFlop::module()),
-        ("Inverter", mixed::Inverter::module()),
-        ("Dac", mixed::DigitalToAnalog::module()),
+        ("Dff", digital::DataFlipFlop::module()),
+        ("Inverter", digital::Inverter::module()),
+        ("Dac", mixed::BitDigitalToAnalog::module()),
         ("SettleCount", mixed::SettleCount::module()),
         ("Globals", mixed::Globals::module()),
-        ("Timer", mixed::Timer::module()),
-        ("Recorder", mixed::Recorder::module()),
-        ("Sampler", mixed::Sampler::module()),
-        ("Stub", mixed::Stub::module()),
-        ("Counter", mixed::Counter::module()),
+        ("Timer", digital::Timer::module()),
+        ("Recorder", digital::MultiRecorder::module()),
+        ("Sampler", digital::Sampler::module()),
+        ("Stub", digital::Stub::module()),
+        ("Counter", digital::Counter::module()),
         ("SettleTime", mixed::SettleTime::module()),
         ("Delay", mixed::Delay::module()),
         ("Finisher", mixed::Finisher::module()),
-        ("Tracer", mixed::Tracer::module()),
+        ("Tracer", mixed::ConductanceTracer::module()),
         ("FlakyG", mixed::FlakyConductance::module()),
         ("Capped", mixed::Capped::module()),
         ("ClockSrc", mixed::ClockSource::module()),
@@ -201,11 +202,11 @@ impl AbiDevicesCases {
             // abi_mixed.rs. reads: inp, inn
             ("Comparator", mixed::Comparator::module(), 0, vec![AbiDevicesCases::reals(&[0.7, 0.5]), AbiDevicesCases::reals(&[-1.0, 2.0])]),
             // reads: code (BIT), out, f, vref
-            ("Dac", mixed::DigitalToAnalog::module(), 0, vec![AbiDevicesCases::bit_then(&[1], &[0.4, 0.01, 1.0]), AbiDevicesCases::bit_then(&[0], &[-0.2, 0.0, 3.3])]),
+            ("Dac", mixed::BitDigitalToAnalog::module(), 0, vec![AbiDevicesCases::bit_then(&[1], &[0.4, 0.01, 1.0]), AbiDevicesCases::bit_then(&[0], &[-0.2, 0.0, 3.3])]),
             // reads: clk_a, gnd, f, hi (BIT)
             ("ClockSrc", mixed::ClockSource::module(), 0, vec![AbiDevicesCases::reals_then(&[1.0, 0.0, 0.02], &[1]), AbiDevicesCases::reals_then(&[0.3, 0.1, -0.5], &[0])]),
             // reads: p
-            ("Tracer", mixed::Tracer::module(), 0, vec![AbiDevicesCases::reals(&[0.7]), AbiDevicesCases::reals(&[-3.0])]),
+            ("Tracer", mixed::ConductanceTracer::module(), 0, vec![AbiDevicesCases::reals(&[0.7]), AbiDevicesCases::reals(&[-3.0])]),
             // reads: p, n, TIME (never armed in this target)
             ("FlakyG", mixed::FlakyConductance::module(), 0, vec![AbiDevicesCases::reals(&[0.7, 0.2, 1.0e-4]), AbiDevicesCases::reals(&[-1.0, 1.0, 0.0])]),
             // reads: p, cap

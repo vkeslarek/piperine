@@ -4,7 +4,7 @@
 //! the param, as residual-shaped right-side stamps. Values are computed here
 //! by hand.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_analog_solver::device::AnalogBinding::Discrete;
@@ -13,7 +13,7 @@ use piperine_analog_solver::math::linear::Stamp;
 
 #[test]
 fn a_flow_term_has_its_declared_derivative_against_a_param() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let r = 2.0e3;
     let res = Circuits::instance("r1", m.resistor, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
@@ -38,7 +38,7 @@ fn a_flow_term_has_its_declared_derivative_against_a_param() {
 
 #[test]
 fn a_ddt_term_has_no_equilibrium_derivative() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let cap = Circuits::instance("c1", m.capacitor, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![cap], &net).expect("bind"));

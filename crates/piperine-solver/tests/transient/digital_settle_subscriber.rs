@@ -14,6 +14,7 @@
 //! per-hook contract and its event queue; they are listed in `removed.txt`.
 
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::cell::RefCell;
 use std::result::Result;
@@ -159,8 +160,8 @@ fn the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_a
     // two inverter stages' settle c = HIGH.
     let mut b = CircuitBuilder::new("before_after");
     DigitalSettleSubscriberCases::start(&mut b);
-    b.device(mixed::Inverter::module(), "inv1", &[], &[DigitalSettleSubscriberCases::net("a"), DigitalSettleSubscriberCases::net("b1")]);
-    b.device(mixed::Inverter::module(), "inv2", &[], &[DigitalSettleSubscriberCases::net("b1"), DigitalSettleSubscriberCases::net("b2")]);
+    b.device(digital::Inverter::module(), "inv1", &[], &[DigitalSettleSubscriberCases::net("a"), DigitalSettleSubscriberCases::net("b1")]);
+    b.device(digital::Inverter::module(), "inv2", &[], &[DigitalSettleSubscriberCases::net("b1"), DigitalSettleSubscriberCases::net("b2")]);
     b.device(OR_MODULE.get_or_init(|| module::<Gate<false>>("Or2")), "or", &[], &[DigitalSettleSubscriberCases::net("a"), DigitalSettleSubscriberCases::net("b2"), DigitalSettleSubscriberCases::net("c")]);
     DigitalSettleSubscriberCases::subscribe(&mut b);
     DigitalSettleSubscriberCases::run(b.build().expect("build"));

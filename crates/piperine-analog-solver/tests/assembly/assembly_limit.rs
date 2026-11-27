@@ -8,10 +8,10 @@
 //!
 //! Numerically sensitive: stamps are computed here by hand.
 
-use piperine_device_fixtures::analog::{Call, G_LIMIT, Modules, VT};
+use piperine_device_fixtures::analog::{RecordedCall, G_LIMIT, FixtureModules, VT};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
-use piperine_device_fixtures::examples::{Diode, K_B, Q};
+use piperine_device_fixtures::examples::{K_B, LimitingDiode, Q};
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
 use piperine_analog_solver::device::{Ambient, AnalogPlan, Assembly};
 
@@ -65,7 +65,7 @@ fn an_active_limit_vetoes_convergence() {
 
 #[test]
 fn owns_correction_gets_no_correction_and_keeps_the_veto() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let (xa, xk) = (0.9, 0.2);
     for (off, vetoed) in [(0.0, false), (0.5, true)] {
@@ -86,7 +86,7 @@ fn owns_correction_gets_no_correction_and_keeps_the_veto() {
 
 #[test]
 fn a_limited_diode_reaches_the_unlimited_operating_point() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &["v1.f"]);
     let (vin, r, is) = (5.0, 1.0e3, 1.0e-14);
     let (top, mid, f) = (&n[0], &n[1], &n[2]);
@@ -125,18 +125,18 @@ fn a_limited_diode_reaches_the_unlimited_operating_point() {
 
 #[test]
 fn age_and_last_follow_the_table_of_the_abi() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(2, &[]);
     let tr = Circuits::tagged("tr", m.tracker, 501, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![tr], &net).expect("bind"));
-    let held = |c: &Call| (Circuits::real_of(&c.reads[2]), c.reads[3][0]);
+    let held = |c: &RecordedCall| (Circuits::real_of(&c.reads[2]), c.reads[3][0]);
 
     assembly.evaluate(&[0.75, 0.25], AssemblySolves::at_rest()).expect("evaluate");
     assembly.end_iteration();
     assembly.evaluate(&[1.0, 0.25], AssemblySolves::at_rest()).expect("evaluate");
     assembly.accept(&[1.25, 0.25], AssemblySolves::at_rest()).expect("accept");
     assembly.evaluate(&[1.25, 0.25], AssemblySolves::at_time(1e-9)).expect("evaluate");
-    let c = Call::recorded(501);
+    let c = RecordedCall::recorded(501);
     assert_eq!(c.len(), 4);
     assert_eq!(held(&c[0]), (0.0, 0), "none held before any solve");
     assert_eq!(held(&c[1]), (0.5, 2), "from the previous iteration");
@@ -157,13 +157,13 @@ fn age_and_last_follow_the_table_of_the_abi() {
         assembly.evaluate(&[1.5, 0.0], ambient).expect("evaluate");
         assembly.limiting_active()[0].limited
     };
-    AssemblySolves::close(held(&mut assembly, AssemblySolves::at_rest()), Diode::limit_junction(1.5, vcrit, nvt, vcrit), 1e-15, "STATIC, AGE 1: seeded");
-    AssemblySolves::close(held(&mut assembly, AssemblySolves::at_time(1e-9)), Diode::limit_junction(1.5, 0.3, nvt, vcrit), 1e-15, "AGE 1: against LAST");
+    AssemblySolves::close(held(&mut assembly, AssemblySolves::at_rest()), LimitingDiode::limit_junction(1.5, vcrit, nvt, vcrit), 1e-15, "STATIC, AGE 1: seeded");
+    AssemblySolves::close(held(&mut assembly, AssemblySolves::at_time(1e-9)), LimitingDiode::limit_junction(1.5, 0.3, nvt, vcrit), 1e-15, "AGE 1: against LAST");
 }
 
 #[test]
 fn an_unevaluated_limit_answers_last() {
-    let m = Modules::all();
+    let m = FixtureModules::all();
     let (net, n) = Circuits::netlist(1, &[]);
     let r = Circuits::tagged("rd", m.reader, 601, vec![Discrete(0), Circuits::at(&n[0])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![r], &net).expect("bind"));
@@ -171,7 +171,7 @@ fn an_unevaluated_limit_answers_last() {
     assert!(assembly.limiting_active().is_empty(), "LIMITED = PROPOSED: no veto");
     assembly.accept(&[0.8], AssemblySolves::at_rest()).expect("accept");
     assembly.assemble_dc(&[0.9], AssemblySolves::at_rest()).expect("assemble");
-    let c = Call::recorded(601);
+    let c = RecordedCall::recorded(601);
     assert_eq!(c.len(), 1, "VALUE stays LAST, so the reader is not called again");
     assert_eq!(Circuits::real_of(&c[0].reads[0]), 0.0, "VALUE = LAST, none held");
     let (a, b) = AssemblySolves::dense(&stamps, 1);
@@ -184,7 +184,7 @@ pub struct LimitCircuits;
 impl LimitCircuits {
     /// A clamp between unknowns 0 and 1 whose held iterate is `x + off`.
     fn clamp(off: f64) -> Assembly {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &[]);
         let c = Circuits::instance("top.lim", m.clamp, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
         let mut assembly = Assembly::new(AnalogPlan::bind(vec![c], &net).expect("bind"));

@@ -378,113 +378,122 @@ impl<'a> PoleZeroSolver<'a> {
 mod tests {
     use super::*;
     use piperine_analog_solver::netlist::NodeIdentifier;
-    use crate::analyses::test_devices as td;
+    use crate::analyses::test_devices::AnalysisDevices;
     use crate::core::builder::CircuitBuilder;
     use crate::core::circuit::CircuitInstance;
 
-    // ── test doubles: `analyses/test_devices.rs` ────────────────────────
+    
 
-    /// `v1(in,gnd) --R-- out --C-- gnd`: a source-driven single-pole RC
-    /// low-pass — `.pz`'s canonical single-pole worked example. `V(in)` is
-    /// pinned by the ideal source, so `H(s) = V(out)/V(in) = 1/(RCs + 1)`,
-    /// pole at `s = −1/(RC)`.
-    fn rc_circuit_with_source(r: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut b = CircuitBuilder::new("rc");
-        let n_in = b.node("n0");
-        let n_out = b.node("n1");
-        let gnd = b.ground();
-        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
-        td::resistor(&mut b, "r", &n_in, &n_out, r);
-        td::capacitor(&mut b, "c", &n_out, &gnd, c);
-        let circuit = b.build().unwrap();
-        let options = PoleZeroOptions {
-            input_source: BranchIdentifier::new("v1", "f"),
-            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
-            output_ref: None,
-        };
-        (circuit, options)
+    /// The circuits the pole-zero tests solve.
+    struct PoleZeroCircuits;
+
+    impl PoleZeroCircuits {
+        /// `v1(in,gnd) --R-- out --C-- gnd`: a source-driven single-pole RC
+        /// low-pass — `.pz`'s canonical single-pole worked example. `V(in)` is
+        /// pinned by the ideal source, so `H(s) = V(out)/V(in) = 1/(RCs + 1)`,
+        /// pole at `s = −1/(RC)`.
+        fn rc_circuit_with_source(r: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+            let mut b = CircuitBuilder::new("rc");
+            let n_in = b.node("n0");
+            let n_out = b.node("n1");
+            let gnd = b.ground();
+            AnalysisDevices::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+            AnalysisDevices::resistor(&mut b, "r", &n_in, &n_out, r);
+            AnalysisDevices::capacitor(&mut b, "c", &n_out, &gnd, c);
+            let circuit = b.build().unwrap();
+            let options = PoleZeroOptions {
+                input_source: BranchIdentifier::new("v1", "f"),
+                output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+                output_ref: None,
+            };
+            (circuit, options)
+        }
+
+        /// `v1(in,gnd) --R-- a --L-- b --C-- gnd`: a source-driven series RLC —
+        /// `.pz`'s canonical complex-conjugate-pair worked example, poles at
+        /// `−R/(2L) ± j·sqrt(1/(LC) − (R/(2L))²)`.
+        fn rlc_circuit_with_source(r: f64, l: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+            let mut b = CircuitBuilder::new("rlc");
+            let n_in = b.node("n0");
+            let n_a = b.node("n1");
+            let n_b = b.node("n2");
+            let gnd = b.ground();
+            AnalysisDevices::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+            AnalysisDevices::resistor(&mut b, "r", &n_in, &n_a, r);
+            AnalysisDevices::inductor(&mut b, "l1", &n_a, &n_b, l);
+            AnalysisDevices::capacitor(&mut b, "c", &n_b, &gnd, c);
+            let circuit = b.build().unwrap();
+            let options = PoleZeroOptions {
+                input_source: BranchIdentifier::new("v1", "f"),
+                output: AnalogVariable::Node(NodeIdentifier::Anonymous(2)),
+                output_ref: None,
+            };
+            (circuit, options)
+        }
+
+        /// `v1(in,gnd) --R-- gnd`: a purely resistive network (no reactive
+        /// element anywhere) — `.pz`'s PZ-05 fail-loud worked example.
+        fn resistor_only_circuit(r: f64) -> (CircuitInstance, PoleZeroOptions) {
+            let mut b = CircuitBuilder::new("ronly");
+            let n_in = b.node("n0");
+            let gnd = b.ground();
+            AnalysisDevices::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+            AnalysisDevices::resistor(&mut b, "r", &n_in, &gnd, r);
+            let circuit = b.build().unwrap();
+            let options = PoleZeroOptions {
+                input_source: BranchIdentifier::new("v1", "f"),
+                output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
+                output_ref: None,
+            };
+            (circuit, options)
+        }
+
+        /// `v1(in,gnd) --R1‖C-- out --R2-- gnd`: a lead/lag network — `R1` and
+        /// `C` in parallel between `in` and `out`, `R2` from `out` to gnd.
+        /// `H(s) = (1/R1 + sC) / (1/R1 + 1/R2 + sC)`: zero at `s = −1/(R1·C)`,
+        /// pole at `s = −1/((R1‖R2)·C)` — `.pz`'s canonical worked example with
+        /// a known finite zero (PZ-02/04).
+        fn lag_network_circuit(r1: f64, r2: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
+            let mut b = CircuitBuilder::new("lag");
+            let n_in = b.node("n0");
+            let n_out = b.node("n1");
+            let gnd = b.ground();
+            AnalysisDevices::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
+            AnalysisDevices::resistor(&mut b, "r1", &n_in, &n_out, r1);
+            AnalysisDevices::capacitor(&mut b, "c", &n_in, &n_out, c);
+            AnalysisDevices::resistor(&mut b, "r2", &n_out, &gnd, r2);
+            let circuit = b.build().unwrap();
+            let options = PoleZeroOptions {
+                input_source: BranchIdentifier::new("v1", "f"),
+                output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
+                output_ref: None,
+            };
+            (circuit, options)
+        }
+
+        /// `in --Rin-- gnd`, `in --R-- out`, `out --C-- gnd`: a 2-unknown RC
+        /// network with a well-posed (nonsingular) DC point and a clean,
+        /// hand-computable `(G, C)` pencil.
+        fn rc_circuit(r_in: f64, r: f64, c: f64) -> (CircuitInstance, AnalogReference, AnalogReference) {
+            let mut b = CircuitBuilder::new("rc");
+            let n_in = b.node("n0");
+            let n_out = b.node("n1");
+            let gnd = b.ground();
+            AnalysisDevices::resistor(&mut b, "rin", &n_in, &gnd, r_in);
+            AnalysisDevices::resistor(&mut b, "r", &n_in, &n_out, r);
+            AnalysisDevices::capacitor(&mut b, "c", &n_out, &gnd, c);
+            let circuit = b.build().unwrap();
+            (circuit, n_in, n_out)
+        }
     }
 
-    /// `v1(in,gnd) --R-- a --L-- b --C-- gnd`: a source-driven series RLC —
-    /// `.pz`'s canonical complex-conjugate-pair worked example, poles at
-    /// `−R/(2L) ± j·sqrt(1/(LC) − (R/(2L))²)`.
-    fn rlc_circuit_with_source(r: f64, l: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut b = CircuitBuilder::new("rlc");
-        let n_in = b.node("n0");
-        let n_a = b.node("n1");
-        let n_b = b.node("n2");
-        let gnd = b.ground();
-        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
-        td::resistor(&mut b, "r", &n_in, &n_a, r);
-        td::inductor(&mut b, "l1", &n_a, &n_b, l);
-        td::capacitor(&mut b, "c", &n_b, &gnd, c);
-        let circuit = b.build().unwrap();
-        let options = PoleZeroOptions {
-            input_source: BranchIdentifier::new("v1", "f"),
-            output: AnalogVariable::Node(NodeIdentifier::Anonymous(2)),
-            output_ref: None,
-        };
-        (circuit, options)
-    }
 
-    /// `v1(in,gnd) --R-- gnd`: a purely resistive network (no reactive
-    /// element anywhere) — `.pz`'s PZ-05 fail-loud worked example.
-    fn resistor_only_circuit(r: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut b = CircuitBuilder::new("ronly");
-        let n_in = b.node("n0");
-        let gnd = b.ground();
-        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
-        td::resistor(&mut b, "r", &n_in, &gnd, r);
-        let circuit = b.build().unwrap();
-        let options = PoleZeroOptions {
-            input_source: BranchIdentifier::new("v1", "f"),
-            output: AnalogVariable::Node(NodeIdentifier::Anonymous(0)),
-            output_ref: None,
-        };
-        (circuit, options)
-    }
 
-    /// `v1(in,gnd) --R1‖C-- out --R2-- gnd`: a lead/lag network — `R1` and
-    /// `C` in parallel between `in` and `out`, `R2` from `out` to gnd.
-    /// `H(s) = (1/R1 + sC) / (1/R1 + 1/R2 + sC)`: zero at `s = −1/(R1·C)`,
-    /// pole at `s = −1/((R1‖R2)·C)` — `.pz`'s canonical worked example with
-    /// a known finite zero (PZ-02/04).
-    fn lag_network_circuit(r1: f64, r2: f64, c: f64) -> (CircuitInstance, PoleZeroOptions) {
-        let mut b = CircuitBuilder::new("lag");
-        let n_in = b.node("n0");
-        let n_out = b.node("n1");
-        let gnd = b.ground();
-        td::vsrc(&mut b, "v1", &n_in, &gnd, 1.0);
-        td::resistor(&mut b, "r1", &n_in, &n_out, r1);
-        td::capacitor(&mut b, "c", &n_in, &n_out, c);
-        td::resistor(&mut b, "r2", &n_out, &gnd, r2);
-        let circuit = b.build().unwrap();
-        let options = PoleZeroOptions {
-            input_source: BranchIdentifier::new("v1", "f"),
-            output: AnalogVariable::Node(NodeIdentifier::Anonymous(1)),
-            output_ref: None,
-        };
-        (circuit, options)
-    }
 
-    /// `in --Rin-- gnd`, `in --R-- out`, `out --C-- gnd`: a 2-unknown RC
-    /// network with a well-posed (nonsingular) DC point and a clean,
-    /// hand-computable `(G, C)` pencil.
-    fn rc_circuit(r_in: f64, r: f64, c: f64) -> (CircuitInstance, AnalogReference, AnalogReference) {
-        let mut b = CircuitBuilder::new("rc");
-        let n_in = b.node("n0");
-        let n_out = b.node("n1");
-        let gnd = b.ground();
-        td::resistor(&mut b, "rin", &n_in, &gnd, r_in);
-        td::resistor(&mut b, "r", &n_in, &n_out, r);
-        td::capacitor(&mut b, "c", &n_out, &gnd, c);
-        let circuit = b.build().unwrap();
-        (circuit, n_in, n_out)
-    }
 
     #[test]
     fn assembles_known_2x2_g_and_c_on_an_rc_network() {
-        let (mut circuit, n_in, n_out) = rc_circuit(2000.0, 1000.0, 1e-6);
+        let (mut circuit, n_in, n_out) = PoleZeroCircuits::rc_circuit(2000.0, 1000.0, 1e-6);
         let context = Context::default();
         circuit.setup_all(&context).unwrap();
         let dc_point = DcSolver::new(&mut circuit, context.clone()).unwrap().solve().unwrap();
@@ -516,9 +525,9 @@ mod tests {
         let n1 = b.node("n0");
         let n2 = b.node("n1");
         let gnd = b.ground();
-        td::resistor(&mut b, "r1", &n1, &gnd, 1000.0);
-        td::resistor(&mut b, "r2", &n2, &gnd, 1000.0);
-        td::freq_nonlinear(&mut b, "bad", &n1, &n2, 1.0);
+        AnalysisDevices::resistor(&mut b, "r1", &n1, &gnd, 1000.0);
+        AnalysisDevices::resistor(&mut b, "r2", &n2, &gnd, 1000.0);
+        AnalysisDevices::freq_nonlinear(&mut b, "bad", &n1, &n2, 1.0);
         let mut circuit = b.build().unwrap();
         let context = Context::default();
         circuit.setup_all(&context).unwrap();
@@ -535,7 +544,7 @@ mod tests {
 
     #[test]
     fn rc_low_pass_has_one_real_pole_at_minus_one_over_rc() {
-        let (mut circuit, options) = rc_circuit_with_source(1000.0, 1e-6);
+        let (mut circuit, options) = PoleZeroCircuits::rc_circuit_with_source(1000.0, 1e-6);
         let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
         let poles = solver.poles().expect("RC has one finite pole");
 
@@ -549,7 +558,7 @@ mod tests {
     #[test]
     fn series_rlc_has_complex_conjugate_pole_pair() {
         let (r, l, c) = (10.0, 1e-3, 1e-6);
-        let (mut circuit, options) = rlc_circuit_with_source(r, l, c);
+        let (mut circuit, options) = PoleZeroCircuits::rlc_circuit_with_source(r, l, c);
         let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
         let poles = solver.poles().expect("series RLC has a conjugate pole pair");
 
@@ -572,7 +581,7 @@ mod tests {
 
     #[test]
     fn resistor_only_circuit_fails_loud_pz05() {
-        let (mut circuit, options) = resistor_only_circuit(1000.0);
+        let (mut circuit, options) = PoleZeroCircuits::resistor_only_circuit(1000.0);
         let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
         let result = solver.poles();
         assert!(result.is_err(), "a purely resistive network has no finite poles (PZ-05)");
@@ -585,7 +594,7 @@ mod tests {
     #[test]
     fn lag_network_has_the_known_pole_and_zero() {
         let (r1, r2, c) = (1000.0, 2000.0, 1e-6);
-        let (mut circuit, options) = lag_network_circuit(r1, r2, c);
+        let (mut circuit, options) = PoleZeroCircuits::lag_network_circuit(r1, r2, c);
         let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
 
         let poles = solver.poles().expect("lag network has one finite pole");
@@ -614,7 +623,7 @@ mod tests {
     fn rc_low_pass_has_no_transmission_zero() {
         // A plain RC low-pass has one pole and no finite zero — zeros() must
         // return an empty (not an error) result, unlike poles().
-        let (mut circuit, options) = rc_circuit_with_source(1000.0, 1e-6);
+        let (mut circuit, options) = PoleZeroCircuits::rc_circuit_with_source(1000.0, 1e-6);
         let solver = PoleZeroSolver::new(&mut circuit, options, Context::default()).unwrap();
         let zeros = solver.zeros().expect("empty zero set is a legitimate answer, not an error");
         assert!(zeros.is_empty(), "RC low-pass should have no finite transmission zero: {zeros:?}");

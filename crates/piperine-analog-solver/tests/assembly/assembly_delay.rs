@@ -4,7 +4,7 @@
 //! equilibrium solve it is its value; a `td` beyond `max` fails naming
 //! instance and term (C10); a restore returns the history.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_analog_solver::device::AnalogBinding::Discrete;
@@ -78,7 +78,7 @@ impl DelayCircuits {
     /// A delay line from unknown 0 (`a`) to the row of unknown 1 (`o`), with a
     /// ramp `v(a) = t/µs` accepted at 0, 1, 2 and 3 µs.
     fn ramp(td: f64, max: f64) -> Assembly {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &[]);
         let d = Circuits::instance("top.dl", m.delay_line, vec![Discrete(0), Discrete(1), Circuits::at(&n[0]), Circuits::at(&n[1])]);
         let mut assembly = Assembly::new(AnalogPlan::bind(vec![d], &net).expect("bind"));

@@ -5,7 +5,7 @@
 
 use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
+use piperine_abi::device::{Device, Eval, Fault, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{
     Cell, DEFAULT, GROUND, Module, Partial, Shape, ambient, cell, op, part, pin_flag, role,
@@ -19,7 +19,8 @@ const THERMAL_VOLTAGE: f64 = 0.02585;
 /// The literal the Verilog-A sources write for pi.
 const PI_LITERAL: f64 = 3.14159265358979;
 
-const ORIGIN: &str = "abi_devices.rs";
+/// The origin every term and function of this module reports: the worked examples of abi.md section 11.
+const ORIGIN: &str = "abi.md:11";
 
 // ---------------------------------------------------------------------------
 // R
@@ -84,9 +85,6 @@ impl Device for Resistor {
         // `dF/dr = -(V_p - V_n) / r^2`: the sensitivity partial.
         cx.jac().copy_from_slice(&[g, -g, -(vp - vn) / (r * r)]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -156,9 +154,6 @@ impl Device for OptionalResistor {
         cx.jac().copy_from_slice(&[g, -g]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -217,9 +212,6 @@ impl Device for Capacitor {
         cx.set(0, c * v);
         cx.jac().copy_from_slice(&[c, -c, v]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -281,9 +273,6 @@ impl Device for Diode {
         // `dF/d is_sat = exp(vd / vt) - 1`.
         cx.jac().copy_from_slice(&[gd, -gd, ex - 1.0]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -352,9 +341,6 @@ impl Device for VoltageSource {
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -scale]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// ```verilog
@@ -416,9 +402,6 @@ impl Device for SineSource {
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -arg.sin(), -amp * arg.cos() * 2.0 * PI_LITERAL * t]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// ```verilog
@@ -471,9 +454,6 @@ impl Device for RampSource {
         cx.set(1, vp - vn - 1.0e3 * t);
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -537,9 +517,6 @@ impl Device for AcCurrentSource {
         }
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// An inductor, `V(p, n) = l * ddt(I)`, on a private branch current `f`.
@@ -594,9 +571,6 @@ impl Device for Inductor {
         cx.set(2, -l * f);
         cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -l, -f]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -670,9 +644,6 @@ impl Device for NoisyResistor {
             cx.set(0, 4.0 * K_B * cx.f64(1) / cx.f64(0));
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -751,9 +722,6 @@ impl Device for NoisePair {
             _ => cx.set(0, 1.0e-18_f64),
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 

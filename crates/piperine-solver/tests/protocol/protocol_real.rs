@@ -9,6 +9,7 @@
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::cell::Cell as StdCell;
 use std::sync::{Arc, OnceLock};
@@ -32,8 +33,8 @@ fn a_clock_nothing_analog_reads_adds_no_step() {
     let clocked = {
         let mut b = CircuitBuilder::new("rc + clock");
         ProtocolRealCases::rc(&mut b);
-        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
-        b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
         let mut circuit = b.build().expect("build");
         let result = ProtocolRealCases::run(&mut circuit, 1.0e-3, 1.0e-5);
         // The clock did run: 50 rising edges in 1 ms of 10 µs half periods.
@@ -58,8 +59,8 @@ fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     let gnd = b.ground();
     let o = b.node("o");
     let c = b.node("c");
-    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(edge))], &[ProtocolRealCases::net("code")]);
-    b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[ProtocolRealCases::net("code"), Port::Node(o.clone())]);
+    b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(edge))], &[ProtocolRealCases::net("code")]);
+    b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[ProtocolRealCases::net("code"), Port::Node(o.clone())]);
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
     CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
     let mut circuit = b.build().expect("build");
@@ -157,8 +158,8 @@ fn the_default_run_copies_the_digital_state_once_per_accepted_step() {
 #[test]
 fn a_design_without_analog_runs_every_instant_with_no_solve() {
     let mut b = CircuitBuilder::new("clock only");
-    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-6))], &[ProtocolRealCases::net("clk")]);
-    b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
+    b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-6))], &[ProtocolRealCases::net("clk")]);
+    b.device(digital::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
     let mut circuit = b.build().expect("build");
     let result = ProtocolRealCases::run(&mut circuit, 1.0e-5, 1.0e-7);
     // Rising edges at 1, 3, 5, 7, 9 µs; the edge at 10 µs (falling) is the stop time.
@@ -171,7 +172,7 @@ fn a_design_without_analog_runs_every_instant_with_no_solve() {
 fn a_commit_due_after_the_stop_time_stays_pending() {
     let mut b = CircuitBuilder::new("rc + slow clock");
     ProtocolRealCases::rc(&mut b);
-    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(3.0e-4))], &[ProtocolRealCases::net("clk")]);
+    b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(3.0e-4))], &[ProtocolRealCases::net("clk")]);
     let mut circuit = b.build().expect("build");
     ProtocolRealCases::run(&mut circuit, 5.0e-4, 1.0e-5);
     let bound = circuit.bound();
@@ -267,8 +268,8 @@ impl ProtocolRealCases {
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &out);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
         b.device(FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
-        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
-        b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
         (b.build().expect("build"), out)
     }
 }

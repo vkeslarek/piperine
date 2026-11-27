@@ -5,6 +5,7 @@
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context};
 
@@ -76,10 +77,10 @@ impl SessionBoundsCases {
         let a = b.node("a");
         let r = b.node("r");
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-        b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[SessionBoundsCases::net("code"), Port::Node(a.clone())]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[SessionBoundsCases::net("code"), Port::Node(a.clone())]);
         b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r), SessionBoundsCases::net("cmp")]);
-        b.device(mixed::DataFlipFlop::module(), "ff", &[], &[SessionBoundsCases::net("cmp"), SessionBoundsCases::net("code"), SessionBoundsCases::net("q")]);
-        b.device(mixed::Inverter::module(), "inv", &[], &[SessionBoundsCases::net(code_from), SessionBoundsCases::net("code")]);
+        b.device(digital::DataFlipFlop::module(), "ff", &[], &[SessionBoundsCases::net("cmp"), SessionBoundsCases::net("code"), SessionBoundsCases::net("q")]);
+        b.device(digital::Inverter::module(), "inv", &[], &[SessionBoundsCases::net(code_from), SessionBoundsCases::net("code")]);
         b.device(mixed::SettleCount::module(), "settle", &[], &[]);
         (b, a)
     }
@@ -88,7 +89,7 @@ impl SessionBoundsCases {
     /// instant never goes quiet (`E0501`).
     fn zero_delay_clock(bound: Option<usize>) -> CircuitBuilder {
         let mut b = CircuitBuilder::new("zero delay");
-        b.device(mixed::Timer::module(), "t", &[("half", ParamValue::Real(0.0))], &[SessionBoundsCases::net("clk")]);
+        b.device(digital::Timer::module(), "t", &[("half", ParamValue::Real(0.0))], &[SessionBoundsCases::net("clk")]);
         if let Some(bound) = bound {
             b.microsteps(bound);
         }

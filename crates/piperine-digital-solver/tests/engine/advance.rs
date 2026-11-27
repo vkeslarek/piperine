@@ -3,7 +3,7 @@
 //! stops before the first one that touches the analog side, restoring that
 //! instant whole; `HORIZON` and `TICK`; times that round to one tick.
 
-use piperine_device_fixtures::digital::{And2, ClockWatch, DataFlipFlop, Delayed, Inverter, Lagged, Odd, Sampler, Setter, Settler, Stub, Timer};
+use piperine_device_fixtures::digital::{And2, ClockWatch, DataFlipFlop, LaterDelayed, Inverter, Lagged, Odd, Sampler, Setter, Settler, Stub, Timer};
 use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
@@ -169,7 +169,7 @@ fn a_later_statement_does_not_make_its_instant_a_time_point() {
     // which is tested on its own
     let mut d = AdvanceCases::started(AdvanceCases::engine_with(
         vec![
-            ("dl", Delayed::handle(), vec![("go", "go"), ("out", "x")]),
+            ("dl", LaterDelayed::handle(), vec![("go", "go"), ("out", "x")]),
             ("buf", Inverter::handle(), vec![("a", "x"), ("y", "y")]),
         ],
         &["y"],

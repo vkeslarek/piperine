@@ -12,7 +12,10 @@ use piperine_abi::raw::{
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 
-use crate::examples::{Capacitor, Comparator, DigitalToAnalog, Diode, FlipFlop, KF, K_B, Q, Resistor, ShapeParts};
+use crate::circuit::{Capacitor, Resistor, VoltageSource};
+use crate::digital::DataFlipFlop;
+use crate::examples::{DigitalToAnalog, KF, K_B, LimitingDiode, Q, ShapeParts};
+use crate::mixed::Comparator;
 
 const SQRT_2: f64 = std::f64::consts::SQRT_2;
 
@@ -54,14 +57,11 @@ impl Device for TightCapacitor {
         cx.jac().copy_from_slice(&[c, -c, v]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// Every fixture module, by name.
 #[derive(Clone, Copy)]
-pub struct Modules {
+pub struct FixtureModules {
     /// The module of the resistor fixture.
     pub resistor: &'static Module,
     /// The module of the diode fixture.
@@ -161,9 +161,6 @@ impl Device for Cubic {
         cx.jac().copy_from_slice(&[g, -g, v * v * v]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// A shape that breaks abi.md A3: one function writes a limit and a term
@@ -237,7 +234,7 @@ impl BadLimit {
 /// One call of a recording fixture: its tag, the bytes it read and which of
 /// its partials were seeded.
 #[derive(Clone, Debug)]
-pub struct Call {
+pub struct RecordedCall {
     /// The tag.
     pub tag: u64,
     /// The reads.
@@ -246,7 +243,7 @@ pub struct Call {
     pub seed: Vec<bool>,
 }
 
-static CALLS: Mutex<Vec<Call>> = Mutex::new(Vec::new());
+static CALLS: Mutex<Vec<RecordedCall>> = Mutex::new(Vec::new());
 
 /// pins: tag=0, idc=1 (PARAM F64); p=2, n=3 (PORT continuous)
 /// terms: T0 FLOW {p, n} "i" = idc: a current source that reads only a param
@@ -281,17 +278,14 @@ impl Device for CurrentSource {
         ShapeParts::shared(&SOURCE, CurrentSource::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((CurrentSource { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&SOURCE, CurrentSource::shape))))
+        Ok((CurrentSource { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&SOURCE, CurrentSource::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        Call::record(self.tag, cx, 1);
+        RecordedCall::record(self.tag, cx, 1);
         let idc = cx.f64(0);
         cx.set(0, idc);
         cx.jac()[0] = 1.0;
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -328,29 +322,26 @@ impl Device for CountedResistor {
         ShapeParts::shared(&COUNTED, CountedResistor::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((CountedResistor { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&COUNTED, CountedResistor::shape))))
+        Ok((CountedResistor { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&COUNTED, CountedResistor::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        Call::record(self.tag, cx, 3);
+        RecordedCall::record(self.tag, cx, 3);
         let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
         cx.set(0, v / r);
         cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
 /// pins: tag=0 (PARAM F64); p=1 (PORT continuous)
 /// terms: T0 FLOW {p, GROUND} "g" = v(p): a 1 S conductance
 /// fn 0 "g": reads [p, TIME, FREQ, STATIC, GMIN, SOURCE_SCALE] writes [T0] partials (0←0)=1   (records)
-pub struct Probe {
+pub struct RecordingConductance {
     tag: u64,
 }
 static PROBE: OnceLock<ShapeRef> = OnceLock::new();
 
-impl Probe {
+impl RecordingConductance {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -375,22 +366,19 @@ impl Probe {
     }
 }
 
-impl Device for Probe {
+impl Device for RecordingConductance {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&PROBE, Probe::shape).shape()
+        ShapeParts::shared(&PROBE, RecordingConductance::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Probe { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&PROBE, Probe::shape))))
+        Ok((RecordingConductance { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&PROBE, RecordingConductance::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        Call::record(self.tag, cx, 1);
+        RecordedCall::record(self.tag, cx, 1);
         let v = cx.f64(0);
         cx.set(0, v);
         cx.jac()[0] = 1.0;
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -400,10 +388,10 @@ impl Device for Probe {
 /// mode 1: the value is NaN; 2: the seeded partial (0←0) is +inf; 3: the
 /// partial against the param (never seeded in a Newton solve) is +inf;
 /// 4: the call faults with code 7.
-pub struct Faulty;
+pub struct ModeFaulty;
 static FAULTY: OnceLock<ShapeRef> = OnceLock::new();
 
-impl Faulty {
+impl ModeFaulty {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -423,12 +411,12 @@ impl Faulty {
     }
 }
 
-impl Device for Faulty {
+impl Device for ModeFaulty {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&FAULTY, Faulty::shape).shape()
+        ShapeParts::shared(&FAULTY, ModeFaulty::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Faulty, Arc::clone(ShapeParts::shared(&FAULTY, Faulty::shape))))
+        Ok((ModeFaulty, Arc::clone(ShapeParts::shared(&FAULTY, ModeFaulty::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let mode = cx.f64(2);
@@ -441,9 +429,6 @@ impl Device for Faulty {
         let dm = if mode == 3.0 { f64::INFINITY } else { 0.0 };
         cx.jac().copy_from_slice(&[g, -1.0, dm]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -492,58 +477,6 @@ impl Device for PlainDiode {
         let gd = is * e / VT;
         cx.jac().copy_from_slice(&[gd, -gd, e - 1.0]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// A potential source written as abi.md A1 says: a private continuous pin
-/// `f` carries the branch flow.
-/// pins: dc=0 (PARAM F64); p=1, n=2 (PORT continuous); f=3 (PRIVATE continuous)
-/// terms: T0 FLOW {p, n} "i" = f;  T1 FLOW {f, GROUND} "eq" = x(p) − x(n) − dc·SOURCE_SCALE
-/// fn 0 "v": reads [p, n, f, dc, SOURCE_SCALE] writes [T0, T1]
-///           partials (0←2)=1 (1←0)=1 (1←1)=−1 (1←3)=−SOURCE_SCALE
-pub struct VoltageSource;
-static VSOURCE: OnceLock<ShapeRef> = OnceLock::new();
-
-impl VoltageSource {
-    /// The shape helper `shape`.
-    fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let dc = s.pin(ShapeParts::param("dc"));
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
-        let t0 = s.term(ShapeParts::flow("i", op::FLOW, p, n));
-        let t1 = s.term(ShapeParts::flow("eq", op::FLOW, f, GROUND));
-        s.function(FunctionSpec {
-            name: "v",
-            reads: vec![ShapeParts::pin(p), ShapeParts::pin(n), ShapeParts::pin(f), ShapeParts::pin(dc), ShapeParts::ambient(ambient::SOURCE_SCALE)],
-            writes: vec![ShapeParts::term(t0), ShapeParts::term(t1)],
-            partials: vec![ShapeParts::partial(0, 2), ShapeParts::partial(1, 0), ShapeParts::partial(1, 1), ShapeParts::partial(1, 3)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}
-
-impl Device for VoltageSource {
-    fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&VSOURCE, VoltageSource::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((VoltageSource, Arc::clone(ShapeParts::shared(&VSOURCE, VoltageSource::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let scale = cx.f64(4);
-        cx.set(0, cx.f64(2));
-        cx.set(1, cx.f64(0) - cx.f64(1) - cx.f64(3) * scale);
-        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, -scale]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -617,9 +550,6 @@ impl Device for Clamp {
         }
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// A function that writes a limit and the term depending on it in one call
@@ -629,10 +559,10 @@ impl Device for Clamp {
 /// fn 0 "all" OWNS_CORRECTION: reads [a, k, off]
 ///     writes [I0.PROPOSED = v, I0.LIMITED = v + off, T0]
 ///     partials (0←0)=1 (0←1)=−1 (2←0)=G_LIMIT (2←1)=−G_LIMIT
-pub struct Owner;
+pub struct CorrectionOwner;
 static OWNER: OnceLock<ShapeRef> = OnceLock::new();
 
-impl Owner {
+impl CorrectionOwner {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -653,12 +583,12 @@ impl Owner {
     }
 }
 
-impl Device for Owner {
+impl Device for CorrectionOwner {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&OWNER, Owner::shape).shape()
+        ShapeParts::shared(&OWNER, CorrectionOwner::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Owner, Arc::clone(ShapeParts::shared(&OWNER, Owner::shape))))
+        Ok((CorrectionOwner, Arc::clone(ShapeParts::shared(&OWNER, CorrectionOwner::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let v = cx.f64(0) - cx.f64(1);
@@ -668,21 +598,18 @@ impl Device for Owner {
         cx.jac().copy_from_slice(&[1.0, -1.0, G_LIMIT, -G_LIMIT]);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// A limit that no function writes, read by one (abi.md A3).
 /// pins: tag=0 (PARAM F64); a=1 (PORT continuous)
 /// inputs: I0 LIMIT "x"     terms: T0 FLOW {a, GROUND} "i" = 2·x̂
 /// fn 0 "i": reads [I0] writes [T0] partials (0←0)=2        (records every call)
-pub struct Reader {
+pub struct LimitReader {
     tag: u64,
 }
 static READER: OnceLock<ShapeRef> = OnceLock::new();
 
-impl Reader {
+impl LimitReader {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -701,22 +628,19 @@ impl Reader {
     }
 }
 
-impl Device for Reader {
+impl Device for LimitReader {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&READER, Reader::shape).shape()
+        ShapeParts::shared(&READER, LimitReader::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Reader { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&READER, Reader::shape))))
+        Ok((LimitReader { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&READER, LimitReader::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        Call::record(self.tag, cx, 1);
+        RecordedCall::record(self.tag, cx, 1);
         let xh = cx.f64(0);
         cx.set(0, 2.0 * xh);
         cx.jac()[0] = 2.0;
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -765,11 +689,11 @@ impl Device for Tracker {
         ShapeParts::shared(&TRACKER, Tracker::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Tracker { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&TRACKER, Tracker::shape))))
+        Ok((Tracker { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&TRACKER, Tracker::shape))))
     }
     fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
         if k == 0 {
-            Call::record(self.tag, cx, 2);
+            RecordedCall::record(self.tag, cx, 2);
             let v = cx.f64(0) - cx.f64(1);
             cx.set(0, v);
             cx.set(1, v);
@@ -780,9 +704,6 @@ impl Device for Tracker {
             cx.jac()[0] = G_LIMIT;
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -827,9 +748,6 @@ impl Device for DelayLine {
         cx.set(1, td);
         cx.jac()[0] = 1.0;
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -881,9 +799,6 @@ impl Device for Trio {
         cx.set(3, td);
         cx.jac().copy_from_slice(&[a, b, c]);
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -942,9 +857,6 @@ impl Device for AcVoltageSource {
         }
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 // ─── Noise fixtures ─────────────────────────────────────────────────────────
@@ -956,10 +868,10 @@ pub const T_NOISE: f64 = 300.15;
 /// inputs: I0 NOISE "thermal"       terms: T0 FLOW {p, n} "i" = v/r + I0
 /// fn 0 "i":   reads [p, n, r, I0] writes [T0] partials (0←0)=1/r (0←1)=−1/r (0←2)=−v/r² (0←3)=1
 /// fn 1 "psd": reads [r] writes [I0.PSD] = 4·k·T/r
-pub struct NoisyResistor;
+pub struct FixedTemperatureNoisyResistor;
 static NOISY: OnceLock<ShapeRef> = OnceLock::new();
 
-impl NoisyResistor {
+impl FixedTemperatureNoisyResistor {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -985,12 +897,12 @@ impl NoisyResistor {
     }
 }
 
-impl Device for NoisyResistor {
+impl Device for FixedTemperatureNoisyResistor {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&NOISY, NoisyResistor::shape).shape()
+        ShapeParts::shared(&NOISY, FixedTemperatureNoisyResistor::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((NoisyResistor, Arc::clone(ShapeParts::shared(&NOISY, NoisyResistor::shape))))
+        Ok((FixedTemperatureNoisyResistor, Arc::clone(ShapeParts::shared(&NOISY, FixedTemperatureNoisyResistor::shape))))
     }
     fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
         if k == 0 {
@@ -1001,9 +913,6 @@ impl Device for NoisyResistor {
             cx.set(0, 4.0 * K_B * T_NOISE / cx.f64(0));
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -1077,9 +986,6 @@ impl Device for Split {
         }
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// A flicker source whose density reads `FREQ`.
@@ -1122,20 +1028,17 @@ impl Device for Flicker {
         ShapeParts::shared(&FLICKER, Flicker::shape).shape()
     }
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Flicker { tag: Call::tag_of(values) }, Arc::clone(ShapeParts::shared(&FLICKER, Flicker::shape))))
+        Ok((Flicker { tag: RecordedCall::tag_of(values) }, Arc::clone(ShapeParts::shared(&FLICKER, Flicker::shape))))
     }
     fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
         if k == 0 {
             cx.set(0, G_LIMIT * cx.f64(0) + cx.f64(1));
             cx.jac().copy_from_slice(&[G_LIMIT, 1.0]);
         } else {
-            Call::record(self.tag, cx, 0);
+            RecordedCall::record(self.tag, cx, 0);
             cx.set(0, KF / cx.f64(0));
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -1185,9 +1088,6 @@ impl Device for CapWatch {
         cx.set(1, c2);
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 /// A conductance that traces its voltage whenever it exceeds 0.5 V.
@@ -1195,17 +1095,17 @@ impl Device for CapWatch {
 /// terms: T0 FLOW {p, GROUND} "g" = v(p)     watches: W0 TRACE "hi" (layout `HI`)
 /// fn 0 "g": reads [p] writes [T0, W0] partials (0←0)=1; W0 = {some: 1, v} when v > 0.5,
 ///           else left empty (all zero, A5)
-pub struct Tracer;
+pub struct ThresholdTracer;
 static TRACER: OnceLock<ShapeRef> = OnceLock::new();
 
 static HI_FIELDS: [Field; 2] = [
     Field { name: Str::from_static("some"), leaf: piperine_abi::raw::leaf::BOOL, offset: 0, count: 1 },
     Field { name: Str::from_static("v"), leaf: piperine_abi::raw::leaf::F64, offset: 8, count: 1 },
 ];
-/// The record of `Tracer`: a `BOOL` presence field, then the traced `F64` (abi.md A5).
+/// The record of `ThresholdTracer`: a `BOOL` presence field, then the traced `F64` (abi.md A5).
 pub static HI: Layout = Layout { size: 16, align: 8, fields: piperine_abi::raw::List::from_slice(&HI_FIELDS) };
 
-impl Tracer {
+impl ThresholdTracer {
     /// The shape helper `shape`.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
@@ -1231,12 +1131,12 @@ impl Tracer {
     }
 }
 
-impl Device for Tracer {
+impl Device for ThresholdTracer {
     fn prototype() -> &'static Shape<'static> {
-        ShapeParts::shared(&TRACER, Tracer::shape).shape()
+        ShapeParts::shared(&TRACER, ThresholdTracer::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Tracer, Arc::clone(ShapeParts::shared(&TRACER, Tracer::shape))))
+        Ok((ThresholdTracer, Arc::clone(ShapeParts::shared(&TRACER, ThresholdTracer::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let v = cx.f64(0);
@@ -1248,9 +1148,6 @@ impl Device for Tracer {
             rec[8..16].copy_from_slice(&v.to_le_bytes());
         }
         Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
     }
 }
 
@@ -1352,7 +1249,7 @@ impl Device for ChargeDiode {
             let (age, is_static) = (cx.u8(6), cx.bool(7));
             // ngspice's INITJCT: the first evaluation, or the first of an equilibrium solve, starts at
             // the seed itself, unlimited; every later one limits from `LAST`.
-            let limited = if age == 0 || (is_static && age == 1) { vcrit } else { Diode::limit_junction(v, cx.f64(5), nvt, vcrit) };
+            let limited = if age == 0 || (is_static && age == 1) { vcrit } else { LimitingDiode::limit_junction(v, cx.f64(5), nvt, vcrit) };
             cx.set(0, v);
             cx.set(1, limited);
             cx.jac().copy_from_slice(&[1.0, -1.0]);
@@ -1366,12 +1263,9 @@ impl Device for ChargeDiode {
         }
         Ok(())
     }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
-impl Modules {
+impl FixtureModules {
     // ─── 11.4 D flip-flop ───────────────────────────────────────────────────────
 
     /// pins: clk=0, d=1 (PORT BIT);  q=2 (PORT BIT, init LOW);  rise=3 (PRIVATE event)
@@ -1379,35 +1273,35 @@ impl Modules {
 
 
     /// One module per fixture type, built once.
-    pub fn all() -> Modules {
+    pub fn all() -> FixtureModules {
         static M: [OnceLock<Module>; 29] = [const { OnceLock::new() }; 29];
-        Modules {
-            resistor: ShapeParts::module_of::<Resistor>(&M[0], "Resistor"),
-            diode: ShapeParts::module_of::<Diode>(&M[1], "Diode"),
-            capacitor: ShapeParts::module_of::<Capacitor>(&M[2], "Capacitor"),
-            flip_flop: ShapeParts::module_of::<FlipFlop>(&M[3], "FlipFlop"),
-            comparator: ShapeParts::module_of::<Comparator>(&M[4], "Comparator"),
+        FixtureModules {
+            resistor: Resistor::module(),
+            diode: ShapeParts::module_of::<LimitingDiode>(&M[1], "Diode"),
+            capacitor: Capacitor::module(),
+            flip_flop: DataFlipFlop::module(),
+            comparator: Comparator::module(),
             digital_to_analog: ShapeParts::module_of::<DigitalToAnalog>(&M[5], "Dac"),
             cubic: ShapeParts::module_of::<Cubic>(&M[6], "Cubic"),
             bad_limit: M[7].get_or_init(BadLimit::module),
             source: ShapeParts::module_of::<CurrentSource>(&M[8], "CurrentSource"),
             counted: ShapeParts::module_of::<CountedResistor>(&M[9], "CountedResistor"),
-            probe: ShapeParts::module_of::<Probe>(&M[10], "Probe"),
-            faulty: ShapeParts::module_of::<Faulty>(&M[11], "Faulty"),
+            probe: ShapeParts::module_of::<RecordingConductance>(&M[10], "Probe"),
+            faulty: ShapeParts::module_of::<ModeFaulty>(&M[11], "ModeFaulty"),
             plain_diode: ShapeParts::module_of::<PlainDiode>(&M[12], "PlainDiode"),
-            voltage_source: ShapeParts::module_of::<VoltageSource>(&M[13], "VSource"),
+            voltage_source: VoltageSource::module(),
             clamp: ShapeParts::module_of::<Clamp>(&M[14], "Clamp"),
-            owner: ShapeParts::module_of::<Owner>(&M[15], "Owner"),
-            reader: ShapeParts::module_of::<Reader>(&M[16], "Reader"),
+            owner: ShapeParts::module_of::<CorrectionOwner>(&M[15], "Owner"),
+            reader: ShapeParts::module_of::<LimitReader>(&M[16], "Reader"),
             tracker: ShapeParts::module_of::<Tracker>(&M[17], "Tracker"),
             delay_line: ShapeParts::module_of::<DelayLine>(&M[18], "DelayLine"),
             trio: ShapeParts::module_of::<Trio>(&M[19], "Trio"),
             ac_voltage_source: ShapeParts::module_of::<AcVoltageSource>(&M[20], "AcVSource"),
-            noisy: ShapeParts::module_of::<NoisyResistor>(&M[21], "NoisyResistor"),
+            noisy: ShapeParts::module_of::<FixedTemperatureNoisyResistor>(&M[21], "FixedTemperatureNoisyResistor"),
             split: ShapeParts::module_of::<Split>(&M[22], "Split"),
             flicker: ShapeParts::module_of::<Flicker>(&M[23], "Flicker"),
             cap_watch_device: ShapeParts::module_of::<CapWatch>(&M[24], "Capper"),
-            tracer: ShapeParts::module_of::<Tracer>(&M[25], "Tracer"),
+            tracer: ShapeParts::module_of::<ThresholdTracer>(&M[25], "ThresholdTracer"),
             sample_hold: ShapeParts::module_of::<SampleHold>(&M[26], "SampleHold"),
             charge_diode: ShapeParts::module_of::<ChargeDiode>(&M[27], "ChargeDiode"),
             tight_capacitor: ShapeParts::module_of::<TightCapacitor>(&M[28], "TightCapacitor"),
@@ -1415,10 +1309,10 @@ impl Modules {
     }
 }
 
-impl Call {
+impl RecordedCall {
     /// The record helper `record`.
     fn record(tag: u64, cx: &Eval, partials: usize) {
-        let call = Call {
+        let call = RecordedCall {
             tag,
             reads: (0..cx.reads()).map(|i| cx.bytes(i).to_vec()).collect(),
             seed: (0..partials).map(|p| cx.wanted(p)).collect(),
@@ -1428,7 +1322,7 @@ impl Call {
 
     /// Every recorded call of the fixture tagged `tag`, in order. Each test uses
     /// its own tags, so parallel tests do not see each other's calls.
-    pub fn recorded(tag: u64) -> Vec<Call> {
+    pub fn recorded(tag: u64) -> Vec<RecordedCall> {
         CALLS.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|c| c.tag == tag).cloned().collect()
     }
 

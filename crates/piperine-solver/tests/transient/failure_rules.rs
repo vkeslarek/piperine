@@ -11,7 +11,7 @@
 //! typed assertion the taxonomy offers.)
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::partials::PartialsCheck;
 use std::result::Result;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -486,7 +486,7 @@ fn a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1e6, &a, &gnd);
-    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(5.0e-7))], &[Port::Net("go".to_string())]);
+    b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(5.0e-7))], &[Port::Net("go".to_string())]);
     b.device(
         JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")),
         "jump",

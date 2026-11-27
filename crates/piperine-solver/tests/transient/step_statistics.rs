@@ -45,7 +45,7 @@ impl Scenario {
         let source = builder.node("source");
         let output = builder.node("output");
         builder.device(
-            mixed::DigitalToAnalog::module(),
+            mixed::BitDigitalToAnalog::module(),
             "dac",
             &[("vref", ParamValue::Real(1.0))],
             &[Port::Net("code".to_string()), Port::Node(source.clone())],

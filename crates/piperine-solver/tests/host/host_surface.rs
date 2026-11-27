@@ -7,6 +7,7 @@
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -34,13 +35,13 @@ fn the_sink_receives_everything_in_instant_order() {
     let a = b.node("a");
     let r = b.node("r");
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[HostSurfaceCases::net("code"), Port::Node(a.clone())]);
+    b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[HostSurfaceCases::net("code"), Port::Node(a.clone())]);
     b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), HostSurfaceCases::net("cmp")]);
-    b.device(mixed::DataFlipFlop::module(), "ff", &[], &[HostSurfaceCases::net("cmp"), HostSurfaceCases::net("code"), HostSurfaceCases::net("q")]);
-    b.device(mixed::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("q"), HostSurfaceCases::net("code")]);
-    b.device(mixed::Tracer::module(), "tr", &[], &[Port::Node(r)]);
+    b.device(digital::DataFlipFlop::module(), "ff", &[], &[HostSurfaceCases::net("cmp"), HostSurfaceCases::net("code"), HostSurfaceCases::net("q")]);
+    b.device(digital::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("q"), HostSurfaceCases::net("code")]);
+    b.device(mixed::ConductanceTracer::module(), "tr", &[], &[Port::Node(r)]);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-6))], &[HostSurfaceCases::net("go")]);
-    b.device(mixed::Recorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
+    b.device(digital::MultiRecorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
     let (mut solver, seen) = HostSurfaceCases::with_sink(b.build().expect("build"), 5.0e-6, 1.0e-7);
     HostSurfaceCases::tran(&mut solver);
     let seen = seen.borrow();
@@ -80,7 +81,7 @@ fn records_of_an_undone_instant_do_not_reach_the_sink() {
     let mut b = CircuitBuilder::new("undone");
     HostSurfaceCases::sine_rc(&mut b);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-4))], &[HostSurfaceCases::net("go")]);
-    b.device(mixed::Recorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
+    b.device(digital::MultiRecorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
     let (mut solver, seen) = HostSurfaceCases::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
     let result = HostSurfaceCases::tran(&mut solver);
     assert!(result.stats.steps_rejected >= 1);
@@ -99,7 +100,7 @@ fn an_irreversible_reaction_runs_once_at_an_accepted_time() {
     let mut b = CircuitBuilder::new("irreversible");
     HostSurfaceCases::sine_rc(&mut b);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[HostSurfaceCases::net("go")]);
-    b.device(mixed::Stub::module(), "emu", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("out")]);
+    b.device(digital::Stub::module(), "emu", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("out")]);
     let (mut solver, _) = HostSurfaceCases::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
     let result = HostSurfaceCases::tran(&mut solver);
     assert!(mixed::FlakyConductance::has_faulted(), "the Newton failure happened");
@@ -129,7 +130,7 @@ fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
     let mut b = CircuitBuilder::new("waiter");
     HostSurfaceCases::sine_rc(&mut b);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[HostSurfaceCases::net("go")]);
-    b.device(mixed::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("h"), HostSurfaceCases::net("hy")]);
+    b.device(digital::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("h"), HostSurfaceCases::net("hy")]);
     let circuit = b.build().expect("build");
     let h = circuit.bound().names.nets["net:h"].0;
     let (mut solver, seen) = HostSurfaceCases::with_sink(circuit, 1.0e-3, 1.0e-5);

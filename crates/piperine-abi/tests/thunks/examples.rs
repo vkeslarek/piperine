@@ -7,7 +7,10 @@
 
 use std::sync::OnceLock;
 
-use piperine_device_fixtures::examples::{Capacitor, Comparator, Diode, DigitalToAnalog, FlipFlop, Resistor, ShapeParts};
+use piperine_device_fixtures::circuit::{Capacitor, Resistor};
+use piperine_device_fixtures::digital::DataFlipFlop;
+use piperine_device_fixtures::examples::{DigitalToAnalog, LimitingDiode, ShapeParts};
+use piperine_device_fixtures::mixed::Comparator;
 use piperine_abi::caller::{Commit, Handle};
 use piperine_abi::device::{Access, Flow, cell_lens};
 use piperine_abi::layout::{HIGH, LOW};
@@ -144,9 +147,9 @@ impl ExampleChecks {
     fn modules() -> [&'static Module; 6] {
         [
             ShapeParts::module_of::<Resistor>(&M_RESISTOR, "Resistor"),
-            ShapeParts::module_of::<Diode>(&M_DIODE, "Diode"),
+            ShapeParts::module_of::<LimitingDiode>(&M_DIODE, "Diode"),
             ShapeParts::module_of::<Capacitor>(&M_CAPACITOR, "Capacitor"),
-            ShapeParts::module_of::<FlipFlop>(&M_FLIP_FLOP, "FlipFlop"),
+            ShapeParts::module_of::<DataFlipFlop>(&M_FLIP_FLOP, "FlipFlop"),
             ShapeParts::module_of::<Comparator>(&M_COMPARATOR, "Comparator"),
             ShapeParts::module_of::<DigitalToAnalog>(&M_DAC, "Dac"),
         ]

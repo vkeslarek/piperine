@@ -5,6 +5,7 @@
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use piperine_device_fixtures::scripted::Call;
 use piperine_device_fixtures::scripted::ScriptedAnalog;
 use piperine_device_fixtures::scripted::ScriptedDiscrete;
@@ -333,9 +334,9 @@ impl StepObserverCases {
         let gnd = b.ground();
         let o = b.node("o");
         let c = b.node("c");
-        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[StepObserverCases::net("code")]);
-        b.device(mixed::Counter::module(), "cnt", &[], &[StepObserverCases::net("code"), StepObserverCases::net("n")]);
-        b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[StepObserverCases::net("code"), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[StepObserverCases::net("code")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[StepObserverCases::net("code"), StepObserverCases::net("n")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[StepObserverCases::net("code"), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-7, &c, &gnd);
         (b.build().expect("build"), c)

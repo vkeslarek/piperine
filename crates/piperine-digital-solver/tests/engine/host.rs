@@ -4,7 +4,7 @@
 //! write mid-run is refused, a param write is checked on a copy of the store
 //! first.
 
-use piperine_device_fixtures::digital::{Checked, Inverter, Setter};
+use piperine_device_fixtures::digital::{CheckedParameter, Inverter, Setter};
 use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
@@ -41,7 +41,7 @@ fn a_host_write_is_a_commit_at_microstep_zero() {
 fn a_structural_param_write_during_a_run_is_refused() {
     // C40
     let structural = |nets: &mut Vec<NetSpec>| nets.iter_mut().find(|n| n.name == "c.r").unwrap().structural = true;
-    let mut d = HostCases::engine_with(vec![("c", Checked::handle(), vec![])], structural);
+    let mut d = HostCases::engine_with(vec![("c", CheckedParameter::handle(), vec![])], structural);
     // between runs the write is a plain commit
     d.host_commit(HostCases::net(&d, "c.r"), 0, &HostCases::f64_bytes(2.0), Tick(0)).expect("no run in progress");
     d.start().unwrap();
@@ -59,7 +59,7 @@ fn a_structural_param_write_during_a_run_is_refused() {
 fn the_cone_is_the_functions_fed_by_params_and_globals_only() {
     let d = HostCases::engine_with(
         vec![
-            ("c", Checked::handle(), vec![]),                                           // reads a PARAM: in
+            ("c", CheckedParameter::handle(), vec![]),                                           // reads a PARAM: in
             ("chain", Inverter::handle(), vec![("a", "c.ok"), ("y", "chained")]),       // through a cone function: in
             ("port", Inverter::handle(), vec![("a", "driven"), ("y", "p")]),            // a net the host drives as a port: out
             ("set", Setter::handle(), vec![("up", "up"), ("out", "stmt")]),
@@ -83,7 +83,7 @@ fn the_cone_is_the_functions_fed_by_params_and_globals_only() {
 #[test]
 fn a_false_check_refuses_the_write_and_changes_nothing() {
     // C41
-    let d = HostCases::started(HostCases::engine_with(vec![("c", Checked::handle(), vec![])], |_| {}));
+    let d = HostCases::started(HostCases::engine_with(vec![("c", CheckedParameter::handle(), vec![])], |_| {}));
     let r = HostCases::net(&d, "c.r");
     assert_eq!(d.read(r), HostCases::f64_bytes(1.0), "the default");
     assert_eq!(d.read(HostCases::net(&d, "c.ok")), HIGH);
@@ -99,7 +99,7 @@ fn a_false_check_refuses_the_write_and_changes_nothing() {
 #[test]
 fn reshape_on_the_shadow_names_the_instance_and_changes_nothing() {
     // C42
-    let d = HostCases::started(HostCases::engine_with(vec![("c", Checked::handle(), vec![])], |_| {}));
+    let d = HostCases::started(HostCases::engine_with(vec![("c", CheckedParameter::handle(), vec![])], |_| {}));
     let before = d.checkpoint();
     assert_eq!(d.shadow(HostCases::net(&d, "c.r"), 0, &HostCases::f64_bytes(500.0)).unwrap(), Shadow::Reshape { instance: "c".into() });
     assert_eq!(d.checkpoint(), before);

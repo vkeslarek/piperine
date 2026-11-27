@@ -4,7 +4,7 @@
 //! design runs the same whatever order it was assembled in, and every change,
 //! commit and record is delivered in order.
 
-use piperine_device_fixtures::digital::{CallCounts, Counter, DataFlipFlop, Inverter, Recorder, Settler, Timer};
+use piperine_device_fixtures::digital::{CallCounts, Counter, DataFlipFlop, Inverter, MultiRecorder, Settler, Timer};
 use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_digital_solver::engine::{Digital, Horizon, Mode, Outcome};
 use piperine_digital_solver::net::{NetId, NetSpec};
@@ -69,7 +69,7 @@ fn two_runs_give_identical_observations() {
 #[test]
 fn every_change_commit_and_record_is_observed_in_order() {
     // C37: eight records through one statement
-    let mut d = CheckpointCases::engine(vec![("r", Recorder::handle(), vec![("go", "go"), ("log", "log")])]);
+    let mut d = CheckpointCases::engine(vec![("r", MultiRecorder::handle(), vec![("go", "go"), ("log", "log")])]);
     d.start().unwrap();
     CheckpointCases::instant(&mut d, Tick(0));
     d.drain_observations();

@@ -9,6 +9,7 @@
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::digital;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -59,8 +60,8 @@ impl Fixture {
         let mut builder = CircuitBuilder::new("landing inside the first step");
         let out = Fixture::sine_rc(&mut builder);
         builder.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(LANDING))], &[Fixture::net("go")]);
-        builder.device(mixed::Sampler::module(), "sample", &[], &[Port::Node(out), Fixture::net("go"), Fixture::net("sampled")]);
-        builder.device(mixed::Recorder::module(), "rec", &[], &[Fixture::net("go"), Fixture::net("log")]);
+        builder.device(digital::Sampler::module(), "sample", &[], &[Port::Node(out), Fixture::net("go"), Fixture::net("sampled")]);
+        builder.device(digital::MultiRecorder::module(), "rec", &[], &[Fixture::net("go"), Fixture::net("log")]);
         let seen = Rc::new(RefCell::new(Vec::new()));
         let mut solver = Solver::new(builder.build().expect("build"))
             .with_tran_opts(TransientAnalysisOptions::new(1.0e-3, 1.0e-3))
@@ -91,7 +92,7 @@ impl Fixture {
         let source = builder.node("source");
         let output = builder.node("output");
         builder.device(
-            mixed::DigitalToAnalog::module(),
+            mixed::BitDigitalToAnalog::module(),
             "dac",
             &[("vref", ParamValue::Real(1.0))],
             &[Fixture::net("code"), Port::Node(source.clone())],

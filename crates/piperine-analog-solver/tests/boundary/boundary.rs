@@ -5,7 +5,7 @@
 //! adapter of the owner's `AnalogSide` needs (C22), driven here on an RC
 //! with a DAC through the real Newton engine, with one rejected step.
 
-use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::analog::{FixtureModules};
 use piperine_device_fixtures::assembly::Circuits;
 use piperine_device_fixtures::assembly::{Solver, AssemblySolves, Tran};
 use std::path::{Path, PathBuf};
@@ -119,7 +119,7 @@ impl BoundaryCircuits {
     /// one time constant in 50 steps; the step `reject` (if any) is solved,
     /// rejected, restored and solved again. Returns the end time and v(rc).
     fn rc_with_a_dac(reject: Option<usize>) -> (f64, f64) {
-        let m = Modules::all();
+        let m = FixtureModules::all();
         let (net, n) = Circuits::netlist(2, &["dac.f"]);
         let (out, rc, f) = (&n[0], &n[1], &n[2]);
         let (r, c) = (1.0e3, 1.0e-6);
