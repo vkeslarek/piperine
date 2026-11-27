@@ -116,9 +116,9 @@ struct QuotedMessages {
 }
 
 impl QuotedMessages {
-    /// Where the words of a form may end its context clause: a punctuated clause (`: it has no finite symbolic
-    /// reading`, `, in a function that returns an `Event``, the bare `,` after a detail) or a place (` in a `fn`
-    /// called inside a `ddx``, ` before the event of ..`). A row may quote a message without that clause.
+    /// The openers of a form's context clause: a punctuated clause (`: it has no finite symbolic reading`, `, in a
+    /// function that returns an `Event``, the bare `,` after a detail) or a place (` in a `fn` called inside a `ddx``,
+    /// ` before the event of ..`).
     const CONTEXT_OPENERS: [&'static str; 4] = [":", ",", " in ", " before "];
 
     /// The messages quoted by the row `id` of `gaps`, or `None` when it has no such row or the row has no `P0001` column.
@@ -135,11 +135,25 @@ impl QuotedMessages {
         self.messages.iter().any(|quote| QuotedMessages::message_names(quote, text))
     }
 
-    /// Whether `quote` is `text`, or `text` cut before one of its context clauses, with each `{}` of the words read as
-    /// the detail it stands for (any non-empty text).
+    /// Where the last context clause of `text` starts: the last opener in it, taken with the comma right before it
+    /// (`, in ..` is one clause), or `None` when the words have no clause.
+    fn context_clause(text: &str) -> Option<usize> {
+        let last = (0..text.len()).rev().find(|at| text.is_char_boundary(*at) && QuotedMessages::CONTEXT_OPENERS.iter().any(|opener| text[*at..].starts_with(opener)))?;
+        let joined = last > 0 && text[..last].ends_with(',') && !text[last..].starts_with(',');
+        Some(if joined { last - 1 } else { last })
+    }
+
+    /// Whether the last `{}` of `text` is its context clause, the body the form is raised in (`a `let` of a pattern that
+    /// is no name in {}`): such a form is shared by the bodies that fill it, so no one gap owns it.
+    fn detail_is_context(text: &str) -> bool {
+        QuotedMessages::context_clause(text).is_some_and(|start| text[start..].contains("{}"))
+    }
+
+    /// Whether `quote` is `text`, or `text` without its last context clause, with each `{}` of the words read as the
+    /// detail it stands for (any non-empty text).
     fn message_names(quote: &str, text: &str) -> bool {
-        let cuts = (0..text.len()).filter(|at| text.is_char_boundary(*at) && QuotedMessages::CONTEXT_OPENERS.iter().any(|opener| text[*at..].starts_with(opener)));
-        cuts.chain([text.len()]).any(|cut| QuotedMessages::fills(quote, &text[..cut]))
+        let cut = QuotedMessages::context_clause(text).map(|start| &text[..start]);
+        QuotedMessages::fills(quote, text) || cut.is_some_and(|words| QuotedMessages::fills(quote, words))
     }
 
     /// Whether `quote` is `words` with each `{}` filled by a non-empty detail.
@@ -163,13 +177,16 @@ impl QuotedMessages {
 /// message whole, or abbreviated by leaving off its trailing context clause (`a `while` or `loop` in a `fn` called inside
 /// a `ddx`` for the words `..: it has no finite symbolic reading`; `a `match` arm whose pattern binds a name` for
 /// `.., in a function that returns an `Event``), and fills a `{}` with an example detail (`value input port of type
-/// `module ..``). The row's prose is never read: L74's prose mentions "an assignment to a field or an element", a form it
-/// does not own.
+/// `module ..``). Only the last context clause is left off, so a quote cannot own a form by its first words alone. The
+/// row's prose is never read: L74's prose mentions "an assignment to a field or an element", a form it does not own. A form
+/// whose last `{}` is its context clause (the body it is raised in, shared by ddx and event-function bodies) has no
+/// `Gap` owner: each body is its own gap.
 #[test]
 fn every_gap_owner_names_a_gaps_row() {
     let gaps = RefusalTable::gaps();
     for (_, row) in RefusalTable::entries() {
         if let RefusalOwner::Gap(id) = row.owner {
+            assert!(!QuotedMessages::detail_is_context(row.text), "{:?} names `{id}` as its owner but its last `{{}}` is the body it is raised in (`{}`): a shared form stays `Unswept`", row.form, row.text);
             let quoted = QuotedMessages::of_row(&gaps, id).unwrap_or_else(|| panic!("the form {:?} names `{id}` as its owner and GAPS.md has no such row with a `P0001` column", row.form));
             assert!(quoted.names_form(row.text), "{:?} names `{id}` as its owner but that row's `P0001` column quotes none of {:?} as its words `{}`", row.form, quoted.messages, row.text);
         }

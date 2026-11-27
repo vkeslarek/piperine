@@ -277,8 +277,7 @@
  },
  "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`": {
   "family": "Analog",
-  "name": "BreakContinueOrReturnWithNoValue",
-  "owner": "L74"
+  "name": "BreakContinueOrReturnWithNoValue"
  },
  "a `break`, a `continue` or a nested `while` in a loop of {}": {
   "family": "Analog",
@@ -303,13 +302,11 @@
  },
  "a `fn` called inside a `ddx` that forks into more than 4096 paths": {
   "family": "Analog",
-  "name": "FnCalledInsideDdxThatForksInto",
-  "owner": "L74"
+  "name": "FnCalledInsideDdxThatForksInto"
  },
  "a `fn` with no value inside a `ddx`": {
   "family": "Analog",
-  "name": "FnWithNoValueInsideDdx",
-  "owner": "L74"
+  "name": "FnWithNoValueInsideDdx"
  },
  "a `for` of more than 4096 iterations in {}": {
   "family": "Analog",
