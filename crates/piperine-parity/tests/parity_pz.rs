@@ -4,7 +4,7 @@
 //! ngspice shorts a node a voltage source pins, so its fixture leaves the source out: the
 //! `vol` transfer of the network behind `in` is the transfer the source drives.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::host::HostRun;
@@ -69,7 +69,7 @@ fn compare(reference: &Reference, backend: Backend) {
 #[test]
 fn pz_lowpass() {
     let reference = Ngspice::from_environment().run("pz_lowpass");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare(&reference, backend);
     }
 }
@@ -80,7 +80,7 @@ fn pz_lowpass_through_a_session() {
     // against ngspice's, root for root
     let reference = Ngspice::from_environment().run("pz_lowpass");
     let Reference::Golden(golden) = &reference else { return };
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = HostRun::new("pz_lowpass", "pz", backend)
             .keys(|keys| {
                 keys.input = Some("v1".into());

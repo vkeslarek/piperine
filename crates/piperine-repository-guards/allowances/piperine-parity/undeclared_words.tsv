@@ -1,4 +1,3 @@
-crates/piperine-parity/src/backend.rs::Interp	1
 crates/piperine-parity/src/corpus.rs::expected_stdout	1
 crates/piperine-parity/src/golden.rs::an_unparsable_row_names_file_and_row	1
 crates/piperine-parity/src/golden.rs::im	1

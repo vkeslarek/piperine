@@ -3,7 +3,7 @@
 //! a name that matches nothing is `E0801`, never a solver fault.
 
 use piperine_ir::Ir;
-use piperine_solver::prelude::{FlowOutput, NodeIdentifier, NoiseAnalysisResult};
+use piperine_solver::prelude::{FlowOutput, GroundName, NodeIdentifier, NoiseAnalysisResult};
 
 use crate::failure::Failure;
 use crate::probe::Probe;
@@ -66,7 +66,7 @@ impl NoiseProbe {
 
     /// The node `path` names; `entry` is the whole request for the fault.
     fn node_of(ir: &Ir, top: &str, path: &str, entry: &str) -> Result<NodeIdentifier, Failure> {
-        if matches!(path, "gnd" | "GND" | "vss" | "VSS") {
+        if GroundName::names(path) {
             return Ok(NodeIdentifier::Gnd);
         }
         match Probe::resolve(ir, top, path)? {

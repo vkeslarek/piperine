@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
 use crate::core::bind::{bind, ArrayDecl, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
+use crate::core::ground::GroundName;
 use crate::core::result::Result;
 use piperine_digital_solver::landing::TimePointRule;
 
@@ -49,11 +50,6 @@ pub struct CircuitBuilder {
     next_anon: usize,
 }
 
-/// Names that route to the ground reference regardless of case (netlist convention).
-fn is_gnd_name(name: &str) -> bool {
-    matches!(name, "gnd" | "GND" | "vss" | "VSS")
-}
-
 impl CircuitBuilder {
     /// Create an empty builder with the given circuit title.
     pub fn new(title: impl Into<String>) -> Self {
@@ -81,9 +77,9 @@ impl CircuitBuilder {
     }
 
     /// Named analog node. Same name → same reference (idempotent lookup).
-    /// Ground-family names (`"gnd"`, `"GND"`, `"vss"`, `"VSS"`) route to ground.
+    /// The ground name (`"gnd"`, see [`GroundName`]) routes to ground.
     pub fn node(&mut self, name: &str) -> AnalogReference {
-        if is_gnd_name(name) {
+        if GroundName::names(name) {
             return self.ground();
         }
         if let Some(r) = self.nodes.get(name) {
@@ -249,7 +245,7 @@ mod tests {
         let g = b.ground();
         let n = b.node("gnd");
         assert_eq!(g, n);
-        let n2 = b.node("GND");
-        assert_eq!(g, n2);
+        let other_case = b.node("GND");
+        assert_ne!(g, other_case, "the spec knows `gnd` only: `GND` is a node of that name");
     }
 }

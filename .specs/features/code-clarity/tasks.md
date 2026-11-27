@@ -960,8 +960,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `no_type_of_the_inventory_is_defined_in_two_crates` passes under `**Run boundaries**` (the rows T51 and T52 close are allowance rows)
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-parity`
+- [x] `no_type_of_the_inventory_is_defined_in_two_crates` passes under `**Run boundaries**` (the rows T51 and T52 close are allowance rows)
+- [x] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-parity`
 
 **Tests**: integration
 **Gate**: quick

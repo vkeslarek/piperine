@@ -34,6 +34,7 @@ pub use crate::analyses::sensitivity::{
 pub use crate::analyses::sp::{SpOptions, SpPort, SpSolver};
 pub use crate::analyses::transient::{Keep, Reentry, TransientAnalysisOptions};
 pub use crate::analyses::Context;
+pub use crate::core::ground::GroundName;
 pub use piperine_analog_solver::tolerances::{Policy, Tolerances};
 pub use crate::analyses::Solver;
 pub use crate::protocol::{StepObserver, StepView};

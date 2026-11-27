@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, ToleranceContract};
 use piperine_parity::deviation::Deviation;
@@ -248,7 +248,7 @@ fn the_table_covers_every_twin() {
         .filter(|stem| stem != "devices")
         .collect();
     msl.sort();
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let Some(table) = measure(backend) else { return };
         let covered: Vec<&str> = table.keys().copied().collect();
         let expected: Vec<&str> = msl.iter().map(String::as_str).filter(|name| !OWN_TARGET.contains(name) && (backend == Backend::Rust || !COMPILED_ONLY.contains(name))).collect();

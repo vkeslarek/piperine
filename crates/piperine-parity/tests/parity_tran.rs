@@ -9,7 +9,7 @@
 //! piperine fails `E0508`. They run on the compiled backend only: the interpreter does not run
 //! `now()`.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
@@ -69,7 +69,7 @@ impl TranRun {
 /// A twin whose source reads the time: the compiled backend only (the interpreter runs the M1
 /// analog subset, which has no `now()`).
 fn compiled_backends() -> Vec<Backend> {
-    Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
 }
 
 /// The stop of the three floor twins and the print rows ngspice exports for it (a print step of
@@ -90,7 +90,7 @@ fn the_transient_step_cap_is_a_tenth_of_the_print_step() {
 #[test]
 fn tran_rc() {
     let reference = Ngspice::from_environment().run("tran_rc");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare_on("tran_rc", "out", &reference, backend);
     }
 }
@@ -98,7 +98,7 @@ fn tran_rc() {
 #[test]
 fn tran_dq() {
     let reference = Ngspice::from_environment().run("tran_dq");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare_on("tran_dq", "a", &reference, backend);
     }
 }

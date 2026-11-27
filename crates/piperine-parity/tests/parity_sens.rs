@@ -2,7 +2,7 @@
 //! `sens_divider` with respect to both resistances and the source's value agree with ngspice's
 //! `.sens v(mid)` under `SENSITIVITY`, on each selected backend.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::host::HostRun;
@@ -37,7 +37,7 @@ fn compare(reference: &Reference, backend: Backend) {
 #[test]
 fn sens_divider() {
     let reference = Ngspice::from_environment().run("sens_divider");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare(&reference, backend);
     }
 }
@@ -48,7 +48,7 @@ fn sens_divider_through_a_session() {
     // table against ngspice's `.sens`
     let reference = Ngspice::from_environment().run("sens_divider");
     let Reference::Golden(golden) = &reference else { return };
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = HostRun::new("sens_divider", "sens", backend)
             .keys(|keys| {
                 keys.wrt = WRT.iter().map(|(_, instance, param)| format!("{instance}.{param}")).collect();

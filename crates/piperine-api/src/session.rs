@@ -1041,7 +1041,7 @@ mod tests {
     use super::*;
 
     /// A session of a divider on the interpreter with a transient, its design's params all marked
-    /// structural: the elaborator marks none (generation is outside the M1 subset), so the marking
+    /// structural: the elaborator marks none (generation is outside what the interpreter runs), so the marking
     /// is written into the IR the session holds.
     fn structural_session() -> (tempfile::TempDir, Session) {
         let dir = tempfile::tempdir().expect("tmp");

@@ -11,7 +11,7 @@ use std::rc::Rc;
 
 use piperine::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_cli::{Cli, Invocation};
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::corpus::{Corpus, Twin};
 use piperine_parity::golden::{Complex, Golden};
@@ -69,7 +69,7 @@ impl Scenario {
     /// The backends that run this scenario among the selected ones.
     fn backends(&self) -> Vec<Backend> {
         let compiled_only = COMPILED_ONLY.contains(&self.name());
-        Backend::selected().into_iter().filter(|backend| !compiled_only || *backend == Backend::Rust).collect()
+        BackendSelection::selected().into_iter().filter(|backend| !compiled_only || *backend == Backend::Rust).collect()
     }
 
     /// The run on `backend`, in a build directory of its own: the table, or the failure.

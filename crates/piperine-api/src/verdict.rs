@@ -64,6 +64,13 @@ impl Verdict {
     }
 }
 
+impl Verdict {
+    /// Whether `record` is the fatal one of a run: a `sim` record whose `failed` is true.
+    pub fn is_fatal(record: &Record) -> bool {
+        record.stream == "sim" && record.holds("failed")
+    }
+}
+
 impl Default for Verdict {
     fn default() -> Self {
         Verdict::new()
@@ -76,7 +83,7 @@ impl RecordSink for Verdict {
     /// as the fatal one; every other record is dropped, so a run's memory
     /// holds the failures only.
     fn record(&mut self, record: &Record) {
-        if record.stream == "sim" && self.fatal.is_none() && record.holds("failed") {
+        if self.fatal.is_none() && Verdict::is_fatal(record) {
             self.fatal = Some(record.clone());
         }
         if record.stream != "checks" {

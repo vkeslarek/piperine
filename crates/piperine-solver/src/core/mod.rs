@@ -7,6 +7,7 @@
 pub mod bind;
 pub mod builder;
 pub mod circuit;
+pub mod ground;
 pub mod introspect;
 pub mod net;
 pub mod result;

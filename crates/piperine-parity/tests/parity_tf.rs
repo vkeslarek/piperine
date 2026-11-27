@@ -2,7 +2,7 @@
 //! input resistance of the twin `tf_divider` (`.tf v(out) v1`) agree with the values ngspice
 //! prints under `TF_RATIO`, on each selected backend, the input named by its design path.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::host::HostRun;
@@ -34,7 +34,7 @@ fn compare(reference: &Reference, backend: Backend) {
 #[test]
 fn tf_divider() {
     let reference = Ngspice::from_environment().run("tf_divider");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare(&reference, backend);
     }
 }
@@ -45,7 +45,7 @@ fn tf_divider_through_a_session() {
     // against what ngspice prints
     let reference = Ngspice::from_environment().run("tf_divider");
     let Reference::Golden(golden) = &reference else { return };
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = HostRun::new("tf_divider", "tf", backend)
             .keys(|keys| {
                 keys.input = Some("v1".into());

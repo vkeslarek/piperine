@@ -4,29 +4,29 @@
 //! runs the modules of a library it built and loaded, and the interpreter bench none. The
 //! variable's parser is pure over a value, so no test sets an environment variable.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_solver::prelude::Context;
 
 #[test]
 fn the_variable_selects_one_backend() {
-    assert_eq!(Backend::parse(Some("interp")), Ok(vec![Backend::Interp]));
-    assert_eq!(Backend::parse(Some("rust")), Ok(vec![Backend::Rust]));
-    assert_eq!(Backend::parse(None), Ok(vec![Backend::Interp, Backend::Rust]), "unset: both, the reference first");
-    assert_eq!(Backend::parse(Some("")), Ok(vec![Backend::Interp, Backend::Rust]), "empty counts as unset");
+    assert_eq!(BackendSelection::parse(Some("interp")), Ok(vec![Backend::Interp]));
+    assert_eq!(BackendSelection::parse(Some("rust")), Ok(vec![Backend::Rust]));
+    assert_eq!(BackendSelection::parse(None), Ok(vec![Backend::Interp, Backend::Rust]), "unset: both, the reference first");
+    assert_eq!(BackendSelection::parse(Some("")), Ok(vec![Backend::Interp, Backend::Rust]), "empty counts as unset");
     assert_eq!(Backend::Interp.name(), "interp");
     assert_eq!(Backend::Rust.name(), "rust");
-    assert_eq!(Backend::parse(Some(Backend::Rust.name())), Ok(vec![Backend::Rust]), "the name round-trips");
+    assert_eq!(BackendSelection::parse(Some(Backend::Rust.name())), Ok(vec![Backend::Rust]), "the name round-trips");
 }
 
 #[test]
 fn an_unknown_backend_is_refused_naming_both() {
     for value in ["cranelift", "Rust", "interp,rust", " rust"] {
-        let message = Backend::parse(Some(value)).expect_err("an unknown backend is refused");
+        let message = BackendSelection::parse(Some(value)).expect_err("an unknown backend is refused");
         assert!(message.contains("`interp`") && message.contains("`rust`"), "{value}: {message}");
         assert!(message.contains(value), "the value is named: {message}");
-        assert!(message.contains(Backend::VARIABLE), "the variable is named: {message}");
+        assert!(message.contains(BackendSelection::VARIABLE), "the variable is named: {message}");
     }
 }
 

@@ -30,7 +30,6 @@ code-clarity	C22	run srcio names no test finish_and_check_are_the_writers_of_the
 code-clarity	C26	run suite names no test no_allow_in_test_code
 code-clarity	C26	run suite names no test no_test_support_is_shared_by_path
 code-clarity	C28	run suite names no test the_suite_report_has_before_and_after
-code-clarity	C3	run boundaries names no test no_type_of_the_inventory_is_defined_in_two_crates
 code-clarity	C9	run refusals names no test every_refused_form_has_a_row
 code-clarity	C9	run refusals names no test p0001_is_worded_in_one_place
 code-clarity	C9	run refusals names no test the_unswept_count_only_shrinks
