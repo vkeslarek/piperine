@@ -1191,7 +1191,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run partials | test every_device_of_the_crate_is_in_the_list ... ok
 
 **C61** - A check of another module does not count. (HYG-16, AC 3; T34)
-Proof: run partials | test every_device_of_the_crate_is_in_the_list ... ok
+Proof: run partials | test a_check_of_another_module_does_not_count ... ok
 
 **C62** - A rewind equals the checkpoint taken at the mark. (HYG-14, AC 4; T37)
 Proof: run digital | test a_rewind_equals_the_checkpoint_taken_at_the_mark ... ok

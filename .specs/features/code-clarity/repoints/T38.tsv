@@ -37,5 +37,5 @@ replace piperine-solver/protocol::protocol_real::its_devices_pass_the_partials_v
 replace piperine-solver/protocol::protocol_transient::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
 # T38: the guard that scanned this target and the shared helpers is the fixtures crate's own scan; the generic-point list of the helper devices is that crate's one list.
 replace piperine-solver/abi_devices::abi_devices::every_hand_written_device_is_in_a_partials_check piperine-device-fixtures/partials::every_device_of_the_crate_is_in_the_list
-replace piperine-solver/abi_devices::abi_devices::a_check_of_another_module_does_not_count piperine-device-fixtures/partials::every_device_of_the_crate_is_in_the_list
+replace piperine-solver/abi_devices::abi_devices::a_check_of_another_module_does_not_count piperine-device-fixtures/partials::a_check_of_another_module_does_not_count
 replace piperine-solver/abi_devices::abi_devices::every_helper_device_passes_at_generic_points piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier

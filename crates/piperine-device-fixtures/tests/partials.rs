@@ -7,11 +7,14 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use piperine_abi::raw::Module;
+use piperine_abi::device::Device;
+use piperine_abi::raw::{Module, Shape};
+use piperine_device_fixtures::analog;
 use piperine_device_fixtures::analog::FixtureModules;
 use piperine_device_fixtures::analyses;
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::digital;
+use piperine_device_fixtures::examples;
 use piperine_device_fixtures::mixed;
 use piperine_device_fixtures::partials::{Fixture, PartialsCheck};
 use piperine_device_fixtures::solver_devices;
@@ -29,17 +32,31 @@ enum Check {
     Exempt(&'static str),
 }
 
-/// One device of the crate: its label (`module::Type`), its module and how its partials are checked.
+/// One device of the crate: its label (`module::Type`), its module and how its partials are checked. The
+/// label and the module are built from one type, so a row cannot point at another device's module.
 struct ListedDevice {
-    /// `module::Type`, the path of the device inside the crate.
-    label: &'static str,
+    /// `module::Type`, the path of the device inside the crate, taken from the type itself.
+    label: String,
     /// The module the device builds.
     module: &'static Module,
     /// How the partials of the device are checked.
     check: Check,
 }
 
-/// The sources of the crate, read to find every `impl Device`.
+impl ListedDevice {
+    /// The row of the device `Type`: its label is the type's path, and `module` must be the module built
+    /// from `Type`'s own prototype, or this panics.
+    fn of<Type: Device>(module: &'static Module, check: Check) -> ListedDevice {
+        let path = std::any::type_name::<Type>();
+        let label = path.split_once("::").map_or(path, |(_, inside)| inside).to_string();
+        let own = Type::prototype() as *const Shape<'static>;
+        assert!(std::ptr::eq(module.prototype_ptr(), own), "the row of {label} holds the module of another device");
+        ListedDevice { label, module, check }
+    }
+}
+
+/// The sources of the crate, read to find every `impl Device`. The scan reaches only devices written as
+/// `impl Device`: `BadLimit` and `Rogue` build raw modules on purpose and are checked by their own tests.
 struct DeviceScan;
 
 impl DeviceScan {
@@ -81,338 +98,338 @@ impl EveryDevice {
     /// The devices of `analog`.
     fn analog(modules: &FixtureModules) -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "analog::AcVoltageSource", module: modules.ac_voltage_source, check: Check::Generic },
-            ListedDevice { label: "analog::CapWatch", module: modules.cap_watch_device, check: Check::Generic },
-            ListedDevice { label: "analog::ChargeDiode", module: modules.charge_diode, check: Check::Exempt("its exponential overflows at the generic points; its tests set their own") },
-            ListedDevice { label: "analog::Clamp", module: modules.clamp, check: Check::Exempt("a limit it owns: the partials against the limit input are meaningful only at the held iterate its tests set") },
-            ListedDevice { label: "analog::CorrectionOwner", module: modules.owner, check: Check::Exempt("a limit it owns: the partials against the limit input are meaningful only at the held iterate its tests set") },
-            ListedDevice { label: "analog::CountedResistor", module: modules.counted, check: Check::Generic },
-            ListedDevice { label: "analog::Cubic", module: modules.cubic, check: Check::Generic },
-            ListedDevice { label: "analog::CurrentSource", module: modules.source, check: Check::Generic },
-            ListedDevice { label: "analog::DelayLine", module: modules.delay_line, check: Check::Generic },
-            ListedDevice { label: "analog::FixedTemperatureNoisyResistor", module: modules.noisy, check: Check::Generic },
-            ListedDevice { label: "analog::Flicker", module: modules.flicker, check: Check::Generic },
-            ListedDevice { label: "analog::LimitReader", module: modules.reader, check: Check::Generic },
-            ListedDevice { label: "analog::ModeFaulty", module: modules.faulty, check: Check::Generic },
-            ListedDevice { label: "analog::PlainDiode", module: modules.plain_diode, check: Check::Generic },
-            ListedDevice { label: "analog::RecordingConductance", module: modules.probe, check: Check::Generic },
-            ListedDevice { label: "analog::SampleHold", module: modules.sample_hold, check: Check::Generic },
-            ListedDevice { label: "analog::Split", module: modules.split, check: Check::Generic },
-            ListedDevice { label: "analog::ThresholdTracer", module: modules.tracer, check: Check::Generic },
-            ListedDevice { label: "analog::TightCapacitor", module: modules.tight_capacitor, check: Check::Generic },
-            ListedDevice { label: "analog::Tracker", module: modules.tracker, check: Check::Generic },
-            ListedDevice { label: "analog::Trio", module: modules.trio, check: Check::Generic },
+            ListedDevice::of::<analog::AcVoltageSource>(modules.ac_voltage_source, Check::Generic),
+            ListedDevice::of::<analog::CapWatch>(modules.cap_watch_device, Check::Generic),
+            ListedDevice::of::<analog::ChargeDiode>(modules.charge_diode, Check::Exempt("its exponential overflows at the generic points; its tests set their own")),
+            ListedDevice::of::<analog::Clamp>(modules.clamp, Check::Exempt("a limit it owns: the partials against the limit input are meaningful only at the held iterate its tests set")),
+            ListedDevice::of::<analog::CorrectionOwner>(modules.owner, Check::Exempt("a limit it owns: the partials against the limit input are meaningful only at the held iterate its tests set")),
+            ListedDevice::of::<analog::CountedResistor>(modules.counted, Check::Generic),
+            ListedDevice::of::<analog::Cubic>(modules.cubic, Check::Generic),
+            ListedDevice::of::<analog::CurrentSource>(modules.source, Check::Generic),
+            ListedDevice::of::<analog::DelayLine>(modules.delay_line, Check::Generic),
+            ListedDevice::of::<analog::FixedTemperatureNoisyResistor>(modules.noisy, Check::Generic),
+            ListedDevice::of::<analog::Flicker>(modules.flicker, Check::Generic),
+            ListedDevice::of::<analog::LimitReader>(modules.reader, Check::Generic),
+            ListedDevice::of::<analog::ModeFaulty>(modules.faulty, Check::Generic),
+            ListedDevice::of::<analog::PlainDiode>(modules.plain_diode, Check::Generic),
+            ListedDevice::of::<analog::RecordingConductance>(modules.probe, Check::Generic),
+            ListedDevice::of::<analog::SampleHold>(modules.sample_hold, Check::Generic),
+            ListedDevice::of::<analog::Split>(modules.split, Check::Generic),
+            ListedDevice::of::<analog::ThresholdTracer>(modules.tracer, Check::Generic),
+            ListedDevice::of::<analog::TightCapacitor>(modules.tight_capacitor, Check::Generic),
+            ListedDevice::of::<analog::Tracker>(modules.tracker, Check::Generic),
+            ListedDevice::of::<analog::Trio>(modules.trio, Check::Generic),
         ]
     }
 
     /// The devices of `analyses`.
     fn analyses() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "analyses::Bias", module: analyses::Bias::module(), check: Check::Generic },
-            ListedDevice { label: "analyses::Quadratic", module: analyses::Quadratic::module(), check: Check::Generic },
-            ListedDevice { label: "analyses::Wire", module: analyses::Wire::module(), check: Check::Generic },
+            ListedDevice::of::<analyses::Bias>(analyses::Bias::module(), Check::Generic),
+            ListedDevice::of::<analyses::Quadratic>(analyses::Quadratic::module(), Check::Generic),
+            ListedDevice::of::<analyses::Wire>(analyses::Wire::module(), Check::Generic),
         ]
     }
 
     /// The devices of `circuit`.
     fn circuit() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "circuit::AcCurrentSource", module: circuit::AcCurrentSource::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::Capacitor", module: circuit::Capacitor::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::Diode", module: circuit::Diode::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::Inductor", module: circuit::Inductor::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::NoisePair", module: circuit::NoisePair::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::NoisyResistor", module: circuit::NoisyResistor::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::OptionalResistor", module: circuit::OptionalResistor::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::RampSource", module: circuit::RampSource::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::Resistor", module: circuit::Resistor::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::SineSource", module: circuit::SineSource::module(), check: Check::Generic },
-            ListedDevice { label: "circuit::VoltageSource", module: circuit::VoltageSource::module(), check: Check::Generic },
+            ListedDevice::of::<circuit::AcCurrentSource>(circuit::AcCurrentSource::module(), Check::Generic),
+            ListedDevice::of::<circuit::Capacitor>(circuit::Capacitor::module(), Check::Generic),
+            ListedDevice::of::<circuit::Diode>(circuit::Diode::module(), Check::Generic),
+            ListedDevice::of::<circuit::Inductor>(circuit::Inductor::module(), Check::Generic),
+            ListedDevice::of::<circuit::NoisePair>(circuit::NoisePair::module(), Check::Generic),
+            ListedDevice::of::<circuit::NoisyResistor>(circuit::NoisyResistor::module(), Check::Generic),
+            ListedDevice::of::<circuit::OptionalResistor>(circuit::OptionalResistor::module(), Check::Generic),
+            ListedDevice::of::<circuit::RampSource>(circuit::RampSource::module(), Check::Generic),
+            ListedDevice::of::<circuit::Resistor>(circuit::Resistor::module(), Check::Generic),
+            ListedDevice::of::<circuit::SineSource>(circuit::SineSource::module(), Check::Generic),
+            ListedDevice::of::<circuit::VoltageSource>(circuit::VoltageSource::module(), Check::Generic),
         ]
     }
 
     /// The devices of `digital`.
     fn digital() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "digital::And2", module: digital::And2::module(), check: Check::Generic },
-            ListedDevice { label: "digital::BitFaulty", module: digital::BitFaulty::module(), check: Check::Exempt("faults on purpose") },
-            ListedDevice { label: "digital::CheckedParameter", module: digital::CheckedParameter::module(), check: Check::Generic },
-            ListedDevice { label: "digital::ClockWatch", module: digital::ClockWatch::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Counter", module: digital::Counter::module(), check: Check::Generic },
-            ListedDevice { label: "digital::DataFlipFlop", module: digital::DataFlipFlop::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Inverter", module: digital::Inverter::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Lagged", module: digital::Lagged::module(), check: Check::Generic },
-            ListedDevice { label: "digital::LaterDelayed", module: digital::LaterDelayed::module(), check: Check::Generic },
-            ListedDevice { label: "digital::MultiRecorder", module: digital::MultiRecorder::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Odd", module: digital::Odd::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Or2", module: digital::Or2::module(), check: Check::Generic },
-            ListedDevice { label: "digital::PulseGenerator", module: digital::PulseGenerator::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Rearm", module: digital::Rearm::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Resolver", module: digital::Resolver::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Sampler", module: digital::Sampler::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Setter", module: digital::Setter::module(), check: Check::Generic },
-            ListedDevice { label: "digital::SettleEvent", module: digital::SettleEvent::module(), check: Check::Generic },
-            ListedDevice { label: "digital::SettleRecorder", module: digital::SettleRecorder::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Settler", module: digital::Settler::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Stub", module: digital::Stub::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Successor", module: digital::Successor::module(), check: Check::Generic },
-            ListedDevice { label: "digital::Timer", module: digital::Timer::module(), check: Check::Generic },
+            ListedDevice::of::<digital::And2>(digital::And2::module(), Check::Generic),
+            ListedDevice::of::<digital::BitFaulty>(digital::BitFaulty::module(), Check::Exempt("faults on purpose")),
+            ListedDevice::of::<digital::CheckedParameter>(digital::CheckedParameter::module(), Check::Generic),
+            ListedDevice::of::<digital::ClockWatch>(digital::ClockWatch::module(), Check::Generic),
+            ListedDevice::of::<digital::Counter>(digital::Counter::module(), Check::Generic),
+            ListedDevice::of::<digital::DataFlipFlop>(digital::DataFlipFlop::module(), Check::Generic),
+            ListedDevice::of::<digital::Inverter>(digital::Inverter::module(), Check::Generic),
+            ListedDevice::of::<digital::Lagged>(digital::Lagged::module(), Check::Generic),
+            ListedDevice::of::<digital::LaterDelayed>(digital::LaterDelayed::module(), Check::Generic),
+            ListedDevice::of::<digital::MultiRecorder>(digital::MultiRecorder::module(), Check::Generic),
+            ListedDevice::of::<digital::Odd>(digital::Odd::module(), Check::Generic),
+            ListedDevice::of::<digital::Or2>(digital::Or2::module(), Check::Generic),
+            ListedDevice::of::<digital::PulseGenerator>(digital::PulseGenerator::module(), Check::Generic),
+            ListedDevice::of::<digital::Rearm>(digital::Rearm::module(), Check::Generic),
+            ListedDevice::of::<digital::Resolver>(digital::Resolver::module(), Check::Generic),
+            ListedDevice::of::<digital::Sampler>(digital::Sampler::module(), Check::Generic),
+            ListedDevice::of::<digital::Setter>(digital::Setter::module(), Check::Generic),
+            ListedDevice::of::<digital::SettleEvent>(digital::SettleEvent::module(), Check::Generic),
+            ListedDevice::of::<digital::SettleRecorder>(digital::SettleRecorder::module(), Check::Generic),
+            ListedDevice::of::<digital::Settler>(digital::Settler::module(), Check::Generic),
+            ListedDevice::of::<digital::Stub>(digital::Stub::module(), Check::Generic),
+            ListedDevice::of::<digital::Successor>(digital::Successor::module(), Check::Generic),
+            ListedDevice::of::<digital::Timer>(digital::Timer::module(), Check::Generic),
         ]
     }
 
     /// The devices of `examples`.
     fn examples(modules: &FixtureModules) -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "examples::DigitalToAnalog", module: modules.digital_to_analog, check: Check::Generic },
-            ListedDevice { label: "examples::LimitingDiode", module: modules.diode, check: Check::Exempt("its exponential overflows at the generic points; its tests set their own") },
+            ListedDevice::of::<examples::DigitalToAnalog>(modules.digital_to_analog, Check::Generic),
+            ListedDevice::of::<examples::LimitingDiode>(modules.diode, Check::Exempt("its exponential overflows at the generic points; its tests set their own")),
         ]
     }
 
     /// The devices of `mixed`.
     fn mixed() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "mixed::BitDigitalToAnalog", module: mixed::BitDigitalToAnalog::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::Capped", module: mixed::Capped::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::ClockSource", module: mixed::ClockSource::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::Comparator", module: mixed::Comparator::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::ConductanceTracer", module: mixed::ConductanceTracer::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::Delay", module: mixed::Delay::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::Finisher", module: mixed::Finisher::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::FlakyConductance", module: mixed::FlakyConductance::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::Globals", module: mixed::Globals::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::SettleCount", module: mixed::SettleCount::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::SettleTime", module: mixed::SettleTime::module(), check: Check::Generic },
-            ListedDevice { label: "mixed::ToggleFlipFlop", module: mixed::ToggleFlipFlop::module(), check: Check::Generic },
+            ListedDevice::of::<mixed::BitDigitalToAnalog>(mixed::BitDigitalToAnalog::module(), Check::Generic),
+            ListedDevice::of::<mixed::Capped>(mixed::Capped::module(), Check::Generic),
+            ListedDevice::of::<mixed::ClockSource>(mixed::ClockSource::module(), Check::Generic),
+            ListedDevice::of::<mixed::Comparator>(mixed::Comparator::module(), Check::Generic),
+            ListedDevice::of::<mixed::ConductanceTracer>(mixed::ConductanceTracer::module(), Check::Generic),
+            ListedDevice::of::<mixed::Delay>(mixed::Delay::module(), Check::Generic),
+            ListedDevice::of::<mixed::Finisher>(mixed::Finisher::module(), Check::Generic),
+            ListedDevice::of::<mixed::FlakyConductance>(mixed::FlakyConductance::module(), Check::Generic),
+            ListedDevice::of::<mixed::Globals>(mixed::Globals::module(), Check::Generic),
+            ListedDevice::of::<mixed::SettleCount>(mixed::SettleCount::module(), Check::Generic),
+            ListedDevice::of::<mixed::SettleTime>(mixed::SettleTime::module(), Check::Generic),
+            ListedDevice::of::<mixed::ToggleFlipFlop>(mixed::ToggleFlipFlop::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::abi_ac`.
     fn solver_devices_abi_ac() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::abi_ac::Spy", module: solver_devices::abi_ac::Spy::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::abi_ac::Spy>(solver_devices::abi_ac::Spy::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::abi_dc`.
     fn solver_devices_abi_dc() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::abi_dc::GminProbe", module: solver_devices::abi_dc::GminProbe::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::abi_dc::GminProbe>(solver_devices::abi_dc::GminProbe::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::abi_noise`.
     fn solver_devices_abi_noise() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::abi_noise::NoisyR", module: solver_devices::abi_noise::NoisyR::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::abi_noise::NoisyR>(solver_devices::abi_noise::NoisyR::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::abi_sensitivity`.
     fn solver_devices_abi_sensitivity() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::abi_sensitivity::Gd", module: solver_devices::abi_sensitivity::Gd::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::abi_sensitivity::Gd>(solver_devices::abi_sensitivity::Gd::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::abi_tran`.
     fn solver_devices_abi_tran() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::abi_tran::ChargedC", module: solver_devices::abi_tran::ChargedC::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::abi_tran::FlakyC", module: solver_devices::abi_tran::FlakyC::module(), check: Check::Holding(&[(0, 3, 0.0)]) },
+            ListedDevice::of::<solver_devices::abi_tran::ChargedC>(solver_devices::abi_tran::ChargedC::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::abi_tran::FlakyC>(solver_devices::abi_tran::FlakyC::module(), Check::Holding(&[(0, 3, 0.0)])),
         ]
     }
 
     /// The devices of `solver_devices::array_windows`.
     fn solver_devices_array_windows() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::array_windows::Poker", module: solver_devices::array_windows::Poker::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::array_windows::Summer", module: solver_devices::array_windows::Summer::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::array_windows::Poker>(solver_devices::array_windows::Poker::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::array_windows::Summer>(solver_devices::array_windows::Summer::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::bind`.
     fn solver_devices_bind() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::bind::BoundValuesProbe", module: solver_devices::bind::BoundValuesProbe::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::bind::CreateCounter", module: solver_devices::bind::CreateCounter::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::bind::BoundValuesProbe>(solver_devices::bind::BoundValuesProbe::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::bind::CreateCounter>(solver_devices::bind::CreateCounter::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::checkpoint_restore`.
     fn solver_devices_checkpoint_restore() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::checkpoint_restore::AgedDiode", module: solver_devices::checkpoint_restore::AgedDiode::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::checkpoint_restore::AgedDiode>(solver_devices::checkpoint_restore::AgedDiode::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::crossing_rules`.
     fn solver_devices_crossing_rules() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::crossing_rules::Riser", module: solver_devices::crossing_rules::Riser::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::crossing_rules::ToleranceWatch", module: solver_devices::crossing_rules::ToleranceWatch::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::crossing_rules::Riser>(solver_devices::crossing_rules::Riser::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::crossing_rules::ToleranceWatch>(solver_devices::crossing_rules::ToleranceWatch::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::digital_settle_subscriber`.
     fn solver_devices_digital_settle_subscriber() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::digital_settle_subscriber::InitialLowSetter", module: solver_devices::digital_settle_subscriber::InitialLowSetter::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::digital_settle_subscriber::LagInverter", module: solver_devices::digital_settle_subscriber::LagInverter::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::digital_settle_subscriber::Subscriber", module: solver_devices::digital_settle_subscriber::Subscriber::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::digital_settle_subscriber::InitialLowSetter>(solver_devices::digital_settle_subscriber::InitialLowSetter::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::digital_settle_subscriber::LagInverter>(solver_devices::digital_settle_subscriber::LagInverter::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::digital_settle_subscriber::Subscriber>(solver_devices::digital_settle_subscriber::Subscriber::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::environment`.
     fn solver_devices_environment() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::environment::EnvProbe", module: solver_devices::environment::EnvProbe::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::environment::FlagProbe", module: solver_devices::environment::FlagProbe::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::environment::GminLoad", module: solver_devices::environment::GminLoad::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::environment::EnvProbe>(solver_devices::environment::EnvProbe::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::environment::FlagProbe>(solver_devices::environment::FlagProbe::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::environment::GminLoad>(solver_devices::environment::GminLoad::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::failure_rules`.
     fn solver_devices_failure_rules() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::failure_rules::JumpOscillator", module: solver_devices::failure_rules::JumpOscillator::module(), check: Check::Holding(&[(0, 3, 0.0)]) },
-            ListedDevice { label: "solver_devices::failure_rules::LateOscillator", module: solver_devices::failure_rules::LateOscillator::module(), check: Check::Holding(&[(0, 2, 0.0)]) },
-            ListedDevice { label: "solver_devices::failure_rules::LateSource", module: solver_devices::failure_rules::LateSource::module(), check: Check::Holding(&[(0, 3, 0.0)]) },
-            ListedDevice { label: "solver_devices::failure_rules::NanSource", module: solver_devices::failure_rules::NanSource::module(), check: Check::Fixtures(&[(0, Fixture::NonFinite)]) },
-            ListedDevice { label: "solver_devices::failure_rules::OpenAboveDc", module: solver_devices::failure_rules::OpenAboveDc::module(), check: Check::Holding(&[(0, 2, 0.0)]) },
-            ListedDevice { label: "solver_devices::failure_rules::Oscillator", module: solver_devices::failure_rules::Oscillator::module(), check: Check::Fixtures(&[(0, Fixture::Impure)]) },
+            ListedDevice::of::<solver_devices::failure_rules::JumpOscillator>(solver_devices::failure_rules::JumpOscillator::module(), Check::Holding(&[(0, 3, 0.0)])),
+            ListedDevice::of::<solver_devices::failure_rules::LateOscillator>(solver_devices::failure_rules::LateOscillator::module(), Check::Holding(&[(0, 2, 0.0)])),
+            ListedDevice::of::<solver_devices::failure_rules::LateSource>(solver_devices::failure_rules::LateSource::module(), Check::Holding(&[(0, 3, 0.0)])),
+            ListedDevice::of::<solver_devices::failure_rules::NanSource>(solver_devices::failure_rules::NanSource::module(), Check::Fixtures(&[(0, Fixture::NonFinite)])),
+            ListedDevice::of::<solver_devices::failure_rules::OpenAboveDc>(solver_devices::failure_rules::OpenAboveDc::module(), Check::Holding(&[(0, 2, 0.0)])),
+            ListedDevice::of::<solver_devices::failure_rules::Oscillator>(solver_devices::failure_rules::Oscillator::module(), Check::Fixtures(&[(0, Fixture::Impure)])),
         ]
     }
 
     /// The devices of `solver_devices::host_set`.
     fn solver_devices_host_set() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::host_set::CheckedR", module: solver_devices::host_set::CheckedR::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::host_set::Collapsible", module: solver_devices::host_set::Collapsible::module(), check: Check::Holding(&[(0, 0, 1.0e3)]) },
+            ListedDevice::of::<solver_devices::host_set::CheckedR>(solver_devices::host_set::CheckedR::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::host_set::Collapsible>(solver_devices::host_set::Collapsible::module(), Check::Holding(&[(0, 0, 1.0e3)])),
         ]
     }
 
     /// The devices of `solver_devices::jump_retake`.
     fn solver_devices_jump_retake() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::jump_retake::Gate", module: solver_devices::jump_retake::Gate::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::jump_retake::SettleMirror", module: solver_devices::jump_retake::SettleMirror::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::jump_retake::SettleSetter", module: solver_devices::jump_retake::SettleSetter::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::jump_retake::Gate>(solver_devices::jump_retake::Gate::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::jump_retake::SettleMirror>(solver_devices::jump_retake::SettleMirror::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::jump_retake::SettleSetter>(solver_devices::jump_retake::SettleSetter::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::lifecycle`.
     fn solver_devices_lifecycle() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::lifecycle::Counted", module: solver_devices::lifecycle::Counted::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::lifecycle::Failing", module: solver_devices::lifecycle::Failing::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::lifecycle::Counted>(solver_devices::lifecycle::Counted::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::lifecycle::Failing>(solver_devices::lifecycle::Failing::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::limiting_report`.
     fn solver_devices_limiting_report() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::limiting_report::AlwaysLimited", module: solver_devices::limiting_report::AlwaysLimited::module(), check: Check::Fixtures(&[(0, Fixture::AlwaysLimited)]) },
-            ListedDevice { label: "solver_devices::limiting_report::LimitedDiode", module: solver_devices::limiting_report::LimitedDiode::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::limiting_report::AlwaysLimited>(solver_devices::limiting_report::AlwaysLimited::module(), Check::Fixtures(&[(0, Fixture::AlwaysLimited)])),
+            ListedDevice::of::<solver_devices::limiting_report::LimitedDiode>(solver_devices::limiting_report::LimitedDiode::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::live_params`.
     fn solver_devices_live_params() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::live_params::Mute", module: solver_devices::live_params::Mute::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::live_params::Mute>(solver_devices::live_params::Mute::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::noise_report`.
     fn solver_devices_noise_report() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::noise_report::TwinFlicker", module: solver_devices::noise_report::TwinFlicker::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::noise_report::TwinFlicker>(solver_devices::noise_report::TwinFlicker::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::parity_baseline`.
     fn solver_devices_parity_baseline() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::parity_baseline::DigitalSource", module: solver_devices::parity_baseline::DigitalSource::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::parity_baseline::FixedDiode", module: solver_devices::parity_baseline::FixedDiode::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::parity_baseline::GatedISink", module: solver_devices::parity_baseline::GatedISink::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::parity_baseline::SineVsrc", module: solver_devices::parity_baseline::SineVsrc::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::parity_baseline::ThresholdComparator", module: solver_devices::parity_baseline::ThresholdComparator::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::parity_baseline::DigitalSource>(solver_devices::parity_baseline::DigitalSource::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::parity_baseline::FixedDiode>(solver_devices::parity_baseline::FixedDiode::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::parity_baseline::GatedISink>(solver_devices::parity_baseline::GatedISink::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::parity_baseline::SineVsrc>(solver_devices::parity_baseline::SineVsrc::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::parity_baseline::ThresholdComparator>(solver_devices::parity_baseline::ThresholdComparator::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::probe_selection`.
     fn solver_devices_probe_selection() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::probe_selection::StateAndVariableProbe", module: solver_devices::probe_selection::StateAndVariableProbe::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::probe_selection::StateAndVariableProbe>(solver_devices::probe_selection::StateAndVariableProbe::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::protocol_crossings`.
     fn solver_devices_protocol_crossings() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::protocol_crossings::Saturating", module: solver_devices::protocol_crossings::Saturating::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::protocol_crossings::ToleranceComparator", module: solver_devices::protocol_crossings::ToleranceComparator::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::protocol_crossings::Saturating>(solver_devices::protocol_crossings::Saturating::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::protocol_crossings::ToleranceComparator>(solver_devices::protocol_crossings::ToleranceComparator::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::protocol_real`.
     fn solver_devices_protocol_real() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::protocol_real::FlakyG", module: solver_devices::protocol_real::FlakyG::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::protocol_real::FlakyG>(solver_devices::protocol_real::FlakyG::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::protocol_transient`.
     fn solver_devices_protocol_transient() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::protocol_transient::Flipper", module: solver_devices::protocol_transient::Flipper::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::protocol_transient::Flipper>(solver_devices::protocol_transient::Flipper::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::pz_device_fault`.
     fn solver_devices_pz_device_fault() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::pz_device_fault::AcFault", module: solver_devices::pz_device_fault::AcFault::module(), check: Check::Holding(&[(0, 1, 0.0)]) },
+            ListedDevice::of::<solver_devices::pz_device_fault::AcFault>(solver_devices::pz_device_fault::AcFault::module(), Check::Holding(&[(0, 1, 0.0)])),
         ]
     }
 
     /// The devices of `solver_devices::sensitivity_fallback`.
     fn solver_devices_sensitivity_fallback() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::sensitivity_fallback::Gan", module: solver_devices::sensitivity_fallback::Gan::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::sensitivity_fallback::Gfb", module: solver_devices::sensitivity_fallback::Gfb::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::sensitivity_fallback::Gan>(solver_devices::sensitivity_fallback::Gan::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::sensitivity_fallback::Gfb>(solver_devices::sensitivity_fallback::Gfb::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::settled_value`.
     fn solver_devices_settled_value() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::settled_value::SettledWatch", module: solver_devices::settled_value::SettledWatch::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::settled_value::TwoWrites", module: solver_devices::settled_value::TwoWrites::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::settled_value::SettledWatch>(solver_devices::settled_value::SettledWatch::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::settled_value::TwoWrites>(solver_devices::settled_value::TwoWrites::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::solver_entry`.
     fn solver_devices_solver_entry() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::solver_entry::BadElement", module: solver_devices::solver_entry::BadElement::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::solver_entry::BadElement>(solver_devices::solver_entry::BadElement::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::temperature`.
     fn solver_devices_temperature() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::temperature::Thermo", module: solver_devices::temperature::Thermo::module(), check: Check::Generic },
+            ListedDevice::of::<solver_devices::temperature::Thermo>(solver_devices::temperature::Thermo::module(), Check::Generic),
         ]
     }
 
     /// The devices of `solver_devices::truncation`.
     fn solver_devices_truncation() -> Vec<ListedDevice> {
         vec![
-            ListedDevice { label: "solver_devices::truncation::CubicCapacitor", module: solver_devices::truncation::CubicCapacitor::module(), check: Check::Generic },
-            ListedDevice { label: "solver_devices::truncation::FaultOnce", module: solver_devices::truncation::FaultOnce::module(), check: Check::Holding(&[(0, 2, 0.0)]) },
-            ListedDevice { label: "solver_devices::truncation::StepSource", module: solver_devices::truncation::StepSource::module(), check: Check::Holding(&[(0, 5, 0.0)]) },
+            ListedDevice::of::<solver_devices::truncation::CubicCapacitor>(solver_devices::truncation::CubicCapacitor::module(), Check::Generic),
+            ListedDevice::of::<solver_devices::truncation::FaultOnce>(solver_devices::truncation::FaultOnce::module(), Check::Holding(&[(0, 2, 0.0)])),
+            ListedDevice::of::<solver_devices::truncation::StepSource>(solver_devices::truncation::StepSource::module(), Check::Holding(&[(0, 5, 0.0)])),
         ]
     }
 
@@ -464,9 +481,9 @@ fn its_devices_pass_the_partials_verifier() {
     let mut checked = 0;
     for entry in EveryDevice::all() {
         match entry.check {
-            Check::Generic => PartialsCheck::verify_every_function(entry.label, entry.module),
-            Check::Holding(held) => PartialsCheck::verify_every_function_with(entry.label, entry.module, held),
-            Check::Fixtures(fixtures) => PartialsCheck::verify_every_function_except(entry.label, entry.module, fixtures),
+            Check::Generic => PartialsCheck::verify_every_function(&entry.label, entry.module),
+            Check::Holding(held) => PartialsCheck::verify_every_function_with(&entry.label, entry.module, held),
+            Check::Fixtures(fixtures) => PartialsCheck::verify_every_function_except(&entry.label, entry.module, fixtures),
             Check::Exempt(reason) => {
                 assert!(!reason.is_empty(), "{}: an exemption names its reason", entry.label);
                 continue;
@@ -479,11 +496,26 @@ fn its_devices_pass_the_partials_verifier() {
 
 #[test]
 fn every_device_of_the_crate_is_in_the_list() {
-    let listed: BTreeSet<String> = EveryDevice::all().iter().map(|entry| entry.label.to_string()).collect();
+    let listed: BTreeSet<String> = EveryDevice::all().iter().map(|entry| entry.label.clone()).collect();
     let declared = DeviceScan::labels();
     let missing: Vec<&String> = declared.difference(&listed).collect();
     let stale: Vec<&String> = listed.difference(&declared).collect();
     assert!(missing.is_empty(), "devices no row of EveryDevice names: {missing:?}");
     assert!(stale.is_empty(), "rows whose device is gone: {stale:?}");
     assert!(declared.len() > 100, "the scan found the crate's devices ({})", declared.len());
+}
+
+/// HYG-16 AC 3: a check counts for the device its module builds, not for its label. A row whose module
+/// is another device's cannot be written: the row panics when it is built.
+#[test]
+#[should_panic(expected = "holds the module of another device")]
+fn a_check_of_another_module_does_not_count() {
+    ListedDevice::of::<circuit::Resistor>(circuit::Capacitor::module(), Check::Generic);
+}
+
+/// HYG-16 AC 3: the row of a device built from its own module carries the device's own path as its label.
+#[test]
+fn a_row_takes_its_label_from_its_type() {
+    let row = ListedDevice::of::<circuit::Resistor>(circuit::Resistor::module(), Check::Generic);
+    assert_eq!(row.label, "circuit::Resistor");
 }
