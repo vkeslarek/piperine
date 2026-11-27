@@ -499,9 +499,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No test is named for a retired crate, PHDL or the Verilog-AMS front end
-- [ ] `every_retired_check_is_recorded` passes under `**Run ledger**`
-- [ ] Gate check passes: Ledger
+- [x] No test is named for a retired crate, PHDL or the Verilog-AMS front end
+- [x] `every_retired_check_is_recorded` passes under `**Run ledger**`
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -522,9 +522,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `crates/piperine-cli/tests/docs.rs` is gone; the kept tests pass under `**Run suite**` with their names
-- [ ] Each removed test has a `retired.tsv` row naming the feature and check that cited it
-- [ ] Gate check passes: Ledger
+- [x] `crates/piperine-cli/tests/docs.rs` is gone; the kept tests pass under `**Run suite**` with their names
+- [x] Each removed test has a `retired.tsv` row naming the feature and check that cited it
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -545,9 +545,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `spec_text.rs` is gone; `spec_structure` opens with a `//!` header and its tests keep their names
-- [ ] No remaining test asserts `contains(..)` on a sentence of the spec (reviewed in the commit body: the list of kept tests and why each is structural)
-- [ ] Gate check passes: Ledger
+- [x] `spec_text.rs` is gone; `spec_structure` opens with a `//!` header and its tests keep their names
+- [x] No remaining test asserts `contains(..)` on a sentence of the spec (reviewed in the commit body: the list of kept tests and why each is structural)
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -568,9 +568,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every uncited test of the three crates has a verdict
-- [ ] No removed test was the only assertion of its rule (the commit body lists each removal with its survivor)
-- [ ] Gate check passes: Ledger
+- [x] Every uncited test of the three crates has a verdict
+- [x] No removed test was the only assertion of its rule (the commit body lists each removal with its survivor)
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
