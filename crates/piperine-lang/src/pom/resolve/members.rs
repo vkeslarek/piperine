@@ -11,7 +11,7 @@ use super::super::builtin::builtin_method;
 use super::super::decl::{DeclKind, FnParamData, GenericParamData, NatureFieldNode};
 use super::super::design::Design;
 use super::super::ids::{DeclId, ExprId, FileId, PathId, TypeId};
-use super::classify::access_table;
+use super::classify::Classifier;
 use super::super::resolution::{CallClass, DeferReason, Resolution};
 use crate::msl::Diagnostic;
 
@@ -70,7 +70,7 @@ pub(super) type InScope<'a> = &'a dyn Fn(DeclId, DeclId) -> bool;
 pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
     let reader = Reader { design, local_types: local_types(design), in_scope };
     let mut out = Members::default();
-    let access = access_table(design);
+    let access = Classifier::new(design).access_table();
     let probe_operands = reader.probe_operands();
     for i in 0..design.expr_count() {
         let expr = ExprId(i as u32);

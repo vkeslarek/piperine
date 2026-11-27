@@ -1385,9 +1385,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The file leaves the free-function allowance
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The file leaves the free-function allowance
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

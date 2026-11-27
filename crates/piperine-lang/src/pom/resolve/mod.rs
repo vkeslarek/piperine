@@ -65,7 +65,7 @@ impl<'a> Ctx<'a> {
             deps: dependency_names(design),
             links: BTreeMap::new(),
             impls: BTreeMap::new(),
-            access: classify::access_table(design),
+            access: classify::Classifier::new(design).access_table(),
             ambiguous: Cell::new(false),
         }
     }
@@ -97,7 +97,7 @@ pub(super) fn run(design: &mut Design) {
     for (file, diagnostic) in out.diagnostics {
         design.push_diagnostic(file, diagnostic);
     }
-    let classified = classify::run(design);
+    let classified = classify::Classifier::new(design).run();
     for (port, kind) in classified.port_kinds {
         design.set_port_kind(port, kind);
     }

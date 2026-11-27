@@ -393,12 +393,6 @@ crates/piperine-lang/src/pom/reflect/mod.rs::Reflect::decl	1
 crates/piperine-lang/src/pom/reflect/mod.rs::Reflect::file	1
 crates/piperine-lang/src/pom/reflect/mod.rs::Reflect::is_pub	1
 crates/piperine-lang/src/pom/resolution.rs::::DeferReason	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::call_expressions	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::is_field	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::is_fn_param	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::is_param	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::is_port	1
-crates/piperine-lang/src/pom/resolve/classify.rs::::port_kind	1
 crates/piperine-lang/src/pom/resolve/imports.rs::::Imports	1
 crates/piperine-lang/src/pom/resolve/imports.rs::::NsImports	1
 crates/piperine-lang/src/pom/resolve/imports.rs::Ctx::find_entry	1
