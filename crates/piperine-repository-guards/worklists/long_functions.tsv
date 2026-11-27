@@ -9,8 +9,6 @@ crates/piperine-api/src/probe.rs::Probe::resolve	-
 crates/piperine-api/src/request.rs::Keys::spec	-
 crates/piperine-api/src/request.rs::Keys::with	-
 crates/piperine-api/src/request.rs::Source::key	-
-crates/piperine-api/src/session.rs::Session::analysis	-
-crates/piperine-api/src/session.rs::Session::open_announced	-
 crates/piperine-digital-solver/src/dag.rs::Dag::build	-
 crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-
 crates/piperine-digital-solver/src/plan.rs::::analyze	-

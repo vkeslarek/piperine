@@ -18,14 +18,32 @@ use piperine_lang::types::Types;
 use piperine_plan::{Netlist, ParamReads};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{
-    AcSweepAnalysisOptions, AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, NoiseAnalysisOptions, ParamValue, PoleZeroOptions, PoleZeroResult, SensAnalysisOptions, Solver, TransferFunctionAnalysisOptions, PssAnalysisOptions,
+    AnalogVariable, BranchIdentifier, CircuitInstance, Context, Keep, Net, NodeIdentifier, ParamValue,
     TransientAnalysisOptions,
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
+mod frequency;
+mod operating_point;
+mod periodic;
+mod run;
+mod sensitivity;
+mod small_signal;
+mod sweep;
+mod transient;
+
+use frequency::FrequencyRunner;
+use operating_point::OperatingPointRunner;
+use periodic::PeriodicRunner;
+use run::AnalysisRun;
+use sensitivity::SensitivityRunner;
+use small_signal::SmallSignalRunner;
+use sweep::DcSweepRunner;
+use transient::TransientRunner;
+
 use crate::backend::Backend;
 use crate::failure::Failure;
-use crate::noise::{NoiseOutput, NoiseProbe, NoiseReport};
+use crate::noise::{NoiseProbe, NoiseReport};
 use crate::held::Held;
 use crate::host::{HostAction, TimedChange, TimedSet};
 use crate::metadata::Metadata;
@@ -36,10 +54,9 @@ use crate::params::{Changed, Derive, Evaluated, Params};
 use crate::plot::Plot;
 use crate::probe::Probe;
 use crate::record::{Delivery, RecordSink, Streams};
-use crate::recorder::{Recorder, Tap};
 use crate::table::Table;
 use crate::project::Project;
-use crate::request::{Analysis, Grid, Options, RunSpec};
+use crate::request::{Analysis, Options, RunSpec};
 use crate::source::NodeSources;
 use crate::statistics::TransientStatistics;
 
@@ -362,26 +379,9 @@ impl Session {
         let (ir, top) = Session::elaborate(project, spec)?;
         let probes = Session::probes_of(&ir, spec)?;
         let mut streams = Streams::of(ir.clone());
-        if matches!(spec.analysis, Analysis::Dc { .. }) && !streams.paths().is_empty() {
-            // CLI-09 AC 10: a point of a sweep has no time, and a record line is stamped
-            // `@<time>`, so the records of a sweep would be lost; refused before any compile
-            let message = format!(
-                "a `dc` run of a design with record streams is refused: a point of a DC sweep has no time to stamp its records with, so they would be lost (the streams are {}); run `op` at each value, or a `transient`",
-                streams.paths().join(", ")
-            );
-            return Err(Failure::Host { code: "P0010", message });
-        }
+        Session::refuse_swept_records(spec, &streams)?;
         streams.keep(&spec.streams)?;
-        let swept = match &spec.analysis {
-            Analysis::Dc { sweep, .. } => {
-                let path = ParamPath::resolve(&ir, ir.top().path(), sweep)?;
-                // a sweep of a key param needs one elaboration per value (GAPS: owned by
-                // sweeps-montecarlo-optimization): refused before anything compiles
-                path.refuse_structural(&ir)?;
-                Some(path)
-            }
-            _ => None,
-        };
+        let swept = Session::swept_of(&ir, spec)?;
         // every param path resolves before anything compiles: a typo costs no `rustc`
         let texts = spec.param_texts.iter().map(|(entry, text)| Ok((ParamTarget::resolve_text(&ir, ir.top().path(), entry)?, text.as_str()))).collect::<Result<Vec<_>, Failure>>()?;
         let params = spec.params.iter().map(|(entry, value)| Ok((ParamTarget::resolve(&ir, ir.top().path(), entry)?, entry, *value))).collect::<Result<Vec<_>, Failure>>()?;
@@ -394,13 +394,50 @@ impl Session {
         };
         let session_parameters = crate::parameters::SessionParameters::of(&ir, &spec.options);
         let netlist = Session::netlist_of(&ir, &spec.options, &session_parameters);
-        let (mut circuit, compiled) = match backend {
+        let (mut circuit, compiled) = Session::bind(backend, &ir, &netlist, settings, &top, compiling)?;
+        // the nodeset is the first iterate of every operating point the run takes, whichever analysis
+        // takes it: it rides in the context, which the solver hands each of them
+        context.nodeset = Session::seeds(&circuit, &nodeset)?;
+        let table = Session::initial_params(&ir, &params, &texts, compiled.as_ref(), &mut circuit)?;
+        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
+    }
+
+    /// CLI-09 AC 10: a point of a sweep has no time and a record line is stamped `@<time>`, so the
+    /// records of a `dc` run would be lost; refused before any compile.
+    fn refuse_swept_records(spec: &RunSpec, streams: &Streams) -> Result<(), Failure> {
+        if matches!(spec.analysis, Analysis::Dc { .. }) && !streams.paths().is_empty() {
+            let message = format!(
+                "a `dc` run of a design with record streams is refused: a point of a DC sweep has no time to stamp its records with, so they would be lost (the streams are {}); run `op` at each value, or a `transient`",
+                streams.paths().join(", ")
+            );
+            return Err(Failure::Host { code: "P0010", message });
+        }
+        Ok(())
+    }
+
+    /// The param a `dc` run sweeps, resolved against the design; none for any other analysis.
+    fn swept_of(ir: &Ir, spec: &RunSpec) -> Result<Option<ParamPath>, Failure> {
+        Ok(match &spec.analysis {
+            Analysis::Dc { sweep, .. } => {
+                let path = ParamPath::resolve(ir, ir.top().path(), sweep)?;
+                // a sweep of a key param needs one elaboration per value (GAPS: owned by
+                // sweeps-montecarlo-optimization): refused before anything compiles
+                path.refuse_structural(ir)?;
+                Some(path)
+            }
+            _ => None,
+        })
+    }
+
+    /// The design bound to a circuit on `backend`, with the compiled library when the backend has one.
+    fn bind(backend: Backend, ir: &Arc<Ir>, netlist: &Option<Netlist<'_>>, settings: &Settings, top: &str, compiling: &mut dyn FnMut(&str)) -> Result<(CircuitInstance, Option<Compiled>), Failure> {
+        Ok(match backend {
             Backend::Interp => {
                 let interpreter = Interpreter::new(ir.clone()).map_err(|rejected| {
                     let entries: Vec<String> = rejected.entries.iter().map(|e| format!("  {}: {}", e.item, e.what)).collect();
                     Failure::Backend(format!("the interpreter cannot run this design (use --backend rust):\n{}", entries.join("\n")))
                 })?;
-                let circuit = match &netlist {
+                let circuit = match netlist {
                     Some(netlist) => netlist.circuit(&interpreter),
                     None => interpreter.circuit(),
                 };
@@ -408,34 +445,35 @@ impl Session {
             }
             Backend::Rust => {
                 let transpiler = Transpiler::new(ir.clone()).map_err(|e| Failure::Backend(e.to_string()))?;
-                let compiled = transpiler.compile_announced(settings, &mut || compiling(&top)).map_err(|e| Failure::Backend(e.to_string()))?;
-                let circuit = match &netlist {
+                let compiled = transpiler.compile_announced(settings, &mut || compiling(top)).map_err(|e| Failure::Backend(e.to_string()))?;
+                let circuit = match netlist {
                     Some(netlist) => netlist.circuit(&compiled),
                     None => compiled.circuit(),
                 };
                 let circuit = circuit.map_err(|e| Failure::Backend(format!("the compiled design cannot bind: {e}")))?;
                 (circuit, Some(compiled))
             }
-        };
-        // the nodeset is the first iterate of every operating point the run takes, whichever analysis
-        // takes it: it rides in the context, which the solver hands each of them
-        context.nodeset = Session::seeds(&circuit, &nodeset)?;
-        // the table's params, then the flags', in the order given: the design's own check may
-        // refuse a value, and then no analysis runs
-        let mut table = Params::of(&ir);
-        for (path, _, value) in &params {
+        })
+    }
+
+    /// The table of every param with the run's values written: the params, then the flags', in the
+    /// order given. The design's own check may refuse a value, and then no analysis runs.
+    fn initial_params(ir: &Ir, params: &[(ParamTarget, &String, f64)], texts: &[(ParamTarget, &str)], compiled: Option<&Compiled>, circuit: &mut CircuitInstance) -> Result<Params, Failure> {
+        let derive = compiled.map(|c| c as &dyn Derive);
+        let mut table = Params::of(ir);
+        for (path, _, value) in params {
             match &path.leaf {
-                Some(leaf) => Session::set_leaf(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, leaf, &LeafInput::Number(*value))?,
+                Some(leaf) => Session::set_leaf(&mut table, derive, circuit, &path.param, leaf, &LeafInput::Number(*value))?,
                 None => {
                     table.refuse_unfit(&path.param.instance, &path.param.param, *value)?;
-                    Session::set_param(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &path.param, *value)?
+                    Session::set_param(&mut table, derive, circuit, &path.param, *value)?
                 }
             }
         }
-        for (target, text) in &texts {
-            Session::set_target_text(&mut table, compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, &ir, target, text)?;
+        for (target, text) in texts {
+            Session::set_target_text(&mut table, derive, circuit, ir, target, text)?;
         }
-        Ok(Session { circuit: Some(circuit), ir, compiled, top, backend, spec: spec.clone(), probes, swept, streams, plotted: None, context, transfer, noise, noise_report: None, wrt, actions: Vec::new(), timed_sets: Vec::new(), sources: NodeSources::default(), params: table, statistics: None })
+        Ok(table)
     }
 
     /// Sets `path` to `value` on `circuit` and, through `table`, every param derived from it, in
@@ -701,184 +739,27 @@ impl Session {
         }
     }
 
-    /// The request's analysis on `circuit`, every observation of the solver to `delivery`.
-    fn analysis(&mut self, circuit: CircuitInstance, mut delivery: Box<Delivery>) -> Result<Table, Failure> {
+    /// The request's analysis on `circuit`, every observation of the solver to `delivery`: the
+    /// host's changes due in it are derived first, then the runner of the analysis's family runs.
+    fn analysis(&mut self, circuit: CircuitInstance, delivery: Box<Delivery>) -> Result<Table, Failure> {
         let design = self.ir.clone();
         let derive = self.compiled.as_ref().map(|c| c as &dyn Derive);
         let changes = Session::timed_changes(&self.params, derive, &circuit, &self.timed_sets)?;
         let held = self.held_params(&circuit, &changes);
         let mut timed = std::mem::take(&mut self.actions);
         timed.extend(changes.iter().filter(|c| c.written).map(TimedChange::action));
-        match &self.spec.analysis {
-            Analysis::Op => {
-                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
-                let result = solver
-                    .dc()
-                    .and_then(|mut dc| dc.solve())
-                    .map_err(|error| Failure::from_fault("op", error, Some(0.0), &design))?;
-                let circuit = solver.circuit();
-                let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
-                let term = |instance: &str, name: &str| circuit.bound().analog.term_value(instance, name);
-                Table::operating_point(&self.probes, &result, &net, &term)
-            }
-            Analysis::Transient { stop, max_step, print_step, from } => {
-                // every printed signal finds its place in a step before the first one is taken
-                let columns = self.probes.iter().map(|probe| probe.column_with(&circuit, &held)).collect::<Result<Vec<_>, Failure>>()?;
-                let labels = self.probes.iter().map(Probe::label).collect();
-                let mut recorder = Recorder::new(columns, labels, from.unwrap_or(0.0));
-                if let Some(step) = print_step {
-                    recorder = recorder.with_grid(*step, *stop);
-                }
-                let recorder = Rc::new(RefCell::new(recorder));
-                let finished = delivery.finished.clone();
-                delivery.recorder = Some(recorder.clone());
-                let options = Session::transient_options(*stop, *max_step);
-                let options = match self.spec.options.max_steps {
-                    Some(budget) => options.with_max_steps(budget as usize),
-                    None => options,
-                };
-                let mut solver = Solver::new(circuit)
-                    .with_context(self.context.clone())
-                    .with_tran_opts(options)
-                    .with_sink(delivery)
-                    .with_step_observer(Box::new(Tap(recorder.clone())))
-                    .build();
-                let result = solver
-                    .tran()
-                    .and_then(|mut tran| {
-                        for action in &timed {
-                            match action {
-                                HostAction::Drive { net, value, at } => tran.schedule_write(*at, net.clone(), value.clone()),
-                                HostAction::Set { path, value, at } => tran.schedule_set(*at, path.instance.clone(), path.param.clone(), value.clone()),
-                            }
-                        }
-                        tran.solve()
-                    })
-                    .map_err(|error| Failure::from_fault("transient", error, recorder.borrow().reached(), &design))?;
-                self.statistics = Some(TransientStatistics::new(result.statistics().clone(), result.stats.clone()));
-                // CLI-05 AC 11: a run that stopped short has no table to give. How far it got is the
-                // last step the observer saw, which a design with no analog unknown reaches too (its
-                // result holds no analog accept, HII-17). A model that wrote `finish` ended the run at
-                // that instant: it is the run's end (FIX-02 AC 1), and the grid stops there
-                let end = finished.borrow().map_or(*stop, |at| at.min(*stop));
-                recorder.borrow_mut().end_at(end);
-                let reached = recorder.borrow().reached();
-                if reached.is_none_or(|last| last < end * (1.0 - 1e-9)) {
-                    let at = reached.map_or_else(|| "no step".to_string(), |t| format!("the last step at {t:e}"));
-                    return Err(Failure::Backend(format!("the transient ended with {at}, before its stop at {end:e}")));
-                }
-                // the solver held the observers; with it gone the recorder has one owner
-                drop(solver);
-                let recorder = Rc::try_unwrap(recorder).map_err(|_| Failure::Backend("the run's recorder is still shared after the run".into()))?;
-                recorder.into_inner().finish()
-            }
-            Analysis::Dc { from, to, step, .. } => {
-                let mut circuit = circuit;
-                let swept = self.swept.as_ref().ok_or_else(|| Failure::Backend("a dc run resolved no param to sweep".into()))?;
-                // `from + k*step` for every k while the point is not past `to`; the tolerance on
-                // k absorbs the rounding of `(to - from) / step` (a whole number of steps that
-                // lands a hair under)
-                let count = ((to - from) / step + 1e-9).floor() as usize + 1;
-                let mut points = Vec::with_capacity(count);
-                for k in 0..count {
-                    let value = from + k as f64 * step;
-                    Session::set_param(&mut self.params, self.compiled.as_ref().map(|c| c as &dyn Derive), &mut circuit, swept, value)?;
-                    let result = circuit
-                        .dc(self.context.clone())
-                        // the settle commits of a point land at the next one (§15 S6)
-                        .and_then(|dc| dc.followed_by_another_point(k + 1 < count).solve())
-                        .map_err(|error| Failure::from_fault("dc", error, None, &design))?;
-                    let held = self.held_params(&circuit, &[]);
-                    let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));
-                    let term = |instance: &str, name: &str| circuit.bound().analog.term_value(instance, name);
-                    points.push((value, Table::point(&self.probes, &result, &net, &term)?));
-                }
-                Ok(Table::sweep(&swept.label(), &self.probes, points))
-            }
-            Analysis::Ac { from, to, grid } => {
-                let options = AcSweepAnalysisOptions {
-                    start_frequency: *from,
-                    stop_frequency: *to,
-                    steps: grid.steps(*from, *to),
-                    logarithmic: matches!(grid, Grid::PerDecade(_)),
-                };
-                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
-                let result = solver.ac().and_then(|mut ac| ac.solve_sweep(options)).map_err(|error| Failure::from_fault("ac", error, None, &design))?;
-                Table::frequency(&self.probes, &result)
-            }
-            Analysis::Tf { .. } => {
-                let mut circuit = circuit;
-                let transfer = self.transfer()?;
-                let options = TransferFunctionAnalysisOptions {
-                    output: AnalogVariable::Node(transfer.output.clone()),
-                    output_ref: None,
-                    input_source: transfer.input.clone(),
-                };
-                let result = circuit
-                    .transfer_function(options, self.context.clone())
-                    .and_then(|mut tf| tf.solve())
-                    .map_err(|error| Failure::from_fault("tf", error, None, &design))?;
-                Ok(Table::transfer(&result))
-            }
-            Analysis::Pz { .. } => {
-                let mut circuit = circuit;
-                let transfer = self.transfer()?;
-                let options = PoleZeroOptions { input_source: transfer.input.clone(), output: AnalogVariable::Node(transfer.output.clone()), output_ref: None };
-                let roots = circuit
-                    .pz(options, self.context.clone())
-                    .and_then(|pz| Ok(PoleZeroResult { poles: pz.poles()?, zeros: pz.zeros()? }))
-                    .map_err(|error| Failure::from_fault("pz", error, None, &design))?;
-                Ok(Table::roots(&roots))
-            }
-            Analysis::Pss { period, tstab, max_step, print_step } => {
-                let mut circuit = circuit;
-                let mut options = PssAnalysisOptions::new(*period).with_tstab(*tstab);
-                options.dt = *max_step;
-                options.dt_max = *max_step;
-                options.max_steps = self.spec.options.max_steps.map(|budget| budget as usize);
-                let orbit = circuit
-                    .pss(options, self.context.clone())
-                    .and_then(|pss| pss.solve())
-                    .map_err(|error| Failure::from_fault("pss", error, None, &design))?;
-                // the orbit starts at `tstab` and holds one period
-                let table = Table::transient_with(&self.probes, &orbit.trace, &held)?;
-                match print_step {
-                    Some(step) => table.on_grid(*step, *tstab, tstab + period),
-                    None => Ok(table),
-                }
-            }
-            Analysis::Noise { from, to, grid, .. } => {
-                let probe = self.noise.as_ref().ok_or_else(|| Failure::Backend("a noise run resolved no output".into()))?;
-                let sweep_options = AcSweepAnalysisOptions {
-                    start_frequency: *from,
-                    stop_frequency: *to,
-                    steps: grid.steps(*from, *to),
-                    logarithmic: matches!(grid, Grid::PerDecade(_)),
-                };
-                let (output_node, reference_node, output_flow) = match &probe.output {
-                    NoiseOutput::Potential { plus, minus } => (plus.clone(), minus.clone(), None),
-                    NoiseOutput::Flow(flow) => (NodeIdentifier::Gnd, NodeIdentifier::Gnd, Some(flow.clone())),
-                };
-                let options = NoiseAnalysisOptions { sweep_options, output_node, reference_node, input_source_name: probe.input.clone(), output_flow };
-                let unit = probe.unit();
-                let mut solver = Solver::new(circuit).with_context(self.context.clone()).with_sink(delivery).build();
-                let result = solver.noise(options).and_then(|mut noise| noise.solve()).map_err(|error| Failure::Solver { analysis: "noise", error })?;
-                let report = NoiseReport::of(&result, unit);
-                let table = Table::noise(&report);
-                self.noise_report = Some(report);
-                Ok(table)
-            }
-            Analysis::Sens { .. } => {
-                let mut circuit = circuit;
-                let nets = circuit.nets();
-                let outputs = self.probes.iter().map(|probe| Session::net_of(&nets, probe)).collect::<Result<Vec<Net>, Failure>>()?;
-                let params = self.wrt.iter().map(|path| (path.instance.clone(), path.param.clone())).collect();
-                let result = circuit
-                    .sens(SensAnalysisOptions::new(outputs.clone(), params), self.context.clone())
-                    .and_then(|sens| sens.solve())
-                    .map_err(|error| Failure::from_fault("sens", error, None, &design))?;
-                Table::sensitivities(&self.probes, &outputs, &self.wrt, &result)
-            }
+        let analysis = self.spec.analysis.clone();
+        let run = AnalysisRun { session: self, circuit, delivery, design, held, timed };
+        match analysis {
+            Analysis::Op => OperatingPointRunner::new(run).solve(),
+            Analysis::Transient { stop, max_step, print_step, from } => TransientRunner::new(run).solve(stop, max_step, print_step, from),
+            Analysis::Dc { from, to, step, .. } => DcSweepRunner::new(run).solve(from, to, step),
+            Analysis::Ac { from, to, grid } => FrequencyRunner::new(run).ac(from, to, grid),
+            Analysis::Noise { from, to, grid, .. } => FrequencyRunner::new(run).noise(from, to, grid),
+            Analysis::Tf { .. } => SmallSignalRunner::new(run).transfer_function(),
+            Analysis::Pz { .. } => SmallSignalRunner::new(run).poles_and_zeros(),
+            Analysis::Pss { period, tstab, max_step, print_step } => PeriodicRunner::new(run).solve(period, tstab, max_step, print_step),
+            Analysis::Sens { .. } => SensitivityRunner::new(run).solve(),
         }
     }
 

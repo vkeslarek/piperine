@@ -1705,8 +1705,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Session`'s public methods are unchanged; the crate's tests pass unedited
-- [ ] Gate check passes: Golden
+- [x] `Session`'s public methods are unchanged; the crate's tests pass unedited
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
