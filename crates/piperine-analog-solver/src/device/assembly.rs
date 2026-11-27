@@ -220,10 +220,6 @@ impl Assembly {
 
     /// Ends a Newton iteration: every written limit's `LAST` becomes the `x̂`
     /// of the iteration just assembled, with `AGE = 2`.
-    // SPEC_DEVIATION: design.md gives `end_iteration(&mut self, x)`; it takes
-    // no solution.
-    // Reason: `x̂` is the `LIMITED` written in the iteration's own evaluation,
-    // which already ran at the iterate; the next solution is not read.
     pub fn end_iteration(&mut self) {
         self.iteration += 1;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
@@ -392,10 +388,6 @@ impl Assembly {
     /// The small-signal system at operating point `op` and sweep frequency
     /// `amb.freq`: the matrix `Σ resp(ω)·∂v` and the stimulus right side
     /// `−Σ w·g·(RE + j·IM)`. Every limit holds `x̂ = x`.
-    // SPEC_DEVIATION: design.md gives `assemble_ac(op, omega)`; it takes the
-    // ambient, whose `freq` gives `ω = 2π·freq`.
-    // Reason: functions read `FREQ` and the continuation values as ambient
-    // inputs (abi.md §4.2); the caller supplies all of them.
     pub fn assemble_ac(&mut self, op: &[f64], amb: Ambient) -> Result<(ComplexStamps, ComplexStamps), Error> {
         self.evaluate_for(op, amb, Need::AC)?;
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
@@ -414,9 +406,6 @@ impl Assembly {
     /// `amb.freq`: one column per `NOISE` input, through every term that
     /// reads it, with its density `PSD` (abi.md §10 "Noise"). Densities are
     /// evaluated here only (A4).
-    // SPEC_DEVIATION: design.md gives `noise_sources(op, freq)`; it takes the
-    // ambient, as `assemble_ac` does.
-    // Reason: `FREQ` and the continuation values are ambient inputs.
     pub fn noise_sources(&mut self, op: &[f64], amb: Ambient) -> Result<Vec<NoiseColumn>, Error> {
         self.evaluate_for(op, amb, Need::NOISE)?;
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
@@ -476,10 +465,6 @@ impl Assembly {
     /// nonlinear `q` and a held `x̂` far from `x` is not `q(x)` at all. Called once per converged solve, where the
     /// Newton state buffer gains its row (a stage, an operating point, an
     /// initial-condition row), so the two stay aligned.
-    // SPEC_DEVIATION: design.md gives `push_stage(&mut self)`; it takes the
-    // solution and its ambient.
-    // Reason: the buffer row the companion reads is the converged `x`, which
-    // no assembly evaluated (the last assemble ran at the iterate before it).
     pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         self.evaluate_for(x, amb, Need { small_signal: true, ..Need::NEWTON })?;
         self.iteration = 0;

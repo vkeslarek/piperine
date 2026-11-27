@@ -1005,8 +1005,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `SPEC_DEVIATION` in the back-end crates; each closure is named in the commit body with the design file it touched
-- [ ] Gate check passes: Quick
+- [x] No `SPEC_DEVIATION` in the back-end crates; each closure is named in the commit body with the design file it touched
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

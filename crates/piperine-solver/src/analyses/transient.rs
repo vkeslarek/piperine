@@ -1426,8 +1426,6 @@ impl TransientSolver<'_> {
     ) -> crate::core::result::Result<Vec<f64>> {
         self.system.uic_hold = false;
         self.device_bound().analog.restore(&state.assembly);
-        // SPEC_DEVIATION: T6 restores the captured state here (tasks.md assigns T7)
-        // Reason: the capture fields have no reader without it; an unread field warns (L-016).
         // The captured step's own solution: the Newton history, the time loop and the step
         // controller continue from where the continuous run stood. A shooting analysis
         // re-enters from a solution of its own with the state of another step: that run starts
@@ -1557,10 +1555,6 @@ impl TransientSolver<'_> {
     /// lies within one tick of `to`, so the time grid is the controller's.
     /// The step whose target is the stop ends at the stop itself, bit for bit,
     /// as a landing ends at its tick: a sum of controller steps falls ulps short.
-    // SPEC_DEVIATION: the step solves to its own proposal, not to `to`, when
-    // the two are less than one tick apart and the step is not a landing.
-    // Reason: the parity oracles pin the controller's time grid (`parity_baseline`
-    // 161 steps, `differential` 1e-15); a femtosecond floor moves every step.
     pub(crate) fn device_attempt(
         &mut self,
         run: &mut DeviceRun,
