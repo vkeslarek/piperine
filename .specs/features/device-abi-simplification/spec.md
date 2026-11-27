@@ -1,6 +1,6 @@
 # Device ABI Simplification Specification
 
-**Approved**:
+**Approved**: 2026-11-27 - user: "Aprovo a spec e design do novo abi"
 
 ## Open questions (for the user)
 

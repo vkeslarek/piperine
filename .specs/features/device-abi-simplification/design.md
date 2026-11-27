@@ -1,8 +1,8 @@
 # Device ABI Simplification Design
 
 **Spec**: `.specs/features/device-abi-simplification/spec.md`
-**Status**: Draft
-**Approved**:
+**Status**: Approved
+**Approved**: 2026-11-27 - user: "Aprovo a spec e design do novo abi"
 
 Paths and crate names are those of the tree after `code-clarity` merges (`piperine-language`, `piperine-interpreter`, `piperine-device-fixtures`, `raw/`, `solver/src/circuit`, merged test targets). T1 re-takes them on the merged `main`. Proposal sections are cited as "proposal §n"; sections of the published specification as "ABI §n".
 
