@@ -463,7 +463,7 @@ T152 → T153 → T154 → T155
 
 ### T8: The numbers before: the suite report and the worklists
 
-**What**: Add `SuiteCensus` and `Worklist`; write `.specs/features/code-clarity/suite-report.md` section `## Before` (targets and tests per crate from the census); seed `worklists/{long_functions,single_implementor_traits,test_only_items,duplicate_tests}.tsv` from the scan with no verdict yet (allowance: all rows open); add the targets `worklists` and the test `no_crate_has_more_targets_than_its_plan` (the plan starts at today's counts).
+**What**: Add `SuiteCensus` and `Worklist`; write `.specs/features/code-clarity/suite-report.md` section `## Before` (targets and tests per crate from the census; run seconds per crate, one serial pass with ngspice, the before values taken from findings.md §3.1 at the inventory base, 2 202 s in all; no build time); seed `worklists/{long_functions,single_implementor_traits,test_only_items,duplicate_tests}.tsv` from the scan with no verdict yet (allowance: all rows open); add the targets `worklists` and the test `no_crate_has_more_targets_than_its_plan` (the plan starts at today's counts).
 **Where**: `crates/piperine-repository-guards/tests/worklists.rs`
 **Depends on**: T7
 **Reuses**: findings.md §3.1, Appendix B
@@ -473,7 +473,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] `suite-report.md` `## Before` holds the census columns of the table of findings.md §3.1 re-taken at this commit (no build or run time, user decision 2026-11-26)
+- [x] `suite-report.md` `## Before` holds the census columns re-taken at this commit and the `Run s` column from findings.md §3.1 (no build time column)
 - [x] `every_long_function_of_the_inventory_has_a_verdict`, `every_single_implementor_trait_is_removed_or_justified`, `every_test_only_item_has_a_verdict` and `every_duplicate_of_the_inventory_has_a_verdict` pass under `**Run worklists**` (open rows are allowance rows)
 - [x] `no_crate_has_more_targets_than_its_plan` passes under `**Run suite**`
 - [x] Gate check passes: Quick
@@ -3755,7 +3755,7 @@ T152 → T153 → T154 → T155
 
 ### T153: The numbers after
 
-**What**: Write `suite-report.md` `## After` the way T8 took `## Before` (the census), with the difference per crate; add `the_suite_report_has_before_and_after`.
+**What**: Write `suite-report.md` `## After` the way T8 took `## Before` (the census and the run seconds per crate, measured in the one full-suite run of T155), with the difference per crate; add `the_suite_report_has_before_and_after`.
 **Where**: `.specs/features/code-clarity/suite-report.md`
 **Depends on**: T152
 **Reuses**: T8
@@ -3765,7 +3765,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `the_suite_report_has_before_and_after` passes under `**Run suite**`: both tables, the same rows, test count, target count
+- [ ] `the_suite_report_has_before_and_after` passes under `**Run suite**`: both tables, the same rows, test count, target count and run time
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -3942,7 +3942,7 @@ Proof: run suite | test the_suite_report_has_before_and_after ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** the suite report has no build or run time column (user 2026-11-26: "O build não precisa de métrica... Tá de boa"); the census columns stay.
+**Settled mid-build:** the suite report has no build-time column; test run time is the key metric (user 2026-11-26: "O build não precisa de métrica... Tá de boa"; "Tempo e build é muito relativo... O importante é menor tempo de testes (conjunto mais bem dimensionado deles)"). The before `Run s` values come from findings.md §3.1 (2 202 s); T155 measures the after value in its single full-suite run.
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
 **Progress:** T1 to T8 done.
