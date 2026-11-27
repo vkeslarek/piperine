@@ -8,7 +8,7 @@ use piperine_ir::Constant;
 
 use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault};
-use crate::refusal::RefusedForm;
+use crate::refusal::forms::{ConstantForm, StructureForm};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 
 /// One generation around a `let`, outermost first, as the evaluation needs it.
@@ -48,7 +48,7 @@ impl ConstEval<'_, '_> {
             }
             GenerationLevel::If { cond, then } => match self.fold(cond, bindings)? {
                 Constant::Bool(taken) if taken == then => self.fold_level(expr, binding, value, inner, bindings, inside_for),
-                _ if inside_for => Err(ConstFault::refused(expr, RefusedForm::Text("a `let` declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps), read as an array".to_string()))),
+                _ if inside_for => Err(ConstFault::refused(expr, StructureForm::LetDeclaredInGenerationIfThatNot)),
                 _ => {
                     let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                     Err(ConstFault::Ungenerated { expr, message: format!("`{name}` is declared in an arm of a generation that was not elaborated (§8.2.24)") })
@@ -61,7 +61,7 @@ impl ConstEval<'_, '_> {
     fn integer_bound(&mut self, expr: ExprId, bound: ExprId, bindings: &Bindings) -> Result<i128, ConstFault> {
         match self.fold(bound, bindings)? {
             Constant::Int(value) => Ok(value),
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("a generation range whose bound is not an integer".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::GenerationRangeWhoseBoundIsNotInteger)),
         }
     }
 

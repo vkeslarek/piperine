@@ -4,7 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::Span;
-use piperine_lang::refusal::{Refusal, RefusedForm};
+use piperine_lang::refusal::Refusal;
+use piperine_lang::refusal::forms::ValueForm;
 
 /// The sources of this crate, read as text.
 struct Sources;
@@ -41,8 +42,8 @@ fn p0001_is_worded_in_one_place() {
 
 #[test]
 fn p0001_does_not_name_a_milestone() {
-    let diagnostic = Refusal::of(RefusedForm::Text("a form".to_string())).diagnostic(Span::default());
-    assert_eq!(diagnostic.message, "a form is not supported yet");
+    let diagnostic = Refusal::of(ValueForm::Assignment).diagnostic(Span::default());
+    assert_eq!(diagnostic.message, "assignment is not supported yet");
     assert_eq!(diagnostic.primary.1, "not supported yet");
     let milestone = ["M1", " subset"].concat();
     let naming: Vec<PathBuf> = Sources::all().into_iter().filter(|path| std::fs::read_to_string(path).is_ok_and(|text| text.contains(&milestone))).collect();

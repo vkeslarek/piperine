@@ -816,8 +816,6 @@ crates/piperine-lang/tests/types_compound.rs::a_method_outside_h3_h4_is_e0161	1
 crates/piperine-lang/tests/types_compound.rs::decl	1
 crates/piperine-lang/tests/types_compound.rs::match_is_typed_over_enums_bools_integers_and_options	1
 crates/piperine-lang/tests/types_compound.rs::unit_enums_and_their_variants_are_typed	1
-crates/piperine-lang/tests/types_control.rs::a_non_exhaustive_match_or_refutable_let_is_e0184	1
-crates/piperine-lang/tests/types_control.rs::refutable_patterns_type_check_in_if_let_while_let_and_let_else	1
 crates/piperine-lang/tests/types_events.rs::a_delay_that_is_not_f64_is_e0433	1
 crates/piperine-lang/tests/types_events.rs::dpwm	1
 crates/piperine-lang/tests/types_events.rs::exprs_reading	1

@@ -755,9 +755,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `RefusedForm` has no `Text` variant
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] `RefusedForm` has no `Text` variant
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

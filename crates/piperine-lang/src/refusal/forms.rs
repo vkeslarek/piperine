@@ -1871,15 +1871,411 @@ impl From<GenericsForm> for RefusedForm {
 /// The constant forms the front end refuses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConstantForm {
+    /// an argument that is not a closure or a function
+    ArgumentThatIsNotClosureOrFunction,
+    /// an argument with neither a value nor a function
+    ArgumentWithNeitherValueNorFunction,
+    /// an array length that is not a non-negative integer
+    ArrayLengthThatIsNotNonNegative,
+    /// an array too long to parse
+    ArrayTooLongToParse,
+    /// an assignment into a local with no value
+    AssignmentIntoLocalWithNoValue,
+    /// an assignment to something that is not a local, a field or an element
+    AssignmentToSomethingThatIsNotLocal,
+    /// a `bool` where an `f64` is required
+    BoolWhereFloatIsRequired,
+    /// a call of a name that is not a function
+    CallOfNameThatIsNotFunction,
+    /// this cast
+    Cast,
+    /// a cast of a composite value
+    CastOfCompositeValue,
+    /// a cast of a variant outside its enum
+    CastOfVariantOutsideItsEnum,
+    /// a closure parameter pattern that does not match its argument
+    ClosureParameterPatternThatDoesNotMatch,
+    /// a closure that does not give a `bool`
+    ClosureThatDoesNotGiveBool,
+    /// a comparison of an `f64` and a `bool`
+    ComparisonOfFloatAndBool,
+    /// a composite param in a const expression
+    CompositeParamInConstExpression,
+    /// a composite value bound from outside the evaluation
+    CompositeValueBoundFromOutsideEvaluation,
+    /// a composite value input in a const expression
+    CompositeValueInputInConstExpression,
+    /// a composite value that does not have the type its position needs
+    CompositeValueThatDoesNotHaveType,
+    /// a composite value where a `bool` is required
+    CompositeValueWhereBoolIsRequired,
+    /// a composite value where an `f64` is required
+    CompositeValueWhereFloatIsRequired,
+    /// a composite value where a scalar is required
+    CompositeValueWhereScalarIsRequired,
+    /// a composite value with a different number of parts than its type
+    CompositeValueWithDifferentNumberOfParts,
+    /// a const argument of a template that is not an integer or a `bool`
+    ConstArgumentOfTemplateThatIsNot,
+    /// a `const` composite of a type with no constant form
+    ConstCompositeOfTypeWithNoConstant,
+    /// a `const` without a value
+    ConstWithoutValue,
+    /// `contains` of a value that is not a range
+    ContainsOfValueThatIsNotRange,
+    /// the default of this type
+    DefaultOfThisType,
+    /// an element index that is not a non-negative integer
+    ElementIndexThatIsNotNonNegative,
+    /// an `encode` of a value that is no scalar
+    EncodeOfValueThatIsNoScalar,
+    /// an `encode` that gives a level that is not a `bool`
+    EncodeThatGivesLevelThatIsNot,
+    /// a field out of range
+    FieldOutOfRange,
+    /// a field pattern that names no field
+    FieldPatternThatNamesNoField,
+    /// a field read of a value that is not a template
+    FieldReadOfValueThatIsNot,
+    /// a field the struct does not have
+    FieldStructDoesNotHave,
+    /// a field the value does not have
+    FieldValueDoesNotHave,
+    /// a float literal
+    FloatLiteral,
+    /// an `f64` where a `bool` is required
+    FloatWhereBoolIsRequired,
+    /// a `for` range whose bounds are not integers
+    ForRangeWhoseBoundsAreNotIntegers,
+    /// this form in a const expression
+    FormInConstExpression,
+    /// a form with no value where a value is needed
+    FormWithNoValueWhereValueIs,
+    /// a function body with no value
+    FunctionBodyWithNoValue,
+    /// a function bound by a pattern that is not a name
+    FunctionBoundByPatternThatIsNot,
+    /// a generation range whose bound is not an integer
+    GenerationRangeWhoseBoundIsNotInteger,
+    /// a generic argument of a template that is still a parameter
+    GenericArgumentOfTemplateThatIsStill,
+    /// a hex image of other than integers
+    HexImageOfOtherThanIntegers,
+    /// an implicit `Some` of a value with no value type
+    ImplicitSomeOfValueWithNoValue,
+    /// an `include_str!` path with an undefined escape
+    IncludeStrPathWithUndefinedEscape,
+    /// an integer literal
+    IntegerLiteral,
+    /// an integer operator outside an integer type
+    IntegerOperatorOutsideIntegerType,
+    /// an integer operator over a non-integer
+    IntegerOperatorOverNonInteger,
+    /// an integer where a `bool` is required
+    IntegerWhereBoolIsRequired,
+    /// an integer where an `f64` is required
+    IntegerWhereFloatIsRequired,
+    /// an iteration over a value that is not an array, a range or an iterator
+    IterationOverValueThatIsNotArray,
+    /// a `let .. else` whose `else` does not leave
+    LetElseWhoseElseDoesNotLeave,
+    /// this literal
+    Literal,
+    /// a `logic` pattern that is no literal
+    LogicPatternThatIsNoLiteral,
+    /// a `logic` pattern with a character that names no level
+    LogicPatternWithCharacterThatNamesNo,
+    /// a `match` no arm of which matches
+    MatchNoArmOfWhichMatches,
+    /// this method in a const expression
+    MethodInConstExpression,
+    /// this method of a float
+    MethodOfFloat,
+    /// a method of a float over a non-float
+    MethodOfFloatOverNonFloat,
+    /// this method of an integer
+    MethodOfInteger,
+    /// a method of an integer over a non-integer
+    MethodOfIntegerOverNonInteger,
+    /// a name
+    Name,
+    /// this name in a const expression
+    NameInConstExpression,
+    /// a number-width value where a `bool` is required
+    NumberWidthValueWhereBoolIsRequired,
+    /// a number-width value where an `f64` is required
+    NumberWidthValueWhereFloatIsRequired,
+    /// this operator
+    Operator,
+    /// this operator on a float
+    OperatorOnFloat,
+    /// this operator on integers
+    OperatorOnIntegers,
+    /// an operator other than a comparison on a composite value
+    OperatorOtherThanComparisonOnCompositeValue,
+    /// an operator over a float and another type
+    OperatorOverFloatAndAnotherType,
+    /// this `Option` row in a const expression
+    OptionRowInConstExpression,
+    /// the param `{}` of a template, which has no value
+    ParamOfTemplateWhichHasNoValue,
+    /// a param `{}` the template's module does not have
+    ParamTemplateModuleDoesNotHave,
+    /// a parsed array whose length is a generic argument
+    ParsedArrayWhoseLengthIsGenericArgument,
+    /// a parser called with other than one text
+    ParserCalledWithOtherThanOneText,
+    /// this parser over this element type
+    ParserOverThisElementType,
+    /// a parser whose array type the checker did not give
+    ParserWhoseArrayTypeCheckerDidNot,
+    /// a path pattern that is not a constant or a unit variant
+    PathPatternThatIsNotConstantOr,
+    /// this pattern in a const expression
+    PatternInConstExpression,
+    /// a pattern that names no struct or variant
+    PatternThatNamesNoStructOrVariant,
+    /// `pow` by a non-constant exponent
+    PowByNonConstantExponent,
+    /// `powi` by a non-constant exponent
+    PowiByNonConstantExponent,
+    /// a range index bound that is not a non-negative integer
+    RangeIndexBoundThatIsNotNon,
+    /// a range pattern over values that are not both integers or both floats
+    RangePatternOverValuesThatAreNot,
+    /// a range whose bounds are not integers
+    RangeWhoseBoundsAreNotIntegers,
+    /// a range with no high bound
+    RangeWithNoHighBound,
+    /// a range with no low bound
+    RangeWithNoLowBound,
+    /// a refutable pattern in a `let` without `else`
+    RefutablePatternInLetWithoutElse,
+    /// a row outside Appendix H.5 to H.7
+    RowOutsideAppendixRows,
+    /// a shift by a non-integer
+    ShiftByNonInteger,
+    /// this statement in a const expression
+    StatementInConstExpression,
+    /// a string with an undefined escape
+    StringWithUndefinedEscape,
+    /// a struct expression that leaves a field out
+    StructExpressionThatLeavesFieldOut,
+    /// a text that is no `include_str!` or `const` of one
+    TextThatIsNoIncludeStrOr,
+    /// a text value other than `include_str!`
+    TextValueOtherThanIncludeStr,
+    /// {} that is not a composite value
+    ThatIsNotCompositeValue,
+    /// a value built from a name that is neither a struct nor a variant
+    ValueBuiltFromNameThatIsNeither,
 }
 
 impl ConstantForm {
     /// Every form of the family, in declaration order.
     pub const ALL: &[ConstantForm] = &[
+        ConstantForm::ArgumentThatIsNotClosureOrFunction,
+        ConstantForm::ArgumentWithNeitherValueNorFunction,
+        ConstantForm::ArrayLengthThatIsNotNonNegative,
+        ConstantForm::ArrayTooLongToParse,
+        ConstantForm::AssignmentIntoLocalWithNoValue,
+        ConstantForm::AssignmentToSomethingThatIsNotLocal,
+        ConstantForm::BoolWhereFloatIsRequired,
+        ConstantForm::CallOfNameThatIsNotFunction,
+        ConstantForm::Cast,
+        ConstantForm::CastOfCompositeValue,
+        ConstantForm::CastOfVariantOutsideItsEnum,
+        ConstantForm::ClosureParameterPatternThatDoesNotMatch,
+        ConstantForm::ClosureThatDoesNotGiveBool,
+        ConstantForm::ComparisonOfFloatAndBool,
+        ConstantForm::CompositeParamInConstExpression,
+        ConstantForm::CompositeValueBoundFromOutsideEvaluation,
+        ConstantForm::CompositeValueInputInConstExpression,
+        ConstantForm::CompositeValueThatDoesNotHaveType,
+        ConstantForm::CompositeValueWhereBoolIsRequired,
+        ConstantForm::CompositeValueWhereFloatIsRequired,
+        ConstantForm::CompositeValueWhereScalarIsRequired,
+        ConstantForm::CompositeValueWithDifferentNumberOfParts,
+        ConstantForm::ConstArgumentOfTemplateThatIsNot,
+        ConstantForm::ConstCompositeOfTypeWithNoConstant,
+        ConstantForm::ConstWithoutValue,
+        ConstantForm::ContainsOfValueThatIsNotRange,
+        ConstantForm::DefaultOfThisType,
+        ConstantForm::ElementIndexThatIsNotNonNegative,
+        ConstantForm::EncodeOfValueThatIsNoScalar,
+        ConstantForm::EncodeThatGivesLevelThatIsNot,
+        ConstantForm::FieldOutOfRange,
+        ConstantForm::FieldPatternThatNamesNoField,
+        ConstantForm::FieldReadOfValueThatIsNot,
+        ConstantForm::FieldStructDoesNotHave,
+        ConstantForm::FieldValueDoesNotHave,
+        ConstantForm::FloatLiteral,
+        ConstantForm::FloatWhereBoolIsRequired,
+        ConstantForm::ForRangeWhoseBoundsAreNotIntegers,
+        ConstantForm::FormInConstExpression,
+        ConstantForm::FormWithNoValueWhereValueIs,
+        ConstantForm::FunctionBodyWithNoValue,
+        ConstantForm::FunctionBoundByPatternThatIsNot,
+        ConstantForm::GenerationRangeWhoseBoundIsNotInteger,
+        ConstantForm::GenericArgumentOfTemplateThatIsStill,
+        ConstantForm::HexImageOfOtherThanIntegers,
+        ConstantForm::ImplicitSomeOfValueWithNoValue,
+        ConstantForm::IncludeStrPathWithUndefinedEscape,
+        ConstantForm::IntegerLiteral,
+        ConstantForm::IntegerOperatorOutsideIntegerType,
+        ConstantForm::IntegerOperatorOverNonInteger,
+        ConstantForm::IntegerWhereBoolIsRequired,
+        ConstantForm::IntegerWhereFloatIsRequired,
+        ConstantForm::IterationOverValueThatIsNotArray,
+        ConstantForm::LetElseWhoseElseDoesNotLeave,
+        ConstantForm::Literal,
+        ConstantForm::LogicPatternThatIsNoLiteral,
+        ConstantForm::LogicPatternWithCharacterThatNamesNo,
+        ConstantForm::MatchNoArmOfWhichMatches,
+        ConstantForm::MethodInConstExpression,
+        ConstantForm::MethodOfFloat,
+        ConstantForm::MethodOfFloatOverNonFloat,
+        ConstantForm::MethodOfInteger,
+        ConstantForm::MethodOfIntegerOverNonInteger,
+        ConstantForm::Name,
+        ConstantForm::NameInConstExpression,
+        ConstantForm::NumberWidthValueWhereBoolIsRequired,
+        ConstantForm::NumberWidthValueWhereFloatIsRequired,
+        ConstantForm::Operator,
+        ConstantForm::OperatorOnFloat,
+        ConstantForm::OperatorOnIntegers,
+        ConstantForm::OperatorOtherThanComparisonOnCompositeValue,
+        ConstantForm::OperatorOverFloatAndAnotherType,
+        ConstantForm::OptionRowInConstExpression,
+        ConstantForm::ParamOfTemplateWhichHasNoValue,
+        ConstantForm::ParamTemplateModuleDoesNotHave,
+        ConstantForm::ParsedArrayWhoseLengthIsGenericArgument,
+        ConstantForm::ParserCalledWithOtherThanOneText,
+        ConstantForm::ParserOverThisElementType,
+        ConstantForm::ParserWhoseArrayTypeCheckerDidNot,
+        ConstantForm::PathPatternThatIsNotConstantOr,
+        ConstantForm::PatternInConstExpression,
+        ConstantForm::PatternThatNamesNoStructOrVariant,
+        ConstantForm::PowByNonConstantExponent,
+        ConstantForm::PowiByNonConstantExponent,
+        ConstantForm::RangeIndexBoundThatIsNotNon,
+        ConstantForm::RangePatternOverValuesThatAreNot,
+        ConstantForm::RangeWhoseBoundsAreNotIntegers,
+        ConstantForm::RangeWithNoHighBound,
+        ConstantForm::RangeWithNoLowBound,
+        ConstantForm::RefutablePatternInLetWithoutElse,
+        ConstantForm::RowOutsideAppendixRows,
+        ConstantForm::ShiftByNonInteger,
+        ConstantForm::StatementInConstExpression,
+        ConstantForm::StringWithUndefinedEscape,
+        ConstantForm::StructExpressionThatLeavesFieldOut,
+        ConstantForm::TextThatIsNoIncludeStrOr,
+        ConstantForm::TextValueOtherThanIncludeStr,
+        ConstantForm::ThatIsNotCompositeValue,
+        ConstantForm::ValueBuiltFromNameThatIsNeither,
     ];
 
     /// The rows of the family, one per form in declaration order.
     const ROWS: &[RefusalRow] = &[
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ArgumentThatIsNotClosureOrFunction), text: "an argument that is not a closure or a function", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ArgumentWithNeitherValueNorFunction), text: "an argument with neither a value nor a function", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ArrayLengthThatIsNotNonNegative), text: "an array length that is not a non-negative integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ArrayTooLongToParse), text: "an array too long to parse", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::AssignmentIntoLocalWithNoValue), text: "an assignment into a local with no value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::AssignmentToSomethingThatIsNotLocal), text: "an assignment to something that is not a local, a field or an element", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::BoolWhereFloatIsRequired), text: "a `bool` where an `f64` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CallOfNameThatIsNotFunction), text: "a call of a name that is not a function", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::Cast), text: "this cast", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CastOfCompositeValue), text: "a cast of a composite value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CastOfVariantOutsideItsEnum), text: "a cast of a variant outside its enum", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ClosureParameterPatternThatDoesNotMatch), text: "a closure parameter pattern that does not match its argument", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ClosureThatDoesNotGiveBool), text: "a closure that does not give a `bool`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ComparisonOfFloatAndBool), text: "a comparison of an `f64` and a `bool`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeParamInConstExpression), text: "a composite param in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueBoundFromOutsideEvaluation), text: "a composite value bound from outside the evaluation", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueInputInConstExpression), text: "a composite value input in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueThatDoesNotHaveType), text: "a composite value that does not have the type its position needs", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueWhereBoolIsRequired), text: "a composite value where a `bool` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueWhereFloatIsRequired), text: "a composite value where an `f64` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueWhereScalarIsRequired), text: "a composite value where a scalar is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::CompositeValueWithDifferentNumberOfParts), text: "a composite value with a different number of parts than its type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ConstArgumentOfTemplateThatIsNot), text: "a const argument of a template that is not an integer or a `bool`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ConstCompositeOfTypeWithNoConstant), text: "a `const` composite of a type with no constant form", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ConstWithoutValue), text: "a `const` without a value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ContainsOfValueThatIsNotRange), text: "`contains` of a value that is not a range", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::DefaultOfThisType), text: "the default of this type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ElementIndexThatIsNotNonNegative), text: "an element index that is not a non-negative integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::EncodeOfValueThatIsNoScalar), text: "an `encode` of a value that is no scalar", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::EncodeThatGivesLevelThatIsNot), text: "an `encode` that gives a level that is not a `bool`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FieldOutOfRange), text: "a field out of range", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FieldPatternThatNamesNoField), text: "a field pattern that names no field", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FieldReadOfValueThatIsNot), text: "a field read of a value that is not a template", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FieldStructDoesNotHave), text: "a field the struct does not have", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FieldValueDoesNotHave), text: "a field the value does not have", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FloatLiteral), text: "a float literal", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FloatWhereBoolIsRequired), text: "an `f64` where a `bool` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ForRangeWhoseBoundsAreNotIntegers), text: "a `for` range whose bounds are not integers", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FormInConstExpression), text: "this form in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FormWithNoValueWhereValueIs), text: "a form with no value where a value is needed", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FunctionBodyWithNoValue), text: "a function body with no value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::FunctionBoundByPatternThatIsNot), text: "a function bound by a pattern that is not a name", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::GenerationRangeWhoseBoundIsNotInteger), text: "a generation range whose bound is not an integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::GenericArgumentOfTemplateThatIsStill), text: "a generic argument of a template that is still a parameter", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::HexImageOfOtherThanIntegers), text: "a hex image of other than integers", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ImplicitSomeOfValueWithNoValue), text: "an implicit `Some` of a value with no value type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IncludeStrPathWithUndefinedEscape), text: "an `include_str!` path with an undefined escape", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IntegerLiteral), text: "an integer literal", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IntegerOperatorOutsideIntegerType), text: "an integer operator outside an integer type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IntegerOperatorOverNonInteger), text: "an integer operator over a non-integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IntegerWhereBoolIsRequired), text: "an integer where a `bool` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IntegerWhereFloatIsRequired), text: "an integer where an `f64` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::IterationOverValueThatIsNotArray), text: "an iteration over a value that is not an array, a range or an iterator", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::LetElseWhoseElseDoesNotLeave), text: "a `let .. else` whose `else` does not leave", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::Literal), text: "this literal", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::LogicPatternThatIsNoLiteral), text: "a `logic` pattern that is no literal", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::LogicPatternWithCharacterThatNamesNo), text: "a `logic` pattern with a character that names no level", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MatchNoArmOfWhichMatches), text: "a `match` no arm of which matches", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MethodInConstExpression), text: "this method in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MethodOfFloat), text: "this method of a float", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MethodOfFloatOverNonFloat), text: "a method of a float over a non-float", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MethodOfInteger), text: "this method of an integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::MethodOfIntegerOverNonInteger), text: "a method of an integer over a non-integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::Name), text: "a name", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::NameInConstExpression), text: "this name in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::NumberWidthValueWhereBoolIsRequired), text: "a number-width value where a `bool` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::NumberWidthValueWhereFloatIsRequired), text: "a number-width value where an `f64` is required", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::Operator), text: "this operator", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::OperatorOnFloat), text: "this operator on a float", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::OperatorOnIntegers), text: "this operator on integers", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::OperatorOtherThanComparisonOnCompositeValue), text: "an operator other than a comparison on a composite value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::OperatorOverFloatAndAnotherType), text: "an operator over a float and another type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::OptionRowInConstExpression), text: "this `Option` row in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParamOfTemplateWhichHasNoValue), text: "the param `{}` of a template, which has no value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParamTemplateModuleDoesNotHave), text: "a param `{}` the template's module does not have", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParsedArrayWhoseLengthIsGenericArgument), text: "a parsed array whose length is a generic argument", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParserCalledWithOtherThanOneText), text: "a parser called with other than one text", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParserOverThisElementType), text: "this parser over this element type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ParserWhoseArrayTypeCheckerDidNot), text: "a parser whose array type the checker did not give", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::PathPatternThatIsNotConstantOr), text: "a path pattern that is not a constant or a unit variant", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::PatternInConstExpression), text: "this pattern in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::PatternThatNamesNoStructOrVariant), text: "a pattern that names no struct or variant", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::PowByNonConstantExponent), text: "`pow` by a non-constant exponent", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::PowiByNonConstantExponent), text: "`powi` by a non-constant exponent", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RangeIndexBoundThatIsNotNon), text: "a range index bound that is not a non-negative integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RangePatternOverValuesThatAreNot), text: "a range pattern over values that are not both integers or both floats", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RangeWhoseBoundsAreNotIntegers), text: "a range whose bounds are not integers", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RangeWithNoHighBound), text: "a range with no high bound", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RangeWithNoLowBound), text: "a range with no low bound", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RefutablePatternInLetWithoutElse), text: "a refutable pattern in a `let` without `else`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::RowOutsideAppendixRows), text: "a row outside Appendix H.5 to H.7", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ShiftByNonInteger), text: "a shift by a non-integer", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::StatementInConstExpression), text: "this statement in a const expression", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::StringWithUndefinedEscape), text: "a string with an undefined escape", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::StructExpressionThatLeavesFieldOut), text: "a struct expression that leaves a field out", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::TextThatIsNoIncludeStrOr), text: "a text that is no `include_str!` or `const` of one", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::TextValueOtherThanIncludeStr), text: "a text value other than `include_str!`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ThatIsNotCompositeValue), text: "{} that is not a composite value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Constant(ConstantForm::ValueBuiltFromNameThatIsNeither), text: "a value built from a name that is neither a struct nor a variant", owner: RefusalOwner::Unswept },
     ];
 
     /// The row of the form: its words and its owner.

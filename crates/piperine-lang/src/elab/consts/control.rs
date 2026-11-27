@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 use piperine_ir::Constant;
 
 use super::{Bindings, ConstEval, ConstFault, Exit};
-use crate::refusal::RefusedForm;
+use crate::refusal::forms::{ConstantForm, ValueForm};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 
 /// The most iterations one loop runs in one evaluation (Q5, §1 rule 11).
@@ -69,7 +69,7 @@ impl ConstEval<'_, '_> {
 
     /// `expr` as a value, for the forms of `exec` that may have none.
     pub(super) fn exec_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        self.exec(expr, bindings)?.ok_or(ConstFault::refused(expr, RefusedForm::Text("a form with no value where a value is needed".to_string())))
+        self.exec(expr, bindings)?.ok_or(ConstFault::refused(expr, ConstantForm::FormWithNoValueWhereValueIs))
     }
 
     /// `break`, `continue` or `return`, with its value evaluated: the fault the loop or function it
@@ -99,7 +99,7 @@ impl ConstEval<'_, '_> {
                     }
                 }
                 StmtKind::Empty => {}
-                _ => return Err(ConstFault::refused(expr, RefusedForm::Text("this statement in a const expression".to_string()))),
+                _ => return Err(ConstFault::refused(expr, ConstantForm::StatementInConstExpression)),
             }
         }
         Ok(value)
@@ -177,9 +177,9 @@ impl ConstEval<'_, '_> {
             Some(block) => {
                 // the `else` diverges: its exit is the fault that leaves the enclosing form
                 self.exec_block(expr, &block.stmts, bindings)?;
-                Err(ConstFault::refused(expr, RefusedForm::Text("a `let .. else` whose `else` does not leave".to_string())))
+                Err(ConstFault::refused(expr, ConstantForm::LetElseWhoseElseDoesNotLeave))
             }
-            None => Err(ConstFault::refused(expr, RefusedForm::Text("a refutable pattern in a `let` without `else`".to_string()))),
+            None => Err(ConstFault::refused(expr, ConstantForm::RefutablePatternInLetWithoutElse)),
         }
     }
 
@@ -221,7 +221,7 @@ impl ConstEval<'_, '_> {
             }
             return self.exec(arm.body, bindings);
         }
-        Err(ConstFault::refused(expr, RefusedForm::Text("a `match` no arm of which matches".to_string())))
+        Err(ConstFault::refused(expr, ConstantForm::MatchNoArmOfWhichMatches))
     }
 
     // ---- loops -------------------------------------------------------------------------------
@@ -281,7 +281,7 @@ impl ConstEval<'_, '_> {
             return Ok(None);
         };
         let (Constant::Int(first), Constant::Int(last)) = (self.fold(lo, bindings)?, self.fold(hi, bindings)?) else {
-            return Err(ConstFault::refused(iter, RefusedForm::Text("a `for` range whose bounds are not integers".to_string())));
+            return Err(ConstFault::refused(iter, ConstantForm::ForRangeWhoseBoundsAreNotIntegers));
         };
         let end = if inclusive { last + 1 } else { last };
         let mut trips = 0;
@@ -302,10 +302,10 @@ impl ConstEval<'_, '_> {
             return result;
         }
         let ExprKind::Path(path) = &self.design.expr_node(target).kind else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("an assignment to something that is not a local, a field or an element".to_string())));
+            return Err(ConstFault::refused(expr, ConstantForm::AssignmentToSomethingThatIsNotLocal));
         };
         let Some(Resolution::Decl(local)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("an assignment to a name that is not a local".to_string())));
+            return Err(ConstFault::refused(expr, ValueForm::AssignmentToNameThatIsNotLocal));
         };
         let value = self.fold(rhs, bindings)?;
         let assigned = match op {
@@ -348,7 +348,7 @@ impl ConstEval<'_, '_> {
             }
             PatKind::Path(path) => match self.named_constant(self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res)) {
                 Some(named) => Ok(self.equals(value, named)),
-                None => Err(ConstFault::refused(at, RefusedForm::Text("a path pattern that is not a constant or a unit variant".to_string()))),
+                None => Err(ConstFault::refused(at, ConstantForm::PathPatternThatIsNotConstantOr)),
             },
             PatKind::Or(alternatives) => {
                 for alternative in alternatives {
@@ -370,10 +370,10 @@ impl ConstEval<'_, '_> {
                 };
                 match (above, below) {
                     (Some(above), Some(below)) => Ok(above && below),
-                    _ => Err(ConstFault::refused(at, RefusedForm::Text("a range pattern over values that are not both integers or both floats".to_string()))),
+                    _ => Err(ConstFault::refused(at, ConstantForm::RangePatternOverValuesThatAreNot)),
                 }
             }
-            _ => Err(ConstFault::refused(at, RefusedForm::Text("this pattern in a const expression".to_string()))),
+            _ => Err(ConstFault::refused(at, ConstantForm::PatternInConstExpression)),
         }
     }
 
@@ -465,11 +465,11 @@ impl ConstEval<'_, '_> {
                 (Some(function), PatKind::Ident { binding, sub: None, .. }) => {
                     self.fn_values.insert(binding, function);
                 }
-                (Some(_), _) => return Err(ConstFault::refused(expr, RefusedForm::Text("a function bound by a pattern that is not a name".to_string()))),
+                (Some(_), _) => return Err(ConstFault::refused(expr, ConstantForm::FunctionBoundByPatternThatIsNot)),
                 (None, _) => {
-                    let Some(value) = argument.value else { return Err(ConstFault::refused(expr, RefusedForm::Text("an argument with neither a value nor a function".to_string()))) };
+                    let Some(value) = argument.value else { return Err(ConstFault::refused(expr, ConstantForm::ArgumentWithNeitherValueNorFunction)) };
                     if !self.matches(*pat, value, expr, bindings)? {
-                        return Err(ConstFault::refused(expr, RefusedForm::Text("a closure parameter pattern that does not match its argument".to_string())));
+                        return Err(ConstFault::refused(expr, ConstantForm::ClosureParameterPatternThatDoesNotMatch));
                     }
                 }
             }
@@ -494,6 +494,6 @@ impl ConstEval<'_, '_> {
             Err(ConstFault::Leaves { exit: Exit::Return, .. }) => self.leaving.take(),
             Err(fault) => return Err(fault),
         };
-        value.ok_or(ConstFault::refused(expr, RefusedForm::Text("a function body with no value".to_string())))
+        value.ok_or(ConstFault::refused(expr, ConstantForm::FunctionBodyWithNoValue))
     }
 }

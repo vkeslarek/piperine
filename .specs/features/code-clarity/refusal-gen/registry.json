@@ -55,6 +55,10 @@
   "family": "Value",
   "name": "ConstWithoutValue"
  },
+ "`contains` of a value that is not a range": {
+  "family": "Constant",
+  "name": "ContainsOfValueThatIsNotRange"
+ },
  "`continue`": {
   "family": "Value",
   "name": "Continue"
@@ -171,6 +175,14 @@
   "family": "Analog",
   "name": "ParseTableOrParseHexOutsideConst"
  },
+ "`pow` by a non-constant exponent": {
+  "family": "Constant",
+  "name": "PowByNonConstantExponent"
+ },
+ "`powi` by a non-constant exponent": {
+  "family": "Constant",
+  "name": "PowiByNonConstantExponent"
+ },
  "`return`": {
   "family": "Value",
   "name": "Return"
@@ -243,6 +255,10 @@
   "family": "Structure",
   "name": "BoolInitialValue"
  },
+ "a `bool` where an `f64` is required": {
+  "family": "Constant",
+  "name": "BoolWhereFloatIsRequired"
+ },
  "a `bound_step` inside a closure or an `Option` method": {
   "family": "Analog",
   "name": "BoundStepInsideClosureOrOptionMethod"
@@ -266,6 +282,14 @@
  "a `break`, a `continue` or a nested `while` in a loop of {}": {
   "family": "Analog",
   "name": "BreakContinueOrNestedWhileInLoop"
+ },
+ "a `const` composite of a type with no constant form": {
+  "family": "Constant",
+  "name": "ConstCompositeOfTypeWithNoConstant"
+ },
+ "a `const` without a value": {
+  "family": "Constant",
+  "name": "ConstWithoutValue"
  },
  "a `const` without a value in {}": {
   "family": "Value",
@@ -295,6 +319,10 @@
   "family": "Value",
   "name": "ForPatternThatIsNotName"
  },
+ "a `for` range whose bounds are not integers": {
+  "family": "Constant",
+  "name": "ForRangeWhoseBoundsAreNotIntegers"
+ },
  "a `for` that is not over a range with both bounds, in {}": {
   "family": "Analog",
   "name": "ForThatIsNotOverRangeWith"
@@ -306,6 +334,10 @@
  "a `for` whose variable is no name, in {}": {
   "family": "Analog",
   "name": "ForWhoseVariableIsNoNameIn"
+ },
+ "a `let .. else` whose `else` does not leave": {
+  "family": "Constant",
+  "name": "LetElseWhoseElseDoesNotLeave"
  },
  "a `let` declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps), read as an array": {
   "family": "Structure",
@@ -355,6 +387,14 @@
   "family": "Analog",
   "name": "LogicCallWhoseTypeIsNotLogic"
  },
+ "a `logic` pattern that is no literal": {
+  "family": "Constant",
+  "name": "LogicPatternThatIsNoLiteral"
+ },
+ "a `logic` pattern with a character that names no level": {
+  "family": "Constant",
+  "name": "LogicPatternWithCharacterThatNamesNo"
+ },
  "a `match` arm whose pattern binds a name, in a function that returns an `Event`": {
   "family": "Analog",
   "name": "MatchArmWhosePatternBindsNameIn"
@@ -362,6 +402,10 @@
  "a `match` arm with a guard in a function that returns an `Event`": {
   "family": "Analog",
   "name": "MatchArmWithGuardInFunctionThat"
+ },
+ "a `match` no arm of which matches": {
+  "family": "Constant",
+  "name": "MatchNoArmOfWhichMatches"
  },
  "a `match` whose last arm has a guard": {
   "family": "Value",
@@ -471,6 +515,10 @@
   "family": "Structure",
   "name": "CallOfFunctionWithNoBodyInside"
  },
+ "a call of a name that is not a function": {
+  "family": "Constant",
+  "name": "CallOfNameThatIsNotFunction"
+ },
  "a call of a struct or variant with named fields: write a struct expression `Name { .. }`": {
   "family": "Value",
   "name": "CallOfStructOrVariantWithNamed"
@@ -527,6 +575,14 @@
   "family": "Digital",
   "name": "CarrierWhoseValueTypeHasNoValue"
  },
+ "a cast of a composite value": {
+  "family": "Constant",
+  "name": "CastOfCompositeValue"
+ },
+ "a cast of a variant outside its enum": {
+  "family": "Constant",
+  "name": "CastOfVariantOutsideItsEnum"
+ },
  "a choice of arrays of templates with no array in the arm it takes": {
   "family": "Structure",
   "name": "ChoiceOfArraysOfTemplatesWithNo"
@@ -551,6 +607,10 @@
   "family": "Analog",
   "name": "ClosureOrOptionBindingInsideNoiseDensity"
  },
+ "a closure parameter pattern that does not match its argument": {
+  "family": "Constant",
+  "name": "ClosureParameterPatternThatDoesNotMatch"
+ },
  "a closure parameter that is not a name": {
   "family": "Value",
   "name": "ClosureParameterThatIsNotName"
@@ -558,6 +618,10 @@
  "a closure that captures where a function pointer `fn(..) -> R` is expected (only a closure that captures nothing coerces to one)": {
   "family": "Value",
   "name": "ClosureThatCapturesWhereFunctionPointerFn"
+ },
+ "a closure that does not give a `bool`": {
+  "family": "Constant",
+  "name": "ClosureThatDoesNotGiveBool"
  },
  "a closure with another number of parameters than the row gives it": {
   "family": "Value",
@@ -567,13 +631,49 @@
   "family": "Digital",
   "name": "CommitOrDefinitionOfWholeArrayOf"
  },
+ "a comparison of an `f64` and a `bool`": {
+  "family": "Constant",
+  "name": "ComparisonOfFloatAndBool"
+ },
  "a composite initial value": {
   "family": "Structure",
   "name": "CompositeInitialValue"
  },
+ "a composite param in a const expression": {
+  "family": "Constant",
+  "name": "CompositeParamInConstExpression"
+ },
+ "a composite value bound from outside the evaluation": {
+  "family": "Constant",
+  "name": "CompositeValueBoundFromOutsideEvaluation"
+ },
+ "a composite value input in a const expression": {
+  "family": "Constant",
+  "name": "CompositeValueInputInConstExpression"
+ },
  "a composite value of a type that has no value type": {
   "family": "Structure",
   "name": "CompositeValueOfTypeThatHasNo"
+ },
+ "a composite value that does not have the type its position needs": {
+  "family": "Constant",
+  "name": "CompositeValueThatDoesNotHaveType"
+ },
+ "a composite value where a `bool` is required": {
+  "family": "Constant",
+  "name": "CompositeValueWhereBoolIsRequired"
+ },
+ "a composite value where a scalar is required": {
+  "family": "Constant",
+  "name": "CompositeValueWhereScalarIsRequired"
+ },
+ "a composite value where an `f64` is required": {
+  "family": "Constant",
+  "name": "CompositeValueWhereFloatIsRequired"
+ },
+ "a composite value with a different number of parts than its type": {
+  "family": "Constant",
+  "name": "CompositeValueWithDifferentNumberOfParts"
  },
  "a compound assignment through an operator of a type, in {}": {
   "family": "Analog",
@@ -582,6 +682,10 @@
  "a condition that is not a `bool`": {
   "family": "Structure",
   "name": "ConditionThatIsNotBool"
+ },
+ "a const argument of a template that is not an integer or a `bool`": {
+  "family": "Constant",
+  "name": "ConstArgumentOfTemplateThatIsNot"
  },
  "a const argument that is not an integer or a `bool`": {
   "family": "Structure",
@@ -667,9 +771,45 @@
   "family": "Value",
   "name": "FieldOfTypeInValueType"
  },
+ "a field out of range": {
+  "family": "Constant",
+  "name": "FieldOutOfRange"
+ },
+ "a field pattern that names no field": {
+  "family": "Constant",
+  "name": "FieldPatternThatNamesNoField"
+ },
+ "a field read of a value that is not a template": {
+  "family": "Constant",
+  "name": "FieldReadOfValueThatIsNot"
+ },
+ "a field the struct does not have": {
+  "family": "Constant",
+  "name": "FieldStructDoesNotHave"
+ },
+ "a field the value does not have": {
+  "family": "Constant",
+  "name": "FieldValueDoesNotHave"
+ },
+ "a float literal": {
+  "family": "Constant",
+  "name": "FloatLiteral"
+ },
  "a flow probe of a branch without a potential contribution": {
   "family": "Analog",
   "name": "FlowProbeOfBranchWithoutPotentialContribution"
+ },
+ "a form with no value where a value is needed": {
+  "family": "Constant",
+  "name": "FormWithNoValueWhereValueIs"
+ },
+ "a function body with no value": {
+  "family": "Constant",
+  "name": "FunctionBodyWithNoValue"
+ },
+ "a function bound by a pattern that is not a name": {
+  "family": "Constant",
+  "name": "FunctionBoundByPatternThatIsNot"
  },
  "a function of \u00a722.1 called with the wrong number of arguments": {
   "family": "Analog",
@@ -719,6 +859,14 @@
   "family": "Structure",
   "name": "GenerationConditionThatIsNotBool"
  },
+ "a generation range whose bound is not an integer": {
+  "family": "Constant",
+  "name": "GenerationRangeWhoseBoundIsNotInteger"
+ },
+ "a generic argument of a template that is still a parameter": {
+  "family": "Constant",
+  "name": "GenericArgumentOfTemplateThatIsStill"
+ },
  "a generic argument that is still a parameter": {
   "family": "Structure",
   "name": "GenericArgumentThatIsStillParameter"
@@ -734,6 +882,10 @@
  "a guarded `limit` whose input binds a local": {
   "family": "Analog",
   "name": "GuardedLimitWhoseInputBindsLocal"
+ },
+ "a hex image of other than integers": {
+  "family": "Constant",
+  "name": "HexImageOfOtherThanIntegers"
  },
  "a hoisted module that holds {},": {
   "family": "Structure",
@@ -755,9 +907,17 @@
   "family": "Generics",
   "name": "MethodCallThroughBoundThatNoImpl"
  },
+ "a method of a float over a non-float": {
+  "family": "Constant",
+  "name": "MethodOfFloatOverNonFloat"
+ },
  "a method of a generic impl whose parameters the receiver leaves open": {
   "family": "Generics",
   "name": "MethodOfGenericImplWhoseParametersReceiver"
+ },
+ "a method of an integer over a non-integer": {
+  "family": "Constant",
+  "name": "MethodOfIntegerOverNonInteger"
  },
  "a method on a nature that returns an `Option`": {
   "family": "Value",
@@ -770,6 +930,10 @@
  "a method that returns an `Event` that no impl gives for this type": {
   "family": "Analog",
   "name": "MethodThatReturnsEventThatNoImpl"
+ },
+ "a name": {
+  "family": "Constant",
+  "name": "Name"
  },
  "a name bound by a pattern in a definition": {
   "family": "Pattern",
@@ -823,6 +987,18 @@
   "family": "Value",
   "name": "NodeOrPortReadAsValue"
  },
+ "a number-width value where a `bool` is required": {
+  "family": "Constant",
+  "name": "NumberWidthValueWhereBoolIsRequired"
+ },
+ "a number-width value where an `f64` is required": {
+  "family": "Constant",
+  "name": "NumberWidthValueWhereFloatIsRequired"
+ },
+ "a param `{}` the template's module does not have": {
+  "family": "Constant",
+  "name": "ParamTemplateModuleDoesNotHave"
+ },
  "a param of a child that no placement value fixes": {
   "family": "Value",
   "name": "ParamOfChildThatNoPlacementValue"
@@ -835,6 +1011,18 @@
   "family": "Value",
   "name": "ParamOfAnotherModule"
  },
+ "a parsed array whose length is a generic argument": {
+  "family": "Constant",
+  "name": "ParsedArrayWhoseLengthIsGenericArgument"
+ },
+ "a parser called with other than one text": {
+  "family": "Constant",
+  "name": "ParserCalledWithOtherThanOneText"
+ },
+ "a parser whose array type the checker did not give": {
+  "family": "Constant",
+  "name": "ParserWhoseArrayTypeCheckerDidNot"
+ },
  "a part of a nested array of carriers as a value: name an element": {
   "family": "Digital",
   "name": "PartOfNestedArrayOfCarriersAs"
@@ -842,6 +1030,10 @@
  "a part of an array of generated instances as the receiver of a field: name an instance": {
   "family": "Value",
   "name": "PartOfArrayOfGeneratedInstancesAs"
+ },
+ "a path pattern that is not a constant or a unit variant": {
+  "family": "Constant",
+  "name": "PathPatternThatIsNotConstantOr"
  },
  "a pattern naming something that is no struct or variant": {
   "family": "Pattern",
@@ -854,6 +1046,10 @@
  "a pattern that is not a text known where it is read": {
   "family": "Analog",
   "name": "PatternThatIsNotTextKnownWhere"
+ },
+ "a pattern that names no struct or variant": {
+  "family": "Constant",
+  "name": "PatternThatNamesNoStructOrVariant"
  },
  "a pattern with fields over a value that is not a struct, a tuple or an enum": {
   "family": "Pattern",
@@ -883,13 +1079,33 @@
   "family": "Analog",
   "name": "ProbeOfMoreThanTwoNodes"
  },
+ "a range index bound that is not a non-negative integer": {
+  "family": "Constant",
+  "name": "RangeIndexBoundThatIsNotNon"
+ },
  "a range of anything but integers": {
   "family": "Value",
   "name": "RangeOfAnythingButIntegers"
  },
+ "a range pattern over values that are not both integers or both floats": {
+  "family": "Constant",
+  "name": "RangePatternOverValuesThatAreNot"
+ },
  "a range that is not written where it is used or bound by a `let`": {
   "family": "Value",
   "name": "RangeThatIsNotWrittenWhereIt"
+ },
+ "a range whose bounds are not integers": {
+  "family": "Constant",
+  "name": "RangeWhoseBoundsAreNotIntegers"
+ },
+ "a range with no high bound": {
+  "family": "Constant",
+  "name": "RangeWithNoHighBound"
+ },
+ "a range with no low bound": {
+  "family": "Constant",
+  "name": "RangeWithNoLowBound"
  },
  "a receiver that is not a carrier of this module": {
   "family": "Analog",
@@ -907,9 +1123,21 @@
   "family": "Structure",
   "name": "RecursionThroughFunctionWithoutBody"
  },
+ "a refutable pattern in a `let` without `else`": {
+  "family": "Constant",
+  "name": "RefutablePatternInLetWithoutElse"
+ },
  "a resolved carrier whose drive type has no value in the IR": {
   "family": "Value",
   "name": "ResolvedCarrierWhoseDriveTypeHasNo"
+ },
+ "a row outside Appendix H.5 to H.7": {
+  "family": "Constant",
+  "name": "RowOutsideAppendixRows"
+ },
+ "a shift by a non-integer": {
+  "family": "Constant",
+  "name": "ShiftByNonInteger"
  },
  "a statement that is no `let` of a name before the event of a function that returns an `Event`": {
   "family": "Analog",
@@ -927,6 +1155,14 @@
   "family": "Structure",
   "name": "StringLiteralBoundByLet"
  },
+ "a string with an undefined escape": {
+  "family": "Constant",
+  "name": "StringWithUndefinedEscape"
+ },
+ "a struct expression that leaves a field out": {
+  "family": "Constant",
+  "name": "StructExpressionThatLeavesFieldOut"
+ },
  "a struct expression that names neither a struct nor a variant": {
   "family": "Value",
   "name": "StructExpressionThatNamesNeitherStructNor"
@@ -934,6 +1170,14 @@
  "a target that is not a carrier of this module": {
   "family": "Digital",
   "name": "TargetThatIsNotCarrierOfThis"
+ },
+ "a text that is no `include_str!` or `const` of one": {
+  "family": "Constant",
+  "name": "TextThatIsNoIncludeStrOr"
+ },
+ "a text value other than `include_str!`": {
+  "family": "Constant",
+  "name": "TextValueOtherThanIncludeStr"
  },
  "a tuple `let` component that is not a name": {
   "family": "Value",
@@ -954,6 +1198,10 @@
  "a type that has no value in the IR": {
   "family": "Value",
   "name": "TypeThatHasNoValueInIr"
+ },
+ "a value built from a name that is neither a struct nor a variant": {
+  "family": "Constant",
+  "name": "ValueBuiltFromNameThatIsNeither"
  },
  "a value input left out, read as a value": {
   "family": "Value",
@@ -1003,6 +1251,18 @@
   "family": "Analog",
   "name": "ElseThatIsNoBlockOrIf"
  },
+ "an `encode` of a value that is no scalar": {
+  "family": "Constant",
+  "name": "EncodeOfValueThatIsNoScalar"
+ },
+ "an `encode` that gives a level that is not a `bool`": {
+  "family": "Constant",
+  "name": "EncodeThatGivesLevelThatIsNot"
+ },
+ "an `f64` where a `bool` is required": {
+  "family": "Constant",
+  "name": "FloatWhereBoolIsRequired"
+ },
  "an `if let` in a `fn` called inside a `ddx`": {
   "family": "Analog",
   "name": "IfLetInFnCalledInsideDdx"
@@ -1015,6 +1275,10 @@
   "family": "Pattern",
   "name": "IfLetOfOptionValuesWhoseBlock"
  },
+ "an `include_str!` path with an undefined escape": {
+  "family": "Constant",
+  "name": "IncludeStrPathWithUndefinedEscape"
+ },
  "an analog loop whose variable is not a name": {
   "family": "Structure",
   "name": "AnalogLoopWhoseVariableIsNotName"
@@ -1022,6 +1286,18 @@
  "an argument at an array port of nodes that is no array of nodes": {
   "family": "Digital",
   "name": "ArgumentAtArrayPortOfNodesThat"
+ },
+ "an argument that is not a closure or a function": {
+  "family": "Constant",
+  "name": "ArgumentThatIsNotClosureOrFunction"
+ },
+ "an argument with neither a value nor a function": {
+  "family": "Constant",
+  "name": "ArgumentWithNeitherValueNorFunction"
+ },
+ "an array length that is not a non-negative integer": {
+  "family": "Constant",
+  "name": "ArrayLengthThatIsNotNonNegative"
  },
  "an array of `{}`": {
   "family": "Value",
@@ -1063,6 +1339,14 @@
   "family": "Value",
   "name": "ArrayThatIsNotArrayValue"
  },
+ "an array too long to parse": {
+  "family": "Constant",
+  "name": "ArrayTooLongToParse"
+ },
+ "an assignment into a local with no value": {
+  "family": "Constant",
+  "name": "AssignmentIntoLocalWithNoValue"
+ },
  "an assignment to a field of a type that has none": {
   "family": "Value",
   "name": "AssignmentToFieldOfTypeThatHas"
@@ -1095,6 +1379,14 @@
   "family": "Analog",
   "name": "AssignmentToSomethingThatIsNoName"
  },
+ "an assignment to something that is not a local, a field or an element": {
+  "family": "Constant",
+  "name": "AssignmentToSomethingThatIsNotLocal"
+ },
+ "an element index that is not a non-negative integer": {
+  "family": "Constant",
+  "name": "ElementIndexThatIsNotNonNegative"
+ },
  "an element of a value that is no array": {
   "family": "Digital",
   "name": "ElementOfValueThatIsNoArray"
@@ -1122,6 +1414,10 @@
  "an expression the type checker gave no value type": {
   "family": "Value",
   "name": "ExpressionTypeCheckerGaveNoValueType"
+ },
+ "an implicit `Some` of a value with no value type": {
+  "family": "Constant",
+  "name": "ImplicitSomeOfValueWithNoValue"
  },
  "an index of a value that is no array of nodes": {
   "family": "Analog",
@@ -1155,9 +1451,29 @@
   "family": "Digital",
   "name": "InitialValueOfArrayOfNodesThat"
  },
+ "an integer literal": {
+  "family": "Constant",
+  "name": "IntegerLiteral"
+ },
+ "an integer operator outside an integer type": {
+  "family": "Constant",
+  "name": "IntegerOperatorOutsideIntegerType"
+ },
+ "an integer operator over a non-integer": {
+  "family": "Constant",
+  "name": "IntegerOperatorOverNonInteger"
+ },
  "an integer or number-width initial value": {
   "family": "Structure",
   "name": "IntegerOrNumberWidthInitialValue"
+ },
+ "an integer where a `bool` is required": {
+  "family": "Constant",
+  "name": "IntegerWhereBoolIsRequired"
+ },
+ "an integer where an `f64` is required": {
+  "family": "Constant",
+  "name": "IntegerWhereFloatIsRequired"
  },
  "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)": {
   "family": "Structure",
@@ -1166,6 +1482,10 @@
  "an item of a child placed in generation, read without naming its iteration: index every loop": {
   "family": "Value",
   "name": "ItemOfChildPlacedInGenerationRead"
+ },
+ "an iteration over a value that is not an array, a range or an iterator": {
+  "family": "Constant",
+  "name": "IterationOverValueThatIsNotArray"
  },
  "an iterator consumer with other arguments than the row takes": {
   "family": "Value",
@@ -1186,6 +1506,14 @@
  "an operator other than a comparison on `Option`s": {
   "family": "Generics",
   "name": "OperatorOtherThanComparisonOnOptions"
+ },
+ "an operator other than a comparison on a composite value": {
+  "family": "Constant",
+  "name": "OperatorOtherThanComparisonOnCompositeValue"
+ },
+ "an operator over a float and another type": {
+  "family": "Constant",
+  "name": "OperatorOverFloatAndAnotherType"
  },
  "an unresolved name": {
   "family": "Value",
@@ -1547,6 +1875,10 @@
   "family": "Pattern",
   "name": "StructPattern"
  },
+ "the default of this type": {
+  "family": "Constant",
+  "name": "DefaultOfThisType"
+ },
  "the feedback of `{}` through an instance whose value is not a placement of a module with a result": {
   "family": "Structure",
   "name": "FeedbackOfThroughInstanceWhoseValueIs"
@@ -1554,6 +1886,10 @@
  "the name of {}, which has fields, used as a value: build it with a call or a struct expression": {
   "family": "Value",
   "name": "NameOfWhichHasFieldsUsedAs"
+ },
+ "the param `{}` of a template, which has no value": {
+  "family": "Constant",
+  "name": "ParamOfTemplateWhichHasNoValue"
  },
  "the range `..` without a bound": {
   "family": "Value",
@@ -1567,13 +1903,25 @@
   "family": "Value",
   "name": "TopModuleItsElaborationFailedWithoutDiagnostic"
  },
+ "this `Option` row in a const expression": {
+  "family": "Constant",
+  "name": "OptionRowInConstExpression"
+ },
  "this call as an event": {
   "family": "Analog",
   "name": "CallAsEvent"
  },
+ "this cast": {
+  "family": "Constant",
+  "name": "Cast"
+ },
  "this expression": {
   "family": "Value",
   "name": "ThisExpression"
+ },
+ "this form in a const expression": {
+  "family": "Constant",
+  "name": "FormInConstExpression"
  },
  "this form of an `Option` value": {
   "family": "Value",
@@ -1583,9 +1931,25 @@
   "family": "Analog",
   "name": "FormOfEvent"
  },
+ "this literal": {
+  "family": "Constant",
+  "name": "Literal"
+ },
  "this method as an event": {
   "family": "Analog",
   "name": "MethodAsEvent"
+ },
+ "this method in a const expression": {
+  "family": "Constant",
+  "name": "MethodInConstExpression"
+ },
+ "this method of a float": {
+  "family": "Constant",
+  "name": "MethodOfFloat"
+ },
+ "this method of an integer": {
+  "family": "Constant",
+  "name": "MethodOfInteger"
  },
  "this name as a pattern": {
   "family": "Pattern",
@@ -1599,9 +1963,33 @@
   "family": "Analog",
   "name": "NameAsEvent"
  },
+ "this name in a const expression": {
+  "family": "Constant",
+  "name": "NameInConstExpression"
+ },
+ "this operator": {
+  "family": "Constant",
+  "name": "Operator"
+ },
+ "this operator on a float": {
+  "family": "Constant",
+  "name": "OperatorOnFloat"
+ },
+ "this operator on integers": {
+  "family": "Constant",
+  "name": "OperatorOnIntegers"
+ },
+ "this parser over this element type": {
+  "family": "Constant",
+  "name": "ParserOverThisElementType"
+ },
  "this pattern": {
   "family": "Pattern",
   "name": "ThisPattern"
+ },
+ "this pattern in a const expression": {
+  "family": "Constant",
+  "name": "PatternInConstExpression"
  },
  "this pattern inside `Some` in a definition": {
   "family": "Pattern",
@@ -1614,6 +2002,10 @@
  "this statement": {
   "family": "Value",
   "name": "Statement"
+ },
+ "this statement in a const expression": {
+  "family": "Constant",
+  "name": "StatementInConstExpression"
  },
  "this type": {
   "family": "Value",
@@ -1678,6 +2070,10 @@
  "{} inside a module": {
   "family": "Value",
   "name": "InsideModule"
+ },
+ "{} that is not a composite value": {
+  "family": "Constant",
+  "name": "ThatIsNotCompositeValue"
  },
  "{} that is not a constant or a param": {
   "family": "Analog",

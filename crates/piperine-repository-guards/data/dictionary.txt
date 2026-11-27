@@ -1310,6 +1310,7 @@ ignore
 ignored
 ignores
 ill
+image
 immutable
 impedance
 implement
@@ -2894,6 +2895,7 @@ unchecked
 unclassified
 unconnected
 undeclared
+undefined
 under
 underscore
 underscores

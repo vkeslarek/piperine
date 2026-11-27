@@ -42,8 +42,6 @@ pub struct RefusalRow {
 /// The forms the front end refuses, grouped by family.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RefusedForm {
-    /// A form written as free text: the words a user reads. Gone when every site is named.
-    Text(String),
     /// A value, a type or an expression form.
     Value(ValueForm),
     /// A pattern form.
@@ -64,7 +62,6 @@ impl RefusedForm {
     /// The words that name the form, with a `{}` for each detail.
     fn text(&self) -> &str {
         match self {
-            RefusedForm::Text(words) => words,
             RefusedForm::Value(form) => form.row().text,
             RefusedForm::Pattern(form) => form.row().text,
             RefusedForm::Analog(form) => form.row().text,

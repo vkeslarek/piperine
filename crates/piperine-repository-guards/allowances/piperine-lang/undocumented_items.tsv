@@ -7,7 +7,6 @@ crates/piperine-lang/src/elab/consts.rs::Bindings::get	1
 crates/piperine-lang/src/elab/consts.rs::ConstEval::boolean	1
 crates/piperine-lang/src/elab/consts.rs::ConstEval::new	1
 crates/piperine-lang/src/elab/consts/numbers.rs::ConstEval::panic	1
-crates/piperine-lang/src/elab/consts/numbers.rs::ConstEval::unsupported	1
 crates/piperine-lang/src/elab/elaborator.rs::Elaboration::new	1
 crates/piperine-lang/src/elab/elaborator.rs::Elaborator::new	1
 crates/piperine-lang/src/elab/events.rs::Elaboration::not	1

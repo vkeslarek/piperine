@@ -22,7 +22,7 @@ use piperine_ir::{AggregateId, Constant, Real};
 use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
-use crate::refusal::RefusedForm;
+use crate::refusal::forms::{ConstantForm, StructureForm, ValueForm};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
 use crate::types::{Method, Length, Nominal, Ty};
 
@@ -116,7 +116,7 @@ impl ConstEval<'_, '_> {
         let (_, parts) = self.parts_of(init, levels, "the levels of an `encode`")?;
         let mut word: i128 = 0;
         for (level, part) in parts.iter().enumerate() {
-            let Constant::Bool(high) = part else { return Err(ConstFault::refused(init, RefusedForm::Text("an `encode` that gives a level that is not a `bool`".to_string()))) };
+            let Constant::Bool(high) = part else { return Err(ConstFault::refused(init, ConstantForm::EncodeThatGivesLevelThatIsNot)) };
             word |= i128::from(*high) << level;
         }
         Ok(Constant::Int(word))
@@ -126,7 +126,7 @@ impl ConstEval<'_, '_> {
     fn parts_of(&self, expr: ExprId, value: Constant, what: &str) -> Result<(CompositeKind, Vec<Constant>), ConstFault> {
         match self.composite_of(value) {
             Some(composite) => Ok((composite.kind, composite.parts.clone())),
-            None => Err(ConstFault::refused(expr, RefusedForm::Text(format!("{what} that is not a composite value")))),
+            None => Err(ConstFault::refused_with(expr, ConstantForm::ThatIsNotCompositeValue, [what.to_string()])),
         }
     }
 
@@ -186,7 +186,7 @@ impl ConstEval<'_, '_> {
             Some(count) => count as usize,
             None => match self.fold(length, bindings)? {
                 Constant::Int(count) if count >= 0 => count as usize,
-                _ => return Err(ConstFault::refused(expr, RefusedForm::Text("an array length that is not a non-negative integer".to_string()))),
+                _ => return Err(ConstFault::refused(expr, ConstantForm::ArrayLengthThatIsNotNonNegative)),
             },
         };
         let value = self.fold(element, bindings)?;
@@ -200,7 +200,7 @@ impl ConstEval<'_, '_> {
             Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
-                _ => return Err(ConstFault::refused(expr, RefusedForm::Text("a struct expression that names neither a struct nor a variant".to_string()))),
+                _ => return Err(ConstFault::refused(expr, ValueForm::StructExpressionThatNamesNeitherStructNor)),
             },
         };
         let layout: Vec<DeclId> = self.types.fields(owner).map(|fields| fields.iter().map(|f| f.decl).collect()).unwrap_or_default();
@@ -211,12 +211,12 @@ impl ConstEval<'_, '_> {
                 _ => None,
             };
             let Some(at) = at else {
-                return Err(ConstFault::refused(expr, RefusedForm::Text("a field the struct does not have".to_string())));
+                return Err(ConstFault::refused(expr, ConstantForm::FieldStructDoesNotHave));
             };
             parts[at] = Some(self.fold(init.value, bindings)?);
         }
         let Some(parts) = parts.into_iter().collect::<Option<Vec<_>>>() else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("a struct expression that leaves a field out".to_string())));
+            return Err(ConstFault::refused(expr, ConstantForm::StructExpressionThatLeavesFieldOut));
         };
         self.owned(expr, owner, parts)
     }
@@ -233,9 +233,9 @@ impl ConstEval<'_, '_> {
             DeclKind::Struct(_) => Ok(self.make(CompositeKind::Struct, parts)),
             DeclKind::Variant(_) => match EnumLayout::variant_tag(self.design, owner) {
                 Some(position) => Ok(self.make(CompositeKind::Variant(position as u32), parts)),
-                None => Err(ConstFault::refused(expr, RefusedForm::Text("a variant outside its enum".to_string()))),
+                None => Err(ConstFault::refused(expr, ValueForm::VariantOutsideItsEnum)),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("a value built from a name that is neither a struct nor a variant".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::ValueBuiltFromNameThatIsNeither)),
         }
     }
 
@@ -317,8 +317,8 @@ impl ConstEval<'_, '_> {
             Some(ExprKind::Lit(lit)) => lit.str_value(),
             _ => None,
         };
-        let Some(text) = text else { return Err(ConstFault::refused(expr, RefusedForm::Text("a `logic` pattern that is no literal".to_string()))) };
-        let pattern = crate::types::LogicPattern::parse(&text).map_err(|_| ConstFault::refused(expr, RefusedForm::Text("a `logic` pattern with a character that names no level".to_string())))?;
+        let Some(text) = text else { return Err(ConstFault::refused(expr, ConstantForm::LogicPatternThatIsNoLiteral)) };
+        let pattern = crate::types::LogicPattern::parse(&text).map_err(|_| ConstFault::refused(expr, ConstantForm::LogicPatternWithCharacterThatNamesNo))?;
         let (binary, value) = pattern.planes();
         Ok(self.make(CompositeKind::Struct, vec![Constant::Int(binary as i128), Constant::Int(value as i128)]))
     }
@@ -343,7 +343,7 @@ impl ConstEval<'_, '_> {
                 let parts = fields.iter().map(|field| self.default_value(expr, field)).collect::<Result<Vec<_>, _>>()?;
                 Ok(self.make(CompositeKind::Struct, parts))
             }
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("the default of this type".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::DefaultOfThisType)),
         }
     }
 
@@ -357,8 +357,8 @@ impl ConstEval<'_, '_> {
             return self.template_param(expr, whole, name);
         }
         let (_, parts) = self.parts_of(expr, whole, "a field read of a value")?;
-        let at = self.field_position(recv, name).ok_or(ConstFault::refused(expr, RefusedForm::Text("a field the value does not have".to_string())))?;
-        parts.get(at).copied().ok_or(ConstFault::refused(expr, RefusedForm::Text("a field out of range".to_string())))
+        let at = self.field_position(recv, name).ok_or(ConstFault::refused(expr, ConstantForm::FieldValueDoesNotHave))?;
+        parts.get(at).copied().ok_or(ConstFault::refused(expr, ConstantForm::FieldOutOfRange))
     }
 
     /// The position of the field `name` of the tuple or struct `recv` is.
@@ -390,7 +390,7 @@ impl ConstEval<'_, '_> {
                 Some(element) => Ok(*element),
                 None => Err(ConstFault::Panic { expr, what: format!("the index {at} is out of range for an array of {} elements (§1.5.25)", elements.len()) }),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("an index that is not an integer".to_string()))),
+            _ => Err(ConstFault::refused(expr, StructureForm::IndexThatIsNotInteger)),
         }
     }
 
@@ -403,7 +403,7 @@ impl ConstEval<'_, '_> {
                 Some(bound) if let Some(at) = this.integer(bound) => Ok(at as usize),
                 Some(bound) => match this.fold(bound, bindings)? {
                     Constant::Int(at) if at >= 0 => Ok(at as usize),
-                    _ => Err(ConstFault::refused(expr, RefusedForm::Text("a range index bound that is not a non-negative integer".to_string()))),
+                    _ => Err(ConstFault::refused(expr, ConstantForm::RangeIndexBoundThatIsNotNon)),
                 },
             }
         };
@@ -474,7 +474,7 @@ impl ConstEval<'_, '_> {
                     _ => order.is_ge(),
                 }),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("an operator other than a comparison on a composite value".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::OperatorOtherThanComparisonOnCompositeValue)),
         }
     }
 
@@ -527,7 +527,7 @@ impl ConstEval<'_, '_> {
             }
         };
         let Some(root) = self.locals.get(&local).copied() else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("an assignment into a local with no value".to_string())));
+            return Err(ConstFault::refused(expr, ConstantForm::AssignmentIntoLocalWithNoValue));
         };
         let mut positions = Vec::new();
         for step in steps {
@@ -535,7 +535,7 @@ impl ConstEval<'_, '_> {
                 Step::Field(at) => *at,
                 Step::Element(index) => match self.fold(*index, bindings)? {
                     Constant::Int(at) if at >= 0 => at as usize,
-                    _ => return Err(ConstFault::refused(*index, RefusedForm::Text("an element index that is not a non-negative integer".to_string()))),
+                    _ => return Err(ConstFault::refused(*index, ConstantForm::ElementIndexThatIsNotNonNegative)),
                 },
             });
         }
@@ -578,9 +578,9 @@ impl ConstEval<'_, '_> {
                 let fields = fields.clone();
                 Some(self.matches_owner(owner, value, at, bindings, |this, parts| {
                     for field in &fields {
-                        let Resolution::Decl(decl) = field.res else { return Err(ConstFault::refused(at, RefusedForm::Text("a field pattern that names no field".to_string()))) };
+                        let Resolution::Decl(decl) = field.res else { return Err(ConstFault::refused(at, ConstantForm::FieldPatternThatNamesNoField)) };
                         let layout = this.pattern_layout(owner);
-                        let Some(position) = layout.iter().position(|f| *f == decl) else { return Err(ConstFault::refused(at, RefusedForm::Text("a field the struct does not have".to_string()))) };
+                        let Some(position) = layout.iter().position(|f| *f == decl) else { return Err(ConstFault::refused(at, ConstantForm::FieldStructDoesNotHave)) };
                         let part = parts[position];
                         match (field.pat, field.binding) {
                             (Some(sub), _) => {
@@ -629,7 +629,7 @@ impl ConstEval<'_, '_> {
     /// `value` against the struct or variant `owner`: the same variant (a struct has one shape), then
     /// `parts_match` over its parts.
     fn matches_owner(&mut self, owner: Option<DeclId>, value: Constant, at: ExprId, _bindings: &Bindings, parts_match: impl FnOnce(&mut Self, Vec<Constant>) -> Result<bool, ConstFault>) -> Result<bool, ConstFault> {
-        let Some(owner) = owner else { return Err(ConstFault::refused(at, RefusedForm::Text("a pattern that names no struct or variant".to_string()))) };
+        let Some(owner) = owner else { return Err(ConstFault::refused(at, ConstantForm::PatternThatNamesNoStructOrVariant)) };
         let (kind, parts) = self.parts_of(at, value, "a pattern over a value")?;
         match (self.design.decl_data(owner).kind.clone(), kind) {
             (DeclKind::Struct(_), CompositeKind::Struct) => parts_match(self, parts),
@@ -733,9 +733,9 @@ impl ConstEval<'_, '_> {
                     }
                     Ok((first..end).map(|v| Constant::Int(v)).collect())
                 }
-                _ => Err(ConstFault::refused(expr, RefusedForm::Text("a range whose bounds are not integers".to_string()))),
+                _ => Err(ConstFault::refused(expr, ConstantForm::RangeWhoseBoundsAreNotIntegers)),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("an iteration over a value that is not an array, a range or an iterator".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::IterationOverValueThatIsNotArray)),
         }
     }
 
@@ -751,7 +751,7 @@ impl ConstEval<'_, '_> {
 
     /// The closure or function an argument of a row is.
     fn closure_argument(&mut self, expr: ExprId, arg: ExprId) -> Result<FnValue, ConstFault> {
-        self.fn_value_of(arg).ok_or(ConstFault::refused(expr, RefusedForm::Text("an argument that is not a closure or a function".to_string())))
+        self.fn_value_of(arg).ok_or(ConstFault::refused(expr, ConstantForm::ArgumentThatIsNotClosureOrFunction))
     }
 
     /// `function` called on `values`.
@@ -764,7 +764,7 @@ impl ConstEval<'_, '_> {
     fn test_with(&mut self, expr: ExprId, function: &FnValue, values: Vec<Constant>, bindings: &Bindings) -> Result<bool, ConstFault> {
         match self.call_with(expr, function, values, bindings)? {
             Constant::Bool(holds) => Ok(holds),
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("a closure that does not give a `bool`".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::ClosureThatDoesNotGiveBool)),
         }
     }
 
@@ -806,7 +806,7 @@ impl ConstEval<'_, '_> {
                 let elements = self.elements_of(expr, receiver)?;
                 match self.fold(args[0], bindings)? {
                     Constant::Int(at) => Ok(self.optional(usize::try_from(at).ok().and_then(|at| elements.get(at)).copied())),
-                    _ => Err(ConstFault::refused(expr, RefusedForm::Text("an index that is not an integer".to_string()))),
+                    _ => Err(ConstFault::refused(expr, StructureForm::IndexThatIsNotInteger)),
                 }
             }
             Method::RangeContains => self.range_contains(expr, receiver, args[0], bindings),
@@ -817,7 +817,7 @@ impl ConstEval<'_, '_> {
                         Some(order) => known(!(if inclusive { order.is_le() } else { order.is_lt() })),
                         None => known(true),
                     },
-                    _ => Err(ConstFault::refused(expr, RefusedForm::Text("`is_empty` of a range with a missing bound".to_string()))),
+                    _ => Err(ConstFault::refused(expr, ValueForm::IsEmptyOfRangeWithMissingBound)),
                 }
             }
             Method::IteratorMap | Method::IteratorFilter | Method::IteratorAny | Method::IteratorAll => {
@@ -851,7 +851,7 @@ impl ConstEval<'_, '_> {
                 elements.reverse();
                 Ok(self.make(CompositeKind::Array, elements))
             }
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("a row outside Appendix H.5 to H.7".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::RowOutsideAppendixRows)),
         }
     }
 
@@ -914,16 +914,16 @@ impl ConstEval<'_, '_> {
         let value = self.fold(sought, bindings)?;
         let (kind, parts) = self.parts_of(expr, range, "`contains` of a value")?;
         let CompositeKind::Range { low, high, inclusive } = kind else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("`contains` of a value that is not a range".to_string())));
+            return Err(ConstFault::refused(expr, ConstantForm::ContainsOfValueThatIsNotRange));
         };
         let mut holds = true;
         let mut bounds = parts.into_iter();
         if low {
-            let lo = bounds.next().ok_or(ConstFault::refused(expr, RefusedForm::Text("a range with no low bound".to_string())))?;
+            let lo = bounds.next().ok_or(ConstFault::refused(expr, ConstantForm::RangeWithNoLowBound))?;
             holds &= self.ordering(lo, value).is_some_and(|o| o.is_le());
         }
         if high {
-            let hi = bounds.next().ok_or(ConstFault::refused(expr, RefusedForm::Text("a range with no high bound".to_string())))?;
+            let hi = bounds.next().ok_or(ConstFault::refused(expr, ConstantForm::RangeWithNoHighBound))?;
             holds &= self.ordering(value, hi).is_some_and(|o| if inclusive { o.is_le() } else { o.is_lt() });
         }
         Ok(Constant::Bool(holds))
@@ -972,7 +972,7 @@ impl ConstEval<'_, '_> {
             (Method::Map | Method::AndThen, None) => Ok(self.make(CompositeKind::Option, Vec::new())),
             (Method::Or, Some(_)) => Ok(receiver),
             (Method::Or, None) => self.fold(args[0], bindings),
-            _ => Err(ConstFault::refused(expr, RefusedForm::Text("this `Option` row in a const expression".to_string()))),
+            _ => Err(ConstFault::refused(expr, ConstantForm::OptionRowInConstExpression)),
         }
     }
 }

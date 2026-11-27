@@ -4,7 +4,7 @@
 use piperine_ir::Constant;
 
 use super::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree};
-use crate::refusal::RefusedForm;
+use crate::refusal::forms::ConstantForm;
 use crate::elab::instances::ConcreteValue;
 use crate::elab::templates::{TemplateValue, Templates};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
@@ -59,9 +59,9 @@ impl ConstEval<'_, '_> {
                 ConstTerm::Expr(folded) => match self.value(folded, bindings)? {
                     Constant::Int(number) => Ok(ConcreteValue::Const(number)),
                     Constant::Bool(flag) => Ok(ConcreteValue::Bool(flag)),
-                    _ => Err(ConstFault::refused(expr, RefusedForm::Text("a const argument of a template that is not an integer or a `bool`".to_string()))),
+                    _ => Err(ConstFault::refused(expr, ConstantForm::ConstArgumentOfTemplateThatIsNot)),
                 },
-                ConstTerm::Param(_) | ConstTerm::Width(_) => Err(ConstFault::refused(expr, RefusedForm::Text("a generic argument of a template that is still a parameter".to_string()))),
+                ConstTerm::Param(_) | ConstTerm::Width(_) => Err(ConstFault::refused(expr, ConstantForm::GenericArgumentOfTemplateThatIsStill)),
             },
         }
     }
@@ -72,15 +72,15 @@ impl ConstEval<'_, '_> {
     /// default of the module's param, folded over the params of the template so far (a default may read an earlier param).
     pub(in crate::elab) fn template_param(&mut self, expr: ExprId, number: Constant, name: &str) -> Result<Constant, ConstFault> {
         let Some(template) = self.templates.get(number).cloned() else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text("a field read of a value that is not a template".to_string())));
+            return Err(ConstFault::refused(expr, ConstantForm::FieldReadOfValueThatIsNot));
         };
         let Some(param) = self.design.decl_data(template.module).children.iter().copied().find(|child| {
             let data = self.design.decl_data(*child);
             matches!(data.kind, DeclKind::Param(_)) && data.name.as_ref().is_some_and(|own| own.text == name)
         }) else {
-            return Err(ConstFault::refused(expr, RefusedForm::Text(format!("a param `{name}` the template's module does not have"))));
+            return Err(ConstFault::refused_with(expr, ConstantForm::ParamTemplateModuleDoesNotHave, [name.to_string()]));
         };
-        self.template_bindings(&template)?.get(param).ok_or(ConstFault::refused(expr, RefusedForm::Text(format!("the param `{name}` of a template, which has no value"))))
+        self.template_bindings(&template)?.get(param).ok_or(ConstFault::refused_with(expr, ConstantForm::ParamOfTemplateWhichHasNoValue, [name.to_string()]))
     }
 
     /// The value of every param of the module of `template` that has one: what its block binds, else the default, folded over

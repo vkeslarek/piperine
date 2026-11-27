@@ -22,7 +22,7 @@ use piperine_numbers::quad::Float128;
 use super::floats::Ieee754;
 use super::integers::DynamicInteger;
 use super::{ConstEval, ConstFault};
-use crate::refusal::RefusedForm;
+use crate::refusal::forms::ConstantForm;
 use crate::msl::lexer;
 use crate::pom::{BinOp, ExprId, LitKind, UnOp};
 use crate::types::{FloatText, Method, Ty};
@@ -84,10 +84,6 @@ impl ConstEval<'_, '_> {
         }
     }
 
-    fn unsupported(expr: ExprId, what: &str) -> ConstFault {
-        ConstFault::refused(expr, RefusedForm::Text(what.to_string()))
-    }
-
     fn panic(expr: ExprId, what: &str) -> ConstFault {
         ConstFault::Panic { expr, what: what.to_string() }
     }
@@ -117,7 +113,7 @@ impl ConstEval<'_, '_> {
             LitKind::Int(text) => DecimalText::nearest(&Self::digits(text), format),
             _ => None,
         };
-        nearest.map(Constant::FloatBits).ok_or_else(|| Self::unsupported(expr, "a float literal"))
+        nearest.map(Constant::FloatBits).ok_or_else(|| ConstFault::refused(expr, ConstantForm::FloatLiteral))
     }
 
     /// The text of a number literal without its underscores and its `f32`/`f64` suffix.
@@ -134,7 +130,7 @@ impl ConstEval<'_, '_> {
         if ty.is_other_float() {
             return Some(match (op, Self::float_pattern(value)) {
                 (UnOp::Neg, Some(pattern)) => Ok(Constant::FloatBits(Self::negated(&ty, pattern))),
-                _ => Err(Self::unsupported(expr, "this operator on a float")),
+                _ => Err(ConstFault::refused(expr, ConstantForm::OperatorOnFloat)),
             });
         }
         let integer = self.integer_of(&ty, value)?;
@@ -167,7 +163,7 @@ impl ConstEval<'_, '_> {
     /// An operator over two floats of one of the three formats.
     fn float_binary(&self, expr: ExprId, op: BinOp, ty: &Ty, left: Constant, right: Constant) -> Result<Constant, ConstFault> {
         let (Some(a), Some(b)) = (Self::float_pattern(left), Self::float_pattern(right)) else {
-            return Err(Self::unsupported(expr, "an operator over a float and another type"));
+            return Err(ConstFault::refused(expr, ConstantForm::OperatorOverFloatAndAnotherType));
         };
         match ty {
             Ty::F32 => Self::float_operation::<f32>(expr, op, a, b),
@@ -191,20 +187,20 @@ impl ConstEval<'_, '_> {
             BinOp::Ge => Ok(Constant::Bool(x >= y)),
             BinOp::Eq => Ok(Constant::Bool(x == y)),
             BinOp::Ne => Ok(Constant::Bool(x != y)),
-            _ => Err(Self::unsupported(expr, "this operator on a float")),
+            _ => Err(ConstFault::refused(expr, ConstantForm::OperatorOnFloat)),
         }
     }
 
     /// An operator over two integers wider than 64 bits (the shift amount of any integer type).
     fn integer_binary_wide(&mut self, expr: ExprId, op: BinOp, ty: &Ty, left: Constant, (amount_ty, right): (&Ty, Constant)) -> Result<Constant, ConstFault> {
-        let Some(a) = self.integer_of(ty, left) else { return Err(Self::unsupported(expr, "an integer operator over a non-integer")) };
+        let Some(a) = self.integer_of(ty, left) else { return Err(ConstFault::refused(expr, ConstantForm::IntegerOperatorOverNonInteger)) };
         if matches!(op, BinOp::Shl | BinOp::Shr) {
-            let Some(amount) = self.integer_of(amount_ty, right) else { return Err(Self::unsupported(expr, "a shift by a non-integer")) };
+            let Some(amount) = self.integer_of(amount_ty, right) else { return Err(ConstFault::refused(expr, ConstantForm::ShiftByNonInteger)) };
             let Some(count) = amount.shift_amount() else { return Err(Self::panic(expr, "a shift by a negative amount")) };
             let shifted = if op == BinOp::Shl { a.shift_left(count) } else { a.shift_right(count) };
             return Ok(self.integer_constant(&shifted));
         }
-        let Some(b) = self.integer_of(ty, right) else { return Err(Self::unsupported(expr, "an integer operator over a non-integer")) };
+        let Some(b) = self.integer_of(ty, right) else { return Err(ConstFault::refused(expr, ConstantForm::IntegerOperatorOverNonInteger)) };
         let ordering = a.compare(&b);
         let result = match op {
             BinOp::Lt => return Ok(Constant::Bool(ordering == Ordering::Less)),
@@ -221,7 +217,7 @@ impl ConstEval<'_, '_> {
             BinOp::BitAnd => a.and(&b),
             BinOp::BitOr => a.or(&b),
             BinOp::BitXor => a.xor(&b),
-            _ => return Err(Self::unsupported(expr, "this operator on integers")),
+            _ => return Err(ConstFault::refused(expr, ConstantForm::OperatorOnIntegers)),
         };
         Ok(self.integer_constant(&result))
     }
@@ -241,7 +237,7 @@ impl ConstEval<'_, '_> {
 
     /// An H.2 row over a float of one of the three formats.
     fn float_method(&self, expr: ExprId, ty: &Ty, method: Method, receiver: Constant, values: &[Constant]) -> Result<Constant, ConstFault> {
-        let Some(pattern) = Self::float_pattern(receiver) else { return Err(Self::unsupported(expr, "a method of a float over a non-float")) };
+        let Some(pattern) = Self::float_pattern(receiver) else { return Err(ConstFault::refused(expr, ConstantForm::MethodOfFloatOverNonFloat)) };
         let arguments: Vec<u128> = values.iter().filter_map(|value| Self::float_pattern(*value)).collect();
         let powi = || match values {
             [Constant::Int(exponent)] => i32::try_from(*exponent).ok(),
@@ -262,22 +258,22 @@ impl ConstEval<'_, '_> {
             (Method::IsNan, []) => Ok(Constant::Bool(x.is_nan())),
             (Method::IsFinite, []) => Ok(Constant::Bool(x.is_finite())),
             (Method::IsInfinite, []) => Ok(Constant::Bool(x.is_infinite())),
-            (Method::Powi, []) => exponent.map_or_else(|| Err(Self::unsupported(expr, "`powi` by a non-constant exponent")), |e| float(x.power_integer(e))),
+            (Method::Powi, []) => exponent.map_or_else(|| Err(ConstFault::refused(expr, ConstantForm::PowiByNonConstantExponent)), |e| float(x.power_integer(e))),
             (Method::Clamp, [low, high]) => x.clamp(T::from_pattern(*low), T::from_pattern(*high)).map_or_else(|| Err(Self::panic(expr, "a `clamp` whose bounds are crossed or NaN")), float),
-            (_, []) => x.unary(method).map_or_else(|| Err(Self::unsupported(expr, "this method of a float")), float),
-            (_, [other]) => x.binary(method, T::from_pattern(*other)).map_or_else(|| Err(Self::unsupported(expr, "this method of a float")), float),
-            _ => Err(Self::unsupported(expr, "this method of a float")),
+            (_, []) => x.unary(method).map_or_else(|| Err(ConstFault::refused(expr, ConstantForm::MethodOfFloat)), float),
+            (_, [other]) => x.binary(method, T::from_pattern(*other)).map_or_else(|| Err(ConstFault::refused(expr, ConstantForm::MethodOfFloat)), float),
+            _ => Err(ConstFault::refused(expr, ConstantForm::MethodOfFloat)),
         }
     }
 
     /// An H.1 row over an integer wider than 64 bits.
     fn integer_method(&mut self, expr: ExprId, ty: &Ty, method: Method, receiver: Constant, values: &[Constant], arg_types: &[Ty]) -> Result<Constant, ConstFault> {
-        let Some(x) = self.integer_of(ty, receiver) else { return Err(Self::unsupported(expr, "a method of an integer over a non-integer")) };
+        let Some(x) = self.integer_of(ty, receiver) else { return Err(ConstFault::refused(expr, ConstantForm::MethodOfIntegerOverNonInteger)) };
         let same: Vec<DynamicInteger> = values.iter().filter_map(|value| self.integer_of(ty, *value)).collect();
         let result = match (method, same.as_slice()) {
             (Method::Pow, _) => {
                 let exponent = values.first().zip(arg_types.first()).and_then(|(value, ty)| self.integer_of(ty, *value)).and_then(|e| e.shift_amount());
-                x.power(exponent.ok_or_else(|| Self::unsupported(expr, "`pow` by a non-constant exponent"))?)
+                x.power(exponent.ok_or_else(|| ConstFault::refused(expr, ConstantForm::PowByNonConstantExponent))?)
             }
             (Method::Min, [y]) => x.minimum(y),
             (Method::Max, [y]) => x.maximum(y),
@@ -288,7 +284,7 @@ impl ConstEval<'_, '_> {
             (Method::SaturatingAdd, [y]) => x.saturating_add(y),
             (Method::SaturatingSub, [y]) => x.saturating_sub(y),
             (Method::SaturatingMul, [y]) => x.saturating_mul(y),
-            _ => return Err(Self::unsupported(expr, "this method of an integer")),
+            _ => return Err(ConstFault::refused(expr, ConstantForm::MethodOfInteger)),
         };
         Ok(self.integer_constant(&result))
     }
@@ -305,7 +301,7 @@ impl ConstEval<'_, '_> {
 
     /// The conversion of `value` of type `source` to `target`.
     fn cast_number(&mut self, expr: ExprId, source: &Ty, target: &Ty, value: Constant) -> Result<Constant, ConstFault> {
-        let refused = || Self::unsupported(expr, "this cast");
+        let refused = || ConstFault::refused(expr, ConstantForm::Cast);
         if let Some(from) = FloatText::format(source) {
             let pattern = Self::float_pattern(value).ok_or_else(refused)?;
             if let Some(to) = FloatText::format(target) {
