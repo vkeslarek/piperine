@@ -61,9 +61,6 @@ fn the_catch_all_refusal_files_are_gone() {
 struct RefusalTable;
 
 impl RefusalTable {
-    /// The length from which a fragment of a form's words is distinctive enough to show a GAPS row owns the form.
-    const DISTINCTIVE: usize = 20;
-
     /// Every form of every family, each paired with the row its family gives it, in declaration order.
     fn entries() -> Vec<(RefusedForm, &'static RefusalRow)> {
         let mut entries = Vec::new();
@@ -112,17 +109,69 @@ fn every_refused_form_has_a_row() {
     }
 }
 
+/// The `P0001` messages one `GAPS.md` row quotes: the strings of its column that starts with `` `P0001`: ``, never its
+/// prose (a row's prose may mention a form it does not own).
+struct QuotedMessages {
+    messages: Vec<String>,
+}
+
+impl QuotedMessages {
+    /// Where the words of a form may end its context clause: a punctuated clause (`: it has no finite symbolic
+    /// reading`, `, in a function that returns an `Event``, the bare `,` after a detail) or a place (` in a `fn`
+    /// called inside a `ddx``, ` before the event of ..`). A row may quote a message without that clause.
+    const CONTEXT_OPENERS: [&'static str; 4] = [":", ",", " in ", " before "];
+
+    /// The messages quoted by the row `id` of `gaps`, or `None` when it has no such row or the row has no `P0001` column.
+    fn of_row(gaps: &str, id: &str) -> Option<QuotedMessages> {
+        let line = gaps.lines().find(|line| line.starts_with(&format!("| {id} |")))?;
+        let unescaped = line.replace("\\|", "\u{1}");
+        let column = unescaped.split('|').map(str::trim).find(|cell| cell.starts_with("`P0001`:"))?;
+        let messages = column.split('"').skip(1).step_by(2).map(|quote| quote.replace('\u{1}', "|")).collect();
+        Some(QuotedMessages { messages })
+    }
+
+    /// Whether one of the messages is the message of the form worded `text`.
+    fn names_form(&self, text: &str) -> bool {
+        self.messages.iter().any(|quote| QuotedMessages::message_names(quote, text))
+    }
+
+    /// Whether `quote` is `text`, or `text` cut before one of its context clauses, with each `{}` of the words read as
+    /// the detail it stands for (any non-empty text).
+    fn message_names(quote: &str, text: &str) -> bool {
+        let cuts = (0..text.len()).filter(|at| text.is_char_boundary(*at) && QuotedMessages::CONTEXT_OPENERS.iter().any(|opener| text[*at..].starts_with(opener)));
+        cuts.chain([text.len()]).any(|cut| QuotedMessages::fills(quote, &text[..cut]))
+    }
+
+    /// Whether `quote` is `words` with each `{}` filled by a non-empty detail.
+    fn fills(quote: &str, words: &str) -> bool {
+        let pieces: Vec<&str> = words.split("{}").collect();
+        let (first, last) = (pieces[0], pieces[pieces.len() - 1]);
+        if pieces.len() == 1 {
+            return quote == words;
+        }
+        let Some(mut rest) = quote.strip_prefix(first) else { return false };
+        for piece in &pieces[1..pieces.len() - 1] {
+            let detail = rest.chars().next().map_or(0, char::len_utf8);
+            let Some(found) = rest.get(detail..).and_then(|after| after.find(piece)) else { return false };
+            rest = &rest[detail + found + piece.len()..];
+        }
+        rest.len() > last.len() && rest.ends_with(last)
+    }
+}
+
+/// A form names `Gap(id)` only when that `GAPS.md` row quotes the form's message in its `P0001` column. GAPS quotes a
+/// message whole, or abbreviated by leaving off its trailing context clause (`a `while` or `loop` in a `fn` called inside
+/// a `ddx`` for the words `..: it has no finite symbolic reading`; `a `match` arm whose pattern binds a name` for
+/// `.., in a function that returns an `Event``), and fills a `{}` with an example detail (`value input port of type
+/// `module ..``). The row's prose is never read: L74's prose mentions "an assignment to a field or an element", a form it
+/// does not own.
 #[test]
 fn every_gap_owner_names_a_gaps_row() {
     let gaps = RefusalTable::gaps();
     for (_, row) in RefusalTable::entries() {
         if let RefusalOwner::Gap(id) = row.owner {
-            let owning = gaps.lines().find(|line| line.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("the form {:?} names `{id}` as its owner and GAPS.md has no such row", row.form));
-            let fragments: Vec<&str> = row.text.split("{}").map(str::trim).filter(|fragment| fragment.len() >= RefusalTable::DISTINCTIVE).collect();
-            assert!(!fragments.is_empty(), "the words of {:?} have no distinctive fragment, so no GAPS row can be shown to own it", row.form);
-            for fragment in fragments {
-                assert!(owning.contains(fragment), "{:?} names `{id}` as its owner but that row does not quote `{fragment}`", row.form);
-            }
+            let quoted = QuotedMessages::of_row(&gaps, id).unwrap_or_else(|| panic!("the form {:?} names `{id}` as its owner and GAPS.md has no such row with a `P0001` column", row.form));
+            assert!(quoted.names_form(row.text), "{:?} names `{id}` as its owner but that row's `P0001` column quotes none of {:?} as its words `{}`", row.form, quoted.messages, row.text);
         }
     }
 }

@@ -277,7 +277,8 @@
  },
  "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`": {
   "family": "Analog",
-  "name": "BreakContinueOrReturnWithNoValue"
+  "name": "BreakContinueOrReturnWithNoValue",
+  "owner": "L74"
  },
  "a `break`, a `continue` or a nested `while` in a loop of {}": {
   "family": "Analog",
@@ -302,11 +303,13 @@
  },
  "a `fn` called inside a `ddx` that forks into more than 4096 paths": {
   "family": "Analog",
-  "name": "FnCalledInsideDdxThatForksInto"
+  "name": "FnCalledInsideDdxThatForksInto",
+  "owner": "L74"
  },
  "a `fn` with no value inside a `ddx`": {
   "family": "Analog",
-  "name": "FnWithNoValueInsideDdx"
+  "name": "FnWithNoValueInsideDdx",
+  "owner": "L74"
  },
  "a `for` of more than 4096 iterations in {}": {
   "family": "Analog",
@@ -398,7 +401,8 @@
  },
  "a `match` arm whose pattern binds a name, in a function that returns an `Event`": {
   "family": "EventFunction",
-  "name": "MatchArmWhosePatternBindsNameIn"
+  "name": "MatchArmWhosePatternBindsNameIn",
+  "owner": "L75"
  },
  "a `match` arm with a guard in a function that returns an `Event`": {
   "family": "EventFunction",
@@ -459,11 +463,13 @@
  },
  "a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading": {
   "family": "Analog",
-  "name": "WhileOrLoopInFnCalledInside"
+  "name": "WhileOrLoopInFnCalledInside",
+  "owner": "L74"
  },
  "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`": {
   "family": "EventFunction",
-  "name": "WhileLoopBreakContinueOrReturnWith"
+  "name": "WhileLoopBreakContinueOrReturnWith",
+  "owner": "L75"
  },
  "a `zip` of an iterator that was filtered": {
   "family": "Value",
@@ -1156,11 +1162,13 @@
  },
  "a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`": {
   "family": "Analog",
-  "name": "StatementThatIsNoLetOfName"
+  "name": "StatementThatIsNoLetOfName",
+  "owner": "L74"
  },
  "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`": {
   "family": "EventFunction",
-  "name": "StatementThatIsNoLetAssignmentIf"
+  "name": "StatementThatIsNoLetAssignmentIf",
+  "owner": "L75"
  },
  "a string literal bound by a `let`": {
   "family": "Structure",
@@ -1277,7 +1285,8 @@
  },
  "an `if let` in a `fn` called inside a `ddx`": {
   "family": "Analog",
-  "name": "IfLetInFnCalledInsideDdx"
+  "name": "IfLetInFnCalledInsideDdx",
+  "owner": "L74"
  },
  "an `if let` in a function that returns an `Event`": {
   "family": "EventFunction",
@@ -1422,7 +1431,8 @@
  },
  "an expression statement that is no assignment, `if` or `for` in a `fn` called inside a `ddx`": {
   "family": "Analog",
-  "name": "ExpressionStatementThatIsNoAssignmentIf"
+  "name": "ExpressionStatementThatIsNoAssignmentIf",
+  "owner": "L74"
  },
  "an expression the type checker gave no value type": {
   "family": "Value",

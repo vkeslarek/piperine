@@ -768,7 +768,7 @@ T152 → T153 → T154 → T155
 
 ### T21: One method per repeated refusal
 
-**What**: Each of the 25 messages raised from more than one site (68 sites, R3) is raised by one method of its owner; the elaborator's copy of the two forms the checker refuses first (R4: `expect` with a non-literal message, a name as a pattern) becomes an internal guard `P0004`; `types/unsupported.rs` and `elab/unlowered.rs` fold into the table (R7).
+**What**: Each of the 25 messages raised from more than one site (68 sites, R3) is one named variant whose words live in one row of the refusal table, and each site builds that variant directly (coordinator decision, user AFK, pending review: the first attempt's one pass-through method per form, `refusal/repeated.rs`, was removed as indirection); the elaborator's copy of the two forms the checker refuses first (R4: `expect` with a non-literal message, a name as a pattern) becomes an internal guard `P0004`; `types/unsupported.rs` and `elab/unlowered.rs` fold into the table (R7).
 **Where**: `crates/piperine-lang/src/refusal/forms.rs`
 **Depends on**: T20
 **Reuses**: findings.md §6 R3, R4, R7
