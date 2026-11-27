@@ -11,10 +11,10 @@ crates/piperine-api/src/record.rs::Field	1
 crates/piperine-api/src/recorder.rs::Grid	1
 crates/piperine-api/src/request.rs::Analysis	1
 crates/piperine-api/src/request.rs::Given	1
-crates/piperine-api/src/request.rs::Grid	1
-crates/piperine-api/src/request.rs::Options	1
-crates/piperine-api/src/request.rs::Overrides	1
 crates/piperine-api/src/request.rs::Source	1
+crates/piperine-api/src/request/grid.rs::Grid	1
+crates/piperine-api/src/request/options.rs::Options	1
+crates/piperine-api/src/request/overrides.rs::Overrides	1
 crates/piperine-api/src/session.rs::Built	1
 crates/piperine-api/src/table.rs::Cell	1
 crates/piperine-api/src/verdict.rs::Verdict	1

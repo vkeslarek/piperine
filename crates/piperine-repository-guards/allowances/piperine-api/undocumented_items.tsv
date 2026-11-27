@@ -13,10 +13,4 @@ crates/piperine-api/src/record.rs::RecordSink::record	1
 crates/piperine-api/src/record.rs::Streams::record	1
 crates/piperine-api/src/record.rs::Streams::trace_record	1
 crates/piperine-api/src/recorder.rs::Recorder::row	1
-crates/piperine-api/src/request.rs::::span	1
-crates/piperine-api/src/request.rs::::span_of	1
-crates/piperine-api/src/request.rs::Given::flag	1
-crates/piperine-api/src/request.rs::Keys::over	1
-crates/piperine-api/src/request.rs::Source::fault	1
-crates/piperine-api/src/request.rs::Source::fault_in	1
 crates/piperine-api/src/session.rs::Session::diagnosed	1

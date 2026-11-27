@@ -1727,8 +1727,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate has no row in the free-function allowance; the request tests pass unedited
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-cli`
+- [x] The crate has no row in the free-function allowance; the request tests pass unedited
+- [x] Gate check passes: Quick, and `cargo test -p piperine-cli`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
