@@ -1408,10 +1408,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

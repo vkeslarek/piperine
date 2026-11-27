@@ -70,6 +70,16 @@ pub enum DeclKind {
 }
 
 impl DeclKind {
+    /// The tables an imported declaration of this kind occupies: types, values.
+    pub(crate) fn occupies(&self) -> (bool, bool) {
+        match self {
+            DeclKind::Fn(_) | DeclKind::Const(_) | DeclKind::Variant(_) => (false, true),
+            DeclKind::Module(_) => (true, true),
+            DeclKind::Struct(s) => (true, s.form == FieldsForm::Unit),
+            _ => (true, false),
+        }
+    }
+
     /// The variant's name, as `dump()` prints it.
     pub fn label(&self) -> &'static str {
         match self {

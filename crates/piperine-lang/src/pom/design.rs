@@ -544,7 +544,7 @@ impl DesignBuilder {
             design.report_reserved_stem(id, reserved);
         }
         design.add_std(&self.std_sources);
-        super::resolve::run(&mut design);
+        super::resolve::NameResolution::new(&mut design).run();
         design
     }
 }

@@ -1103,7 +1103,6 @@ Why a member was left `Deferred` instead of resolved.
 | --- | --- | --- |
 | `ReceiverTypeUnknown` | — | The receiver type cannot be read from a declaration. |
 | `AmbiguousAccess` | — | An access call (`v(x)`) whose access name several natures declare and the argument does not decide. |
-| `InferredGenerics` | — | Reserved: needs inference of generic arguments. The resolver does not produce it yet. |
 | `BuiltinTraitMember` | — | An associated name written through a generic bounded by a catalogue trait of Appendix H (`T: PartialOrd`, `T::foo`). |
 
 ### `CallClass`

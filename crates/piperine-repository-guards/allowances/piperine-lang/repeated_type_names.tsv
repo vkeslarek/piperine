@@ -95,7 +95,7 @@ crates/piperine-lang/src/pom/reflect/items.rs::Trait	1
 crates/piperine-lang/src/pom/reflect/items.rs::Variant	1
 crates/piperine-lang/src/pom/reflect/mod.rs::Attr	1
 crates/piperine-lang/src/pom/resolution.rs::Resolution	1
-crates/piperine-lang/src/pom/resolve/mod.rs::Ctx	1
+crates/piperine-lang/src/pom/resolve/context.rs::Ctx	1
 crates/piperine-lang/src/pom/resolve/names.rs::Frame	1
 crates/piperine-lang/src/types/aggregate_patterns.rs::Shape	1
 crates/piperine-lang/src/types/catalogue.rs::Arg	1

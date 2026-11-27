@@ -16,7 +16,7 @@ piperine-lang	ParseCheck	T46
 piperine-lang	Classifier	T47
 piperine-lang	NameResolution	T48
 piperine-lang	MemberResolution	T48
-piperine-lang	ShapeCheck	T48
+piperine-lang	DeclarationShapeCheck	T48
 piperine-lang	LeafResolution	T48
 piperine-lang	BodyWalk	T49
 piperine-lang	CheckState	T69

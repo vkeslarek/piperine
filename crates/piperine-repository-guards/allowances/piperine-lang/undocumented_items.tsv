@@ -395,13 +395,8 @@ crates/piperine-lang/src/pom/reflect/mod.rs::Reflect::is_pub	1
 crates/piperine-lang/src/pom/resolution.rs::::DeferReason	1
 crates/piperine-lang/src/pom/resolve/imports.rs::::Imports	1
 crates/piperine-lang/src/pom/resolve/imports.rs::::NsImports	1
-crates/piperine-lang/src/pom/resolve/imports.rs::Ctx::find_entry	1
+crates/piperine-lang/src/pom/resolve/context.rs::Ctx::find_entry	1
 crates/piperine-lang/src/pom/resolve/imports.rs::Imports::build	1
-crates/piperine-lang/src/pom/resolve/members.rs::::Reader	1
-crates/piperine-lang/src/pom/resolve/members.rs::::run	1
-crates/piperine-lang/src/pom/resolve/members.rs::Reader::find	1
-crates/piperine-lang/src/pom/resolve/mod.rs::Ctx::new	1
-crates/piperine-lang/src/pom/resolve/names.rs::::Names	1
 crates/piperine-lang/src/pom/resolve/names.rs::Names::children	1
 crates/piperine-lang/src/pom/resolve/names.rs::Names::decl	1
 crates/piperine-lang/src/pom/resolve/names.rs::Names::expr	1

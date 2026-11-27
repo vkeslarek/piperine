@@ -69,11 +69,11 @@ impl Scopes {
             let id = DeclId(i as u32);
             match &design.decl_data(id).kind {
                 DeclKind::Namespace(_) => {
-                    scopes.namespaces.insert(id, namespace_table(design, id));
+                    scopes.namespaces.insert(id, ScopeCollector::new(design).namespace_table(id));
                 }
                 DeclKind::Module(_) => {
                     let mut entries = Named::default();
-                    collect_members(design, id, &mut entries);
+                    ScopeCollector::new(design).collect_members(id, &mut entries);
                     scopes.members.insert(id, entries);
                 }
                 DeclKind::GenericParam(_) => {
@@ -106,13 +106,13 @@ impl Scopes {
         // Source order across the namespaces' tables.
         out.sort_by_key(|(_, d)| d.span().start);
         for (ns, table) in &self.namespaces {
-            out.extend(duplicates(design, *ns, table));
+            out.extend(ScopeCollector::new(design).duplicates(*ns, table));
         }
         for (module, entries) in &self.members {
             let module_name = design.decl_data(*module).name.as_ref().map_or("", |n| n.text.as_str());
             let mut firsts: BTreeMap<&str, DeclId> = BTreeMap::new();
             for (name, decl) in entries {
-                let Some(first) = first_of(&mut firsts, name, *decl) else { continue };
+                let Some(first) = ScopeCollector::first_of(&mut firsts, name, *decl) else { continue };
                 let span_of = |d: DeclId| {
                     let data = design.decl_data(d);
                     data.name.as_ref().map_or(data.span, |n| n.span)
@@ -127,101 +127,116 @@ impl Scopes {
     }
 }
 
-/// The declaration that first took `name`, or none when `decl` is it (and now recorded).
-fn first_of<'a>(firsts: &mut BTreeMap<&'a str, DeclId>, name: &'a str, decl: DeclId) -> Option<DeclId> {
-    match firsts.get(name) {
-        Some(first) => Some(*first),
-        None => {
-            firsts.insert(name, decl);
-            None
-        }
-    }
+/// Collects the names each namespace and module of one design declares.
+struct ScopeCollector<'design> {
+    design: &'design Design,
 }
 
-/// `E0162` for each declaration that repeats a name of its table, at its name,
-/// with a label at the first. A declaration in both tables is reported once.
-/// Two functions are an overload: the parser reports them as `E0143`.
-fn duplicates(design: &Design, ns: DeclId, table: &NsTable) -> Vec<(FileId, Diagnostic)> {
-    let mut out = Vec::new();
-    let mut reported: BTreeSet<DeclId> = BTreeSet::new();
-    for entries in [&table.types, &table.values] {
-        let mut firsts: BTreeMap<&str, DeclId> = BTreeMap::new();
-        for (name, decl) in entries {
-            let Some(first) = first_of(&mut firsts, name, *decl) else { continue };
-            if first == *decl {
-                continue;
+impl<'design> ScopeCollector<'design> {
+    /// A collector over `design`.
+    fn new(design: &'design Design) -> Self {
+        Self { design }
+    }
+
+    /// The declaration that first took `name`, or none when `decl` is it (and now recorded).
+    fn first_of<'a>(firsts: &mut BTreeMap<&'a str, DeclId>, name: &'a str, decl: DeclId) -> Option<DeclId> {
+        match firsts.get(name) {
+            Some(first) => Some(*first),
+            None => {
+                firsts.insert(name, decl);
+                None
             }
-            let is_fn = |d: DeclId| matches!(design.decl_data(d).kind, DeclKind::Fn(_));
-            if (is_fn(*decl) && is_fn(first)) || !reported.insert(*decl) {
-                continue;
-            }
-            let span_of = |d: DeclId| {
-                let data = design.decl_data(d);
-                data.name.as_ref().map_or(data.span, |n| n.span)
-            };
-            let message = format!("`{name}` is defined more than once in this namespace");
-            let diagnostic = Diagnostic::new("E0162", message, span_of(*decl), "defined again here").with_label(span_of(first), "first defined here");
-            out.push((design.decl_data(ns).file, diagnostic));
         }
     }
-    out
-}
 
-/// The named children of a namespace.
-fn namespace_table(design: &Design, ns: DeclId) -> NsTable {
-    let mut table = NsTable::default();
-    for child in &design.decl_data(ns).children {
-        let data = design.decl_data(*child);
-        let Some(name) = &data.name else { continue };
-        let entry = (name.text.clone(), *child);
-        match &data.kind {
-            // A unit struct is a value too, as a module is (§3.4.7).
-            DeclKind::Struct(s) if s.form == FieldsForm::Unit => {
-                table.types.push(entry.clone());
-                table.values.push(entry);
-            }
-            DeclKind::Nature(_) | DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Trait(_) | DeclKind::Namespace(_) => {
-                table.types.push(entry)
-            }
-            DeclKind::Fn(_) | DeclKind::Const(_) => table.values.push(entry),
-            DeclKind::Module(_) => {
-                table.types.push(entry.clone());
-                table.values.push(entry);
-            }
-            _ => {}
-        }
-    }
-    table
-}
 
-/// The ports, params, signals and `let` names under `parent`, entering
-/// generations (their loop bindings are not members). A `let` contributes
-/// the names of its pattern, not those bound inside its value.
-fn collect_members(design: &Design, parent: DeclId, out: &mut Named) {
-    for child in &design.decl_data(parent).children {
-        let data = design.decl_data(*child);
-        match &data.kind {
-            DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) => {
-                if let Some(name) = &data.name {
-                    out.push((name.text.clone(), *child));
+    /// `E0162` for each declaration that repeats a name of its table, at its name,
+    /// with a label at the first. A declaration in both tables is reported once.
+    /// Two functions are an overload: the parser reports them as `E0143`.
+    fn duplicates(&self, ns: DeclId, table: &NsTable) -> Vec<(FileId, Diagnostic)> {
+        let mut out = Vec::new();
+        let mut reported: BTreeSet<DeclId> = BTreeSet::new();
+        for entries in [&table.types, &table.values] {
+            let mut firsts: BTreeMap<&str, DeclId> = BTreeMap::new();
+            for (name, decl) in entries {
+                let Some(first) = Self::first_of(&mut firsts, name, *decl) else { continue };
+                if first == *decl {
+                    continue;
                 }
+                let is_fn = |d: DeclId| matches!(self.design.decl_data(d).kind, DeclKind::Fn(_));
+                if (is_fn(*decl) && is_fn(first)) || !reported.insert(*decl) {
+                    continue;
+                }
+                let span_of = |d: DeclId| {
+                    let data = self.design.decl_data(d);
+                    data.name.as_ref().map_or(data.span, |n| n.span)
+                };
+                let message = format!("`{name}` is defined more than once in this namespace");
+                let diagnostic = Diagnostic::new("E0162", message, span_of(*decl), "defined again here").with_label(span_of(first), "first defined here");
+                out.push((self.design.decl_data(ns).file, diagnostic));
             }
-            DeclKind::Let(l) => {
-                // Only the names the `let`'s own pattern binds: a `match` arm or an `if let` in
-                // its value binds names of that arm alone, which are no members.
-                let pat = design.pat_node(l.pat).span;
-                for binding in &data.children {
-                    let b = design.decl_data(*binding);
-                    if let (DeclKind::Binding(_), Some(name)) = (&b.kind, &b.name)
-                        && b.span.start >= pat.start
-                        && b.span.end <= pat.end
-                    {
-                        out.push((name.text.clone(), *binding));
+        }
+        out
+    }
+
+
+    /// The named children of a namespace.
+    fn namespace_table(&self, ns: DeclId) -> NsTable {
+        let mut table = NsTable::default();
+        for child in &self.design.decl_data(ns).children {
+            let data = self.design.decl_data(*child);
+            let Some(name) = &data.name else { continue };
+            let entry = (name.text.clone(), *child);
+            match &data.kind {
+                // A unit struct is a value too, as a module is (§3.4.7).
+                DeclKind::Struct(s) if s.form == FieldsForm::Unit => {
+                    table.types.push(entry.clone());
+                    table.values.push(entry);
+                }
+                DeclKind::Nature(_) | DeclKind::Struct(_) | DeclKind::Enum(_) | DeclKind::Trait(_) | DeclKind::Namespace(_) => {
+                    table.types.push(entry)
+                }
+                DeclKind::Fn(_) | DeclKind::Const(_) => table.values.push(entry),
+                DeclKind::Module(_) => {
+                    table.types.push(entry.clone());
+                    table.values.push(entry);
+                }
+                _ => {}
+            }
+        }
+        table
+    }
+
+
+    /// The ports, params, signals and `let` names under `parent`, entering
+    /// generations (their loop bindings are not members). A `let` contributes
+    /// the names of its pattern, not those bound inside its value.
+    fn collect_members(&self, parent: DeclId, out: &mut Named) {
+        for child in &self.design.decl_data(parent).children {
+            let data = self.design.decl_data(*child);
+            match &data.kind {
+                DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) => {
+                    if let Some(name) = &data.name {
+                        out.push((name.text.clone(), *child));
                     }
                 }
+                DeclKind::Let(l) => {
+                    // Only the names the `let`'s own pattern binds: a `match` arm or an `if let` in
+                    // its value binds names of that arm alone, which are no members.
+                    let pat = self.design.pat_node(l.pat).span;
+                    for binding in &data.children {
+                        let b = self.design.decl_data(*binding);
+                        if let (DeclKind::Binding(_), Some(name)) = (&b.kind, &b.name)
+                            && b.span.start >= pat.start
+                            && b.span.end <= pat.end
+                        {
+                            out.push((name.text.clone(), *binding));
+                        }
+                    }
+                }
+                DeclKind::Generation(_) => self.collect_members(*child, out),
+                _ => {}
             }
-            DeclKind::Generation(_) => collect_members(design, *child, out),
-            _ => {}
         }
     }
 }

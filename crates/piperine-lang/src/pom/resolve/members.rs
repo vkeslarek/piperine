@@ -56,7 +56,8 @@ enum Recv {
     Unknown,
 }
 
-struct Reader<'a> {
+/// Resolves the members every field access and method call of a design names.
+pub(super) struct MemberResolution<'a> {
     design: &'a Design,
     /// The annotated type of each `let` binding of a block.
     local_types: BTreeMap<DeclId, TypeId>,
@@ -67,68 +68,75 @@ struct Reader<'a> {
 /// Is the trait (second) in scope for code owned by the declaration (first)?
 pub(super) type InScope<'a> = &'a dyn Fn(DeclId, DeclId) -> bool;
 
-pub(super) fn run<'a>(design: &Design, in_scope: InScope<'a>) -> Members {
-    let reader = Reader { design, local_types: local_types(design), in_scope };
-    let mut out = Members::default();
-    let access = Classifier::new(design).access_table();
-    let probe_operands = reader.probe_operands();
-    for i in 0..design.expr_count() {
-        let expr = ExprId(i as u32);
-        if let Some(segment) = reader.reached_access(expr, &access) {
-            out.segments.push(segment);
-        }
-        if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
-            let (res, misapplied) = reader.method(*recv, &method.text, design.expr_node(expr).owner);
-            out.res.push((expr, res));
-            let owner = design.expr_node(expr).owner;
-            match misapplied {
-                Misapplied::Nowhere => {}
-                Misapplied::OnArray => {
-                    let message = format!("the carrier method `{}` is applied to an array of carriers", method.text);
-                    out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "index the array first")));
-                }
-                // §7 rule 12: carrier methods apply to a field, not to the bundle
-                Misapplied::OnBundle(bundle) => {
-                    let name = design.decl_data(bundle).name.as_ref().map_or("", |n| n.text.as_str());
-                    let message = format!("the carrier method `{}` is applied to the bundle `{name}`: it applies to a field of it (§7 rule 12, §5.1)", method.text);
-                    out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "call it on a field")));
-                }
+impl<'a> MemberResolution<'a> {
+    /// The resolution over `design`; `in_scope` tells whether a trait is in scope for a declaration.
+    pub(super) fn new(design: &'a Design, in_scope: InScope<'a>) -> Self {
+        MemberResolution { design, local_types: Self::local_types(design), in_scope }
+    }
+
+    /// What every field access and method call of the design names, and the errors found.
+    pub(super) fn resolve(&self) -> Members {
+        let design = self.design;
+        let reader = self;
+        let mut out = Members::default();
+        let access = Classifier::new(design).access_table();
+        let probe_operands = reader.probe_operands();
+        for i in 0..design.expr_count() {
+            let expr = ExprId(i as u32);
+            if let Some(segment) = reader.reached_access(expr, &access) {
+                out.segments.push(segment);
             }
-        }
-        if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
-            let (res, error) = reader.field(*recv, &name.text, design.expr_node(expr).owner);
-            out.res.push((expr, res));
-            if let Some((module, missing)) = error {
+            if let ExprKind::MethodCall { recv, method, .. } = &design.expr_node(expr).kind {
+                let (res, misapplied) = reader.method(*recv, &method.text, design.expr_node(expr).owner);
+                out.res.push((expr, res));
                 let owner = design.expr_node(expr).owner;
-                let module_name = design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str());
-                let (code, message, label) = if missing {
-                    ("E0343", format!("no item `{}` in module `{module_name}`", name.text), "no such item")
-                } else if probe_operands.contains(&expr) {
-                    // §6 rule 7: a probe or a contribution on a node the module cannot reach.
-                    ("E0244", format!("the node `{}` of module `{module_name}` is not `pub`: the module cannot reach it (§6 rule 7)", name.text), "node out of reach")
-                } else {
-                    ("E0343", format!("`{}` is not `pub` in module `{module_name}`", name.text), "not `pub`")
-                };
-                out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new(code, message, name.span, label)));
+                match misapplied {
+                    Misapplied::Nowhere => {}
+                    Misapplied::OnArray => {
+                        let message = format!("the carrier method `{}` is applied to an array of carriers", method.text);
+                        out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "index the array first")));
+                    }
+                    // §7 rule 12: carrier methods apply to a field, not to the bundle
+                    Misapplied::OnBundle(bundle) => {
+                        let name = design.decl_data(bundle).name.as_ref().map_or("", |n| n.text.as_str());
+                        let message = format!("the carrier method `{}` is applied to the bundle `{name}`: it applies to a field of it (§7 rule 12, §5.1)", method.text);
+                        out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new("E0211", message, method.span, "call it on a field")));
+                    }
+                }
+            }
+            if let ExprKind::Field { expr: recv, name, .. } = &design.expr_node(expr).kind {
+                let (res, error) = reader.field(*recv, &name.text, design.expr_node(expr).owner);
+                out.res.push((expr, res));
+                if let Some((module, missing)) = error {
+                    let owner = design.expr_node(expr).owner;
+                    let module_name = design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str());
+                    let (code, message, label) = if missing {
+                        ("E0343", format!("no item `{}` in module `{module_name}`", name.text), "no such item")
+                    } else if probe_operands.contains(&expr) {
+                        // §6 rule 7: a probe or a contribution on a node the module cannot reach.
+                        ("E0244", format!("the node `{}` of module `{module_name}` is not `pub`: the module cannot reach it (§6 rule 7)", name.text), "node out of reach")
+                    } else {
+                        ("E0343", format!("`{}` is not `pub` in module `{module_name}`", name.text), "not `pub`")
+                    };
+                    out.diagnostics.push((design.decl_data(owner).file, Diagnostic::new(code, message, name.span, label)));
+                }
             }
         }
+        out
     }
-    out
-}
 
-/// `let x: T = ..;` in a block: the binding `x` and its type.
-fn local_types(design: &Design) -> BTreeMap<DeclId, TypeId> {
-    let mut types = BTreeMap::new();
-    for i in 0..design.stmt_count() {
-        let StmtKind::Let { pat, ty: Some(ty), .. } = &design.stmt_node(super::super::ids::StmtId(i as u32)).kind else { continue };
-        if let PatKind::Ident { binding, sub: None, .. } = &design.pat_node(*pat).kind {
-            types.insert(*binding, *ty);
+    /// `let x: T = ..;` in a block: the binding `x` and its type.
+    fn local_types(design: &Design) -> BTreeMap<DeclId, TypeId> {
+        let mut types = BTreeMap::new();
+        for i in 0..design.stmt_count() {
+            let StmtKind::Let { pat, ty: Some(ty), .. } = &design.stmt_node(super::super::ids::StmtId(i as u32)).kind else { continue };
+            if let PatKind::Ident { binding, sub: None, .. } = &design.pat_node(*pat).kind {
+                types.insert(*binding, *ty);
+            }
         }
+        types
     }
-    types
-}
 
-impl Reader<'_> {
     /// The callee of the access call `expr` (`v(c.mid)`) when classification left it ambiguous and
     /// its first node is a `pub` port or signal of a placed child: the quantity of that item's
     /// nature, which the declarations alone decide (§8.2.8). The segment to write and what it names.
@@ -148,7 +156,7 @@ impl Reader<'_> {
         // the item of a placed child, or the field of a bundle (`v(d.p, d.n)`, §7 rule 12)
         let item = match self.receiver(*recv) {
             Recv::Instance(module) => self.member_of(module, &name.text)?,
-            Recv::Struct(bundle) => child_field(self.design, bundle, &name.text)?,
+            Recv::Struct(bundle) => self.child_field(bundle, &name.text)?,
             _ => return None,
         };
         let nature = self.design.nature_of(self.design.declared_type(item)?)?;
@@ -195,7 +203,7 @@ impl Reader<'_> {
                 Some(item) => (Resolution::Decl(item), Some((module, false))),
                 None => (Resolution::Unresolved, Some((module, true))),
             },
-            Recv::Struct(s) => match child_field(self.design, s, name) {
+            Recv::Struct(s) => match self.child_field(s, name) {
                 Some(f) => (Resolution::Decl(f), None),
                 None => (Resolution::Unresolved, None),
             },
@@ -222,7 +230,7 @@ impl Reader<'_> {
     /// second answer says whether a carrier method was applied to an array of carriers or to a whole bundle (`E0211`).
     fn method(&self, recv: ExprId, name: &str, owner: DeclId) -> (Resolution, Misapplied) {
         let design = self.design;
-        let in_impls = |target: DeclId| design.impls_of(target).into_iter().find_map(|i| child_fn(design, i, name)).map(Resolution::Decl);
+        let in_impls = |target: DeclId| design.impls_of(target).into_iter().find_map(|i| self.child_fn(i, name)).map(Resolution::Decl);
         let carrier_method = |nature: Option<DeclId>| -> Option<Resolution> {
             builtin_method(name).map(Resolution::Builtin).or_else(|| {
                 let nature = nature?;
@@ -285,7 +293,7 @@ impl Reader<'_> {
             if !(self.in_scope)(owner, tr) {
                 return None;
             }
-            child_fn(design, tr, name)
+            self.child_fn(tr, name)
         })
     }
 
@@ -308,7 +316,7 @@ impl Reader<'_> {
             },
             ExprKind::Field { expr: inner, name, .. } => match self.receiver(*inner) {
                 Recv::Instance(m) => self.member_of(m, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
-                Recv::Struct(s) => child_field(self.design, s, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
+                Recv::Struct(s) => self.child_field(s, &name.text).map_or(Recv::Unknown, |d| self.of_decl(d)),
                 Recv::Carrier(_) | Recv::CarrierArray(..) | Recv::StructArray(_) | Recv::InstanceArray(_) | Recv::Unknown => Recv::Unknown,
             },
             _ => Recv::Unknown,
@@ -372,27 +380,25 @@ impl Reader<'_> {
 
     /// The port, param, signal or `let` name `name` of a module, entering generation.
     fn member_of(&self, module: DeclId, name: &str) -> Option<DeclId> {
-        fn find(design: &Design, parent: DeclId, name: &str) -> Option<DeclId> {
-            for c in &design.decl_data(parent).children {
-                let data = design.decl_data(*c);
-                match &data.kind {
-                    DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) if data.name.as_ref().is_some_and(|n| n.text == name) => return Some(*c),
-                    DeclKind::Let(_) => {
-                        if let Some(b) = data.children.iter().find(|b| design.decl_data(**b).name.as_ref().is_some_and(|n| n.text == name)) {
-                            return Some(*b);
-                        }
+        let design = self.design;
+        for c in &design.decl_data(module).children {
+            let data = design.decl_data(*c);
+            match &data.kind {
+                DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) if data.name.as_ref().is_some_and(|n| n.text == name) => return Some(*c),
+                DeclKind::Let(_) => {
+                    if let Some(b) = data.children.iter().find(|b| design.decl_data(**b).name.as_ref().is_some_and(|n| n.text == name)) {
+                        return Some(*b);
                     }
-                    DeclKind::Generation(_) => {
-                        if let Some(found) = find(design, *c, name) {
-                            return Some(found);
-                        }
-                    }
-                    _ => {}
                 }
+                DeclKind::Generation(_) => {
+                    if let Some(found) = self.member_of(*c, name) {
+                        return Some(found);
+                    }
+                }
+                _ => {}
             }
-            None
         }
-        find(self.design, module, name)
+        None
     }
 
     /// Is an item of a module readable by its parent (§8.2.8)? A port is the
@@ -405,20 +411,20 @@ impl Reader<'_> {
             _ => data.public,
         }
     }
-}
 
-/// The field `name` of a struct.
-fn child_field(design: &Design, owner: DeclId, name: &str) -> Option<DeclId> {
-    design.decl_data(owner).children.iter().copied().find(|c| {
-        let d = design.decl_data(*c);
-        matches!(d.kind, DeclKind::Field(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
-    })
-}
+    /// The field `name` of a struct.
+    fn child_field(&self, owner: DeclId, name: &str) -> Option<DeclId> {
+        self.design.decl_data(owner).children.iter().copied().find(|c| {
+            let d = self.design.decl_data(*c);
+            matches!(d.kind, DeclKind::Field(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
+        })
+    }
 
-/// The function `name` written in an `impl` block.
-fn child_fn(design: &Design, imp: DeclId, name: &str) -> Option<DeclId> {
-    design.decl_data(imp).children.iter().copied().find(|c| {
-        let d = design.decl_data(*c);
-        matches!(d.kind, DeclKind::Fn(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
-    })
+    /// The function `name` written in an `impl` block.
+    fn child_fn(&self, imp: DeclId, name: &str) -> Option<DeclId> {
+        self.design.decl_data(imp).children.iter().copied().find(|c| {
+            let d = self.design.decl_data(*c);
+            matches!(d.kind, DeclKind::Fn(_)) && d.name.as_ref().is_some_and(|n| n.text == name)
+        })
+    }
 }
