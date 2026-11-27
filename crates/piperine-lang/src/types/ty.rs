@@ -1,4 +1,4 @@
-//! The types of the M1 subset, as data.
+//! The types of the supported subset, as data.
 
 use crate::pom::{DeclId, Design, ExprId};
 

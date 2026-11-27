@@ -170,7 +170,6 @@ carrier, wrapping arithmetic, an integer division by zero as a fault naming the 
 
 - **67 of the spec's 187 error codes are raised nowhere in the source** (list in §10). Most belong to
   a refused construct; `E0105` does not.
-- `P0001` says "outside the M1 subset" for forms the spec defines.
 
 | ID | Gap | Where | Size |
 | -- | --- | ----- | ---- |

@@ -1,4 +1,4 @@
-//! # Type checking of the M1 subset
+//! # Type checking of the supported subset
 //!
 //! A bidirectional checker over POM ids. [`Types::check`] starts at one module of the root crate
 //! and follows what it reaches: placements lead to modules, calls to functions, paths to

@@ -639,9 +639,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `p0001_is_worded_in_one_place` passes under `**Run refusals**`: the literal `"P0001"` is in one file of `src/`
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] `p0001_is_worded_in_one_place` passes under `**Run refusals**`: the literal `"P0001"` is in one file of `src/`
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -662,10 +662,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `p0001_does_not_name_a_milestone` passes under `**Run refusals**`
-- [ ] No non-test file says "M1 subset"
-- [ ] A test that pinned the old label is re-pinned exactly, named in the commit body
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-api`
+- [x] `p0001_does_not_name_a_milestone` passes under `**Run refusals**`
+- [x] No non-test file says "M1 subset"
+- [x] A test that pinned the old label is re-pinned exactly, named in the commit body
+- [x] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-api`
 
 **Tests**: integration
 **Gate**: quick

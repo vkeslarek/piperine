@@ -1,4 +1,4 @@
-//! # Elaboration of the M1 subset
+//! # Elaboration of the supported subset
 //!
 //! A type-checked [`Design`](crate::pom::Design) and the name of a top module in, an
 //! [`Ir`](piperine_ir::Ir) out (or the reasons there is none). The design is only borrowed: every

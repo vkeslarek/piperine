@@ -1,4 +1,4 @@
-//! The one place that names a construct outside the M1 subset. Every `match` is exhaustive with
+//! The one place that names a construct outside the supported subset. Every `match` is exhaustive with
 //! no wildcard arm, so a new POM variant fails to compile until it is classified.
 
 use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind};

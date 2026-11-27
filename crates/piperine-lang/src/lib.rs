@@ -11,8 +11,8 @@
 //!   `module.ports()`, `signal.writers()`). The model mirrors the source: a signal declared in
 //!   module `abc` is found there and nowhere else, and resolution only adds links.
 //!
-//! * [`types`]: the type checker of the M1 subset, a side table over POM ids.
-//! * [`elab`]: elaboration of the M1 subset, a `Design` and a top module in, an
+//! * [`types`]: the type checker of the supported subset, a side table over POM ids.
+//! * [`elab`]: elaboration of the supported subset, a `Design` and a top module in, an
 //!   [`piperine_ir::Ir`] out. It is built *from* a `Design`, never into it.
 //! * [`refusal`]: the one owner of `P0001`, the refusal of a form the front end does not support yet.
 //!

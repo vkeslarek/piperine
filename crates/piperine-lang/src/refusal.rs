@@ -50,6 +50,6 @@ impl Refusal {
     /// The `P0001` diagnostic at `span`: the one place the code is worded.
     pub fn diagnostic(&self, span: Span) -> Diagnostic {
         let subject = self.subject();
-        Diagnostic::new("P0001", format!("{subject} is not supported yet"), span, format!("{subject} is outside the M1 subset"))
+        Diagnostic::new("P0001", format!("{subject} is not supported yet"), span, "not supported yet")
     }
 }

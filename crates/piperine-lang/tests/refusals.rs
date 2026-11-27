@@ -3,6 +3,9 @@
 
 use std::path::{Path, PathBuf};
 
+use piperine_lang::msl::Span;
+use piperine_lang::refusal::{Refusal, RefusedForm};
+
 /// The sources of this crate, read as text.
 struct Sources;
 
@@ -34,4 +37,14 @@ fn p0001_is_worded_in_one_place() {
     let spelled: Vec<PathBuf> = Sources::all().into_iter().filter(|path| std::fs::read_to_string(path).is_ok_and(|text| text.contains(&spelling))).collect();
     assert_eq!(spelled.len(), 1, "the literal {spelling} is written in {spelled:?}; `Refusal::diagnostic` is its one place");
     assert!(spelled[0].ends_with("refusal.rs"), "the literal {spelling} is written in {spelled:?}, not in refusal.rs");
+}
+
+#[test]
+fn p0001_does_not_name_a_milestone() {
+    let diagnostic = Refusal::of(RefusedForm::Text("a form".to_string())).diagnostic(Span::default());
+    assert_eq!(diagnostic.message, "a form is not supported yet");
+    assert_eq!(diagnostic.primary.1, "not supported yet");
+    let milestone = ["M1", " subset"].concat();
+    let naming: Vec<PathBuf> = Sources::all().into_iter().filter(|path| std::fs::read_to_string(path).is_ok_and(|text| text.contains(&milestone))).collect();
+    assert!(naming.is_empty(), "these sources still name the milestone `{milestone}`: {naming:?}");
 }

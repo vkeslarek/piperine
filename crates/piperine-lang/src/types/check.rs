@@ -416,7 +416,7 @@ impl<'d> Checker<'d> {
         self.diagnostics.len()
     }
 
-    /// `P0001`: a construct outside the M1 subset, named.
+    /// `P0001`: a construct outside the supported subset, named.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
     }

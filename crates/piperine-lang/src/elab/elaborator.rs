@@ -341,7 +341,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.report(file, Diagnostic::new("P0004", format!("internal error: {what}"), span, "this is a bug in the elaborator, not in the model"));
     }
 
-    /// `P0001`: a construct inside the type-checked subset that M1 elaboration does not lower.
+    /// `P0001`: a construct inside the type-checked subset that elaboration does not lower yet.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
     }
