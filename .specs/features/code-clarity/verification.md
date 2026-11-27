@@ -463,3 +463,104 @@ Fix: say "a pin on a sentence of <the file>".
 | P2-4 Q9 mislabel, ADC pair inverted | Low | `duplicate_tests.tsv:14,41` | cite T90 or §3.3 T2; name the sides | |
 | P2-5 T12 file in T11's commit, unguarded | Low | 980f640e0, c2a1b0ef2 | accept, or guard the file | |
 | P2-6 "tracking file" reason on non-tracking documents | Low | `repoints/T10.tsv:31,33` | name the file | |
+
+## Phase 2 round 2
+
+**Verdict**: FAIL (one Medium finding, four Low)
+**Head**: 39295ddfc (the fix of round 1, on top of 6375cebe5)
+**Verifier**: independent sub-agent (Opus; author != verifier). This round reran the gates itself.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | lib 45, boundaries 19, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 27, worklists 5: all pass |
+| `cargo test -p piperine-digital-solver` | 161 passed, 0 failed |
+| `cargo test -p piperine-lang` | 1 432 passed, 0 failed (round 1 had 1 433; `the_package_builds_with_no_diagnostics` left) |
+
+### Round 1 findings
+
+| Finding | Status at 39295ddfc |
+| --- | --- |
+| P2-1 | **Closed.** The 5 duplicates are gone, each with a `retire` row naming its survivor (`repoints/T12.tsv`, `T13.tsv`). The finish pair is merged: `a_finish_at_an_instant_run_ahead_is_final_in_both_rules` now takes `before = d.checkpoint()` per rule and asserts `d.checkpoint() == before` after `Final(Tick(6))`, so it holds both assertions of `advance_returns_final_at_a_finish` under both rules, and a `replace` row moves that test's proofs. The `RemovedUnknownForms` successor row (`suite_hygiene.rs:1069`) now names `replace_removes_every_pending_commit_of_the_statement`. Ten more uncited tests found no further duplicate (detail below). The rewritten reasons are acceptable with two wrong rows (R2-3) |
+| P2-2 | Three pins retired with reasons that name the file. `the_buck_readme_says_how_to_run_it` is half wording pin (R2-4) |
+| P2-3 | Renamed to `examples_hold_only_package_sources` with a `replace` row, but the repointed proof is broken (R2-1) |
+| P2-4 | **Closed.** The 8 layer pairs cite design.md:282 and T90. The ADC and comparator pairs name the hand-built-IR side (`boundary.rs`) and the on-demand source side (`buck_boundary.rs`, `test = false`). `traces_are_recorded_only_for_a_named_stream` states the two inputs |
+| P2-5 | Guard added. It fails on an unlisted test, a stale row and a repeated row, but passes any verdict text (R2-2) |
+| P2-6 | **Closed.** `T10.tsv:21,22,31,33,39` name the document each test read (abi.md, `examples/buck/SPEC.md`, the Book, the `Piperine.toml` comment, the per-level spec) |
+
+**Ten more uncited tests checked** (none is a duplicate):
+
+- `probe_selection` `…_requested_state_observable` and `…_var_observable`: they request different observables.
+- `param_text.rs` `an_integer_above_2_pow_53_is_read_exactly` against `session.rs` `…_is_set_exactly`: the parser alone, against the session plus `describe`.
+- `types_structure` `a_parent_may_drive_a_childs_pub_resolved_signal` against `source_nets` `a_parent_drives_…`: a type check against a run, giving 121.
+- `integration.rs` `the_jump_estimate_is_zero…` against `the_state_estimate_is_zero…`: `jump_lte` against `state_lte`.
+- `failure_rules` `section_12_unresolvable_noise_reference_node…` against `…output_node…`: different fields.
+- `ir/operators` delay against noise read: different operators.
+- `usage.rs` `help_lists_exactly_the_eight_commands`: this one is the strongest of its group. The cited Book test `help_lists_the_commands_and_version_prints_the_version` asserts only `len() == 8` plus the version, which `version_prints_the_workspace_version` already asserts. So the weaker test is the cited one. It is out of T13's scope (it is cited and needs repointing) and is noted here for B11.
+
+**Throwaway edits for the P2-5 guard.** Each edit was reverted with `git checkout`, and the tree is clean.
+
+- A planted `#[test] fn zzqx_planted_uncited_check` in `piperine-plan/tests/nan_param.rs` fails the guard: "unnamed tests with no row".
+- A row for a test that does not exist fails it: "rows whose test is gone".
+- A duplicated first row fails it: "rows that stand more than once".
+- The first `piperine-abi` row's verdict replaced by `TODO`, or by an empty cell, passes the guard (R2-2).
+
+**Code rules (`src/unnamed_tests.rs`).** There is no free function: one unit type, `UnnamedTests`, with methods. The names are full words. Every item has a `///`, including both `const`s, and so does the module's `//!`.
+
+### R2-1 (Medium): the repointed proof of solver-restructure C11 can no longer match
+
+`.specs/features/solver-restructure/tasks.md:737` now reads:
+
+`Proof: run boundaries | test workspace_shape::workspace_shape::examples_hold_only_package_sources ... ok`
+
+The module segment is doubled. Cargo prints `test workspace_shape::examples_hold_only_package_sources ... ok`; this was checked by running `cargo test -p piperine-repository-guards --test boundaries`. `check_proofs.py` will therefore find no such line, and C11 loses its proof at T155.
+
+`proof_ledger` cannot see the mistake. `proof_ledger.rs:156` (`test.rsplit("::").next()`) and `repoint.rs:37` compare only the last segment of a test path.
+
+Repro: `grep -n examples_hold_only .specs/features/solver-restructure/tasks.md`.
+
+Fix:
+
+1. Correct the line.
+2. Find out whether the `repoint` binary or a hand edit doubled the prefix. If it was the binary, fix `repoint` for a rename inside a module, and add a unit test for it.
+3. Consider having the ledger compare the full module path a proof names with the module the test lives in.
+
+### R2-2 (Low): the unnamed-tests guard accepts any verdict and leaves out two crates on a rule that does not exist
+
+`UnnamedTests::verdict_rows` (`unnamed_tests.rs:90`) keys on the first three cells and never reads the fourth. A row whose verdict is empty or `TODO` passes. The guard proves only that the rows and the inventory match one to one; it does not prove that every test has a verdict. Fix: refuse a row whose fourth cell does not start with `kept: `.
+
+`JUDGED_CRATES` (`:10-27`) leaves out `piperine-numbers` and `piperine-project`, "the two that CC-12 AC 2 leaves out". CC-12 AC 2 (spec.md:153) leaves out no crate. Both crates have no uncited test today (22 and 53 tests, all cited), so including them costs no row. Excluding them means a future uncited test there escapes the guard. Fix: include both, or invert the list to exclude only the guards crate. Either way, correct the comment.
+
+The header of `uncited_tests.tsv` (line 2) also names the guard `every_uncited_test_has_exactly_one_verdict`; the test is `every_unnamed_test_has_exactly_one_verdict`.
+
+### R2-3 (Low): the generated reasons are mostly specific, but two rows are wrong
+
+The 366 rows have the form "asserts <comment or first assertion>; its nearest test in the file, <name>, asserts <…>". In a sample of 15 rows, 13 state what the test proves in a way that differs visibly from its neighbour. That meets T12's `kept: <the rule it alone proves>`; it is generated rather than judged per row, but the text comes from the test itself. 98 rows fall back to the raw text of an assertion, and 147 are cut off with `…`.
+
+These rows are wrong:
+
+- `section_12_unresolvable_noise_reference_node_is_an_analysis_error` reads "asserts its run to completion without an error". The test (`failure_rules.rs:186-200`) asserts that the analysis fails with a `Noise` error naming "reference node". Its nearest test gets the same text, so the row states no difference.
+- `a_std_file_sees_another_namespace_through_the_prelude` gives the identical text for itself and its neighbour `bit_rise_resolves_into_std_values`.
+- Weaker, from the sample: `a_commit_reaches_the_owner`'s neighbour text, "asserts 'functions, 3'", says nothing.
+
+Fix: write these rows by hand, and scan for rows whose two halves are equal.
+
+### R2-4 (Low): `the_buck_readme_says_how_to_run_it` is half a wording pin
+
+T10 keeps "the buck README's command lines". The command-line assertions of `repository_records.rs:19` are in scope: `piperine run startup`, `piperine test`, `--print-step 1e-8 --csv`, `--plot`. Its other assertions are the same kind of pin as `the_buck_readme_points_at_the_scenarios`, which this round retired with the reason "three of them absences":
+
+- two sentence pins: "prints the whole start" and "No such host exists yet";
+- six `!contains` pins on stale sentences: "from = 599e-6", "last microsecond", "two-row table", and three on "no host API…" / "no testbench".
+
+Fix: keep the command-line assertions and retire the sentence and absence pins, recording the narrowing in `retired.tsv`. Or retire the whole test, as was done for its sibling.
+
+### Round 2 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| R2-1 doubled module in a repointed proof | Medium | `solver-restructure/tasks.md:737`; `proof_ledger.rs:156` | correct the line; fix `repoint` if it is the cause; make the ledger compare the module | |
+| R2-2 the guard accepts any verdict; two crates left out | Low | `unnamed_tests.rs:10-27,90`; `uncited_tests.tsv:2` | require `kept: `; include numbers and project; fix the guard name | |
+| R2-3 two wrong generated reasons | Low | `uncited_tests.tsv` rows `section_12_unresolvable_noise_reference_node…`, `a_std_file_sees_another_namespace…` | rewrite them by hand; scan for equal halves | |
+| R2-4 README sentence and absence pins kept | Low | `repository_records.rs:19-36` | narrow to the command lines, or retire | |
