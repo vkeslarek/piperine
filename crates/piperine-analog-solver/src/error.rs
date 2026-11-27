@@ -186,6 +186,7 @@ impl Error {
 
     /// Re-code a run error: the driver that sees a failure decides which Part V
     /// code it is (an equilibrium, a step at the floor, a step after a jump).
+    /// Kept for a host that tags an error with its code; the language tests read the code.
     pub fn with_code(mut self, code: RunCode) -> Error {
         if let Error::Run(run) = &mut self {
             run.code = code;

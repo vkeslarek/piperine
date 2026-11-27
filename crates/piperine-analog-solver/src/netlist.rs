@@ -47,6 +47,7 @@ impl BranchIdentifier {
         }
     }
 
+    /// Kept for a host that names a branch from a component, as the solver's net layer does.
     pub fn from_component(component_name: impl Into<String>) -> Self {
         Self {
             component: component_name.into(),

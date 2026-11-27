@@ -1,27 +1,27 @@
 crates/piperine-abi/src/raw.rs::Module::prototype_ptr	-
 crates/piperine-abi/src/verify.rs::::verify_partials	-
-crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_newton	-
-crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_stepper	-
-crates/piperine-analog-solver/src/device/assembly.rs::Assembly::assemble_tran	-
-crates/piperine-analog-solver/src/device/plan.rs::AnalogPlan::analog_functions	-
-crates/piperine-analog-solver/src/error.rs::Error::with_code	-
-crates/piperine-analog-solver/src/netlist.rs::BranchIdentifier::from_component	-
-crates/piperine-api/src/host.rs::Session::drive_pattern	-
-crates/piperine-api/src/host.rs::Session::set_text	-
-crates/piperine-api/src/session.rs::Session::noise_probe	-
-crates/piperine-api/src/source.rs::NodeSource::with_ac	-
-crates/piperine-api/src/source.rs::NodeSource::with_corners	-
-crates/piperine-api/src/source.rs::Session::source_at	-
-crates/piperine-digital-solver/src/array.rs::SparseArray::written_len	-
-crates/piperine-digital-solver/src/engine.rs::Digital::holds_settle_commits	-
-crates/piperine-digital-solver/src/engine.rs::Digital::host_commit_element	-
-crates/piperine-digital-solver/src/engine.rs::Digital::journaled_nets	-
-crates/piperine-digital-solver/src/engine.rs::Digital::observations	-
-crates/piperine-digital-solver/src/plan.rs::FnNode::over_whole_nets	-
-crates/piperine-ir/src/build.rs::IrBuilder::find_function	-
-crates/piperine-ir/src/build.rs::IrBuilder::find_nature	-
-crates/piperine-ir/src/deps.rs::Body::param_changes	-
-crates/piperine-ir/src/print.rs::Ir::print_structural	-
+crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_newton	kept: the host that swaps the Newton strategy
+crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_stepper	kept: the host that swaps the stepper
+crates/piperine-analog-solver/src/device/assembly.rs::Assembly::assemble_tran	kept: a transient driver outside the solver
+crates/piperine-analog-solver/src/device/plan.rs::AnalogPlan::analog_functions	kept: a host that lists the analog functions
+crates/piperine-analog-solver/src/error.rs::Error::with_code	kept: a host that tags errors with a code
+crates/piperine-analog-solver/src/netlist.rs::BranchIdentifier::from_component	kept: a host naming a branch from a component
+crates/piperine-api/src/host.rs::Session::drive_pattern	kept: the Rust host of `piperine-api`
+crates/piperine-api/src/host.rs::Session::set_text	kept: the Rust host of `piperine-api`
+crates/piperine-api/src/session.rs::Session::noise_probe	kept: the Rust host of `piperine-api`
+crates/piperine-api/src/source.rs::NodeSource::with_ac	kept: the Rust host of `piperine-api`
+crates/piperine-api/src/source.rs::NodeSource::with_corners	kept: the Rust host of `piperine-api`
+crates/piperine-api/src/source.rs::Session::source_at	kept: the Rust host of `piperine-api`
+crates/piperine-digital-solver/src/array.rs::SparseArray::written_len	kept: a host reading array nets
+crates/piperine-digital-solver/src/engine.rs::Digital::holds_settle_commits	kept: a solver reading the settle state
+crates/piperine-digital-solver/src/engine.rs::Digital::host_commit_element	kept: a host writing array nets
+crates/piperine-digital-solver/src/engine.rs::Digital::journaled_nets	kept: a host that restores checkpoints
+crates/piperine-digital-solver/src/engine.rs::Digital::observations	kept: a host that drains the digital observations
+crates/piperine-digital-solver/src/plan.rs::FnNode::over_whole_nets	kept: the plan shape readers
+crates/piperine-ir/src/build.rs::IrBuilder::find_function	kept: an IR builder host
+crates/piperine-ir/src/build.rs::IrBuilder::find_nature	kept: an IR builder host
+crates/piperine-ir/src/deps.rs::Body::param_changes	kept: an IR analysis host
+crates/piperine-ir/src/print.rs::Ir::print_structural	kept: an IR printing host
 crates/piperine-lang/src/elab/consts.rs::ConstEval::files_read	-
 crates/piperine-lang/src/pom/design.rs::Design::dump	-
 crates/piperine-lang/src/pom/design.rs::Design::from_json	-
@@ -68,22 +68,22 @@ crates/piperine-parity/src/scenario/trace.rs::Trace::first_crossing	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::largest_rise	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::settled_into	-
 crates/piperine-project/src/lib.rs::::load_project	-
-crates/piperine-solver/src/analyses/solver.rs::Solver::with_policy	-
-crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_dt_min	-
-crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_probe_selection	-
-crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_record_from	-
-crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_reentry	-
-crates/piperine-solver/src/analyses/transient.rs::TransientSolver::set_plan	-
-crates/piperine-solver/src/core/builder.rs::CircuitBuilder::param_net	-
-crates/piperine-solver/src/core/circuit.rs::CircuitInstance::bound_mut	-
-crates/piperine-solver/src/core/introspect.rs::Value::as_real	-
-crates/piperine-solver/src/core/result.rs::TransientStep::device_state_keys	-
-crates/piperine-solver/src/core/result.rs::TransientStep::digital_net	-
-crates/piperine-solver/src/core/result.rs::TransientStep::digital_nets	-
-crates/piperine-solver/src/core/result.rs::TransientStep::with_digital	-
-crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::instants_for	-
-crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::instants_run	-
-crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::sampling_share	-
-crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::zero_width_for	-
-crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::zero_width_solves	-
-crates/piperine-transpile/src/rt/commits.rs::Commits::commit_range	-
+crates/piperine-solver/src/analyses/solver.rs::Solver::with_policy	kept: a host that fixes a solver's policy
+crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_dt_min	kept: a host bounding the transient step
+crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_probe_selection	kept: a host selecting probes
+crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_record_from	kept: the Rust host of `piperine-api`
+crates/piperine-solver/src/analyses/transient.rs::TransientAnalysisOptions::with_reentry	kept: a host re-entering a transient
+crates/piperine-solver/src/analyses/transient.rs::TransientSolver::set_plan	kept: a host setting a convergence plan
+crates/piperine-solver/src/core/builder.rs::CircuitBuilder::param_net	kept: a host naming param nets
+crates/piperine-solver/src/core/circuit.rs::CircuitInstance::bound_mut	kept: a host mutating the bound devices
+crates/piperine-solver/src/core/introspect.rs::Value::as_real	kept: the parity host
+crates/piperine-solver/src/core/result.rs::TransientStep::device_state_keys	kept: a host reading device state
+crates/piperine-solver/src/core/result.rs::TransientStep::digital_net	kept: a host reading discrete nets
+crates/piperine-solver/src/core/result.rs::TransientStep::digital_nets	kept: a host reading discrete nets
+crates/piperine-solver/src/core/result.rs::TransientStep::with_digital	kept: a host re-entering a transient
+crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::instants_for	kept: the Rust host of `piperine-api`
+crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::instants_run	kept: the Rust host of `piperine-api`
+crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::sampling_share	kept: the Rust host of `piperine-api`
+crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::zero_width_for	kept: the Rust host of `piperine-api`
+crates/piperine-solver/src/protocol/statistics.rs::StepStatistics::zero_width_solves	kept: the Rust host of `piperine-api`
+crates/piperine-transpile/src/rt/commits.rs::Commits::commit_range	kept: the generated runtime

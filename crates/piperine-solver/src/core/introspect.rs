@@ -28,6 +28,7 @@ impl Value {
     }
 
     /// The value as `f64` when it is `Real` or `Integer`.
+    /// Kept for a host that reads an introspected value as a real (`piperine-parity` `tests/source_generics.rs`).
     pub fn as_real(&self) -> Option<f64> {
         match self {
             Value::Real(v) => Some(*v),

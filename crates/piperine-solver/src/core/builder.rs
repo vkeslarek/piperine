@@ -125,6 +125,7 @@ impl CircuitBuilder {
 
     /// A shared param net (a model card, abi.md P5): every instance whose
     /// `PARAM` is given `ParamValue::Shared(name)` is bound to it.
+    /// Kept for a host that names the net of a param (`tests/bind.rs`).
     pub fn param_net(&mut self, name: &str, seed: ParamValue) -> &mut Self {
         self.shared_params.push((name.to_string(), seed));
         self

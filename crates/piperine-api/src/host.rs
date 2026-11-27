@@ -78,6 +78,7 @@ impl Session {
     /// `N` characters of `0`, `1`, `x`, `z`, highest level first. The port is a discrete `in` port, or a resolved port of the top
     /// whose drive type is `Logic<N>`, where the host's drive is the first one of the net (§4 rule 2). `E0702` for a character
     /// outside the four or a length other than `N`, `E0802` for a port that holds no `Logic`, and the refusals of `drive` otherwise.
+    /// Kept for a Rust host that drives a net with a logic pattern (`tests/host_patterns.rs`).
     pub fn drive_pattern(&mut self, port: &str, pattern: &str, at: f64) -> Result<(), Failure> {
         Session::not_before(at, &format!("the drive of `{port}`"))?;
         let (net, ty, resolved) = self.top_input(port)?;
@@ -150,6 +151,7 @@ impl Session {
     /// integer literal of the type and range, the name of a variant of a unit enum, `None` or a value of
     /// `T` for an `Option<T>`. `E0801` for a path that names no param, `E0803` for a structural param,
     /// `E0802` for a text that is no value of its type, naming the param and listing an enum's variants.
+    /// Kept for a Rust host that writes a param as text (`tests/host_patterns.rs`).
     pub fn set_text(&mut self, path: &str, text: &str) -> Result<(), Failure> {
         let action = format!("the set of `{path}`");
         let param = ParamPath::resolve(self.ir(), self.ir().top().path(), path)?;

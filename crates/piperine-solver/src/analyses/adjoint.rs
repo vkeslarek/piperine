@@ -57,12 +57,6 @@ impl AdjointOptions {
     pub fn new(output: Net, params: Vec<(String, String)>) -> Self {
         Self { output, output_ref: None, params, finite_difference_only: false }
     }
-
-    /// Differential output `output − output_ref` — the shape a margin on
-    /// `V(a, b)` needs. One transpose solve still serves every parameter.
-    pub fn new_diff(output: Net, output_ref: Net, params: Vec<(String, String)>) -> Self {
-        Self { output, output_ref: Some(output_ref), params, finite_difference_only: false }
-    }
 }
 
 /// The DC adjoint result: `∂(output)/∂(label.param)` per request, with the

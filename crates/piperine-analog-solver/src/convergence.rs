@@ -408,6 +408,7 @@ impl ConvergencePlan {
     }
 
     /// Override the Newton strategy.
+    /// Kept for a host that swaps the Newton strategy of a plan.
     pub fn with_newton(mut self, newton: Box<dyn NewtonStrategy>) -> Self {
         self.newton = newton;
         self
@@ -416,27 +417,9 @@ impl ConvergencePlan {
     /// Override the transient timestep strategy (ABI-42). The transient driver
     /// delegates `propose_dt`/`reject_dt` to this strategy through the plan,
     /// instead of owning one inline.
+    /// Kept for a host that swaps the transient stepper of a plan.
     pub fn with_stepper(mut self, stepper: Box<dyn StepperStrategy>) -> Self {
         self.stepper = stepper;
-        self
-    }
-
-    /// Override the numerical limits honored across drivers.
-    pub fn with_limits(mut self, limits: PlanLimits) -> Self {
-        self.limits = limits;
-        self
-    }
-
-    /// Override the homotopy schedules the strategies ramp by.
-    pub fn with_schedules(mut self, schedules: Schedules) -> Self {
-        self.schedules = schedules;
-        self
-    }
-
-    /// Override the diagnostic trace toggles handed to the strategies
-    /// (drivers seed them from [`Policy::trace`](crate::tolerances::Policy)).
-    pub fn with_trace(mut self, trace: TraceFlags) -> Self {
-        self.trace = trace;
         self
     }
 

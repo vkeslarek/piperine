@@ -61,6 +61,7 @@ impl CircuitInstance {
     }
 
     /// The bound device instances, mutably; always `Some`, because `build` binds them.
+    /// Kept for a host that mutates the bound device instances between analyses.
     pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { Some(&mut self.abi) }
 
     /// The values the device instance at `path` is created with, by param

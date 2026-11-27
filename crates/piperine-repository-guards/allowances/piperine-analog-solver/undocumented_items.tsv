@@ -64,7 +64,6 @@ crates/piperine-analog-solver/src/netlist.rs::AnalogReference::variable	1
 crates/piperine-analog-solver/src/netlist.rs::AnalogVariable::is_branch	1
 crates/piperine-analog-solver/src/netlist.rs::AnalogVariable::is_ground	1
 crates/piperine-analog-solver/src/netlist.rs::AnalogVariable::is_node	1
-crates/piperine-analog-solver/src/netlist.rs::BranchIdentifier::from_component	1
 crates/piperine-analog-solver/src/netlist.rs::BranchIdentifier::new	1
 crates/piperine-analog-solver/src/netlist.rs::Netlist::all_references	1
 crates/piperine-analog-solver/src/netlist.rs::Netlist::connect_branch	1

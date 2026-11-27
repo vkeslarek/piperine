@@ -611,6 +611,7 @@ impl Session {
     }
 
     /// What a `noise` run measures and refers to, resolved at open; `None` for any other analysis.
+    /// Kept for a Rust host that resolves a noise probe before the run (`tests/noise.rs`).
     pub fn noise_probe(&self) -> Option<&NoiseProbe> {
         self.noise.as_ref()
     }

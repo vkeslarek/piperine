@@ -151,6 +151,7 @@ impl TransientAnalysisOptions {
     }
 
     /// Set which steps carry a re-entry state.
+    /// Kept for a host that re-enters a transient from a state (`tests/transient_reentry.rs`).
     pub fn with_reentry(mut self, reentry: Reentry) -> Self {
         self.reentry = reentry;
         self
@@ -174,6 +175,7 @@ impl TransientAnalysisOptions {
     }
 
     /// Set minimum timestep
+    /// Kept for a host that bounds the smallest transient step (`tests/failure_rules.rs`).
     pub fn with_dt_min(mut self, dt_min: f64) -> Self {
         self.dt_min = dt_min;
         self
@@ -192,6 +194,7 @@ impl TransientAnalysisOptions {
     }
 
     /// Set the earliest recorded time (`TranConfig.start`).
+    /// Kept for a host that records from a time on (`piperine-api` `tests/grid.rs`).
     pub fn with_record_from(mut self, record_from: f64) -> Self {
         self.record_from = record_from;
         self
@@ -203,6 +206,7 @@ impl TransientAnalysisOptions {
     /// selection leaves the prior behavior in place: nothing recorded
     /// unless `record_device_state = true`. Unknown device/observable
     /// requests fail loud at solver setup (ABI-35).
+    /// Kept for a host that selects the probes a transient records (`tests/probe_selection.rs`).
     pub fn with_probe_selection(
         mut self,
         selection: crate::core::introspect::ProbeSelection,
@@ -665,6 +669,7 @@ impl<'a> TransientSolver<'a> {
 
     /// Replace the convergence plan (ABI-42). The host plugs in a plan with a
     /// custom stepper; the driver delegates rejection/proposal to it.
+    /// Kept for a host that sets the convergence plan of a transient (`tests/stepper_fold.rs`).
     pub fn set_plan(&mut self, plan: piperine_analog_solver::convergence::ConvergencePlan) {
         self.plan = plan;
     }

@@ -53,11 +53,13 @@ impl NodeSource {
     }
 
     /// The same source with the AC stimulus `magnitude` at `phase` radians.
+    /// Kept for a Rust host that gives a source an `ac` magnitude (`tests/host_sources.rs`).
     pub fn with_ac(self, magnitude: f64, phase: f64) -> NodeSource {
         NodeSource { ac: Some((magnitude, phase)), ..self }
     }
 
     /// The same source with the piecewise-linear waveform through `corners`.
+    /// Kept for a Rust host that gives a source corners (`tests/host_sources.rs`).
     pub fn with_corners(self, corners: Vec<(f64, f64)>) -> NodeSource {
         NodeSource { corners, ..self }
     }
@@ -184,6 +186,7 @@ impl Session {
     /// source's segment becoming the constant `value` from `at` on. The port has a source already
     /// (`E0810` at the run otherwise); the errors are those of [`Session::set_at`] (`E0806` for
     /// a time already past or after the stop) and `Session::source`'s for the port.
+    /// Kept for a Rust host that reads the source at a node (`tests/host_sources.rs`).
     pub fn source_at(&mut self, port: &str, value: f64, at: f64) -> Result<(), Failure> {
         let name = NodeSources::node_port(self.ir(), port)?;
         if !value.is_finite() {

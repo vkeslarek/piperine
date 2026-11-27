@@ -572,11 +572,6 @@ impl Params {
         }
     }
 
-    /// Remembers the exact integer `value` of the param, which no `f64` holds.
-    pub fn keep_exact(&mut self, instance: &str, param: &str, value: i128) {
-        self.exact.insert((instance.to_string(), param.to_string()), value);
-    }
-
     /// The exact integer a host gave the param, when no `f64` holds it.
     pub fn exact_integer(&self, instance: &str, param: &str) -> Option<i128> {
         self.exact.get(&(instance.to_string(), param.to_string())).copied()

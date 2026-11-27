@@ -982,9 +982,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The 12 items are gone and the workspace builds
-- [ ] Every back-end row of the worklist has a verdict
-- [ ] Gate check passes: Ledger
+- [x] The 12 items are gone and the workspace builds
+- [x] Every back-end row of the worklist has a verdict
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

@@ -71,6 +71,7 @@ pub enum NetWriter {
 
 impl FnNode {
     /// A function named `name`, function `k` of `instance`, that reads and writes the nets `reads` and `writes` whole.
+    /// Kept for the DAG tests and the plan shape tests, which ask whether a function reads whole nets.
     pub fn over_whole_nets(name: &str, instance: u32, k: u32, reads: Vec<NetId>, writes: Vec<NetId>) -> FnNode {
         let read_parts = reads.iter().copied().map(NetPart::whole).collect();
         let write_parts = writes.iter().copied().map(NetPart::whole).collect();

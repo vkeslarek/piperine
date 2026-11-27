@@ -234,6 +234,7 @@ impl<'a> Body<'a> {
 
     /// The params whose `changed` event (`EventSource::ParamChanged`) `target` reads through
     /// `Expr::Fired`, by index (`Body::params`), sorted and without repeats.
+    /// Kept for a host that lists the param changes a body reacts to (`tests/structure.rs`).
     pub fn param_changes(&self, target: Target) -> Vec<u32> {
         let events = self.events();
         let params: BTreeSet<u32> = self

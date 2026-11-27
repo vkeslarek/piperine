@@ -238,6 +238,7 @@ impl AnalogPlan {
     }
 
     /// The shape indices of the analog functions taken from instance `i`.
+    /// Kept for a host that lists the analog functions of an instance, as the plan tests do.
     pub fn analog_functions(&self, i: usize) -> Vec<u32> {
         self.instances[i].functions.iter().map(|f| f.k).collect()
     }

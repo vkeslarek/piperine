@@ -326,12 +326,14 @@ impl TransientStep {
     }
 
     /// Attach the step's digital net values.
+    /// Kept for a host that builds a step with discrete nets, as the re-entry tests do.
     pub fn with_digital(mut self, digital: DigitalNets) -> Self {
         self.digital = Some(Arc::new(digital));
         self
     }
 
     /// Every digital net's bytes at this step, or `None` if unrecorded.
+    /// Kept for a host that reads the discrete nets of a step (`tests/step_observer.rs`).
     pub fn digital_nets(&self) -> Option<&DigitalNets> {
         self.digital.as_deref()
     }
@@ -348,6 +350,7 @@ impl TransientStep {
 
     /// Read the digital net's bytes by [`Net`]. Returns `None` for analog and
     /// pseudo nets, or for digital nets that were not recorded this step.
+    /// Kept for a host that reads one discrete net of a step.
     pub fn digital_net(&self, net: &Net) -> Option<&[u8]> {
         if !matches!(net.kind(), crate::core::net::NetKind::Digital) {
             return None;
@@ -384,6 +387,7 @@ impl TransientStep {
     /// The labels of devices recorded into this step's `device_state`. Used
     /// by the selective-recording contract (ABI-34): a `ProbeSelection`
     /// requesting one device yields exactly that device's label here.
+    /// Kept for a host that lists the device state a step holds (`tests/probe_selection.rs`).
     pub fn device_state_keys(&self) -> impl Iterator<Item = &str> {
         self.device_state.keys().map(String::as_str)
     }
