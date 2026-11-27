@@ -564,3 +564,110 @@ Fix: keep the command-line assertions and retire the sentence and absence pins, 
 | R2-2 the guard accepts any verdict; two crates left out | Low | `unnamed_tests.rs:10-27,90`; `uncited_tests.tsv:2` | require `kept: `; include numbers and project; fix the guard name | |
 | R2-3 two wrong generated reasons | Low | `uncited_tests.tsv` rows `section_12_unresolvable_noise_reference_node…`, `a_std_file_sees_another_namespace…` | rewrite them by hand; scan for equal halves | |
 | R2-4 README sentence and absence pins kept | Low | `repository_records.rs:19-36` | narrow to the command lines, or retire | |
+
+## Phase 2 round 3
+
+**Verdict**: PASS
+**Head**: acf28ab8e. Four fix commits sit on 21bad1466: 3e504144c (R2-1), dbda0d62b (R2-2), 1f98685e5 (R2-3), acf28ab8e (R2-4).
+**Verifier**: independent sub-agent (Opus; author != verifier; the fixer was another Opus agent). The gates were rerun at the head.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | lib 49, boundaries 19, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 27, worklists 5: all pass |
+| `cargo test -p piperine-digital-solver` | 161 passed, 0 failed |
+| `cargo test -p piperine-lang` | 1 432 passed, 0 failed |
+
+### Round 2 findings
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| R2-1 | **Closed** (3e504144c) | See "R2-1" below |
+| R2-2 | **Closed** (dbda0d62b) | See "R2-2" below |
+| R2-3 | **Closed** (1f98685e5) | See "R2-3" below |
+| R2-4 | **Closed** (acf28ab8e) | See "R2-4" below |
+
+**R2-1.**
+
+- C11 now reads `test workspace_shape::examples_hold_only_package_sources ... ok`.
+- `repoint` replaces the whole written path. The unit test `a_replace_inside_a_module_writes_the_module_once` shows that the module is written once.
+- The ledger builds each test's cargo path. `SourceTree::modules_reached_from` gives the module path from the target root. `TestTargets::test_paths` adds each test's inline `mod` scope.
+- `TestTarget::path_names` accepts the full path or a `::`-suffix of it, and nothing else.
+
+Throwaway edits, reverted with `git checkout`; the tree is clean:
+
+| Edit | Result |
+| --- | --- |
+| C11 with `crate_boundaries::` as its module | fails, "names no test crate_boundaries::…" |
+| C11 with `workspace_shape::workspace_shape::` (the round-2 bug) | fails |
+| C11 with the bare name | passes |
+| host-ii C1, a unit test, rewritten from `request::tests::…` to `recorder::tests::…` | fails |
+
+Unit-test roots come from `lib.rs`, `main.rs` and `src/bin/*`. The 215 module-path proofs at the head pass, `clilib`'s `cli::tests::…` and `apilib`'s `request::tests::…` among them. `a_test_path_follows_the_module_declarations_from_the_root` covers a file module, an inline `mod tests` and a `mod inline { mod deep; }`.
+
+There are 209 `proof_ledger.tsv` rows before and after. With the leading module path removed, the old and new sets are identical. Only the 12 rows whose proof writes a path (`rt::…`, `recorder::tests::…`, `verdict::tests::…`, `plot::tests::…`) changed spelling. No dangling proof was added and none was hidden.
+
+**R2-2.**
+
+- `UnnamedTests::is_judged` requires `kept: ` followed by a non-empty rule that is not `-` and not `TODO`. Its unit test covers 8 cases that are not judged.
+- A throwaway `TODO` verdict fails `every_unnamed_test_has_exactly_one_verdict` with "rows whose verdict is not `kept: <rule>`". It was reverted.
+- `JUDGED_CRATES` now holds `piperine-numbers` and `piperine-project`. Neither has an uncited test today, so the inventory gains no row.
+- The file header names the guard correctly.
+
+**R2-3.**
+
+- 366 rows; none has equal halves, and 1 contains a `…`.
+- `section_12_unresolvable_noise_reference_node_is_an_analysis_error` and `a_std_file_sees_another_namespace_through_the_prelude` were rewritten by hand.
+
+I sampled 15 rows (seed 7). 12 state the rule and a visible difference from the neighbour; examples are the two `emit!` positions of `msl_errors`, `edge_gnd_name_routes_to_ground` against `ac3_node_is_idempotent`, the `Logic<4>` pattern against the enum names, and `a_type_that_contains_itself_is_refused`. Two are thin but true:
+
+- `test_setup_error_propagates`, "asserts 'result.is_err()'";
+- `analytic_and_fallback_paths_coexist…`, "asserts Engine attribution (DVG-07)".
+
+One is wrong. `reset_clears_stamps_without_reallocating` reads "asserts Stamp a matrix entry and an RHS entry", which is the setup comment at `faer.rs:236`, not what the test checks.
+
+A scan for setup-style openings found two more of the same kind: `a_derivative_chains_through_a_discrete_function` ("asserts Run the instant at t = 0 by hand…") and the DVG-07 row above.
+
+The 123 halves that quote an assertion verbatim do meet T12's `kept: <the rule it alone proves>`. The quote is the exact value the test fixes, such as `TrBdf2::jump_lte(..) < 1e-9` against the neighbour's `state_lte`, or the SP-05 messages "a port on ground" against "a port on a node not in the circuit". That is more precise than a paraphrase.
+
+Verdict on R2-3: closed. The three setup-comment rows are a bookkeeping imprecision in a `.specs` record that no proof reads. They do not change which test is kept, or whether a duplicate exists. They are noted, not opened as a finding:
+
+- `reset_clears_stamps_without_reallocating`;
+- `a_derivative_chains_through_a_discrete_function`;
+- `analytic_and_fallback_paths_coexist_and_the_fallback_is_named`.
+
+The coordinator may rewrite them by hand in any later commit.
+
+**R2-4.**
+
+- `the_buck_readme_says_how_to_run_it` now asserts only the four command lines: `piperine run startup`, `piperine test`, `--print-step 1e-8 --csv` and `--plot`. This is T10's keep-list, "the buck README's command lines".
+
+On the claims:
+
+- **msl-cli C157** reads "names `piperine run startup` and no longer says nothing executes". The first half is still proved exactly. The second half's absence pin is gone, and the annotation says so.
+- **long-run C58** reads "describes the whole-start run". `--print-step 1e-8 --csv` with `--plot` is the whole-start run's invocation, so the proof still falsifies the claim's checkable core: drop those flags from the README and the test fails.
+
+The annotation "(narrowed by code-clarity T10: …)" is the honest record. It matches Q13's decision that a prose pin's criterion loses its prose proof with a note naming code-clarity. Retiring C58 would discard a proof that still holds part of the claim. I judge the annotation right. The only gap is that no guard reads "narrowed", as `every_retired_check_is_recorded` reads "retired". That is acceptable for two rows.
+
+**Code rules** (`test_targets.rs`, `source_tree.rs`, `unnamed_tests.rs`, `repoint.rs`):
+
+- no free function;
+- full words;
+- a `///` on every new field and method (`paths`, `unit_paths`, `path_names`, `holds_path`, `test_paths`, `modules_reached_from`, `is_judged`, `rows_without_a_verdict`);
+- no `#[allow]`;
+- the new unit tests are in `mod tests` blocks.
+
+### Round 3 findings
+
+None. I probed:
+
+- wrong, doubled and bare module paths in a run proof;
+- a wrong module in a unit-test proof;
+- a `TODO` verdict;
+- the re-spelled allowance rows (the same set modulo the path);
+- 15 sampled reasons and a setup-comment scan (three imprecise rows, noted above);
+- the narrowed README test against C157 and C58.
+
+Phase 2 (T9 to T14) is verified. The round 1 and round 2 findings are closed by 39295ddfc, 3e504144c, dbda0d62b, 1f98685e5 and acf28ab8e.
