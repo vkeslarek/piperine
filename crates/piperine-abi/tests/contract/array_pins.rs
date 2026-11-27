@@ -67,14 +67,21 @@ fn array_pins_validate_their_count_and_init() {
 #[test]
 fn a_whole_read_cell_holds_an_array_view() {
     // The cell of a WHOLE read is the view's own bytes (abi.md §3.1): a lens reads an element through it.
-    unsafe extern "C" fn read(data: *const std::ffi::c_void, element: u64, _part: u32) -> *const u8 {
-        // SAFETY: `data` is the `[[u8; 1]; 3]` this test passed as the view's data and `element` is below 3.
-        unsafe { data.cast::<[u8; 1]>().add(element as usize).cast::<u8>() }
-    }
     let rows = [[0u8], [1], [0]];
-    let view = ArrayView { context: rows.as_ptr().cast(), count: 3, size: 1, read };
+    let view = ArrayView { context: rows.as_ptr().cast(), count: 3, size: 1, read: ArrayViews::read };
     let read_back = ArrayView::from_bytes(view.as_bytes()).expect("a view's bytes hold a view");
     assert_eq!(read_back.element(1, part::VALUE), Some(&[1u8][..]));
     assert_eq!(read_back.element(3, part::VALUE), None, "an element at count is past the end");
     assert!(ArrayView::from_bytes(&[0u8; 3]).is_none(), "too few bytes hold no view");
+}
+
+/// The element reader of the array views these tests build.
+struct ArrayViews;
+
+impl ArrayViews {
+    /// The cell of a WHOLE read is the view's own bytes (abi.md §3.1): a lens reads an element through it.
+    unsafe extern "C" fn read(data: *const std::ffi::c_void, element: u64, _part: u32) -> *const u8 {
+        // SAFETY: `data` is the `[[u8; 1]; 3]` the test passed as the view's data and `element` is below 3.
+        unsafe { data.cast::<[u8; 1]>().add(element as usize).cast::<u8>() }
+    }
 }

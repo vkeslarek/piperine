@@ -1106,9 +1106,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
-- [ ] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
-- [ ] Gate check passes: Ledger
+- [x] 2 targets, each with a `//!` header; every test keeps its name; no `#[path]`, no `#[allow]`, no free helper
+- [x] `no_crate_has_more_targets_than_its_plan` passes with the plan lowered to 2
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

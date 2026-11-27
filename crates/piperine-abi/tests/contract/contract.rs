@@ -9,16 +9,6 @@
 use core::mem::{align_of, size_of};
 use piperine_abi::raw::*;
 
-/// A group of constants: no member is 0 and no two are equal.
-fn assert_group(name: &str, group: &[u32]) {
-    for (i, a) in group.iter().enumerate() {
-        assert_ne!(*a, 0, "{name}: a constant is 0");
-        for b in &group[i + 1..] {
-            assert_ne!(a, b, "{name}: duplicate value {a}");
-        }
-    }
-}
-
 #[test]
 fn every_constant_has_its_pinned_value() {
     let groups: &[(&str, &[(u32, u32)])] = &[
@@ -64,7 +54,7 @@ fn every_constant_has_its_pinned_value() {
             assert_eq!(got, want, "{name}: pinned value");
         }
         let values: Vec<u32> = pairs.iter().map(|(v, _)| *v).collect();
-        assert_group(name, &values);
+        ContractReading::assert_group(name, &values);
     }
     assert_eq!(GROUND, u32::MAX);
     assert_eq!(DEFAULT, u32::MAX - 1);
@@ -95,29 +85,12 @@ struct WiderPin {
     appended: [u8; 16],
 }
 
-fn pin_named(name: &'static str) -> Pin<'static> {
-    Pin {
-        name: Str::from_static(name),
-        origin: Str::from_static("t.msl:1:1"),
-        kind: kind::CONTINUOUS,
-        role: role::PORT,
-        global: 0,
-        flags: 0,
-        layout: Layout { size: 8, align: 8, fields: List::empty() },
-        unit: Str::EMPTY,
-        init: Bytes::EMPTY,
-        check: 0,
-        abstol: [0.0, 0.0],
-        count: 0,
-    }
-}
-
 #[test]
 fn list_reads_by_the_producers_stride() {
     let wide = [
-        WiderPin { pin: pin_named("p"), appended: [0xAA; 16] },
-        WiderPin { pin: pin_named("n"), appended: [0xBB; 16] },
-        WiderPin { pin: pin_named("f"), appended: [0xCC; 16] },
+        WiderPin { pin: ContractReading::pin_named("p"), appended: [0xAA; 16] },
+        WiderPin { pin: ContractReading::pin_named("n"), appended: [0xBB; 16] },
+        WiderPin { pin: ContractReading::pin_named("f"), appended: [0xCC; 16] },
     ];
     assert_eq!(size_of::<WiderPin>(), size_of::<Pin>() + 16);
     // SAFETY: `wide` holds three elements `size_of::<Pin>() + 16` bytes apart
@@ -146,42 +119,21 @@ fn empty_list_yields_nothing() {
     assert!(Bytes::EMPTY.as_slice().is_empty());
 }
 
-/// The text of one `[section]` of a manifest, `None` when the header is absent.
-fn section(manifest: &str, name: &str) -> Option<String> {
-    let header = format!("[{name}]");
-    let mut out = None;
-    for line in manifest.lines() {
-        let t = line.trim();
-        if t.starts_with('[') {
-            if t == header {
-                out = Some(String::new());
-            } else if out.is_some() {
-                break;
-            }
-            continue;
-        }
-        if let Some(text) = out.as_mut() {
-            text.push_str(line);
-            text.push('\n');
-        }
-    }
-    out
-}
-
 #[test]
 fn crate_declares_no_dependency() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/Cargo.toml");
     let manifest = std::fs::read_to_string(path).expect("read the crate manifest");
-    let deps = section(&manifest, "dependencies").expect("the manifest has a [dependencies] section");
+    let deps = ContractReading::section(&manifest, "dependencies").expect("the manifest has a [dependencies] section");
     let entries: Vec<&str> = deps
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .collect();
     assert!(entries.is_empty(), "piperine-abi declares dependencies: {entries:?}");
-    for other in ["dev-dependencies", "build-dependencies"] {
-        assert!(section(&manifest, other).is_none(), "piperine-abi has a [{other}] section");
-    }
+    assert!(ContractReading::section(&manifest, "build-dependencies").is_none(), "piperine-abi has a [build-dependencies] section");
+    let dev = ContractReading::section(&manifest, "dev-dependencies").unwrap_or_default();
+    let dev_entries: Vec<&str> = dev.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')).collect();
+    assert!(dev_entries.iter().all(|l| l.starts_with("piperine-device-fixtures")), "piperine-abi has a dev-dependency other than the fixtures crate: {dev_entries:?}");
     assert!(
         !manifest.contains("dependencies."),
         "piperine-abi declares a dependency through a dotted table"
@@ -199,7 +151,7 @@ fn a_list_whose_stride_is_below_its_element_is_refused() {
     assert!(short.get(0).is_none() && short.get(3).is_none(), "no element is read");
     assert_eq!(short.iter().count(), 0);
     // A stride that breaks the element's alignment is refused too.
-    let pins = [pin_named("p"), pin_named("n")];
+    let pins = [ContractReading::pin_named("p"), ContractReading::pin_named("n")];
     // SAFETY: one element at `pins`, which outlives the list.
     let odd: List<Pin> = unsafe { List::from_raw_parts(pins.as_ptr(), 1, size_of::<Pin>() + 1) };
     assert!(!odd.is_readable() && odd.get(0).is_none());
@@ -233,15 +185,6 @@ fn raw_views_have_no_public_pointer_field() {
     assert_eq!(b.as_slice(), [1, 2]);
 }
 
-/// Code lines (comments aside) of `text` that use `unsafe`.
-fn unsafe_lines(text: &str) -> Vec<String> {
-    text.lines()
-        .map(str::trim_start)
-        .filter(|l| !l.starts_with("//") && l.contains("unsafe"))
-        .map(str::to_string)
-        .collect()
-}
-
 #[test]
 fn no_unsafe_outside_raw_thunk_and_caller() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -253,11 +196,75 @@ fn no_unsafe_outside_raw_thunk_and_caller() {
             continue;
         }
         seen += 1;
-        let found = unsafe_lines(&std::fs::read_to_string(&path).expect("read a source"));
+        let found = ContractReading::unsafe_lines(&std::fs::read_to_string(&path).expect("read a source"));
         assert!(found.is_empty(), "{name} uses unsafe: {found:?}");
     }
     assert!(seen >= 6, "the scan saw {seen} files");
     // The scan catches what it forbids and ignores comments.
-    assert_eq!(unsafe_lines("    let x = unsafe { *p };").len(), 1);
-    assert!(unsafe_lines("    // nothing here is `unsafe`").is_empty());
+    assert_eq!(ContractReading::unsafe_lines("    let x = unsafe { *p };").len(), 1);
+    assert!(ContractReading::unsafe_lines("    // nothing here is `unsafe`").is_empty());
+}
+
+/// Reads the contract's sources and constants for the tests.
+pub struct ContractReading;
+
+impl ContractReading {
+    /// A group of constants: no member is 0 and no two are equal.
+    fn assert_group(name: &str, group: &[u32]) {
+        for (i, a) in group.iter().enumerate() {
+            assert_ne!(*a, 0, "{name}: a constant is 0");
+            for b in &group[i + 1..] {
+                assert_ne!(a, b, "{name}: duplicate value {a}");
+            }
+        }
+    }
+
+    /// The pin named helper `pin_named`.
+    fn pin_named(name: &'static str) -> Pin<'static> {
+        Pin {
+            name: Str::from_static(name),
+            origin: Str::from_static("t.msl:1:1"),
+            kind: kind::CONTINUOUS,
+            role: role::PORT,
+            global: 0,
+            flags: 0,
+            layout: Layout { size: 8, align: 8, fields: List::empty() },
+            unit: Str::EMPTY,
+            init: Bytes::EMPTY,
+            check: 0,
+            abstol: [0.0, 0.0],
+            count: 0,
+        }
+    }
+
+    /// The text of one `[section]` of a manifest, `None` when the header is absent.
+    fn section(manifest: &str, name: &str) -> Option<String> {
+        let header = format!("[{name}]");
+        let mut out = None;
+        for line in manifest.lines() {
+            let t = line.trim();
+            if t.starts_with('[') {
+                if t == header {
+                    out = Some(String::new());
+                } else if out.is_some() {
+                    break;
+                }
+                continue;
+            }
+            if let Some(text) = out.as_mut() {
+                text.push_str(line);
+                text.push('\n');
+            }
+        }
+        out
+    }
+
+    /// Code lines (comments aside) of `text` that use `unsafe`.
+    fn unsafe_lines(text: &str) -> Vec<String> {
+        text.lines()
+            .map(str::trim_start)
+            .filter(|l| !l.starts_with("//") && l.contains("unsafe"))
+            .map(str::to_string)
+            .collect()
+    }
 }

@@ -20,10 +20,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run types**: `cargo test -p piperine-lang --test types_explicit`
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run ir**: `cargo test -p piperine-ir --test digital`
-**Run abi**: `cargo test -p piperine-abi --test layouts`
+**Run abi**: `cargo test -p piperine-abi --test contract layouts::`
 **Run plan**: `cargo test -p piperine-plan --test digital_shape`
 **Run cache**: `cargo test -p piperine-transpile --test cache`
-**Run abicontract**: `cargo test -p piperine-abi --test contract`
+**Run abicontract**: `cargo test -p piperine-abi --test contract contract::`
 **Run relax**: `cargo test -p piperine-digital-solver --test relax`
 **Run records**: `cargo test -p piperine-api --test records`
 **Run session**: `cargo test -p piperine-api --test session`

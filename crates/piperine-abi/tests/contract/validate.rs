@@ -11,10 +11,6 @@ use piperine_abi::raw::{
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
 use piperine_abi::validate::{Rule, validate};
 
-fn pin_cell(index: u32, part: u32) -> Cell {
-    Cell { kind: cell::PIN, index, part }
-}
-
 /// The specs of a shape, mutable before it is built.
 #[derive(Clone, Default)]
 struct Specs {
@@ -51,87 +47,7 @@ impl Specs {
     }
 }
 
-const R_DEFAULT: [u8; 8] = [0, 0, 0, 0, 0, 0x40, 0x8f, 0x40]; // 1e3f64, little-endian
-
-/// abi.md §11.1, `PARAM` first: pins r=0, p=1, n=2; term "i" FLOW {p, n};
-/// fn "i": reads [p, n, r] writes [T0] partials (0←0) (0←1) (0←2).
-fn resistor() -> Specs {
-    Specs {
-        pins: vec![
-            PinSpec {
-                origin: "res.msl:2:5",
-                flags: pin_flag::HAS_INIT,
-                init: &R_DEFAULT,
-                ..PinSpec::discrete("r", role::PARAM, &F64)
-            },
-            PinSpec { origin: "res.msl:1:17", ..PinSpec::continuous("p", role::PORT) },
-            PinSpec { origin: "res.msl:1:20", ..PinSpec::continuous("n", role::PORT) },
-        ],
-        terms: vec![TermSpec {
-            name: "i",
-            origin: "res.msl:3:5",
-            op: op::FLOW,
-            plus: 1,
-            minus: 2,
-            abstol: DEFAULT,
-            max: DEFAULT,
-        }],
-        functions: vec![FunctionSpec {
-            name: "i",
-            origin: "res.msl:3:9",
-            reads: vec![pin_cell(1, part::VALUE), pin_cell(2, part::VALUE), pin_cell(0, part::VALUE)],
-            writes: vec![Cell { kind: cell::TERM, index: 0, part: part::VALUE }],
-            partials: (0..3).map(|read| Partial { write: 0, to: 0, read, at: 0 }).collect(),
-            ..FunctionSpec::default()
-        }],
-        ..Specs::default()
-    }
-}
-
-/// abi.md §11.4: pins clk=0, d=1 (PORT BIT); q=2 (PORT BIT, init LOW);
-/// rise=3 (PRIVATE event). fn "rise": reads [clk.VALUE, clk.PREVIOUS,
-/// clk.CHANGED] writes [rise]. reaction "sample": on [rise] reads [d]
-/// writes [S0 {q}].
-fn flip_flop() -> Specs {
-    Specs {
-        pins: vec![
-            PinSpec { origin: "dff.msl:1:10", ..PinSpec::discrete("clk", role::PORT, &BIT) },
-            PinSpec { origin: "dff.msl:1:15", ..PinSpec::discrete("d", role::PORT, &BIT) },
-            PinSpec {
-                origin: "dff.msl:1:18",
-                flags: pin_flag::HAS_INIT,
-                init: &LOW,
-                ..PinSpec::discrete("q", role::PORT, &BIT)
-            },
-            PinSpec { origin: "dff.msl:2:5", ..PinSpec::event("rise", role::PRIVATE) },
-        ],
-        functions: vec![FunctionSpec {
-            name: "rise",
-            origin: "dff.msl:2:5",
-            reads: vec![pin_cell(0, part::VALUE), pin_cell(0, part::PREVIOUS), pin_cell(0, part::CHANGED)],
-            writes: vec![pin_cell(3, part::CHANGED)],
-            ..FunctionSpec::default()
-        }],
-        reactions: vec![ReactionSpec {
-            name: "sample",
-            origin: "dff.msl:3:5",
-            on: vec![3],
-            reads: vec![pin_cell(1, part::VALUE)],
-            writes: vec![Statement { pin: 2, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-            ..ReactionSpec::default()
-        }],
-        ..Specs::default()
-    }
-}
-
-/// A resistor whose function also writes a `LIMIT` input "vd".
-fn resistor_writing_a_limit(flags: u32) -> Specs {
-    let mut s = resistor();
-    s.inputs.push(InputSpec { name: "vd", origin: "res.msl:4:5", kind: input::LIMIT });
-    s.functions[0].flags = flags;
-    s.functions[0].writes.push(Cell { kind: cell::INPUT, index: 0, part: part::PROPOSED });
-    s
-}
+const R_DEFAULT: [u8; 8] = [0, 0, 0, 0, 0, 0x40, 0x8f, 0x40];
 
 /// (rule, a defect planted in the raw shape, the entry the error names, its origin)
 type RawRow = (Rule, fn(&mut Shape), &'static str, &'static str);
@@ -142,35 +58,35 @@ type Row = (Rule, fn() -> Specs, &'static str, &'static str);
 #[test]
 fn every_shape_local_rule_is_enforced() {
     let table: [Row; 22] = [
-        (Rule::UnknownConstant, || { let mut s = resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
-        (Rule::IndexOutOfRange, || { let mut s = resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
+        (Rule::UnknownConstant, || { let mut s = ShapeCases::resistor(); s.terms[0].op = 9; s }, "term i", "res.msl:3:5"),
+        (Rule::IndexOutOfRange, || { let mut s = ShapeCases::resistor(); s.functions[0].reads[1].index = 7; s }, "function i", "res.msl:3:9"),
         (Rule::KindRole, || {
-            let mut s = resistor();
+            let mut s = ShapeCases::resistor();
             s.pins[1].role = role::GLOBAL;
             s.pins[1].global = global::TEMPERATURE;
             s
         }, "pin p", "res.msl:1:17"),
-        (Rule::PartialNotF64, || { let mut s = resistor(); s.functions[0].partials[2].at = 8; s }, "function i", "res.msl:3:9"),
-        (Rule::TermTargetNotContinuous, || { let mut s = resistor(); s.terms[0].plus = 0; s }, "term i", "res.msl:3:5"),
-        (Rule::MixedSorts, || { let mut s = resistor(); s.functions[0].writes.push(pin_cell(0, part::VALUE)); s }, "function i", "res.msl:3:9"),
+        (Rule::PartialNotF64, || { let mut s = ShapeCases::resistor(); s.functions[0].partials[2].at = 8; s }, "function i", "res.msl:3:9"),
+        (Rule::TermTargetNotContinuous, || { let mut s = ShapeCases::resistor(); s.terms[0].plus = 0; s }, "term i", "res.msl:3:5"),
+        (Rule::MixedSorts, || { let mut s = ShapeCases::resistor(); s.functions[0].writes.push(ShapeCases::pin_cell(0, part::VALUE)); s }, "function i", "res.msl:3:9"),
         (Rule::DiscreteReadsAnalog, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.functions[0].reads.push(Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE });
             s
         }, "function rise", "dff.msl:2:5"),
-        (Rule::ChangedReadByWriter, || { let mut s = flip_flop(); s.functions[0].writes = vec![pin_cell(2, part::VALUE)]; s }, "function rise", "dff.msl:2:5"),
-        (Rule::LimitCorrection, || resistor_writing_a_limit(0), "function i", "res.msl:3:9"),
-        (Rule::QuietRead, || { let mut s = flip_flop(); s.pins[0].flags = pin_flag::QUIET; s }, "function rise", "dff.msl:2:5"),
-        (Rule::ReactionOnNonEvent, || { let mut s = flip_flop(); s.reactions[0].on = vec![1]; s }, "reaction sample", "dff.msl:3:5"),
-        (Rule::ParamAfterNonParam, || { let mut s = resistor(); s.pins.rotate_left(1); s.terms[0].plus = 0; s.terms[0].minus = 1; s }, "pin r", "res.msl:2:5"),
+        (Rule::ChangedReadByWriter, || { let mut s = ShapeCases::flip_flop(); s.functions[0].writes = vec![ShapeCases::pin_cell(2, part::VALUE)]; s }, "function rise", "dff.msl:2:5"),
+        (Rule::LimitCorrection, || ShapeCases::resistor_writing_a_limit(0), "function i", "res.msl:3:9"),
+        (Rule::QuietRead, || { let mut s = ShapeCases::flip_flop(); s.pins[0].flags = pin_flag::QUIET; s }, "function rise", "dff.msl:2:5"),
+        (Rule::ReactionOnNonEvent, || { let mut s = ShapeCases::flip_flop(); s.reactions[0].on = vec![1]; s }, "reaction sample", "dff.msl:3:5"),
+        (Rule::ParamAfterNonParam, || { let mut s = ShapeCases::resistor(); s.pins.rotate_left(1); s.terms[0].plus = 0; s.terms[0].minus = 1; s }, "pin r", "res.msl:2:5"),
         (Rule::StatementOnContinuous, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.pins.push(PinSpec { origin: "dff.msl:4:5", ..PinSpec::continuous("a", role::PRIVATE) });
             s.reactions[0].writes[0].pin = 4;
             s
         }, "reaction sample", "dff.msl:3:5"),
         (Rule::CrossEventNotEvent, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.watches.push(WatchSpec {
                 name: "up",
                 origin: "dff.msl:5:5",
@@ -182,31 +98,31 @@ fn every_shape_local_rule_is_enforced() {
             });
             s
         }, "watch up", "dff.msl:5:5"),
-        (Rule::TermBoundNotDiscreteF64, || { let mut s = resistor(); s.terms[0].abstol = 1; s }, "term i", "res.msl:3:5"),
-        (Rule::EventNotEmpty, || { let mut s = flip_flop(); s.pins[3].layout = &BYTE; s }, "pin rise", "dff.msl:2:5"),
-        (Rule::ContinuousNotF64, || { let mut s = resistor(); s.pins[1].layout = &BYTE; s }, "pin p", "res.msl:1:17"),
+        (Rule::TermBoundNotDiscreteF64, || { let mut s = ShapeCases::resistor(); s.terms[0].abstol = 1; s }, "term i", "res.msl:3:5"),
+        (Rule::EventNotEmpty, || { let mut s = ShapeCases::flip_flop(); s.pins[3].layout = &BYTE; s }, "pin rise", "dff.msl:2:5"),
+        (Rule::ContinuousNotF64, || { let mut s = ShapeCases::resistor(); s.pins[1].layout = &BYTE; s }, "pin p", "res.msl:1:17"),
         (Rule::CheckNotBool, || {
-            let mut s = resistor();
+            let mut s = ShapeCases::resistor();
             s.pins[0].flags |= pin_flag::HAS_CHECK;
             s.pins[0].check = 1;
             s
         }, "pin r", "res.msl:2:5"),
         (Rule::QuietChangeRead, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.pins[1].flags = pin_flag::QUIET;
-            s.reactions[0].reads = vec![pin_cell(1, part::PREVIOUS)];
+            s.reactions[0].reads = vec![ShapeCases::pin_cell(1, part::PREVIOUS)];
             s
         }, "reaction sample", "dff.msl:3:5"),
-        (Rule::ArrayNotDiscrete, || { let mut s = resistor(); s.pins[1].count = 4; s }, "pin p", "res.msl:1:17"),
+        (Rule::ArrayNotDiscrete, || { let mut s = ShapeCases::resistor(); s.pins[1].count = 4; s }, "pin p", "res.msl:1:17"),
         (Rule::ArrayInitLength, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.pins[2].count = 4;
             s.pins[2].flags = pin_flag::HAS_INIT;
             s.pins[2].init = &[0, 0, 0];
             s
         }, "pin q", "dff.msl:1:18"),
         (Rule::ElementOutOfRange, || {
-            let mut s = flip_flop();
+            let mut s = ShapeCases::flip_flop();
             s.pins[1].count = 4;
             s.reactions[0].elements = vec![4];
             s
@@ -225,7 +141,7 @@ fn every_shape_local_rule_is_enforced() {
         assert_eq!(rows, 1, "one row for {rule:?}");
     }
     for (rule, plant, entry, origin) in raw_rows {
-        let built = resistor().build();
+        let built = ShapeCases::resistor().build();
         let mut shape = *built.shape();
         plant(&mut shape);
         let err = validate(&shape).expect_err(&format!("{rule:?} is not refused"));
@@ -241,7 +157,7 @@ fn every_shape_local_rule_is_enforced() {
     }
 
     // A3, the second half: with OWNS_CORRECTION, a partial against that limit.
-    let mut s = resistor_writing_a_limit(fn_flag::OWNS_CORRECTION);
+    let mut s = ShapeCases::resistor_writing_a_limit(fn_flag::OWNS_CORRECTION);
     assert!(validate(s.clone().build().shape()).is_ok(), "OWNS_CORRECTION and no partial against the limit is legal");
     s.functions[0].reads.push(Cell { kind: cell::INPUT, index: 0, part: part::VALUE });
     s.functions[0].partials.push(Partial { write: 0, to: 0, read: 3, at: 0 });
@@ -257,17 +173,17 @@ fn a_zeroed_shape_entry_is_an_unknown_constant() {
     let err = validate(s.freeze().shape()).expect_err("a zeroed pin");
     assert_eq!(err.rule, Rule::UnknownConstant);
 
-    let mut specs = resistor();
+    let mut specs = ShapeCases::resistor();
     specs.terms[0] = TermSpec { name: "", origin: "", op: 0, plus: 0, minus: 0, abstol: 0, max: 0 };
     let err = validate(specs.build().shape()).expect_err("a zeroed term");
     assert_eq!(err.rule, Rule::UnknownConstant);
 
-    let mut specs = resistor();
+    let mut specs = ShapeCases::resistor();
     specs.functions[0].reads[0] = Cell { kind: 0, index: 0, part: 0 };
     let err = validate(specs.build().shape()).expect_err("a zeroed cell");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "function i"));
 
-    let mut specs = flip_flop();
+    let mut specs = ShapeCases::flip_flop();
     specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 1, flags: 0x80, min_after: 0.0 };
     let err = validate(specs.build().shape()).expect_err("an unknown statement flag");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "reaction sample"));
@@ -281,7 +197,7 @@ fn an_index_is_checked_before_it_is_followed() {
         |s: &mut Specs| s.functions[0].partials[0].read = u32::MAX,
         |s: &mut Specs| s.terms[0].minus = u32::MAX - 2,
     ] {
-        let mut specs = resistor();
+        let mut specs = ShapeCases::resistor();
         plant(&mut specs);
         let err = validate(specs.build().shape()).expect_err("an index of u32::MAX");
         assert_eq!(err.rule, Rule::IndexOutOfRange, "{err}");
@@ -292,7 +208,7 @@ fn an_index_is_checked_before_it_is_followed() {
         |s: &mut Specs| s.reactions[0].reads[0].index = u32::MAX,
         |s: &mut Specs| s.reactions[0].writes[0].len = 3,
     ] {
-        let mut specs = flip_flop();
+        let mut specs = ShapeCases::flip_flop();
         plant(&mut specs);
         let err = validate(specs.build().shape()).expect_err("an index out of range");
         assert_eq!((err.rule, err.entry.as_str()), (Rule::IndexOutOfRange, "reaction sample"), "{err}");
@@ -301,12 +217,12 @@ fn an_index_is_checked_before_it_is_followed() {
 
 #[test]
 fn the_valid_fixtures_pass() {
-    assert_eq!(validate(resistor().build().shape()), Ok(()));
-    assert_eq!(validate(flip_flop().build().shape()), Ok(()));
+    assert_eq!(validate(ShapeCases::resistor().build().shape()), Ok(()));
+    assert_eq!(validate(ShapeCases::flip_flop().build().shape()), Ok(()));
     assert_eq!(validate(ShapeBuf::new().freeze().shape()), Ok(()), "an empty shape");
     // The legal forms of the three bound rules: a CROSS watch firing an event
     // pin, a term bound read from a discrete F64 pin, a statement on a discrete pin.
-    let mut ff = flip_flop();
+    let mut ff = ShapeCases::flip_flop();
     ff.watches.push(WatchSpec {
         name: "up",
         origin: "dff.msl:5:5",
@@ -317,24 +233,24 @@ fn the_valid_fixtures_pass() {
         etol: DEFAULT,
     });
     assert_eq!(validate(ff.build().shape()), Ok(()));
-    let mut res = resistor();
+    let mut res = ShapeCases::resistor();
     res.terms[0].abstol = 0;
     res.terms[0].max = 0;
     assert_eq!(validate(res.build().shape()), Ok(()));
     // A `check` naming a discrete BOOL pin, and a QUIET pin read by value only.
-    let mut ff = flip_flop();
+    let mut ff = ShapeCases::flip_flop();
     ff.pins.push(PinSpec { flags: pin_flag::HAS_CHECK, check: 0, ..PinSpec::discrete("k", role::PRIVATE, &BIT) });
     ff.pins[1].flags = pin_flag::QUIET;
     assert_eq!(validate(ff.build().shape()), Ok(()));
     // The flip-flop's pins are of every discrete kind the rules look at.
-    let ff = flip_flop().build();
+    let ff = ShapeCases::flip_flop().build();
     let kinds: Vec<u32> = ff.shape().pins.iter().map(|p| p.kind).collect();
     assert_eq!(kinds, [kind::DISCRETE, kind::DISCRETE, kind::DISCRETE, kind::EVENT]);
 }
 
 #[test]
 fn a_shape_with_an_unreadable_list_is_refused() {
-    let built = resistor().build();
+    let built = ShapeCases::resistor().build();
     let mut shape = *built.shape();
     // SAFETY: the shape's live pins, read by a stride below the element (refused).
     shape.pins = unsafe { piperine_abi::raw::List::from_raw_parts(shape.pins.as_ptr(), shape.pins.len(), size_of::<piperine_abi::raw::Pin>() - 8) };
@@ -358,18 +274,110 @@ fn a_reaction_may_read_gmin_and_source_scale() {
     // instant and no event follows it).
     let ambient_cell = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
     for index in [ambient::GMIN, ambient::SOURCE_SCALE] {
-        let mut s = flip_flop();
+        let mut s = ShapeCases::flip_flop();
         s.reactions[0].reads.push(ambient_cell(index));
         validate(s.build().shape()).unwrap_or_else(|e| panic!("a reaction reading ambient {index}: {e}"));
-        let mut s = flip_flop();
+        let mut s = ShapeCases::flip_flop();
         s.functions[0].reads.push(ambient_cell(index));
         validate(s.build().shape()).unwrap_or_else(|e| panic!("a discrete function reading ambient {index}: {e}"));
     }
-    let mut s = flip_flop();
+    let mut s = ShapeCases::flip_flop();
     s.reactions[0].reads.push(ambient_cell(ambient::FREQ));
     let e = validate(s.build().shape()).expect_err("FREQ in a reaction");
     assert_eq!(e.rule, Rule::UnknownConstant, "{e}");
-    let mut s = flip_flop();
+    let mut s = ShapeCases::flip_flop();
     s.functions[0].reads.push(ambient_cell(ambient::TIME));
     assert_eq!(validate(s.build().shape()).expect_err("TIME in a discrete function").rule, Rule::DiscreteReadsAnalog);
+}
+
+/// The shapes the validation tests check.
+pub struct ShapeCases;
+
+impl ShapeCases {
+    /// The pin cell helper `pin_cell`.
+    fn pin_cell(index: u32, part: u32) -> Cell {
+        Cell { kind: cell::PIN, index, part }
+    }
+
+     // 1e3f64, little-endian
+
+    /// abi.md §11.1, `PARAM` first: pins r=0, p=1, n=2; term "i" FLOW {p, n};
+    /// fn "i": reads [p, n, r] writes [T0] partials (0←0) (0←1) (0←2).
+    fn resistor() -> Specs {
+        Specs {
+            pins: vec![
+                PinSpec {
+                    origin: "res.msl:2:5",
+                    flags: pin_flag::HAS_INIT,
+                    init: &R_DEFAULT,
+                    ..PinSpec::discrete("r", role::PARAM, &F64)
+                },
+                PinSpec { origin: "res.msl:1:17", ..PinSpec::continuous("p", role::PORT) },
+                PinSpec { origin: "res.msl:1:20", ..PinSpec::continuous("n", role::PORT) },
+            ],
+            terms: vec![TermSpec {
+                name: "i",
+                origin: "res.msl:3:5",
+                op: op::FLOW,
+                plus: 1,
+                minus: 2,
+                abstol: DEFAULT,
+                max: DEFAULT,
+            }],
+            functions: vec![FunctionSpec {
+                name: "i",
+                origin: "res.msl:3:9",
+                reads: vec![ShapeCases::pin_cell(1, part::VALUE), ShapeCases::pin_cell(2, part::VALUE), ShapeCases::pin_cell(0, part::VALUE)],
+                writes: vec![Cell { kind: cell::TERM, index: 0, part: part::VALUE }],
+                partials: (0..3).map(|read| Partial { write: 0, to: 0, read, at: 0 }).collect(),
+                ..FunctionSpec::default()
+            }],
+            ..Specs::default()
+        }
+    }
+
+    /// abi.md §11.4: pins clk=0, d=1 (PORT BIT); q=2 (PORT BIT, init LOW);
+    /// rise=3 (PRIVATE event). fn "rise": reads [clk.VALUE, clk.PREVIOUS,
+    /// clk.CHANGED] writes [rise]. reaction "sample": on [rise] reads [d]
+    /// writes [S0 {q}].
+    fn flip_flop() -> Specs {
+        Specs {
+            pins: vec![
+                PinSpec { origin: "dff.msl:1:10", ..PinSpec::discrete("clk", role::PORT, &BIT) },
+                PinSpec { origin: "dff.msl:1:15", ..PinSpec::discrete("d", role::PORT, &BIT) },
+                PinSpec {
+                    origin: "dff.msl:1:18",
+                    flags: pin_flag::HAS_INIT,
+                    init: &LOW,
+                    ..PinSpec::discrete("q", role::PORT, &BIT)
+                },
+                PinSpec { origin: "dff.msl:2:5", ..PinSpec::event("rise", role::PRIVATE) },
+            ],
+            functions: vec![FunctionSpec {
+                name: "rise",
+                origin: "dff.msl:2:5",
+                reads: vec![ShapeCases::pin_cell(0, part::VALUE), ShapeCases::pin_cell(0, part::PREVIOUS), ShapeCases::pin_cell(0, part::CHANGED)],
+                writes: vec![ShapeCases::pin_cell(3, part::CHANGED)],
+                ..FunctionSpec::default()
+            }],
+            reactions: vec![ReactionSpec {
+                name: "sample",
+                origin: "dff.msl:3:5",
+                on: vec![3],
+                reads: vec![ShapeCases::pin_cell(1, part::VALUE)],
+                writes: vec![Statement { pin: 2, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
+                ..ReactionSpec::default()
+            }],
+            ..Specs::default()
+        }
+    }
+
+    /// A resistor whose function also writes a `LIMIT` input "vd".
+    fn resistor_writing_a_limit(flags: u32) -> Specs {
+        let mut s = ShapeCases::resistor();
+        s.inputs.push(InputSpec { name: "vd", origin: "res.msl:4:5", kind: input::LIMIT });
+        s.functions[0].flags = flags;
+        s.functions[0].writes.push(Cell { kind: cell::INPUT, index: 0, part: part::PROPOSED });
+        s
+    }
 }
