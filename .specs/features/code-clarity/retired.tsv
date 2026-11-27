@@ -1,0 +1,2 @@
+# Checks whose test was removed with no replacement (code-clarity CC-12 AC 5).
+# feature<TAB>check<TAB>removed test<TAB>reason. Written by `repoint`; never edited by hand.

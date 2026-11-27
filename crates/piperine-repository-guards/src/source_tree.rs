@@ -146,3 +146,26 @@ impl SourceTree {
         }
     }
 }
+
+impl SourceTree {
+    /// The file at `root` and every file its module declarations reach, transitively.
+    pub fn reached_from(&self, root: &Path) -> Vec<&SourceFile> {
+        let index: BTreeMap<&Path, &SourceFile> = self.files.iter().map(|file| (file.path(), file)).collect();
+        let mut reached: Vec<&SourceFile> = Vec::new();
+        let mut pending: Vec<PathBuf> = vec![root.to_path_buf()];
+        while let Some(path) = pending.pop() {
+            let Some(&file) = index.get(path.as_path()) else { continue };
+            if reached.iter().any(|seen| std::ptr::eq(*seen, file)) {
+                continue;
+            }
+            reached.push(file);
+            let Ok(syntax) = file.syntax() else { continue };
+            for declaration in ModuleDeclaration::of_file(syntax) {
+                if let Some(next) = declaration.candidates(file.path()).into_iter().find(|candidate| index.contains_key(candidate.as_path())) {
+                    pending.push(next);
+                }
+            }
+        }
+        reached
+    }
+}

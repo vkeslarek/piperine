@@ -8,3 +8,10 @@ publish = false
 [dependencies]
 syn = { version = "2", features = ["full", "visit"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[[bin]]
+name = "repoint"
+path = "src/bin/repoint.rs"

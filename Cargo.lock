@@ -1310,6 +1310,7 @@ version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "syn 2.0.118",
+ "tempfile",
 ]
 
 [[package]]
