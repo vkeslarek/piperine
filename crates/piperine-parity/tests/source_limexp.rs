@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Access, cell_lens};
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Ngspice, Reference};
@@ -30,7 +30,7 @@ struct SeriesModel {
 impl SeriesModel {
     /// The backends that run a diode written with `limit`: the compiled one.
     fn compiled_backends() -> Vec<Backend> {
-        Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+        BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
     }
 
     /// The path of the model.

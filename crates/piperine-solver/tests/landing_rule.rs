@@ -151,7 +151,7 @@ fn the_counter_counts_every_edge_in_both_rules() {
         builder.time_point_rule(rule);
         let mut circuit = builder.build().expect("build");
         circuit.transient(TransientAnalysisOptions::new(STOP, 1.0e-7), Context::default()).expect("tran").solve().expect("solve");
-        let bound = circuit.bound().expect("bound");
+        let bound = circuit.bound();
         let n = count_of(bound.digital.read(bound.names.nets["net:n"]));
         assert_eq!(n, 700, "{rule:?}");
     }

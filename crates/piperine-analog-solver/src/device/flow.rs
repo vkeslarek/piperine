@@ -53,8 +53,8 @@ impl<'a> Linear<'a> {
     /// value's partial against the limit.
     pub fn cols(&self) -> impl Iterator<Item = (&'a AnalogReference, f64)> + use<'a> {
         let weight = self.weight;
-        self.source.into_iter().flat_map(move |Source { term, instance, state }| {
-            let (writer, _) = term.value.expect("a term with a source has a writer");
+        let written = self.source.into_iter().filter_map(|source| source.term.value.map(|(writer, _)| (source, writer)));
+        written.flat_map(move |(Source { term, instance, state }, writer)| {
             let jac = &state.fns[writer].jac;
             let direct = term.direct.iter().map(move |(p, column)| (column, weight * jac[*p]));
             let through = term.via.iter().flat_map(move |(p, input)| {
@@ -71,7 +71,7 @@ impl<'a> Linear<'a> {
 
     /// `Σ g_j·x_j` over the iterate. `piperine-interp`'s affine rule (INT-12) writes a linear row as `c + this fold`; its test `an_affine_term_is_constant_plus_folded_products` fails if the fold order changes.
     pub fn dot(&self, x: &[f64]) -> f64 {
-        self.cols().fold(0.0, |s, (c, g)| s + g * x[c.idx().expect("a column is an unknown")])
+        self.cols().fold(0.0, |s, (c, g)| c.idx().map_or(s, |unknown| s + g * x[unknown]))
     }
 }
 

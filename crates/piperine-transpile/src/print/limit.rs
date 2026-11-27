@@ -233,7 +233,7 @@ mod tests {
     use crate::print::AnalogPrinter;
 
     fn printed(ir: &Ir, body: BodyId, mode: fn(Mode) -> bool) -> String {
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let k = plan.functions().iter().position(|f| mode(f.mode)).expect("the function");
         let printer = AnalogPrinter::new(ir.body(body), &plan);
         match plan.functions()[k].mode {

@@ -92,6 +92,8 @@ cargo test -p piperine --test integrated      # small mixed-signal designs end t
    purpose per type; files named for their system role (never `utils.rs`).
 5. **No god methods;** small methods, flat control flow. No file-scope lint suppression,
    no `#[allow]` to hide a design problem (`too_many_arguments` → a parameter object).
+   Only where there is truly no other way, an item-scoped `#[expect(lint, reason = "…")]`
+   is allowed: the reason says why no design avoids it, and the guard lists each one.
 6. **Doc comments on every item.**
 7. **No macros** (`macro_rules!`, proc-macro codegen): data tables and methods instead.
 8. **No language special cases:** builtins follow the same rules as user items and are

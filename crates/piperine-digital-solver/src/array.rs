@@ -77,6 +77,7 @@ impl SparseArray {
     }
 
     /// How many elements have been written: what the storage is proportional to.
+    /// Kept for a host that reads how much of a sparse array a run wrote (`tests/array_nets.rs`).
     pub fn written_len(&self) -> usize {
         self.written.len()
     }

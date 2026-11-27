@@ -11,7 +11,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
 use piperine_transpile::Settings;
@@ -71,7 +71,7 @@ fn the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports() {
     let reference = Ngspice::from_environment().run("tran_rc");
     let Some((rows, _)) = export(&reference) else { return };
     let print_step = rows[1].0 - rows[0].0;
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = grid(backend, print_step);
         for (time, _) in &rows {
             assert!(row_at(&table, *time, print_step).is_some(), "{}: no grid row within 1e-9 * {print_step:e} s of ngspice's time {time:e} s", backend.name());
@@ -88,7 +88,7 @@ fn tran_rc_on_the_grid_agrees_with_ngspice() {
     let reference = Ngspice::from_environment().run("tran_rc");
     let Some((rows, version)) = export(&reference) else { return };
     let print_step = rows[1].0 - rows[0].0;
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = grid(backend, print_step);
         let mut worst = 0.0_f64;
         for (time, wanted) in &rows {
@@ -108,7 +108,7 @@ fn a_skipped_reference_still_runs_the_twin() {
     // output, by `Ngspice::run`) and the twin still runs on its grid, 0 to 10 us at 0.1 us
     let reference = Ngspice::new(Lookup::Skip).run("tran_rc");
     assert!(matches!(reference, Reference::Skipped));
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let table = grid(backend, 0.1e-6);
         assert_eq!(table.rows.len(), 101, "{}: 0 to 10 us at 0.1 us", backend.name());
     }

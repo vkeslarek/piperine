@@ -74,7 +74,7 @@ impl Designs {
     /// The tolerance the bound circuit of `session` gives node `entry`.
     fn node_tolerance(session: &mut Session, entry: &str) -> f64 {
         let id = Designs::node(session, entry);
-        let bound = session.circuit().expect("a circuit").bound().expect("a bound circuit");
+        let bound = session.circuit().expect("a circuit").bound();
         *bound.vntol.get(&id).unwrap_or_else(|| panic!("no tolerance reached `{entry}`"))
     }
 
@@ -96,7 +96,7 @@ fn a_potential_abstol_of_one_millivolt_reaches_its_node() {
     assert_eq!(Designs::node_tolerance(&mut session, "a"), 1e-3);
     let id = Designs::node(&session, "a");
     let circuit = session.circuit().expect("a circuit");
-    let bound = circuit.bound().expect("a bound circuit");
+    let bound = circuit.bound();
     let netlist = circuit.netlist();
     let unknowns = netlist.all_references().into_iter().filter_map(|reference| reference.idx()).count();
     let at = netlist.reference_for(&piperine_solver::prelude::AnalogVariable::Node(id)).and_then(|reference| reference.idx()).expect("the node is an unknown");
@@ -126,7 +126,7 @@ fn a_flow_abstol_of_one_nanoampere_reaches_its_branch() {
     let mut session = Designs::session("module Top() { signal a: Fine; let v1 = FineSource(a, gnd); }\n");
     let branch = BranchIdentifier::new("Top.v1", "b0.flow");
     let circuit = session.circuit().expect("a circuit");
-    let bound = circuit.bound().expect("a bound circuit");
+    let bound = circuit.bound();
     assert_eq!(bound.branch_abstol.get(&branch).copied(), Some(1e-9), "{:?}", bound.branch_abstol);
     let mut tolerances = Tolerances { abstol: 1e-6, ..Tolerances::default() };
     bound.tighten(&mut tolerances);
@@ -155,7 +155,7 @@ fn a_nature_only_tightens_the_session_abstol_of_a_branch() {
     let mut session = Designs::session("module Top() { signal a: Electrical; let v1 = Source(a, gnd); }\n");
     let branch = BranchIdentifier::new("Top.v1", "b0.flow");
     let circuit = session.circuit().expect("a circuit");
-    let bound = circuit.bound().expect("a bound circuit");
+    let bound = circuit.bound();
     assert_eq!(bound.branch_abstol.get(&branch).copied(), Some(1e-12), "{:?}", bound.branch_abstol);
     let netlist = circuit.netlist();
     let unknowns = netlist.all_references().into_iter().filter_map(|reference| reference.idx()).count();

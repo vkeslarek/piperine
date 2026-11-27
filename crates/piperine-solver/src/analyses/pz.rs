@@ -227,6 +227,12 @@ impl<'a> PoleZeroSolver<'a> {
         const TOL_INFINITE: f64 = 1e-9;
         const TOL_REAL: f64 = 1e-9;
 
+        if a.iter().chain(b.iter()).any(|entry| !entry.is_finite()) {
+            return Err(Error::simple(
+                SolverDomain::Pz,
+                "the pencil holds an infinite or undefined entry, so its poles and zeros are undefined",
+            ));
+        }
         let a_mat = faer::Mat::from_fn(size, size, |i, j| a[[i, j]]);
         let b_mat = faer::Mat::from_fn(size, size, |i, j| b[[i, j]]);
         let evd = a_mat.generalized_eigen(&b_mat).map_err(|e| {
@@ -247,7 +253,7 @@ impl<'a> PoleZeroSolver<'a> {
             }
             roots.push(s);
         }
-        roots.sort_by(|x, y| x.re.partial_cmp(&y.re).unwrap().then(x.im.partial_cmp(&y.im).unwrap()));
+        roots.sort_by(|x, y| x.re.total_cmp(&y.re).then(x.im.total_cmp(&y.im)));
         Ok(roots)
     }
 
@@ -270,7 +276,7 @@ impl<'a> PoleZeroSolver<'a> {
         }
 
         let mut g = Array2::<f64>::zeros((size, size));
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: 0.0,
@@ -306,7 +312,7 @@ impl<'a> PoleZeroSolver<'a> {
             gmin: context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         for stamp in bound.analog.assemble_ac(&op, amb)?.0 {
             if let Stamp::Matrix(r, c, val) = stamp
                 && let (Some(ri), Some(ci)) = (r.idx(), c.idx())
@@ -660,5 +666,16 @@ mod tests {
         re.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert!((re[0] - (-3.0)).abs() < 1e-9);
         assert!((re[1] - (-2.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_matrix_with_an_infinite_entry_is_refused() {
+        Context::init_global();
+        let a = ndarray::arr2(&[[-2.0, 0.0], [0.0, f64::INFINITY]]);
+        let b = ndarray::arr2(&[[1.0, 0.0], [0.0, 1.0]]);
+        match PoleZeroSolver::finite_generalized_eigenvalues(&a, &b, 2) {
+            Err(Error::Simple { domain: SolverDomain::Pz, detail }) => assert!(detail.contains("infinite"), "{detail}"),
+            other => panic!("an infinite entry is refused in the Pz domain: {other:?}"),
+        }
     }
 }

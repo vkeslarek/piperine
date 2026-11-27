@@ -4,7 +4,7 @@
 //! point under `DC_VOLTAGE`, on each selected backend. The same twin at the default temperature
 //! agrees with ngspice at 27 C.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::host::HostRun;
@@ -34,7 +34,7 @@ fn compare(reference: &Reference, printed: &str, kelvin: Option<f64>, backend: B
 fn temp_res() {
     // 75 C: ngspice's `.options temp=75`, the context's 348.15 K
     let reference = Ngspice::from_environment().run("temp_res");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare(&reference, "v(mid)", Some(75.0 + 273.15), backend);
     }
 }
@@ -44,7 +44,7 @@ fn temp_res_at_the_default_temperature() {
     // 27 C: ngspice's `option temp=27` (the `cold` it prints), the solver's default context
     assert_eq!(Context::default().tolerances.temperature, NOMINAL, "the default temperature is ngspice's 27 C");
     let reference = Ngspice::from_environment().run("temp_res");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare(&reference, "cold", None, backend);
     }
 }
@@ -68,7 +68,7 @@ fn compare_session(reference: &Reference, printed: &str, celsius: Option<f64>, b
 fn temp_res_through_a_session() {
     // HII-03 AC 1 and 2: the run key `temp = 75` and no key at all, each against ngspice
     let reference = Ngspice::from_environment().run("temp_res");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare_session(&reference, "v(mid)", Some(75.0), backend);
         compare_session(&reference, "cold", None, backend);
     }

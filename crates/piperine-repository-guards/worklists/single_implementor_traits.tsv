@@ -1,8 +1,3 @@
-crates/piperine-analog-solver/src/math/faer.rs::FaerToNdarray	-
-crates/piperine-analog-solver/src/math/iv.rs::InitialValueApplyExt	-
-crates/piperine-analog-solver/src/math/linear.rs::LinearSystem	-
-crates/piperine-analog-solver/src/math/linear.rs::SymbolicLinearSystem	-
-crates/piperine-analog-solver/src/math/linear.rs::SymbolicMatrix	-
-crates/piperine-lang/src/msl/parser/base.rs::In	-
+crates/piperine-lang/src/msl/parser/base.rs::In	kept: a trait alias for chumsky's `ValueInput<Token = Token, Span = Span>` (stable Rust has no `trait X = ..`), written on 113 grammar signatures; the reason is on the trait
 crates/piperine-numbers/src/limbs.rs::Limbs	-
-crates/piperine-solver/src/protocol/step.rs::NetRead	-
+crates/piperine-solver/src/protocol/step.rs::NetRead	kept: erases the discrete side's type behind `StepView` (reason on the trait)

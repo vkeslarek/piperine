@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Backend, Cell, Failure, Field, Overrides, Project, Record, RecordSink, RunSpec, Session, Table};
+use piperine_api::{Backend, Cell, Failure, Field, Overrides, Project, Record, RecordSink, RunSpec, Session, Table, Verdict};
 use piperine_transpile::Settings;
 
 use crate::cli::Out;
@@ -76,7 +76,7 @@ struct LiveRecords {
 
 impl RecordSink for LiveRecords {
     fn record(&mut self, record: &Record) {
-        if self.fatal.is_none() && record.stream == "sim" && record.holds("failed") {
+        if self.fatal.is_none() && Verdict::is_fatal(record) {
             self.fatal = Some(record.clone());
         }
         if self.closed.is_some() {

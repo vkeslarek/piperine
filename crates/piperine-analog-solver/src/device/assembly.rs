@@ -10,6 +10,7 @@ use piperine_abi::raw::{ambient, op, watch};
 
 use super::ddt::{History, Stage, companion_current, stamp_ddt};
 use super::delay::{Delayed, stamp_delay};
+use super::cell::RealCell;
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
@@ -68,7 +69,7 @@ pub(crate) struct FnState {
 impl FnState {
     /// The `F64` at byte 0 of write `w`.
     pub fn f64(&self, w: usize) -> f64 {
-        f64::from_le_bytes(self.out[w][..8].try_into().expect("an F64 cell"))
+        RealCell::read(&self.out[w])
     }
 }
 
@@ -219,10 +220,6 @@ impl Assembly {
 
     /// Ends a Newton iteration: every written limit's `LAST` becomes the `x̂`
     /// of the iteration just assembled, with `AGE = 2`.
-    // SPEC_DEVIATION: design.md gives `end_iteration(&mut self, x)`; it takes
-    // no solution.
-    // Reason: `x̂` is the `LIMITED` written in the iteration's own evaluation,
-    // which already ran at the iterate; the next solution is not read.
     pub fn end_iteration(&mut self) {
         self.iteration += 1;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
@@ -334,6 +331,7 @@ impl Assembly {
     /// The stamps of transient stage `stage` at iterate `x`: `FLOW` terms in
     /// their Norton form, `DDT` terms through the TR-BDF2 companion over
     /// their own history, `DELAY` terms at `amb.time − td` of theirs.
+    /// Kept for a transient driver that stamps one stage by itself; the assembly tests are its first host.
     pub fn assemble_tran(
         &mut self,
         x: &[f64],
@@ -390,10 +388,6 @@ impl Assembly {
     /// The small-signal system at operating point `op` and sweep frequency
     /// `amb.freq`: the matrix `Σ resp(ω)·∂v` and the stimulus right side
     /// `−Σ w·g·(RE + j·IM)`. Every limit holds `x̂ = x`.
-    // SPEC_DEVIATION: design.md gives `assemble_ac(op, omega)`; it takes the
-    // ambient, whose `freq` gives `ω = 2π·freq`.
-    // Reason: functions read `FREQ` and the continuation values as ambient
-    // inputs (abi.md §4.2); the caller supplies all of them.
     pub fn assemble_ac(&mut self, op: &[f64], amb: Ambient) -> Result<(ComplexStamps, ComplexStamps), Error> {
         self.evaluate_for(op, amb, Need::AC)?;
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
@@ -412,9 +406,6 @@ impl Assembly {
     /// `amb.freq`: one column per `NOISE` input, through every term that
     /// reads it, with its density `PSD` (abi.md §10 "Noise"). Densities are
     /// evaluated here only (A4).
-    // SPEC_DEVIATION: design.md gives `noise_sources(op, freq)`; it takes the
-    // ambient, as `assemble_ac` does.
-    // Reason: `FREQ` and the continuation values are ambient inputs.
     pub fn noise_sources(&mut self, op: &[f64], amb: Ambient) -> Result<Vec<NoiseColumn>, Error> {
         self.evaluate_for(op, amb, Need::NOISE)?;
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
@@ -474,10 +465,6 @@ impl Assembly {
     /// nonlinear `q` and a held `x̂` far from `x` is not `q(x)` at all. Called once per converged solve, where the
     /// Newton state buffer gains its row (a stage, an operating point, an
     /// initial-condition row), so the two stay aligned.
-    // SPEC_DEVIATION: design.md gives `push_stage(&mut self)`; it takes the
-    // solution and its ambient.
-    // Reason: the buffer row the companion reads is the converged `x`, which
-    // no assembly evaluated (the last assemble ran at the iterate before it).
     pub fn push_stage(&mut self, x: &[f64], amb: Ambient) -> Result<(), Error> {
         self.evaluate_for(x, amb, Need { small_signal: true, ..Need::NEWTON })?;
         self.iteration = 0;
@@ -494,17 +481,6 @@ impl Assembly {
         Ok(())
     }
 
-    /// The unknowns each `DDT` term of `ddt_states` contributes to, in the same order.
-    pub fn ddt_unknowns(&self) -> Vec<Vec<usize>> {
-        let mut out = Vec::new();
-        for inst in &self.plan.instances {
-            for t in inst.terms.iter().filter(|t| t.op == op::DDT) {
-                out.push([&t.plus, &t.minus].into_iter().flatten().filter_map(|r| r.idx()).collect());
-            }
-        }
-        out
-    }
-
     /// The `DDT` states of the step the last two stages completed: per term, its value at `t_n`,
     /// `t_{n+γ}` and `t_{n+1}` (the three newest history rows), its companion current at `t_n`
     /// and `t_{n+1}`, and its own `abstol` when the instance gave a finite positive one. What the
@@ -515,7 +491,7 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate().filter(|(_, t)| t.op == op::DDT) {
                 let h = &st.ddt[ti];
-                let abstol = t.abstol.map(|s| f64::from_le_bytes(self.slots[s][..8].try_into().expect("an F64 at byte 0")));
+                let abstol = t.abstol.map(|s| RealCell::read(&self.slots[s]));
                 out.push(DdtState {
                     q: [h.back(3), h.back(2), h.back(1)],
                     i: [h.current_back(3), h.current_back(1)],
@@ -549,7 +525,9 @@ impl Assembly {
         let mut d = vec![0.0; inst.terms.len()];
         let mut scratch: Vec<u8> = Vec::new();
         for f in inst.functions.iter().filter(|f| f.rows && !f.limits) {
-            let sf = shape.functions.get(f.k as usize).expect("validated");
+            let sf = shape.functions.get(f.k as usize).ok_or_else(|| {
+                device_error(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
+            })?;
             let pin_d = |c: &piperine_abi::raw::Cell| {
                 let discrete = shape
                     .pins
@@ -635,7 +613,7 @@ impl Assembly {
 /// parameter cone has not written yet (the operating point's first solve comes before the cone's
 /// first run) is unbounded too: its zero bytes are no bound.
 fn max_of(t: &TermPlan, slots: &[Vec<u8>], written: &[bool]) -> f64 {
-    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
+    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| RealCell::read(&slots[s]))
 }
 
 /// Which outputs one evaluation needs beyond the rows of a Newton solve.

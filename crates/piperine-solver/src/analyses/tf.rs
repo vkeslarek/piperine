@@ -11,7 +11,6 @@ use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
-use piperine_analog_solver::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
 
@@ -226,7 +225,7 @@ impl<'a> TransferFunctionSolver<'a> {
             }
         }
 
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: 0.0,
@@ -273,7 +272,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// 4. Read output response
     fn calculate_gain(&mut self) -> crate::core::result::Result<(f64, Array1<f64>)> {
         use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
-        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::linear::Stamp;
 
         // Build linear system with ONLY matrix stamps (no RHS)
         // Filter out RHS stamps - we only want the Jacobian matrix
@@ -378,7 +377,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// For current output: Apply 1V test voltage, measure current change
     fn calculate_output_resistance(&mut self) -> crate::core::result::Result<f64> {
         use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
-        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::linear::Stamp;
 
         // Build the linear system the way the gain does: the Jacobian only. The right-hand side
         // of the operating point (a source's own value) is not part of the small-signal problem,
@@ -448,53 +447,6 @@ impl<'a> TransferFunctionSolver<'a> {
                 // R_out = V_test / I_response
                 Ok(1.0 / i_response)
             }
-        }
-    }
-}
-
-// A.13 — `TransferFunctionSolver::new` historically called `eprintln!`
-// twice to dump the DC operating point and output-reference resolution to
-// stderr. That is debug noise in production. The regression test pins the
-// contract: the source must contain zero `eprintln!` calls in non-test code.
-// We assert on the literal source string instead of capturing stderr at
-// runtime because the solver's `new` requires a fully built `CircuitInstance`,
-// which would make a proper runtime test heavyweight.
-//
-// If you legitimately need to re-add a debug print, gate it behind
-// `tracing::debug!` instead so it respects the standard logging machinery.
-#[cfg(test)]
-mod a13_no_debug_eprintln {
-    #[test]
-    fn no_eprintln_in_tf_solver_a13() {
-        // Track when we enter / leave this test module so its own lines
-        // (which mention the macro name in comments and assertions) do
-        // not trip the check.
-        let src = include_str!("tf.rs");
-        let mut in_test_module = false;
-        for (idx, line) in src.lines().enumerate() {
-            if line.contains("mod a13_no_debug_eprintln") {
-                in_test_module = true;
-                continue;
-            }
-            if in_test_module {
-                if line.starts_with("}") {
-                    in_test_module = false;
-                }
-                continue;
-            }
-            let trimmed = line.trim_start();
-            assert!(
-                !trimmed.starts_with("eprintln!"),
-                "A.13: `eprintln!` found at line {}: `{}`",
-                idx + 1,
-                trimmed
-            );
-            assert!(
-                !trimmed.contains(" eprintln!"),
-                "A.13: inline `eprintln!` found at line {}: `{}`",
-                idx + 1,
-                trimmed
-            );
         }
     }
 }

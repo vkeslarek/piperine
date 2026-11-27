@@ -9,7 +9,7 @@ use std::path::Path;
 use std::rc::Rc;
 
 use piperine_api::{Failure, Overrides, Project, Record, RecordSink, Session};
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::host::HostRun;
 use piperine_solver::prelude::Context;
@@ -30,7 +30,7 @@ fn operating_point_error(name: &str, backend: Backend) -> String {
 /// HYG-01 AC 7: two potential sources in parallel fail `E0503` naming both instance paths.
 #[test]
 fn a_loop_of_two_vsources_from_source_is_e0503() {
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let text = operating_point_error("source_loop", backend);
         assert!(text.contains("E0503"), "{}: {text}", backend.name());
         assert!(text.contains("SourceLoop.v1"), "{}: names v1: {text}", backend.name());
@@ -41,7 +41,7 @@ fn a_loop_of_two_vsources_from_source_is_e0503() {
 /// HYG-01 AC 1: a node reached only through capacitors fails `E0503` naming the node by its pins.
 #[test]
 fn a_floating_node_from_source_is_e0503() {
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let text = operating_point_error("floating", backend);
         assert!(text.contains("E0503"), "{}: {text}", backend.name());
         assert!(
@@ -55,7 +55,7 @@ fn a_floating_node_from_source_is_e0503() {
 /// HYG-02 AC 3: a NaN contribution fails `E0507` naming the instance.
 #[test]
 fn a_nan_contribution_from_source_is_e0507() {
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         let text = operating_point_error("nan", backend);
         assert!(text.contains("E0507"), "{}: {text}", backend.name());
         assert!(text.contains("Nan.x1"), "{}: names the instance: {text}", backend.name());

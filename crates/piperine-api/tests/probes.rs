@@ -134,7 +134,7 @@ fn a_node_a_flow_and_a_net_resolve_to_their_columns() {
         panic!("a node and a flow are unknowns of the solution")
     };
     assert_ne!(node_at, flow_at, "two unknowns have two indices");
-    let id = circuit.bound().expect("bound").digital.plan().nets.iter().position(|n| n.name == "Top.flag").expect("the plan holds Top.flag") as u32;
+    let id = circuit.bound().digital.plan().nets.iter().position(|n| n.name == "Top.flag").expect("the plan holds Top.flag") as u32;
     assert_eq!(probes[2].column(circuit).unwrap_or_else(|f| panic!("{f}")), Column::Net { id, ty: ValueType::Bool });
 }
 

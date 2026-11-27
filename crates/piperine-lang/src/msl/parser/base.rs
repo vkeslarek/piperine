@@ -95,6 +95,10 @@ pub(crate) type P<'a, I, O> = Boxed<'a, 'a, I, O, Extra<'a>>;
 pub(crate) type Rec<'a, I, O> = Recursive<Indirect<'a, 'a, I, O, Extra<'a>>>;
 
 /// An input of spanned MSL tokens.
+///
+/// Kept as a trait alias: stable Rust has no `trait X = ..`, and this bound is written on every
+/// grammar signature (113 of them); the blanket impl is the alias, so there is one implementor-less
+/// name for `ValueInput<'a, Token = Token, Span = Span>`.
 pub(crate) trait In<'a>: ValueInput<'a, Token = Token, Span = Span> {}
 impl<'a, I> In<'a> for I where I: ValueInput<'a, Token = Token, Span = Span> {}
 

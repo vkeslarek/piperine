@@ -146,10 +146,8 @@ impl Tolerances {
         netlist
             .all_references()
             .iter()
-            .filter(|s| s.idx().is_some())
-            .all(|reference| {
-                let index = reference.idx().unwrap();
-
+            .filter_map(|reference| reference.idx().map(|index| (reference, index)))
+            .all(|(reference, index)| {
                 if index >= old_values.len() || index >= new_values.len() {
                     return true;
                 }

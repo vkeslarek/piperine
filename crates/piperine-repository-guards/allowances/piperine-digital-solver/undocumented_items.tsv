@@ -11,7 +11,6 @@ crates/piperine-digital-solver/src/queue.rs::Queue::new	1
 crates/piperine-digital-solver/src/run.rs::::fault	1
 crates/piperine-digital-solver/src/run.rs::::walk	1
 crates/piperine-digital-solver/src/run.rs::DirtySet::any	1
-crates/piperine-digital-solver/src/run.rs::DirtySet::is_dirty	1
 crates/piperine-digital-solver/src/run.rs::DirtySet::none	1
 crates/piperine-digital-solver/src/store.rs::::NetBytes	1
 crates/piperine-digital-solver/src/store.rs::Aligned::bytes	1

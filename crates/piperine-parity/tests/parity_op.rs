@@ -3,7 +3,7 @@
 //! its `.cir`, under `DC_VOLTAGE`. One test per fixture, named after it; ngspice runs once per twin.
 
 use piperine_lang::elab::Overrides;
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
@@ -13,7 +13,7 @@ use piperine_solver::prelude::Context;
 /// Runs ngspice once for the twin and holds every selected backend to it.
 fn compare(twin: OperatingPoint) {
     let reference = Ngspice::from_environment().run(twin.fixture);
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         twin.compare_on(&reference, backend);
     }
 }
@@ -36,7 +36,7 @@ fn isrc_r() {
 /// The backends that run a twin whose model selects its equations by a param: the compiled one (the
 /// interpreter refuses a contribution under a selector by name, T15).
 fn compiled_backends() -> Vec<Backend> {
-    Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
 }
 
 #[test]

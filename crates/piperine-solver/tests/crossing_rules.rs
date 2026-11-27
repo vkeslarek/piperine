@@ -192,7 +192,7 @@ fn a_crossing_between_operating_point_rounds_fires_in_the_later_round() {
     assert_eq!(fired.len(), 1, "{fired:?}");
     assert_eq!(fired[0].analysis, AnalysisKind::OperatingPoint);
     assert_eq!(reactions("comparator"), 1);
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     assert_eq!(bound.digital.read(bound.names.nets["net:out"]), HIGH);
 }
 
@@ -211,7 +211,7 @@ fn a_crossing_between_two_operating_points_fires_at_the_later() {
     let mut circuit = b.build().expect("build");
     circuit.dc(Context::default()).expect("dc").solve().expect("point 1");
     let out = |c: &piperine_solver::prelude::CircuitInstance| {
-        let bound = c.bound().unwrap();
+        let bound = c.bound();
         bound.digital.read(bound.names.nets["net:out"]).to_vec()
     };
     assert_eq!(reactions("comparator"), 0, "0.3 V: nothing fires");

@@ -401,7 +401,8 @@ impl Module {
         unsafe { &*self.prototype }
     }
 
-    /// The prototype pointer, as the C entry `create` receives it.
+    /// The prototype pointer, as the C entry `create` receives it. Kept for a device plugin host that
+    /// calls that entry.
     pub fn prototype_ptr(&self) -> *const Shape<'static> {
         self.prototype
     }

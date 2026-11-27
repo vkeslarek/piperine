@@ -97,7 +97,7 @@ crates/piperine-lang/src/types/module.rs::Checker::connections	-
 crates/piperine-lang/src/types/module.rs::Checker::placement	-
 crates/piperine-plan/src/digital.rs::Digital::functions	-
 crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
-crates/piperine-plan/src/plan.rs::BodyPlan::new	-
+crates/piperine-plan/src/plan.rs::BodyPlan::build	-
 crates/piperine-project/src/manifest.rs::Walk::dependency	-
 crates/piperine-project/src/manifest.rs::Walk::package	-
 crates/piperine-solver/src/analyses/adjoint.rs::AdjointSolver::solve	-

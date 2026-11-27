@@ -52,7 +52,7 @@ fn the_buck_compiles_with_no_warning_and_valid_shapes() {
         if !runs {
             continue;
         }
-        let plan = piperine_plan::BodyPlan::new(body);
+        let plan = piperine_plan::BodyPlan::build(body).expect("the body plans");
         assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()), "the shape of `{}`", body.name());
         shapes += 1;
     }

@@ -197,7 +197,7 @@ fn a_derivative_chains_through_a_discrete_function() {
     // Run the instant at t = 0 by hand (the protocol drives it in a transient) and
     // hand the analog side the derived conductance.
     {
-        let bound = circuit.bound_mut().expect("bound");
+        let bound = circuit.bound_mut();
         bound.digital.start().expect("start");
         let outcome = bound
             .digital

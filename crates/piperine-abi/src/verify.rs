@@ -39,6 +39,7 @@ fn f64_at(bytes: &[u8], at: u32) -> f64 {
 /// The step is `h = 1e-6 · max(1, |x|)`. A non-finite declared value or
 /// finite difference is a mismatch, never a pass.
 /// A function that faults at the point returns its `CallError`.
+/// Kept for the parity host that verifies a device's declared partials (`piperine-parity` `tests/source_tables.rs`).
 pub fn verify_partials(handle: &Handle, k: u32, input: &[Vec<u8>], rel_tol: f64) -> Result<Verdict, CallError> {
     let shape = handle.shape();
     let f = shape.functions.get(k as usize).ok_or_else(|| CallError {

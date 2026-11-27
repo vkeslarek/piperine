@@ -1,10 +1,7 @@
 //! The `faer` sparse LU linear system: symbolic analysis + numeric
-//! factorization behind the `LinearSystem`/`SymbolicLinearSystem`
-//! contracts.
+//! factorization.
 use crate::error::Error;
-use crate::math::linear::{
-    AsIndex, LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix,
-};
+use crate::math::linear::{AsIndex, Stamp};
 use crate::math::num::Scalar;
 use faer::prelude::{Solve, SparseColMat};
 use faer::sparse::Triplet;
@@ -18,12 +15,14 @@ pub struct FaerSymbolicMatrix {
     pattern: SymbolicLu<usize>,
 }
 
-impl SymbolicMatrix for FaerSymbolicMatrix {
-    fn size(&self) -> usize {
+impl FaerSymbolicMatrix {
+    /// The order of the matrix.
+    pub fn size(&self) -> usize {
         self.size
     }
 
-    fn new<A: AsIndex, E: Scalar>(
+    /// The symbolic analysis of the pattern `stamps` fill in a matrix of order `size`.
+    pub fn new<A: AsIndex, E: Scalar>(
         size: usize,
         stamps: Vec<Stamp<A, E>>,
     ) -> crate::error::Result<Self> {
@@ -68,7 +67,7 @@ impl<E: Scalar> FaerSparseLinearSystem<E> {
     ///
     /// The symbolic LU (`SymbolicLu`) is already reused for a whole run; this
     /// closes the other half of per-iteration allocation cost — the `Vec`
-    /// rebuild that `LinearSystem::new` would do. Call this instead of
+    /// rebuild that `FaerSparseLinearSystem::new` would do. Call this instead of
     /// reconstructing the system each iteration.
     pub fn reset(&mut self) {
         self.triplets.clear();
@@ -122,7 +121,7 @@ impl FaerSparseLinearSystem<f64> {
             )
         })?;
 
-        let lambda = lu.solve_transpose(&b).to_ndarray();
+        let lambda = lu.solve_transpose(&b).as_ref().iter().cloned().collect::<Array1<f64>>();
         // faer's symbolic LU catches *structural* singularity (a rank-
         // deficient sparsity pattern) at `try_new_with_symbolic`, but a
         // numerically singular matrix whose pattern is non-singular slips
@@ -141,8 +140,9 @@ impl FaerSparseLinearSystem<f64> {
     }
 }
 
-impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
-    fn new(size: usize) -> Self {
+impl<E: Scalar> FaerSparseLinearSystem<E> {
+    /// An empty system of order `size`.
+    pub fn new(size: usize) -> Self {
         Self {
             triplets: Vec::with_capacity(size * 4),
             b_vec: vec![E::zero(); size],
@@ -150,7 +150,8 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         }
     }
 
-    fn apply_stamps_from<A: AsIndex>(&mut self, stamps: &[Stamp<A, E>]) {
+    /// Adds every stamp of `stamps`, which the caller keeps (and can refill) afterwards.
+    pub fn apply_stamps_from<A: AsIndex>(&mut self, stamps: &[Stamp<A, E>]) {
         for stamp in stamps {
             match stamp {
                 Stamp::Matrix(r, c, val) => {
@@ -167,22 +168,23 @@ impl<E: 'static + Scalar> LinearSystem<E> for FaerSparseLinearSystem<E> {
         }
     }
 
-    fn reset(&mut self) {
-        self.triplets.clear();
-        self.b_vec.fill(E::zero());
+    /// Adds every stamp of `stamps`.
+    pub fn apply_stamps<A: AsIndex>(&mut self, stamps: Vec<Stamp<A, E>>) {
+        self.apply_stamps_from(&stamps);
     }
 
-    fn matrix_entries(&self) -> Vec<(usize, usize, E)> {
+    /// The matrix entries stamped since the last reset, as `(row, column, value)`: what a
+    /// singularity diagnosis reads after a failed solve.
+    pub fn matrix_entries(&self) -> Vec<(usize, usize, E)> {
         self.triplets.iter().map(|t| (t.row, t.col, t.val)).collect()
     }
 }
 
-impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> {
-    type SymbolicType = FaerSymbolicMatrix;
-
-    fn solve_with_backend(
+impl<E: Scalar> FaerSparseLinearSystem<E> {
+    /// Solves the stamped system against `symbolic`, the analysis of its pattern.
+    pub fn solve_with_backend(
         &self,
-        symbolic: &Self::SymbolicType,
+        symbolic: &FaerSymbolicMatrix,
     ) -> crate::error::Result<Array1<E>> {
         let a = SparseColMat::try_new_from_triplets(self.size, self.size, &self.triplets).map_err(
             |err| Error::cause(crate::error::SolverDomain::SpaceMatrix,
@@ -204,17 +206,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
             )
         })?;
 
-        Ok(lu.solve(&b).to_ndarray())
-    }
-}
-
-pub trait FaerToNdarray<E> {
-    fn to_ndarray(&self) -> Array1<E>;
-}
-
-impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
-    fn to_ndarray(&self) -> Array1<E> {
-        self.as_ref().iter().cloned().collect()
+        Ok(lu.solve(&b).as_ref().iter().cloned().collect())
     }
 }
 
@@ -232,7 +224,7 @@ mod tests {
             fn as_index(&self) -> Option<usize> { Some(self.0) }
         }
 
-        let mut sys: FaerSparseLinearSystem<f64> = LinearSystem::new(4);
+        let mut sys: FaerSparseLinearSystem<f64> = FaerSparseLinearSystem::new(4);
         // Stamp a matrix entry and an RHS entry.
         sys.apply_stamps(vec![
             Stamp::Matrix(Idx(0), Idx(1), 3.0),
@@ -286,7 +278,7 @@ mod tests {
         }
         let symbolic = FaerSymbolicMatrix::new(size, stamps.clone())
             .expect("symbolic pattern builds");
-        let mut system: FaerSparseLinearSystem<f64> = LinearSystem::new(size);
+        let mut system: FaerSparseLinearSystem<f64> = FaerSparseLinearSystem::new(size);
         system.apply_stamps(stamps);
         (system, symbolic)
     }
@@ -356,7 +348,7 @@ mod tests {
         // Re-stamp the RHS only — the matrix triplets stay; only `b`
         // changes. This is the exact pattern the adjoint driver uses: one
         // Jacobian, two right-hand sides, one symbolic pattern.
-        let mut again: FaerSparseLinearSystem<f64> = LinearSystem::new(2);
+        let mut again: FaerSparseLinearSystem<f64> = FaerSparseLinearSystem::new(2);
         again.apply_stamps(vec![
             Stamp::Matrix(Idx(0), Idx(0), 2.0),
             Stamp::Matrix(Idx(0), Idx(1), 5.0),

@@ -90,11 +90,13 @@ impl StepStatistics {
     }
 
     /// The zero-width solves made for `cause`.
+    /// Kept for a host that reports the zero-width instants of one cause (`tests/protocol_transient.rs`).
     pub fn zero_width_for(&self, cause: ZeroWidthCause) -> u64 {
         self.zero_width.get(&cause).copied().unwrap_or(0)
     }
 
     /// The zero-width solves made, whatever their cause.
+    /// Kept for a host that reports the zero-width solves of a run.
     pub fn zero_width_solves(&self) -> u64 {
         self.zero_width.values().sum()
     }
@@ -115,11 +117,13 @@ impl StepStatistics {
     }
 
     /// The instants the protocol ran at accepted steps.
+    /// Kept for a host that reports the instants a run took (`piperine-api` `tests/buck_long.rs`).
     pub fn instants_run(&self) -> u64 {
         self.instants.values().sum()
     }
 
     /// The instants the protocol ran at accepted steps for `cause`.
+    /// Kept for a host that reports the instants one cause ran (`piperine-api` `tests/buck_accuracy.rs`).
     pub fn instants_for(&self, cause: InstantCause) -> u64 {
         self.instants.get(&cause).copied().unwrap_or(0)
     }
@@ -131,6 +135,7 @@ impl StepStatistics {
 
     /// The share of accepted steps that ended on a landing only because a reaction reads a
     /// continuous pin, 0.0 when no step was accepted.
+    /// Kept for a host that reports the share of instants spent sampling (`piperine-api` `tests/buck_long.rs`).
     pub fn sampling_share(&self) -> f64 {
         match self.accepted() {
             0 => 0.0,

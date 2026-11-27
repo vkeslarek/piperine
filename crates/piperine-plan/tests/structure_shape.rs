@@ -2,7 +2,8 @@
 //! (AS-01, AS-03), derivative sites and their `abstol` pins (AS-07), guarded `limit` and
 //! `bound_step` sites, param events and reached carriers (AS-06, AS-14, AS-11). Each test builds
 //! a small body by hand and reads its shape entry by entry; every expected entry is written from
-//! the design (mechanisms 1 to 3) and abi.md, and every shape passes `piperine_abi::validate`.
+//! the design (mechanisms 1 to 3) and abi.md, and every shape passes `piperine_abi::validate`. A body `check()` refuses is a
+//! plan error, not a panic.
 
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Shape, cell, kind, op, part, role};
 use piperine_ir::{
@@ -26,7 +27,7 @@ struct Find;
 impl Find {
     /// The plan of the only body of `ir`.
     fn plan(ir: &Ir) -> BodyPlan {
-        BodyPlan::new(ir.bodies().next().expect("a body"))
+        BodyPlan::build(ir.bodies().next().expect("a body")).expect("the body plans")
     }
 
     /// The cell of a pin's value.
@@ -298,10 +299,50 @@ fn a_reached_carrier_is_a_port_pin() {
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "{ir}");
     let top_body = ir.top().body();
-    let plan = BodyPlan::new(top_body);
+    let plan = BodyPlan::build(top_body).expect("the body plans");
     let shape = plan.shape().shape();
     let pin = shape.pins.get(Find::pin(shape, "seen") as usize).expect("the pin");
     assert_eq!((pin.kind, pin.role), (kind::DISCRETE, role::PORT));
     assert!(BodyPlan::carrier_is_port(top_body, seen));
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+}
+
+/// A body that `Ir::check` refuses, planned without being checked: the plan's error names the body, where the plan used to panic.
+mod unchecked_body {
+    use piperine_ir::{BodySpec, Branch, BranchKind, Constant, InstanceSpec, Ir, IrBuilder, Origin, Terminal};
+    use piperine_plan::BodyPlan;
+
+    /// A body whose one branch ends on an own terminal, which belongs in a child's node slot only.
+    struct OwnTerminalBody;
+
+    impl OwnTerminalBody {
+        /// The IR of `Top`, which `check()` refuses.
+        fn ir() -> Ir {
+            let origin = Origin { file: "unchecked.msl".into(), line: 1, col: 1 };
+            let mut builder = IrBuilder::new();
+            let body = builder.body(BodySpec {
+                name: "Top".into(),
+                origin: origin.clone(),
+                params: vec![],
+                nodes: vec![],
+                branches: vec![Branch { plus: Terminal::Own(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
+                limits: vec![],
+                stims: vec![],
+                locals: vec![],
+                analog: None,
+                children: vec![],
+            });
+            let top = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: Vec::<Constant>::new(), origin });
+            builder.finish(top)
+        }
+    }
+
+    #[test]
+    fn an_own_terminal_on_a_branch_is_a_plan_error_not_a_panic() {
+        let ir = OwnTerminalBody::ir();
+        assert!(!ir.check().is_empty(), "the body is one check() refuses");
+        let refused = BodyPlan::build(ir.bodies().next().expect("a body")).expect_err("an own terminal has no pin");
+        assert_eq!(refused.body, "Top");
+        assert!(refused.to_string().contains("own terminal"), "{refused}");
+    }
 }

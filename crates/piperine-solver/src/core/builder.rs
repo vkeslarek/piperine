@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
 use crate::core::bind::{bind, ArrayDecl, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
+use crate::core::ground::GroundName;
 use crate::core::result::Result;
 use piperine_digital_solver::landing::TimePointRule;
 
@@ -49,11 +50,6 @@ pub struct CircuitBuilder {
     next_anon: usize,
 }
 
-/// Names that route to the ground reference regardless of case (netlist convention).
-fn is_gnd_name(name: &str) -> bool {
-    matches!(name, "gnd" | "GND" | "vss" | "VSS")
-}
-
 impl CircuitBuilder {
     /// Create an empty builder with the given circuit title.
     pub fn new(title: impl Into<String>) -> Self {
@@ -81,9 +77,9 @@ impl CircuitBuilder {
     }
 
     /// Named analog node. Same name → same reference (idempotent lookup).
-    /// Ground-family names (`"gnd"`, `"GND"`, `"vss"`, `"VSS"`) route to ground.
+    /// The ground names (see [`GroundName`]) route to ground.
     pub fn node(&mut self, name: &str) -> AnalogReference {
-        if is_gnd_name(name) {
+        if GroundName::names(name) {
             return self.ground();
         }
         if let Some(r) = self.nodes.get(name) {
@@ -129,6 +125,7 @@ impl CircuitBuilder {
 
     /// A shared param net (a model card, abi.md P5): every instance whose
     /// `PARAM` is given `ParamValue::Shared(name)` is bound to it.
+    /// Kept for a host that names the net of a param (`tests/bind.rs`).
     pub fn param_net(&mut self, name: &str, seed: ParamValue) -> &mut Self {
         self.shared_params.push((name.to_string(), seed));
         self
@@ -188,10 +185,8 @@ impl CircuitBuilder {
         let mut node_names: Vec<(String, AnalogReference)> =
             self.nodes.drain().filter(|(_, r)| Some(r) != ground.as_ref()).collect();
         node_names.sort_by(|a, b| a.0.cmp(&b.0));
-        let mut instance = CircuitInstance::from_netlist(self.title, self.netlist);
+        let mut instance = CircuitInstance::from_netlist(self.title, self.netlist, bound, recipe);
         instance.node_names = node_names;
-        instance.abi = Some(bound);
-        instance.recipe = Some(recipe);
         Ok(instance)
     }
 }
@@ -241,7 +236,7 @@ mod tests {
         // Edge: zero instances → valid empty CircuitInstance (no panic)
         let b = CircuitBuilder::new("empty");
         let circuit = b.build().expect("empty build should succeed");
-        assert_eq!(circuit.bound().expect("bound").names.instances.len(), 0);
+        assert_eq!(circuit.bound().names.instances.len(), 0);
     }
 
     #[test]

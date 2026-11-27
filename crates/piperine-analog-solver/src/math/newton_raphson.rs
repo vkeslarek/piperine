@@ -5,8 +5,9 @@ use crate::device::LimitState;
 use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::singular::SingularityReport;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::iv::{InitialValue, InitialValueApplyExt};
-use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use crate::math::iv::InitialValue;
+use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use crate::math::linear::{AsIndex, Stamp};
 use crate::math::num::Scalar;
 use crate::convergence::{DampContext, NewtonStrategy};
 use crate::tolerances::{Policy, Tolerances};
@@ -149,14 +150,13 @@ impl SolveTimer {
     }
 }
 
-pub struct NewtonRaphsonSolver<A, E, L>
+pub struct NewtonRaphsonSolver<A, E>
 where
     A: AsIndex,
     E: Scalar,
-    L: SymbolicLinearSystem<E>,
 {
-    linear_system: L,
-    symbolic: L::SymbolicType,
+    linear_system: FaerSparseLinearSystem<E>,
+    symbolic: FaerSymbolicMatrix,
     state: CircularArrayBuffer2<E>,
     /// Per-row nonlinear residual `(A·v − b)`, rebuilt each iteration in
     /// place. Hoisted so the Newton inner loop allocates nothing (CP-06).
@@ -179,11 +179,10 @@ where
     _marker: std::marker::PhantomData<A>,
 }
 
-impl<A, E, L> NewtonRaphsonSolver<A, E, L>
+impl<A, E> NewtonRaphsonSolver<A, E>
 where
     A: AsIndex,
     E: Scalar,
-    L: SymbolicLinearSystem<E>,
 {
     pub fn new(
         system: &mut dyn NonLinearSystem<A, E>,
@@ -199,7 +198,7 @@ where
                 Stamp::Rhs(..) => None,
             })
             .collect();
-        let symbolic = L::SymbolicType::new(size, dry_run_stamps).map_err(|cause| {
+        let symbolic = FaerSymbolicMatrix::new(size, dry_run_stamps).map_err(|cause| {
             SingularityReport::error(
                 SolverDomain::Newton,
                 size,
@@ -207,7 +206,7 @@ where
                 &format!("the Jacobian is singular ({})", Self::cause_text(&cause)),
             )
         })?;
-        let linear_system = L::new(size);
+        let linear_system = FaerSparseLinearSystem::new(size);
         let nodes = system
             .netlist()
             .all_references()
@@ -238,6 +237,18 @@ where
         match error {
             Error::WithCause { cause, .. } => cause.to_string(),
             other => other.to_string(),
+        }
+    }
+
+    /// Stores `guess` as the latest row of the iterate buffer; a buffer with no row is the
+    /// solver's error, not a panic.
+    fn commit(&mut self, guess: &ArrayView1<E>) -> Result<(), Error> {
+        match self.state.latest_mut() {
+            Some(mut latest) => {
+                latest.assign(guess);
+                Ok(())
+            }
+            None => Err(self.singular("the iterate buffer holds no row to commit to")),
         }
     }
 
@@ -343,10 +354,7 @@ where
                 // Commit the converged solution — the buffer's latest row is
                 // what snapshots read and what the next timestep's companion
                 // models treat as the accepted point.
-                self.state
-                    .latest_mut()
-                    .unwrap()
-                    .assign(&current_guess.view());
+                self.commit(&current_guess.view())?;
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
                 self.last_iterations = iter + 1;
@@ -354,15 +362,14 @@ where
                 return Ok(current_guess);
             }
 
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&current_guess.view());
+            self.commit(&current_guess.view())?;
         }
 
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
-        system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
+        if let Some(latest) = self.state.latest() {
+            system.convergence_failed_callback(&self.state, max_iter, &latest);
+        }
         Err(Self::exhausted(max_iter, Vec::new(), &system.limiting_report()))
     }
 
@@ -377,10 +384,9 @@ where
 
 // ── f64-only path: NewtonStrategy integration ──────────────────────────────
 
-impl<A, L> NewtonRaphsonSolver<A, f64, L>
+impl<A> NewtonRaphsonSolver<A, f64>
 where
     A: AsIndex,
-    L: SymbolicLinearSystem<f64>,
 {
     /// Iterations taken by the last `solve` / `solve_with_strategy` call.
     /// Drivers read this to populate `SolverStats`.
@@ -515,10 +521,7 @@ where
                     system.netlist(),
                     tolerances,
                 ) {
-                self.state
-                    .latest_mut()
-                    .unwrap()
-                    .assign(&current_guess.view());
+                self.commit(&current_guess.view())?;
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
                 self.last_iterations = iter + 1;
@@ -538,15 +541,14 @@ where
                 );
             }
 
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&current_guess.view());
+            self.commit(&current_guess.view())?;
         }
 
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
-        system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
+        if let Some(latest) = self.state.latest() {
+            system.convergence_failed_callback(&self.state, max_iter, &latest);
+        }
         Err(Self::exhausted(max_iter, failing, &system.limiting_report()))
     }
 }
@@ -555,10 +557,9 @@ where
 mod tests {
     use super::*;
     use crate::convergence::NoDamping;
-    use crate::math::faer::FaerSparseLinearSystem;
     use crate::netlist::{AnalogReference, Netlist, NodeIdentifier};
 
-    type Solver = NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>;
+    type Solver = NewtonRaphsonSolver<AnalogReference, f64>;
 
     /// A diagonal system `g_i · x_i = rhs_i(x)` over anonymous nodes.
     struct Diagonal {

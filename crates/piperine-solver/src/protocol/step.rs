@@ -15,7 +15,8 @@ pub trait StepObserver {
     fn step(&mut self, step: &StepView<'_>);
 }
 
-/// A reader of discrete nets by id, over a `DiscreteSide`.
+/// A reader of discrete nets by id, over a `DiscreteSide`. Kept: it erases the side's type behind `StepView`,
+/// which a host names without parameters; `DiscreteSide` has an associated `Mark` and is not object safe.
 pub(super) trait NetRead {
     fn net(&self, id: u32) -> Option<&[u8]>;
     /// The net's bytes as printed (`DiscreteSide::net_bytes`).

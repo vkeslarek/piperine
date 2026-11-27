@@ -213,7 +213,7 @@ fn the_fallback_does_not_re_solve_the_operating_point() {
     // The parameter was restored (no residue) — the adjoint economy survives
     // because the fallback re-stamps only, never re-solves. The `g` the
     // re-solve's accepted solution read is the device's `VAR` watch.
-    let bytes = circuit.bound().expect("bound").analog.var("gfb", "g").expect("VAR g").to_vec();
+    let bytes = circuit.bound().analog.var("gfb", "g").expect("VAR g").to_vec();
     let g_after = f64::from_le_bytes(bytes[..8].try_into().expect("an F64"));
     assert!((g_after - 1e-3).abs() < 1e-15, "param restored after perturbation: {g_after}");
 
@@ -235,7 +235,7 @@ fn the_fallback_restores_a_host_written_param() {
     assert!((fb_v - 1.0).abs() < 1e-3, "fallback ∂F(n1)/∂g = V = 1.0 (FD), got {fb_v}");
 
     circuit.dc(Context::default()).unwrap().solve().expect("dc re-solve");
-    let bytes = circuit.bound().expect("bound").analog.var("gfb", "g").expect("VAR g").to_vec();
+    let bytes = circuit.bound().analog.var("gfb", "g").expect("VAR g").to_vec();
     let g_after = f64::from_le_bytes(bytes[..8].try_into().expect("an F64"));
     assert!((g_after - 2e-3).abs() < 1e-15, "the written value is restored, not the default: {g_after}");
 }

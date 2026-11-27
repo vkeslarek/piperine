@@ -278,7 +278,7 @@ impl Probe {
             }),
             Probe::Empty { .. } => Ok(Column::Empty),
             Probe::Shaped { path, shape, leaf, .. } => {
-                let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
+                let bound = circuit.bound();
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
                 if bound.digital.plan().nets[at as usize].count > 0 {
                     return Ok(Column::Array { id: at, shape: shape.clone(), leaf: leaf.clone() });
@@ -286,7 +286,7 @@ impl Probe {
                 Ok(Column::Shaped { id: at, path: path.clone(), shape: shape.clone(), leaf: leaf.clone() })
             }
             Probe::Net { path, ty } | Probe::Param { path, ty } => {
-                let bound = circuit.bound().ok_or_else(|| none("the circuit binds no design"))?;
+                let bound = circuit.bound();
                 let at = bound.digital.plan().nets.iter().position(|n| n.name == *path).ok_or_else(|| none("no net of the digital plan has that path"))? as u32;
                 Ok(if matches!(self, Probe::Param { .. }) { Column::Param { id: at, ty: ty.clone() } } else { Column::Net { id: at, ty: ty.clone() } })
             }

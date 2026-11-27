@@ -5,8 +5,8 @@ crates/piperine-transpile/src/cache.rs::Entry::manifest_path	1
 crates/piperine-transpile/src/cache.rs::Key::as_str	1
 crates/piperine-transpile/src/cache.rs::Manifest::parse	1
 crates/piperine-transpile/src/cache.rs::Manifest::render	1
-crates/piperine-transpile/src/compile.rs::Transpiler::build_and_open	1
-crates/piperine-transpile/src/compile.rs::Transpiler::write	1
+crates/piperine-transpile/src/transpiler.rs::Transpiler::build_and_open	1
+crates/piperine-transpile/src/transpiler.rs::Transpiler::write	1
 crates/piperine-transpile/src/error.rs::::Error	1
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::new	1
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::slice_before	1

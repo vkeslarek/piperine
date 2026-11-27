@@ -826,13 +826,15 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `expect` on the binding remains in `analyses/` or `core/circuit.rs`
-- [ ] Gate check passes: Quick
+- [x] No `expect` on the binding remains in `analyses/` or `core/circuit.rs`
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
 
 **Commit**: `refactor(solver): a circuit of devices cannot be unbound`
+
+**Notes**: one call changed in a test, because `CircuitInstance::from_netlist` (`pub(crate)`) now takes the binding: `sp.rs` `zero_ports_fails_loud` builds its empty circuit through `CircuitBuilder::new(..).build()`; its assertion is unchanged.
 
 ---
 
@@ -848,8 +850,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test per site drives the input that panicked and reads the error (two new tests in the crate's analyses target)
-- [ ] Gate check passes: Quick
+- [x] A test per site drives the input that panicked and reads the error (two new tests in the crate's analyses target: `a_matrix_with_an_infinite_entry_is_refused` in `pz.rs`, `a_result_with_no_step_has_no_final_step_error` in `tests/pss.rs` (the reader's claim: a shot always records its first step, so the shooting cannot be driven to it))
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -870,8 +872,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `grep -rE 'unwrap\(\)|expect\(' crates/piperine-analog-solver/src` finds nothing outside `#[cfg(test)]`
-- [ ] Gate check passes: Quick
+- [x] `grep -rE 'unwrap\(\)|expect\(' crates/piperine-analog-solver/src` finds nothing outside `#[cfg(test)]`
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -892,13 +894,17 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test per crate builds the offending `Ir` through `IrBuilder` and reads the error
-- [ ] Gate check passes: Golden
+- [x] A test per crate builds the offending `Ir` through `IrBuilder` and reads the error: `an_own_terminal_on_a_branch_is_a_plan_error_not_a_panic` (`piperine-plan`, `tests/structure_shape.rs`), `a_probe_on_an_own_terminal_has_no_text_not_a_panic` (`piperine-transpile`, `print/analog.rs`) and `a_branch_on_an_own_terminal_is_labelled_not_a_panic` (`print/contribution.rs`); a checked `Ir` cannot reach those two print sites, so the tests hand the printer the terminal
+- [x] Gate check passes: Golden
 
 **Tests**: integration
 **Gate**: golden
 
+- [ ] (deferred to T55) the 7 out-of-range panics of `ir/src/build.rs` return the builder's error
+
 **Commit**: `fix(plan): refuse an unchecked ir with an error`
+
+**Deferred (partly, to T55)**: the 7 out-of-range panics of `ir/src/build.rs` stay: `resolve_net`, `bind_nets`, `bind_reached_node`, `bind_reached_net` have 5 callers in `piperine-lang/src/elab/` (lane F's paths) and about 40 in tests; changing them to `Result` needs both. They are a builder-misuse panic (a handle of another builder), not a user-input path. Reported to the coordinator.
 
 ---
 
@@ -914,8 +920,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `eprintln!` in `src/` of the two crates; the trace a flag printed is the same bytes through the sink (one test)
-- [ ] Gate check passes: Ledger
+- [x] No `eprintln!` in `src/` of the two crates; the trace a flag printed is the same bytes through the sink (one test: `a_trace_line_reaches_the_sink_with_the_bytes_the_flag_printed`)
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -936,8 +942,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Both `lib.rs` hold no `struct`, `enum`, `impl` or `fn`; every public path is unchanged
-- [ ] Gate check passes: Golden
+- [x] Both `lib.rs` hold no `struct`, `enum`, `impl` or `fn`; every public path is unchanged
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -948,7 +954,7 @@ T152 → T153 → T154 → T155
 
 ### T29: One owner per rule written twice
 
-**What**: The fatal-record rule lives in `piperine-api`'s `Verdict` and `cli/src/commands/run.rs:79` reads it; `Backend` is declared once (`piperine-api`) and `piperine-parity` uses it; the ground name is one `GroundName` of `piperine-solver` that `api/src/noise.rs:69` uses, and it accepts `gnd` only (S21: stop and report if a corpus, example or test uses `GND`, `vss` or `VSS` as ground). Adds `no_type_of_the_inventory_is_defined_in_two_crates` over the names of findings.md A4 and A6.
+**What**: The fatal-record rule lives in `piperine-api`'s `Verdict` and `cli/src/commands/run.rs:79` reads it; `Backend` is declared once (`piperine-api`) and `piperine-parity` uses it; the ground name is one `GroundName` of `piperine-solver` that `api/src/noise.rs:69` uses, and it accepts `gnd` only (S21, deferred to the user, see Deferred below: stop and report if a corpus, example or test uses `GND`, `vss` or `VSS` as ground). Adds `no_type_of_the_inventory_is_defined_in_two_crates` over the names of findings.md A4 and A6.
 **Where**: `crates/piperine-api/src/verdict.rs`
 **Depends on**: T28
 **Reuses**: findings.md §1.6 A4, §2.2 S21
@@ -958,13 +964,15 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `no_type_of_the_inventory_is_defined_in_two_crates` passes under `**Run boundaries**` (the rows T51 and T52 close are allowance rows)
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-parity`
+- [x] `no_type_of_the_inventory_is_defined_in_two_crates` passes under `**Run boundaries**` (the rows T51 and T52 close are allowance rows)
+- [x] Gate check passes: Quick, and `cargo test -p piperine-cli -p piperine-parity`
 
 **Tests**: integration
 **Gate**: quick
 
 **Commit**: `refactor(api): one owner for the verdict, backend and ground rules`
+
+**Deferred**: S21 (the `GND`, `vss` and `VSS` aliases) is deferred to the user: the ground net's public label is `GND` (`core/net.rs`), so removing the alias changes host behaviour. `GroundName` accepts the four names again and `edge_gnd_name_routes_to_ground` keeps its original assertion. (Coordinator decision, user AFK, pending review.)
 
 ---
 
@@ -980,9 +988,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The 12 items are gone and the workspace builds
-- [ ] Every back-end row of the worklist has a verdict
-- [ ] Gate check passes: Ledger
+- [x] The 8 back-end items of the 12 are gone and the workspace builds
+- [ ] The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48 (their Done-when lines)
+- [x] Every back-end row of the worklist has a verdict
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1003,8 +1012,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `SPEC_DEVIATION` in the back-end crates; each closure is named in the commit body with the design file it touched
-- [ ] Gate check passes: Quick
+- [x] No `SPEC_DEVIATION` in the back-end crates; each closure is named in the commit body with the design file it touched
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1025,13 +1034,16 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**` with no open row
-- [ ] Gate check passes: Quick for abi, numbers, analog-solver and solver
+- [x] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**`
+- [ ] no open row: `lang::In` (T43) and `numbers::Limbs` (T51) are closed by their Done-when lines
+- [x] Gate check passes: Quick for abi, numbers, analog-solver and solver
 
 **Tests**: integration
 **Gate**: quick
 
 **Commit**: `refactor: remove traits with one implementor and no use`
+
+**Deferred**: rows `lang::In` and `numbers::Limbs` stay open until T43 and T51 (outside lane K's paths). `LinearSystem`, `SymbolicMatrix` and `SymbolicLinearSystem` are removed (fix round 1: `NewtonRaphsonSolver` has no backend parameter; its methods are inherent on `FaerSparseLinearSystem` and `FaerSymbolicMatrix`; test edits: the import at `tests/support/system.rs`, the `Solver` alias there, three ascriptions in `faer.rs`'s unit tests). `NetRead` is kept: `DiscreteSide` has an associated `Mark` and is not object safe.
 
 ---
 
@@ -1274,8 +1286,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged (partly: `parse`, `parse_bytes` and the other 51 free functions are methods now; the six fragment entry points `parse_type`, `parse_pat`, `parse_generics`, `parse_expr`, `parse_module_item`, `parse_block` stay free functions, see Deferred)
+- [x] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged
 - [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse` and `parse_bytes`, now `SourceParser::parse` and `SourceParser::parse_bytes`)
+- [x] the `lang::In` row of `worklists/single_implementor_traits.tsv` (`msl/parser/base.rs`, a trait alias) has a verdict: removed, or kept with its reason written on the trait (T32): kept, reason on the trait
 - [x] Gate check passes: Quick
 
 **Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr` (closed by T44: `ExpressionGrammar::parse`), T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block` (done: `ModuleGrammar::parse`, `ExpressionGrammar::parse_block`). All six are gone; the first box is ticked. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
@@ -1397,6 +1410,7 @@ T152 → T153 → T154 → T155
 
 - [ ] `pom/resolve` has no row in the free-function allowance and no hygiene exemption
 - [ ] `cargo test -p piperine-lang` passes with no existing test edited
+- [ ] `DeferReason::InferredGenerics` (`lang/src/pom/resolution.rs`), never referenced (T30, findings 4.1), is removed
 - [ ] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1420,6 +1434,7 @@ T152 → T153 → T154 → T155
 
 - [ ] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
 - [ ] `cargo test -p piperine-lang` passes with no existing test edited
+- [ ] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
 - [ ] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1443,6 +1458,7 @@ T152 → T153 → T154 → T155
 
 - [ ] No registered oversized `mod.rs`; every public path of `piperine_lang::pom` is unchanged
 - [ ] Verdicts in `test_only_items.tsv` for the POM's reflection items (kept: the public reflection surface `docs/pom/` documents)
+- [ ] `GenericParam::default_type` (`lang/src/pom/reflect/items.rs`), never referenced (T30, findings 4.1), is removed
 - [ ] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1465,6 +1481,8 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] The A6 row leaves the `boundaries` allowance; `crates/piperine-numbers/tests/purity.rs` passes
+- [ ] `BinaryFormat::round_integer` (`numbers/src/format.rs`), never referenced (T30, findings 4.1), is removed
+- [ ] the `numbers::Limbs` row of `worklists/single_implementor_traits.tsv` has a verdict: the trait is removed, or kept with its reason written on it (T32)
 - [ ] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1555,6 +1573,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] Every `piperine_ir::model::…` path compiles unchanged across the workspace
+- [ ] `crates/piperine-ir/src/build.rs` holds no `panic!` on an out-of-range id: the 7 sites of T26 (`body_data`, `resolve_net`, `bind_nets`, `bind_reached_node` twice, `bind_reached_net` twice) return the builder's error, and the five call sites in `piperine-lang/src/elab/{place,resolvers}.rs` and the test calls move with them (coordinate with lane F at rebase)
 - [ ] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)

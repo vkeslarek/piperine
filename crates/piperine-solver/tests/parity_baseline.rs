@@ -406,7 +406,7 @@ fn parity_mixed_signal_dc_settle() {
     // comparator fires One, the gate adds 1 mS to ground, and the node settles
     // lower. Pin the converged value + the latched digital decision.
     assert!((vmid - 1.666_666_666_666_666_7).abs() < 1e-9, "vmid = {vmid}");
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     assert_eq!(bound.digital.read(bound.names.nets["net:ctrl"]), HIGH, "ctrl latched");
 }
 
@@ -485,7 +485,7 @@ fn parity_digital_scheduler_snapshot() {
     let mut solver = Solver::new(b.build().unwrap()).build();
     solver.dc().unwrap().solve().unwrap();
 
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     let nets = |i: usize| bound.digital.read(bound.names.nets[&format!("net:net{i}")]).to_vec();
     // net0=1 → inv0 net1=0 → inv1 net2=1 → AND(net1,net2)=AND(0,1)=0.
     assert_eq!(nets(0), HIGH, "net0");

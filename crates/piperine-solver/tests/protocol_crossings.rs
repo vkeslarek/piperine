@@ -114,7 +114,7 @@ fn a_reaction_reads_the_accepted_solution() {
     let result = solver.tran().expect("tran").solve().expect("solve");
 
     let landing = result.iter().find(|s| (s.time() - at).abs() < 1.0e-15).expect("the probing instant is a landing");
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     let s = bound.digital.read(bound.names.nets["net:s"]).to_vec();
     let sample = f64::from_le_bytes(s[..8].try_into().unwrap());
     assert_eq!(sample, landing.get_node(&node_id(&top)).unwrap(), "the accepted solution at its instant");
