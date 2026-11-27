@@ -20,6 +20,7 @@ pub enum Stamp<A: AsIndex, E: Scalar> {
     Rhs(A, E),
 }
 
+/// A sparse linear system the stamps are added to. Kept: `NewtonRaphsonSolver` is generic over its backend (`L`) and the analog targets call `LinearSystem::new`, so removing the layer over `faer` rewrites those tests, which a refactor task does not do; faer is the only backend today and the removal is a task of its own.
 pub trait LinearSystem<E: Scalar> {
     fn new(size: usize) -> Self;
     /// Adds every stamp of `stamps`, which the caller keeps (and can refill) afterwards.
@@ -36,6 +37,7 @@ pub trait LinearSystem<E: Scalar> {
     fn matrix_entries(&self) -> Vec<(usize, usize, E)>;
 }
 
+/// The symbolic (structure) half of a sparse factorisation. Kept with `LinearSystem`: see `LinearSystem`.
 pub trait SymbolicMatrix {
     fn size(&self) -> usize;
     fn new<A: AsIndex, E: Scalar>(
@@ -46,6 +48,7 @@ pub trait SymbolicMatrix {
         Self: Sized;
 }
 
+/// A linear system that solves against a symbolic matrix. Kept with `LinearSystem`: see there.
 pub trait SymbolicLinearSystem<E: Scalar>: LinearSystem<E> {
     type SymbolicType: SymbolicMatrix;
 

@@ -18,16 +18,9 @@ crates/piperine-analog-solver/src/math/circular_array.rs::CircularArrayBuffer2::
 crates/piperine-analog-solver/src/math/circular_array.rs::CircularArrayBuffer2::view_mut	1
 crates/piperine-analog-solver/src/math/faer.rs::::FaerSparseLinearSystem	1
 crates/piperine-analog-solver/src/math/faer.rs::::FaerSymbolicMatrix	1
-crates/piperine-analog-solver/src/math/faer.rs::::FaerToNdarray	1
-crates/piperine-analog-solver/src/math/faer.rs::FaerToNdarray::to_ndarray	1
 crates/piperine-analog-solver/src/math/iv.rs::::InitialValue	1
-crates/piperine-analog-solver/src/math/iv.rs::::InitialValueApplyExt	1
-crates/piperine-analog-solver/src/math/iv.rs::InitialValueApplyExt::apply_iv	1
 crates/piperine-analog-solver/src/math/linear.rs::::AsIndex	1
-crates/piperine-analog-solver/src/math/linear.rs::::LinearSystem	1
 crates/piperine-analog-solver/src/math/linear.rs::::Stamp	1
-crates/piperine-analog-solver/src/math/linear.rs::::SymbolicLinearSystem	1
-crates/piperine-analog-solver/src/math/linear.rs::::SymbolicMatrix	1
 crates/piperine-analog-solver/src/math/linear.rs::AsIndex::as_index	1
 crates/piperine-analog-solver/src/math/linear.rs::LinearSystem::new	1
 crates/piperine-analog-solver/src/math/linear.rs::SymbolicLinearSystem::solve_with_backend	1

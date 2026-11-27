@@ -5,7 +5,7 @@ use crate::device::LimitState;
 use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::singular::SingularityReport;
 use crate::math::circular_array::CircularArrayBuffer2;
-use crate::math::iv::{InitialValue, InitialValueApplyExt};
+use crate::math::iv::InitialValue;
 use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
 use crate::math::num::Scalar;
 use crate::convergence::{DampContext, NewtonStrategy};

@@ -45,10 +45,8 @@ crates/piperine-analog-solver/src/error.rs::Sens	1
 crates/piperine-analog-solver/src/lib.rs::config	1
 crates/piperine-analog-solver/src/math/faer.rs::FaerSparseLinearSystem	1
 crates/piperine-analog-solver/src/math/faer.rs::FaerSymbolicMatrix	1
-crates/piperine-analog-solver/src/math/faer.rs::FaerToNdarray	1
 crates/piperine-analog-solver/src/math/faer.rs::Idx	2
 crates/piperine-analog-solver/src/math/faer.rs::b_vec	1
-crates/piperine-analog-solver/src/math/faer.rs::to_ndarray	1
 crates/piperine-analog-solver/src/math/integration.rs::bdf2_coeffs	1
 crates/piperine-analog-solver/src/math/integration.rs::i	1
 crates/piperine-analog-solver/src/math/integration.rs::jump_coeffs	1
@@ -63,8 +61,7 @@ crates/piperine-analog-solver/src/math/integration.rs::trbdf2_stage_coeffs_degra
 crates/piperine-analog-solver/src/math/integration.rs::trbdf2_stage_coeffs_pass_through_with_history	1
 crates/piperine-analog-solver/src/math/integration.rs::trbdf2_trapezoidal_phase_coeffs_match_formula	1
 crates/piperine-analog-solver/src/math/integration.rs::with_chgtol	1
-crates/piperine-analog-solver/src/math/iv.rs::InitialValueApplyExt	1
-crates/piperine-analog-solver/src/math/iv.rs::apply_iv	1
+crates/piperine-analog-solver/src/math/circular_array.rs::apply_iv	1
 crates/piperine-analog-solver/src/math/linear.rs::Rhs	1
 crates/piperine-analog-solver/src/math/mod.rs::faer	1
 crates/piperine-analog-solver/src/math/mod.rs::iv	1

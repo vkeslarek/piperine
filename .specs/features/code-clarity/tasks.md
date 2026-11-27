@@ -1027,13 +1027,15 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**` with no open row
-- [ ] Gate check passes: Quick for abi, numbers, analog-solver and solver
+- [x] `every_single_implementor_trait_is_removed_or_justified` passes under `**Run worklists**` with no open row
+- [x] Gate check passes: Quick for abi, numbers, analog-solver and solver
 
 **Tests**: integration
 **Gate**: quick
 
 **Commit**: `refactor: remove traits with one implementor and no use`
+
+**Deferred**: rows `lang::In` (lane F) and `numbers::Limbs` stay open (outside lane K's paths). `LinearSystem`, `SymbolicMatrix` and `SymbolicLinearSystem` are kept with the reason on the trait: removing them rewrites `NewtonRaphsonSolver`'s backend parameter and the analog targets' calls, which a refactor task may not edit.
 
 ---
 

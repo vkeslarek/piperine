@@ -122,7 +122,7 @@ impl FaerSparseLinearSystem<f64> {
             )
         })?;
 
-        let lambda = lu.solve_transpose(&b).to_ndarray();
+        let lambda = lu.solve_transpose(&b).as_ref().iter().cloned().collect::<Array1<f64>>();
         // faer's symbolic LU catches *structural* singularity (a rank-
         // deficient sparsity pattern) at `try_new_with_symbolic`, but a
         // numerically singular matrix whose pattern is non-singular slips
@@ -204,17 +204,7 @@ impl<E: Scalar + 'static> SymbolicLinearSystem<E> for FaerSparseLinearSystem<E> 
             )
         })?;
 
-        Ok(lu.solve(&b).to_ndarray())
-    }
-}
-
-pub trait FaerToNdarray<E> {
-    fn to_ndarray(&self) -> Array1<E>;
-}
-
-impl<E: Clone + 'static> FaerToNdarray<E> for Col<E> {
-    fn to_ndarray(&self) -> Array1<E> {
-        self.as_ref().iter().cloned().collect()
+        Ok(lu.solve(&b).as_ref().iter().cloned().collect())
     }
 }
 
