@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use piperine_ir::{Body, BodyId, Expr, Ir, ValueType};
+use piperine_ir::{Body, BodyId, Broken, Expr, Ir, ValueType};
 use piperine_plan::BodyPlan;
 
 use crate::print::LibraryPrinter;
@@ -62,13 +62,18 @@ impl Transpiler {
         if !entries.is_empty() {
             return Err(Error::Rejected(entries));
         }
-        let plans = ir
-            .bodies()
-            .map(|body| {
-                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some()) || Transpiler::has_digital_form(body);
-                runs.then(|| BodyPlan::new(body))
-            })
-            .collect();
+        let mut plans = Vec::new();
+        for body in ir.bodies() {
+            let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some()) || Transpiler::has_digital_form(body);
+            if !runs {
+                plans.push(None);
+                continue;
+            }
+            let plan = BodyPlan::build(body).map_err(|refused| {
+                Error::Rejected(vec![Broken { item: format!("body {}", body.name()), origin: body.origin().clone(), what: refused.to_string() }])
+            })?;
+            plans.push(Some(plan));
+        }
         Ok(Transpiler { ir, plans })
     }
 

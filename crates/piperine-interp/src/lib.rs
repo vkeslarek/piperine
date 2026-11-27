@@ -91,20 +91,22 @@ impl Interpreter {
         if !refused.is_empty() {
             return Err(Rejected { entries: refused });
         }
-        let modules = ir
-            .bodies()
-            .map(|body| {
-                let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some());
-                runs.then(|| {
-                    let plan = Arc::new(BodyPlan::new(body));
-                    let factory = BodyFactory { ir: Arc::clone(&ir), body: body.id(), plan };
-                    let factory: &'static BodyFactory = Box::leak(Box::new(factory));
-                    let name: &'static str = Box::leak(body.name().to_string().into_boxed_str());
-                    let module: &'static Module = Box::leak(Box::new(module_with(name, factory)));
-                    module
-                })
-            })
-            .collect();
+        let mut modules = Vec::new();
+        for body in ir.bodies() {
+            let runs = body.analog().is_some() || body.nodes().iter().any(|n| n.init.is_some());
+            if !runs {
+                modules.push(None);
+                continue;
+            }
+            let plan = BodyPlan::build(body).map_err(|refused| Rejected {
+                entries: vec![Broken { item: format!("body {}", body.name()), origin: body.origin().clone(), what: refused.to_string() }],
+            })?;
+            let factory = BodyFactory { ir: Arc::clone(&ir), body: body.id(), plan: Arc::new(plan) };
+            let factory: &'static BodyFactory = Box::leak(Box::new(factory));
+            let name: &'static str = Box::leak(body.name().to_string().into_boxed_str());
+            let module: &'static Module = Box::leak(Box::new(module_with(name, factory)));
+            modules.push(Some(module));
+        }
         Ok(Interpreter { ir, modules })
     }
 

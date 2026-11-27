@@ -398,7 +398,7 @@ impl<'a> ValuePrinter<'a> {
         let node = |t: Terminal| match t {
             Terminal::Node(i) => reads.nodes.get(i as usize).map(|n| self.read(n)),
             Terminal::Ground => Some(ground.to_string()),
-            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
+            Terminal::Own(_) => None,
         };
         let (p, m) = (node(plus)?, node(minus)?);
         Some(match minus {

@@ -892,13 +892,15 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test per crate builds the offending `Ir` through `IrBuilder` and reads the error
-- [ ] Gate check passes: Golden
+- [x] A test per crate builds the offending `Ir` through `IrBuilder` and reads the error: `an_own_terminal_on_a_branch_is_a_plan_error_not_a_panic` (`piperine-plan`, `tests/structure_shape.rs`), `an_own_terminal_on_a_branch_is_a_rejection_not_a_panic` (`piperine-transpile`, `tests/reject.rs`)
+- [x] Gate check passes: Golden
 
 **Tests**: integration
 **Gate**: golden
 
 **Commit**: `fix(plan): refuse an unchecked ir with an error`
+
+**Deferred**: the 7 out-of-range panics of `ir/src/build.rs` stay: `resolve_net`, `bind_nets`, `bind_reached_node`, `bind_reached_net` have 5 callers in `piperine-lang/src/elab/` (lane F's paths) and about 40 in tests; changing them to `Result` needs both. They are a builder-misuse panic (a handle of another builder), not a user-input path. Reported to the coordinator.
 
 ---
 

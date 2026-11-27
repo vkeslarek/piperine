@@ -76,8 +76,7 @@ impl ContributionSums {
         let Some(b) = body.branches().get(branch as usize) else { return format!("branch {branch}") };
         let node = |t: Terminal| match t {
             Terminal::Node(i) => body.nodes().get(i as usize),
-            Terminal::Ground => None,
-            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
+            Terminal::Ground | Terminal::Own(_) => None,
         };
         let nature = node(b.plus).or_else(|| node(b.minus)).map(|n| body.ir().nature(n.nature));
         let access = nature.map_or_else(
@@ -87,7 +86,10 @@ impl ContributionSums {
                 QuantityRole::Potential => n.potential().access.clone(),
             },
         );
-        let name = |t: Terminal| node(t).map_or_else(|| "gnd".to_string(), |n| n.name.clone());
+        let name = |t: Terminal| match t {
+            Terminal::Own(slot) => format!("own terminal {slot}"),
+            _ => node(t).map_or_else(|| "gnd".to_string(), |n| n.name.clone()),
+        };
         match b.minus {
             Terminal::Ground => format!("{access}({})", name(b.plus)),
             _ => format!("{access}({}, {})", name(b.plus), name(b.minus)),

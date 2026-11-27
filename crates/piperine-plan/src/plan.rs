@@ -24,6 +24,7 @@ use std::collections::BTreeSet;
 
 use piperine_abi::layout::{BIT, F64};
 
+use crate::error::PlanError;
 use crate::digital::{CarrierLayout, Digital, ReactionPlan};
 use crate::pin::PinLayout;
 use piperine_abi::raw::{Cell, DEFAULT, Field, GROUND, Layout, List, Partial, Str, WHOLE, ambient, cell, global, input, leaf, op, part, pin_flag, role};
@@ -522,12 +523,12 @@ impl Pins {
         self.records.get(s as usize).copied().unwrap_or(GROUND)
     }
 
-    /// The pin a term end names: a node's pin, or `GROUND`.
-    pub fn terminal(&self, t: Terminal) -> u32 {
+    /// The pin a term end of `body` names: a node's pin, or `GROUND`; an own terminal is the body's error.
+    pub fn terminal(&self, body: Body<'_>, t: Terminal) -> Result<u32, PlanError> {
         match t {
-            Terminal::Node(i) => self.node(i),
-            Terminal::Ground => GROUND,
-            Terminal::Own(_) => panic!("Ir::check: an own terminal belongs in a child's node slot only"),
+            Terminal::Node(i) => Ok(self.node(i)),
+            Terminal::Ground => Ok(GROUND),
+            Terminal::Own(_) => Err(PlanError::new(body.name(), "an own terminal belongs in a child's node slot only".to_string())),
         }
     }
 }
@@ -549,8 +550,17 @@ impl BodyPlan {
         if value.is_nan() { f64::NAN.to_le_bytes().to_vec() } else { value.to_le_bytes().to_vec() }
     }
 
-    /// Plans `body`. The body comes from an `Ir` that passes `check()`.
+    /// Plans `body`, which comes from an `Ir` that passes `check()`: a body `check()` refuses
+    /// breaks that precondition and panics; a host that did not check the `Ir` calls [`build`](Self::build).
     pub fn new(body: Body<'_>) -> BodyPlan {
+        match Self::build(body) {
+            Ok(plan) => plan,
+            Err(refused) => panic!("{refused}"),
+        }
+    }
+
+    /// Plans `body`, or names what it holds that has no layout.
+    pub fn build(body: Body<'_>) -> Result<BodyPlan, PlanError> {
         let ir = body.ir();
         let origin = |o: &Origin| format!("{}:{}:{}", o.file, o.line, o.col);
         let received = Self::received(body);
@@ -685,24 +695,24 @@ impl BodyPlan {
                 pin
             }));
         }
-        let carriers = Digital::carrier_pins(&mut s, body);
+        let carriers = Digital::carrier_pins(&mut s, body)?;
         let events = Digital::event_pins(&mut s, body);
         let crossed = Digital::crossed_pins(&mut s, body);
         let delayed = Digital::delayed_pins(&mut s, body);
         let timers = Digital::timer_pins(&mut s, body);
         let start = Digital::start_pin(&mut s, body);
         let rearms = Digital::rearm_pins(&mut s, body);
-        let records = Digital::record_pins(&mut s, body);
+        let records = Digital::record_pins(&mut s, body)?;
         let tolerances = Digital::tolerance_pins(&mut s, body);
         let derivative_abstols = Digital::derivative_abstol_pins(&mut s, body);
         let delay_maxima = Digital::delay_maximum_pins(&mut s, body);
         let settle = Digital::settle_pin(&mut s, body);
         let element_drives = Digital::element_drive_pins(&mut s, body);
-        let resolved = Digital::resolved_pins(&mut s, body);
+        let resolved = Digital::resolved_pins(&mut s, body)?;
         let session_parameters = Self::session_parameter_pins(&mut s, body);
         let watches = Digital::watches(&mut s, body, &events, &crossed, &tolerances);
         let caps = Digital::cap_watches(&mut s, body);
-        let traces = Digital::trace_watches(&mut s, body);
+        let traces = Digital::trace_watches(&mut s, body)?;
         let pins = Pins {
             nodes,
             branches,
@@ -736,7 +746,7 @@ impl BodyPlan {
         let mut terms = Vec::new();
         for (b, branch) in body.branches().iter().enumerate() {
             let at = branch_origin(b);
-            let (plus, minus) = (pins.terminal(branch.plus), pins.terminal(branch.minus));
+            let (plus, minus) = (pins.terminal(body, branch.plus)?, pins.terminal(body, branch.minus)?);
             let mut term = |name: String, operator: u32, plus: u32, minus: u32, what: Term| {
                 s.term(TermSpec { name: &name, origin: &at, op: operator, plus, minus, abstol: DEFAULT, max: DEFAULT });
                 terms.push(what);
@@ -840,7 +850,7 @@ impl BodyPlan {
         Self::delay_functions(&mut s, &pins, &terms, body, &mut functions);
         let reactions = Digital::reactions(&mut s, &pins, body);
 
-        BodyPlan { shape: s.freeze(), functions, reactions }
+        Ok(BodyPlan { shape: s.freeze(), functions, reactions })
     }
 
     /// The `file:line:col` text of `origin`, as a shape names where a pin, term or function comes from.

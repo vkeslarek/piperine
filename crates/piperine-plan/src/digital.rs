@@ -80,6 +80,7 @@ use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, WatchSpec};
 use piperine_ir::{Body, CarrierRole, Constant, EventSource, Expr, ExprId, Ir, Origin, Projection, Stmt, Stream, Target as Query, ValueType};
 
 use crate::array::ArrayPin;
+use crate::error::PlanError;
 use crate::pin::PinLayout;
 use crate::widths::NumberLayout;
 use crate::plan::{BodyPlan, DelayedPins, FunctionPlan, Mode, Pins, ReadSet, ResolvedPins, Source, Target};
@@ -385,16 +386,16 @@ impl Digital {
     /// Adds one pin per carrier of `body`, in declaration order; returns the index of the first
     /// (the index the next pin would get when the body has none). The body passes `check()`, so
     /// every carrier holds `bool`, `f64` or an integer type.
-    pub(crate) fn carrier_pins(s: &mut ShapeBuf, body: Body<'_>) -> u32 {
+    pub(crate) fn carrier_pins(s: &mut ShapeBuf, body: Body<'_>) -> Result<u32, PlanError> {
         let first = s.shape().pins.len() as u32;
         let drives = body.resolve_drive_carriers();
         for (i, c) in body.carriers().iter().enumerate() {
             let at = format!("{}:{}:{}", c.origin.file, c.origin.line, c.origin.col);
             // a resolved carrier's initial value is its first drive's: it starts the drive pin (`resolved_pins`)
             let init = match c.init.filter(|_| !matches!(c.role, CarrierRole::Resolved { .. })) {
-                Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).unwrap_or_else(|| {
-                    panic!("body {}: carrier {} at {at}: initial value {value:?} is not a value of {}; check() refuses it", body.name(), c.name, c.ty)
-                }),
+                Some(value) => ArrayPin::init(body.ir(), c, value).or_else(|| PinLayout::bytes_in(body.ir(), &c.ty, value)).ok_or_else(|| {
+                    PlanError::new(body.name(), format!("carrier {} at {at}: initial value {value:?} is not a value of {}", c.name, c.ty))
+                })?,
                 None => Vec::new(),
             };
             let pin_role = if Self::is_port(body, i as u32) { role::PORT } else { role::PRIVATE };
@@ -402,14 +403,14 @@ impl Digital {
             // a drive of a `resolve` is read through the drive layout of its net: the driven type, then `driving`
             let pin = if drives.contains(&(i as u32)) {
                 let Some(layout) = DriveLayout::of(body.ir(), &c.ty) else {
-                    panic!("body {}: carrier {} at {at} holds {}, which no drive net holds; check() refuses it", body.name(), c.name, c.ty)
+                    return Err(PlanError::new(body.name(), format!("carrier {} at {at} holds {}, which no drive net holds", c.name, c.ty)));
                 };
                 let fields = layout.fields();
                 let abi = layout.layout(&fields);
                 s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&c.name, pin_role, &abi) })
             } else {
                 let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
-                    panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
+                    return Err(PlanError::new(body.name(), format!("carrier {} at {at} holds {}, which no pin holds", c.name, c.ty)));
                 };
                 let fields = layout.fields();
                 let abi = layout.layout(&fields);
@@ -417,22 +418,22 @@ impl Digital {
             };
             debug_assert_eq!(pin, first + i as u32);
         }
-        first
+        Ok(first)
     }
 
     /// Adds, after the `SETTLE` pin and the element drive pins, the drive pin `<carrier>.drive` of each resolved carrier
     /// (`PORT`, `RELAX`, the drive layout of its driven type) and, when the body calls `others()` of it, the others
     /// pin `<carrier>.others` (`PORT`, the carrier's own layout); `None` for every other carrier. The netlist binds
     /// the drive pin to the carrier's drive net and the others pin to its others net.
-    pub(crate) fn resolved_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<Option<ResolvedPins>> {
+    pub(crate) fn resolved_pins(s: &mut ShapeBuf, body: Body<'_>) -> Result<Vec<Option<ResolvedPins>>, PlanError> {
         body.carriers()
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let CarrierRole::Resolved { driven, .. } = &c.role else { return None };
+                let CarrierRole::Resolved { driven, .. } = &c.role else { return Ok(None) };
                 let at = Self::at(&c.origin);
                 let Some(layout) = DriveLayout::of(body.ir(), driven) else {
-                    panic!("body {}: carrier {} at {at} is driven with {driven}, which no drive net holds; check() refuses it", body.name(), c.name)
+                    return Err(PlanError::new(body.name(), format!("carrier {} at {at} is driven with {driven}, which no drive net holds", c.name)));
                 };
                 let fields = layout.fields();
                 let abi = layout.layout(&fields);
@@ -440,15 +441,16 @@ impl Digital {
                 let init = c.init.and_then(|value| layout.init_bytes(body.ir(), driven, value)).unwrap_or_default();
                 let flags = if init.is_empty() { pin_flag::RELAX } else { pin_flag::RELAX | pin_flag::HAS_INIT };
                 let drive = s.pin(PinSpec { origin: &at, flags, init: &init, ..PinSpec::discrete(&format!("{}.drive", c.name), role::PORT, &abi) });
-                let others = body.reads_others(i as u32).then(|| {
+                let others = body.reads_others(i as u32).then(|| -> Result<u32, PlanError> {
                     let Some(layout) = PinLayout::in_ir(body.ir(), &c.ty) else {
-                        panic!("body {}: carrier {} at {at} holds {}, which no pin holds; check() refuses it", body.name(), c.name, c.ty)
+                        return Err(PlanError::new(body.name(), format!("carrier {} at {at} holds {}, which no pin holds", c.name, c.ty)));
                     };
                     let fields = layout.fields();
                     let abi = layout.layout(&fields);
-                    s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("{}.others", c.name), role::PORT, &abi) })
+                    Ok(s.pin(PinSpec { origin: &at, ..PinSpec::discrete(&format!("{}.others", c.name), role::PORT, &abi) }))
                 });
-                Some(ResolvedPins { drive, others })
+                let others = others.transpose()?;
+                Ok(Some(ResolvedPins { drive, others }))
             })
             .collect()
     }
@@ -590,22 +592,22 @@ impl Digital {
     /// watches: its layout is a `BOOL` presence byte (0 for "not written in this evaluation", abi.md
     /// A5) followed by the record layout of the site's stream, whose fields the site leaves out
     /// stay zero. Returns each site's watch.
-    pub(crate) fn trace_watches(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+    pub(crate) fn trace_watches(s: &mut ShapeBuf, body: Body<'_>) -> Result<Vec<u32>, PlanError> {
         body.traces()
             .iter()
             .enumerate()
             .map(|(k, site)| {
                 let Some(stream) = body.streams().get(site.stream as usize) else {
-                    panic!("body {}: trace site {k} names stream {}, out of range; check() refuses it", body.name(), site.stream)
+                    return Err(PlanError::new(body.name(), format!("trace site {k} names stream {}, out of range", site.stream)));
                 };
                 let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
-                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                    return Err(PlanError::new(body.name(), format!("stream {} holds a field no pin holds", stream.name)));
                 };
                 let start = record.trace_start();
                 let mut fields = vec![Field { name: Str::from_str("present"), leaf: leaf::BOOL, offset: 0, count: 1 }];
                 fields.extend(record.abi_fields().into_iter().map(|f| Field { offset: f.offset + start, ..f }));
                 let layout = Layout { size: record.trace_size(), align: record.align, fields: List::from_slice(&fields) };
-                s.watch(WatchSpec {
+                Ok(s.watch(WatchSpec {
                     name: &format!("trace:{k}"),
                     origin: &Self::at(&site.origin),
                     kind: watch::TRACE,
@@ -613,7 +615,7 @@ impl Digital {
                     event: DEFAULT,
                     ttol: DEFAULT,
                     etol: DEFAULT,
-                })
+                }))
             })
             .collect()
     }
@@ -736,17 +738,17 @@ impl Digital {
 
     /// Adds one `PRIVATE` `RECORD` pin per stream of `body`, named by the stream; returns their
     /// indices. The body passes `check()`, so every field holds `bool`, `f64` or an integer.
-    pub(crate) fn record_pins(s: &mut ShapeBuf, body: Body<'_>) -> Vec<u32> {
+    pub(crate) fn record_pins(s: &mut ShapeBuf, body: Body<'_>) -> Result<Vec<u32>, PlanError> {
         let at = Self::at(body.origin());
         body.streams()
             .iter()
             .map(|stream| {
                 let Some(record) = RecordLayout::in_ir(body.ir(), stream) else {
-                    panic!("body {}: stream {} holds a field no pin holds; check() refuses it", body.name(), stream.name)
+                    return Err(PlanError::new(body.name(), format!("stream {} holds a field no pin holds", stream.name)));
                 };
                 let fields = record.abi_fields();
                 let layout = Layout { size: record.size, align: record.align, fields: List::from_slice(&fields) };
-                s.pin(PinSpec { origin: &at, flags: pin_flag::RECORD, ..PinSpec::discrete(&stream.name, role::PRIVATE, &layout) })
+                Ok(s.pin(PinSpec { origin: &at, flags: pin_flag::RECORD, ..PinSpec::discrete(&stream.name, role::PRIVATE, &layout) }))
             })
             .collect()
     }
