@@ -1,0 +1,9 @@
+crates/piperine-project/src/lockfile.rs::Lockfile::parse_at	1
+crates/piperine-project/src/manifest.rs::Manifest::parse_at	1
+crates/piperine-project/src/manifest.rs::Walk::dependencies	1
+crates/piperine-project/src/manifest.rs::Walk::fault	1
+crates/piperine-project/src/manifest.rs::Walk::manifest	1
+crates/piperine-project/src/manifest.rs::Walk::mistyped	1
+crates/piperine-project/src/manifest.rs::Walk::package	1
+crates/piperine-project/src/manifest.rs::Walk::unknown	1
+crates/piperine-project/src/resolver.rs::::Walk	1

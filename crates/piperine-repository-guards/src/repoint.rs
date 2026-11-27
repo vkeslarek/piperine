@@ -25,16 +25,19 @@ pub struct TestReference {
 }
 
 impl TestReference {
+    /// Parses `<package>/<target>::<test>`.
     fn parse(text: &str) -> Result<TestReference, String> {
         let (target_path, test) = text.split_once("::").ok_or_else(|| format!("`{text}` is not <package>/<target>::<test>"))?;
         let (package, target) = target_path.split_once('/').ok_or_else(|| format!("`{text}` is not <package>/<target>::<test>"))?;
         Ok(TestReference { package: package.to_string(), target: target.to_string(), test: test.to_string() })
     }
 
+    /// The test function's own name, module path removed.
     fn function(&self) -> &str {
         self.test.rsplit("::").next().unwrap_or(&self.test)
     }
 
+    /// The reference as the maps spell it.
     fn spelled(&self) -> String {
         format!("{}/{}::{}", self.package, self.target, self.test)
     }
@@ -99,6 +102,7 @@ impl RepointMap {
         Ok(RepointMap { task: task.to_string(), rows })
     }
 
+    /// One row of a map.
     fn parse_row(line: &str) -> Result<RepointRow, String> {
         let words: Vec<&str> = line.split_whitespace().collect();
         match words.as_slice() {
@@ -181,6 +185,7 @@ impl Repointer {
         self.append_retired(&retired)
     }
 
+    /// Rewrites a file of the repository in place when `rewrite` changes it; a missing file is left alone.
     fn rewrite_file(&self, relative: &str, rewrite: impl Fn(&str) -> Result<String, String>) -> Result<(), String> {
         let path = self.root.join(relative);
         let Ok(text) = std::fs::read_to_string(&path) else { return Ok(()) };
@@ -191,6 +196,7 @@ impl Repointer {
         Ok(())
     }
 
+    /// Appends the retired rows to `retired.tsv`.
     fn append_retired(&self, rows: &[RetiredRow]) -> Result<(), String> {
         if rows.is_empty() {
             return Ok(());
@@ -214,6 +220,7 @@ struct FeatureRewriter {
 }
 
 impl FeatureRewriter {
+    /// The file's text after every row of the map, and the checks the map retired.
     fn rewrite(file: &FeatureFile, map: &RepointMap) -> Result<(String, Vec<RetiredRow>), String> {
         let mut rewriter = FeatureRewriter { lines: file.text().lines().map(str::to_string).collect(), retired: Vec::new(), feature: file.feature().to_string(), task: map.task().to_string() };
         for row in map.rows() {
@@ -254,6 +261,7 @@ impl FeatureRewriter {
         if FeatureFile::parse_run_proof(&proof).is_some() { None } else { Some(proof) }
     }
 
+    /// Replaces every unfenced command that `rewrite` gives a new text for.
     fn rewrite_commands(&mut self, rewrite: impl Fn(&CargoTestCommand) -> Option<String>) {
         for index in self.unfenced() {
             let Some(command) = Self::command_of(&self.lines[index]) else { continue };
@@ -264,16 +272,19 @@ impl FeatureRewriter {
         }
     }
 
+    /// Points every command that ran the moved target at its merged target.
     fn move_commands(&mut self, from_package: &str, from_target: &str, to_package: &str, to_target: &str, module: &str) {
         self.rewrite_commands(|command| {
             ((command.package() == Some(from_package) || command.package() == Some(to_package)) && command.targets().contains(&from_target)).then(|| command.moved(from_target, to_package, to_target, module))
         });
     }
 
+    /// Renames the package of every command that names the old crate.
     fn rename_commands(&mut self, old: &str, new: &str) {
         self.rewrite_commands(|command| (command.package() == Some(old)).then(|| command.with_package(new)));
     }
 
+    /// The file's runs, by name.
     fn runs(&self) -> BTreeMap<String, String> {
         self.unfenced().into_iter().filter_map(|index| FeatureFile::parse_run(&self.lines[index])).collect()
     }
@@ -283,6 +294,7 @@ impl FeatureRewriter {
         self.unfenced().into_iter().rev().find(|&index| FeatureFile::parse_run(&self.lines[index]).is_some())
     }
 
+    /// Adds the `Run` line after the last one when the file has no run called `name`.
     fn ensure_run(&mut self, name: &str, line: &str) {
         if self.runs().contains_key(name) {
             return;
@@ -329,6 +341,7 @@ impl FeatureRewriter {
         found
     }
 
+    /// Points the proofs of `from` at `to`, naming a run for the survivor's target when the file has none.
     fn replace_proofs(&mut self, from: &TestReference, to: &TestReference) {
         if from == to {
             return;
@@ -342,6 +355,7 @@ impl FeatureRewriter {
         }
     }
 
+    /// Turns the proofs of `test` into the ledger's retirement proof and records each retired check.
     fn retire_proofs(&mut self, test: &TestReference, reason: &str) {
         while let Some((_, _, check)) = self.proofs_of(test).into_iter().next() {
             self.ensure_run("ledger", LEDGER_RUN);
@@ -354,6 +368,7 @@ impl FeatureRewriter {
         }
     }
 
+    /// Appends the retirement note to the claim line of `check`, once.
     fn annotate_check(&mut self, check: &str, reason: &str) {
         let note = format!(" (retired by code-clarity {}: {reason})", self.task);
         for index in self.unfenced() {
@@ -368,6 +383,7 @@ impl FeatureRewriter {
 struct InventoryRewriter;
 
 impl InventoryRewriter {
+    /// The inventory's text after every row of the map; a retired test an inventory row cites is an error.
     fn rewrite(text: &str, map: &RepointMap) -> Result<String, String> {
         let mut rewritten: Vec<String> = Vec::new();
         for line in text.lines() {
@@ -386,6 +402,7 @@ impl InventoryRewriter {
         Ok(result)
     }
 
+    /// One `covered_by` cell after one row.
     fn cell(cell: &str, row: &RepointRow) -> Result<String, String> {
         Ok(match row {
             RepointRow::Move { from_package, from_target, to_package, to_target, module } => match cell.strip_prefix(&format!("{from_package}/{from_target}::")) {
@@ -414,6 +431,7 @@ impl InventoryRewriter {
 struct ProseRewriter;
 
 impl ProseRewriter {
+    /// The prose's text after every row of the map.
     fn rewrite(text: &str, map: &RepointMap) -> String {
         let mut result = text.to_string();
         for row in map.rows() {

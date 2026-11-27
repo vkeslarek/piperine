@@ -1,0 +1,116 @@
+# The domain glossary of CC-05 (findings.md 1.3 (a), with `eval`, `spec` and `param`, Q2): terms the
+# domain spells in short form, which a name may hold. term<TAB>what it is.
+msl	the mixed-signal language
+pom	the object model of a design
+ir	the intermediate representation
+abi	the device interface
+cli	the command line
+std	the standard library
+id	identifier of an arena entry
+ids	identifiers
+param	a parameter, the MSL word
+params	parameters
+repr	the representation of a value
+ngspice	the reference simulator
+rustc	the Rust compiler
+netlist	a list of connected devices
+nodeset	an initial guess of a node
+simparam	a simulation parameter
+gnd	ground
+csv	comma-separated values
+json	JSON
+svg	scalable vector graphics
+git	the version control system
+dag	directed acyclic graph
+ac	small-signal analysis
+dc	operating point and sweep analysis
+op	operating point
+tran	transient analysis
+pss	periodic steady state
+pz	pole-zero analysis
+sp	scattering parameters
+tf	transfer function
+lte	local truncation error
+mna	modified nodal analysis
+bdf	backward differentiation formula
+gmin	minimum conductance
+abstol	absolute tolerance
+reltol	relative tolerance
+vntol	voltage tolerance
+trtol	truncation tolerance
+ttol	time tolerance
+etol	energy tolerance
+uic	use initial conditions
+psd	power spectral density
+tstab	stabilization time
+adjoint	the adjoint method
+phasor	a complex amplitude
+ziv	Ziv's rounding test
+ddt	time derivative operator
+ddx	partial derivative operator
+idt	time integral operator
+idtmod	modular time integral operator
+ac_stim	small-signal stimulus
+prev	the previous value
+inflow	flow into a branch
+sqrt	square root
+atan	arc tangent
+atan2	two-argument arc tangent
+asin	arc sine
+acos	arc cosine
+sinh	hyperbolic sine
+cosh	hyperbolic cosine
+tanh	hyperbolic tangent
+exp	exponential
+ln	natural logarithm
+powf	float power
+powi	integer power
+signum	sign of a number
+fract	fractional part
+trunc	truncation
+hypot	hypotenuse
+rem	remainder
+euclid	Euclidean
+fmt	the formatting trait
+eq	equality
+ne	inequality
+cmp	comparison
+deref	dereference
+iter	iterator
+len	length
+shl	shift left
+shr	shift right
+bitand	bitwise and
+bitor	bitwise or
+bitxor	bitwise exclusive or
+fn	function keyword
+impl	implementation keyword
+struct	structure keyword
+enum	enumeration keyword
+const	constant keyword
+mut	mutable keyword
+bool	boolean type
+str	string type
+eval	evaluate, the ABI contract's own word
+spec	specification, as the ABI's descriptions are named
+tr	trapezoidal, as in TR-BDF2
+add	the addition trait
+sub	the subtraction trait
+mul	the multiplication trait
+div	the division trait
+neg	the negation trait
+ord	the ordering trait
+nan	not a number
+ok	the success variant
+mod	the module keyword
+async	a keyword
+dyn	a keyword
+extern	a keyword
+inf	infinity
+cfg	the conditional compilation attribute
+doc	a doc comment
+docs	doc comments, as in the missing_docs lint
+dev	development, as in dev-dependencies
+vams	the retired Verilog-AMS corpus
+piperine	the product name
+impls	implementations

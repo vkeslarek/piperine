@@ -116,6 +116,7 @@ impl FeatureFile {
         lines
     }
 
+    /// The text without surrounding spaces and backticks.
     fn unquoted(text: &str) -> String {
         text.trim().trim_matches('`').trim().to_string()
     }

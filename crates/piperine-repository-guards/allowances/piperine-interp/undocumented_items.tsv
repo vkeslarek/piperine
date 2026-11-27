@@ -1,0 +1,12 @@
+crates/piperine-interp/src/device.rs::Interpreted::body	1
+crates/piperine-interp/src/dual.rs::Dual::exp	1
+crates/piperine-interp/src/dual.rs::Dual::ln	1
+crates/piperine-interp/src/dual.rs::Dual::sqrt	1
+crates/piperine-interp/src/walk.rs::Sums::add	1
+crates/piperine-interp/src/walk.rs::Walk::binary	1
+crates/piperine-interp/src/walk.rs::Walk::fault	1
+crates/piperine-interp/src/walk.rs::Walk::kind	1
+crates/piperine-interp/src/walk.rs::Walk::locals	1
+crates/piperine-interp/src/walk.rs::Walk::mode	1
+crates/piperine-interp/src/walk.rs::Walk::origin	1
+crates/piperine-interp/src/walk.rs::Walk::undeclared	1

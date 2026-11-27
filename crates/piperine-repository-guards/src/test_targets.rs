@@ -3,18 +3,18 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
-use crate::item_scan::{FreeFunctionPermit, ItemKind, ItemScan};
+use crate::item_scan::{FreeFunctionPermit, ScannedKind, ItemScan};
 use crate::source_tree::SourceTree;
 
 /// What a package's `Cargo.toml` declares: its name and its `[[test]]` targets.
-struct Manifest {
+struct ManifestText {
     package: String,
     explicit_tests: Vec<(String, String)>,
 }
 
-impl Manifest {
+impl ManifestText {
     /// Reads the few lines of a manifest this crate needs; no TOML parser is involved.
-    fn parse(text: &str) -> Manifest {
+    fn parse(text: &str) -> ManifestText {
         let mut package = String::new();
         let mut explicit_tests = Vec::new();
         let mut section = String::new();
@@ -42,7 +42,7 @@ impl Manifest {
             }
         }
         flush(&mut pending, &mut explicit_tests);
-        Manifest { package, explicit_tests }
+        ManifestText { package, explicit_tests }
     }
 }
 
@@ -90,19 +90,20 @@ impl TestTargets {
             }
         }
         let mut found: BTreeMap<PathBuf, BTreeSet<String>> = BTreeMap::new();
-        for item in scan.items().iter().filter(|i| i.kind == ItemKind::FreeFunction && i.permit == Some(FreeFunctionPermit::TestAttribute)) {
+        for item in scan.items().iter().filter(|i| i.kind == ScannedKind::FreeFunction && i.permit == Some(FreeFunctionPermit::TestAttribute)) {
             found.entry(item.file.clone()).or_default().insert(item.name.clone());
         }
         let mut packages = BTreeMap::new();
         for (directory, manifest_path) in manifests {
             let Ok(text) = std::fs::read_to_string(&manifest_path) else { continue };
-            let manifest = Manifest::parse(&text);
+            let manifest = ManifestText::parse(&text);
             packages.insert(manifest.package.clone(), Self::package_tests(tree, &found, &directory, &manifest));
         }
         TestTargets { packages }
     }
 
-    fn package_tests(tree: &SourceTree, found: &BTreeMap<PathBuf, BTreeSet<String>>, directory: &Path, manifest: &Manifest) -> PackageTests {
+    /// The targets and tests of one package.
+    fn package_tests(tree: &SourceTree, found: &BTreeMap<PathBuf, BTreeSet<String>>, directory: &Path, manifest: &ManifestText) -> PackageTests {
         let mut roots: Vec<(String, PathBuf)> = manifest.explicit_tests.iter().map(|(name, path)| (name.clone(), directory.join(path))).collect();
         let tests_directory = directory.join("tests");
         for file in tree.files() {

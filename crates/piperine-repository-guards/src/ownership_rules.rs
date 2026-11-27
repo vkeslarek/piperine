@@ -5,12 +5,13 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use crate::allowance::Findings;
-use crate::item_scan::{ItemKind, ItemScan, Origin, ScannedItem};
+use crate::item_scan::{ScannedKind, ItemScan, CodeOrigin, ScannedItem};
 
 /// The rules over who owns what.
 pub struct OwnershipRules;
 
 impl OwnershipRules {
+    /// The allowance key of an item: its file and its name.
     fn file_key(item: &ScannedItem) -> String {
         format!("{}::{}", item.file.display(), item.name)
     }
@@ -18,18 +19,19 @@ impl OwnershipRules {
     /// Product code defines no free function (or nested function) but `main`, an `extern` function
     /// and a `#[test]`.
     pub fn free_functions(scan: &ItemScan) -> Findings {
-        Self::functions_of(scan, Origin::Product)
+        Self::functions_of(scan, CodeOrigin::Product)
     }
 
     /// Test code defines no free helper either: its helpers are methods of fixture types.
     pub fn test_helper_functions(scan: &ItemScan) -> Findings {
-        Self::functions_of(scan, Origin::Test)
+        Self::functions_of(scan, CodeOrigin::Test)
     }
 
-    fn functions_of(scan: &ItemScan, origin: Origin) -> Findings {
+    /// The free and nested functions of code of the given origin that are not permitted.
+    fn functions_of(scan: &ItemScan, origin: CodeOrigin) -> Findings {
         let mut findings = Findings::new();
         for item in scan.items().iter().filter(|item| item.origin == origin) {
-            let loose = item.is_unpermitted_free_function() || item.kind == ItemKind::NestedFunction;
+            let loose = item.is_unpermitted_free_function() || item.kind == ScannedKind::NestedFunction;
             if loose {
                 findings.add(&item.crate_name, Self::file_key(item));
             }
@@ -40,11 +42,11 @@ impl OwnershipRules {
     /// An inherent `impl T` is in the file that declares `T` or below that file's directory.
     pub fn impls_away_from_their_type(scan: &ItemScan) -> Findings {
         let mut declarations: BTreeMap<(&str, &str), Vec<&Path>> = BTreeMap::new();
-        for item in scan.items().iter().filter(|item| matches!(item.kind, ItemKind::Type)) {
+        for item in scan.items().iter().filter(|item| matches!(item.kind, ScannedKind::Type)) {
             declarations.entry((item.crate_name.as_str(), item.name.as_str())).or_default().push(&item.file);
         }
         let mut findings = Findings::new();
-        for item in scan.of_kind(ItemKind::Impl).filter(|item| item.trait_name.is_none()) {
+        for item in scan.of_kind(ScannedKind::Impl).filter(|item| item.trait_name.is_none()) {
             let Some(files) = declarations.get(&(item.crate_name.as_str(), item.name.as_str())) else { continue };
             if !files.iter().any(|declared| Self::is_with(&item.file, declared)) {
                 findings.add(&item.crate_name, Self::file_key(item));
@@ -66,7 +68,7 @@ impl OwnershipRules {
     /// No `#[allow]` or `#[expect]` outside the lint list of generated code (which is a string, not an attribute).
     pub fn allow_attributes(scan: &ItemScan) -> Findings {
         let mut findings = Findings::new();
-        for item in scan.of_kind(ItemKind::LintAttribute).filter(|item| item.name.starts_with("allow(") || item.name.starts_with("expect(")) {
+        for item in scan.of_kind(ScannedKind::LintAttribute).filter(|item| item.name.starts_with("allow(") || item.name.starts_with("expect(")) {
             findings.add(&item.crate_name, Self::file_key(item));
         }
         findings
@@ -78,8 +80,8 @@ impl OwnershipRules {
         for line in owners.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')) {
             let cells: Vec<&str> = line.split('\t').collect();
             let [crate_name, owner, ..] = cells.as_slice() else { continue };
-            let declared = scan.items().iter().any(|i| matches!(i.kind, ItemKind::Type | ItemKind::Trait) && i.crate_name == *crate_name && i.name == *owner);
-            let has_methods = scan.of_kind(ItemKind::Method).any(|m| m.crate_name == *crate_name && m.scope == *owner);
+            let declared = scan.items().iter().any(|i| matches!(i.kind, ScannedKind::Type | ScannedKind::Trait) && i.crate_name == *crate_name && i.name == *owner);
+            let has_methods = scan.of_kind(ScannedKind::Method).any(|m| m.crate_name == *crate_name && m.scope == *owner);
             if !(declared && has_methods) {
                 findings.add(crate_name, (*owner).to_string());
             }

@@ -1,0 +1,6 @@
+crates/piperine-cli/src/cli.rs::Values	1
+crates/piperine-cli/src/commands/fmt.rs::Outcome	1
+crates/piperine-cli/src/commands/run.rs::Stop	1
+crates/piperine-cli/src/exit.rs::Exit	1
+crates/piperine-cli/src/render/diagnostic.rs::Report	1
+crates/piperine-cli/src/render/number.rs::Number	1

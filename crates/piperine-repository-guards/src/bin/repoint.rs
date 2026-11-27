@@ -3,6 +3,7 @@
 
 use piperine_repository_guards::{RepointMap, Repointer, SourceTree};
 
+/// Applies the maps named on the command line, stopping at the first one that fails.
 fn main() {
     let paths: Vec<String> = std::env::args().skip(1).collect();
     if paths.is_empty() {

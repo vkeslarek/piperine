@@ -1,0 +1,6 @@
+crates/piperine-parity/src/backend.rs::Backend	1
+crates/piperine-parity/src/ngspice.rs::Lookup	1
+crates/piperine-parity/src/ngspice.rs::Reference	1
+crates/piperine-parity/src/operating_point.rs::Outcome	1
+crates/piperine-parity/src/project.rs::Project	1
+crates/piperine-parity/src/project.rs::Rejection	1

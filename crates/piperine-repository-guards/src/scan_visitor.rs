@@ -5,9 +5,9 @@ use syn::spanned::Spanned;
 use syn::visit::Visit;
 use syn::{Attribute, Fields, Meta, Type};
 
-use crate::item_scan::{FreeFunctionPermit, ItemKind, Origin, ScannedItem};
+use crate::item_scan::{FreeFunctionPermit, ScannedKind, CodeOrigin, ScannedItem};
 use crate::module_declaration::ModuleDeclaration;
-use crate::source_tree::SourceFile;
+use crate::source_tree::RustSource;
 
 /// The shortest closure, in lines, that counts as a function.
 const LONG_CLOSURE_LINES: usize = 15;
@@ -23,7 +23,7 @@ struct Enclosing {
 
 /// Walks one file and appends what it finds to `items`.
 pub struct ScanVisitor<'a> {
-    file: &'a SourceFile,
+    file: &'a RustSource,
     items: &'a mut Vec<ScannedItem>,
     modules: Vec<String>,
     enclosing: Vec<Enclosing>,
@@ -33,33 +33,36 @@ pub struct ScanVisitor<'a> {
 
 impl<'a> ScanVisitor<'a> {
     /// Scans a parsed file: its `File` item, then everything inside it.
-    pub fn scan_file(file: &'a SourceFile, syntax: &syn::File, items: &'a mut Vec<ScannedItem>) {
+    pub fn scan_file(file: &'a RustSource, syntax: &syn::File, items: &'a mut Vec<ScannedItem>) {
         let mut visitor = ScanVisitor { file, items, modules: Vec::new(), enclosing: Vec::new(), test_depth: 0, function_depth: 0 };
-        let mut item = visitor.item(ItemKind::File, file.path().to_string_lossy().to_string(), 1, file.line_count().max(1), &syntax.attrs);
+        let mut item = visitor.item(ScannedKind::File, file.path().to_string_lossy().to_string(), 1, file.line_count().max(1), &syntax.attrs);
         item.documented = Self::is_documented(&syntax.attrs);
-        item.origin = if file.is_test() { Origin::Test } else { Origin::Product };
+        item.origin = if file.is_test() { CodeOrigin::Test } else { CodeOrigin::Product };
         visitor.items.push(item);
         visitor.visit_file(syntax);
     }
 
+    /// Whether an attribute list holds a doc comment.
     fn is_documented(attributes: &[Attribute]) -> bool {
         attributes.iter().any(|attribute| attribute.path().is_ident("doc"))
     }
 
+    /// Whether an attribute list holds `#[test]` or a path ending in `test`.
     fn has_test_attribute(attributes: &[Attribute]) -> bool {
         attributes.iter().any(|attribute| attribute.path().segments.last().is_some_and(|segment| segment.ident == "test"))
     }
 
-    fn origin_of(&self, attributes: &[Attribute]) -> Origin {
+    /// Test when the file, an enclosing module or the attributes say so, product otherwise.
+    fn origin_of(&self, attributes: &[Attribute]) -> CodeOrigin {
         if self.file.is_test() || self.test_depth > 0 || ModuleDeclaration::is_cfg_test(attributes) || Self::has_test_attribute(attributes) {
-            Origin::Test
+            CodeOrigin::Test
         } else {
-            Origin::Product
+            CodeOrigin::Product
         }
     }
 
     /// A new item at `line`, `length` lines long, with the context the walk is in.
-    fn item(&self, kind: ItemKind, name: String, line: usize, length: usize, attributes: &[Attribute]) -> ScannedItem {
+    fn item(&self, kind: ScannedKind, name: String, line: usize, length: usize, attributes: &[Attribute]) -> ScannedItem {
         ScannedItem {
             kind,
             name,
@@ -76,6 +79,7 @@ impl<'a> ScanVisitor<'a> {
         }
     }
 
+    /// The `impl`, `trait` or inline module path the walk is inside.
     fn scope(&self) -> String {
         match self.enclosing.last() {
             Some(enclosing) => enclosing.name.clone(),
@@ -84,7 +88,7 @@ impl<'a> ScanVisitor<'a> {
     }
 
     /// An item whose first line is `start`'s and whose last line is `end`'s.
-    fn spanning(&self, kind: ItemKind, name: String, start: Span, end: Span, attributes: &[Attribute]) -> ScannedItem {
+    fn spanning(&self, kind: ScannedKind, name: String, start: Span, end: Span, attributes: &[Attribute]) -> ScannedItem {
         let line = start.start().line;
         self.item(kind, name, line, end.end().line.saturating_sub(line) + 1, attributes)
     }
@@ -97,6 +101,7 @@ impl<'a> ScanVisitor<'a> {
         self.test_depth -= usize::from(raised);
     }
 
+    /// The name of the type an `impl` is for, looking through references.
     fn type_name(ty: &Type) -> String {
         match ty {
             Type::Path(path) => path.path.segments.last().map(|s| s.ident.to_string()).unwrap_or_default(),
@@ -107,9 +112,10 @@ impl<'a> ScanVisitor<'a> {
         }
     }
 
-    fn function_item(&mut self, signature: &syn::Signature, end: Span, attributes: &[Attribute], kind: ItemKind) {
+    /// Appends the item of a function or method found at `signature`.
+    fn function_item(&mut self, signature: &syn::Signature, end: Span, attributes: &[Attribute], kind: ScannedKind) {
         let mut item = self.spanning(kind, signature.ident.to_string(), signature.span(), end, attributes);
-        if kind == ItemKind::FreeFunction {
+        if kind == ScannedKind::FreeFunction {
             item.permit = if signature.ident == "main" {
                 Some(FreeFunctionPermit::Main)
             } else if signature.abi.is_some() {
@@ -123,6 +129,7 @@ impl<'a> ScanVisitor<'a> {
         self.items.push(item);
     }
 
+    /// Runs `walk` one function body deeper.
     fn visit_function_body(&mut self, walk: impl FnOnce(&mut Self)) {
         self.function_depth += 1;
         walk(self);
@@ -132,7 +139,7 @@ impl<'a> ScanVisitor<'a> {
 
 impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     fn visit_item_mod(&mut self, node: &'ast syn::ItemMod) {
-        let item = self.spanning(ItemKind::Module, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Module, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
         self.items.push(item);
         self.within_test_scope(&node.attrs, |visitor| {
             visitor.modules.push(node.ident.to_string());
@@ -142,7 +149,7 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     }
 
     fn visit_item_struct(&mut self, node: &'ast syn::ItemStruct) {
-        let item = self.spanning(ItemKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
         self.items.push(item);
         let owner = node.ident.to_string();
         let fields: Vec<&syn::Field> = match &node.fields {
@@ -153,7 +160,7 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
         self.within_test_scope(&node.attrs, |visitor| {
             for (position, field) in fields.iter().enumerate() {
                 let name = field.ident.as_ref().map_or_else(|| position.to_string(), |ident| ident.to_string());
-                let mut item = visitor.spanning(ItemKind::Field, name, field.span(), field.span(), &field.attrs);
+                let mut item = visitor.spanning(ScannedKind::Field, name, field.span(), field.span(), &field.attrs);
                 item.scope = owner.clone();
                 visitor.items.push(item);
             }
@@ -162,11 +169,11 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     }
 
     fn visit_item_enum(&mut self, node: &'ast syn::ItemEnum) {
-        let item = self.spanning(ItemKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
         self.items.push(item);
         self.within_test_scope(&node.attrs, |visitor| {
             for variant in &node.variants {
-                let mut item = visitor.spanning(ItemKind::Variant, variant.ident.to_string(), variant.ident.span(), variant.span(), &variant.attrs);
+                let mut item = visitor.spanning(ScannedKind::Variant, variant.ident.to_string(), variant.ident.span(), variant.span(), &variant.attrs);
                 item.scope = node.ident.to_string();
                 visitor.items.push(item);
             }
@@ -175,13 +182,13 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     }
 
     fn visit_item_union(&mut self, node: &'ast syn::ItemUnion) {
-        let item = self.spanning(ItemKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Type, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
         self.items.push(item);
         self.within_test_scope(&node.attrs, |visitor| syn::visit::visit_item_union(visitor, node));
     }
 
     fn visit_item_trait(&mut self, node: &'ast syn::ItemTrait) {
-        let item = self.spanning(ItemKind::Trait, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Trait, node.ident.to_string(), node.ident.span(), node.span(), &node.attrs);
         self.items.push(item);
         self.within_test_scope(&node.attrs, |visitor| {
             visitor.enclosing.push(Enclosing { name: node.ident.to_string(), trait_name: None });
@@ -193,7 +200,7 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     fn visit_item_impl(&mut self, node: &'ast syn::ItemImpl) {
         let name = Self::type_name(&node.self_ty);
         let trait_name = node.trait_.as_ref().and_then(|(_, path, _)| path.segments.last().map(|s| s.ident.to_string()));
-        let mut item = self.spanning(ItemKind::Impl, name.clone(), node.impl_token.span, node.span(), &node.attrs);
+        let mut item = self.spanning(ScannedKind::Impl, name.clone(), node.impl_token.span, node.span(), &node.attrs);
         item.trait_name = trait_name.clone();
         self.items.push(item);
         self.within_test_scope(&node.attrs, |visitor| {
@@ -204,18 +211,18 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     }
 
     fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
-        self.function_item(&node.sig, node.block.span(), &node.attrs, ItemKind::Method);
+        self.function_item(&node.sig, node.block.span(), &node.attrs, ScannedKind::Method);
         self.within_test_scope(&node.attrs, |visitor| visitor.visit_function_body(|inner| syn::visit::visit_impl_item_fn(inner, node)));
     }
 
     fn visit_trait_item_fn(&mut self, node: &'ast syn::TraitItemFn) {
         let end = node.default.as_ref().map_or_else(|| node.sig.span(), |block| block.span());
-        self.function_item(&node.sig, end, &node.attrs, ItemKind::Method);
+        self.function_item(&node.sig, end, &node.attrs, ScannedKind::Method);
         self.within_test_scope(&node.attrs, |visitor| visitor.visit_function_body(|inner| syn::visit::visit_trait_item_fn(inner, node)));
     }
 
     fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
-        let kind = if self.function_depth > 0 { ItemKind::NestedFunction } else { ItemKind::FreeFunction };
+        let kind = if self.function_depth > 0 { ScannedKind::NestedFunction } else { ScannedKind::FreeFunction };
         self.function_item(&node.sig, node.block.span(), &node.attrs, kind);
         let saved = std::mem::take(&mut self.enclosing);
         self.within_test_scope(&node.attrs, |visitor| visitor.visit_function_body(|inner| syn::visit::visit_item_fn(inner, node)));
@@ -226,15 +233,15 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
         let Meta::List(list) = &node.meta else { return };
         let Some(level) = LINT_LEVELS.iter().find(|level| list.path.is_ident(level)) else { return };
         let name = format!("{level}({})", list.tokens);
-        let mut item = self.spanning(ItemKind::LintAttribute, name, node.span(), node.span(), &[]);
+        let mut item = self.spanning(ScannedKind::LintAttribute, name, node.span(), node.span(), &[]);
         item.detail = if matches!(node.style, syn::AttrStyle::Inner(_)) { "inner" } else { "outer" }.to_string();
         self.items.push(item);
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
         let kind = match node.method.to_string().as_str() {
-            "unwrap" => Some(ItemKind::UnwrapCall),
-            "expect" => Some(ItemKind::ExpectCall),
+            "unwrap" => Some(ScannedKind::UnwrapCall),
+            "expect" => Some(ScannedKind::ExpectCall),
             _ => None,
         };
         if let Some(kind) = kind {
@@ -245,7 +252,7 @@ impl<'ast> Visit<'ast> for ScanVisitor<'_> {
     }
 
     fn visit_expr_closure(&mut self, node: &'ast syn::ExprClosure) {
-        let item = self.spanning(ItemKind::Closure, "closure".to_string(), node.span(), node.span(), &node.attrs);
+        let item = self.spanning(ScannedKind::Closure, "closure".to_string(), node.span(), node.span(), &node.attrs);
         if item.length >= LONG_CLOSURE_LINES {
             self.items.push(item);
         }

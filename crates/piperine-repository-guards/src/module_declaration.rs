@@ -25,6 +25,7 @@ impl ModuleDeclaration {
         found
     }
 
+    /// Appends the file-backed module declarations of `items`, descending into inline modules.
     fn collect(items: &[Item], inline_path: &[String], inherited_test: bool, found: &mut Vec<ModuleDeclaration>) {
         for item in items {
             let Item::Mod(module) = item else { continue };
@@ -57,6 +58,7 @@ impl ModuleDeclaration {
         })
     }
 
+    /// The value of a `#[path = "..."]` attribute among `attributes`.
     fn path_attribute_of(attributes: &[Attribute]) -> Option<String> {
         attributes.iter().find_map(|attribute| {
             let Meta::NameValue(pair) = &attribute.meta else { return None };

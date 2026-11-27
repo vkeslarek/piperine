@@ -16,10 +16,12 @@ impl CargoTestCommand {
         Some(CargoTestCommand { tokens, cargo_at, arguments_end })
     }
 
+    /// The tokens after `cargo test`, up to the first `--` or shell operator.
     fn arguments(&self) -> &[String] {
         &self.tokens[self.cargo_at + 2..self.arguments_end]
     }
 
+    /// The value after the first of `flags` among the arguments, with its token index.
     fn value_after(&self, flags: &[&str]) -> Option<(usize, &str)> {
         let arguments = self.arguments();
         let at = arguments.iter().position(|a| flags.contains(&a.as_str()))?;

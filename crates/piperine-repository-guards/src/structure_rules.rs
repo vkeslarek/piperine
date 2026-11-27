@@ -4,7 +4,7 @@
 use syn::Item;
 
 use crate::allowance::Findings;
-use crate::item_scan::{ItemKind, ItemScan, Origin};
+use crate::item_scan::{ScannedKind, ItemScan, CodeOrigin};
 use crate::module_declaration::ModuleDeclaration;
 use crate::source_tree::SourceTree;
 
@@ -58,6 +58,7 @@ impl StructureRules {
         }
     }
 
+    /// The text of the file's `//!` doc comment.
     fn doc_text(file: &syn::File) -> String {
         let mut text = String::new();
         for attribute in file.attrs.iter().filter(|a| a.path().is_ident("doc")) {
@@ -76,7 +77,7 @@ impl StructureRules {
     /// No module is named `utils`, `helpers`, `misc` or `common` outside test support.
     pub fn empty_module_names(scan: &ItemScan) -> Findings {
         let mut findings = Findings::new();
-        for item in scan.of_kind(ItemKind::Module).filter(|item| item.origin == Origin::Product) {
+        for item in scan.of_kind(ScannedKind::Module).filter(|item| item.origin == CodeOrigin::Product) {
             if EMPTY_MODULE_NAMES.contains(&item.name.as_str()) || item.name == SHARED_NAME {
                 findings.add(&item.crate_name, format!("{}::{}", item.file.display(), item.name));
             }

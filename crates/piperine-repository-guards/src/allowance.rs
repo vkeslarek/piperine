@@ -53,8 +53,8 @@ impl Findings {
     }
 
     /// Judges every crate's findings against `allowances/<crate>/<guard>.tsv`.
-    pub fn judge(&self, guard: &str) -> Verdict {
-        let mut verdict = Verdict::default();
+    pub fn judge(&self, guard: &str) -> AllowanceVerdict {
+        let mut verdict = AllowanceVerdict::default();
         for crate_name in self.crates_to_judge() {
             let found = self.by_crate.get(&crate_name).map(Vec::as_slice).unwrap_or(&[]);
             let crate_verdict = Allowance::read(&crate_name, guard).judge(found);
@@ -67,14 +67,14 @@ impl Findings {
 
 /// The outcome of judging findings against an allowance.
 #[derive(Debug, Default, PartialEq, Eq)]
-pub struct Verdict {
+pub struct AllowanceVerdict {
     /// Violations the allowance does not list (or lists with a smaller count), as the row to add.
     pub unlisted: Vec<String>,
     /// Rows the allowance lists that are no longer found (or found fewer times), as the row to delete.
     pub stale: Vec<String>,
 }
 
-impl Verdict {
+impl AllowanceVerdict {
     /// Panics with every unlisted violation and every stale row; a clean verdict returns.
     pub fn assert_clean(&self, guard: &str) {
         assert!(
@@ -110,12 +110,12 @@ impl Allowance {
     }
 
     /// Compares what was found (one key per violation) with the rows.
-    pub fn judge(&self, found: &[String]) -> Verdict {
+    pub fn judge(&self, found: &[String]) -> AllowanceVerdict {
         let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
         for key in found {
             *counts.entry(key.as_str()).or_default() += 1;
         }
-        let mut verdict = Verdict::default();
+        let mut verdict = AllowanceVerdict::default();
         for (key, &count) in &counts {
             if self.rows.get(*key).copied().unwrap_or(0) < count {
                 verdict.unlisted.push(Self::row(key, count));
@@ -168,7 +168,7 @@ mod tests {
     fn a_repeated_violation_is_counted_both_ways() {
         let allowance = Allowance::parse("a.rs::dup\t2\n");
         let twice = ["a.rs::dup".to_string(), "a.rs::dup".to_string()];
-        assert_eq!(allowance.judge(&twice), Verdict::default());
+        assert_eq!(allowance.judge(&twice), AllowanceVerdict::default());
         assert_eq!(allowance.judge(&twice[..1]).stale, vec!["a.rs::dup\t2".to_string()]);
         let three = ["a.rs::dup".to_string(), "a.rs::dup".to_string(), "a.rs::dup".to_string()];
         assert_eq!(allowance.judge(&three).unlisted, vec!["a.rs::dup\t3".to_string()]);
@@ -179,6 +179,6 @@ mod tests {
         let found = vec!["x::b".to_string(), "x::a".to_string(), "x::a".to_string()];
         let text = Allowance::render(&found);
         assert_eq!(text, "x::a\t2\nx::b\t1\n");
-        assert_eq!(Allowance::parse(&text).judge(&found), Verdict::default());
+        assert_eq!(Allowance::parse(&text).judge(&found), AllowanceVerdict::default());
     }
 }

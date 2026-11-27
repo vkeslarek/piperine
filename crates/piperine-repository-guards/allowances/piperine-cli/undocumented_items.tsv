@@ -1,0 +1,16 @@
+crates/piperine-cli/src/cli.rs::::ArgKind	1
+crates/piperine-cli/src/cli.rs::Cli::arg	1
+crates/piperine-cli/src/commands/build.rs::BuildCommand::listed	1
+crates/piperine-cli/src/commands/clean.rs::CleanCommand::attempt	1
+crates/piperine-cli/src/commands/fmt.rs::FmtCommand::fail	1
+crates/piperine-cli/src/commands/info.rs::InfoCommand::attempt	1
+crates/piperine-cli/src/commands/info.rs::InfoCommand::params	1
+crates/piperine-cli/src/commands/info.rs::InfoCommand::ports	1
+crates/piperine-cli/src/commands/info.rs::InfoCommand::streams	1
+crates/piperine-cli/src/commands/info.rs::InfoCommand::text	1
+crates/piperine-cli/src/commands/new.rs::NewCommand::create	1
+crates/piperine-cli/src/commands/run.rs::RunCommand::attempt	1
+crates/piperine-cli/src/commands/test.rs::TestCommand::print	1
+crates/piperine-cli/src/main.rs::::main	1
+crates/piperine-cli/src/render/csv.rs::CsvTable::cell	1
+crates/piperine-cli/src/render/json.rs::JsonRecord::real	1

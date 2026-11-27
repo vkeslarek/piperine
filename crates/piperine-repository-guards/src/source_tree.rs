@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use crate::module_declaration::ModuleDeclaration;
 
 /// One `.rs` file: its place in the repository, its syntax and whether it is test code.
-pub struct SourceFile {
+pub struct RustSource {
     path: PathBuf,
     crate_name: String,
     is_test: bool,
@@ -14,7 +14,7 @@ pub struct SourceFile {
     syntax: Result<syn::File, String>,
 }
 
-impl SourceFile {
+impl RustSource {
     /// The path relative to the repository root.
     pub fn path(&self) -> &Path {
         &self.path
@@ -44,7 +44,7 @@ impl SourceFile {
 
 /// Every Rust source of the workspace.
 pub struct SourceTree {
-    files: Vec<SourceFile>,
+    files: Vec<RustSource>,
 }
 
 impl SourceTree {
@@ -70,10 +70,11 @@ impl SourceTree {
     }
 
     /// Every file, in path order.
-    pub fn files(&self) -> &[SourceFile] {
+    pub fn files(&self) -> &[RustSource] {
         &self.files
     }
 
+    /// Reads every `.rs` file under `path` into `texts`, skipping `target` and hidden directories.
     fn collect(root: &Path, path: &Path, texts: &mut Vec<(PathBuf, String)>) {
         if path.is_dir() {
             let Ok(entries) = std::fs::read_dir(path) else { return };
@@ -91,11 +92,12 @@ impl SourceTree {
         }
     }
 
+    /// Parses the texts, marks the test files and builds the tree.
     fn from_texts(texts: Vec<(PathBuf, String)>) -> SourceTree {
         let sorted: BTreeMap<PathBuf, String> = texts.into_iter().collect();
-        let mut files: Vec<SourceFile> = sorted
+        let mut files: Vec<RustSource> = sorted
             .into_iter()
-            .map(|(path, text)| SourceFile {
+            .map(|(path, text)| RustSource {
                 crate_name: Self::crate_name_of(&path),
                 is_test: path.components().any(|c| c.as_os_str() == "tests"),
                 line_count: text.lines().count(),
@@ -107,6 +109,7 @@ impl SourceTree {
         SourceTree { files }
     }
 
+    /// The crate directory name of a path under `crates/`, `piperine` otherwise.
     fn crate_name_of(path: &Path) -> String {
         let mut components = path.components();
         match (components.next(), components.next()) {
@@ -117,7 +120,7 @@ impl SourceTree {
 
     /// Follows every module declaration to the file it reaches; a file reached by a `#[cfg(test)]`
     /// declaration, or by a declaration written in test code, is test code too.
-    fn mark_reached_test_files(files: &mut [SourceFile]) {
+    fn mark_reached_test_files(files: &mut [RustSource]) {
         let index: BTreeMap<PathBuf, usize> = files.iter().enumerate().map(|(i, f)| (f.path.clone(), i)).collect();
         let edges: Vec<Vec<(usize, bool)>> = files
             .iter()
@@ -149,9 +152,9 @@ impl SourceTree {
 
 impl SourceTree {
     /// The file at `root` and every file its module declarations reach, transitively.
-    pub fn reached_from(&self, root: &Path) -> Vec<&SourceFile> {
-        let index: BTreeMap<&Path, &SourceFile> = self.files.iter().map(|file| (file.path(), file)).collect();
-        let mut reached: Vec<&SourceFile> = Vec::new();
+    pub fn reached_from(&self, root: &Path) -> Vec<&RustSource> {
+        let index: BTreeMap<&Path, &RustSource> = self.files.iter().map(|file| (file.path(), file)).collect();
+        let mut reached: Vec<&RustSource> = Vec::new();
         let mut pending: Vec<PathBuf> = vec![root.to_path_buf()];
         while let Some(path) = pending.pop() {
             let Some(&file) = index.get(path.as_path()) else { continue };

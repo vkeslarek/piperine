@@ -48,6 +48,7 @@ impl ProofLedger {
         ProofLedger { features: FeatureFile::read_all(&root), inventory_rows: Self::read_inventory(&root), targets: TestTargets::of_workspace(tree, scan), root }
     }
 
+    /// The `(id, covered_by)` cells of the Book's inventory rows.
     fn read_inventory(root: &Path) -> Vec<(String, String)> {
         let Ok(text) = std::fs::read_to_string(root.join("tests/book/inventory.tsv")) else { return Vec::new() };
         text.lines()
@@ -121,6 +122,7 @@ impl ProofLedger {
         found.into_iter().collect()
     }
 
+    /// The reference a proof leaves dangling, when its run names no test that exists.
     fn dangling_proof(&self, file: &FeatureFile, runs: &[RunLine], proof: &ProofLine) -> Option<DanglingReference> {
         let owner = file.feature().to_string();
         let command = runs.iter().find(|run| run.name == proof.run_name).map(|run| run.command.as_str())?;
