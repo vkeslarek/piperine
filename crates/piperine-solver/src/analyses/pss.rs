@@ -197,7 +197,7 @@ impl<'a> PssSolver<'a> {
                 let mut solver =
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
                         solver.policy = self.policy.clone();
-                solver.solve()?.last().expect("pre-roll has steps").clone()
+                solver.solve()?.final_step()?.clone()
             } else {
                 // A zero-length "shot" is not defined; take the DC point via
                 // a minimal transient record at t=0: integrate one dt and
@@ -207,7 +207,10 @@ impl<'a> PssSolver<'a> {
                     TransientSolver::new(self.circuit, opts, self.context.clone())?;
                         solver.policy = self.policy.clone();
                 let r = solver.solve()?;
-                r.iter().next().expect("transient records t=0").clone()
+                r.iter()
+                    .next()
+                    .ok_or_else(|| Error::simple(SolverDomain::Pss, "the transient recorded no step at t=0"))?
+                    .clone()
             }
         };
 
@@ -219,7 +222,7 @@ impl<'a> PssSolver<'a> {
 
         for iter in 0..self.options.max_shoot_iter.max(1) {
             let arrival = self.shoot(&x0_step, t0, period)?;
-            let x_t = Self::step_to_vec(arrival.last().expect("shot has steps"), &vars);
+            let x_t = Self::step_to_vec(arrival.final_step()?, &vars);
             let g: Vec<f64> = x_t.iter().zip(&x0).map(|(a, b)| a - b).collect();
             residual = g.iter().fold(0.0_f64, |m, v| m.max(v.abs()));
 
@@ -231,9 +234,9 @@ impl<'a> PssSolver<'a> {
                 // over the second period must land where the first did,
                 // within the integration-tolerance class (not shoot_tol —
                 // per-period LTE drift is larger than the Newton residual).
-                let arrival_step = arrival.last().unwrap().clone();
+                let arrival_step = arrival.final_step()?.clone();
                 let second = self.shoot(&arrival_step, t0 + period, period)?;
-                let x_2t = Self::step_to_vec(second.last().unwrap(), &vars);
+                let x_2t = Self::step_to_vec(second.final_step()?, &vars);
                 for (i, (a, b)) in x_t.iter().zip(&x_2t).enumerate() {
                     let tol = 1.0e-9 + 1.0e-3 * a.abs().max(b.abs());
                     if (a - b).abs() > tol {
@@ -275,7 +278,7 @@ impl<'a> PssSolver<'a> {
                         xp[col] += eps;
                         let xp_step = Self::vec_to_step(&xp, &vars, t0, &x0_step);
                         let arr = self.shoot(&xp_step, t0, period)?;
-                        let xtp = Self::step_to_vec(arr.last().unwrap(), &vars);
+                        let xtp = Self::step_to_vec(arr.final_step()?, &vars);
                         for row in 0..n {
                             // d g_row / d x0_col = M − I (monodromy minus identity).
                             m[row][col] = (xtp[row] - x_t[row]) / eps
@@ -366,7 +369,7 @@ impl<'a> PssSolver<'a> {
         let mut state = arrival.clone();
         for k in 2..=4_usize {
             let arr = self.shoot(&state, t0 + (k as f64 - 1.0) * period, period)?;
-            let next = arr.last().unwrap().clone();
+            let next = arr.final_step()?.clone();
             if matches(start, &next) {
                 return Err(Error::simple(
                     SolverDomain::Pss,

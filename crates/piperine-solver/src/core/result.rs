@@ -149,6 +149,17 @@ impl TransientAnalysisResult {
         self.values.last()
     }
 
+    /// The step the run ended on; a result with no step is an error of the
+    /// transient, not a panic.
+    pub fn final_step(&self) -> Result<&TransientStep> {
+        self.values.last().ok_or_else(|| {
+            piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                "the run recorded no step, so it has no final state",
+            )
+        })
+    }
+
     pub fn iter(&self) -> Iter<'_, TransientStep> {
         self.values.iter()
     }

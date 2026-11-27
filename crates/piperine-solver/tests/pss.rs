@@ -138,3 +138,11 @@ fn digital_divider_reports_k_times_period() {
     assert!(msg.contains("appears to be 2·T"), "k·T diagnostic: {msg}");
     assert!(msg.contains("2.000000e-3"), "suggests period = 2·T: {msg}");
 }
+
+/// A shot that recorded no step has no arrival state to compare: the shooting reads the error.
+#[test]
+fn a_shot_with_no_step_is_an_error_not_a_panic() {
+    let empty = piperine_solver::prelude::TransientAnalysisResult::new(Vec::new());
+    let err = empty.final_step().expect_err("no step, no final state");
+    assert!(err.to_string().contains("no step"), "{err}");
+}

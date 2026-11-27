@@ -848,8 +848,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test per site drives the input that panicked and reads the error (two new tests in the crate's analyses target)
-- [ ] Gate check passes: Quick
+- [x] A test per site drives the input that panicked and reads the error (two new tests in the crate's analyses target: `a_matrix_with_an_infinite_entry_is_refused` in `pz.rs`, `a_shot_with_no_step_is_an_error_not_a_panic` in `tests/pss.rs`)
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
