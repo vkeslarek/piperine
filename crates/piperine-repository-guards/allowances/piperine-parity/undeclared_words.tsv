@@ -45,6 +45,7 @@ crates/piperine-parity/tests/parity_ac.rs::ac_rc_with_a_scaled_derivative	1
 crates/piperine-parity/tests/parity_ac.rs::delay_tline_ac	1
 crates/piperine-parity/tests/parity_corpus.rs::every_twin_has_a_cir_and_a_test	1
 crates/piperine-parity/tests/parity_dc.rs::diode_iv	1
+crates/piperine-parity/tests/parity_dc.rs::diode_rev	1
 crates/piperine-parity/tests/parity_grid.rs::the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports	1
 crates/piperine-parity/tests/parity_grid.rs::tran_rc_on_the_grid_agrees_with_ngspice	1
 crates/piperine-parity/tests/parity_noise.rs::noise_rc	1

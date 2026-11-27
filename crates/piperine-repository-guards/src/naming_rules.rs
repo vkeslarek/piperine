@@ -10,10 +10,14 @@ use crate::source_tree::SourceTree;
 /// The terms the domain spells in short form: names a reader already knows (`msl`, `abi`, `dc`).
 pub struct Glossary {
     terms: BTreeSet<String>,
+    /// The declared names in which a term means something other than its row says (`diode_rev`
+    /// is reverse bias, not `rev`'s reversed order): the term does not clear them.
+    other_meanings: BTreeSet<String>,
 }
 
 impl Glossary {
-    /// Reads `data/glossary.tsv`: one `term<TAB>meaning` row per line.
+    /// Reads `data/glossary.tsv`: one `term<TAB>meaning` row per line, with an optional third
+    /// column listing, comma-separated, the names in which the term means something else.
     pub fn read() -> Glossary {
         let text = std::fs::read_to_string(SourceTree::guards_directory().join("data/glossary.tsv")).unwrap_or_default();
         Glossary::parse(&text)
@@ -21,8 +25,15 @@ impl Glossary {
 
     /// Parses glossary text; `#` lines and blank lines are comments.
     pub fn parse(text: &str) -> Glossary {
-        let terms = text.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')).filter_map(|line| line.split('\t').next()).map(|term| term.trim().to_lowercase()).collect();
-        Glossary { terms }
+        let rows: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')).collect();
+        let terms = rows.iter().filter_map(|line| line.split('\t').next()).map(|term| term.trim().to_lowercase()).collect();
+        let other_meanings = rows.iter().filter_map(|line| line.split('\t').nth(2)).flat_map(|names| names.split(',')).map(|name| name.trim().to_string()).filter(|name| !name.is_empty()).collect();
+        Glossary { terms, other_meanings }
+    }
+
+    /// Whether the name is one in which a term means something other than its row says.
+    pub fn means_otherwise_in(&self, name: &str) -> bool {
+        self.other_meanings.contains(name)
     }
 
     /// Whether the glossary holds the term.
@@ -110,8 +121,12 @@ impl NamingRules {
         findings
     }
 
-    /// Whether every word of `name` is in the glossary or the dictionary, glossary compounds read whole.
+    /// Whether every word of `name` is in the glossary or the dictionary, glossary compounds read
+    /// whole, and the name is not one in which a glossary term means something else.
     fn is_made_of_words(name: &str, glossary: &Glossary, dictionary: &Dictionary) -> bool {
+        if glossary.means_otherwise_in(name) {
+            return false;
+        }
         let mut remaining = NameWords::of(name).join("_");
         for compound in glossary.compounds() {
             remaining = remaining.replace(compound.as_str(), "_");
@@ -155,5 +170,14 @@ mod tests {
         assert!(NamingRules::is_made_of_words("lower_ac_stim", &glossary, &dictionary));
         assert!(!NamingRules::is_made_of_words("lower_expr", &glossary, &dictionary));
         assert!(!NamingRules::is_made_of_words("x", &glossary, &dictionary));
+    }
+
+    #[test]
+    fn a_name_in_which_a_term_means_something_else_fails() {
+        let glossary = Glossary::parse("rev\treversed order\tdiode_rev, other_rev\n");
+        let dictionary = Dictionary::parse("diode\nlower\n");
+        assert!(NamingRules::is_made_of_words("lower_rev", &glossary, &dictionary));
+        assert!(!NamingRules::is_made_of_words("diode_rev", &glossary, &dictionary));
+        assert!(!NamingRules::is_made_of_words("other_rev", &glossary, &dictionary));
     }
 }
