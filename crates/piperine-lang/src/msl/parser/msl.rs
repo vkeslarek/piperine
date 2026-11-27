@@ -1,6 +1,6 @@
 //! The language's own productions (Appendix B.3): natures, signals, modules,
 //! behavior blocks. Each is a function over the shared [`Handles`], used by
-//! [`super::item::build`] for the item level.
+//! [`item::build`] for the item level.
 //!
 //! `potential`, `flow`, `value`, `resolve`, `analog` and `digital` are
 //! contextual keywords: plain identifiers that mean something only at the
@@ -42,13 +42,13 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .ignore_then(TokenInput::punctuation(Punct::Colon))
         .ignore_then(h.ty.clone())
         .map(NatureFieldKind::Value);
-    let field = item::meta(h)
+    let field = ItemGrammar::meta(h)
         .then(TokenInput::first_of(vec![quantity.boxed(), value.boxed()]))
         .map_with(|(meta, kind), e| NatureField { meta, kind, span: Loc(e.span()) })
         .labelled("nature field");
     TokenInput::keyword(Kw::Nature)
         .ignore_then(TokenInput::identifier())
-        .then(ty::generics(h).or_not())
+        .then(GenericsGrammar::parameters(h).or_not())
         .then(
             field
                 .separated_by(TokenInput::punctuation(Punct::Comma))
@@ -68,7 +68,7 @@ fn signal_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItemKind> {
     TokenInput::keyword(Kw::Signal)
         .ignore_then(TokenInput::identifier())
         .then_ignore(TokenInput::punctuation(Punct::Colon))
-        .then(ty::sigtype(h))
+        .then(TypeGrammar::sigtype(h))
         .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map(|((name, ty), init)| ModuleItemKind::Signal { name, ty, init })
@@ -102,7 +102,7 @@ fn place<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
             Expr { span: Loc(span), kind: ExprKind::Paren(Box::new(inner)) }
         });
     let head = TokenInput::first_of(vec![
-        ty::path(h, true).map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) }).boxed(),
+        TypeGrammar::path(h, true).map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) }).boxed(),
         paren.boxed(),
     ]);
     head
@@ -126,7 +126,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     wrap: fn(Gen<X>, Meta) -> X,
 ) -> P<'a, I, X> {
     // A generation takes outer docs and attributes like any item.
-    let meta = item::meta(h);
+    let meta = ItemGrammar::meta(h);
     // `late` is tried after a generation: a bare statement that `E0434`
     // names, inside a generation's list too (`else { y = 2; }`).
     let with_late = |mut alts: Vec<P<'a, I, X>>| {
@@ -144,7 +144,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
             .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
             .boxed();
         let for_ = TokenInput::keyword(Kw::For)
-            .ignore_then(pat::binding(h))
+            .ignore_then(PatternGrammar::binding(h))
             .then_ignore(TokenInput::keyword(Kw::In))
             .then(h.expr_ns.clone())
             .then(list.clone())
@@ -225,7 +225,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
     // `let pat = expr;`: a body `let` takes no type annotation.
     let annotation = TokenInput::punctuation(Punct::Colon).ignore_then(h.ty.clone()).map_with(|_, e| e.span()).or_not();
     let let_item = TokenInput::keyword(Kw::Let)
-        .ignore_then(pat::binding(h))
+        .ignore_then(PatternGrammar::binding(h))
         .then(annotation)
         .then_ignore(TokenInput::punctuation(Punct::Eq))
         .then(h.expr.clone())
@@ -270,7 +270,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         })
         .boxed();
     let declared = TokenInput::first_of(vec![signal_decl(h), param, let_item, nested]);
-    let leaf = item::meta(h)
+    let leaf = ItemGrammar::meta(h)
         .then(TokenInput::visibility().or_not())
         .then(declared)
         .map_with(|((meta, public), kind), e| ModuleItem {
@@ -280,7 +280,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
             span: Loc(e.span()),
         })
         .boxed();
-    let def = item::meta(h)
+    let def = ItemGrammar::meta(h)
         .then(def)
         .map_with(|(meta, kind), e| ModuleItem { meta, public: false, kind, span: Loc(e.span()) })
         .boxed();
@@ -352,8 +352,8 @@ pub(crate) fn misplaced_emit<'a>(span: Span) -> Err<'a> {
 
 /// `[extern "abi"] module Name<G>(ports) [-> T] [where cond] { items [result] }`
 pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
-    let port = item::meta(h)
-        .then(item::dir().or_not())
+    let port = ItemGrammar::meta(h)
+        .then(ItemGrammar::direction().or_not())
         .then(TokenInput::identifier())
         .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
@@ -404,10 +404,10 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .or_not()
         .then_ignore(TokenInput::keyword(Kw::Module))
         .then(TokenInput::identifier())
-        .then(ty::generics(h).or_not())
+        .then(GenericsGrammar::parameters(h).or_not())
         .then(ports)
         .then(TokenInput::punctuation(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
-        .then(item::where_clause(h))
+        .then(ItemGrammar::where_clause(h))
         .then(body)
         .map(|((((((abi, name), generics), ports), ret), where_), (body, result))| {
             ItemKind::Module(ModuleDecl { abi, name, generics, ports, ret, where_, body, result })
@@ -446,7 +446,7 @@ fn reaction<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Reaction> {
 /// One item of a `digital` block: a reaction or a generation over reactions.
 /// A bare statement is parsed so that `E0434` can name it.
 fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
-    let reaction = item::meta(h)
+    let reaction = ItemGrammar::meta(h)
         .then(reaction(h))
         .map_with(|(meta, r), e| DigitalItem { meta, kind: DigitalItemKind::Reaction(r), span: Loc(e.span()) })
         .boxed();
@@ -481,7 +481,7 @@ pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item
         word(name)
             .ignore_then(names.clone().or_not())
             .then_ignore(TokenInput::keyword(Kw::For))
-            .then(ty::path(h, false))
+            .then(TypeGrammar::path(h, false))
     };
     let analog = head("analog")
         .then(

@@ -379,30 +379,6 @@ impl SourceParser {
     }
 }
 
-/// Parse `src` as one type. Lexical diagnostics come first-class in the result.
-pub fn parse_type(src: &str) -> Parsed<Type> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| ty::build(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
-}
-
-/// Parse `src` as one pattern.
-pub fn parse_pat(src: &str) -> Parsed<Pat> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| h.pat.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
-}
-
-/// Parse `src` as generic parameters (`<T: Repr = bool, const N: u32>`).
-pub fn parse_generics(src: &str) -> Parsed<Generics> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
-}
-
 /// Parse `src` as one item of a module body.
 pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
     let (tokens, diags) = SourceParser::lex_limited(src);

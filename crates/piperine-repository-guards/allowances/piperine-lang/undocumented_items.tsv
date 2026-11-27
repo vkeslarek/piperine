@@ -92,14 +92,11 @@ crates/piperine-lang/src/msl/parser/entry.rs::Depth::close	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::close_angle	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::new	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::open	1
-crates/piperine-lang/src/msl/parser/item.rs::::One	1
-crates/piperine-lang/src/msl/parser/item.rs::::dir	1
-crates/piperine-lang/src/msl/parser/item.rs::::impl_items	1
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::direction	1
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::impl_items	1
 crates/piperine-lang/src/msl/parser/msl.rs::::Step	1
 crates/piperine-lang/src/msl/parser/msl.rs::::recover_item	1
-crates/piperine-lang/src/msl/parser/pat.rs::::Tail	1
-crates/piperine-lang/src/msl/parser/ty.rs::::carrier	1
-crates/piperine-lang/src/msl/parser/ty.rs::::path_with	1
+crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::path_with_sugar	1
 crates/piperine-lang/src/msl/print.rs::Kid::new	1
 crates/piperine-lang/src/msl/print/expressions.rs::Printer::args	1
 crates/piperine-lang/src/msl/print.rs::Printer::attr	1

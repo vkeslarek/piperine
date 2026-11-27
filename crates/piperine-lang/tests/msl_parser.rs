@@ -7,16 +7,16 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, parse_block, parse_generics, parse_pat, parse_type};
+use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, parse_block, GenericsGrammar, PatternGrammar, TypeGrammar};
 
 fn ty(src: &str) -> Type {
-    let (t, diags) = parse_type(src);
+    let (t, diags) = TypeGrammar::parse(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     t.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }
 
 fn pat(src: &str) -> Pat {
-    let (p, diags) = parse_pat(src);
+    let (p, diags) = PatternGrammar::parse(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     p.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }
@@ -110,7 +110,7 @@ fn inherited_rust_forms_parse() {
     assert_eq!(ty("flip Stream<T>").span.0, Span::new(0, 14));
 
     // ---- generics and bounds ----
-    let (g, diags) = parse_generics("<T: Repr = bool, const N: u32, C: Fn(Cell), U: A + B>");
+    let (g, diags) = GenericsGrammar::parse("<T: Repr = bool, const N: u32, C: Fn(Cell), U: A + B>");
     assert!(diags.is_empty(), "{diags:?}");
     let g = g.unwrap();
     assert_eq!(g.params.len(), 4);

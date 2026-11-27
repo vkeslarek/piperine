@@ -10,7 +10,7 @@ use crate::msl::diag::Diagnostic;
 use crate::msl::lexer::{Kw, Token};
 use crate::msl::span::Span;
 
-use super::{expr, item, pat, ty};
+use super::{ExpressionGrammar, ItemGrammar, PatternGrammar, TypeGrammar};
 
 /// A custom parse error: a spec code, a message, an optional help line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -125,18 +125,18 @@ impl<'a, I: In<'a>> Handles<'a, I> {
             block: Recursive::declare(),
             item: Recursive::declare(),
         };
-        let p = ty::build(&h);
+        let p = TypeGrammar::definition(&h);
         h.ty.define(p);
-        let (pat, pat1) = pat::build(&h);
+        let (pat, pat1) = PatternGrammar::definition(&h);
         h.pat.define(pat);
         h.pat1.define(pat1);
-        let p = expr::ExpressionGrammar::expression(&h, true, h.expr.clone());
+        let p = ExpressionGrammar::expression(&h, true, h.expr.clone());
         h.expr.define(p);
-        let p = expr::ExpressionGrammar::expression(&h, false, h.expr_ns.clone());
+        let p = ExpressionGrammar::expression(&h, false, h.expr_ns.clone());
         h.expr_ns.define(p);
-        let p = expr::ExpressionGrammar::block(&h);
+        let p = ExpressionGrammar::block(&h);
         h.block.define(p);
-        let p = item::build(&h);
+        let p = ItemGrammar::definition(&h);
         h.item.define(p);
         h
     }

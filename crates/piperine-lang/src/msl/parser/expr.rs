@@ -389,7 +389,7 @@ impl ExpressionGrammar {
             .map_with(|name, e| Ident { name, raw: false, span: Loc(e.span()) });
         TokenInput::punctuation(Punct::Dot).ignore_then(TokenInput::first_of(vec![
             TokenInput::identifier()
-                .then(ty::generic_args(handles, true).or_not())
+                .then(TypeGrammar::generic_args(handles, true).or_not())
                 .then(Self::arguments(handles))
                 .map(|((name, g), a)| Postfix::Method(name, g, a))
                 .boxed(),
@@ -510,7 +510,7 @@ impl ExpressionGrammar {
     /// `{ name: value, .. }`: a struct literal's fields or an instance's param block. A field is
     /// `name: value`, or the shorthand `name` for `name: name`.
     fn field_values<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Vec<FieldInit>, Extra<'a>> + Clone + use<'a, I> {
-        let field = super::item::rejected_meta(handles)
+        let field = ItemGrammar::rejected_meta(handles)
             .ignore_then(TokenInput::identifier())
             .then(TokenInput::punctuation(Punct::Colon).ignore_then(handles.expr.clone()).or_not())
             .map_with(|(name, value), e| {
@@ -533,7 +533,7 @@ impl ExpressionGrammar {
 
     /// A path, or a struct literal `Path { .. }` where `allow_struct` admits one.
     fn path_expression<'a, I: In<'a>>(handles: &Handles<'a, I>, allow_struct: bool) -> P<'a, I, Expr> {
-        let path = ty::path(handles, true);
+        let path = TypeGrammar::path(handles, true);
         if allow_struct {
             path.then(Self::field_values(handles).or_not())
                 .map_with(|(path, fields), e| match fields {
@@ -670,7 +670,7 @@ impl ExpressionGrammar {
 
     /// Any other `name!(..)` is a macro: E0901, then the group is skipped.
     fn macro_call<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Expr, Extra<'a>> + Clone + use<'a, I> {
-        ty::path(handles, true)
+        TypeGrammar::path(handles, true)
             .filter(|p: &Path| {
                 !(p.segments.len() == 1 && matches!(p.segments[0].ident.name.as_str(), "emit" | "include_str"))
             })
@@ -684,7 +684,7 @@ impl ExpressionGrammar {
 
     /// `<T as Tr>::f`: a removed form (B.3.6), reported once.
     fn qualified_path<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Expr, Extra<'a>> + Clone + use<'a, I> {
-        ty::qualified_path(handles).validate(|_, e, emitter| {
+        TypeGrammar::qualified_path(handles).validate(|_, e, emitter| {
             emitter.emit(ParseDiagnostics::removed("qualified paths", e.span()));
             Self::node(ExprKind::Error, e.span())
         })
@@ -726,7 +726,7 @@ impl ExpressionGrammar {
 
     /// `||` or `|a, b: T|`.
     fn closure_parameters<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Vec<ClosureParam>, Extra<'a>> + Clone + use<'a, I> {
-        let parameter = pat::binding(handles)
+        let parameter = PatternGrammar::binding(handles)
             .then(TokenInput::punctuation(Punct::Colon).ignore_then(handles.ty.clone()).or_not())
             .map_with(|(pat, ty), e| ClosureParam { pat, ty, span: Loc(e.span()) });
         choice((
@@ -807,7 +807,7 @@ impl ExpressionGrammar {
 
     /// `pat [if guard] => body`, the comma optional after a block-like body.
     fn match_arm<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Arm, Extra<'a>> + Clone + use<'a, I> {
-        item::meta(handles)
+        ItemGrammar::meta(handles)
             .then(handles.pat.clone())
             .then(TokenInput::keyword(Kw::If).ignore_then(handles.expr.clone()).or_not())
             .then_ignore(TokenInput::punctuation(Punct::FatArrow))
@@ -839,7 +839,7 @@ impl ExpressionGrammar {
     /// `for pat in iter { .. }`.
     fn for_expression<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Expr, Extra<'a>> + Clone + use<'a, I> {
         TokenInput::keyword(Kw::For)
-            .ignore_then(pat::binding(handles))
+            .ignore_then(PatternGrammar::binding(handles))
             .then_ignore(TokenInput::keyword(Kw::In))
             .then(handles.expr_ns.clone())
             .then(handles.block.clone())
@@ -866,7 +866,7 @@ impl ExpressionGrammar {
     pub(crate) fn statement<'a, I: In<'a>>(handles: &Handles<'a, I>) -> P<'a, I, Stmt> {
         // Every form but an item takes outer docs and attributes (Rust's `stmt`).
         let empty = TokenInput::punctuation(Punct::Semi).map_with(|_, e| Self::statement_node(StmtKind::Empty, e.span()));
-        let with_meta = item::meta(handles)
+        let with_meta = ItemGrammar::meta(handles)
             .then(TokenInput::first_of(vec![
                 empty.boxed(),
                 Self::let_statement(handles).boxed(),
@@ -897,7 +897,7 @@ impl ExpressionGrammar {
     /// `let pat [: T] [= init [else { .. }]];`.
     fn let_statement<'a, I: In<'a>>(handles: &Handles<'a, I>) -> impl Parser<'a, I, Stmt, Extra<'a>> + Clone + use<'a, I> {
         TokenInput::keyword(Kw::Let)
-            .ignore_then(pat::binding(handles))
+            .ignore_then(PatternGrammar::binding(handles))
             .then(TokenInput::punctuation(Punct::Colon).ignore_then(handles.ty.clone()).or_not())
             .then(
                 TokenInput::punctuation(Punct::Eq)
@@ -983,7 +983,7 @@ impl ExpressionGrammar {
         TokenInput::keyword(Kw::Signal)
             .ignore_then(TokenInput::identifier())
             .then_ignore(TokenInput::punctuation(Punct::Colon))
-            .then(ty::sigtype(handles))
+            .then(TypeGrammar::sigtype(handles))
             .then(TokenInput::punctuation(Punct::Eq).ignore_then(handles.expr.clone()).or_not())
             .then_ignore(TokenInput::punctuation(Punct::Semi))
             .map_with(|((name, ty), init), e| Self::statement_node(StmtKind::Signal { name, ty, init }, e.span()))
@@ -1007,7 +1007,7 @@ impl ExpressionGrammar {
                 Token::Kw(Kw::Const | Kw::Fn | Kw::Use | Kw::Struct | Kw::Enum | Kw::Impl | Kw::Trait | Kw::Mod | Kw::Module | Kw::Pub | Kw::Extern | Kw::Type | Kw::Static)
             )
         });
-        item::meta(handles)
+        ItemGrammar::meta(handles)
             .ignore_then(item_keyword)
             .rewind()
             .ignore_then(handles.item.clone())

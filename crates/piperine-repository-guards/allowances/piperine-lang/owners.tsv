@@ -9,16 +9,13 @@ ElaborationState	1
 ExpressionTyping	1
 FunctionLowering	1
 GenericsSolver	1
-ItemGrammar	1
 LeafResolution	1
 MemberResolution	1
 ModuleGrammar	1
 ModuleTyping	1
 NameResolution	1
 ParseCheck	1
-PatternGrammar	1
 PatternTyping	1
 ShapeCheck	1
 StructureLowering	1
-TypeGrammar	1
 ValueLowering	1

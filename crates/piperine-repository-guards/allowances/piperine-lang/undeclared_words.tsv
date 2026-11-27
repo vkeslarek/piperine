@@ -177,10 +177,8 @@ crates/piperine-lang/src/msl/parser/check.rs::expr_inner	1
 crates/piperine-lang/src/msl/parser/check.rs::fn_decl	1
 crates/piperine-lang/src/msl/parser/check.rs::stmt	1
 crates/piperine-lang/src/msl/parser/entry.rs::lex_limited	1
-crates/piperine-lang/src/msl/parser/entry.rs::parse_pat	1
 crates/piperine-lang/src/msl/parser/item.rs::Attr	1
 crates/piperine-lang/src/msl/parser/item.rs::Doc	1
-crates/piperine-lang/src/msl/parser/item.rs::dir	1
 crates/piperine-lang/src/msl/parser/item.rs::fn_decl	1
 crates/piperine-lang/src/msl/parser/mod.rs::expr	1
 crates/piperine-lang/src/msl/parser/mod.rs::pat	1
@@ -190,7 +188,6 @@ crates/piperine-lang/src/msl/parser/msl.rs::module_decl	1
 crates/piperine-lang/src/msl/parser/msl.rs::nature_decl	1
 crates/piperine-lang/src/msl/parser/msl.rs::signal_decl	1
 crates/piperine-lang/src/msl/parser/ty.rs::generic_args	1
-crates/piperine-lang/src/msl/parser/ty.rs::neg_lit_expr	1
 crates/piperine-lang/src/msl/parser/ty.rs::sigtype	1
 crates/piperine-lang/src/msl/print.rs::Kid	1
 crates/piperine-lang/src/msl/print/expressions.rs::args	1

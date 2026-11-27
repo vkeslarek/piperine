@@ -66,12 +66,12 @@ crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
 crates/piperine-lang/src/msl/parser/check.rs::::expr_inner	-
 crates/piperine-lang/src/msl/parser/check.rs::::stmt	-
 crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	-
-crates/piperine-lang/src/msl/parser/item.rs::::build	-
-crates/piperine-lang/src/msl/parser/item.rs::::fn_decl	-
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::definition	-
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::fn_decl	-
 crates/piperine-lang/src/msl/parser/msl.rs::::module_decl	-
 crates/piperine-lang/src/msl/parser/msl.rs::::recover_item	-
-crates/piperine-lang/src/msl/parser/pat.rs::::build	-
-crates/piperine-lang/src/msl/parser/ty.rs::::build	-
+crates/piperine-lang/src/msl/parser/pat.rs::PatternGrammar::definition	-
+crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::definition	-
 crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	-
 crates/piperine-lang/src/pom/check.rs::Design::check_nodes	-
 crates/piperine-lang/src/pom/check.rs::Refs::decl	-
