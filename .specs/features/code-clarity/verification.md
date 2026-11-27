@@ -945,3 +945,65 @@ Fix (either):
 | --- | --- | --- | --- | --- |
 | P3R3-1 L74 quotes two unprobed messages and an undescribed cap to satisfy the guard | Medium | `GAPS.md` L74 last column; `symbolic.rs:102,193,252`; the probes above (`E0180`, `E0185`, a clean run) | drop the two quotes and set their forms back to `Unswept`, or probe them; add the cap to the prose or set it back to `Unswept` | |
 | P3R3-2 the clause cut admits either owner on a shared form | Low | `refusals.rs:141-145`; `LetOfPatternThatIsNoName` passes with both `L74` and `L75` | split the shared forms by body, or cut only the trailing clause | |
+
+## Phase 3 round 4
+
+**Verdict**: PASS (one latent weakness recorded as a note)
+**Head**: 20d79a232 (on bcb5974ac)
+**Verifier**: independent sub-agent (Opus; author != verifier). Gates rerun on target-a with the full logs read. Probes use the head's `piperine run <file> --analysis op`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards --no-fail-fast` | 11 result lines, 116 passed, 0 failed |
+| `cargo test -p piperine-lang --no-fail-fast` | 84 result lines, 1 439 passed, 0 failed; `refusals` 7/7 |
+
+### The six proofs (throwaway owner edits on `forms.rs`, each reverted; tree clean)
+
+| Owner | Guard | Expected |
+| --- | --- | --- |
+| head as committed | passes | passes ✓ |
+| `AssignmentToFieldOrElement` → L74 | fails: L74's column quotes none of it | fails ✓ |
+| `FormOfOptionValue` → L83 | fails | fails ✓ |
+| `LetOfPatternThatIsNoName` → L74 | fails: "its last `{}` is the body it is raised in" | fails ✓ |
+| `LetOfPatternThatIsNoName` → L75 | fails, same message | fails ✓ |
+| `IfLetInFunctionThatReturnsEvent` → L74 | fails | fails ✓ |
+| `IfLetInFnCalledInsideDdx` → L75 | fails | fails ✓ |
+
+`WhileOrLoopInFnCalledInside` = L74 and `MatchArmWhosePatternBindsNameIn` = L75 are the committed owners, and they pass.
+
+### Round 3 findings
+
+| Finding | Status |
+| --- | --- |
+| P3R3-1 | **Closed** (20d79a232). The three unprobed L74 quotes are gone, and `BreakContinueOrReturnWithNoValue`, `FnWithNoValueInsideDdx` and `FnCalledInsideDdxThatForksInto` are `Unswept` again. L74's column now holds seven quotes. Every one is printed by the binary: the `while`, the nested `break`, the unfolded `for` bound, the `if let`, the tuple `let`, the expression statement and the deferred `let`/`let … else` were each probed at this head, and each message begins with the quote. Counts: 25 `Gap`, 501 `Unswept`, and `unswept_count.txt` is 501. The 25 are the 18 I checked in round 2, plus 4 ddx-only L74 forms whose message the binary prints, plus 3 L75 forms. Each passes the strengthened guard |
+| P3R3-2 | **Closed for shared forms.** `detail_is_context` refuses a `Gap` on any form whose last clause carries a `{}`, which is the body. Both shared-form proofs above fail as they should. Over-matching remains possible in a latent form (note below) |
+
+### Note: the last-clause cut still lets a very short quote own an unrelated form
+
+`context_clause` (`refusals.rs:140-145`) treats the last ` in `, `:`, `,` or ` before ` as the context clause. But in several forms the last ` in ` belongs to the subject, not to a context. Replicating the rule over the 526 rows gives 18 forms whose cut prefix is under 20 characters. For example:
+
+- "a `let` in a param value" cuts to "a `let`";
+- "a node declared in generation of a module a parent reads through" (L94) cuts to "a node declared";
+- "this pattern in a const expression" cuts to "this pattern".
+
+Six prefixes are shared by several forms ("a `let`" ×4, "an `if let`" ×2, "this statement" ×2, …).
+
+Throwaway proof: I added `"a `let`"` to L83's column and set `StructureForm::LetInParamValue` → L83. The guard **passes**. Both edits were reverted.
+
+So the test's doc comment, "a quote cannot own a form by its first words alone", is not true in general. No current quote is that short, so no owner at the head is wrong. That is why this is a note and not a finding.
+
+A cheap hardening, if wanted: refuse a match whose cut prefix is shorter than the quote's own row needs to be distinctive, for example under 20 characters. Or treat ` in ` as a context opener only when the clause names a body (` in a `fn``, ` in a function`, ` in {}`).
+
+### Round 4 findings
+
+None. I probed:
+
+- the six owner proofs;
+- a short-prefix over-match (latent, noted above);
+- every L74 quote against the binary;
+- the 25 owners through the guard.
+
+Phase 3 (T15 to T22) is verified. The round 1 to round 3 findings are closed by 84e215ff4, a53a47e22 and 20d79a232.
