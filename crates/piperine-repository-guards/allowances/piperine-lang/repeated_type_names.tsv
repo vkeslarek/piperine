@@ -102,7 +102,6 @@ crates/piperine-lang/src/pom/resolve/names.rs::Frame	1
 crates/piperine-lang/src/types/aggregate_patterns.rs::Shape	1
 crates/piperine-lang/src/types/catalogue.rs::Arg	1
 crates/piperine-lang/src/types/catalogue.rs::Lookup	1
-crates/piperine-lang/src/types/check.rs::Checker	1
 crates/piperine-lang/src/types/check.rs::Context	1
 crates/piperine-lang/src/types/coherence.rs::Subject	1
 crates/piperine-lang/src/types/continuity.rs::Continuity	1

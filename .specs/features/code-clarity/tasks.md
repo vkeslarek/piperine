@@ -1524,8 +1524,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Ir::check` reports the same errors in the same order (the crate's tests, unedited); the file's rows of `long_functions.tsv` have a verdict
-- [ ] Gate check passes: Golden
+- [x] `Ir::check` reports the same errors in the same order (the crate's tests, unedited); the file's rows of `long_functions.tsv` have a verdict
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

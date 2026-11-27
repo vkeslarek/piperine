@@ -1,15 +1,10 @@
 crates/piperine-ir/src/build.rs::FunctionSpec	1
 crates/piperine-ir/src/build.rs::NetSpec	1
-crates/piperine-ir/src/check.rs::Checker	1
-crates/piperine-ir/src/check.rs::Ctx	1
-crates/piperine-ir/src/check.rs::Task	1
-crates/piperine-ir/src/check.rs::Walk	1
 crates/piperine-ir/src/check/traits.rs::Trait	1
 crates/piperine-ir/src/contributions.rs::Contribution	1
 crates/piperine-ir/src/contributions.rs::Step	1
 crates/piperine-ir/src/deps.rs::Scope	1
 crates/piperine-ir/src/deps.rs::Target	1
-crates/piperine-ir/src/deps.rs::Task	1
 crates/piperine-ir/src/deps.rs::Value	1
 crates/piperine-ir/src/deps.rs::Walk	1
 crates/piperine-ir/src/deps/control.rs::LoopFrame	1

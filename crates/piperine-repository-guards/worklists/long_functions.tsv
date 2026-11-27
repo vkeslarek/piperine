@@ -22,13 +22,6 @@ crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
 crates/piperine-interp/src/walk.rs::Walk::form_name	-
-crates/piperine-ir/src/check.rs::Checker::code	-
-crates/piperine-ir/src/check.rs::Checker::discrete	-
-crates/piperine-ir/src/check.rs::Checker::expr	-
-crates/piperine-ir/src/check.rs::Checker::expr_children	-
-crates/piperine-ir/src/check.rs::Checker::ids	-
-crates/piperine-ir/src/check.rs::Checker::stmt	-
-crates/piperine-ir/src/check.rs::Checker::types	-
 crates/piperine-ir/src/deps.rs::Walk::body	-
 crates/piperine-ir/src/deps.rs::Walk::expr	-
 crates/piperine-ir/src/deps.rs::Walk::finish	-

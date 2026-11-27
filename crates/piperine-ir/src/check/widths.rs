@@ -6,11 +6,12 @@
 //! integer type over 64 bits: it holds `ceil(N/64)` limbs, and for `UInt<N>` no bit past `N`, for
 //! `Int<N>` the sign extended to the limb boundary.
 
-use super::{Checker, Walk};
+use super::walk::{CodeWalk, ExpressionVisit};
+use super::{IrReader, TypeCheck};
 use crate::ids::WideId;
-use crate::model::{Origin, ValueType};
+use crate::model::ValueType;
 
-impl Checker<'_> {
+impl IrReader<'_> {
     /// Whether `bits` is a bit pattern of the float type `ty`: no bit set past its width.
     pub(super) fn float_bits_fit(&self, ty: &ValueType, bits: u128) -> bool {
         match ty.float_width() {
@@ -46,24 +47,36 @@ impl Checker<'_> {
             high_bits == 0
         }
     }
+}
 
-    /// A `FloatBits` literal is a value of `f32`, `f16` or `f128` with no bit past the width.
-    pub(super) fn float_literal(&mut self, w: &Walk, origin: &Origin, ty: &ValueType, bits: u128) {
+impl TypeCheck<'_> {
+    /// A `FloatBits` literal is a value of `f32`, `f16` or `f128` with no bit past the width
+    /// (checked on the first visit of the literal).
+    pub(super) fn float_literal(&mut self, walk: &CodeWalk, visit: &ExpressionVisit, bits: u128) {
+        let (origin, ty) = (&visit.origin, visit.recorded_type);
+        if !visit.first {
+            return;
+        }
         if !ty.is_other_float() {
-            self.wrong(w, origin.clone(), format!("a float bit literal must have the type `f32`, `f16` or `f128`, found {ty}"));
-        } else if !self.float_bits_fit(ty, bits) {
-            self.wrong(w, origin.clone(), format!("the bit pattern 0x{bits:x} has a bit past the width of {ty}"));
+            self.wrong(walk, origin.clone(), format!("a float bit literal must have the type `f32`, `f16` or `f128`, found {ty}"));
+        } else if !self.reader.float_bits_fit(ty, bits) {
+            self.wrong(walk, origin.clone(), format!("the bit pattern 0x{bits:x} has a bit past the width of {ty}"));
         }
     }
 
-    /// A `Wide` literal names an entry of the arena and is a value of an integer type over 64 bits.
-    pub(super) fn wide_literal(&mut self, w: &Walk, origin: &Origin, ty: &ValueType, id: WideId) {
-        if self.ir.wides.get(id.index()).is_none() {
-            self.wrong(w, origin.clone(), format!("wide constant {} is outside the arena ({} entries)", id.0, self.ir.wides.len()));
+    /// A `Wide` literal names an entry of the arena and is a value of an integer type over 64 bits
+    /// (checked on the first visit of the literal).
+    pub(super) fn wide_literal(&mut self, walk: &CodeWalk, visit: &ExpressionVisit, id: WideId) {
+        let (origin, ty) = (&visit.origin, visit.recorded_type);
+        if !visit.first {
+            return;
+        }
+        if self.reader.ir.wides.get(id.index()).is_none() {
+            self.wrong(walk, origin.clone(), format!("wide constant {} is outside the arena ({} entries)", id.0, self.reader.ir.wides.len()));
         } else if !ty.is_wide_integer() {
-            self.wrong(w, origin.clone(), format!("a wide literal must have an integer type wider than 64 bits, found {ty}"));
-        } else if !self.wide_fits(ty, id) {
-            self.wrong(w, origin.clone(), format!("wide constant {} is not a canonical value of {ty}", id.0));
+            self.wrong(walk, origin.clone(), format!("a wide literal must have an integer type wider than 64 bits, found {ty}"));
+        } else if !self.reader.wide_fits(ty, id) {
+            self.wrong(walk, origin.clone(), format!("wide constant {} is not a canonical value of {ty}", id.0));
         }
     }
 }

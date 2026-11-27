@@ -2,7 +2,7 @@
 //! enum by what it derives. `Ir::check` asks it where an aggregate is compared (§1.3.10), where
 //! `Default` builds one, and where a derive demands each field to implement the same trait (rule 6).
 
-use super::Checker;
+use super::TypeCheck;
 use crate::model::{Derives, TypeKind, ValueType};
 
 /// One of the traits of H.8 a model may derive.
@@ -63,7 +63,7 @@ impl Trait {
     }
 }
 
-impl Checker<'_> {
+impl TypeCheck<'_> {
     /// Whether a value of `ty` implements `which` (H.8 rule 7 for the built-in types, the derives
     /// for a struct or an enum). A type that reaches itself is reported elsewhere and counts as
     /// implementing it here, so the walk ends.
@@ -82,7 +82,7 @@ impl Checker<'_> {
             ValueType::Tuple(parts) => parts.iter().all(|part| self.implements_visiting(part, which, visiting)),
             ValueType::Array(element, _) | ValueType::Option(element) => self.implements_visiting(element, which, visiting),
             ValueType::Struct(id) | ValueType::Enum(id) => {
-                let Some(data) = self.ir.types.get(id.index()) else { return false };
+                let Some(data) = self.reader.ir.types.get(id.index()) else { return false };
                 if visiting.contains(&id.index()) {
                     return true;
                 }
