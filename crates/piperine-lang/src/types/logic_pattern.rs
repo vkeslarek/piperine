@@ -1,6 +1,7 @@
 //! The pattern of `logic` and `matches_bits` (§22.1.4): one character per level, highest level first, each of `0`, `1`,
 //! `x` and `z`. The checker validates a literal pattern, the elaborator reads the planes of the value it names and the
-//! masks a match compares.
+//! masks a match compares. The host reads the same pattern of a text it is given ([`LogicPattern::parse_with_width`]) and
+//! lays it out as the bytes of a pin ([`LogicPattern::bytes`]).
 
 /// What one character of a pattern names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,8 +18,17 @@ enum PatternLevel {
 
 /// A parsed pattern: its levels, highest first.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct LogicPattern {
+pub struct LogicPattern {
     levels: Vec<PatternLevel>,
+}
+
+/// Why a text is no pattern of a given width (§22.1.4 rule 2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatternFault {
+    /// The first character that is none of `0`, `1`, `x` and `z`.
+    Character(char),
+    /// The pattern names this many levels, and the value has another count.
+    Length(usize),
 }
 
 /// What `matches_bits` compares: `binary & binary_mask == binary_wanted && value & value_mask == value_wanted`.
@@ -36,7 +46,7 @@ pub(crate) struct PatternMasks {
 
 impl LogicPattern {
     /// The pattern `text`; the first character that is none of `0`, `1`, `x` and `z` is the error.
-    pub(crate) fn parse(text: &str) -> Result<LogicPattern, char> {
+    pub fn parse(text: &str) -> Result<LogicPattern, char> {
         let levels = text
             .chars()
             .map(|character| match character {
@@ -50,8 +60,36 @@ impl LogicPattern {
         Ok(LogicPattern { levels })
     }
 
+    /// The text of a host, trimmed, as a pattern of exactly `width` levels: the character that is no level, then the length that is
+    /// not `width`, is the fault.
+    pub fn parse_with_width(text: &str, width: u32) -> Result<LogicPattern, PatternFault> {
+        let pattern = LogicPattern::parse(text.trim()).map_err(PatternFault::Character)?;
+        if pattern.width() != width as usize {
+            return Err(PatternFault::Length(pattern.width()));
+        }
+        Ok(pattern)
+    }
+
+    /// The bytes of a `Logic<N>` pin holding this pattern, whose two planes are `plane` bytes each: `binary` then `value`, level
+    /// `k` at bit `k` of its plane, little-endian.
+    pub fn bytes(&self, plane: usize) -> Vec<u8> {
+        let mut bytes = vec![0u8; 2 * plane];
+        for (position, level) in self.levels.iter().rev().enumerate() {
+            let (binary, value) = match level {
+                PatternLevel::Zero => (true, false),
+                PatternLevel::One => (true, true),
+                PatternLevel::Z => (false, true),
+                PatternLevel::X => (false, false),
+            };
+            let (byte, bit) = (position / 8, position % 8);
+            bytes[byte] |= u8::from(binary) << bit;
+            bytes[plane + byte] |= u8::from(value) << bit;
+        }
+        bytes
+    }
+
     /// How many levels the pattern names.
-    pub(crate) fn width(&self) -> usize {
+    pub fn width(&self) -> usize {
         self.levels.len()
     }
 

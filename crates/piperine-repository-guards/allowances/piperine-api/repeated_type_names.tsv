@@ -1,6 +1,5 @@
 crates/piperine-api/src/composite.rs::Tag	1
 crates/piperine-api/src/held.rs::Held	1
-crates/piperine-api/src/logic_pattern.rs::LogicPattern	1
 crates/piperine-api/src/param_text.rs::Reading	1
 crates/piperine-api/src/param_text.rs::Scalar	1
 crates/piperine-api/src/pins.rs::Pins	1

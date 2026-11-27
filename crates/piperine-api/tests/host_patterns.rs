@@ -108,10 +108,10 @@ impl Bench {
 fn a_pattern_lays_out_its_two_planes_highest_level_first() {
     // §22.1.4 rule 3, abi.md P3: `10xz` is levels 3 to 0 equal to 1, 0, X, Z; `binary` has the levels that are 0 or 1 (levels 3
     // and 2), `value` the levels that are 1 or Z (levels 3 and 0)
-    let pattern = LogicPattern::parse("10xz", 4, "a test").expect("a pattern");
+    let pattern = LogicPattern::parse_with_width("10xz", 4).expect("a pattern");
     assert_eq!(pattern.bytes(1), vec![0b1100, 0b1001]);
     // nine levels take two bytes a plane: level 8 is `1` (binary and value, bit 0 of byte 1) and levels 7 to 0 are `0` (binary only)
-    let wide = LogicPattern::parse(&format!("1{}", "0".repeat(8)), 9, "a test").expect("a pattern");
+    let wide = LogicPattern::parse_with_width(&format!("1{}", "0".repeat(8)), 9).expect("a pattern");
     assert_eq!(wide.bytes(2), vec![0xff, 0x01, 0x00, 0x01]);
 }
 
@@ -119,7 +119,7 @@ fn a_pattern_lays_out_its_two_planes_highest_level_first() {
 fn a_bad_character_and_a_wrong_length_are_e0702() {
     // §22.1.4 rule 2: any other character, or a length other than `N`, is `E0702`
     for (text, wanted) in [("10xq", "`q`"), ("10X1", "`X`"), ("10x", "3 levels"), ("10xz1", "5 levels"), ("", "0 levels")] {
-        let failure = LogicPattern::parse(text, 4, "the port `a`").expect_err(text);
+        let failure = LogicPattern::parse_with_width(text, 4).map(|_| ()).map_err(|fault| Failure::logic_pattern(fault, text, 4, "the port `a`")).expect_err(text);
         let (code, message) = Bench::refusal(failure);
         assert_eq!(code, "E0702", "{text}");
         assert!(message.contains(wanted) && message.contains("the port `a`"), "{text}: {message}");

@@ -108,7 +108,6 @@ crates/piperine-lang/src/types/element_target.rs::Step	1
 crates/piperine-lang/src/types/flow.rs::Flow	1
 crates/piperine-lang/src/types/flow.rs::LoopFrame	1
 crates/piperine-lang/src/types/generics.rs::Bound	1
-crates/piperine-lang/src/types/logic_pattern.rs::LogicPattern	1
 crates/piperine-lang/src/types/patterns.rs::Bound	1
 crates/piperine-lang/src/types/patterns.rs::Number	1
 crates/piperine-lang/src/types/record.rs::Site	1

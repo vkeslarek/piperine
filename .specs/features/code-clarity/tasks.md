@@ -1504,8 +1504,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `no_type_of_the_inventory_is_defined_in_two_crates` passes with no allowance row
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
+- [x] `no_type_of_the_inventory_is_defined_in_two_crates` passes with no allowance row
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api`
 
 **Tests**: integration
 **Gate**: quick
