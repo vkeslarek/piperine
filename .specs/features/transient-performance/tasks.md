@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run solver**: `cargo test -p piperine-solver --test step_statistics --test jump_step --test landing_rule`
 **Run integration**: `cargo test -p piperine-analog-solver --lib math::integration::`
 **Run newton**: `cargo test -p piperine-analog-solver --lib math::newton_raphson::`
-**Run alloc**: `cargo test -p piperine-analog-solver --test allocation`
+**Run alloc**: `cargo test -p piperine-analog-solver --test numerics allocation::`
 **Run abialloc**: `cargo test -p piperine-abi --test thunks eval_allocation::`
 **Run apistats**: `cargo test -p piperine-api --test session`
 **Run bucklong**: `cargo test -p piperine-api --test buck_long -- --nocapture`

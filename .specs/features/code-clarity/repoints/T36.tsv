@@ -1,0 +1,15 @@
+# T36: the thirteen analog-solver targets become `assembly`, `numerics` and `boundary`, one module per former target.
+# Order matters: the row that keeps its name comes first, so it does not rewrite the filters the others add.
+move piperine-analog-solver/boundary piperine-analog-solver/boundary::boundary
+move piperine-analog-solver/assembly_ddt piperine-analog-solver/assembly::assembly_ddt
+move piperine-analog-solver/assembly_delay piperine-analog-solver/assembly::assembly_delay
+move piperine-analog-solver/assembly_eval piperine-analog-solver/assembly::assembly_eval
+move piperine-analog-solver/assembly_flow piperine-analog-solver/assembly::assembly_flow
+move piperine-analog-solver/assembly_limit piperine-analog-solver/assembly::assembly_limit
+move piperine-analog-solver/assembly_noise piperine-analog-solver/assembly::assembly_noise
+move piperine-analog-solver/assembly_param piperine-analog-solver/assembly::assembly_param
+move piperine-analog-solver/assembly_small_signal piperine-analog-solver/assembly::assembly_small_signal
+move piperine-analog-solver/assembly_watch piperine-analog-solver/assembly::assembly_watch
+move piperine-analog-solver/noise_numerics piperine-analog-solver/numerics::noise_numerics
+move piperine-analog-solver/allocation piperine-analog-solver/numerics::allocation
+move piperine-analog-solver/plan piperine-analog-solver/boundary::plan

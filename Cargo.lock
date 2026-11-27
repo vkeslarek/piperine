@@ -1183,6 +1183,7 @@ dependencies = [
  "num-complex",
  "num-traits",
  "piperine-abi",
+ "piperine-device-fixtures",
  "thiserror 2.0.18",
  "tracing",
 ]
@@ -1225,7 +1226,10 @@ dependencies = [
 name = "piperine-device-fixtures"
 version = "0.2.0"
 dependencies = [
+ "ndarray",
+ "num-complex",
  "piperine-abi",
+ "piperine-analog-solver",
 ]
 
 [[package]]

@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`
 **Run parity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run analogddt**: `cargo test -p piperine-analog-solver --test assembly_ddt`
+**Run analogddt**: `cargo test -p piperine-analog-solver --test assembly assembly_ddt::`
 **Run analoglib**: `cargo test -p piperine-analog-solver --lib`
 **Run reentry**: `cargo test -p piperine-solver --test transient_reentry`
 **Run failure**: `cargo test -p piperine-solver --test failure_rules`

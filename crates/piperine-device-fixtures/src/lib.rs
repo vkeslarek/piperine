@@ -10,6 +10,7 @@
 
 pub mod analog;
 pub mod analyses;
+pub mod assembly;
 pub mod circuit;
 pub mod digital;
 pub mod examples;

@@ -1129,8 +1129,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
-- [ ] Plan lowered to 3; Gate check passes: Ledger
+- [x] 3 targets; every test keeps its name; `tests/support/devices.rs` is gone
+- [x] Plan lowered to 3; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

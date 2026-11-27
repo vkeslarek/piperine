@@ -1,6 +1,9 @@
 //! The numerics the noise analysis rests on (feature `analog-operators`, AO-05): the power-law
 //! integral of a noise density over a band, ngspice's quadrature, against closed forms.
 
+use piperine_device_fixtures::analog::{Modules};
+use piperine_device_fixtures::assembly::Circuits;
+use piperine_device_fixtures::assembly::{AssemblySolves};
 use piperine_analog_solver::math::integration::Integrator;
 
 /// The frequencies a noise sweep reads.
@@ -80,36 +83,23 @@ fn a_zero_density_takes_the_plain_rectangle() {
 
 // ─── The assembly's reads for the noise sweep ───────────────────────────────
 
-#[allow(dead_code)]
-#[path = "support/circuit.rs"]
-mod circuit;
-#[allow(dead_code)]
-#[path = "support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
-#[path = "support/system.rs"]
-mod system;
-
-use circuit::{at, f64_bytes, instance, netlist};
-use devices::modules;
 use num_complex::Complex64;
 use piperine_analog_solver::device::AnalogBinding::{Discrete, Ground};
 use piperine_analog_solver::device::{AnalogPlan, Assembly};
-use system::at_freq;
 
 #[test]
 fn a_stimulus_column_carries_its_partials_and_phase() {
     // An `AcVSource` (dc 0, re 1, im 1) from node 0 to ground: its `STIM` input "ac" enters the
     // branch row `f` of `eq = v(p) − v(n) − dc − I0` with partial −1, at unit magnitude, so the
     // column is one row (the branch unknown, 2) of −1, and the phasor 1 + j has phase π/4.
-    let library = modules();
-    let (net, n) = netlist(1, &["f"]);
-    let source = instance("top.v1", library.ac_vsource, vec![Discrete(0), Discrete(1), Discrete(2), at(&n[0]), Ground, at(&n[1])]);
+    let library = Modules::all();
+    let (net, n) = Circuits::netlist(1, &["f"]);
+    let source = Circuits::instance("top.v1", library.ac_voltage_source, vec![Discrete(0), Discrete(1), Discrete(2), Circuits::at(&n[0]), Ground, Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![source], &net).expect("bind"));
     for (slot, value) in [(0, 0.0), (1, 1.0), (2, 1.0)] {
-        assembly.set_discrete(slot, &f64_bytes(value));
+        assembly.set_discrete(slot, &Circuits::real_bytes(value));
     }
-    let columns = assembly.stimulus_columns(&[0.0, 0.0], at_freq(1.0e3), "top.v1").expect("columns");
+    let columns = assembly.stimulus_columns(&[0.0, 0.0], AssemblySolves::at_frequency(1.0e3), "top.v1").expect("columns");
     assert_eq!(columns.len(), 1, "one column per STIM input");
     assert_eq!(columns[0].name, "top.v1.ac");
     assert!((columns[0].phase - std::f64::consts::FRAC_PI_4).abs() < 1e-15, "phase {}", columns[0].phase);
@@ -117,7 +107,7 @@ fn a_stimulus_column_carries_its_partials_and_phase() {
     assert_eq!(rows, vec![(1, Complex64::new(-1.0, 0.0))]);
 
     // An unknown instance is named.
-    let message = assembly.stimulus_columns(&[0.0, 0.0], at_freq(1.0e3), "top.nope").expect_err("no such instance").to_string();
+    let message = assembly.stimulus_columns(&[0.0, 0.0], AssemblySolves::at_frequency(1.0e3), "top.nope").expect_err("no such instance").to_string();
     assert!(message.contains("top.nope"), "{message}");
 }
 
@@ -126,29 +116,29 @@ fn a_term_linearization_carries_its_unknown_and_noise_partials() {
     // `NoisyResistor` term `i = (v(p) − v(n))/r + I0` at r = 2 kΩ: ∂/∂v(p) = 1/r, ∂/∂v(n) = −1/r,
     // and a direct partial of 1 against its one NOISE input (position 0); the response of a
     // FLOW term is 1.
-    let library = modules();
-    let (net, n) = netlist(2, &[]);
+    let library = Modules::all();
+    let (net, n) = Circuits::netlist(2, &[]);
     let r = 2.0e3;
-    let res = instance("r1", library.noisy, vec![Discrete(0), at(&n[0]), at(&n[1])]);
+    let res = Circuits::instance("r1", library.noisy, vec![Discrete(0), Circuits::at(&n[0]), Circuits::at(&n[1])]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![res], &net).expect("bind"));
-    assembly.set_discrete(0, &f64_bytes(r));
-    let linearization = assembly.term_linearization(&[0.3, 0.1], at_freq(1.0e3), "r1", "i").expect("linearization");
+    assembly.set_discrete(0, &Circuits::real_bytes(r));
+    let linearization = assembly.term_linearization(&[0.3, 0.1], AssemblySolves::at_frequency(1.0e3), "r1", "i").expect("linearization");
     let unknowns: Vec<(usize, Complex64)> =
         linearization.unknowns.iter().map(|(c, g)| (c.idx().expect("unknown"), *g)).collect();
     assert_eq!(unknowns, vec![(0, Complex64::new(1.0 / r, 0.0)), (1, Complex64::new(-1.0 / r, 0.0))]);
     assert_eq!(linearization.noise, vec![(0, Complex64::new(1.0, 0.0))]);
-    let message = assembly.term_linearization(&[0.3, 0.1], at_freq(1.0e3), "r1", "nope").expect_err("no such term").to_string();
+    let message = assembly.term_linearization(&[0.3, 0.1], AssemblySolves::at_frequency(1.0e3), "r1", "nope").expect_err("no such term").to_string();
     assert!(message.contains("`r1`") && message.contains("`nope`"), "{message}");
 
     // The `DDT` term `q` of a `Trio` (b = 3, partial against p1) at 100 kHz carries the response
     // jω: ∂v/∂v(p1)·jω = 3·j·2π·1e5.
-    let trio = instance("t1", library.trio, vec![Discrete(0), Discrete(1), Discrete(2), Discrete(3), at(&n[0]), at(&n[1]), Ground]);
+    let trio = Circuits::instance("t1", library.trio, vec![Discrete(0), Discrete(1), Discrete(2), Discrete(3), Circuits::at(&n[0]), Circuits::at(&n[1]), Ground]);
     let mut assembly = Assembly::new(AnalogPlan::bind(vec![trio], &net).expect("bind"));
     for (slot, value) in [(0, 1.0), (1, 3.0), (2, 1.0), (3, 0.0)] {
-        assembly.set_discrete(slot, &f64_bytes(value));
+        assembly.set_discrete(slot, &Circuits::real_bytes(value));
     }
     let omega = 2.0 * std::f64::consts::PI * 1.0e5;
-    let linearization = assembly.term_linearization(&[0.0, 0.0], at_freq(1.0e5), "t1", "q").expect("linearization");
+    let linearization = assembly.term_linearization(&[0.0, 0.0], AssemblySolves::at_frequency(1.0e5), "t1", "q").expect("linearization");
     assert_eq!(linearization.unknowns.len(), 1);
     assert_eq!(linearization.unknowns[0].0.idx(), Some(1));
     Closeness::assert(linearization.unknowns[0].1.im, 3.0 * omega, 1e-12, "jω·b");
