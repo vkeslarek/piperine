@@ -801,9 +801,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_refused_form_has_a_row`, `every_gap_owner_names_a_gaps_row` and `the_unswept_count_only_shrinks` pass under `**Run refusals**`
-- [ ] `ROADMAP.md` hands the sweep to `spec-closure`
-- [ ] Gate check passes: Quick
+- [x] `every_refused_form_has_a_row`, `every_gap_owner_names_a_gaps_row` and `the_unswept_count_only_shrinks` pass under `**Run refusals**`
+- [x] `ROADMAP.md` hands the sweep to `spec-closure`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

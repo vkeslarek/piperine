@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::Span;
-use piperine_lang::refusal::Refusal;
-use piperine_lang::refusal::forms::ValueForm;
+use piperine_lang::refusal::forms::{AnalogForm, ConstantForm, DigitalForm, GenericsForm, PatternForm, StructureForm, ValueForm};
+use piperine_lang::refusal::{Refusal, RefusalOwner, RefusalRow, RefusedForm};
 
 /// The sources of this crate, read as text.
 struct Sources;
@@ -89,4 +89,72 @@ fn the_catch_all_refusal_files_are_gone() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     assert!(!source.join("types/unsupported.rs").exists(), "types/unsupported.rs is gone: its names live in refusal/syntax.rs");
     assert!(!source.join("elab/unlowered.rs").exists(), "elab/unlowered.rs is gone: its forms are rows of the refusal table");
+}
+
+/// The refusal table, read as one list of rows.
+struct RefusalTable;
+
+impl RefusalTable {
+    /// Every form of every family, each paired with the row its family gives it, in declaration order.
+    fn entries() -> Vec<(RefusedForm, &'static RefusalRow)> {
+        let mut entries = Vec::new();
+        entries.extend(ValueForm::ALL.iter().map(|form| (RefusedForm::Value(*form), form.row())));
+        entries.extend(PatternForm::ALL.iter().map(|form| (RefusedForm::Pattern(*form), form.row())));
+        entries.extend(AnalogForm::ALL.iter().map(|form| (RefusedForm::Analog(*form), form.row())));
+        entries.extend(DigitalForm::ALL.iter().map(|form| (RefusedForm::Digital(*form), form.row())));
+        entries.extend(StructureForm::ALL.iter().map(|form| (RefusedForm::Structure(*form), form.row())));
+        entries.extend(GenericsForm::ALL.iter().map(|form| (RefusedForm::Generics(*form), form.row())));
+        entries.extend(ConstantForm::ALL.iter().map(|form| (RefusedForm::Constant(*form), form.row())));
+        entries
+    }
+
+    /// The number of variants the table's enums declare, read from `src/refusal/forms.rs`.
+    fn declared_variants() -> usize {
+        let text = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("src/refusal/forms.rs")).expect("the table source is readable");
+        let mut inside = false;
+        let mut count = 0;
+        for line in text.lines() {
+            if line.starts_with("pub enum ") {
+                inside = true;
+            } else if line == "}" {
+                inside = false;
+            } else if inside && line.starts_with("    ") && line.ends_with(',') && !line.trim_start().starts_with("//") {
+                count += 1;
+            }
+        }
+        count
+    }
+
+    /// The repository's `GAPS.md`.
+    fn gaps() -> String {
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("../../GAPS.md")).expect("GAPS.md is readable")
+    }
+}
+
+#[test]
+fn every_refused_form_has_a_row() {
+    let entries = RefusalTable::entries();
+    assert_eq!(entries.len(), RefusalTable::declared_variants(), "a form of `refusal/forms.rs` is missing from its family's `ALL`");
+    for (form, row) in &entries {
+        assert_eq!(&row.form, form, "the row of {form:?} words another form: `ROWS` follows the declaration order of the enum");
+        assert!(!row.text.is_empty(), "the row of {form:?} has no words");
+    }
+}
+
+#[test]
+fn every_gap_owner_names_a_gaps_row() {
+    let gaps = RefusalTable::gaps();
+    for (_, row) in RefusalTable::entries() {
+        if let RefusalOwner::Gap(id) = row.owner {
+            assert!(gaps.lines().any(|line| line.starts_with(&format!("| {id} |"))), "the form {:?} names `{id}` as its owner and GAPS.md has no such row", row.form);
+        }
+    }
+}
+
+#[test]
+fn the_unswept_count_only_shrinks() {
+    let swept = RefusalTable::entries().iter().filter(|(_, row)| row.owner == RefusalOwner::Unswept).count();
+    let recorded: usize = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/unswept_count.txt")).expect("the count is recorded").trim().parse().expect("the count is a number");
+    assert!(swept <= recorded, "{swept} forms are `Unswept`, the record holds {recorded}: a new form needs an owner (`Gap(id)`), the count never grows");
+    assert_eq!(swept, recorded, "{swept} forms are `Unswept`: write {swept} in tests/support/unswept_count.txt (the count only shrinks)");
 }

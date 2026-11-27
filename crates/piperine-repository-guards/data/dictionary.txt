@@ -2503,6 +2503,7 @@ shot
 showcases
 shown
 shows
+shrinks
 shunt
 sibling
 side
