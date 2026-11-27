@@ -1,136 +1,25 @@
-//! Handles over hardware declarations: natures and their quantities, modules
-//! with their ports and body items, generation, behavior blocks and
-//! reactions.
+//! Handles over modules: their ports, params, signals, `let` names, definitions and generation.
 
-use super::body::{Block, FieldBinding, Commit, Contribution, Expr, Pat, Path, Type};
-use crate::pom::BodyWalk;
-use super::{Decl, Reflect};
-use crate::pom::body::{BehaviorKind, ExprKind, FieldInit, QuantityRole, StmtKind, TypeKind};
+use super::{Behavior, Decl, Expr, Instance, Nature, Pat, Reflect, Type};
+use crate::pom::body::{BehaviorKind, TypeKind};
 use crate::pom::decl::{
-    BehaviorData, BindingData, BindingOrigin, DeclKind, DefinitionData, Dir, GenElseNode, GenerationData, LetData,
-    ModuleData, NatureData, NatureFieldNode, ParamData, PortData, QuantityData, ReactionData, SignalData,
+    BindingData, BindingOrigin, DeclKind, DefinitionData, Dir, GenElseNode, GenerationData, LetData,
+    ModuleData, ParamData, PortData, SignalData,
 };
-use crate::pom::builtin::{BuiltinId, BuiltinKind};
 use crate::pom::bundles::BundleView;
 use crate::pom::design::Design;
 use crate::pom::ids::DeclId;
-use crate::pom::resolution::{CallClass, NatureKind, PortKind, Resolution};
-use crate::pom::ids::ExprId;
+use crate::pom::resolution::{PortKind, Resolution};
 use crate::pom::body::LitKind;
 
-/// The declarations of a module-body or digital-block item list, in source
-/// order, with the items of every generation in place of the generation.
-fn deep_items<'d>(parent: Decl<'d>, out: &mut Vec<Decl<'d>>) {
-    for child in parent.children() {
-        if matches!(child.kind(), DeclKind::Generation(_)) {
-            deep_items(child, out);
-        } else {
-            out.push(child);
-        }
-    }
-}
 
-// ---- natures ---------------------------------------------------------------------------------
-
-/// `nature Name { potential: .., flow: .., value: .. }`
-#[derive(Clone, Copy)]
-pub struct Nature<'d> {
-    decl: Decl<'d>,
-}
-
-impl<'d> Nature<'d> {
-    fn data(self) -> &'d NatureData {
-        match self.decl.kind() {
-            DeclKind::Nature(n) => n,
-            _ => unreachable!("Nature handle over a non-nature declaration"),
-        }
-    }
-
-    /// `Conservative`, `SignalFlow`, `Discrete`, `Resolved` or `Invalid`, by
-    /// the fields declared.
-    pub fn kind(self) -> NatureKind {
-        self.data().kind
-    }
-
-    pub fn generics(self) -> Vec<super::GenericParam<'d>> {
-        self.decl.children().into_iter().filter_map(|c| c.as_generic_param()).collect()
-    }
-
-    /// The quantities in source order, repeated ones included.
-    pub fn quantities(self) -> Vec<Quantity<'d>> {
-        self.decl.children().into_iter().filter_map(|c| c.as_quantity()).collect()
-    }
-
-    /// The first `potential` quantity.
-    pub fn potential(self) -> Option<Quantity<'d>> {
-        self.quantities().into_iter().find(|q| q.role() == QuantityRole::Potential)
-    }
-
-    /// The first `flow` quantity.
-    pub fn flow(self) -> Option<Quantity<'d>> {
-        self.quantities().into_iter().find(|q| q.role() == QuantityRole::Flow)
-    }
-
-    /// The `impl` blocks written for this nature, in source order.
-    pub fn impls(self) -> Vec<super::Impl<'d>> {
-        let design = self.decl.design();
-        design.impls_of(self.decl.id()).into_iter().filter_map(|i| Decl::new(design, i).as_impl()).collect()
-    }
-
-    /// The type of the first `value: T` field.
-    pub fn value_type(self) -> Option<Type<'d>> {
-        self.data().fields.iter().find_map(|f| match f {
-            NatureFieldNode::Value { ty, .. } => Some(self.decl.design().ty(*ty)),
-            _ => None,
-        })
-    }
-}
-
-/// `potential: Voltage { access: v, units: "V", abstol: 1u }`
-#[derive(Clone, Copy)]
-pub struct Quantity<'d> {
-    decl: Decl<'d>,
-}
-
-impl<'d> Quantity<'d> {
-    fn data(self) -> &'d QuantityData {
-        match self.decl.kind() {
-            DeclKind::Quantity(q) => q,
-            _ => unreachable!("Quantity handle over a non-quantity declaration"),
-        }
-    }
-
-    pub fn role(self) -> QuantityRole {
-        self.data().role
-    }
-
-    /// The value of the attribute `name`, as written.
-    fn attr_value(self, name: &str) -> Option<Expr<'d>> {
-        let init = self.data().attrs.iter().find(|a| a.name.text == name)?;
-        Some(self.decl.design().expr(init.value))
-    }
-
-    /// The `access: v` attribute: the name of the access function.
-    pub fn access(self) -> Option<Expr<'d>> {
-        self.attr_value("access")
-    }
-
-    pub fn units(self) -> Option<Expr<'d>> {
-        self.attr_value("units")
-    }
-
-    pub fn abstol(self) -> Option<Expr<'d>> {
-        self.attr_value("abstol")
-    }
-}
-
-// ---- modules ---------------------------------------------------------------------------------
 
 /// `[extern "abi"] module Name<..>(ports) -> ret where cond { body }`
 #[derive(Clone, Copy)]
 pub struct Module<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Module<'d> {
     fn data(self) -> &'d ModuleData {
@@ -204,7 +93,7 @@ impl<'d> Module<'d> {
 
     fn deep(self) -> Vec<Decl<'d>> {
         let mut out = Vec::new();
-        deep_items(self.decl, &mut out);
+        self.decl.deep_items(&mut out);
         out
     }
 
@@ -290,11 +179,13 @@ impl<'d> Module<'d> {
     }
 }
 
+
 /// One port of a module.
 #[derive(Clone, Copy)]
 pub struct Port<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Port<'d> {
     fn data(self) -> &'d PortData {
@@ -343,11 +234,13 @@ impl<'d> Port<'d> {
     }
 }
 
+
 /// `name: ty = default where cond;` in a module body.
 #[derive(Clone, Copy)]
 pub struct Param<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Param<'d> {
     fn data(self) -> &'d ParamData {
@@ -383,11 +276,13 @@ impl<'d> Param<'d> {
     }
 }
 
+
 /// `signal name: ty = init;`
 #[derive(Clone, Copy)]
 pub struct Signal<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Signal<'d> {
     fn data(self) -> &'d SignalData {
@@ -417,11 +312,13 @@ impl<'d> Signal<'d> {
     }
 }
 
+
 /// `let pat = value;` in a module body.
 #[derive(Clone, Copy)]
 pub struct Let<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Let<'d> {
     fn data(self) -> &'d LetData {
@@ -446,11 +343,13 @@ impl<'d> Let<'d> {
     }
 }
 
+
 /// One identifier a pattern introduces.
 #[derive(Clone, Copy)]
 pub struct Binding<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Binding<'d> {
     fn data(self) -> &'d BindingData {
@@ -496,11 +395,13 @@ impl<'d> Binding<'d> {
     }
 }
 
+
 /// `place = value after delay;`
 #[derive(Clone, Copy)]
 pub struct Definition<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Definition<'d> {
     fn data(self) -> &'d DefinitionData {
@@ -523,13 +424,13 @@ impl<'d> Definition<'d> {
     }
 }
 
-// ---- generation ------------------------------------------------------------------------------
 
 /// A generation `for` or `if` over module or digital items.
 #[derive(Clone, Copy)]
 pub struct Generation<'d> {
     decl: Decl<'d>,
 }
+
 
 impl<'d> Generation<'d> {
     fn data(self) -> &'d GenerationData {
@@ -595,6 +496,7 @@ impl<'d> Generation<'d> {
     }
 }
 
+
 /// One arm of a generation `if` chain.
 #[derive(Clone, Copy)]
 pub struct GenArm<'d> {
@@ -602,6 +504,7 @@ pub struct GenArm<'d> {
     condition: Option<crate::pom::ids::ExprId>,
     items: &'d [DeclId],
 }
+
 
 impl<'d> GenArm<'d> {
     /// The arm's condition; none for the final `else`.
@@ -614,142 +517,6 @@ impl<'d> GenArm<'d> {
     }
 }
 
-// ---- behavior --------------------------------------------------------------------------------
-
-/// `analog<N> for Target { .. }` or `digital for Target { .. }`
-#[derive(Clone, Copy)]
-pub struct Behavior<'d> {
-    decl: Decl<'d>,
-}
-
-impl<'d> Behavior<'d> {
-    fn data(self) -> &'d BehaviorData {
-        match self.decl.kind() {
-            DeclKind::Behavior(b) => b,
-            _ => unreachable!("Behavior handle over a non-behavior declaration"),
-        }
-    }
-
-    pub fn kind(self) -> BehaviorKind {
-        self.data().kind
-    }
-
-    /// The generic names of `analog<N, M>`, in order.
-    pub fn names(self) -> Vec<&'d str> {
-        self.data().names.iter().map(|n| n.text.as_str()).collect()
-    }
-
-    /// The module this block belongs to: the one its target names, when that
-    /// module is declared in the same file and is not `extern`.
-    pub fn module(self) -> Option<Module<'d>> {
-        self.data().module.and_then(|m| Decl::new(self.decl.design(), m).as_module())
-    }
-
-    /// The target path as written, generic arguments included.
-    pub fn target(self) -> Path<'d> {
-        self.decl.design().path(self.data().target)
-    }
-
-    /// The statements of an `analog` block; none for `digital`.
-    pub fn statements(self) -> Vec<super::Stmt<'d>> {
-        self.data().body.iter().map(|s| self.decl.design().stmt(*s)).collect()
-    }
-
-    /// Every contribution of an `analog` block at any depth, in source order.
-    pub fn contributions(self) -> Vec<Contribution<'d>> {
-        let design = self.decl.design();
-        BodyWalk::new(design).nested_statements(&self.data().body)
-            .into_iter()
-            .filter(|s| matches!(design.stmt_node(*s).kind, StmtKind::Contribution { .. }))
-            .map(|s| Contribution::new(design, s))
-            .collect()
-    }
-
-    /// The reactions of a `digital` block in source order, including those
-    /// inside generation.
-    pub fn reactions(self) -> Vec<Reaction<'d>> {
-        let mut out = Vec::new();
-        deep_items(self.decl, &mut out);
-        out.into_iter().filter_map(|d| d.as_reaction()).collect()
-    }
-
-    /// The generation items written directly in a `digital` block.
-    pub fn generations(self) -> Vec<Generation<'d>> {
-        self.decl.children().into_iter().filter_map(|c| c.as_generation()).collect()
-    }
-}
-
-/// `on event { .. }`
-#[derive(Clone, Copy)]
-pub struct Reaction<'d> {
-    decl: Decl<'d>,
-}
-
-impl<'d> Reaction<'d> {
-    fn data(self) -> &'d ReactionData {
-        match self.decl.kind() {
-            DeclKind::Reaction(r) => r,
-            _ => unreachable!("Reaction handle over a non-reaction declaration"),
-        }
-    }
-
-    pub fn event(self) -> Expr<'d> {
-        self.decl.design().expr(self.data().event)
-    }
-
-    /// The body block; the raw block is [`Block::node`].
-    pub fn body(self) -> Block<'d> {
-        Block::new(self.decl.design(), &self.data().body)
-    }
-
-    /// Every commit of the body at any depth, in source order.
-    pub fn commits(self) -> Vec<Commit<'d>> {
-        let design = self.decl.design();
-        BodyWalk::new(design).nested_statements(&self.data().body.stmts)
-            .into_iter()
-            .filter(|s| matches!(design.stmt_node(*s).kind, StmtKind::Commit { .. }))
-            .map(|s| Commit::new(design, s))
-            .collect()
-    }
-}
-
-// ---- Reflect, equality, debug, casts --------------------------------------------------------
-
-impl<'d> Reflect<'d> for Nature<'d> {
-    fn decl(self) -> Decl<'d> {
-        self.decl
-    }
-}
-
-impl PartialEq for Nature<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.decl == other.decl
-    }
-}
-
-impl std::fmt::Debug for Nature<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Nature({:?})", self.decl.id())
-    }
-}
-
-impl<'d> Reflect<'d> for Quantity<'d> {
-    fn decl(self) -> Decl<'d> {
-        self.decl
-    }
-}
-
-impl PartialEq for Quantity<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.decl == other.decl
-    }
-}
-
-impl std::fmt::Debug for Quantity<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Quantity({:?})", self.decl.id())
-    }
-}
 
 impl<'d> Reflect<'d> for Module<'d> {
     fn decl(self) -> Decl<'d> {
@@ -757,11 +524,13 @@ impl<'d> Reflect<'d> for Module<'d> {
     }
 }
 
+
 impl PartialEq for Module<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.decl == other.decl
     }
 }
+
 
 impl std::fmt::Debug for Module<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -769,11 +538,13 @@ impl std::fmt::Debug for Module<'_> {
     }
 }
 
+
 impl<'d> Reflect<'d> for Port<'d> {
     fn decl(self) -> Decl<'d> {
         self.decl
     }
 }
+
 
 impl PartialEq for Port<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -781,11 +552,13 @@ impl PartialEq for Port<'_> {
     }
 }
 
+
 impl std::fmt::Debug for Port<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Port({:?})", self.decl.id())
     }
 }
+
 
 impl<'d> Reflect<'d> for Param<'d> {
     fn decl(self) -> Decl<'d> {
@@ -793,11 +566,13 @@ impl<'d> Reflect<'d> for Param<'d> {
     }
 }
 
+
 impl PartialEq for Param<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.decl == other.decl
     }
 }
+
 
 impl std::fmt::Debug for Param<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -805,11 +580,13 @@ impl std::fmt::Debug for Param<'_> {
     }
 }
 
+
 impl<'d> Reflect<'d> for Signal<'d> {
     fn decl(self) -> Decl<'d> {
         self.decl
     }
 }
+
 
 impl PartialEq for Signal<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -817,11 +594,13 @@ impl PartialEq for Signal<'_> {
     }
 }
 
+
 impl std::fmt::Debug for Signal<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Signal({:?})", self.decl.id())
     }
 }
+
 
 impl<'d> Reflect<'d> for Let<'d> {
     fn decl(self) -> Decl<'d> {
@@ -829,11 +608,13 @@ impl<'d> Reflect<'d> for Let<'d> {
     }
 }
 
+
 impl PartialEq for Let<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.decl == other.decl
     }
 }
+
 
 impl std::fmt::Debug for Let<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -841,11 +622,13 @@ impl std::fmt::Debug for Let<'_> {
     }
 }
 
+
 impl<'d> Reflect<'d> for Binding<'d> {
     fn decl(self) -> Decl<'d> {
         self.decl
     }
 }
+
 
 impl PartialEq for Binding<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -853,11 +636,13 @@ impl PartialEq for Binding<'_> {
     }
 }
 
+
 impl std::fmt::Debug for Binding<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Binding({:?})", self.decl.id())
     }
 }
+
 
 impl<'d> Reflect<'d> for Definition<'d> {
     fn decl(self) -> Decl<'d> {
@@ -865,11 +650,13 @@ impl<'d> Reflect<'d> for Definition<'d> {
     }
 }
 
+
 impl PartialEq for Definition<'_> {
     fn eq(&self, other: &Self) -> bool {
         self.decl == other.decl
     }
 }
+
 
 impl std::fmt::Debug for Definition<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -877,11 +664,13 @@ impl std::fmt::Debug for Definition<'_> {
     }
 }
 
+
 impl<'d> Reflect<'d> for Generation<'d> {
     fn decl(self) -> Decl<'d> {
         self.decl
     }
 }
+
 
 impl PartialEq for Generation<'_> {
     fn eq(&self, other: &Self) -> bool {
@@ -889,57 +678,14 @@ impl PartialEq for Generation<'_> {
     }
 }
 
+
 impl std::fmt::Debug for Generation<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Generation({:?})", self.decl.id())
     }
 }
 
-impl<'d> Reflect<'d> for Behavior<'d> {
-    fn decl(self) -> Decl<'d> {
-        self.decl
-    }
-}
-
-impl PartialEq for Behavior<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.decl == other.decl
-    }
-}
-
-impl std::fmt::Debug for Behavior<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Behavior({:?})", self.decl.id())
-    }
-}
-
-impl<'d> Reflect<'d> for Reaction<'d> {
-    fn decl(self) -> Decl<'d> {
-        self.decl
-    }
-}
-
-impl PartialEq for Reaction<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.decl == other.decl
-    }
-}
-
-impl std::fmt::Debug for Reaction<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Reaction({:?})", self.decl.id())
-    }
-}
-
 impl<'d> Decl<'d> {
-    pub fn as_nature(self) -> Option<Nature<'d>> {
-        matches!(self.kind(), DeclKind::Nature(_)).then_some(Nature { decl: self })
-    }
-
-    pub fn as_quantity(self) -> Option<Quantity<'d>> {
-        matches!(self.kind(), DeclKind::Quantity(_)).then_some(Quantity { decl: self })
-    }
-
     pub fn as_module(self) -> Option<Module<'d>> {
         matches!(self.kind(), DeclKind::Module(_)).then_some(Module { decl: self })
     }
@@ -970,142 +716,5 @@ impl<'d> Decl<'d> {
 
     pub fn as_generation(self) -> Option<Generation<'d>> {
         matches!(self.kind(), DeclKind::Generation(_)).then_some(Generation { decl: self })
-    }
-
-    pub fn as_behavior(self) -> Option<Behavior<'d>> {
-        matches!(self.kind(), DeclKind::Behavior(_)).then_some(Behavior { decl: self })
-    }
-
-    pub fn as_reaction(self) -> Option<Reaction<'d>> {
-        matches!(self.kind(), DeclKind::Reaction(_)).then_some(Reaction { decl: self })
-    }
-}
-
-// ---- instances --------------------------------------------------------------------------------
-
-/// A placement: a view over a call expression classified as an instance. It
-/// is not a declaration and not a node of its own.
-#[derive(Clone, Copy)]
-pub struct Instance<'d> {
-    design: &'d Design,
-    expr: ExprId,
-}
-
-impl<'d> Instance<'d> {
-    pub(crate) fn new(design: &'d Design, expr: ExprId) -> Self {
-        Instance { design, expr }
-    }
-
-    /// The call parts: callee, connections, param block, class.
-    fn call(self) -> (ExprId, &'d [crate::pom::body::Arg], Option<&'d Vec<FieldInit>>, CallClass) {
-        match &self.design.expr_node(self.expr).kind {
-            ExprKind::Call { callee, args, params, class } => (*callee, args, params.as_ref(), *class),
-            _ => unreachable!("Instance over a non-call expression"),
-        }
-    }
-
-    /// The call expression.
-    pub fn expr(self) -> Expr<'d> {
-        self.design.expr(self.expr)
-    }
-
-    /// The name of the `let` whose whole value is this call, when its
-    /// pattern is one identifier; none for an anonymous instance.
-    pub fn name(self) -> Option<&'d str> {
-        let owner = self.design.expr_node(self.expr).owner;
-        let DeclKind::Let(l) = &self.design.decl_data(owner).kind else { return None };
-        if l.value != self.expr {
-            return None;
-        }
-        match &self.design.pat_node(l.pat).kind {
-            crate::pom::body::PatKind::Ident { name, sub: None, .. } => Some(name.text.as_str()),
-            _ => None,
-        }
-    }
-
-    pub fn is_anonymous(self) -> bool {
-        self.name().is_none()
-    }
-
-    /// The module placed, when a declaration names it.
-    pub fn module(self) -> Option<Module<'d>> {
-        match self.call().3 {
-            CallClass::Instance { module: Some(m), .. } => Decl::new(self.design, m).as_module(),
-            _ => None,
-        }
-    }
-
-    /// The template (param, value input, constant, binding or function) the
-    /// call was written through.
-    pub fn via(self) -> Option<Decl<'d>> {
-        match self.call().3 {
-            CallClass::Instance { via: Some(v), .. } => Some(Decl::new(self.design, v)),
-            _ => None,
-        }
-    }
-
-    pub fn via_template(self) -> bool {
-        self.via().is_some()
-    }
-
-    /// The called expression.
-    pub fn callee(self) -> Expr<'d> {
-        self.design.expr(self.call().0)
-    }
-
-    /// The declaration the placement is written in: the module body or
-    /// generation for a `let`, the block or reaction otherwise.
-    pub fn declared_in(self) -> Decl<'d> {
-        let owner = self.design.expr_node(self.expr).owner;
-        let at = Decl::new(self.design, owner);
-        match at.kind() {
-            DeclKind::Let(_) => at.declared_in().unwrap_or(at),
-            _ => at,
-        }
-    }
-
-    /// The connection arguments, in order.
-    pub fn connections(self) -> Vec<Expr<'d>> {
-        self.call().1.iter().map(|a| self.design.expr(a.value)).collect()
-    }
-
-    /// The argument written for `port`: the connection named after it, else
-    /// the unnamed one at its position. None when the instance's module is
-    /// unknown, is not the port's module, or no argument is written there.
-    pub fn connection(self, port: Port<'d>) -> Option<Expr<'d>> {
-        let module = self.module()?;
-        if port.declared_in()? != module.decl() {
-            return None;
-        }
-        let args = self.call().1;
-        let named = args.iter().find(|a| a.res == Resolution::Decl(port.decl().id()));
-        let arg = named.or_else(|| args.get(port.index()).filter(|a| a.name.is_none()))?;
-        Some(self.design.expr(arg.value))
-    }
-
-    /// The `{ name: value }` param bindings as written.
-    pub fn param_bindings(self) -> Vec<FieldBinding<'d>> {
-        self.expr().fields()
-    }
-
-    /// The core module this call places (`cross(x)`, `ddt(x)`); none for a
-    /// user module and for a call the classifier could not place.
-    pub fn builtin(self) -> Option<BuiltinId> {
-        match self.callee().resolution() {
-            Resolution::Builtin(b) if b.info().kind == BuiltinKind::Module => Some(b),
-            _ => None,
-        }
-    }
-}
-
-impl<'d> PartialEq for Instance<'d> {
-    fn eq(&self, other: &Self) -> bool {
-        std::ptr::eq(self.design, other.design) && self.expr == other.expr
-    }
-}
-
-impl std::fmt::Debug for Instance<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Instance({:?})", self.expr)
     }
 }

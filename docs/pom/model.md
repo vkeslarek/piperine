@@ -1373,85 +1373,85 @@ Methods: [Reflection](reflection.md#commit).
 
 ### `Nature`
 
-*struct* in `src/pom/reflect/hardware.rs`. `nature Name { potential: .., flow: .., value: .. }`
+*struct* in `src/pom/reflect/nature.rs`. `nature Name { potential: .., flow: .., value: .. }`
 
 Methods: [Reflection](reflection.md#nature).
 
 ### `Quantity`
 
-*struct* in `src/pom/reflect/hardware.rs`. `potential: Voltage { access: v, units: "V", abstol: 1u }`
+*struct* in `src/pom/reflect/nature.rs`. `potential: Voltage { access: v, units: "V", abstol: 1u }`
 
 Methods: [Reflection](reflection.md#quantity).
 
 ### `Module`
 
-*struct* in `src/pom/reflect/hardware.rs`. `[extern "abi"] module Name<..>(ports) -> ret where cond { body }`
+*struct* in `src/pom/reflect/module.rs`. `[extern "abi"] module Name<..>(ports) -> ret where cond { body }`
 
 Methods: [Reflection](reflection.md#module).
 
 ### `Port`
 
-*struct* in `src/pom/reflect/hardware.rs`. One port of a module.
+*struct* in `src/pom/reflect/module.rs`. One port of a module.
 
 Methods: [Reflection](reflection.md#port).
 
 ### `Param`
 
-*struct* in `src/pom/reflect/hardware.rs`. `name: ty = default where cond;` in a module body.
+*struct* in `src/pom/reflect/module.rs`. `name: ty = default where cond;` in a module body.
 
 Methods: [Reflection](reflection.md#param).
 
 ### `Signal`
 
-*struct* in `src/pom/reflect/hardware.rs`. `signal name: ty = init;`
+*struct* in `src/pom/reflect/module.rs`. `signal name: ty = init;`
 
 Methods: [Reflection](reflection.md#signal).
 
 ### `Let`
 
-*struct* in `src/pom/reflect/hardware.rs`. `let pat = value;` in a module body.
+*struct* in `src/pom/reflect/module.rs`. `let pat = value;` in a module body.
 
 Methods: [Reflection](reflection.md#let).
 
 ### `Binding`
 
-*struct* in `src/pom/reflect/hardware.rs`. One identifier a pattern introduces.
+*struct* in `src/pom/reflect/module.rs`. One identifier a pattern introduces.
 
 Methods: [Reflection](reflection.md#binding).
 
 ### `Definition`
 
-*struct* in `src/pom/reflect/hardware.rs`. `place = value after delay;`
+*struct* in `src/pom/reflect/module.rs`. `place = value after delay;`
 
 Methods: [Reflection](reflection.md#definition).
 
 ### `Generation`
 
-*struct* in `src/pom/reflect/hardware.rs`. A generation `for` or `if` over module or digital items.
+*struct* in `src/pom/reflect/module.rs`. A generation `for` or `if` over module or digital items.
 
 Methods: [Reflection](reflection.md#generation).
 
 ### `GenArm`
 
-*struct* in `src/pom/reflect/hardware.rs`. One arm of a generation `if` chain.
+*struct* in `src/pom/reflect/module.rs`. One arm of a generation `if` chain.
 
 Methods: [Reflection](reflection.md#genarm).
 
 ### `Behavior`
 
-*struct* in `src/pom/reflect/hardware.rs`. `analog<N> for Target { .. }` or `digital for Target { .. }`
+*struct* in `src/pom/reflect/behavior.rs`. `analog<N> for Target { .. }` or `digital for Target { .. }`
 
 Methods: [Reflection](reflection.md#behavior).
 
 ### `Reaction`
 
-*struct* in `src/pom/reflect/hardware.rs`. `on event { .. }`
+*struct* in `src/pom/reflect/behavior.rs`. `on event { .. }`
 
 Methods: [Reflection](reflection.md#reaction).
 
 ### `Instance`
 
-*struct* in `src/pom/reflect/hardware.rs`. A placement: a view over a call expression classified as an instance. It is not a declaration and not a node of its own.
+*struct* in `src/pom/reflect/instance.rs`. A placement: a view over a call expression classified as an instance. It is not a declaration and not a node of its own.
 
 Methods: [Reflection](reflection.md#instance).
 

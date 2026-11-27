@@ -89,15 +89,12 @@ impl ModRsFiles {
             })
             .collect();
         // msl-cli T4 deleted the old `piperine-api` (five `mod.rs`), so the floor is 10; the walk
-        // must also reach the three registered oversized files, which a blind walk would miss.
+        // no `mod.rs` is registered as oversized any more.
         assert!(
             files.len() > 10,
             "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
             files.len()
         );
-        for known in ["crates/piperine-lang/src/pom/reflect/mod.rs"] {
-            assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
-        }
         files
     }
 
@@ -112,12 +109,8 @@ impl ModRsFiles {
     /// VAMS-era splits (catalog, ast) shrank their `mod.rs` back under the
     /// ceiling. The in-file `// hygiene-exempt:` line carries the per-file
     /// reason for the ones that remain.
-    fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
-        Some(match path {
-            // Follow-up (ROADMAP.md, `code-clarity`): refactor this one into named modules.
-            "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
-            _ => return None,
-        })
+    fn registered_oversized_mod_rs(_path: &str) -> Option<&'static str> {
+        None
     }
 }
 
@@ -718,7 +711,7 @@ fn mod_rs_declares_only() {
     );
     assert_eq!(
         exempted.len(),
-        1,
+        0,
         "the exempted set changed — update the registry and the count: {exempted:?}"
     );
 }

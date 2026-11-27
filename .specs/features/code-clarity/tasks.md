@@ -1456,10 +1456,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No registered oversized `mod.rs`; every public path of `piperine_lang::pom` is unchanged
-- [ ] Verdicts in `test_only_items.tsv` for the POM's reflection items (kept: the public reflection surface `docs/pom/` documents)
-- [ ] `GenericParam::default_type` (`lang/src/pom/reflect/items.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] No registered oversized `mod.rs`; every public path of `piperine_lang::pom` is unchanged
+- [x] Verdicts in `test_only_items.tsv` for the POM's reflection items (kept: the public reflection surface `docs/pom/` documents)
+- [x] `GenericParam::default_type` (`lang/src/pom/reflect/items.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

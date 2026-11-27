@@ -7,7 +7,7 @@ use super::super::body::{Arg, ExprKind, FieldInit, ExprNode, PatKind, PatNode, P
 use super::super::design::Design;
 use super::super::ids::{ExprId, FileId, PatId, PathId, StmtId, TypeId};
 use super::super::resolution::Resolution;
-use super::{Decl, Reflect};
+use super::Decl;
 use crate::pom::meta::Doc;
 use crate::msl::{Span, ast};
 
@@ -75,11 +75,6 @@ impl Design {
     }
 }
 
-/// The authored text of `span` in the file of the declaration `owner`.
-fn text_in<'d>(owner: Decl<'d>, span: Span) -> &'d str {
-    owner.file().text().get(span.range()).unwrap_or("")
-}
-
 /// An expression node.
 #[derive(Clone, Copy)]
 pub struct Expr<'d> {
@@ -115,7 +110,7 @@ impl<'d> Expr<'d> {
 
     /// The authored text of the expression.
     pub fn text(self) -> &'d str {
-        text_in(self.enclosing(), self.span())
+        self.enclosing().text_of(self.span())
     }
 
     /// The direct sub-expressions, in source order. A form that holds a block
@@ -338,7 +333,7 @@ impl<'d> Stmt<'d> {
     }
 
     pub fn text(self) -> &'d str {
-        text_in(self.enclosing(), self.span())
+        self.enclosing().text_of(self.span())
     }
 
     /// The doc comments written before the statement, one per comment.
@@ -439,7 +434,7 @@ impl<'d> Pat<'d> {
     }
 
     pub fn text(self) -> &'d str {
-        text_in(self.enclosing(), self.span())
+        self.enclosing().text_of(self.span())
     }
 }
 
@@ -476,7 +471,7 @@ impl<'d> Type<'d> {
     }
 
     pub fn text(self) -> &'d str {
-        text_in(self.enclosing(), self.span())
+        self.enclosing().text_of(self.span())
     }
 }
 
@@ -513,7 +508,7 @@ impl<'d> Path<'d> {
     }
 
     pub fn text(self) -> &'d str {
-        text_in(self.enclosing(), self.span())
+        self.enclosing().text_of(self.span())
     }
 
     /// What the path names: the resolution of its last segment.
