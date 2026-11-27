@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/composite-values/design-c.md`
 **Status**: Draft (executing on the launching agent's instruction)
 **Approved**: 2026-11-23 - user: "Aprovo o plano da fase C"
-**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run abi**: `cargo test -p piperine-abi --test array_pins`
 **Run dsarr**: `cargo test -p piperine-digital-solver --test array_nets`
 **Run bind**: `cargo test -p piperine-solver --test array_windows`

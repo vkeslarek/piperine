@@ -95,6 +95,7 @@ impl NameWords {
 pub struct NamingRules;
 
 impl NamingRules {
+    /// The item kinds whose names are checked.
     const NAMED: [ScannedKind; 8] = [ScannedKind::Type, ScannedKind::Trait, ScannedKind::Field, ScannedKind::Variant, ScannedKind::Method, ScannedKind::FreeFunction, ScannedKind::NestedFunction, ScannedKind::Module];
 
     /// Every declared name is made of words of the dictionary or terms of the glossary; the name of a

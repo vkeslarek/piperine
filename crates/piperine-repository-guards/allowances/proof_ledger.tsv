@@ -220,3 +220,4 @@ unknown-semantics	Run elabunknowns	no test target piperine-lang/elab_unknowns
 unknown-semantics	Run sourceunknowns	no test target piperine-parity/source_unknowns
 unknown-semantics	Run typesunknowns	no test target piperine-lang/types_unknowns
 value-semantics	C28	run srcvs names no test the_library_items_that_took_borrows_give_the_same_results
+msl-parser	Build	no test target piperine/suite_hygiene

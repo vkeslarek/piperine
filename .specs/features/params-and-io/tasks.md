@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/params-and-io/design.md`
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
-**Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-project -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-project -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run typesvalues**: `cargo test -p piperine-lang --test types_values`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`

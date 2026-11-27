@@ -102,7 +102,7 @@ impl ProofLedger {
         self.targets.package(package).is_some_and(|tests| tests.targets.iter().any(|t| t.name == target))
     }
 
-    /// Every dangling reference of the feature files: a `Run` line naming no package or target,
+    /// Every dangling reference of the feature files: a `Run` or `Build` command naming no package or target,
     /// and a proof naming a test that is not there.
     pub fn dangling_proofs(&self) -> Vec<DanglingReference> {
         let mut found = BTreeSet::new();
@@ -111,6 +111,11 @@ impl ProofLedger {
             for run in &runs {
                 if let Some(reason) = self.command_problem(&run.command) {
                     found.insert(DanglingReference { owner: file.feature().to_string(), subject: format!("Run {}", run.name), reason });
+                }
+            }
+            for (_, command) in file.build_commands() {
+                if let Some(reason) = self.command_problem(&command) {
+                    found.insert(DanglingReference { owner: file.feature().to_string(), subject: "Build".to_string(), reason });
                 }
             }
             for proof in file.proofs() {

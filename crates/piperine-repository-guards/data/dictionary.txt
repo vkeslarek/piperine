@@ -1951,7 +1951,6 @@ past
 patch
 path
 paths
-pats
 pattern
 patterns
 payload
@@ -2571,7 +2570,6 @@ specification
 specified
 specifies
 specify
-specs
 spell
 spelled
 spelling
@@ -3081,3 +3079,4 @@ zero
 zeroed
 zeros
 zip
+

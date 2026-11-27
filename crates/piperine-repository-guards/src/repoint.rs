@@ -264,10 +264,15 @@ impl FeatureRewriter {
     /// Replaces every unfenced command that `rewrite` gives a new text for.
     fn rewrite_commands(&mut self, rewrite: impl Fn(&CargoTestCommand) -> Option<String>) {
         for index in self.unfenced() {
-            let Some(command) = Self::command_of(&self.lines[index]) else { continue };
-            let Some(parsed) = CargoTestCommand::parse(&command) else { continue };
-            if let Some(new_command) = rewrite(&parsed) {
-                self.lines[index] = self.lines[index].replacen(&command, &new_command, 1);
+            let commands = match FeatureFile::parse_build(&self.lines[index]) {
+                Some(commands) => commands,
+                None => Self::command_of(&self.lines[index]).into_iter().collect(),
+            };
+            for command in commands {
+                let Some(parsed) = CargoTestCommand::parse(&command) else { continue };
+                if let Some(new_command) = rewrite(&parsed) {
+                    self.lines[index] = self.lines[index].replacen(&command, &new_command, 1);
+                }
             }
         }
     }
@@ -475,10 +480,14 @@ mod tests {
     }
 
     impl Fixture {
-        const TASKS: &'static str = "# Demo\n\n**Run old**: `cargo test -p alpha --test old_target`\n**Run other**: `cargo test -p alpha --test other_target`\n\n**C1** - It holds.\nProof: run old | test it_holds ... ok\n\n**C2** - A prose pin.\nProof: run old | test a_pin ... ok\n\n**C3** - A duplicate.\nProof: run old | test a_copy ... ok\nProof: `cargo test -p alpha --test old_target`\n";
+        /// A feature file with a build line, runs, checks and proofs.
+        const TASKS: &'static str = "# Demo\n\n**Build**: `cargo build -p alpha`; `cargo test -p alpha --test old_target`\n**Run old**: `cargo test -p alpha --test old_target`\n**Run other**: `cargo test -p alpha --test other_target`\n\n**C1** - It holds.\nProof: run old | test it_holds ... ok\n\n**C2** - A prose pin.\nProof: run old | test a_pin ... ok\n\n**C3** - A duplicate.\nProof: run old | test a_copy ... ok\nProof: `cargo test -p alpha --test old_target`\n";
+        /// Two inventory rows covered by tests of the old target.
         const INVENTORY: &'static str = "# header\nclaim\tc#1\tff\trun\talpha/old_target::it_holds\t-\t-\nclaim\tc#2\tff\trun\talpha/old_target::a_copy\t-\t-\n";
+        /// A prose line naming the old target and a longer name that must stay.
         const GAPS: &'static str = "see alpha/old_target and crates/alpha/tests, not alpha/old_target_two\n";
 
+        /// Writes the fixture repository into a temporary directory.
         fn new() -> Fixture {
             let directory = tempfile::tempdir().expect("a temporary directory");
             let feature = directory.path().join(".specs/features/demo");
@@ -491,11 +500,13 @@ mod tests {
             Fixture { directory }
         }
 
+        /// Applies a map of the given rows to the fixture.
         fn apply(&self, task: &str, rows: &str) {
             let map = RepointMap::parse(task, rows).expect("a valid map");
             Repointer::new(self.directory.path().to_path_buf()).apply(&map).expect("the map applies");
         }
 
+        /// The text of a file of the fixture.
         fn read(&self, relative: &str) -> String {
             std::fs::read_to_string(self.directory.path().join(relative)).expect("a file of the fixture")
         }
@@ -507,7 +518,7 @@ mod tests {
         fixture.apply("T5", "move alpha/old_target beta/merged::old_target\n");
         assert_eq!(
             fixture.read(".specs/features/demo/tasks.md"),
-            Fixture::TASKS.replace("**Run old**: `cargo test -p alpha --test old_target`", "**Run old**: `cargo test -p beta --test merged old_target::`").replace("Proof: `cargo test -p alpha --test old_target`", "Proof: `cargo test -p beta --test merged old_target::`")
+            Fixture::TASKS.replace("**Build**: `cargo build -p alpha`; `cargo test -p alpha --test old_target`", "**Build**: `cargo build -p alpha`; `cargo test -p beta --test merged old_target::`").replace("**Run old**: `cargo test -p alpha --test old_target`", "**Run old**: `cargo test -p beta --test merged old_target::`").replace("Proof: `cargo test -p alpha --test old_target`", "Proof: `cargo test -p beta --test merged old_target::`")
         );
         assert_eq!(fixture.read("tests/book/inventory.tsv"), Fixture::INVENTORY.replace("alpha/old_target::", "beta/merged::old_target::"));
         assert_eq!(fixture.read("GAPS.md"), "see beta/merged::old_target and crates/alpha/tests, not alpha/old_target_two\n");
@@ -517,7 +528,7 @@ mod tests {
     fn a_crate_rename_changes_every_package_flag_and_prefix() {
         let fixture = Fixture::new();
         fixture.apply("T139", "rename-crate alpha gamma\n");
-        assert_eq!(fixture.read(".specs/features/demo/tasks.md"), Fixture::TASKS.replace("-p alpha", "-p gamma"));
+        assert_eq!(fixture.read(".specs/features/demo/tasks.md"), Fixture::TASKS.replace("-p alpha", "-p gamma").replace("cargo build -p gamma", "cargo build -p alpha"));
         assert_eq!(fixture.read("tests/book/inventory.tsv"), Fixture::INVENTORY.replace("alpha/", "gamma/"));
         assert_eq!(fixture.read("GAPS.md"), "see gamma/old_target and crates/gamma/tests, not gamma/old_target_two\n");
     }

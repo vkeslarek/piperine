@@ -7,9 +7,11 @@ crates/piperine-project/src/resolver.rs::krate	1
 crates/piperine-project/tests/git.rs::an_unreachable_repository_or_ref_is_e0172	1
 crates/piperine-project/tests/git.rs::branch_tag_and_rev_select_their_commit	1
 crates/piperine-project/tests/git.rs::local_repositories_util_and_util_dot_git_stay_two_crates	1
+crates/piperine-project/tests/git.rs::ok	1
 crates/piperine-project/tests/git.rs::util_repo	1
 crates/piperine-project/tests/lock.rs::an_invalid_lockfile_is_e0176	1
 crates/piperine-project/tests/lock.rs::named_repo	1
+crates/piperine-project/tests/lock.rs::ok	1
 crates/piperine-project/tests/manifest.rs::a_bad_dependency_name_or_requirement_is_e0171	1
 crates/piperine-project/tests/manifest.rs::a_bad_package_name_is_e0171	1
 crates/piperine-project/tests/manifest.rs::a_bad_version_is_e0171	1
@@ -28,6 +30,7 @@ crates/piperine-project/tests/paths.rs::a_package_that_depends_on_itself_is_e017
 crates/piperine-project/tests/paths.rs::a_package_without_a_crate_root_is_e0175	1
 crates/piperine-project/tests/paths.rs::a_path_without_a_package_is_e0172	1
 crates/piperine-project/tests/paths.rs::an_unsatisfied_requirement_is_e0173	1
+crates/piperine-project/tests/paths.rs::ok	1
 crates/piperine-project/tests/project.rs::the_rc_example_resolves_with_no_diagnostic	1
 crates/piperine-project/tests/support/mod.rs::repo	1
 crates/piperine-project/tests/support/mod.rs::url	1

@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/long-run/design.md`
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode ir rodando os grandes passos"
-**Build**: `cargo build -p piperine-solver -p piperine-api -p piperine -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Build**: `cargo build -p piperine-solver -p piperine-api -p piperine -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run step**: `cargo test -p piperine-solver --test step_observer`
 **Run baseline**: `cargo test -p piperine-solver --test parity_baseline`
 **Run apilib**: `cargo test -p piperine-api --lib`

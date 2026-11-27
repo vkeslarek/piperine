@@ -149,7 +149,7 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 
 **Acceptance Criteria** (CC-12):
 
-1. WHEN the inventory runs THEN it SHALL measure the test suite: targets per crate, tests per target, build and run time per target, duplicated or near-duplicated tests, tests that pin an obsolete or superseded behaviour, tests no `## Checks` row or criterion needs, and helpers duplicated across targets (CC-12)
+1. WHEN the inventory runs THEN it SHALL measure the test suite: targets per crate, tests per target, duplicated or near-duplicated tests, tests that pin an obsolete or superseded behaviour, tests no `## Checks` row or criterion needs, and helpers duplicated across targets (CC-12)
 2. WHEN two or more tests prove the same rule THEN design SHALL keep one (the strongest) and remove the others; WHEN a test pins behaviour the spec no longer has THEN it SHALL be removed or rewritten to the current rule (CC-12)
 3. WHEN many small targets in one crate cover one concern THEN they SHALL be merged into fewer targets (fewer link steps), each still opening with its `//!` scope header (MD-28 placement rule kept) (CC-12)
 4. WHEN shared test helpers are duplicated THEN they SHALL live once, as methods of owner types in each crate's test support (no free functions, the user's rules) (CC-12)

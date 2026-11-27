@@ -14,10 +14,12 @@ static SCAN: OnceLock<ItemScan> = OnceLock::new();
 struct WorklistGuards;
 
 impl WorklistGuards {
+    /// The shared scan.
     fn scan() -> &'static ItemScan {
         SCAN.get_or_init(|| ItemScan::of(&SourceTree::of_workspace()))
     }
 
+    /// Fails when the inventory and the worklist differ.
     fn assert_clean(name: &str, inventory: std::collections::BTreeSet<String>) {
         let verdict = Worklist::read(name).judge(&inventory);
         assert!(

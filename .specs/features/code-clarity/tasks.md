@@ -311,8 +311,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The `MD-n` entry exists and names: the guards crate and its allowances, test support as dev-only crates, one module layout, `LanguageItems`, `Refusal`, MD-28 amended
-- [ ] The Handoff names the base commit and the five answers
+- [x] The `MD-n` entry exists and names: the guards crate and its allowances, test support as dev-only crates, one module layout, `LanguageItems`, `Refusal`, MD-28 amended
+- [x] The Handoff names the base commit and the five answers
 
 **Tests**: none
 **Gate**: build
@@ -333,10 +333,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `cargo build --workspace --all-targets` prints no warning and no error
-- [ ] No file of the tree names `piperine-lang-server` or `editors/vscode` outside `.specs/` and `ROADMAP.md`'s `lang-server` row
-- [ ] `CLAUDE.md` no longer says "never `--workspace` bare"
-- [ ] Gate check passes: Quick
+- [x] `cargo build --workspace --all-targets` prints no warning and no error
+- [x] No file of the tree names `piperine-lang-server` or `editors/vscode` outside `.specs/` and `ROADMAP.md`'s `lang-server` row
+- [x] `CLAUDE.md` no longer says "never `--workspace` bare"
+- [x] Gate check passes: Quick
 
 **Tests**: none
 **Gate**: quick
@@ -357,9 +357,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Unit tests over source strings hold each rule of findings.md Appendix G: a free `fn`, a nested `fn`, `main`, an `extern "C"` function, a `#[test]`, a method of a trait `impl`, a `#[cfg(test)]` inline module, a `#[cfg(test)] mod x;` file, a `#[path]` include, a closure of 15 lines, a documented and an undocumented item
-- [ ] The crate has no in-tree dependency and `#![deny(missing_docs)]`
-- [ ] Gate check passes: Quick
+- [x] Unit tests over source strings hold each rule of findings.md Appendix G: a free `fn`, a nested `fn`, `main`, an `extern "C"` function, a `#[test]`, a method of a trait `impl`, a `#[cfg(test)]` inline module, a `#[cfg(test)] mod x;` file, a `#[path]` include, a closure of 15 lines, a documented and an undocumented item
+- [x] The crate has no in-tree dependency and `#![deny(missing_docs)]`
+- [x] Gate check passes: Quick
 
 **Tests**: unit
 **Gate**: quick
@@ -380,9 +380,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_proof_names_a_test_that_exists`, `every_inventory_row_names_a_test_that_exists`, `every_retired_check_is_recorded` and `the_parity_oracles_are_not_reduced` pass under `**Run ledger**`
-- [ ] Unit tests apply one row of each kind to a fixture feature folder and compare the rewritten files byte for byte
-- [ ] Gate check passes: Ledger
+- [x] `every_proof_names_a_test_that_exists`, `every_inventory_row_names_a_test_that_exists`, `every_retired_check_is_recorded` and `the_parity_oracles_are_not_reduced` pass under `**Run ledger**`
+- [x] Unit tests apply one row of each kind to a fixture feature folder and compare the rewritten files byte for byte
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -403,9 +403,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `the_dependency_graph_is_the_documented_one` passes under `**Run boundaries**` and encodes the arrows of `CLAUDE.md` "Pipeline"
-- [ ] Every moved test keeps its name and passes; the hygiene walk now reaches `tests/support/` (the file-scope suppression of `transpile/tests/support/compiled.rs:4` is fixed, not exempted)
-- [ ] Gate check passes: Ledger
+- [x] `the_dependency_graph_is_the_documented_one` passes under `**Run boundaries**` and encodes the arrows of `CLAUDE.md` "Pipeline"
+- [x] Every moved test keeps its name and passes; the hygiene walk now reaches `tests/support/` (the file-scope suppression of `transpile/tests/support/compiled.rs:4` is fixed, not exempted)
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -426,10 +426,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `no_free_function_outside_the_language_exceptions`, `no_free_helper_function_in_test_code`, `an_inherent_impl_lives_with_its_type`, `every_owner_of_the_design_exists_and_has_its_methods` and `no_allow_hides_a_design_problem` pass under `**Run ownership**`
-- [ ] `every_crate_states_its_purpose_and_module_map` and `no_module_is_named_for_no_concern` pass under `**Run structure**`
-- [ ] Each fails on a violation its allowance does not list and on a listed row that no longer exists (a unit test of `Allowance` proves both)
-- [ ] Gate check passes: Quick
+- [x] `no_free_function_outside_the_language_exceptions`, `no_free_helper_function_in_test_code`, `an_inherent_impl_lives_with_its_type`, `every_owner_of_the_design_exists_and_has_its_methods` and `no_allow_hides_a_design_problem` pass under `**Run ownership**`
+- [x] `every_crate_states_its_purpose_and_module_map` and `no_module_is_named_for_no_concern` pass under `**Run structure**`
+- [x] Each fails on a violation its allowance does not list and on a listed row that no longer exists (a unit test of `Allowance` proves both)
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -450,9 +450,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_declared_name_is_words_or_glossary` and `no_bare_type_name_is_declared_twice` pass under `**Run naming**`
-- [ ] `every_item_is_documented` and `every_crate_denies_missing_docs` pass under `**Run documentation**`
-- [ ] Gate check passes: Quick
+- [x] `every_declared_name_is_words_or_glossary` and `no_bare_type_name_is_declared_twice` pass under `**Run naming**`
+- [x] `every_item_is_documented` and `every_crate_denies_missing_docs` pass under `**Run documentation**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -463,7 +463,7 @@ T152 → T153 → T154 → T155
 
 ### T8: The numbers before: the suite report and the worklists
 
-**What**: Add `SuiteCensus` and `Worklist`; write `.specs/features/code-clarity/suite-report.md` section `## Before` (targets and tests per crate from the census; cold build CPU-seconds from `cargo test --workspace --no-run --timings`; one serial run of every test executable, timed, with ngspice); seed `worklists/{long_functions,single_implementor_traits,test_only_items,duplicate_tests}.tsv` from the scan with no verdict yet (allowance: all rows open); add the targets `worklists` and the test `no_crate_has_more_targets_than_its_plan` (the plan starts at today's counts).
+**What**: Add `SuiteCensus` and `Worklist`; write `.specs/features/code-clarity/suite-report.md` section `## Before` (targets and tests per crate from the census); seed `worklists/{long_functions,single_implementor_traits,test_only_items,duplicate_tests}.tsv` from the scan with no verdict yet (allowance: all rows open); add the targets `worklists` and the test `no_crate_has_more_targets_than_its_plan` (the plan starts at today's counts).
 **Where**: `crates/piperine-repository-guards/tests/worklists.rs`
 **Depends on**: T7
 **Reuses**: findings.md §3.1, Appendix B
@@ -473,10 +473,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `suite-report.md` `## Before` holds the table of findings.md §3.1 re-taken at this commit
-- [ ] `every_long_function_of_the_inventory_has_a_verdict`, `every_single_implementor_trait_is_removed_or_justified`, `every_test_only_item_has_a_verdict` and `every_duplicate_of_the_inventory_has_a_verdict` pass under `**Run worklists**` (open rows are allowance rows)
-- [ ] `no_crate_has_more_targets_than_its_plan` passes under `**Run suite**`
-- [ ] Gate check passes: Quick
+- [x] `suite-report.md` `## Before` holds the census columns of the table of findings.md §3.1 re-taken at this commit (no build or run time, user decision 2026-11-26)
+- [x] `every_long_function_of_the_inventory_has_a_verdict`, `every_single_implementor_trait_is_removed_or_justified`, `every_test_only_item_has_a_verdict` and `every_duplicate_of_the_inventory_has_a_verdict` pass under `**Run worklists**` (open rows are allowance rows)
+- [x] `no_crate_has_more_targets_than_its_plan` passes under `**Run suite**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -3755,7 +3755,7 @@ T152 → T153 → T154 → T155
 
 ### T153: The numbers after
 
-**What**: Write `suite-report.md` `## After` the way T8 took `## Before` (cold build CPU-seconds, one serial run, the census), with the difference per crate; add `the_suite_report_has_before_and_after`.
+**What**: Write `suite-report.md` `## After` the way T8 took `## Before` (the census), with the difference per crate; add `the_suite_report_has_before_and_after`.
 **Where**: `.specs/features/code-clarity/suite-report.md`
 **Depends on**: T152
 **Reuses**: T8
@@ -3765,7 +3765,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `the_suite_report_has_before_and_after` passes under `**Run suite**`: both tables, the same rows, test count, target count, build and run time
+- [ ] `the_suite_report_has_before_and_after` passes under `**Run suite**`: both tables, the same rows, test count, target count
 - [ ] Gate check passes: Quick
 
 **Tests**: integration
@@ -3942,10 +3942,10 @@ Proof: run suite | test the_suite_report_has_before_and_after ... ok
 
 The feature's live state, written as it happens - a compaction gives no warning.
 
-**Settled mid-build:** none
+**Settled mid-build:** the suite report has no build or run time column (user 2026-11-26: "O build não precisa de métrica... Tá de boa"); the census columns stay.
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
-**Progress:** T1 to T8 done (the two timing columns of the before report are not taken, see suite-report.md).
+**Progress:** T1 to T8 done.
 **Dispatched:** none
 **Walked:** none - the feature has no screen; each story's Independent Test is a guard target of `## Checks`.
 

@@ -40,4 +40,5 @@ crates/piperine-abi/tests/support/examples.rs::dac_shape	1
 crates/piperine-abi/tests/support/examples.rs::gd	1
 crates/piperine-abi/tests/support/examples.rs::inp	1
 crates/piperine-abi/tests/support/examples.rs::pnjlim	1
+crates/piperine-abi/tests/validate.rs::Specs	1
 crates/piperine-abi/tests/verify.rs::NanJac	1

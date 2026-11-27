@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/unknown-semantics/design.md`
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
-**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run typesunknowns**: `cargo test -p piperine-lang --test types_unknowns`
 **Run elabunknowns**: `cargo test -p piperine-lang --test elab_unknowns`
 **Run sourceunknowns**: `cargo test -p piperine-parity --test source_unknowns`

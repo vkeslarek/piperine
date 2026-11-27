@@ -12,7 +12,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/value-semantics/design.md`
 **Status**: Approved
-**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
 **Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
 **Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`

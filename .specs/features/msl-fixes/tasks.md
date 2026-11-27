@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-fixes/design.md`
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
-**Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run tmod**: `cargo test -p piperine-lang --test types_modules`
 **Run tvalues**: `cargo test -p piperine-lang --test types_values`
 **Run tint**: `cargo test -p piperine-lang --test types_integers`

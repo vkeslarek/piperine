@@ -58,6 +58,7 @@ mod tests {
     struct Scenario;
 
     impl Scenario {
+        /// An inventory of the given keys.
         fn inventory(keys: &[&str]) -> BTreeSet<String> {
             keys.iter().map(|key| key.to_string()).collect()
         }

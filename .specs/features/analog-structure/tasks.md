@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/analog-structure/design.md`
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
-**Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run irstruct**: `cargo test -p piperine-ir --test structure`
 **Run plan**: `cargo test -p piperine-plan --test structure_shape`
 **Run tstruct**: `cargo test -p piperine-transpile --test structure`

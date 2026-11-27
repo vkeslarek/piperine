@@ -49,6 +49,8 @@ crates/piperine-analog-solver/src/math/faer.rs::FaerToNdarray	1
 crates/piperine-analog-solver/src/math/faer.rs::Idx	2
 crates/piperine-analog-solver/src/math/faer.rs::b_vec	1
 crates/piperine-analog-solver/src/math/faer.rs::to_ndarray	1
+crates/piperine-analog-solver/src/math/integration.rs::TrBdf2	1
+crates/piperine-analog-solver/src/math/integration.rs::TrBdf2Phase	1
 crates/piperine-analog-solver/src/math/integration.rs::bdf2_coeffs	1
 crates/piperine-analog-solver/src/math/integration.rs::i	1
 crates/piperine-analog-solver/src/math/integration.rs::jump_coeffs	1
@@ -72,6 +74,7 @@ crates/piperine-analog-solver/src/math/mod.rs::newton_raphson	1
 crates/piperine-analog-solver/src/math/mod.rs::num	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::a_non_finite_solution_of_finite_stamps_is_e0503	1
+crates/piperine-analog-solver/src/math/newton_raphson.rs::add	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::assembly_ns	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::assembly_time_ns	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::rhs	1
@@ -95,6 +98,7 @@ crates/piperine-analog-solver/tests/assembly_small_signal.rs::a_stim_input_is_th
 crates/piperine-analog-solver/tests/assembly_small_signal.rs::an_rc_low_pass_has_its_corner	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::TolComparator	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::a_cap_of_minus_infinity_or_nan_is_e0509	1
+crates/piperine-analog-solver/tests/assembly_watch.rs::a_nan_cross_watch_is_unknown_and_never_fires	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::a_var_watch_is_readable_at_an_accepted_solution	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::accept_fails_with_e0509_on_an_invalid_cap	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::accept_fails_with_e0510_on_an_invalid_tolerance	1

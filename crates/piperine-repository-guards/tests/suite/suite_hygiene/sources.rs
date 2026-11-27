@@ -6,8 +6,6 @@
 //! contents)` shape over the same tree.
 
 use std::fs;
-use std::path::Path;
-
 use piperine_repository_guards::SourceTree;
 
 /// `suite_hygiene.rs` itself: it *spells* the forbidden patterns its own
@@ -53,7 +51,15 @@ impl SourceWalk {
         let root = SourceTree::workspace_root();
         let mut out = Vec::new();
         for base in ["crates", "src", "tests"] {
-            SourceWalk::collect(&root.join(base), &root, &mut out);
+            for path in SourceTree::rust_files_under(&root.join(base)) {
+                let relative = path.strip_prefix(&root).unwrap_or(&path).to_path_buf();
+                if relative.components().any(|part| part.as_os_str() == "target") || relative.to_string_lossy() == SELF {
+                    continue;
+                }
+                if let Ok(text) = fs::read_to_string(&path) {
+                    out.push((relative.to_string_lossy().to_string(), text));
+                }
+            }
         }
         assert!(
             out.len() > 100,
@@ -61,27 +67,6 @@ impl SourceWalk {
             out.len()
         );
         out
-    }
-
-    pub fn collect(dir: &Path, root: &Path, out: &mut Vec<(String, String)>) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            if path.is_dir() {
-                if name != "target" && name != ".git" {
-                    SourceWalk::collect(&path, root, out);
-                }
-            } else if path.extension().is_some_and(|e| e == "rs") {
-                let rel = path.strip_prefix(root).unwrap_or(&path).to_string_lossy().to_string();
-                if rel == SELF {
-                    continue;
-                }
-                if let Ok(text) = fs::read_to_string(&path) {
-                    out.push((rel, text));
-                }
-            }
-        }
     }
 
     /// Every integration-test target: `crates/*/tests/*.rs`, root `tests/*.rs` and a root

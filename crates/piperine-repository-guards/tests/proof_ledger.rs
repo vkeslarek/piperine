@@ -16,15 +16,18 @@ static LEDGER: OnceLock<ProofLedger> = OnceLock::new();
 struct LedgerGuard;
 
 impl LedgerGuard {
+    /// The shared ledger.
     fn ledger() -> &'static ProofLedger {
         LEDGER.get_or_init(ProofLedger::of_workspace)
     }
 
+    /// The text of a file of the guards crate.
     fn crate_file(relative: &str) -> String {
         let path = Self::ledger().root().join("crates/piperine-repository-guards").join(relative);
         std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
     }
 
+    /// The rows of `allowances/proof_ledger.tsv`.
     fn allowed_rows() -> BTreeSet<String> {
         Self::crate_file("allowances/proof_ledger.tsv").lines().filter(|l| !l.is_empty() && !l.starts_with('#')).map(str::to_string).collect()
     }

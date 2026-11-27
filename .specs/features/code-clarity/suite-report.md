@@ -3,7 +3,7 @@
 The numbers of the test suite before and after the feature (CC-12 AC 1, AC 6). The census columns are
 taken by `SuiteCensus::take()` of `piperine-repository-guards` (a static count of the sources: targets
 `cargo test` runs, `#[test]` functions in them and in `src/`, targets of three tests or fewer, lines under
-`tests/`); the two timing columns are measured.
+`tests/`). There is no build or run time column: the user decided the build needs no metric (user 2026-11-26: "O build não precisa de métrica... Tá de boa").
 
 ## Before
 
@@ -36,18 +36,6 @@ Against the inventory of `findings.md` 3.1 (taken before T2 and T5): `piperine-s
 generics-phase-E targets arrived with the base; `piperine-parity` is 62 targets and `piperine-cli`
 10 with 195 tests for the same reason. The guards crate holds 8 targets (`boundaries`, `documentation`,
 `naming`, `ownership`, `proof_ledger`, `structure`, `suite`, `worklists`) and 33 unit tests.
-
-### Timing columns: not taken at T8
-
-Two columns of `findings.md` 3.1 need the whole suite to compile cold and then to run serially:
-*Build CPU s* (`cargo test --workspace --no-run --timings`, a cold target directory) and *Run s* (one
-serial pass over every test executable, with ngspice). The rules of this lane forbid both at T8: the full
-suite runs once, at T155 (gate policy of 2026-11-23, `CLAUDE.md`), and a cold build needs a second target
-directory of about 15 GB on a disk that is at 82 %, or the deletion of the lane's target directory, which
-is a `cargo clean`. They are left to the coordinator: take them in the target directory of a lane that
-may run the suite, on the tree of the commit of this task, or accept the numbers of `findings.md` 3.1
-(1 561 CPU-seconds to build, 2 202 s to run, taken at `93c831ffc`) as the before values, which no task
-before T155 changes by more than the removal of the 62 tests and 2 targets counted above.
 
 ## After
 

@@ -35,23 +35,6 @@ impl Findings {
         crates
     }
 
-    /// Writes every crate's findings as `allowances/<crate>/<guard>.tsv`, replacing the file; a crate
-    /// with no finding has its file removed. Used once per guard, to seed a ratchet.
-    pub fn seed(&self, guard: &str) {
-        for crate_name in SourceTree::crate_names() {
-            let path = SourceTree::guards_directory().join("allowances").join(&crate_name).join(format!("{guard}.tsv"));
-            match self.by_crate.get(&crate_name) {
-                Some(found) => {
-                    std::fs::create_dir_all(path.parent().expect("a file has a directory")).expect("create the allowance directory");
-                    std::fs::write(&path, Allowance::render(found)).expect("write the allowance");
-                }
-                None => {
-                    let _ = std::fs::remove_file(&path);
-                }
-            }
-        }
-    }
-
     /// Judges every crate's findings against `allowances/<crate>/<guard>.tsv`.
     pub fn judge(&self, guard: &str) -> AllowanceVerdict {
         let mut verdict = AllowanceVerdict::default();
@@ -95,15 +78,17 @@ impl Allowance {
     /// Reads `allowances/<crate_name>/<guard>.tsv` of the guards crate; a missing file is an empty allowance.
     pub fn read(crate_name: &str, guard: &str) -> Allowance {
         let path: PathBuf = SourceTree::guards_directory().join("allowances").join(crate_name).join(format!("{guard}.tsv"));
-        let text = std::fs::read_to_string(path).unwrap_or_default();
-        Allowance::parse(&text)
+        let text = std::fs::read_to_string(&path).unwrap_or_default();
+        Allowance::parse(&path.display().to_string(), &text)
     }
 
-    /// Parses the rows of an allowance file; `#` lines and blank lines are comments.
-    pub fn parse(text: &str) -> Allowance {
+    /// Parses the rows of an allowance file called `origin`; `#` lines and blank lines are comments.
+    /// A row that is not `key<TAB>count` is a panic naming the file and the line.
+    pub fn parse(origin: &str, text: &str) -> Allowance {
         let mut rows = BTreeMap::new();
-        for line in text.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')) {
-            let (key, count) = line.rsplit_once('\t').map_or((line, 1), |(key, count)| (key, count.trim().parse().unwrap_or(1)));
+        for (index, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty() && !line.starts_with('#')) {
+            let parsed = line.rsplit_once('\t').and_then(|(key, count)| Some((key, count.trim().parse::<usize>().ok()?)));
+            let Some((key, count)) = parsed else { panic!("{origin}:{}: `{line}` is not `key<TAB>count`", index + 1) };
             rows.insert(key.to_string(), count);
         }
         Allowance { rows }
@@ -150,7 +135,7 @@ mod tests {
 
     #[test]
     fn a_violation_the_allowance_does_not_list_fails() {
-        let allowance = Allowance::parse("a.rs::old\t1\n");
+        let allowance = Allowance::parse("test", "a.rs::old\t1\n");
         let verdict = allowance.judge(&["a.rs::old".to_string(), "b.rs::new".to_string()]);
         assert_eq!(verdict.unlisted, vec!["b.rs::new\t1".to_string()]);
         assert!(verdict.stale.is_empty());
@@ -158,7 +143,7 @@ mod tests {
 
     #[test]
     fn a_listed_row_that_no_longer_exists_fails() {
-        let allowance = Allowance::parse("a.rs::old\t1\na.rs::closed\t1\n");
+        let allowance = Allowance::parse("test", "a.rs::old\t1\na.rs::closed\t1\n");
         let verdict = allowance.judge(&["a.rs::old".to_string()]);
         assert_eq!(verdict.stale, vec!["a.rs::closed\t1".to_string()]);
         assert!(verdict.unlisted.is_empty());
@@ -166,7 +151,7 @@ mod tests {
 
     #[test]
     fn a_repeated_violation_is_counted_both_ways() {
-        let allowance = Allowance::parse("a.rs::dup\t2\n");
+        let allowance = Allowance::parse("test", "a.rs::dup\t2\n");
         let twice = ["a.rs::dup".to_string(), "a.rs::dup".to_string()];
         assert_eq!(allowance.judge(&twice), AllowanceVerdict::default());
         assert_eq!(allowance.judge(&twice[..1]).stale, vec!["a.rs::dup\t2".to_string()]);
@@ -175,10 +160,16 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "allowance.tsv:2")]
+    fn a_malformed_count_fails_loud_naming_the_file_and_line() {
+        Allowance::parse("allowance.tsv", "a.rs::one\t1\nb.rs::two\tmany\n");
+    }
+
+    #[test]
     fn a_seeded_file_judges_clean() {
         let found = vec!["x::b".to_string(), "x::a".to_string(), "x::a".to_string()];
         let text = Allowance::render(&found);
         assert_eq!(text, "x::a\t2\nx::b\t1\n");
-        assert_eq!(Allowance::parse(&text).judge(&found), AllowanceVerdict::default());
+        assert_eq!(Allowance::parse("test", &text).judge(&found), AllowanceVerdict::default());
     }
 }

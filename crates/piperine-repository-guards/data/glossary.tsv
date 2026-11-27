@@ -93,24 +93,3 @@ bool	boolean type
 str	string type
 eval	evaluate, the ABI contract's own word
 spec	specification, as the ABI's descriptions are named
-tr	trapezoidal, as in TR-BDF2
-add	the addition trait
-sub	the subtraction trait
-mul	the multiplication trait
-div	the division trait
-neg	the negation trait
-ord	the ordering trait
-nan	not a number
-ok	the success variant
-mod	the module keyword
-async	a keyword
-dyn	a keyword
-extern	a keyword
-inf	infinity
-cfg	the conditional compilation attribute
-doc	a doc comment
-docs	doc comments, as in the missing_docs lint
-dev	development, as in dev-dependencies
-vams	the retired Verilog-AMS corpus
-piperine	the product name
-impls	implementations

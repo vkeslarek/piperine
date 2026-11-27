@@ -161,6 +161,24 @@ impl FeatureFile {
         Some((format!("C{}", &rest[..digits_end]), claim.trim().to_string()))
     }
 
+    /// The backticked commands of a `**Build**:` line, in order; `None` when the line is no build line.
+    pub fn parse_build(line: &str) -> Option<Vec<String>> {
+        let rest = Self::after_label(line, "Build")?;
+        let after = rest.trim_start_matches(|c: char| c == '*' || c.is_whitespace()).strip_prefix(':')?;
+        Some(after.split('`').skip(1).step_by(2).map(str::to_string).collect())
+    }
+
+    /// Every command of every build line, with the line number.
+    pub fn build_commands(&self) -> Vec<(usize, String)> {
+        let mut commands = Vec::new();
+        for (number, line) in self.unfenced_lines() {
+            for command in Self::parse_build(line).unwrap_or_default() {
+                commands.push((number, command));
+            }
+        }
+        commands
+    }
+
     /// Parses a `Proof: <proof>` line into its text.
     pub fn parse_proof(line: &str) -> Option<String> {
         let rest = Self::after_label(line, "Proof")?;
@@ -247,6 +265,7 @@ mod tests {
     struct Scenario;
 
     impl Scenario {
+        /// One feature file over a small text.
         fn file(text: &str) -> FeatureFile {
             FeatureFile::new(PathBuf::from("tasks.md"), "demo", text.to_string())
         }
@@ -269,6 +288,13 @@ mod tests {
         assert_eq!(FeatureFile::test_named_by("test merged::inner::it_holds ... ok").as_deref(), Some("it_holds"));
         assert_eq!(FeatureFile::test_named_by("test inventory_guard:: ... ok"), None);
         assert_eq!(FeatureFile::test_named_by("result ok"), None);
+    }
+
+    #[test]
+    fn a_build_line_yields_its_backticked_commands() {
+        let line = "**Build**: `cargo build -p a 2>&1 | tee x`; `cargo test -p a --test t`";
+        assert_eq!(FeatureFile::parse_build(line), Some(vec!["cargo build -p a 2>&1 | tee x".to_string(), "cargo test -p a --test t".to_string()]));
+        assert_eq!(FeatureFile::parse_build("**Builder**: x"), None);
     }
 
     #[test]

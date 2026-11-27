@@ -12,7 +12,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 
 **Design**: `.specs/features/composite-values/design-d.md`
 **Status**: Draft (awaiting the user's approval; QD1 to QD8 are defaults the user may overrule)
-**Build**: `cargo build -p piperine-numbers -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-numbers -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run purity**: `cargo test -p piperine-numbers --test purity`
 **Run integers**: `cargo test -p piperine-numbers --test integers`
 **Run formats**: `cargo test -p piperine-numbers --test formats`

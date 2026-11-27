@@ -55,11 +55,16 @@ impl SolverCrates {
     }
 }
 
+/// The analog sub-solver crate.
 const ANALOG: &str = "piperine-analog-solver";
+/// The digital sub-solver crate.
 const DIGITAL: &str = "piperine-digital-solver";
+/// The owner crate over both sub-solvers.
 const OWNER: &str = "piperine-solver";
+/// The device ABI crate every sub-solver depends on.
 const ABI: &str = "piperine-abi";
 
+/// The modules the analog sub-solver holds.
 const ANALOG_MODULES: &[&str] = &[
     "error.rs",
     "math/mod.rs",
@@ -78,6 +83,7 @@ const ANALOG_MODULES: &[&str] = &[
     "crossing.rs",
 ];
 
+/// The modules the digital sub-solver holds.
 const DIGITAL_MODULES: &[&str] = &[
     "advance.rs",
     "dag.rs",

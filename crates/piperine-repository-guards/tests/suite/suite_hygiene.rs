@@ -198,6 +198,7 @@ impl RootTargetRules {
             .collect()
     }
 
+    /// The reason a root target is exempt from the naming rule, when it is.
     fn registered_root_exemption(file: &str) -> Option<&'static str> {
         ROOT_TARGET_EXEMPTIONS.iter().find(|(name, _)| *name == file).map(|(_, why)| *why)
     }
@@ -247,6 +248,7 @@ impl PhdlCorpus {
         out
     }
 
+    /// Appends every `.phdl` or `.ppr` file under `dir` to `out`.
     fn collect_phdl(dir: &Path, out: &mut Vec<PathBuf>) {
         let Ok(entries) = fs::read_dir(dir) else { return };
         for entry in entries.flatten() {
@@ -1006,8 +1008,12 @@ fn root_targets_match_the_naming_rule() {
          exercising one crate alone lives in that crate):\n  {}",
         offences.join("\n  ")
     );
-    let expected: Vec<String> =
+    let mut expected: Vec<String> =
         ROOT_TARGET_EXEMPTIONS.iter().map(|(name, _)| (*name).to_string()).collect();
+    // the walk is in path order, the registry in the order its reasons were written: compare as sets
+    expected.sort();
+    let mut exempted = exempted;
+    exempted.sort();
     assert_eq!(
         exempted, expected,
         "the exempted root-target set changed — record the exemption's reason in \

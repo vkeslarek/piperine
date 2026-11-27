@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/root-e2e/design.md`
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
-**Build**: `cargo build -p piperine -p piperine-parity -p piperine-cli -p piperine-api --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape`
+**Build**: `cargo build -p piperine -p piperine-parity -p piperine-cli -p piperine-api --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run inventory**: `cargo test --test book_inventory`
 **Run claims**: `cargo test --test book_claims`
 **Run errors**: `cargo test --test book_errors`

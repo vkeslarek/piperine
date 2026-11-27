@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/resolved-nets/design.md`
 **Status**: In Progress - B1 and B2 (T1 to T10) done and on `main`; B3 onward (T11 to T39) re-planned 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan and of spec Q2 to Q4
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 and B2 as planned then; the re-plan of B3 onward has no approval yet)
-**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run typesnatures**: `cargo test -p piperine-lang --test types_natures`
 **Run elabnatures**: `cargo test -p piperine-lang --test elab_natures`
 **Run sourcenatures**: `cargo test -p piperine-parity --test source_natures`

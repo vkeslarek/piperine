@@ -14,10 +14,12 @@ static SCAN: OnceLock<ItemScan> = OnceLock::new();
 struct OwnershipGuards;
 
 impl OwnershipGuards {
+    /// The shared scan.
     fn scan() -> &'static ItemScan {
         SCAN.get_or_init(|| ItemScan::of(&SourceTree::of_workspace()))
     }
 
+    /// Fails when the findings differ from the guard's allowances.
     fn assert_clean(guard: &str, findings: Findings) {
         findings.judge(guard).assert_clean(guard);
     }

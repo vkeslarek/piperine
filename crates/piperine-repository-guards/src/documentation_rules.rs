@@ -9,6 +9,7 @@ use crate::source_tree::SourceTree;
 pub struct DocumentationRules;
 
 impl DocumentationRules {
+    /// The item kinds that must carry a doc comment.
     const DOCUMENTED: [ScannedKind; 5] = [ScannedKind::Type, ScannedKind::Trait, ScannedKind::Method, ScannedKind::FreeFunction, ScannedKind::NestedFunction];
 
     /// Every type, trait, function and method of product code is documented; a method of a trait

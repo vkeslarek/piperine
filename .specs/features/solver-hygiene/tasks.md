@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/solver-hygiene/design.md`
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
-**Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-parity -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`; `cargo test -p piperine-solver --test workspace_shape --test crate_boundaries`
+**Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-parity -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run deviationlib**: `cargo test -p piperine-parity --lib deviation`
 **Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`
 **Run parity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
