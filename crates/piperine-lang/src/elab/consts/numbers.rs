@@ -23,7 +23,7 @@ use super::floats::Ieee754;
 use super::integers::DynamicInteger;
 use super::{ConstEval, ConstFault};
 use crate::refusal::forms::ConstantForm;
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 use crate::pom::{BinOp, ExprId, LitKind, UnOp};
 use crate::types::{FloatText, Method, Ty};
 
@@ -97,7 +97,7 @@ impl ConstEval<'_, '_> {
         }
         let (width, signed) = ty.integer_shape().filter(|(width, _)| *width > 64)?;
         let LitKind::Int(text) = kind else { return None };
-        let value = lexer::int_value(text)?;
+        let value = NumberLiteral::new(text).int_value()?;
         let integer = DynamicInteger::from_pattern(width, signed, &[value as u64, (value >> 64) as u64]);
         Some(Ok(self.wide_constant(&integer)))
     }
@@ -106,7 +106,7 @@ impl ConstEval<'_, '_> {
     /// `f64` the suffix scaled.
     fn float_literal(&self, expr: ExprId, kind: &LitKind, format: BinaryFormat) -> Result<Constant, ConstFault> {
         let nearest = match kind {
-            LitKind::Float { value, raw } if !lexer::float_suffix(raw).is_empty() && lexer::float_suffix(raw) != "f32" => {
+            LitKind::Float { value, raw } if !NumberLiteral::new(raw).float_suffix().is_empty() && NumberLiteral::new(raw).float_suffix() != "f32" => {
                 Some(NumberConversion::float_to_float(BinaryFormat::DOUBLE, u128::from(value.to_bits()), format))
             }
             LitKind::Float { raw, .. } => DecimalText::nearest(&Self::digits(raw), format),

@@ -15,6 +15,6 @@ pub mod print;
 pub mod span;
 
 pub use diag::{Diagnostic, render};
-pub use lexer::{lex, lex_bytes};
+pub use lexer::Lexer;
 pub use print::print;
 pub use span::Span;

@@ -13,7 +13,7 @@
 use std::cell::RefCell;
 
 use super::ast::File;
-use super::lexer::{Punct, Token, lex_with_comments};
+use super::lexer::{Lexer, Punct, Token};
 use super::print::{Close, Hooks, Printer, Shape};
 use super::span::Span;
 
@@ -39,7 +39,7 @@ impl Comments {
     /// The plain comments of `src`. The tokens, the doc comments and the
     /// diagnostics of the lexer are not changed by this list.
     pub fn of(src: &str) -> Comments {
-        let (_, _, spans) = lex_with_comments(src);
+        let (_, _, spans) = Lexer::lex_with_comments(src);
         let list = spans
             .into_iter()
             .map(|span| {
@@ -163,7 +163,7 @@ impl Comments {
     pub fn attach(&self, file: &File, src: &str) -> Attached {
         let layout = Layout::default();
         Printer::new(&layout).file(file);
-        let (tokens, _, _) = lex_with_comments(src);
+        let (tokens, _, _) = Lexer::lex_with_comments(src);
         let mut attached = Attached { anchors: Vec::new(), verbatim: Vec::new(), tokens, len: src.len() };
         let kids = layout.kids.into_inner();
         let members = layout.members.into_inner();

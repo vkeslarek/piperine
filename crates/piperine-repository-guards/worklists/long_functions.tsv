@@ -63,8 +63,6 @@ crates/piperine-lang/src/elab/place.rs::Elaboration::place_instance	-
 crates/piperine-lang/src/elab/records.rs::Elaboration::lower_emit	-
 crates/piperine-lang/src/elab/returns.rs::Elaboration::lower_inlined_option_call	-
 crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
-crates/piperine-lang/src/msl/lexer.rs::::classify_number	-
-crates/piperine-lang/src/msl/lexer.rs::::lex_with_comments	-
 crates/piperine-lang/src/msl/parser/check.rs::::expr_inner	-
 crates/piperine-lang/src/msl/parser/check.rs::::stmt	-
 crates/piperine-lang/src/msl/parser/entry.rs::::lex_limited	-

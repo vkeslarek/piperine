@@ -377,7 +377,7 @@ fn the_printer_and_the_object_model_hold_no_removed_form() {
     }
     for (label, src) in sources() {
         let printed = print(&parsed(&label, &src));
-        let (tokens, _) = piperine_lang::msl::lexer::lex(&printed);
+        let (tokens, _) = piperine_lang::msl::lexer::Lexer::lex(&printed);
         let marker = tokens.iter().find(|(t, _)| matches!(t, piperine_lang::msl::lexer::Token::Kw(piperine_lang::msl::lexer::Kw::Mut | piperine_lang::msl::lexer::Kw::Ref | piperine_lang::msl::lexer::Kw::Move)));
         assert!(marker.is_none(), "{label}: the printer wrote a marker: {marker:?}");
     }

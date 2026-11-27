@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use super::ids::{CrateId, DeclId, FileId};
-use crate::msl::lexer::{Token, lex};
+use crate::msl::lexer::{Lexer, Token};
 
 /// One crate of a graph: its name, its root file and its named dependencies.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -60,7 +60,7 @@ pub fn is_crate_name(name: &str) -> bool {
     if name == "std" {
         return false;
     }
-    let (tokens, diagnostics) = lex(name);
+    let (tokens, diagnostics) = Lexer::lex(name);
     diagnostics.is_empty() && matches!(tokens.as_slice(), [(Token::Ident(text), _)] if text == name)
 }
 

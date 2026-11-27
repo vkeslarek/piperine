@@ -4,7 +4,7 @@
 
 use crate::refusal::forms::ValueForm;
 use crate::refusal::RefusedForm;
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack::Stack;
@@ -103,7 +103,7 @@ impl Checker<'_> {
                     self.integer_literal(file, node.span, text, Some(expected), false)
                 }
                 // `1.5` where a float type is expected takes that type (§1.4.2); one past the type's range is `E0909`.
-                ExprKind::Lit(lit) if expected.is_float() && matches!(&lit.kind, LitKind::Float { raw, .. } if lexer::float_suffix(raw).is_empty()) => {
+                ExprKind::Lit(lit) if expected.is_float() && matches!(&lit.kind, LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix().is_empty()) => {
                     let LitKind::Float { raw, .. } = &lit.kind else { return };
                     self.check_float_literal(file, node.span, raw, expected);
                     Some(expected.clone())
@@ -429,7 +429,7 @@ impl Checker<'_> {
         if lhs_read != rhs_read {
             return if lhs_read { (rhs, lhs) } else { (lhs, rhs) };
         }
-        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| lexer::int_suffix_text(&t).is_empty()) || this.open_literal_local(e).is_some();
+        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| NumberLiteral::new(&t).int_suffix_text().is_empty()) || this.open_literal_local(e).is_some();
         // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
         // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
         if bare(self, lhs) && !bare(self, rhs) || self.bare_float_literal(lhs) && !self.bare_float_literal(rhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
@@ -525,13 +525,13 @@ impl Checker<'_> {
     fn literal(&mut self, kind: &LitKind, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
         match kind {
             // §1.4.2: a suffix gives the type; an SI-suffixed literal is always an `f64` (A.2 rule 1)
-            LitKind::Float { raw, .. } if lexer::float_suffix(raw) == "f32" => {
+            LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix() == "f32" => {
                 self.check_float_literal(file, span, raw, &Ty::F32);
                 Some(Ty::F32)
             }
             // an unsuffixed literal with no expected type is an `f64`: one past `f64`'s range is `E0909` (A.8 rule 8, QD5)
             LitKind::Float { raw, .. } => {
-                if lexer::float_suffix(raw).is_empty() {
+                if NumberLiteral::new(raw).float_suffix().is_empty() {
                     self.check_float_literal(file, span, raw, &Ty::F64);
                 }
                 Some(Ty::F64)
@@ -554,7 +554,7 @@ impl Checker<'_> {
     /// range is `E0909`; a suffix outside the subset (`u128`, `f32`) is `P0001` naming it. With
     /// `negated` the literal is the operand of a unary `-`.
     pub(super) fn integer_literal(&mut self, file: FileId, span: Span, text: &str, expected: Option<&Ty>, negated: bool) -> Option<Ty> {
-        let suffix = lexer::int_suffix_text(text);
+        let suffix = NumberLiteral::new(text).int_suffix_text();
         let ty = match suffix {
             "" => expected.cloned().unwrap_or(Ty::Int(32)),
             _ => {
@@ -578,7 +578,7 @@ impl Checker<'_> {
         {
             return Some(ty);
         }
-        let value = lexer::int_value(text);
+        let value = NumberLiteral::new(text).int_value();
         if let (Some(value), Some(max)) = (value, ty.literal_max(negated))
             && value > max
         {
@@ -613,7 +613,7 @@ impl Checker<'_> {
 
     /// Whether `expr` is an integer literal with no suffix: its type comes from its position.
     pub(super) fn integer_literal_waits(&self, expr: ExprId) -> bool {
-        self.integer_literal_text(expr).is_some_and(|t| lexer::int_suffix_text(&t).is_empty())
+        self.integer_literal_text(expr).is_some_and(|t| NumberLiteral::new(&t).int_suffix_text().is_empty())
     }
 
     /// The resolution of the callee of the call `expr`.

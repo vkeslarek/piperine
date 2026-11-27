@@ -575,7 +575,7 @@ fn angle_pairs(tokens: &[(Token, Span)]) -> Vec<bool> {
 /// `E0910` is reported, so the parser stays shallow in nesting and every tree
 /// walk grows its stack only along a chain.
 fn lex_limited(src: &str) -> (Vec<(Token, Span)>, Vec<Diagnostic>) {
-    let (tokens, mut diags) = lex(src);
+    let (tokens, mut diags) = Lexer::lex(src);
     let tokens = drop_dangling_docs(tokens, &mut diags);
     // An unterminated string or comment swallows the rest of the file: the
     // delimiters it hid are not a second fault.
@@ -685,7 +685,7 @@ pub fn parse_bytes(bytes: &[u8]) -> ParseResult {
         Ok(src) => parse(src),
         Err(_) => ParseResult {
             file: File { inner_docs: Vec::new(), items: Vec::new(), span: Loc(Span::new(0, 0)) },
-            diagnostics: lex_bytes(bytes).1,
+            diagnostics: Lexer::lex_bytes(bytes).1,
         },
     }
 }

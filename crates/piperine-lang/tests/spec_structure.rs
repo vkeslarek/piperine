@@ -15,7 +15,7 @@ use spec_tables::{section, table_rows};
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::msl::lexer::{Kw, Punct, Token, lex};
+use piperine_lang::msl::lexer::{Kw, Lexer, Punct, Token};
 
 /// The pages of the specification and what the guards below read from them.
 struct Specification;
@@ -106,7 +106,7 @@ impl Specification {
         let (mut called, mut declared) = (BTreeMap::new(), BTreeSet::new());
         // A `compile_fail` fence shows what is rejected; it catalogues nothing.
         for block in spec_corpus::corpus().into_iter().filter(|b| b.class != spec_corpus::Class::CompileFail) {
-            let (tokens, _) = lex(&block.text);
+            let (tokens, _) = Lexer::lex(&block.text);
             for w in tokens.windows(3) {
                 if let (Token::Punct(Punct::Dot), Token::Ident(n), Token::Punct(Punct::LParen)) = (&w[0].0, &w[1].0, &w[2].0) {
                     called.entry(n.clone()).or_insert_with(|| format!("{}:{}", block.file, block.line));

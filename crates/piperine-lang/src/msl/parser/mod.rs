@@ -9,7 +9,7 @@ use chumsky::prelude::*;
 
 use super::ast::*;
 use super::diag::Diagnostic;
-use super::lexer::{Kw, Punct, Token, lex, lex_bytes};
+use super::lexer::{Kw, Lexer, Punct, Token};
 use super::span::Span;
 
 mod base;

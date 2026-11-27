@@ -260,7 +260,7 @@ impl Checker<'_> {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.literal_number(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
-                LitKind::Int(text) => crate::msl::lexer::int_value(text).and_then(|v| i128::try_from(v).ok()).map(Number::Int),
+                LitKind::Int(text) => crate::msl::lexer::NumberLiteral::new(text).int_value().and_then(|v| i128::try_from(v).ok()).map(Number::Int),
                 LitKind::Float { value, .. } => Some(Number::Float(*value)),
                 _ => None,
             },

@@ -3,7 +3,7 @@
 //! `ConstEval` reads the finished type table, so it cannot decide these; this folder takes what a
 //! literal, a parenthesis, an `as` cast, integer arithmetic and the name of a `const` give.
 
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, LitKind, Resolution};
 
 use super::widths::FloatText;
@@ -97,7 +97,7 @@ impl IntegerFolder<'_> {
         let nesting = nesting.checked_sub(1)?;
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match &lit.kind {
-                LitKind::Int(text) if !FloatText::is(text) => lexer::int_value(text),
+                LitKind::Int(text) if !FloatText::is(text) => NumberLiteral::new(text).int_value(),
                 _ => None,
             },
             ExprKind::Paren(inner) | ExprKind::Cast { expr: inner, .. } => self.fold(*inner, nesting),

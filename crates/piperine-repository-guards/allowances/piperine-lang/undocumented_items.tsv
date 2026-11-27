@@ -74,14 +74,6 @@ crates/piperine-lang/src/msl/diag.rs::Diagnostic::with_help	1
 crates/piperine-lang/src/msl/diag.rs::Diagnostic::with_label	1
 crates/piperine-lang/src/msl/format.rs::Formatter::internal	1
 crates/piperine-lang/src/msl/format.rs::Placement::new	1
-crates/piperine-lang/src/msl/lexer.rs::::classify_ident	1
-crates/piperine-lang/src/msl/lexer.rs::::dropped_class	1
-crates/piperine-lang/src/msl/lexer.rs::::is_type_suffix	1
-crates/piperine-lang/src/msl/lexer.rs::::si_letter	1
-crates/piperine-lang/src/msl/lexer.rs::::unknown_suffix	1
-crates/piperine-lang/src/msl/lexer.rs::Kw::as_str	1
-crates/piperine-lang/src/msl/lexer.rs::Kw::from_str	1
-crates/piperine-lang/src/msl/lexer.rs::Punct::as_str	1
 crates/piperine-lang/src/msl/parser/base.rs::::delim_close	1
 crates/piperine-lang/src/msl/parser/base.rs::::delim_open	1
 crates/piperine-lang/src/msl/parser/base.rs::::handles	1

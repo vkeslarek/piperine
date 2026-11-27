@@ -1229,9 +1229,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate's row for the file leaves the free-function allowance; `long_functions.tsv` rows of the file have a verdict
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The crate's row for the file leaves the free-function allowance; `long_functions.tsv` rows of the file have a verdict
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

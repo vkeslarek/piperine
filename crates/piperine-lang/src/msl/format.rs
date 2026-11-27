@@ -20,7 +20,7 @@ use std::collections::HashMap;
 
 use super::comments::{Anchor, Attached, Comment, Comments};
 use super::diag::Diagnostic;
-use super::lexer::lex;
+use super::lexer::Lexer;
 use super::parser::parse;
 use super::print::{Close, Hooks, Printer, Shape};
 use super::span::Span;
@@ -108,7 +108,7 @@ impl<'a> Placement<'a> {
         for c in comments {
             mask[c.span.range()].fill(b'c');
         }
-        let (tokens, _) = lex(src);
+        let (tokens, _) = Lexer::lex(src);
         let protected = tokens
             .iter()
             .map(|(_, s)| *s)

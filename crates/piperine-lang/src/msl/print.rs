@@ -478,7 +478,7 @@ impl<'h> Printer<'h> {
             LitKind::Float { raw, .. } => raw.clone(),
             LitKind::Str { text, raw_hashes: Some(n) } => {
                 let hashes = "#".repeat(usize::from(*n));
-                let body = super::lexer::unescape(text).0;
+                let body = super::lexer::Lexer::unescape(text).0;
                 format!("r{hashes}\"{body}\"{hashes}")
             }
             LitKind::Str { text, raw_hashes: None } => format!("\"{}\"", enc(text)),
