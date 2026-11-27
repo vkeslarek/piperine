@@ -5,23 +5,17 @@
 //! the same circuit; an invalid `ttol` or `etol` is `E0510`, an invalid step cap `E0509`.
 
 use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::solver_devices::crossing_rules::{Riser, ToleranceWatch};
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
-use piperine_device_fixtures::partials::PartialsCheck;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, F64, HIGH, LOW};
-use piperine_abi::raw::{Cell, GROUND, Module, Partial, Shape, Statement, cell, global, op, part, pin_flag, role, watch};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
-use piperine_abi::thunk::module;
+use piperine_abi::layout::{HIGH, LOW};
+use piperine_abi::raw::Module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Context, Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
-
-const ORIGIN: &str = "crossing_rules.rs";
 
 struct Collect(Rc<RefCell<Vec<Observation>>>);
 
@@ -29,73 +23,6 @@ impl Sink for Collect {
     fn observe(&mut self, o: &Observation) {
         self.0.borrow_mut().push(o.clone());
     }
-}
-
-// ─── Devices ────────────────────────────────────────────────────────────────
-
-/// A source of 0 V that a reaction on `START` raises to 1 V: the operating point's first
-/// round solves 0 V, the instant after it commits `hi`, and the next round solves 1 V.
-/// pins: p=0 (PORT continuous); f=1 (PRIVATE continuous); hi=2 (PRIVATE BIT, init LOW);
-///       start=3 (GLOBAL START)
-/// terms: T0 FLOW{p, GROUND} "i" = f, T1 FLOW{f, GROUND} "eq" = v(p) − (hi ? 1 : 0)
-/// fn 0: reads [p, f, hi] writes [T0, T1] partials (0<-f) (1<-p)
-/// reaction 0: on [start] writes [S0 {hi}]; hi <- HIGH, no delay
-struct Riser;
-static RISER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static RISER: OnceLock<Module> = OnceLock::new();
-
-impl Device for Riser {
-    fn prototype() -> &'static Shape<'static> {
-        RISER_SHAPE.get_or_init(CrossingRulesCases::riser_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Riser, Arc::clone(RISER_SHAPE.get_or_init(CrossingRulesCases::riser_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let level = if cx.bytes(2) == HIGH { 1.0 } else { 0.0 };
-        cx.set(0, cx.f64(1));
-        cx.set(1, cx.f64(0) - level);
-        cx.jac().copy_from_slice(&[1.0, 1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        cx.commit(0, &HIGH, 0.0)?;
-        Ok(Flow::Continue)
-    }
-}
-
-/// A comparator whose `ttol` and `etol` are its own params (abi.md §3 `Watch { ttol, etol }`).
-/// pins: ttol=0, etol=1 (PARAM F64, 1 ps); inp=2, inn=3 (PORT continuous); up=4 (PRIVATE event)
-/// watches: W0 CROSS "rise" -> up, tolerances from pins 0 and 1
-/// fn 0: reads [inp, inn] writes [W0] partials (0<-0) (0<-1)
-struct TolComparator;
-static TOL_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static TOL: OnceLock<Module> = OnceLock::new();
-const ONE_PS: [u8; 8] = 1.0e-12f64.to_le_bytes();
-
-impl Device for TolComparator {
-    fn prototype() -> &'static Shape<'static> {
-        TOL_SHAPE.get_or_init(CrossingRulesCases::tol_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((TolComparator, Arc::clone(TOL_SHAPE.get_or_init(CrossingRulesCases::tol_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        cx.set(0, cx.f64(0) - cx.f64(1));
-        cx.jac().copy_from_slice(&[1.0, -1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// Every function of this target's own devices passes the partials verifier (the guard of
-/// `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Riser", CrossingRulesCases::riser());
-    PartialsCheck::verify_every_function("TolComparator", CrossingRulesCases::tol_comparator());
 }
 
 // ─── SCX-02 ─────────────────────────────────────────────────────────────────
@@ -209,69 +136,14 @@ impl CrossingRulesCases {
         Port::Net(name.to_string())
     }
 
-    /// The pin helper `pin`.
-    fn pin(index: u32) -> Cell {
-        Cell { kind: cell::PIN, index, part: part::VALUE }
-    }
-
-    /// The partial helper `partial`.
-    fn partial(write: u32, read: u32) -> Partial {
-        Partial { write, to: 0, read, at: 0 }
-    }
-
-    /// The riser shape helper `riser_shape`.
-    fn riser_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
-        let hi = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &LOW, ..PinSpec::discrete("hi", role::PRIVATE, &BIT) });
-        let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
-        let flow = |name, plus| TermSpec { name, origin: ORIGIN, op: op::FLOW, plus, minus: GROUND, abstol: piperine_abi::raw::DEFAULT, max: piperine_abi::raw::DEFAULT };
-        let t0 = s.term(flow("i", p));
-        let t1 = s.term(flow("eq", f));
-        let term = |index| Cell { kind: cell::TERM, index, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "v",
-            origin: ORIGIN,
-            reads: vec![CrossingRulesCases::pin(p), CrossingRulesCases::pin(f), CrossingRulesCases::pin(hi)],
-            writes: vec![term(t0), term(t1)],
-            partials: vec![CrossingRulesCases::partial(0, 1), CrossingRulesCases::partial(1, 0)],
-            ..FunctionSpec::default()
-        });
-        let st = Statement { pin: hi, offset: 0, len: 1, flags: 0, min_after: 0.0 };
-        s.reaction(ReactionSpec { name: "rise", origin: ORIGIN, on: vec![start], writes: vec![st], ..ReactionSpec::default() });
-        s.freeze()
-    }
-
     /// The riser helper `riser`.
     fn riser() -> &'static Module {
-        RISER.get_or_init(|| module::<Riser>("Riser"))
-    }
-
-    /// The tol shape helper `tol_shape`.
-    fn tol_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let param = |name, init| PinSpec { flags: pin_flag::HAS_INIT, init, ..PinSpec::discrete(name, role::PARAM, &F64) };
-        let ttol = s.pin(param("ttol", &ONE_PS));
-        let etol = s.pin(param("etol", &ONE_PS));
-        let inp = s.pin(PinSpec::continuous("inp", role::PORT));
-        let inn = s.pin(PinSpec::continuous("inn", role::PORT));
-        let up = s.pin(PinSpec::event("up", role::PRIVATE));
-        let w0 = s.watch(WatchSpec { name: "rise", origin: ORIGIN, kind: watch::CROSS, layout: &F64, event: up, ttol, etol });
-        s.function(FunctionSpec {
-            name: "e",
-            origin: ORIGIN,
-            reads: vec![CrossingRulesCases::pin(inp), CrossingRulesCases::pin(inn)],
-            writes: vec![Cell { kind: cell::WATCH, index: w0, part: part::VALUE }],
-            partials: vec![CrossingRulesCases::partial(0, 0), CrossingRulesCases::partial(0, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
+        Riser::module()
     }
 
     /// The tol comparator helper `tol_comparator`.
     fn tol_comparator() -> &'static Module {
-        TOL.get_or_init(|| module::<TolComparator>("TolComparator"))
+        ToleranceWatch::module()
     }
 
     // ─── SCX-03 ─────────────────────────────────────────────────────────────────

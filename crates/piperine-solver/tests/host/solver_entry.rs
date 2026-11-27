@@ -3,14 +3,8 @@
 //! including the typed `SolverDomain` failures.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::result::Result;
-use std::sync::{Arc, OnceLock};
+use piperine_device_fixtures::solver_devices::solver_entry::{BadElement};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Module, Shape, role};
-use piperine_abi::shape::{PinSpec, ShapeBuf, ShapeRef};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, Port};
 use piperine_solver::prelude::*;
 
@@ -32,43 +26,15 @@ fn test_solver_entry_point() {
     assert!((mid2 - 7.5).abs() < 1e-9);
 }
 
-/// A device whose creation fails: the error reaches the host at build.
-struct BadElement;
-static BAD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static BAD: OnceLock<Module> = OnceLock::new();
-
-impl Device for BadElement {
-    fn prototype() -> &'static Shape<'static> {
-        BAD_SHAPE.get_or_init(SolverEntryCases::bad_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        let _ = Arc::clone(BAD_SHAPE.get_or_init(SolverEntryCases::bad_shape));
-        Err(Fault::new(1, "setup error"))
-    }
-    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 #[test]
 fn test_solver_setup_error_propagation() {
     let mut b = CircuitBuilder::new("bad");
     let gnd = b.ground();
-    b.device(BAD.get_or_init(|| module::<BadElement>("BadElement")), "bad", &[], &[Port::Node(gnd)]);
+    b.device(BadElement::module(), "bad", &[], &[Port::Node(gnd)]);
     let result = b.build();
     assert!(result.is_err());
     let err_str = result.err().unwrap().to_string();
     assert!(err_str.contains("setup error"));
-}
-
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("BadElement", BAD.get_or_init(|| module::<BadElement>("BadElement")));
 }
 
 /// The helpers of the solver_entry tests.
@@ -87,10 +53,4 @@ impl SolverEntryCases {
         (b.build().expect("build"), mid)
     }
 
-    /// The bad shape helper `bad_shape`.
-    fn bad_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec::continuous("p", role::PORT));
-        s.freeze()
-    }
 }

@@ -6,88 +6,20 @@
 //! step whose target is the stop ends at the stop bit for bit.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::solver_devices::abi_tran::{ChargedC, FlakyC};
 use piperine_device_fixtures::circuits::Counting;
 use piperine_device_fixtures::mixed;
 use piperine_device_fixtures::digital;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::F64;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, ambient, cell, op, part, pin_flag, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
+use piperine_abi::raw::Module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::abi::InitialValue;
 use piperine_solver::prelude::{CircuitBuilder, Context, TransientAnalysisOptions};
 
 /// One tick of the session's default resolution, 1 fs.
 const TICK: f64 = 1.0e-15;
-
-// ---------------------------------------------------------------------------
-// ChargedC: the capacitor of `@initial { V(p, n) <- 3.0 }`
-// ---------------------------------------------------------------------------
-
-/// pins: c=0 (PARAM F64, 1e-6); p=1 (PORT, init 3.0); n=2 (PORT)
-/// terms: T0 DDT{p, n}; fn 0: reads [p, n, c] writes [T0]
-struct ChargedC;
-static CHARGED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static CHARGED_MODULE: OnceLock<Module> = OnceLock::new();
-const C_DEFAULT: [u8; 8] = 1.0e-6_f64.to_le_bytes();
 const INITIAL_VOLTAGE: f64 = 3.0;
-const V_INIT: [u8; 8] = INITIAL_VOLTAGE.to_le_bytes();
-
-impl Device for ChargedC {
-    fn prototype() -> &'static Shape<'static> {
-        CHARGED_SHAPE.get_or_init(AbiTranCases::charged_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((ChargedC, Arc::clone(CHARGED_SHAPE.get_or_init(AbiTranCases::charged_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let c = cx.f64(2);
-        cx.set(0, c * (cx.f64(0) - cx.f64(1)));
-        cx.jac().copy_from_slice(&[c, -c]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-// ---------------------------------------------------------------------------
-// FlakyC: the same capacitor, whose function faults late in time
-// ---------------------------------------------------------------------------
-
-/// `ChargedC` plus a read of `TIME`: the function returns a `FAULT` once the
-/// time passes `FLAKY_AFTER`, so a step's second stage fails after its first
-/// converged and pushed a row of every history.
-/// fn 0: reads [p, n, c, TIME] writes [T0]
-struct FlakyC;
-static FLAKY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static FLAKY_MODULE: OnceLock<Module> = OnceLock::new();
-const FLAKY_AFTER: f64 = 8.0e-6;
-
-impl Device for FlakyC {
-    fn prototype() -> &'static Shape<'static> {
-        FLAKY_SHAPE.get_or_init(AbiTranCases::flaky_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((FlakyC, Arc::clone(FLAKY_SHAPE.get_or_init(AbiTranCases::flaky_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        if cx.f64(3) > FLAKY_AFTER {
-            return Err(Fault::new(7, "late"));
-        }
-        let c = cx.f64(2);
-        cx.set(0, c * (cx.f64(0) - cx.f64(1)));
-        cx.jac().copy_from_slice(&[c, -c]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -259,15 +191,6 @@ fn a_rejected_stage_restores_the_term_history() {
     assert_ne!(running.bound().analog.snapshot(), still.bound().analog.snapshot());
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("ChargedC", CHARGED_MODULE.get_or_init(|| module::<ChargedC>("ChargedC")));
-    // TIME (read 3) before FLAKY_AFTER, where the fixture does not fault.
-    PartialsCheck::verify_every_function_with("FlakyC", FLAKY_MODULE.get_or_init(|| module::<FlakyC>("FlakyC")), &[(0, 3, 0.0)]);
-}
-
 #[test]
 fn the_transient_driver_iterates_with_the_plans_strategy() {
     // Every Newton solve of a run goes through the strategy of the plan the driver was given,
@@ -329,72 +252,15 @@ fn two_jumps_in_one_restart_step_restart_from_the_later() {
 pub struct AbiTranCases;
 
 impl AbiTranCases {
-    /// The pin helper `pin`.
-    fn pin(index: u32) -> Cell {
-        Cell { kind: cell::PIN, index, part: part::VALUE }
-    }
-
-    /// The term helper `term`.
-    fn term(index: u32) -> Cell {
-        Cell { kind: cell::TERM, index, part: part::VALUE }
-    }
-
-    /// The flow helper `flow`.
-    fn flow(name: &'static str, operator: u32, plus: u32, minus: u32) -> TermSpec<'static> {
-        TermSpec { name, origin: "abi_tran.rs", op: operator, plus, minus, abstol: DEFAULT, max: DEFAULT }
-    }
-
-    /// The charged shape helper `charged_shape`.
-    fn charged_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &C_DEFAULT, ..PinSpec::discrete("c", role::PARAM, &F64) });
-        let p = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &V_INIT, ..PinSpec::continuous("p", role::PORT) });
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(AbiTranCases::flow("q", op::DDT, p, n));
-        s.function(FunctionSpec {
-            name: "q",
-            origin: "abi_tran.rs",
-            reads: vec![AbiTranCases::pin(p), AbiTranCases::pin(n), AbiTranCases::pin(0)],
-            writes: vec![AbiTranCases::term(t0)],
-            partials: vec![
-                piperine_abi::raw::Partial { write: 0, to: 0, read: 0, at: 0 },
-                piperine_abi::raw::Partial { write: 0, to: 0, read: 1, at: 0 },
-            ],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 
     /// The charged c helper `charged_c`.
     fn charged_c() -> &'static Module {
-        CHARGED_MODULE.get_or_init(|| module::<ChargedC>("ChargedC"))
-    }
-
-    /// The flaky shape helper `flaky_shape`.
-    fn flaky_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &C_DEFAULT, ..PinSpec::discrete("c", role::PARAM, &F64) });
-        let p = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &V_INIT, ..PinSpec::continuous("p", role::PORT) });
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(AbiTranCases::flow("q", op::DDT, p, n));
-        let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "q",
-            origin: "abi_tran.rs",
-            reads: vec![AbiTranCases::pin(p), AbiTranCases::pin(n), AbiTranCases::pin(0), time],
-            writes: vec![AbiTranCases::term(t0)],
-            partials: vec![
-                piperine_abi::raw::Partial { write: 0, to: 0, read: 0, at: 0 },
-                piperine_abi::raw::Partial { write: 0, to: 0, read: 1, at: 0 },
-            ],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
+        ChargedC::module()
     }
 
     /// The flaky c helper `flaky_c`.
     fn flaky_c() -> &'static Module {
-        FLAKY_MODULE.get_or_init(|| module::<FlakyC>("FlakyC"))
+        FlakyC::module()
     }
 
     /// The RC of `rc_step_reads_one_minus_exp_on_devices` with the corner of the `ac_rc`/`tran_rc`

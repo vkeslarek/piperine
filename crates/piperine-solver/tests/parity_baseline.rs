@@ -11,86 +11,14 @@
 //! literals and tolerances are byte-identical to their pre-port originals.
 
 use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::solver_devices::parity_baseline::{DigitalSource, FixedDiode, GatedISink, SineVsrc, ThresholdComparator};
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::digital;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::{BIT, F64, HIGH, LOW};
-use piperine_abi::raw::{
-    Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, ambient, cell, global, op, part, pin_flag, role, watch,
-};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
-use piperine_abi::thunk::module;
+use piperine_abi::layout::{HIGH, LOW};
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions};
 use piperine_solver::prelude::AcSweepAnalysisOptions;
-
-const ORIGIN: &str = "parity_baseline.rs";
-
-// ─────────────────────────── Analog device doubles ───────────────────────────
-// The resistor, capacitor, DC source, AC source and inductor are those of
-// `helpers/abi_devices.rs`; the diode and the sine source keep this target's
-// own constants (`vt = 0.025_852`, `std::f64::consts::PI`).
-
-/// Shockley diode `i = is·(exp(v/vt) − 1)` between `p` and `n`, `vt = 0.025_852`.
-/// pins: p=0, n=1 (PORT); terms T0 FLOW{p, n}; fn 0: reads [p, n] writes [T0] partials (0<-0) (0<-1)
-struct Diode;
-static DIODE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-const IS: f64 = 1e-14;
-const VT: f64 = 0.025_852;
-
-impl Device for Diode {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&DIODE_SHAPE, ParityBaselineCases::diode_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Diode, Arc::clone(ParityBaselineCases::shared(&DIODE_SHAPE, ParityBaselineCases::diode_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let vd = cx.f64(0) - cx.f64(1);
-        let ex = (vd / VT).exp();
-        let gd = IS / VT * ex;
-        cx.set(0, IS * (ex - 1.0));
-        cx.jac().copy_from_slice(&[gd, -gd]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// Sine voltage source `amp·sin(2π·freq·t)` on a private branch current `f`;
-/// at the t=0 operating point it is `sin(0) = 0`.
-/// pins: p=0, n=1 (PORT); f=2 (PRIVATE); terms T0 FLOW{p, n}, T1 FLOW{f, GROUND}
-/// fn 0: reads [p, n, f, TIME] writes [T0, T1] partials (0<-f) (1<-p) (1<-n)
-struct SineVsrc;
-static SINE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-const AMP: f64 = 1.0;
-const FREQ: f64 = 1000.0;
-
-impl Device for SineVsrc {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&SINE_SHAPE, ParityBaselineCases::sine_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((SineVsrc, Arc::clone(ParityBaselineCases::shared(&SINE_SHAPE, ParityBaselineCases::sine_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let v = AMP * (2.0 * std::f64::consts::PI * FREQ * cx.f64(3)).sin();
-        cx.set(0, cx.f64(2));
-        cx.set(1, cx.f64(0) - cx.f64(1) - v);
-        cx.jac().copy_from_slice(&[1.0, 1.0, -1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-static DIODE: OnceLock<Module> = OnceLock::new();
-static SINE: OnceLock<Module> = OnceLock::new();
 
 // ───────────────────────────── T1 analog baselines ───────────────────────────
 
@@ -122,7 +50,7 @@ fn parity_diode_dc_point() {
     let anode = b.node("anode");
     CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &src, &gnd);
     CircuitBuilding::add_resistor(&mut b, "r1", 1000.0, &src, &anode);
-    b.device(DIODE.get_or_init(|| module::<Diode>("Diode")), "d", &[], &[Port::Node(anode.clone()), Port::Node(gnd)]);
+    b.device(FixedDiode::module(), "d", &[], &[Port::Node(anode.clone()), Port::Node(gnd)]);
     let mut solver = Solver::new(b.build().unwrap()).build();
     let res = solver.dc().unwrap().solve().unwrap();
     let vd = res.get_node(&CircuitBuilding::node_id(&anode)).unwrap();
@@ -140,7 +68,7 @@ fn parity_rc_transient() {
     let gnd = b.ground();
     let top = b.node("top");
     let mid = b.node("mid");
-    b.device(SINE.get_or_init(|| module::<SineVsrc>("SineVsrc")), "v1", &[], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
+    b.device(SineVsrc::module(), "v1", &[], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
     CircuitBuilding::add_resistor(&mut b, "r1", 1000.0, &top, &mid);
     CircuitBuilding::add_capacitor(&mut b, "c1", 1e-7, &mid, &gnd);
     let opts = TransientAnalysisOptions::new(1e-3, 1e-5);
@@ -213,69 +141,6 @@ fn parity_rlc_ac_resonant_peak() {
     assert!((peak_freq - 160_705.281_826_163_85).abs() < 1e-3, "peak_freq = {peak_freq}");
 }
 
-// ────────────────────── T2 mixed-signal / digital baselines ──────────────────
-
-/// Analog comparator that samples a node voltage and drives a digital net (A2D):
-/// a reaction on `START` and on each crossing of `threshold` writes
-/// `out = v ≥ threshold`.
-/// pins: threshold=0 (PARAM F64, default 1.0); sense=1 (PORT continuous); out=2 (PORT BIT);
-///       up=3, down=4 (PRIVATE event); start=5 (GLOBAL START)
-/// watches: W0 CROSS -> up (v − threshold), W1 CROSS -> down (threshold − v)
-/// fn 0: reads [sense, threshold] writes [W0, W1] partials (0<-0) (1<-0)
-/// reaction 0: on [start, up, down] reads [sense, threshold] writes [S0 {out}]
-struct Comparator;
-static CMP_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static CMP: OnceLock<Module> = OnceLock::new();
-const ONE_VOLT: [u8; 8] = 1.0_f64.to_le_bytes();
-
-impl Device for Comparator {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&CMP_SHAPE, ParityBaselineCases::cmp_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Comparator, Arc::clone(ParityBaselineCases::shared(&CMP_SHAPE, ParityBaselineCases::cmp_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let e = cx.f64(0) - cx.f64(1);
-        cx.set(0, e);
-        cx.set(1, -e);
-        cx.jac().copy_from_slice(&[1.0, -1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        let level = if cx.f64(0) >= cx.f64(1) { HIGH } else { LOW };
-        cx.commit(0, &level, 0.0)?;
-        Ok(Flow::Continue)
-    }
-}
-
-/// Digital-gated conductance to ground: when `ctrl` is HIGH it adds `g` from
-/// `node` to ground, otherwise nothing (D2A).
-/// pins: g=0 (PARAM F64, default 1 mS); ctrl=1 (PORT BIT); node=2 (PORT continuous)
-/// terms: T0 FLOW{node, GROUND}; fn 0: reads [ctrl, node, g] writes [T0] partials (0<-1)
-struct GatedISink;
-static SINK_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static SINK: OnceLock<Module> = OnceLock::new();
-const ONE_MS: [u8; 8] = 1e-3_f64.to_le_bytes();
-
-impl Device for GatedISink {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&SINK_SHAPE, ParityBaselineCases::sink_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((GatedISink, Arc::clone(ParityBaselineCases::shared(&SINK_SHAPE, ParityBaselineCases::sink_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let g = if cx.bytes(0) == HIGH { cx.f64(2) } else { 0.0 };
-        cx.set(0, g * cx.f64(1));
-        cx.jac().copy_from_slice(&[g]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 /// Mixed-signal DC settle: an analog divider whose mid node is watched by a
 /// comparator; the comparator's digital output gates an extra conductance back
 /// onto the mid node (D2A→A2D loop), through the operating point's rounds.
@@ -290,8 +155,8 @@ fn parity_mixed_signal_dc_settle() {
     CircuitBuilding::add_resistor(&mut b, "r1", 1000.0, &top, &mid);
     CircuitBuilding::add_resistor(&mut b, "r2", 1000.0, &mid, &gnd);
     let ctrl = || Port::Net("ctrl".to_string());
-    b.device(CMP.get_or_init(|| module::<Comparator>("Comparator")), "cmp", &[], &[Port::Node(mid.clone()), ctrl()]);
-    b.device(SINK.get_or_init(|| module::<GatedISink>("GatedISink")), "gsink", &[], &[ctrl(), Port::Node(mid.clone())]);
+    b.device(ThresholdComparator::module(), "cmp", &[], &[Port::Node(mid.clone()), ctrl()]);
+    b.device(GatedISink::module(), "gsink", &[], &[ctrl(), Port::Node(mid.clone())]);
     let mut solver = Solver::new(b.build().unwrap()).build();
     let res = solver.dc().unwrap().solve().unwrap();
     let vmid = res.get_node(&CircuitBuilding::node_id(&mid)).unwrap();
@@ -304,52 +169,6 @@ fn parity_mixed_signal_dc_settle() {
     assert_eq!(bound.digital.read(bound.names.nets["net:ctrl"]), HIGH, "ctrl latched");
 }
 
-// ───────────────────── Digital scheduler snapshot (topology) ──────────────────
-
-/// Constant digital source: `out` is HIGH from power-on (its `init`).
-/// pins: out=0 (PORT BIT, init HIGH)
-struct DigitalSource;
-static SRC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static SRC: OnceLock<Module> = OnceLock::new();
-
-impl Device for DigitalSource {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&SRC_SHAPE, ParityBaselineCases::src_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((DigitalSource, Arc::clone(ParityBaselineCases::shared(&SRC_SHAPE, ParityBaselineCases::src_shape))))
-    }
-    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// Two-input AND gate: pins a=0, b=1, y=2 (PORT BIT); fn 0: reads [a, b] writes [y].
-struct And2;
-static AND_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static AND: OnceLock<Module> = OnceLock::new();
-
-impl Device for And2 {
-    fn prototype() -> &'static Shape<'static> {
-        ParityBaselineCases::shared(&AND_SHAPE, ParityBaselineCases::and_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((And2, Arc::clone(ParityBaselineCases::shared(&AND_SHAPE, ParityBaselineCases::and_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (a, b) = (cx.bytes(0), cx.bytes(1));
-        let y = if a == HIGH && b == HIGH { HIGH } else { LOW };
-        cx.out_bytes(0).copy_from_slice(&y);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 /// Pure-digital combinational snapshot: two inverters feeding an AND gate.
 /// net0 = 1 (driven), inv0: net0→net1, inv1: net1→net2, and: (net1,net2)→net3.
 /// Exercises the digital engine's settle to a stable state at an operating point.
@@ -357,10 +176,10 @@ impl Device for And2 {
 fn parity_digital_scheduler_snapshot() {
     let mut b = CircuitBuilder::new("dig");
     let n = |i: usize| Port::Net(format!("net{i}"));
-    b.device(SRC.get_or_init(|| module::<DigitalSource>("DigitalSource")), "src", &[], &[n(0)]);
+    b.device(DigitalSource::module(), "src", &[], &[n(0)]);
     b.device(digital::Inverter::module(), "inv0", &[], &[n(0), n(1)]);
     b.device(digital::Inverter::module(), "inv1", &[], &[n(1), n(2)]);
-    b.device(AND.get_or_init(|| module::<And2>("And2")), "and", &[], &[n(1), n(2), n(3)]);
+    b.device(digital::And2::module(), "and", &[], &[n(1), n(2), n(3)]);
     let mut solver = Solver::new(b.build().unwrap()).build();
     solver.dc().unwrap().solve().unwrap();
 
@@ -373,147 +192,6 @@ fn parity_digital_scheduler_snapshot() {
     assert_eq!(nets(3), LOW, "net3");
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Diode", DIODE.get_or_init(|| module::<Diode>("Diode")));
-    PartialsCheck::verify_every_function("SineVsrc", SINE.get_or_init(|| module::<SineVsrc>("SineVsrc")));
-    PartialsCheck::verify_every_function("Comparator", CMP.get_or_init(|| module::<Comparator>("Comparator")));
-    PartialsCheck::verify_every_function("GatedISink", SINK.get_or_init(|| module::<GatedISink>("GatedISink")));
-    PartialsCheck::verify_every_function("DigitalSource", SRC.get_or_init(|| module::<DigitalSource>("DigitalSource")));
-    PartialsCheck::verify_every_function("And2", AND.get_or_init(|| module::<And2>("And2")));
-}
-
 /// The helpers of the parity_baseline tests.
 pub struct ParityBaselineCases;
 
-impl ParityBaselineCases {
-    /// The pin helper `pin`.
-    fn pin(index: u32) -> Cell {
-        Cell { kind: cell::PIN, index, part: part::VALUE }
-    }
-
-    /// The term helper `term`.
-    fn term(index: u32) -> Cell {
-        Cell { kind: cell::TERM, index, part: part::VALUE }
-    }
-
-    /// The partial helper `partial`.
-    fn partial(write: u32, read: u32) -> Partial {
-        Partial { write, to: 0, read, at: 0 }
-    }
-
-    /// The flow helper `flow`.
-    fn flow(name: &'static str, plus: u32, minus: u32) -> TermSpec<'static> {
-        TermSpec { name, origin: ORIGIN, op: op::FLOW, plus, minus, abstol: DEFAULT, max: DEFAULT }
-    }
-
-    /// The shared helper `shared`.
-    fn shared(slot: &'static OnceLock<ShapeRef>, build: fn() -> ShapeRef) -> &'static ShapeRef {
-        slot.get_or_init(build)
-    }
-
-    /// The diode shape helper `diode_shape`.
-    fn diode_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(ParityBaselineCases::flow("i", p, n));
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![ParityBaselineCases::pin(p), ParityBaselineCases::pin(n)],
-            writes: vec![ParityBaselineCases::term(t0)],
-            partials: vec![ParityBaselineCases::partial(0, 0), ParityBaselineCases::partial(0, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The sine shape helper `sine_shape`.
-    fn sine_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
-        let t0 = s.term(ParityBaselineCases::flow("i", p, n));
-        let t1 = s.term(ParityBaselineCases::flow("eq", f, GROUND));
-        s.function(FunctionSpec {
-            name: "v",
-            origin: ORIGIN,
-            reads: vec![ParityBaselineCases::pin(p), ParityBaselineCases::pin(n), ParityBaselineCases::pin(f), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
-            writes: vec![ParityBaselineCases::term(t0), ParityBaselineCases::term(t1)],
-            partials: vec![ParityBaselineCases::partial(0, 2), ParityBaselineCases::partial(1, 0), ParityBaselineCases::partial(1, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The cmp shape helper `cmp_shape`.
-    fn cmp_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let th = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_VOLT, ..PinSpec::discrete("threshold", role::PARAM, &F64) });
-        let sense = s.pin(PinSpec::continuous("sense", role::PORT));
-        let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
-        let up = s.pin(PinSpec::event("up", role::PRIVATE));
-        let down = s.pin(PinSpec::event("down", role::PRIVATE));
-        let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
-        let w = |name, event| WatchSpec { name, origin: ORIGIN, kind: watch::CROSS, layout: &F64, event, ttol: DEFAULT, etol: DEFAULT };
-        let w0 = s.watch(w("rise", up));
-        let w1 = s.watch(w("fall", down));
-        let wc = |index| Cell { kind: cell::WATCH, index, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "e",
-            origin: ORIGIN,
-            reads: vec![ParityBaselineCases::pin(sense), ParityBaselineCases::pin(th)],
-            writes: vec![wc(w0), wc(w1)],
-            partials: vec![ParityBaselineCases::partial(0, 0), ParityBaselineCases::partial(1, 0)],
-            ..FunctionSpec::default()
-        });
-        s.reaction(ReactionSpec {
-            name: "sample",
-            origin: ORIGIN,
-            on: vec![start, up, down],
-            reads: vec![ParityBaselineCases::pin(sense), ParityBaselineCases::pin(th)],
-            writes: vec![Statement { pin: out, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-            ..ReactionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The sink shape helper `sink_shape`.
-    fn sink_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let g = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_MS, ..PinSpec::discrete("g", role::PARAM, &F64) });
-        let ctrl = s.pin(PinSpec::discrete("ctrl", role::PORT, &BIT));
-        let node = s.pin(PinSpec::continuous("node", role::PORT));
-        let t0 = s.term(ParityBaselineCases::flow("i", node, GROUND));
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![ParityBaselineCases::pin(ctrl), ParityBaselineCases::pin(node), ParityBaselineCases::pin(g)],
-            writes: vec![ParityBaselineCases::term(t0)],
-            partials: vec![ParityBaselineCases::partial(0, 1)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The src shape helper `src_shape`.
-    fn src_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &HIGH, ..PinSpec::discrete("out", role::PORT, &BIT) });
-        s.freeze()
-    }
-
-    /// The and shape helper `and_shape`.
-    fn and_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
-        let b = s.pin(PinSpec::discrete("b", role::PORT, &BIT));
-        let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
-        s.function(FunctionSpec { name: "and", origin: ORIGIN, reads: vec![ParityBaselineCases::pin(a), ParityBaselineCases::pin(b)], writes: vec![ParityBaselineCases::pin(y)], ..FunctionSpec::default() });
-        s.freeze()
-    }
-}

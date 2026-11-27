@@ -3,43 +3,12 @@
 //! nothing discrete runs or changes during a sweep.
 
 use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::solver_devices::abi_ac::{REACTIONS, Spy};
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::Ordering;
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Module, Shape, Statement, global, role};
-use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
-use piperine_abi::layout::BYTE;
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{AcSweepAnalysisOptions, CircuitBuilder, Context};
-
-static REACTIONS: AtomicUsize = AtomicUsize::new(0);
-
-/// A device with a reaction on `START` that counts its runs: pins start=0 (GLOBAL START),
-/// log=1 (PRIVATE BYTE); reaction 0 on [start] writes [S0 {log}].
-struct Spy;
-static SPY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static SPY_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Device for Spy {
-    fn prototype() -> &'static Shape<'static> {
-        SPY_SHAPE.get_or_init(AbiAcCases::spy_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Spy, Arc::clone(SPY_SHAPE.get_or_init(AbiAcCases::spy_shape))))
-    }
-    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        REACTIONS.fetch_add(1, Ordering::SeqCst);
-        cx.commit(0, &[1], 0.0)?;
-        Ok(Flow::Continue)
-    }
-}
 
 #[test]
 fn an_rlc_peak_matches_the_baseline_on_devices() {
@@ -50,7 +19,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     CircuitBuilding::add_resistor(&mut b, "r1", 10_000.0, &node, &gnd);
     CircuitBuilding::add_capacitor(&mut b, "c1", 1e-9, &node, &gnd);
     b.device(circuit::Inductor::module(), "l1", &[("l", ParamValue::Real(1e-3))], &[Port::Node(node.clone()), Port::Node(gnd)]);
-    let spy = SPY_MODULE.get_or_init(|| module::<Spy>("Spy"));
+    let spy = Spy::module();
     b.device(spy, "spy", &[], &[]);
     let mut circuit = b.build().expect("build");
 
@@ -89,29 +58,3 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     }
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Spy", SPY_MODULE.get_or_init(|| module::<Spy>("Spy")));
-}
-
-/// The helpers of the abi_ac tests.
-pub struct AbiAcCases;
-
-impl AbiAcCases {
-    /// The spy shape helper `spy_shape`.
-    fn spy_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
-        let log = s.pin(PinSpec::discrete("log", role::PRIVATE, &BYTE));
-        s.reaction(ReactionSpec {
-            name: "run",
-            origin: "abi_ac.rs",
-            on: vec![start],
-            writes: vec![Statement { pin: log, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-            ..ReactionSpec::default()
-        });
-        s.freeze()
-    }
-}

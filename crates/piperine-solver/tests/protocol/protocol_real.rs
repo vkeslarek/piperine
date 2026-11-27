@@ -7,18 +7,12 @@
 //! time stays pending; `SETTLE` fires at the stop time.
 
 use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::solver_devices::protocol_real::{FAULTED, FlakyG};
 use piperine_device_fixtures::circuits::CircuitBuilding;
 use piperine_device_fixtures::mixed;
 use piperine_device_fixtures::digital;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::cell::Cell as StdCell;
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::HIGH;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, op, part, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
 use piperine_digital_solver::tick::Tick;
 use piperine_solver::abi::{AnalogReference, Bound, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions, TransientAnalysisResult};
@@ -78,43 +72,6 @@ fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     assert_eq!(result.stats.steps_rejected, 0, "{:?}", result.stats);
     assert_eq!(result.stats.dt_min_floor_hits, 0);
     assert_eq!(ProtocolRealCases::bytes_of(circuit.bound(), "code"), HIGH.to_vec());
-}
-
-// ---------------------------------------------------------------------------
-// A conductance whose function faults once, the first time it is evaluated
-// inside `FAULT_WINDOW`: one Newton failure at a step that is then retried.
-// ---------------------------------------------------------------------------
-
-thread_local! {
-    static FAULTED: StdCell<bool> = const { StdCell::new(false) };
-}
-const FAULT_WINDOW: (f64, f64) = (3.0e-4, 4.0e-4);
-
-/// pins: p=0, n=1 (PORT); fn 0: reads [p, n, TIME] writes [T0] partials (0<-0) (0<-1); g = 1 mS
-struct FlakyG;
-static FLAKY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static FLAKY_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Device for FlakyG {
-    fn prototype() -> &'static Shape<'static> {
-        FLAKY_SHAPE.get_or_init(ProtocolRealCases::flaky_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((FlakyG, Arc::clone(FLAKY_SHAPE.get_or_init(ProtocolRealCases::flaky_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let t = cx.f64(2);
-        if t > FAULT_WINDOW.0 && t < FAULT_WINDOW.1 && !FAULTED.with(|f| f.replace(true)) {
-            return Err(Fault::new(7, "once"));
-        }
-        let g = 1.0e-3;
-        cx.set(0, g * cx.f64(0) - g * cx.f64(1));
-        cx.jac().copy_from_slice(&[g, -g]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
 }
 
 #[test]
@@ -194,13 +151,6 @@ fn settle_fires_at_the_stop_time() {
     assert!((result.last().unwrap().time() - stop).abs() < 1.0e-15);
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("FlakyG", FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")));
-}
-
 /// The helpers of the protocol_real tests.
 pub struct ProtocolRealCases;
 
@@ -235,24 +185,6 @@ impl ProtocolRealCases {
         out
     }
 
-    /// The flaky shape helper `flaky_shape`.
-    fn flaky_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: "protocol_real.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "protocol_real.rs",
-            reads: vec![pin(p), pin(n), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
-            writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
-            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
     /// A 1 V, 1 kHz sine through 1 kΩ into 1 µF beside the flaky 1 mS conductance
     /// at `out`, with a 10 µs clock counted in `n`. `fault` arms the conductance.
     fn flaky_circuit(fault: bool) -> (CircuitInstance, AnalogReference) {
@@ -267,7 +199,7 @@ impl ProtocolRealCases {
         ]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &out);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
-        b.device(FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
+        b.device(FlakyG::module(), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
         b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
         b.device(digital::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
         (b.build().expect("build"), out)

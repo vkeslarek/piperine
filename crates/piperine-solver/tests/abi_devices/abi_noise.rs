@@ -4,17 +4,10 @@
 //! instance and input names, and the per-source PSDs add up to the output.
 
 use piperine_device_fixtures::circuit::K_B;
+use piperine_device_fixtures::solver_devices::abi_noise::{NoisyR};
 use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::result::Result;
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::F64;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, input, op, part, pin_flag, role};
-use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{
     AcSweepAnalysisOptions, CircuitBuilder, Context, NodeIdentifier, NoiseAnalysisOptions, NoiseKind, Tolerances,
@@ -71,41 +64,6 @@ fn a_shared_noise_input_cancels_across_the_pair() {
     assert!((alone - 1.0e-12).abs() <= 1.0e-9 * 1.0e-12, "{alone:e}");
 }
 
-/// A resistor whose branch carries two noise sources: a thermal one of density
-/// `4kT/r` (T = 300 K) and a flicker one of `1e-24`.
-/// pins: r=0 (PARAM F64, 1e3); p=1, n=2 (PORT)
-/// inputs: I0 NOISE "thermal", I1 NOISE "flicker"; terms: T0 FLOW{p, n}
-/// fn 0 "i": reads [p, n, r, I0, I1] writes [T0] partials against all five
-/// fn 1 "thermal": reads [r] writes [I0.PSD]; fn 2 "flicker": reads [] writes [I1.PSD]
-struct NoisyR;
-static NOISY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static NOISY: OnceLock<Module> = OnceLock::new();
-
-impl Device for NoisyR {
-    fn prototype() -> &'static Shape<'static> {
-        NOISY_SHAPE.get_or_init(AbiNoiseCases::noisy_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((NoisyR, Arc::clone(NOISY_SHAPE.get_or_init(AbiNoiseCases::noisy_shape))))
-    }
-    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        match k {
-            0 => {
-                let (vp, vn, r, thermal, flicker) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3), cx.f64(4));
-                let g = 1.0 / r;
-                cx.set(0, g * vp - g * vn + thermal + flicker);
-                cx.jac().copy_from_slice(&[g, -g, -(vp - vn) / (r * r), 1.0, 1.0]);
-            }
-            1 => cx.set(0, 4.0 * 1.380649e-23 * 300.0 / cx.f64(0)),
-            _ => cx.set(0, 1.0e-24_f64),
-        }
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 #[test]
 fn test_per_source_noise_reporting_and_conservation() {
     let mut b = CircuitBuilder::new("test");
@@ -113,7 +71,7 @@ fn test_per_source_noise_reporting_and_conservation() {
     let top = b.node("top");
     for path in ["r1", "r2"] {
         b.device(
-            NOISY.get_or_init(|| module::<NoisyR>("NoisyR")),
+            NoisyR::module(),
             path,
             &[("r", ParamValue::Real(1000.0))],
             &[Port::Node(top.clone()), Port::Node(gnd.clone())],
@@ -166,13 +124,6 @@ fn test_per_source_noise_reporting_and_conservation() {
     assert!((res.integrated_noise - manual_int.sqrt()).abs() < 1e-12);
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("NoisyR", NOISY.get_or_init(|| module::<NoisyR>("NoisyR")));
-}
-
 /// The helpers of the abi_noise tests.
 pub struct AbiNoiseCases;
 
@@ -190,53 +141,4 @@ impl AbiNoiseCases {
 
     // ─── A resistor with a thermal and a flicker source ─────────────────────────
 
-    /// The cell of helper `cell_of`.
-    fn cell_of(kind: u32, index: u32, part: u32) -> Cell {
-        Cell { kind, index, part }
-    }
-
-    /// The partial helper `partial`.
-    fn partial(read: u32) -> Partial {
-        Partial { write: 0, to: 0, read, at: 0 }
-    }
-
-    /// The noisy shape helper `noisy_shape`.
-    fn noisy_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &1.0e3_f64.to_le_bytes(), ..PinSpec::discrete("r", role::PARAM, &F64) });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let i0 = s.input(InputSpec { name: "thermal", origin: "abi_noise.rs", kind: input::NOISE });
-        let i1 = s.input(InputSpec { name: "flicker", origin: "abi_noise.rs", kind: input::NOISE });
-        let t0 = s.term(TermSpec { name: "i", origin: "abi_noise.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "abi_noise.rs",
-            reads: vec![
-                AbiNoiseCases::cell_of(cell::PIN, p, part::VALUE),
-                AbiNoiseCases::cell_of(cell::PIN, n, part::VALUE),
-                AbiNoiseCases::cell_of(cell::PIN, 0, part::VALUE),
-                AbiNoiseCases::cell_of(cell::INPUT, i0, part::VALUE),
-                AbiNoiseCases::cell_of(cell::INPUT, i1, part::VALUE),
-            ],
-            writes: vec![AbiNoiseCases::cell_of(cell::TERM, t0, part::VALUE)],
-            partials: (0..5).map(AbiNoiseCases::partial).collect(),
-            ..FunctionSpec::default()
-        });
-        s.function(FunctionSpec {
-            name: "thermal",
-            origin: "abi_noise.rs",
-            reads: vec![AbiNoiseCases::cell_of(cell::PIN, 0, part::VALUE)],
-            writes: vec![AbiNoiseCases::cell_of(cell::INPUT, i0, part::PSD)],
-            ..FunctionSpec::default()
-        });
-        s.function(FunctionSpec {
-            name: "flicker",
-            origin: "abi_noise.rs",
-            reads: vec![],
-            writes: vec![AbiNoiseCases::cell_of(cell::INPUT, i1, part::PSD)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 }

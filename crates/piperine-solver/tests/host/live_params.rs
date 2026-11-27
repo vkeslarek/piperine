@@ -5,13 +5,8 @@
 //! operating point or the waveform, and a param's value reads from its net.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
+use piperine_device_fixtures::solver_devices::live_params::{Mute};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Module, Shape, role};
-use piperine_abi::shape::{PinSpec, ShapeBuf, ShapeRef};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port, Value};
 use piperine_solver::prelude::{
     CircuitBuilder, CircuitInstance, Context, DcAnalysisResult, TransientAnalysisOptions,
@@ -39,31 +34,11 @@ fn unknown_param_fails_loud_and_lists_available_params() {
     assert!(msg.contains("`r`") || msg.contains(": r"), "candidate list holds `r`: {msg}");
 }
 
-/// A device whose shape declares no param: one port and nothing else.
-struct Mute;
-static MUTE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static MUTE: OnceLock<Module> = OnceLock::new();
-
-impl Device for Mute {
-    fn prototype() -> &'static Shape<'static> {
-        MUTE_SHAPE.get_or_init(LiveParamsCases::mute_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Mute, Arc::clone(MUTE_SHAPE.get_or_init(LiveParamsCases::mute_shape))))
-    }
-    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 #[test]
 fn unknown_param_on_paramless_element_says_so() {
     let mut b = CircuitBuilder::new("mute");
     let gnd = b.ground();
-    b.device(MUTE.get_or_init(|| module::<Mute>("Mute")), "mute", &[], &[Port::Node(gnd)]);
+    b.device(Mute::module(), "mute", &[], &[Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
     let err = circuit.set("mute", "x", ParamValue::Real(1.0)).expect_err("element with no params must reject");
     assert!(err.to_string().contains("declares no writable parameters"), "empty-list case is explicit: {err}");
@@ -200,13 +175,6 @@ fn device_introspect_returns_none_for_an_unknown_label() {
     assert!(!circuit.bound().names.params.keys().any(|(p, _)| p == "nope"));
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Mute", MUTE.get_or_init(|| module::<Mute>("Mute")));
-}
-
 /// The helpers of the live_params tests.
 pub struct LiveParamsCases;
 
@@ -235,10 +203,4 @@ impl LiveParamsCases {
         f64::from_le_bytes(bound.digital.read(net)[..8].try_into().expect("an F64 param"))
     }
 
-    /// The mute shape helper `mute_shape`.
-    fn mute_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec::continuous("p", role::PORT));
-        s.freeze()
-    }
 }

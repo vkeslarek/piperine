@@ -5,56 +5,14 @@
 //! `STRUCTURAL` param.
 
 use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::solver_devices::abi_sensitivity::{Gd};
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::F64;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, pin_flag, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
+use piperine_abi::raw::Module;
 use piperine_digital_solver::engine::{Horizon, Mode};
 use piperine_digital_solver::tick::Tick;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
 use piperine_solver::prelude::{AdjointOptions, CircuitBuilder, CircuitInstance, Context, Net};
-
-// ---------------------------------------------------------------------------
-// Gd: a conductance derived from a param by a discrete function
-// ---------------------------------------------------------------------------
-
-/// pins: r=0 (PARAM F64, 1e3); p=1, n=2 (PORT); g=3 (PRIVATE discrete F64)
-/// terms: T0 FLOW{p, n}
-/// fn 0 "g" (discrete): reads [r] writes [g] partials (0<-0) = -1/r^2
-/// fn 1 "i" (analog): reads [p, n, g] writes [T0] partials (0<-p) = g, (0<-n) = -g, (0<-g) = vp - vn
-struct Gd;
-static GD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static GD_MODULE: OnceLock<Module> = OnceLock::new();
-const R_DEFAULT: [u8; 8] = 1.0e3_f64.to_le_bytes();
-
-impl Device for Gd {
-    fn prototype() -> &'static Shape<'static> {
-        GD_SHAPE.get_or_init(AbiSensitivityCases::gd_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Gd, Arc::clone(GD_SHAPE.get_or_init(AbiSensitivityCases::gd_shape))))
-    }
-    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        if k == 0 {
-            let r = cx.f64(0);
-            cx.set(0, 1.0 / r);
-            cx.jac().copy_from_slice(&[-1.0 / (r * r)]);
-        } else {
-            let (vp, vn, g) = (cx.f64(0), cx.f64(1), cx.f64(2));
-            cx.set(0, g * vp - g * vn);
-            cx.jac().copy_from_slice(&[g, -g, vp - vn]);
-        }
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -142,61 +100,14 @@ fn a_derivative_chains_through_a_discrete_function() {
     assert!(result.fallback_users.is_empty());
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Gd", GD_MODULE.get_or_init(|| module::<Gd>("Gd")));
-}
-
 /// The helpers of the abi_sens tests.
 pub struct AbiSensitivityCases;
 
 impl AbiSensitivityCases {
-    /// The cell of helper `cell_of`.
-    fn cell_of(kind: u32, index: u32) -> Cell {
-        Cell { kind, index, part: part::VALUE }
-    }
-
-    /// The pin helper `pin`.
-    fn pin(index: u32) -> Cell {
-        AbiSensitivityCases::cell_of(cell::PIN, index)
-    }
-
-    /// The gd shape helper `gd_shape`.
-    fn gd_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &R_DEFAULT, ..PinSpec::discrete("r", role::PARAM, &F64) });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let g = s.pin(PinSpec::discrete("g", role::PRIVATE, &F64));
-        let t0 = s.term(TermSpec { name: "i", origin: "abi_sens.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "g",
-            origin: "abi_sens.rs",
-            reads: vec![AbiSensitivityCases::pin(0)],
-            writes: vec![AbiSensitivityCases::pin(g)],
-            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
-            ..FunctionSpec::default()
-        });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "abi_sens.rs",
-            reads: vec![AbiSensitivityCases::pin(p), AbiSensitivityCases::pin(n), AbiSensitivityCases::pin(g)],
-            writes: vec![AbiSensitivityCases::cell_of(cell::TERM, t0)],
-            partials: vec![
-                Partial { write: 0, to: 0, read: 0, at: 0 },
-                Partial { write: 0, to: 0, read: 1, at: 0 },
-                Partial { write: 0, to: 0, read: 2, at: 0 },
-            ],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 
     /// The gd helper `gd`.
     fn gd() -> &'static Module {
-        GD_MODULE.get_or_init(|| module::<Gd>("Gd"))
+        Gd::module()
     }
 
     // ---------------------------------------------------------------------------

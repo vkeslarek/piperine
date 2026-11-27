@@ -6,60 +6,12 @@
 //! fallback.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
+use piperine_device_fixtures::solver_devices::sensitivity_fallback::{Gan, Gfb};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::F64;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, pin_flag, role, watch};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port, Stamp};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context};
 use piperine_solver::prelude::{ParamRequest, ParamStampCollector, SensitivityEngine};
 
-const ORIGIN: &str = "sensitivity_fallback.rs";
-const G_DEFAULT: [u8; 8] = 1.0e-3_f64.to_le_bytes();
-
-struct Gan;
-static GAN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static GAN_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Device for Gan {
-    fn prototype() -> &'static Shape<'static> {
-        GAN_SHAPE.get_or_init(|| SensitivityFallbackCases::conductor_shape(true)).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Gan, Arc::clone(GAN_SHAPE.get_or_init(|| SensitivityFallbackCases::conductor_shape(true)))))
-    }
-    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        SensitivityFallbackCases::conductor_eval(cx, k);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-struct Gfb;
-static GFB_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static GFB_MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Device for Gfb {
-    fn prototype() -> &'static Shape<'static> {
-        GFB_SHAPE.get_or_init(|| SensitivityFallbackCases::conductor_shape(false)).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Gfb, Arc::clone(GFB_SHAPE.get_or_init(|| SensitivityFallbackCases::conductor_shape(false)))))
-    }
-    fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        SensitivityFallbackCases::conductor_eval(cx, k);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 // ── analytic and fallback coexist; both contribute; fallback named ───────────
 
@@ -138,78 +90,10 @@ fn the_fallback_restores_a_host_written_param() {
     assert!((g_after - 2e-3).abs() < 1e-15, "the written value is restored, not the default: {g_after}");
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Gan", GAN_MODULE.get_or_init(|| module::<Gan>("Gan")));
-    PartialsCheck::verify_every_function("Gfb", GFB_MODULE.get_or_init(|| module::<Gfb>("Gfb")));
-}
-
 /// The helpers of the sensitivity_fallback tests.
 pub struct SensitivityFallbackCases;
 
 impl SensitivityFallbackCases {
-    /// The cell of helper `cell_of`.
-    fn cell_of(kind: u32, index: u32) -> Cell {
-        Cell { kind, index, part: part::VALUE }
-    }
-
-    /// A parametric conductor `I = g·V(p, n)` that shows the `g` it reads as a
-    /// `VAR` watch. `Gan` declares the partial against its `g` param (the declared
-    /// route); `Gfb` declares only the partials against its ports, so its `∂F/∂g`
-    /// takes the stamp-perturbation fallback.
-    ///
-    /// pins: g=0 (PARAM F64, 1e-3); p=1, n=2 (PORT)
-    /// terms: T0 FLOW{p, n}; watches: W0 VAR "g"
-    /// fn 0 "i": reads [p, n, g] writes [T0] partials (0<-p) (0<-n) [(0<-g) when declared]
-    /// fn 1 "show": reads [g] writes [W0]
-    fn conductor_shape(declared: bool) -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &G_DEFAULT, ..PinSpec::discrete("g", role::PARAM, &F64) });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        let w0 = s.watch(WatchSpec { name: "g", origin: ORIGIN, kind: watch::VAR, layout: &F64, event: DEFAULT, ttol: DEFAULT, etol: DEFAULT });
-        let mut partials = vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }];
-        if declared {
-            partials.push(Partial { write: 0, to: 0, read: 2, at: 0 });
-        }
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![SensitivityFallbackCases::cell_of(cell::PIN, p), SensitivityFallbackCases::cell_of(cell::PIN, n), SensitivityFallbackCases::cell_of(cell::PIN, 0)],
-            writes: vec![SensitivityFallbackCases::cell_of(cell::TERM, t0)],
-            partials,
-            ..FunctionSpec::default()
-        });
-        s.function(FunctionSpec {
-            name: "show",
-            origin: ORIGIN,
-            reads: vec![SensitivityFallbackCases::cell_of(cell::PIN, 0)],
-            writes: vec![SensitivityFallbackCases::cell_of(cell::WATCH, w0)],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The conductor eval helper `conductor_eval`.
-    fn conductor_eval(cx: &mut Eval, k: u32) {
-        if k == 1 {
-            let g = cx.f64(0);
-            cx.set(0, g);
-            return;
-        }
-        let (vp, vn, g) = (cx.f64(0), cx.f64(1), cx.f64(2));
-        cx.set(0, g * vp - g * vn);
-        let jac = cx.jac();
-        jac[0] = g;
-        jac[1] = -g;
-        if jac.len() > 2 {
-            // d(g·V)/dg = V(p, n): the declared derivative.
-            jac[2] = vp - vn;
-        }
-    }
 
     /// 1 V across two parallel conductors: one declaring its param partial, one
     /// not. Each sees V(n1, gnd) = 1.0 → ∂(g·V)/∂g = 1.0.
@@ -219,8 +103,8 @@ impl SensitivityFallbackCases {
         let n1 = b.node("n1");
         CircuitBuilding::add_voltage_source(&mut b, "v", 1.0, &n1, &n2);
         let ports = [Port::Node(n1.clone()), Port::Node(n2.clone())];
-        b.device(GAN_MODULE.get_or_init(|| module::<Gan>("Gan")), "gan", &[("g", ParamValue::Real(1e-3))], &ports);
-        b.device(GFB_MODULE.get_or_init(|| module::<Gfb>("Gfb")), "gfb", &[("g", ParamValue::Real(1e-3))], &ports);
+        b.device(Gan::module(), "gan", &[("g", ParamValue::Real(1e-3))], &ports);
+        b.device(Gfb::module(), "gfb", &[("g", ParamValue::Real(1e-3))], &ports);
         (b.build().expect("build"), n1, n2)
     }
 

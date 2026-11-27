@@ -18,6 +18,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run drivers**: `cargo test -p piperine-solver --test abi_devices --test transient`
 **Run crossings**: `cargo test -p piperine-solver --test protocol protocol_crossings::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run partials**: `cargo test -p piperine-device-fixtures --test partials`
 
 Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator decides per batch whether Opus implements instead (a different Opus then verifies): the feature is large (25 tasks); Phases 1 to 3 are numerically and protocol delicate, Phase 4 is numerically delicate by volume (the port), Phase 5 is mechanical. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`, after `solver-abi-digital` and `solver-abi-analog` are both merged into it. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push (the tag of T10 is local).
 
@@ -777,9 +778,9 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C27** - Every function of every test device passes the partials verifier (SAI-15, Port AC 4): the helper libraries at a table of operating points and at generic points, each target's own devices (`parity_baseline`'s among them) in that target, and a guard names every hand-written device of the suite in a check (a failure fixture is held to its declared failure)
 Proof: run solver | test every_device_function_passes_the_partials_verifier ... ok
-Proof: run solver | test every_helper_device_passes_at_generic_points ... ok
-Proof: run solver | test every_hand_written_device_is_in_a_partials_check ... ok
-Proof: run solver | test its_devices_pass_the_partials_verifier ... ok
+Proof: run partials | test its_devices_pass_the_partials_verifier ... ok
+Proof: run partials | test every_device_of_the_crate_is_in_the_list ... ok
+Proof: run partials | test its_devices_pass_the_partials_verifier ... ok
 Proof: `o=$(cargo test -p piperine-solver 2>&1); n=$(printf '%s\n' "$o" | grep -cE '^test ([A-Za-z0-9_]+::)*its_devices_pass_the_partials_verifier \.\.\. ok$'); m=$(grep -rhow --include='*.rs' 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests | wc -l); test "$m" -gt 20 && test "$n" -eq "$m" || { echo "$n of $m declarations"; exit 1; }`
 
 **C28** - The analog sub-solver names no digital type (SAI-14, Port AC 6)

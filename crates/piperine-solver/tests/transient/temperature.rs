@@ -5,43 +5,10 @@
 //! is untouched by either.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::sync::{Arc, OnceLock};
+use piperine_device_fixtures::solver_devices::temperature::{Thermo};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Cell, DEFAULT, Module, Shape, cell, global, op, part, role};
-use piperine_abi::layout::F64;
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{AnalogReference, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, Solver, Tolerances};
-
-const ORIGIN: &str = "temperature.rs";
-
-/// A current of `T · 1 µA` drawn out of `p` into `n`, `T` the `TEMPERATURE`
-/// global.
-/// pins: t=0 (GLOBAL TEMPERATURE F64); p=1, n=2 (PORT)
-/// terms: T0 FLOW{p, n}; fn 0: reads [t] writes [T0], no partial (constant in the unknowns)
-struct Thermo;
-static THERMO_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static THERMO: OnceLock<Module> = OnceLock::new();
-
-impl Device for Thermo {
-    fn prototype() -> &'static Shape<'static> {
-        THERMO_SHAPE.get_or_init(TemperatureCases::thermo_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Thermo, Arc::clone(THERMO_SHAPE.get_or_init(TemperatureCases::thermo_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let t = cx.f64(0);
-        cx.set(0, -t * 1.0e-6);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 /// ABI-19: when the solver enters an analysis, the `TEMPERATURE` global
 /// holds the run's temperature before the first evaluation: the very first
@@ -98,33 +65,10 @@ fn default_set_temperature_is_noop() {
     assert!((before - 0.5).abs() < 1e-12);
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Thermo", THERMO.get_or_init(|| module::<Thermo>("Thermo")));
-}
-
 /// The helpers of the temperature tests.
 pub struct TemperatureCases;
 
 impl TemperatureCases {
-    /// The thermo shape helper `thermo_shape`.
-    fn thermo_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { global: global::TEMPERATURE, ..PinSpec::discrete("t", role::GLOBAL, &F64) });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![Cell { kind: cell::PIN, index: 0, part: part::VALUE }],
-            writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 
     /// 1 kΩ from `out` to ground, a `Thermo` pulling `T` µA out of `out`:
     /// `v(out) = T` millivolts. Also a source and a resistor the device does not touch.
@@ -134,7 +78,7 @@ impl TemperatureCases {
         let out = b.node("out");
         let src = b.node("src");
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &out, &gnd);
-        b.device(THERMO.get_or_init(|| module::<Thermo>("Thermo")), "t1", &[], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
+        b.device(Thermo::module(), "t1", &[], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
         CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &src, &gnd);
         CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &src, &gnd);
         (b.build().expect("build"), out)

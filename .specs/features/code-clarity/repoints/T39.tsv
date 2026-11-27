@@ -31,3 +31,24 @@ move piperine-solver/prelude_surface piperine-solver/host::prelude_surface
 move piperine-solver/probe_selection piperine-solver/host::probe_selection
 move piperine-solver/session_bounds piperine-solver/host::session_bounds
 move piperine-solver/solver_entry piperine-solver/host::solver_entry
+# T39: the partials copies of the transient and host modules, and of parity_baseline, leave with the devices they checked (see T38).
+replace piperine-solver/host::bind::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/host::host_set::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/host::live_params::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/host::probe_selection::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/host::solver_entry::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/parity_baseline::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::array_windows::the_fixture_devices_pass_the_partials_check piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::checkpoint_restore::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::crossing_rules::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::digital_settle_subscriber::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::environment::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::failure_rules::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::jump_retake::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::lifecycle::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::limiting_report::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::settled_value::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::temperature::its_devices_pass_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::truncation::its_corner_source_passes_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::truncation::its_device_passes_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier
+replace piperine-solver/transient::truncation::its_once_faulting_device_passes_the_partials_verifier piperine-device-fixtures/partials::its_devices_pass_the_partials_verifier

@@ -38,7 +38,7 @@ static INVERTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static INVERTER: OnceLock<Module> = OnceLock::new();
 
 impl Inverter {
-    /// The shape helper `shape`.
+    /// The shape of `Inverter`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
@@ -82,7 +82,7 @@ static AND2_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static AND2: OnceLock<Module> = OnceLock::new();
 
 impl And2 {
-    /// The shape helper `shape`.
+    /// The shape of `And2`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
@@ -119,6 +119,51 @@ impl Device for And2 {
     }
 }
 
+// ─── Or2 ───────────────────────────────────────────────────────────────────
+
+/// pins: a=0, b=1, y=2 (PORT BIT).  fn 0 "or": reads [a, b] writes [y].
+pub struct Or2;
+static OR2_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
+static OR2: OnceLock<Module> = OnceLock::new();
+
+impl Or2 {
+    /// The shape of `Or2`, built once and shared by every instance.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
+        let b = s.pin(PinSpec::discrete("b", role::PORT, &BIT));
+        let y = s.pin(PinSpec::discrete("y", role::PORT, &BIT));
+        s.function(FunctionSpec { name: "or", reads: vec![DeviceParts::pin(a), DeviceParts::pin(b)], writes: vec![DeviceParts::pin(y)], ..FunctionSpec::default() });
+        s.freeze()
+    }
+
+    /// The module of the device.
+    pub fn module() -> &'static Module {
+        DeviceParts::module_of::<Or2>(&OR2, "or2")
+    }
+
+    /// An instance of the device.
+    pub fn handle() -> Handle {
+        DeviceParts::make::<Or2>(&OR2, "or2")
+    }
+}
+
+impl Device for Or2 {
+    fn prototype() -> &'static Shape<'static> {
+        DeviceParts::shared(&OR2_SHAPE, Or2::shape).shape()
+    }
+    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((Or2, Arc::clone(DeviceParts::shared(&OR2_SHAPE, Or2::shape))))
+    }
+    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
+        CallCounts::bump("or2", false);
+        let (a, b) = (cx.bytes(0), cx.bytes(1));
+        let y = DeviceParts::bit(a[0] != 0 || b[0] != 0);
+        cx.out_bytes(0).copy_from_slice(&y);
+        Ok(())
+    }
+}
+
 // ─── Dff (abi.md §11.4) ─────────────────────────────────────────────────────
 
 /// pins: clk=0, d=1 (PORT BIT); q=2 (PORT BIT, init LOW); rise=3 (PRIVATE event)
@@ -129,7 +174,7 @@ static DFF_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static DFF: OnceLock<Module> = OnceLock::new();
 
 impl DataFlipFlop {
-    /// The shape helper `shape`.
+    /// The shape of `DataFlipFlop`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
@@ -194,7 +239,7 @@ static TIMER: OnceLock<Module> = OnceLock::new();
 const TEN_NS: [u8; 8] = 1e-8f64.to_le_bytes();
 
 impl Timer {
-    /// The shape helper `shape`.
+    /// The shape of `Timer`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let half = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &TEN_NS, ..PinSpec::discrete("half", role::PARAM, &F64) });
@@ -254,7 +299,7 @@ static COUNTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static COUNTER: OnceLock<Module> = OnceLock::new();
 
 impl Counter {
-    /// The shape helper `shape`.
+    /// The shape of `Counter`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
@@ -313,7 +358,7 @@ static RESOLVER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RESOLVER: OnceLock<Module> = OnceLock::new();
 
 impl Resolver {
-    /// The shape helper `shape`.
+    /// The shape of `Resolver`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let d0 = s.pin(PinSpec { flags: pin_flag::RELAX, ..PinSpec::discrete("d0", role::PORT, &BIT) });
@@ -361,7 +406,7 @@ static SUCC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SUCC: OnceLock<Module> = OnceLock::new();
 
 impl Successor {
-    /// The shape helper `shape`.
+    /// The shape of `Successor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let a = s.pin(PinSpec::discrete("a", role::PORT, &COUNT));
@@ -407,7 +452,7 @@ static RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RECORDER: OnceLock<Module> = OnceLock::new();
 
 impl MultiRecorder {
-    /// The shape helper `shape`.
+    /// The shape of `MultiRecorder`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -457,7 +502,7 @@ static SETTLE_RECORDER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SETTLE_RECORDER: OnceLock<Module> = OnceLock::new();
 
 impl SettleRecorder {
-    /// The shape helper `shape`.
+    /// The shape of `SettleRecorder`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let log = s.pin(PinSpec { flags: pin_flag::RECORD, ..PinSpec::discrete("log", role::PORT, &BYTE) });
@@ -507,7 +552,7 @@ static CHECKED: OnceLock<Module> = OnceLock::new();
 const ONE: [u8; 8] = 1.0f64.to_le_bytes();
 
 impl CheckedParameter {
-    /// The shape helper `shape`.
+    /// The shape of `CheckedParameter`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(PinSpec {
@@ -561,7 +606,7 @@ static FAULTY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static FAULTY: OnceLock<Module> = OnceLock::new();
 
 impl BitFaulty {
-    /// The shape helper `shape`.
+    /// The shape of `BitFaulty`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let a = s.pin(PinSpec::discrete("a", role::PORT, &BIT));
@@ -609,7 +654,7 @@ static SAMPLER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SAMPLER: OnceLock<Module> = OnceLock::new();
 
 impl Sampler {
-    /// The shape helper `shape`.
+    /// The shape of `Sampler`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let v = s.pin(PinSpec::continuous("v", role::PORT));
@@ -664,7 +709,7 @@ static STUB_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static STUB: OnceLock<Module> = OnceLock::new();
 
 impl Stub {
-    /// The shape helper `shape`.
+    /// The shape of `Stub`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -721,7 +766,7 @@ static ODD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static ODD: OnceLock<Module> = OnceLock::new();
 
 impl Odd {
-    /// The shape helper `shape`.
+    /// The shape of `Odd`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let out = s.pin(PinSpec::discrete("out", role::PORT, &BIT));
@@ -849,7 +894,7 @@ static SETTER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SETTER: OnceLock<Module> = OnceLock::new();
 
 impl Setter {
-    /// The shape helper `shape`.
+    /// The shape of `Setter`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let up = s.pin(PinSpec::event("up", role::PORT));
@@ -900,6 +945,11 @@ static PULSER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static PULSER: OnceLock<Module> = OnceLock::new();
 
 impl PulseGenerator {
+    /// The module of the device.
+    pub fn module() -> &'static Module {
+        DeviceParts::module_of::<PulseGenerator>(&PULSER, "pulser")
+    }
+
     /// The device, bound by name like the others.
     pub fn handle() -> Handle {
         DeviceParts::make::<PulseGenerator>(&PULSER, "pulser")
@@ -948,7 +998,7 @@ static SETTLER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SETTLER: OnceLock<Module> = OnceLock::new();
 
 impl Settler {
-    /// The shape helper `shape`.
+    /// The shape of `Settler`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let delay = s.pin(PinSpec::discrete("delay", role::PARAM, &F64));
@@ -1007,7 +1057,7 @@ static SETTLE_EVENT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SETTLE_EVENT: OnceLock<Module> = OnceLock::new();
 
 impl SettleEvent {
-    /// The shape helper `shape`.
+    /// The shape of `SettleEvent`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let delay = s.pin(PinSpec::discrete("delay", role::PARAM, &F64));
@@ -1073,7 +1123,7 @@ static DELAYED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static DELAYED: OnceLock<Module> = OnceLock::new();
 
 impl LaterDelayed {
-    /// The shape helper `shape`.
+    /// The shape of `LaterDelayed`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -1127,7 +1177,7 @@ static LAGGED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static LAGGED: OnceLock<Module> = OnceLock::new();
 
 impl Lagged {
-    /// The shape helper `shape`.
+    /// The shape of `Lagged`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -1182,7 +1232,7 @@ static CLOCKWATCH_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static CLOCKWATCH: OnceLock<Module> = OnceLock::new();
 
 impl ClockWatch {
-    /// The shape helper `shape`.
+    /// The shape of `ClockWatch`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -1239,7 +1289,7 @@ static REARM_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static REARM: OnceLock<Module> = OnceLock::new();
 
 impl Rearm {
-    /// The shape helper `shape`.
+    /// The shape of `Rearm`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let a = s.pin(PinSpec::event("a", role::PORT));
@@ -1285,7 +1335,7 @@ impl Device for Rearm {
 pub struct CallCounts;
 
 impl CallCounts {
-    /// The bump helper `bump`.
+    /// Counts one `eval` (or, when `react` is set, one reaction) of the device called `device` on this thread.
     pub(crate) fn bump(device: &'static str, react: bool) {
         CALLS.with(|c| {
             let mut c = c.borrow_mut();
@@ -1311,12 +1361,12 @@ pub struct DeviceParts;
 impl DeviceParts {
     // ─── Shape helpers ──────────────────────────────────────────────────────────
 
-    /// The pin helper `pin`.
+    /// The cell of the value of pin `index`.
     fn pin(index: u32) -> Cell {
         Cell { kind: cell::PIN, index, part: part::VALUE }
     }
 
-    /// The pin part helper `pin_part`.
+    /// The cell of part `part` (`PREVIOUS`, `CHANGED`, ...) of pin `index`.
     fn pin_part(index: u32, part: u32) -> Cell {
         Cell { kind: cell::PIN, index, part }
     }
@@ -1331,7 +1381,7 @@ impl DeviceParts {
         v.to_le_bytes()
     }
 
-    /// The statement helper `statement`.
+    /// The statement that writes `len` bytes of pin `pin` with `flags` and no minimum delay.
     fn statement(pin: u32, len: u32, flags: u32) -> Statement {
         Statement { pin, offset: 0, len, flags, min_after: 0.0 }
     }

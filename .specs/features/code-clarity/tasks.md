@@ -1197,6 +1197,7 @@ T152 → T153 → T154 → T155
 
 - [x] 7 targets in the crate (`context_init` stays its own: its header requires a fresh process); both merged targets pass with `--test-threads=1` and with the default
 - [x] Plan lowered to 7 (6 plus `context_init`); Gate check passes: Ledger
+- Coordinator amendment (user AFK, pending review): the approved text said 6 targets; `context_init` needs a fresh process, so the target count is 7.
 
 **Tests**: integration
 **Gate**: ledger
@@ -1217,7 +1218,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The four crates have no row in the three allowances. Closed here: every row of a `tests/` file, and the digital-solver `test_helper_functions.tsv` file is gone. Not closed: 36 `test_helper_functions` rows of `#[cfg(test)]` helpers in back-end `src/` (abi `raw.rs` 1; analog-solver `convergence.rs`, `math/{faer,integration,newton_raphson,singular}.rs`, `stamp_validation.rs` 6; solver `analyses/{pz,sp,test_devices}.rs`, `protocol/statistics.rs` 29). Those files are lane K's `src/**` (a lane T edit of them was refused); they stay open for lane K's back-end phase, T77 to T85 (T84 for the solver analyses).
+- [x] The four crates have no row in the three allowances. Closed in fix round 1 of phase 5: the 36 `test_helper_functions` rows of `#[cfg(test)]` helpers in back-end `src/` (abi `raw.rs` 1, analog-solver 6, solver 29) are gone, each helper being a method of a `Cases` struct of its test module; solver's `analyses/test_devices.rs` now only places the fixtures crate's devices (coordinator decision, user AFK, pending review: lane T edited those `src/` helpers for this round, which breaks the circular wait with lane K)
 - [x] Gate check passes: Quick for the four crates
 
 **Tests**: integration

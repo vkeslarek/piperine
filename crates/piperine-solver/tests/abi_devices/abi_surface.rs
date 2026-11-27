@@ -3,42 +3,9 @@
 //! importing nothing but `abi` (MD-17's two-tier surface), and it builds into
 //! a circuit and solves.
 
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::result::Result;
-use std::sync::{Arc, OnceLock};
+use piperine_device_fixtures::circuit;
 
-use piperine_solver::abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_solver::abi::layout::F64;
-use piperine_solver::abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, pin_flag, role};
-use piperine_solver::abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_solver::abi::thunk::module;
 use piperine_solver::abi::{CircuitBuilder, Context, ParamValue, Port};
-
-/// A resistor `I(p, n) = V(p, n) / r`.
-/// pins: r=0 (PARAM F64, default 1 kΩ); p=1, n=2 (PORT); term T0 FLOW{p, n}
-/// fn 0: reads [p, n, r] writes [T0] partials (0<-0) (0<-1) (0<-2)
-struct Resistor;
-static SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static MODULE: OnceLock<Module> = OnceLock::new();
-
-impl Device for Resistor {
-    fn prototype() -> &'static Shape<'static> {
-        SHAPE.get_or_init(AbiSurfaceCases::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Resistor, Arc::clone(SHAPE.get_or_init(AbiSurfaceCases::shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, r) = (cx.f64(0), cx.f64(1), cx.f64(2));
-        let g = 1.0 / r;
-        cx.set(0, g * vp - g * vn);
-        cx.jac().copy_from_slice(&[g, -g, -(vp - vn) / (r * r)]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 #[test]
 fn abi_compiles_a_device() {
@@ -47,7 +14,7 @@ fn abi_compiles_a_device() {
     let n1 = b.node("n1");
     // A 1 kΩ resistor to ground alone: nothing drives the node.
     b.device(
-        MODULE.get_or_init(|| module::<Resistor>("Resistor")),
+        circuit::Resistor::module(),
         "r1",
         &[("r", ParamValue::Real(1000.0))],
         &[Port::Node(n1.clone()), Port::Node(gnd)],
@@ -57,41 +24,3 @@ fn abi_compiles_a_device() {
     assert_eq!(res.get(n1.variable().clone()), Some(0.0));
 }
 
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("Resistor", MODULE.get_or_init(|| module::<Resistor>("Resistor")));
-}
-
-/// The helpers of the abi_surface tests.
-pub struct AbiSurfaceCases;
-
-impl AbiSurfaceCases {
-    /// The cell of helper `cell_of`.
-    fn cell_of(kind: u32, index: u32) -> Cell {
-        Cell { kind, index, part: part::VALUE }
-    }
-
-    /// The shape helper `shape`.
-    fn shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &1000.0_f64.to_le_bytes(), ..PinSpec::discrete("r", role::PARAM, &F64) });
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: "abi_surface.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "abi_surface.rs",
-            reads: vec![AbiSurfaceCases::cell_of(cell::PIN, p), AbiSurfaceCases::cell_of(cell::PIN, n), AbiSurfaceCases::cell_of(cell::PIN, 0)],
-            writes: vec![AbiSurfaceCases::cell_of(cell::TERM, t0)],
-            partials: vec![
-                Partial { write: 0, to: 0, read: 0, at: 0 },
-                Partial { write: 0, to: 0, read: 1, at: 0 },
-                Partial { write: 0, to: 0, read: 2, at: 0 },
-            ],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-}

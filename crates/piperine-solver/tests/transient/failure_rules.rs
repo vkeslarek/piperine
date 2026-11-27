@@ -11,75 +11,14 @@
 //! typed assertion the taxonomy offers.)
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::solver_devices::failure_rules::{JumpOscillator, LateOscillator, LateSource, NanSource, OpenAboveDc, Oscillator};
 use piperine_device_fixtures::digital;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::result::Result;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, OnceLock};
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::layout::BIT;
-use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, op, part, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
 use piperine_solver::abi::{Error, Port, SolverDomain};
 use piperine_analog_solver::error::RunCode;
 use piperine_solver::prelude::*;
 
 const ORIGIN: &str = "failure_rules.rs";
-
-/// The §15 trigger: a contribution that is not finite.
-struct NanSource;
-static NAN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static NAN: OnceLock<Module> = OnceLock::new();
-
-impl Device for NanSource {
-    fn prototype() -> &'static Shape<'static> {
-        NAN_SHAPE.get_or_init(FailureRulesCases::two_port_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((NanSource, Arc::clone(NAN_SHAPE.get_or_init(FailureRulesCases::two_port_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        cx.set(0, f64::NAN);
-        cx.jac().copy_from_slice(&[1.0, -1.0]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// A pathological device: its conductance flips sign every evaluation, so no
-/// Newton iteration can settle and no homotopy ramp helps. Nothing in the
-/// stdlib behaves like this — it exists to reach §9's "every strategy failed"
-/// path, which is otherwise only reachable by a real convergence disaster.
-struct Oscillator {
-    flip: AtomicBool,
-}
-static OSC_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static OSC: OnceLock<Module> = OnceLock::new();
-
-impl Device for Oscillator {
-    fn prototype() -> &'static Shape<'static> {
-        OSC_SHAPE.get_or_init(FailureRulesCases::two_port_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Oscillator { flip: AtomicBool::new(false) }, Arc::clone(OSC_SHAPE.get_or_init(FailureRulesCases::two_port_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let flip = !self.flip.fetch_xor(true, Ordering::SeqCst);
-        let g = if flip { 1e-3 } else { 1e3 };
-        let rhs = if flip { 1.0 } else { -1.0 };
-        let v = cx.f64(0) - cx.f64(1);
-        cx.set(0, g * v - rhs);
-        cx.jac().copy_from_slice(&[g, -g]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 // ─── §12 — noise output/reference node cannot be resolved ─────────────────────
 
@@ -136,7 +75,7 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1000.0, &a, &gnd);
-    b.device(NAN.get_or_init(|| module::<NanSource>("NanSource")), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(NanSource::module(), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = circuit
@@ -160,7 +99,7 @@ fn a_non_finite_contribution_is_e0507_and_names_the_instance() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1000.0, &a, &gnd);
-    b.device(NAN.get_or_init(|| module::<NanSource>("NanSource")), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(NanSource::module(), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = FailureRulesCases::dc_error(&mut circuit);
@@ -202,7 +141,7 @@ fn section_9_exhausting_every_dc_strategy_is_a_convergence_failure() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1e6, &a, &gnd);
-    b.device(OSC.get_or_init(|| module::<Oscillator>("Oscillator")), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(Oscillator::module(), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = circuit
@@ -224,33 +163,13 @@ fn an_equilibrium_that_never_converges_is_e0505_with_its_unknowns() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1e6, &a, &gnd);
-    b.device(OSC.get_or_init(|| module::<Oscillator>("Oscillator")), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(Oscillator::module(), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = FailureRulesCases::dc_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0505), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(run.names, vec!["node of r.p, osc.p".to_string()], "the one unknown that never settles: {err}");
-}
-
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    use piperine_device_fixtures::partials::Fixture;
-    // The fixture of the non-finite rule: its value is NaN at every point.
-    PartialsCheck::verify_every_function_except("NanSource", NAN.get_or_init(|| module::<NanSource>("NanSource")), &[(0, Fixture::NonFinite)]);
-    // The fixture of "every strategy failed": its conductance flips at every call.
-    PartialsCheck::verify_every_function_except("Oscillator", OSC.get_or_init(|| module::<Oscillator>("Oscillator")), &[(0, Fixture::Impure)]);
-    // The fixtures of the step floor: their conductance flips once they trip.
-    // (checked at time 0, where it is a plain resistor)
-    PartialsCheck::verify_every_function_with("LateOscillator", LATE.get_or_init(|| module::<LateOscillator>("LateOscillator")), &[(0, 2, 0.0)]);
-    // (checked at time 0, where the jump fixture is a plain resistor)
-    PartialsCheck::verify_every_function_with("JumpOscillator", JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")), &[(0, 3, 0.0)]);
-    // (checked at time 0, where the late source holds its branch at zero)
-    PartialsCheck::verify_every_function_with("LateSource", LATE_SOURCE.get_or_init(|| module::<LateSource>("LateSource")), &[(0, 3, 0.0)]);
-    // (checked at frequency 0, where it is a plain conductance)
-    PartialsCheck::verify_every_function_with("OpenAboveDc", OPEN.get_or_init(|| module::<OpenAboveDc>("OpenAboveDc")), &[(0, 2, 0.0)]);
 }
 
 /// HYG-01 AC 1: a node reached only through capacitors stamps nothing at DC;
@@ -307,117 +226,7 @@ fn an_instance_is_named_once_in_a_singular_report() {
     assert_eq!(run.names, vec!["node of c1.p, c2.p+n".to_string()], "{err}");
     assert_eq!(err.to_string().matches("c2").count(), 1, "{err}");
 }
-
-// ─── §17.1 E0508 / E0504 — a step that fails Newton at the floor ──────────────
-
-/// A resistor that turns into the oscillator (its conductance flips sign every
-/// evaluation, so no Newton iteration settles) once it trips: after 2e-7 s
-/// (`LateOscillator`) or while its `go` pin is HIGH in a run (`JumpOscillator`).
-struct LateOscillator {
-    flip: AtomicBool,
-}
-struct JumpOscillator {
-    flip: AtomicBool,
-}
-static LATE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static LATE: OnceLock<Module> = OnceLock::new();
-static JUMP_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static JUMP: OnceLock<Module> = OnceLock::new();
-
-impl Device for LateOscillator {
-    fn prototype() -> &'static Shape<'static> {
-        LATE_SHAPE.get_or_init(|| FailureRulesCases::tripping_shape(false)).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((LateOscillator { flip: AtomicBool::new(false) }, Arc::clone(LATE_SHAPE.get_or_init(|| FailureRulesCases::tripping_shape(false)))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let trips = cx.f64(2) > 2.0e-7;
-        FailureRulesCases::tripping_current(&self.flip, trips, cx);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-impl Device for JumpOscillator {
-    fn prototype() -> &'static Shape<'static> {
-        JUMP_SHAPE.get_or_init(|| FailureRulesCases::tripping_shape(true)).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((JumpOscillator { flip: AtomicBool::new(false) }, Arc::clone(JUMP_SHAPE.get_or_init(|| FailureRulesCases::tripping_shape(true)))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        // `go` HIGH once the run is under way (the operating point is at time 0).
-        let trips = cx.bytes(2)[0] != 0 && cx.f64(3) > 0.0;
-        FailureRulesCases::tripping_current(&self.flip, trips, cx);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// A potential source that exists only from `LATE_SOURCE_AT` on: before it the branch carries no
-/// current (`f = 0`), after it `V(p, n) = 1 V` is imposed, so a second source across the same nodes
-/// makes the Jacobian singular at a transient step while the operating point is fine.
-/// pins: p=0, n=1 (PORT); f=2 (PRIVATE branch current)
-/// terms: T0 FLOW{p, n} "i" = f, T1 FLOW{f, ground} "eq"
-/// fn 0 "v": reads [p, n, f, TIME] writes [T0, T1] partials (0<-f) (1<-p) (1<-n) (1<-f)
-struct LateSource;
-static LATE_SOURCE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static LATE_SOURCE: OnceLock<Module> = OnceLock::new();
 const LATE_SOURCE_AT: f64 = 2.0e-7;
-
-impl Device for LateSource {
-    fn prototype() -> &'static Shape<'static> {
-        LATE_SOURCE_SHAPE.get_or_init(FailureRulesCases::late_source_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((LateSource, Arc::clone(LATE_SOURCE_SHAPE.get_or_init(FailureRulesCases::late_source_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let (vp, vn, f, t) = (cx.f64(0), cx.f64(1), cx.f64(2), cx.f64(3));
-        cx.set(0, f);
-        if t > LATE_SOURCE_AT {
-            cx.set(1, vp - vn - 1.0);
-            cx.jac().copy_from_slice(&[1.0, 1.0, -1.0, 0.0]);
-        } else {
-            cx.set(1, f);
-            cx.jac().copy_from_slice(&[1.0, 0.0, 0.0, 1.0]);
-        }
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
-/// A 1 mS conductance at DC that is open at any frequency: a node it alone holds is fine at the
-/// operating point and has a zero row in the small-signal system.
-/// pins: p=0, n=1 (PORT); fn 0 "i": reads [p, n, FREQ] writes [T0] partials (0<-p) (0<-n)
-struct OpenAboveDc;
-static OPEN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static OPEN: OnceLock<Module> = OnceLock::new();
-
-impl Device for OpenAboveDc {
-    fn prototype() -> &'static Shape<'static> {
-        OPEN_SHAPE.get_or_init(FailureRulesCases::open_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((OpenAboveDc, Arc::clone(OPEN_SHAPE.get_or_init(FailureRulesCases::open_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let g = if cx.f64(2) > 0.0 { 0.0 } else { 1.0e-3 };
-        cx.set(0, g * (cx.f64(0) - cx.f64(1)));
-        cx.jac().copy_from_slice(&[g, -g]);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
 
 /// HYG-03 AC 5: a Newton failure at the floor is `E0508` with its time and the
 /// unknowns that failed.
@@ -427,7 +236,7 @@ fn a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_resistor(&mut b, "r", 1e6, &a, &gnd);
-    b.device(LATE.get_or_init(|| module::<LateOscillator>("LateOscillator")), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(LateOscillator::module(), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = FailureRulesCases::tran_error(&mut circuit);
@@ -447,7 +256,7 @@ fn a_singular_transient_step_is_e0503_naming_both_sources() {
     let gnd = b.ground();
     let a = b.node("a");
     CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &a, &gnd);
-    b.device(LATE_SOURCE.get_or_init(|| module::<LateSource>("LateSource")), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(LateSource::module(), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = FailureRulesCases::tran_error(&mut circuit);
@@ -465,7 +274,7 @@ fn a_singular_ac_point_is_e0503_naming_the_node() {
     let mut b = CircuitBuilder::new("open at ac");
     let gnd = b.ground();
     let a = b.node("a");
-    b.device(OPEN.get_or_init(|| module::<OpenAboveDc>("OpenAboveDc")), "g1", &[], &[Port::Node(a), Port::Node(gnd)]);
+    b.device(OpenAboveDc::module(), "g1", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
     let err = circuit
@@ -488,7 +297,7 @@ fn a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier() {
     CircuitBuilding::add_resistor(&mut b, "r", 1e6, &a, &gnd);
     b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(5.0e-7))], &[Port::Net("go".to_string())]);
     b.device(
-        JUMP.get_or_init(|| module::<JumpOscillator>("JumpOscillator")),
+        JumpOscillator::module(),
         "jump",
         &[],
         &[Port::Node(a), Port::Node(gnd), Port::Net("go".to_string())],
@@ -508,29 +317,6 @@ pub struct FailureRulesCases;
 
 impl FailureRulesCases {
     // ─── Fixtures ─────────────────────────────────────────────────────────────────
-
-    /// The cell of helper `cell_of`.
-    fn cell_of(kind: u32, index: u32) -> Cell {
-        Cell { kind, index, part: part::VALUE }
-    }
-
-    /// The shape of a two-port device `I(p, n) = f(V(p, n))`: one `FLOW` term and
-    /// the partials against both ports.
-    fn two_port_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![FailureRulesCases::cell_of(cell::PIN, p), FailureRulesCases::cell_of(cell::PIN, n)],
-            writes: vec![FailureRulesCases::cell_of(cell::TERM, t0)],
-            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 
     /// A one-resistor circuit between node 1 and ground.
     fn resistor_circuit() -> CircuitInstance {
@@ -597,87 +383,6 @@ impl FailureRulesCases {
             .and_then(|mut dc| dc.solve())
             .map(|_| ())
             .expect_err("a singular circuit must fail")
-    }
-
-    /// pins: p, n (PORT continuous), go (PORT BIT, jump variant only); one FLOW term.
-    /// The function reads [p, n, TIME] or [p, n, go, TIME].
-    fn tripping_shape(reads_go: bool) -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
-        let mut extra = Vec::new();
-        if reads_go {
-            let go = s.pin(PinSpec::discrete("go", role::PORT, &BIT));
-            extra.push(FailureRulesCases::cell_of(cell::PIN, go));
-        }
-        extra.push(time);
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: [vec![FailureRulesCases::cell_of(cell::PIN, p), FailureRulesCases::cell_of(cell::PIN, n)], extra].concat(),
-            writes: vec![FailureRulesCases::cell_of(cell::TERM, t0)],
-            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The current of a resistor of 1 kOhm, or of the oscillator when `trips`.
-    fn tripping_current(flip: &AtomicBool, trips: bool, cx: &mut Eval) {
-        let v = cx.f64(0) - cx.f64(1);
-        let (g, rhs) = if trips {
-            let flipped = !flip.fetch_xor(true, Ordering::SeqCst);
-            if flipped { (1e-3, 1.0) } else { (1e3, -1.0) }
-        } else {
-            (1e-3, 0.0)
-        };
-        cx.set(0, g * v - rhs);
-        cx.jac().copy_from_slice(&[g, -g]);
-    }
-
-    /// The late source shape helper `late_source_shape`.
-    fn late_source_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let f = s.pin(PinSpec::continuous("f", role::PRIVATE));
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        let t1 = s.term(TermSpec { name: "eq", origin: ORIGIN, op: op::FLOW, plus: f, minus: piperine_abi::raw::GROUND, abstol: DEFAULT, max: DEFAULT });
-        let time = Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "v",
-            origin: ORIGIN,
-            reads: vec![FailureRulesCases::cell_of(cell::PIN, p), FailureRulesCases::cell_of(cell::PIN, n), FailureRulesCases::cell_of(cell::PIN, f), time],
-            writes: vec![FailureRulesCases::cell_of(cell::TERM, t0), FailureRulesCases::cell_of(cell::TERM, t1)],
-            partials: vec![
-                Partial { write: 0, to: 0, read: 2, at: 0 },
-                Partial { write: 1, to: 0, read: 0, at: 0 },
-                Partial { write: 1, to: 0, read: 1, at: 0 },
-                Partial { write: 1, to: 0, read: 2, at: 0 },
-            ],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
-
-    /// The open shape helper `open_shape`.
-    fn open_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let p = s.pin(PinSpec::continuous("p", role::PORT));
-        let n = s.pin(PinSpec::continuous("n", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: ORIGIN, op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-        let frequency = Cell { kind: cell::AMBIENT, index: ambient::FREQ, part: part::VALUE };
-        s.function(FunctionSpec {
-            name: "i",
-            origin: ORIGIN,
-            reads: vec![FailureRulesCases::cell_of(cell::PIN, p), FailureRulesCases::cell_of(cell::PIN, n), frequency],
-            writes: vec![FailureRulesCases::cell_of(cell::TERM, t0)],
-            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
     }
 
     /// The error of a transient to 1 µs that starts at 100 ns and may shrink to 10 ns.

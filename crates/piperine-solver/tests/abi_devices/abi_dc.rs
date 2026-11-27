@@ -5,15 +5,10 @@
 //! through `GMIN`.
 
 use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::solver_devices::abi_dc::{GminProbe};
 use piperine_device_fixtures::circuits::Counting;
-use piperine_device_fixtures::partials::PartialsCheck;
-use std::result::Result;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
-use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
-use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, role};
-use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module;
 use piperine_analog_solver::convergence::{ConvergencePlan, HomotopyDriver};
 use piperine_solver::abi::Port;
 use piperine_solver::prelude::{AnalogReference, CircuitBuilder, CircuitInstance, Context};
@@ -67,34 +62,6 @@ fn source_stepping_scales_sources_through_the_ambient_input() {
     assert!((whole[at] - full).abs() < 1.0e-9, "v(mid) = {} at scale 1", whole[at]);
 }
 
-// ---------------------------------------------------------------------------
-// The gmin-stepping continuation reaches a device through the `GMIN` input.
-// ---------------------------------------------------------------------------
-
-/// Drives the ambient `GMIN` (in amperes per siemens) into its node.
-/// pins: a=0 (PORT); terms: T0 FLOW{a, GROUND} "i" = -GMIN
-/// fn 0: reads [GMIN] writes [T0] (no partial: the term reads no unknown)
-struct GminProbe;
-static GMIN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static GMIN_PROBE: OnceLock<Module> = OnceLock::new();
-
-impl Device for GminProbe {
-    fn prototype() -> &'static Shape<'static> {
-        GMIN_SHAPE.get_or_init(AbiDcCases::gmin_shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((GminProbe, Arc::clone(GMIN_SHAPE.get_or_init(AbiDcCases::gmin_shape))))
-    }
-    fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-        let gmin = cx.f64(0);
-        cx.set(0, -gmin);
-        Ok(())
-    }
-    fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> {
-        Ok(Flow::Continue)
-    }
-}
-
 #[test]
 fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
     // The probe drives GMIN amperes into a 1 Ω load; the driver's own shunt of
@@ -102,7 +69,7 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
     let mut b = CircuitBuilder::new("gmin probe");
     let gnd = b.ground();
     let a = b.node("a");
-    b.device(GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")), "probe", &[], &[Port::Node(a.clone())]);
+    b.device(GminProbe::module(), "probe", &[], &[Port::Node(a.clone())]);
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0, &a, &gnd);
     let mut circuit = b.build().expect("build");
     let at = a.idx().expect("a is solved");
@@ -118,13 +85,6 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
     dc.set_gmin_extra(0.0);
     let rest = dc.newton().expect("a solve at rest");
     assert!((rest[at] - gmin).abs() < 1.0e-15, "v(a) = {} at rest, expected {gmin}", rest[at]);
-}
-
-/// SAI-15: every function of this target's own devices passes the partials
-/// verifier (the guard of `abi_devices.rs` holds each device to it).
-#[test]
-fn its_devices_pass_the_partials_verifier() {
-    PartialsCheck::verify_every_function("GminProbe", GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")));
 }
 
 #[test]
@@ -169,18 +129,4 @@ impl AbiDcCases {
         (b.build().expect("build"), mid)
     }
 
-    /// The gmin shape helper `gmin_shape`.
-    fn gmin_shape() -> ShapeRef {
-        let mut s = ShapeBuf::new();
-        let a = s.pin(PinSpec::continuous("a", role::PORT));
-        let t0 = s.term(TermSpec { name: "i", origin: "abi_dc.rs", op: op::FLOW, plus: a, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
-        s.function(FunctionSpec {
-            name: "i",
-            origin: "abi_dc.rs",
-            reads: vec![Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }],
-            writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
-            ..FunctionSpec::default()
-        });
-        s.freeze()
-    }
 }
