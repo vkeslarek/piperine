@@ -1614,8 +1614,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate's tests pass unedited; `BodyPlan::new`'s row is `split`
-- [ ] Gate check passes: Golden
+- [x] The crate's tests pass unedited; `BodyPlan::new`'s row is `split`
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
