@@ -1568,9 +1568,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every `piperine_ir::model::…` path compiles unchanged across the workspace
-- [ ] `crates/piperine-ir/src/build.rs` holds no `panic!` on an out-of-range id: the 7 sites of T26 (`body_data`, `resolve_net`, `bind_nets`, `bind_reached_node` twice, `bind_reached_net` twice) return the builder's error, and the five call sites in `piperine-lang/src/elab/{place,resolvers}.rs` and the test calls move with them (coordinate with lane F at rebase)
-- [ ] Gate check passes: Golden
+- [x] Every `piperine_ir::model::…` path compiles unchanged across the workspace
+- [x] `crates/piperine-ir/src/build.rs` holds no `panic!` on an out-of-range net, instance or slot: the 6 sites of `resolve_net`, `bind_nets`, `bind_reached_node` and `bind_reached_net` return the typed `BuildError`; the five call sites in `piperine-lang/src/elab/{place,resolvers}.rs` are **call-site changes only** (each reports `Elaboration::internal_error` with the error's text), and the test calls take `.unwrap()`
+- [ ] (open, not owned by a later task) the 7th site, `body_data` (`IrBuilder::body_data`, behind 22 builder methods such as `carrier`, `drive`, `event`): returning an error changes those 22 signatures and about 30 call sites in `piperine-lang/src/elab/{carriers,resolvers,body,children}.rs`, which is lane F's code, more than call-site edits; reported to the coordinator
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

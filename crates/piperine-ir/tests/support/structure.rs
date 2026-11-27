@@ -113,7 +113,7 @@ impl Switching {
         let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         let ir = b.finish(top);
         assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
         ir
@@ -174,7 +174,7 @@ impl ParamEvents {
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         let ir = b.finish(top);
         assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
         ir
@@ -193,7 +193,7 @@ impl ParamEvents {
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: ValueType::F64, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         let ir = b.finish(top);
         assert_eq!(ir.check(), vec![], "the fixture passes check(): {ir}");
         ir

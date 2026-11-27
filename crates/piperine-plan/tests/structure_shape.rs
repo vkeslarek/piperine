@@ -290,12 +290,12 @@ fn a_reached_carrier_is_a_port_pin() {
     let top = b.next_instance_id();
     let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at(4) });
     let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: at(4) });
-    b.bind_nets(top, vec![top_net]);
+    b.bind_nets(top, vec![top_net]).unwrap();
     let leaf_id = b.next_instance_id();
     let q = b.net(NetSpec { path: "Top.leaf.q".into(), ty: ValueType::Bool, declared_by: leaf_id, init: None, origin: at(2) });
     let leaf_instance = b.instance(InstanceSpec { path: "Top.leaf".into(), name: "leaf".into(), body: leaf, parent: Some(top), nodes: vec![], params: vec![], origin: at(5) });
-    b.bind_nets(leaf_instance, vec![q]);
-    b.bind_reached_net(top, seen, q);
+    b.bind_nets(leaf_instance, vec![q]).unwrap();
+    b.bind_reached_net(top, seen, q).unwrap();
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "{ir}");
     let top_body = ir.top().body();

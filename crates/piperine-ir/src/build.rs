@@ -3,6 +3,10 @@
 
 use std::collections::BTreeMap;
 
+mod error;
+
+pub use error::BuildError;
+
 use crate::real::Real;
 use crate::deps::DepsMemo;
 use crate::ids::{AggregateId, WideId, BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId};
@@ -548,23 +552,20 @@ impl IrBuilder {
         NetId(self.nets.len() as u32 - 1)
     }
 
-    /// Records that `net` is a resolved net made of `resolution` (RN-03). An id this builder never handed out panics.
-    pub fn resolve_net(&mut self, net: NetId, resolution: Resolution) {
+    /// Records that `net` is a resolved net made of `resolution` (RN-03). An id this builder never handed out is a [`BuildError`].
+    pub fn resolve_net(&mut self, net: NetId, resolution: Resolution) -> Result<(), BuildError> {
         let count = self.nets.len();
-        match self.nets.get_mut(net.index()) {
-            Some(data) => data.resolution = Some(resolution),
-            None => panic!("net id {} out of range ({count} nets)", net.0),
-        }
+        let data = self.nets.get_mut(net.index()).ok_or(BuildError::NetOutOfRange { net, count })?;
+        data.resolution = Some(resolution);
+        Ok(())
     }
 
     /// Binds the carriers of `instance`'s body, in their order, to `nets`. An id this builder
-    /// never handed out panics.
-    pub fn bind_nets(&mut self, instance: InstanceId, nets: Vec<NetId>) {
-        let count = self.instances.len();
-        match self.instances.get_mut(instance.index()) {
-            Some(data) => data.nets = nets,
-            None => panic!("instance id {} out of range ({count} instances)", instance.0),
-        }
+    /// never handed out is a [`BuildError`].
+    pub fn bind_nets(&mut self, instance: InstanceId, nets: Vec<NetId>) -> Result<(), BuildError> {
+        let data = self.instance_data(instance)?;
+        data.nets = nets;
+        Ok(())
     }
 
     /// Makes `merged` the same node as `kept`, in every instance (a fixed zero-potential branch
@@ -576,27 +577,31 @@ impl IrBuilder {
     }
 
     /// Binds slot `slot` (a node of role `Reached`) of `instance` to `node`, once the child it
-    /// reaches into has been placed and has its own nodes. An id this builder never handed out
-    /// panics.
-    pub fn bind_reached_node(&mut self, instance: InstanceId, slot: u32, node: NodeRef) {
-        let count = self.instances.len();
-        let Some(data) = self.instances.get_mut(instance.index()) else { panic!("instance id {} out of range ({count} instances)", instance.0) };
-        match data.nodes.get_mut(slot as usize) {
-            Some(bound) => *bound = node,
-            None => panic!("instance {}: node slot {slot} out of range ({} nodes)", data.path, data.nodes.len()),
-        }
+    /// reaches into has been placed and has its own nodes. An id or a slot this builder never
+    /// handed out is a [`BuildError`].
+    pub fn bind_reached_node(&mut self, instance: InstanceId, slot: u32, node: NodeRef) -> Result<(), BuildError> {
+        let data = self.instance_data(instance)?;
+        let count = data.nodes.len();
+        let bound = data.nodes.get_mut(slot as usize).ok_or_else(|| BuildError::NodeSlotOutOfRange { instance: data.path.clone(), slot, count })?;
+        *bound = node;
+        Ok(())
     }
 
     /// Binds carrier `carrier` (of role `Reached`) of `instance` to `net`, once the child it reads
     /// is placed. The instance's nets are bound first (`bind_nets`), with any net at this slot; it
-    /// is replaced here. An id this builder never handed out panics.
-    pub fn bind_reached_net(&mut self, instance: InstanceId, carrier: u32, net: NetId) {
+    /// is replaced here. An id or a slot this builder never handed out is a [`BuildError`].
+    pub fn bind_reached_net(&mut self, instance: InstanceId, carrier: u32, net: NetId) -> Result<(), BuildError> {
+        let data = self.instance_data(instance)?;
+        let count = data.nets.len();
+        let bound = data.nets.get_mut(carrier as usize).ok_or_else(|| BuildError::CarrierSlotOutOfRange { instance: data.path.clone(), carrier, count })?;
+        *bound = net;
+        Ok(())
+    }
+
+    /// The instance `id` added before, or the error naming an id this builder never handed out.
+    fn instance_data(&mut self, id: InstanceId) -> Result<&mut InstanceData, BuildError> {
         let count = self.instances.len();
-        let Some(data) = self.instances.get_mut(instance.index()) else { panic!("instance id {} out of range ({count} instances)", instance.0) };
-        match data.nets.get_mut(carrier as usize) {
-            Some(bound) => *bound = net,
-            None => panic!("instance {}: carrier {carrier} out of range ({} nets bound)", data.path, data.nets.len()),
-        }
+        self.instances.get_mut(id.index()).ok_or(BuildError::InstanceOutOfRange { instance: id, count })
     }
 
     /// Applies the node merges: drops every merged node from the arena, renumbers the survivors

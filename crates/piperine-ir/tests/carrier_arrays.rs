@@ -96,7 +96,7 @@ impl Fixture {
             params: vec![],
             origin: Fixture::origin(1),
         });
-        b.bind_nets(id, nets);
+        b.bind_nets(id, nets).unwrap();
         b.finish(id)
     }
 
@@ -354,9 +354,9 @@ fn commit_targets_and_windows_are_checked() {
             origin: Fixture::origin(1),
         };
         let top = b.instance(spec("Ram", ram, None));
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         let child_instance = b.instance(spec("Ram.leaf", leaf, Some(top)));
-        b.bind_nets(child_instance, vec![net]);
+        b.bind_nets(child_instance, vec![net]).unwrap();
         let ir = b.finish(top);
         let broken = ir.check();
         if ok {

@@ -42,7 +42,7 @@ impl Design {
             .map(|(c, ty)| b.net(NetSpec { path: format!("Top.c{c}"), ty: ty.clone(), declared_by: at, init: None, origin: Design::origin("top.msl", 1, 1) }))
             .collect();
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes, params, origin: Design::origin("top.msl", 1, 1) });
-        b.bind_nets(top, nets);
+        b.bind_nets(top, nets).unwrap();
         b.finish(top)
     }
 

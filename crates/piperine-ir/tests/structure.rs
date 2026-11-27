@@ -215,7 +215,7 @@ impl Switching {
         let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         b.finish(top)
     }
 
@@ -298,7 +298,7 @@ fn a_contribution_in_a_function_or_a_reaction_is_broken() {
     let top = b.next_instance_id();
     let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
     let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin });
-    b.bind_nets(top, vec![net]);
+    b.bind_nets(top, vec![net]).unwrap();
     let in_reaction = b.finish(top);
     assert!(Switching::names(&in_reaction.check(), "contribution outside the analog block of a body"), "{:?}", in_reaction.check());
 }
@@ -599,15 +599,15 @@ impl Placements {
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: Self::at(4) });
         let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Self::at(4) });
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![NodeRef::Node(a), NodeRef::Ground], params: vec![], origin: Self::at(4) });
-        b.bind_nets(top, vec![top_net]);
+        b.bind_nets(top, vec![top_net]).unwrap();
         let leaf_id = b.next_instance_id();
         let s = b.node(NodeSpec { path: "Top.leaf.s".into(), nature: el, declared_by: leaf_id, init: None, origin: Self::at(2) });
         let q = b.net(NetSpec { path: "Top.leaf.q".into(), ty: ValueType::Bool, declared_by: leaf_id, init: None, origin: Self::at(2) });
         let leaf_instance = b.instance(InstanceSpec { path: "Top.leaf".into(), name: "leaf".into(), body: leaf, parent: Some(top), nodes: vec![NodeRef::Node(a), NodeRef::Node(s)], params: vec![], origin: Self::at(5) });
-        b.bind_nets(leaf_instance, vec![q]);
+        b.bind_nets(leaf_instance, vec![q]).unwrap();
         if bind {
-            b.bind_reached_node(top, 1, NodeRef::Node(s));
-            b.bind_reached_net(top, seen, q);
+            b.bind_reached_node(top, 1, NodeRef::Node(s)).unwrap();
+            b.bind_reached_net(top, seen, q).unwrap();
         }
         b.finish(top)
     }
@@ -717,7 +717,7 @@ impl ParamEvents {
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         b.finish(top)
     }
 

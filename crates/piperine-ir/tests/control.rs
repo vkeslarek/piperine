@@ -210,7 +210,7 @@ fn a_commit_in_a_loop_is_one_statement() {
     let clk = b.net(piperine_ir::NetSpec { path: "Latch.clk".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Shape::origin() });
     let q = b.net(piperine_ir::NetSpec { path: "Latch.q".into(), ty: ValueType::Bool, declared_by: top, init: Some(Constant::Bool(false)), origin: Shape::origin() });
     let top = b.instance(InstanceSpec { path: "Latch".into(), name: "Latch".into(), body, parent: None, nodes: vec![], params: vec![], origin: Shape::origin() });
-    b.bind_nets(top, vec![clk, q]);
+    b.bind_nets(top, vec![clk, q]).unwrap();
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![]);
     let statements = ir.instance_at("Latch").expect("placed").body().reaction_statements(0);

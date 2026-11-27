@@ -96,7 +96,7 @@ impl Operators {
         let nets: Vec<_> = nets.into_iter().map(|net| b.net(net)).collect();
         let params = vec![Constant::Real(Real::new(1e-9))];
         let top = b.instance(InstanceSpec { path: "Op".into(), name: "Op".into(), body, parent: None, nodes: vec![NodeRef::Ground], params, origin });
-        b.bind_nets(top, nets);
+        b.bind_nets(top, nets).unwrap();
         b.finish(top)
     }
 

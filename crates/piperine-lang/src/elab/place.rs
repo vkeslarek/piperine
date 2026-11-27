@@ -127,7 +127,9 @@ impl Elaboration<'_, '_> {
         let nets = self.nets(&placing, &plan, declared_by);
         let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
         if !nets.is_empty() {
-            self.ir.bind_nets(instance, nets.clone());
+            if let Err(error) = self.ir.bind_nets(instance, nets.clone()) {
+                self.internal_error(&error.to_string());
+            }
         }
         for resolved in &plan.resolved {
             let carrier = &plan.carriers[resolved.carrier as usize];
@@ -176,7 +178,9 @@ impl Elaboration<'_, '_> {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
-                        self.ir.bind_reached_node(instance, node, *own);
+                        if let Err(error) = self.ir.bind_reached_node(instance, node, *own) {
+                            self.internal_error(&error.to_string());
+                        }
                         if let Some(NodeRef::Node(standing)) = nodes.get(node as usize) {
                             self.ir.merge_nodes(*own, *standing);
                         }
@@ -184,7 +188,9 @@ impl Elaboration<'_, '_> {
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
                     if let Some(own) = placed.nets.get(child_carrier as usize) {
-                        self.ir.bind_reached_net(instance, carrier, *own);
+                        if let Err(error) = self.ir.bind_reached_net(instance, carrier, *own) {
+                            self.internal_error(&error.to_string());
+                        }
                         self.record_reached_drive(plan, path, instance, carrier, *own);
                         reached.push((carrier, *own));
                     }

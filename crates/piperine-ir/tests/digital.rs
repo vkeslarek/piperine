@@ -432,7 +432,7 @@ impl Stage {
         let name = path.rsplit('.').next().unwrap_or(path).to_string();
         let params = params.into_iter().map(|v| Constant::Real(Real::new(v))).collect();
         let id = b.instance(InstanceSpec { path: path.into(), name, body, parent, nodes, params, origin: Design::origin(Stage::F, line, 5) });
-        b.bind_nets(id, nets);
+        b.bind_nets(id, nets).unwrap();
         id
     }
 
@@ -623,7 +623,7 @@ impl Slice {
                 .collect();
             let params = params.iter().map(|v| Constant::Real(Real::new(*v))).collect();
             let id = b.instance(InstanceSpec { path, name: name.to_string(), body: *body, parent: Some(top), nodes, params, origin: Design::origin("slice.msl", line, 5) });
-            b.bind_nets(id, nets);
+            b.bind_nets(id, nets).unwrap();
         }
         top
     }

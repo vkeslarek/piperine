@@ -612,14 +612,14 @@ impl Structured {
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: at(4) });
         let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at(4) });
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![NodeRef::Node(a), NodeRef::Ground], params: vec![], origin: at(4) });
-        b.bind_nets(top, vec![top_net]);
+        b.bind_nets(top, vec![top_net]).unwrap();
         let leaf_id = b.next_instance_id();
         let s = b.node(NodeSpec { path: "Top.leaf.s".into(), nature: el, declared_by: leaf_id, init: None, origin: at(2) });
         let q = b.net(NetSpec { path: "Top.leaf.q".into(), ty: ValueType::Bool, declared_by: leaf_id, init: None, origin: at(2) });
         let leaf_instance = b.instance(InstanceSpec { path: "Top.leaf".into(), name: "leaf".into(), body: leaf, parent: Some(top), nodes: vec![NodeRef::Node(a), NodeRef::Node(s)], params: vec![], origin: at(5) });
-        b.bind_nets(leaf_instance, vec![q]);
-        b.bind_reached_node(top, 1, NodeRef::Node(s));
-        b.bind_reached_net(top, seen, q);
+        b.bind_nets(leaf_instance, vec![q]).unwrap();
+        b.bind_reached_node(top, 1, NodeRef::Node(s)).unwrap();
+        b.bind_reached_net(top, seen, q).unwrap();
         b.finish(top)
     }
 }
@@ -957,7 +957,7 @@ impl CarrierArrays {
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Ram.mem".into(), ty: Ty::u(8), declared_by: top, init: None, origin: at(2) });
         let top = b.instance(InstanceSpec { path: "Ram".into(), name: "Ram".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: at(1) });
-        b.bind_nets(top, vec![net]);
+        b.bind_nets(top, vec![net]).unwrap();
         let ir = b.finish(top);
         assert_eq!(ir.check(), vec![], "the design itself is well formed");
         let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a design with an array of carriers was accepted") };

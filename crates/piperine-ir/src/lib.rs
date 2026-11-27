@@ -21,7 +21,7 @@ pub use check::Broken;
 pub use differentiate::{Differentiation, NotDifferentiable, Variable};
 pub use contributions::{Condition, Contribution};
 pub use deps::{BranchIndex, Deps, ParamIndex, SiteIndex, Target};
-pub use build::{BodySpec, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
+pub use build::{BodySpec, BuildError, FunctionSpec, InstanceSpec, IrBuilder, NetSpec, NodeSpec};
 pub use handle::{Body, Function, Instance, Nature, Net, Node, RecordSite};
 pub use ids::{BodyId, ExprId, FunctionId, InstanceId, NatureId, NetId, NodeId, StmtId, TypeId, AggregateId, WideId};
 pub use model::{

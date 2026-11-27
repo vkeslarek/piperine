@@ -102,10 +102,10 @@ impl Fixture {
         let (first, second) = (drive(&mut b, 0), drive(&mut b, 1));
         let others = b.net(NetSpec { path: "Source.w$others0".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: Fixture::origin(4) });
         let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: source, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
-        b.bind_nets(root, vec![value, seen]);
+        b.bind_nets(root, vec![value, seen]).unwrap();
         let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(4) });
-        b.bind_nets(child, vec![first, second, value]);
-        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: holders(root), others: vec![(0, others)] });
+        b.bind_nets(child, vec![first, second, value]).unwrap();
+        b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: holders(root), others: vec![(0, others)] }).unwrap();
         b.finish(root)
     }
 
@@ -206,9 +206,9 @@ impl Placement {
         let x = net(&mut b, "Parent.x", ValueType::Bool, piperine_ir::Constant::Bool(false));
         let y = net(&mut b, "Parent.y", ValueType::UInt(8), piperine_ir::Constant::Int(0));
         let root = b.instance(InstanceSpec { path: "Parent".into(), name: "Parent".into(), body: parent, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
-        b.bind_nets(root, vec![x, y]);
+        b.bind_nets(root, vec![x, y]).unwrap();
         let child = b.instance(InstanceSpec { path: "Parent.h".into(), name: "h".into(), body: holder, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(5) });
-        b.bind_nets(child, vec![x, y]);
+        b.bind_nets(child, vec![x, y]).unwrap();
         b.finish(root).check()
     }
 }

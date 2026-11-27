@@ -91,8 +91,8 @@ fn oscillator_into_flip_flop(d_on_the_clock: bool) -> Ir {
     let q = net(&mut b, "Top.q");
     let d = if d_on_the_clock { clk } else { net(&mut b, "Top.d") };
     // Osc: clk; Dff: clk, d, q
-    b.bind_nets(osc_instance, vec![clk]);
-    b.bind_nets(ff_instance, vec![clk, d, q]);
+    b.bind_nets(osc_instance, vec![clk]).unwrap();
+    b.bind_nets(ff_instance, vec![clk, d, q]).unwrap();
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "the fixture passes check()");
     ir
@@ -218,8 +218,8 @@ fn parent_clocked(bound: bool, init: Option<bool>) -> Ir {
     let clk = net(&mut b, "Top.clk", init);
     let q = net(&mut b, "Top.q", None);
     let ff_clk = if bound { clk } else { net(&mut b, "Top.ff_clk", None) };
-    b.bind_nets(top, vec![clk]);
-    b.bind_nets(ff, vec![ff_clk, ff_clk, q]);
+    b.bind_nets(top, vec![clk]).unwrap();
+    b.bind_nets(ff, vec![ff_clk, ff_clk, q]).unwrap();
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "the fixture passes check()");
     ir

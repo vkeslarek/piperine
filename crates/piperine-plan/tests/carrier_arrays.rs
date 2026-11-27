@@ -53,7 +53,7 @@ impl Fixture {
             .map(|(name, ty)| b.net(NetSpec { path: format!("Ram.{name}"), ty: ty.clone(), declared_by: top, init: None, origin: Fixture::origin(2) }))
             .collect();
         let id = b.instance(InstanceSpec { path: "Ram".into(), name: "Ram".into(), body, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
-        b.bind_nets(id, nets);
+        b.bind_nets(id, nets).unwrap();
         let ir = b.finish(id);
         assert_eq!(ir.check(), vec![], "the fixture passes check()");
         ir

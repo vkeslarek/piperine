@@ -1190,13 +1190,13 @@ impl Resolved {
         let second = net(&mut b, "Source.w$drive1", ValueType::Bool);
         let others = net(&mut b, "Source.w$others0", Ty::u(8));
         let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: holder, parent: None, nodes: vec![], params: vec![], origin: at() });
-        b.bind_nets(root, vec![value, seen]);
+        b.bind_nets(root, vec![value, seen]).unwrap();
         let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: at() });
-        b.bind_nets(child, vec![first, second, value]);
+        b.bind_nets(child, vec![first, second, value]).unwrap();
         b.resolve_net(
             value,
             piperine_ir::Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: vec![Some(piperine_ir::Holder { instance: root, carrier: 0 }), None], others: vec![(0, others)] },
-        );
+        ).unwrap();
         let ir = b.finish(root);
         assert_eq!(ir.check(), vec![], "the fixture passes check()");
         ir

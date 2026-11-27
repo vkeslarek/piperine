@@ -95,7 +95,7 @@ impl Wire {
         });
         let ids: Vec<NetId> = nets.iter().map(|(n, ty)| self.net(n, ty.clone())).collect();
         if !ids.is_empty() {
-            self.b.bind_nets(instance, ids);
+            self.b.bind_nets(instance, ids).unwrap();
         }
     }
 

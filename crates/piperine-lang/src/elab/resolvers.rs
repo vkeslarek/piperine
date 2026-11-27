@@ -142,8 +142,12 @@ impl Elaboration<'_, '_> {
         let name = declared.path.rsplit('.').next().unwrap_or(&declared.path).to_string();
         let resolver = self.ir.instance(InstanceSpec { path: format!("{}$resolve", declared.path), name: format!("{name}$resolve"), body, parent: Some(declared.declared_by), nodes: vec![], params: vec![], origin: declared.origin.clone() });
         let bound: Vec<NetId> = drive_nets.iter().copied().chain([net]).chain(readers.iter().map(|(_, others)| *others)).collect();
-        self.ir.bind_nets(resolver, bound);
-        self.ir.resolve_net(net, Resolution { resolver, driven, drives: drive_nets, holders: owners, others: readers });
+        if let Err(error) = self.ir.bind_nets(resolver, bound) {
+            self.internal_error(&error.to_string());
+        }
+        if let Err(error) = self.ir.resolve_net(net, Resolution { resolver, driven, drives: drive_nets, holders: owners, others: readers }) {
+            self.internal_error(&error.to_string());
+        }
     }
 
     /// `E0225` when two drives of one net hold different driven types (§5.2.15), naming both holders' instance paths
