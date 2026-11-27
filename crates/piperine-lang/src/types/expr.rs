@@ -717,12 +717,12 @@ impl Checker<'_> {
             Resolution::Deferred(_) => match self.width_read(expr) {
                 Some(width) => Some(width),
                 None => {
-                    self.refuse(file, node.span, RefusedForm::unresolved_name());
+                    self.refuse(file, node.span, ValueForm::UnresolvedName);
                     None
                 }
             },
             Resolution::Unresolved => {
-                self.refuse(file, node.span, RefusedForm::unresolved_name());
+                self.refuse(file, node.span, ValueForm::UnresolvedName);
                 None
             }
         }

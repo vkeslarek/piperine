@@ -5,7 +5,6 @@ use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as Lowered
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::nested_stmts;
 use crate::types::Callee;
@@ -68,7 +67,7 @@ impl Elaboration<'_, '_> {
             [plus] => (plus, Terminal::Ground),
             [plus, minus] => (plus, minus),
             _ => {
-                self.refuse(scope.file, node.span, RefusedForm::probe_of_more_than_two_nodes());
+                self.refuse(scope.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
                 return None;
             }
         };

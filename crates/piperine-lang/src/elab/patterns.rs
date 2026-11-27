@@ -17,7 +17,6 @@ use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::selectors::ArmCondition;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId, StmtKind};
@@ -388,7 +387,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl);
         let (name, span) = (data.name.as_ref().map_or_else(String::new, |n| n.text.clone()), data.span);
         if self.types.is_assigned(decl) {
-            self.refuse(scope.file, span, RefusedForm::assignment_to_local_of_type_option());
+            self.refuse(scope.file, span, PatternForm::AssignmentToLocalOfTypeOption);
             return None;
         }
         let ValueType::Option(payload) = self.type_of(packed) else { return None };
@@ -462,11 +461,11 @@ impl Elaboration<'_, '_> {
     /// that is more than its tail expression.
     fn bound_half(&mut self, scope: &mut Scope, lets: Vec<LoweredStmt>, stmts: &[StmtId], span: Span, half: LevelPart) -> Option<LoweredExpr> {
         let [stmt] = stmts else {
-            self.refuse(scope.file, span, RefusedForm::if_let_of_option_values_whose_block());
+            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
         let StmtKind::Expr { expr, semi: false } = self.design.stmt_node(*stmt).kind.clone() else {
-            self.refuse(scope.file, span, RefusedForm::if_let_of_option_values_whose_block());
+            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
         let origin = self.locator.origin(scope.file, span);

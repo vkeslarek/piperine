@@ -8,7 +8,6 @@ use piperine_ir::{Constant, Real};
 
 use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault, Width};
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ConstantForm;
 use crate::elab::tables::{HexText, TableFault, TableText};
 use crate::pom::{ConstData, DeclKind, ExprId, ExprKind, Resolution};
@@ -63,7 +62,7 @@ impl ConstEval<'_, '_> {
             },
             ExprKind::IncludeStr(literal) => {
                 let Some(path) = literal.str_value() else {
-                    return Err(ConstFault::refused(expr, RefusedForm::include_str_path_with_undefined_escape()));
+                    return Err(ConstFault::refused(expr, ConstantForm::IncludeStrPathWithUndefinedEscape));
                 };
                 let owner = self.design.decl_data(self.design.expr_node(expr).owner).file;
                 let source = self.design.file_data(owner).path.clone();
@@ -78,9 +77,9 @@ impl ConstEval<'_, '_> {
                     let value = *value;
                     self.text_of(value, bindings)
                 }
-                _ => Err(ConstFault::refused(expr, RefusedForm::text_that_is_no_include_str_or())),
+                _ => Err(ConstFault::refused(expr, ConstantForm::TextThatIsNoIncludeStrOr)),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::text_that_is_no_include_str_or())),
+            _ => Err(ConstFault::refused(expr, ConstantForm::TextThatIsNoIncludeStrOr)),
         }
     }
 

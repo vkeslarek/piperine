@@ -10,7 +10,6 @@ use piperine_ir::{AggregateData, Constant, ValueType};
 use super::consts::{Bindings, ConstFault, ConstTree};
 use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
 use crate::types::Callee;
@@ -93,13 +92,13 @@ impl Elaboration<'_, '_> {
         match (ty, tree) {
             (Some(ty), _) => self.import_tree(expr, tree, &ty),
             (None, ConstTree::Scalar(value)) => Ok(*value),
-            (None, ConstTree::Composite { .. }) => Err(ConstFault::refused(expr, RefusedForm::composite_value_of_type_that_has_no())),
+            (None, ConstTree::Composite { .. }) => Err(ConstFault::refused(expr, StructureForm::CompositeValueOfTypeThatHasNo)),
         }
     }
 
     /// The array of template numbers `tree` holds, as the aggregate `fold_template_array` makes.
     fn import_template_numbers(&mut self, expr: ExprId, tree: &ConstTree) -> Result<Constant, ConstFault> {
-        let ConstTree::Composite { parts, .. } = tree else { return Err(ConstFault::refused(expr, RefusedForm::array_of_templates_that_is_not_array())) };
+        let ConstTree::Composite { parts, .. } = tree else { return Err(ConstFault::refused(expr, StructureForm::ArrayOfTemplatesThatIsNotArray)) };
         let mut numbers = Vec::with_capacity(parts.len());
         for part in parts {
             let ConstTree::Scalar(number) = part else { return Err(ConstFault::refused(expr, StructureForm::ArrayOfTemplatesInsideArrayOfTemplates)) };
@@ -111,8 +110,8 @@ impl Elaboration<'_, '_> {
 
     /// The template at `index` of the array of templates `array`, folded (`Constant::Int` of its number).
     fn fold_template_element(&mut self, expr: ExprId, array: ExprId, index: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
-        let items = self.template_items(array, 0).ok_or_else(|| ConstFault::refused(expr, RefusedForm::array_of_templates_that_is_not_written()))?;
-        let Constant::Int(at) = self.consts.value(index, bindings)? else { return Err(ConstFault::refused(expr, RefusedForm::index_that_is_not_integer())) };
+        let items = self.template_items(array, 0).ok_or_else(|| ConstFault::refused(expr, StructureForm::ArrayOfTemplatesThatIsNotWritten))?;
+        let Constant::Int(at) = self.consts.value(index, bindings)? else { return Err(ConstFault::refused(expr, StructureForm::IndexThatIsNotInteger)) };
         let length = match &items {
             TemplateItems::Written(items) => items.len(),
             TemplateItems::Param(param) => self.template_array_length(*param).unwrap_or(0),
@@ -127,7 +126,7 @@ impl Elaboration<'_, '_> {
     /// The number of the template each element of the array param `param` holds, as `bindings` binds it.
     fn template_numbers(&self, expr: ExprId, param: DeclId, bindings: &Bindings) -> Result<Vec<Constant>, ConstFault> {
         let Some(held) = bindings.get(param) else { return Err(ConstFault::UnboundParam { expr, param }) };
-        let Constant::Aggregate(id) = held else { return Err(ConstFault::refused(expr, RefusedForm::array_of_templates_that_is_not_array())) };
+        let Constant::Aggregate(id) = held else { return Err(ConstFault::refused(expr, StructureForm::ArrayOfTemplatesThatIsNotArray)) };
         Ok(self.ir.aggregate_at(id).parts.clone())
     }
 
@@ -140,7 +139,7 @@ impl Elaboration<'_, '_> {
             let arm = arm.ok_or_else(|| ConstFault::refused(expr, StructureForm::ChoiceOfArraysOfTemplatesWithNo))?;
             return self.fold_template_array(arm, bindings);
         }
-        let items = self.template_items(expr, 0).ok_or_else(|| ConstFault::refused(expr, RefusedForm::array_of_templates_that_is_not_written()))?;
+        let items = self.template_items(expr, 0).ok_or_else(|| ConstFault::refused(expr, StructureForm::ArrayOfTemplatesThatIsNotWritten))?;
         let numbers = match items {
             TemplateItems::Param(param) => return bindings.get(param).ok_or(ConstFault::UnboundParam { expr, param }),
             TemplateItems::Written(items) => items.into_iter().map(|item| self.fold_param_value(item, bindings)).collect::<Result<Vec<_>, _>>()?,

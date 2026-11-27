@@ -14,8 +14,7 @@ use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildVa
 use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use crate::refusal::RefusedForm;
-use crate::refusal::forms::DigitalForm;
+use crate::refusal::forms::{DigitalForm, ValueForm};
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::{Length, Nominal, Ty};
 
@@ -223,7 +222,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if carried.is_none() {
-            self.refuse(file, span, RefusedForm::carrier_whose_value_type_has_no_value());
+            self.refuse(file, span, DigitalForm::CarrierWhoseValueTypeHasNoValue);
         }
         carried
     }
@@ -300,7 +299,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl).clone();
         let (chosen, picked) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
-            self.refuse(data.file, data.span, RefusedForm::resolved_carrier_whose_drive_type_has_no());
+            self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };
         let ty = self.carried_type(decl)?;

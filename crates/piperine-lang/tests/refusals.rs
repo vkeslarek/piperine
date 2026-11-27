@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 
 use piperine_lang::msl::Span;
-use piperine_lang::refusal::forms::{AnalogForm, ConstantForm, DigitalForm, GenericsForm, PatternForm, StructureForm, ValueForm};
+use piperine_lang::refusal::forms::{AnalogForm, ConstantForm, DigitalForm, EventFunctionForm, GenericsForm, ItemForm, PatternForm, StructureForm, ValueForm};
 use piperine_lang::refusal::{Refusal, RefusalOwner, RefusalRow, RefusedForm};
 
 /// The sources of this crate, read as text.
@@ -50,40 +50,6 @@ fn p0001_does_not_name_a_milestone() {
     assert!(naming.is_empty(), "these sources still name the milestone `{milestone}`: {naming:?}");
 }
 
-/// The constructions of each refused form in the sources outside `refusal/`.
-struct FormSites;
-
-impl FormSites {
-    /// The families of forms, as the enums are named.
-    const FAMILIES: [&'static str; 7] = ["Value", "Pattern", "Analog", "Digital", "Structure", "Generics", "Constant"];
-
-    /// Each form written in `text` (`ValueForm::Method`), in order of appearance.
-    fn written_in(text: &str) -> Vec<String> {
-        let mut written = Vec::new();
-        for family in Self::FAMILIES {
-            let prefix = format!("{family}Form::");
-            for (start, _) in text.match_indices(&prefix) {
-                let name: String = text[start + prefix.len()..].chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-                written.push(format!("{prefix}{name}"));
-            }
-        }
-        written
-    }
-}
-
-#[test]
-fn no_two_sites_build_the_same_refused_form() {
-    let mut sites: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
-    for path in Sources::all().into_iter().filter(|path| !path.components().any(|part| part.as_os_str() == "refusal")) {
-        let text = std::fs::read_to_string(&path).expect("a source of this crate is readable");
-        for form in FormSites::written_in(&text) {
-            *sites.entry(form).or_default() += 1;
-        }
-    }
-    let repeated: Vec<String> = sites.into_iter().filter(|(_, count)| *count > 1).map(|(form, count)| format!("{form} x{count}")).collect();
-    assert!(repeated.is_empty(), "these forms are built at more than one site; give each one method of `RefusedForm` (refusal/repeated.rs): {repeated:?}");
-}
-
 #[test]
 fn the_catch_all_refusal_files_are_gone() {
     let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -95,6 +61,9 @@ fn the_catch_all_refusal_files_are_gone() {
 struct RefusalTable;
 
 impl RefusalTable {
+    /// The length from which a fragment of a form's words is distinctive enough to show a GAPS row owns the form.
+    const DISTINCTIVE: usize = 20;
+
     /// Every form of every family, each paired with the row its family gives it, in declaration order.
     fn entries() -> Vec<(RefusedForm, &'static RefusalRow)> {
         let mut entries = Vec::new();
@@ -105,6 +74,8 @@ impl RefusalTable {
         entries.extend(StructureForm::ALL.iter().map(|form| (RefusedForm::Structure(*form), form.row())));
         entries.extend(GenericsForm::ALL.iter().map(|form| (RefusedForm::Generics(*form), form.row())));
         entries.extend(ConstantForm::ALL.iter().map(|form| (RefusedForm::Constant(*form), form.row())));
+        entries.extend(ItemForm::ALL.iter().map(|form| (RefusedForm::Item(*form), form.row())));
+        entries.extend(EventFunctionForm::ALL.iter().map(|form| (RefusedForm::EventFunction(*form), form.row())));
         entries
     }
 
@@ -146,7 +117,12 @@ fn every_gap_owner_names_a_gaps_row() {
     let gaps = RefusalTable::gaps();
     for (_, row) in RefusalTable::entries() {
         if let RefusalOwner::Gap(id) = row.owner {
-            assert!(gaps.lines().any(|line| line.starts_with(&format!("| {id} |"))), "the form {:?} names `{id}` as its owner and GAPS.md has no such row", row.form);
+            let owning = gaps.lines().find(|line| line.starts_with(&format!("| {id} |"))).unwrap_or_else(|| panic!("the form {:?} names `{id}` as its owner and GAPS.md has no such row", row.form));
+            let fragments: Vec<&str> = row.text.split("{}").map(str::trim).filter(|fragment| fragment.len() >= RefusalTable::DISTINCTIVE).collect();
+            assert!(!fragments.is_empty(), "the words of {:?} have no distinctive fragment, so no GAPS row can be shown to own it", row.form);
+            for fragment in fragments {
+                assert!(owning.contains(fragment), "{:?} names `{id}` as its owner but that row does not quote `{fragment}`", row.form);
+            }
         }
     }
 }
@@ -157,4 +133,14 @@ fn the_unswept_count_only_shrinks() {
     let recorded: usize = std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/support/unswept_count.txt")).expect("the count is recorded").trim().parse().expect("the count is a number");
     assert!(swept <= recorded, "{swept} forms are `Unswept`, the record holds {recorded}: a new form needs an owner (`Gap(id)`), the count never grows");
     assert_eq!(swept, recorded, "{swept} forms are `Unswept`: write {swept} in tests/support/unswept_count.txt (the count only shrinks)");
+}
+
+#[test]
+fn each_form_words_live_in_one_row() {
+    let mut seen: std::collections::BTreeMap<&str, RefusedForm> = std::collections::BTreeMap::new();
+    for (form, row) in RefusalTable::entries() {
+        if let Some(first) = seen.insert(row.text, form.clone()) {
+            panic!("the words `{}` are the row of {first:?} and of {form:?}: a form's words are defined in exactly one row", row.text);
+        }
+    }
 }

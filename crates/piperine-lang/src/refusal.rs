@@ -5,11 +5,10 @@
 //! [`forms`], one table row each.
 
 pub mod forms;
-mod repeated;
 mod syntax;
 
 use crate::msl::{Diagnostic, Span};
-pub use forms::{AnalogForm, ConstantForm, DigitalForm, GenericsForm, PatternForm, StructureForm, ValueForm};
+pub use forms::{AnalogForm, ConstantForm, DigitalForm, EventFunctionForm, GenericsForm, ItemForm, PatternForm, StructureForm, ValueForm};
 
 /// One construct the front end refuses by name (`P0001`).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,6 +56,10 @@ pub enum RefusedForm {
     Generics(GenericsForm),
     /// A form of the constant evaluator.
     Constant(ConstantForm),
+    /// A declaration kind the checker does not type where it is reached.
+    Item(ItemForm),
+    /// A form of a function that returns an `Event` the elaborator does not run.
+    EventFunction(EventFunctionForm),
 }
 
 impl RefusedForm {
@@ -70,6 +73,8 @@ impl RefusedForm {
             RefusedForm::Structure(form) => form.row().text,
             RefusedForm::Generics(form) => form.row().text,
             RefusedForm::Constant(form) => form.row().text,
+            RefusedForm::Item(form) => form.row().text,
+            RefusedForm::EventFunction(form) => form.row().text,
         }
     }
 }

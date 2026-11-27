@@ -17,7 +17,6 @@
 
 use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRole, Origin, Reach, ReachedItem, Terminal, ValueType};
 
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::elab::body::NodePlan;
 use crate::elab::consts::Bindings;
@@ -193,7 +192,7 @@ impl Elaboration<'_, '_> {
     /// generation named by `indexes` (one for each `for` around it). `None` after a diagnostic.
     fn nested_child_frame(&mut self, scope: &Scope, parent: usize, binding: DeclId, indexes: &[ExprId], span: crate::msl::Span) -> Option<usize> {
         let Some(call) = self.body_let_value(binding).map(|value| self.peel_parens(value)) else {
-            self.refuse(scope.file, span, RefusedForm::field_of_something_that_is_not_name());
+            self.refuse(scope.file, span, ValueForm::FieldOfSomethingThatIsNotName);
             return None;
         };
         let owner = self.design.expr_node(call).owner;
@@ -245,17 +244,17 @@ impl Elaboration<'_, '_> {
         } else if self.frames[scope.frame].is_reached() {
             (self.frame_bindings(scope.frame), None)
         } else {
-            self.refuse_unless_refused(scope.frame, scope.file, span, RefusedForm::field_of_child_of_child());
+            self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             return None;
         };
         let Some(module) = self.placed_module(call, &keys) else {
-            self.refuse_unless_refused(scope.frame, scope.file, span, RefusedForm::field_of_child_of_child());
+            self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             return None;
         };
         if scope.frame == 0 && child.is_none() {
             // a placement of the body with no child of its own is a hoisted one: refused when it was hoisted, if it holds a placement
             if !self.refused_modules.contains(&module) {
-                self.refuse_unless_refused(scope.frame, scope.file, span, RefusedForm::field_of_child_of_child());
+                self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             }
             return None;
         }
@@ -463,7 +462,7 @@ impl Elaboration<'_, '_> {
         }
         indexes.reverse();
         let Some((binding, call)) = self.placement_bound_to(at) else {
-            self.refuse(scope.file, span, RefusedForm::field_of_something_that_is_not_name());
+            self.refuse(scope.file, span, ValueForm::FieldOfSomethingThatIsNotName);
             return None;
         };
         let mut key = self.placement_key(scope, call);
@@ -568,7 +567,7 @@ impl Elaboration<'_, '_> {
         };
         let (chosen, _) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
-            self.refuse(data.file, data.span, RefusedForm::resolved_carrier_whose_drive_type_has_no());
+            self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };
         self.structure.carriers[index as usize].role = CarrierRole::Resolved { driven, port: false };

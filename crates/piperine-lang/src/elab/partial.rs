@@ -14,7 +14,6 @@ use piperine_ir::{BodyId, Differentiation, Expr, ExprId as LoweredExpr, Origin, 
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, QuantityRole};
 
@@ -70,7 +69,7 @@ impl Elaboration<'_, '_> {
             [plus] => (plus, Terminal::Ground),
             [plus, minus] => (plus, minus),
             _ => {
-                self.refuse(scope.file, node.span, RefusedForm::probe_of_more_than_two_nodes());
+                self.refuse(scope.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
                 return None;
             }
         };

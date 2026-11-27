@@ -11,7 +11,6 @@ use piperine_ir::{AggregateData, Constant, NodeArray, ValueType};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, ExprId, ExprKind};
 use crate::types::{Length, Ty};
@@ -159,7 +158,7 @@ impl Elaboration<'_, '_> {
         match self.stored_type(value) {
             Some(element) => Some((shape, element)),
             None => {
-                self.refuse(file, span, RefusedForm::carrier_whose_value_type_has_no_value());
+                self.refuse(file, span, DigitalForm::CarrierWhoseValueTypeHasNoValue);
                 None
             }
         }
@@ -180,7 +179,7 @@ impl Elaboration<'_, '_> {
             return Some(self.ir_constant(value, element));
         }
         if shape.dims.len() > 1 {
-            self.refuse(file, node.span, RefusedForm::initial_value_of_nested_array_of_carriers());
+            self.refuse(file, node.span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
             return None;
         }
         let value = self.carrier_init(init, frame)?;
@@ -220,7 +219,7 @@ impl Elaboration<'_, '_> {
         }
         if inner.dims.len() > 1 {
             let span = self.design.expr_node(init).span;
-            self.refuse(self.design.decl_data(decl).file, span, RefusedForm::initial_value_of_nested_array_of_carriers());
+            self.refuse(self.design.decl_data(decl).file, span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
             return None;
         }
         match self.carrier_init_over(init, bindings)? {

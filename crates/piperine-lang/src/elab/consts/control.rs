@@ -18,8 +18,7 @@ use std::collections::BTreeMap;
 use piperine_ir::Constant;
 
 use super::{Bindings, ConstEval, ConstFault, Exit};
-use crate::refusal::RefusedForm;
-use crate::refusal::forms::ConstantForm;
+use crate::refusal::forms::{ConstantForm, ValueForm};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 
 /// The most iterations one loop runs in one evaluation (Q5, §1 rule 11).
@@ -306,7 +305,7 @@ impl ConstEval<'_, '_> {
             return Err(ConstFault::refused(expr, ConstantForm::AssignmentToSomethingThatIsNotLocal));
         };
         let Some(Resolution::Decl(local)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
-            return Err(ConstFault::refused(expr, RefusedForm::assignment_to_name_that_is_not_local()));
+            return Err(ConstFault::refused(expr, ValueForm::AssignmentToNameThatIsNotLocal));
         };
         let value = self.fold(rhs, bindings)?;
         let assigned = match op {

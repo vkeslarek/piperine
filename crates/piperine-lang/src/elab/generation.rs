@@ -16,7 +16,6 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Origin, ValueType};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 
@@ -336,7 +335,7 @@ impl Elaboration<'_, '_> {
         let ordinals: BTreeSet<u32> = reached.iter().filter_map(|iteration| GeneratedLevels::new(loops, iteration).at(level)).collect();
         // an arm some iterations skip leaves a gap: the array the type names has an element the generation never made
         if ordinals.len() as u64 != *length || ordinals.iter().enumerate().any(|(position, ordinal)| position as u32 != *ordinal) {
-            self.refuse(scope.file, self.design.expr_node(expr).span, RefusedForm::let_declared_in_generation_if_that_not());
+            self.refuse(scope.file, self.design.expr_node(expr).span, StructureForm::LetDeclaredInGenerationIfThatNot);
             return None;
         }
         let mut parts = Vec::with_capacity(ordinals.len());

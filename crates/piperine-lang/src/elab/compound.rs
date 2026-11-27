@@ -24,8 +24,7 @@ use super::elements::Lookup;
 use super::patterns::Subject;
 use super::selectors::ArmCondition;
 use super::lower::Scope;
-use crate::refusal::RefusedForm;
-use crate::refusal::forms::ValueForm;
+use crate::refusal::forms::{PatternForm, ValueForm};
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
 use crate::types::{Method, Ty};
 
@@ -273,7 +272,7 @@ impl Elaboration<'_, '_> {
         }
         let origin = self.expr_origin(at);
         let Some(payload) = self.value_type(payload) else {
-            self.refuse(scope.file, self.design.expr_node(at).span, RefusedForm::option_parameter_whose_payload_has_no_value());
+            self.refuse(scope.file, self.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
             return None;
         };
         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
@@ -598,7 +597,7 @@ impl Elaboration<'_, '_> {
     fn closure_parts(&mut self, scope: &mut Scope, closure: ExprId) -> Option<(Option<DeclId>, ExprId)> {
         let node = self.design.expr_node(closure).clone();
         let ExprKind::Closure { params, body, .. } = node.kind else {
-            self.refuse(scope.file, node.span, RefusedForm::closure_argument_that_is_not_closure_literal());
+            self.refuse(scope.file, node.span, ValueForm::ClosureArgumentThatIsNotClosureLiteral);
             return None;
         };
         match params.as_slice() {
@@ -607,7 +606,7 @@ impl Elaboration<'_, '_> {
                 PatKind::Ident { binding, sub: None, .. } => Some((Some(binding), body)),
                 PatKind::Wild => Some((None, body)),
                 _ => {
-                    self.refuse(scope.file, node.span, RefusedForm::closure_parameter_that_is_not_name());
+                    self.refuse(scope.file, node.span, ValueForm::ClosureParameterThatIsNotName);
                     None
                 }
             },
@@ -664,7 +663,7 @@ impl Elaboration<'_, '_> {
                 scope.nesting -= 1;
                 let value = value?;
                 let Some(zero) = self.zero(&payload, origin.clone()) else {
-                    self.refuse(scope.file, span, RefusedForm::option_whose_payload_has_no_zero_in());
+                    self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                     return None;
                 };
                 let val_ty = payload;
@@ -690,7 +689,7 @@ impl Elaboration<'_, '_> {
                         Some(true) => value,
                         _ => {
                             let Some(zero) = zero_of(self, &payload) else {
-                                self.refuse(scope.file, span, RefusedForm::option_whose_payload_has_no_zero_in());
+                                self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                                 return None;
                             };
                             let ty = payload;
@@ -704,7 +703,7 @@ impl Elaboration<'_, '_> {
                 let is_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.is))?;
                 let val_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.val))?;
                 let (Some(no), Some(zero)) = (Some(self.emit(Expr::Bool(false), ValueType::Bool, origin.clone())), zero_of(self, &payload)) else {
-                    self.refuse(scope.file, span, RefusedForm::option_whose_payload_has_no_zero_in());
+                    self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                     return None;
                 };
                 let is_ty = ValueType::Bool;
@@ -720,7 +719,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_option_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, binding: DeclId, init: ExprId) -> bool {
         if self.types.is_assigned(binding) {
             let span = self.design.decl_data(binding).span;
-            self.refuse(scope.file, span, RefusedForm::assignment_to_local_of_type_option());
+            self.refuse(scope.file, span, PatternForm::AssignmentToLocalOfTypeOption);
             return false;
         }
         let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());

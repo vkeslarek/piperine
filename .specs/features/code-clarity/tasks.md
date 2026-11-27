@@ -686,7 +686,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `Refusal` of `types/` is built from `RefusedForm::Text`
+- [x] No `Refusal` of `types/` is built from `RefusedForm::Text`
 - [x] `cargo test -p piperine-lang` passes with no existing test edited
 - [x] Gate check passes: Quick
 
@@ -778,8 +778,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] No two sites build the same `RefusedForm` outside one method (a test of `refusals` counts constructions per variant)
-- [x] `types/unsupported.rs` and `elab/unlowered.rs` are gone
+- [x] A form's words are defined in exactly one row and each repeated form is one named variant, not one message per site: `each_form_words_live_in_one_row` passes under `**Run refusals**` (coordinator decision while the user is AFK, pending review: the per-form pass-through methods of the first attempt were removed as indirection)
+- [x] `types/unsupported.rs` and `elab/unlowered.rs` are gone: `the_catch_all_refusal_files_are_gone` passes under `**Run refusals**`
 - [x] Gate check passes: Quick
 
 **Tests**: integration

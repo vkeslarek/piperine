@@ -39,8 +39,6 @@ pub enum ValueForm {
     AssignmentToPlaceWhoseTypeHasNo,
     /// an assignment to a range index
     AssignmentToRangeIndex,
-    /// behavior block
-    BehaviorBlock,
     /// binary expression
     BinaryExpression,
     /// block expression
@@ -95,8 +93,6 @@ pub enum ValueForm {
     Commit,
     /// comparison of values that are neither `f64`, `bool` nor an integer
     ComparisonOfValuesThatAreNeitherFloatBoolNorInteger,
-    /// `const` item
-    ConstItem,
     /// `const` without a value
     ConstWithoutValue,
     /// a `const` without a value in {}
@@ -109,24 +105,16 @@ pub enum ValueForm {
     DeferredLetOfTypeWithNoZero,
     /// a deferred `let` whose pattern is not a name
     DeferredLetWhosePatternIsNotName,
-    /// definition `=`
-    Definition,
     /// a drive of a child's carrier that is not of a resolved nature
     DriveOfChildCarrierThatIsNot,
     /// `emit!` statement
     EmitStatement,
     /// empty statement
     EmptyStatement,
-    /// `enum` item
-    EnumItem,
     /// an enum of one variant, whose tag has no level,
     EnumOfOneVariantWhoseTagHas,
-    /// `enum` variant
-    EnumVariant,
     /// `expect` with a message that is not a string literal
     ExpectWithMessageThatIsNotString,
-    /// `?` expression
-    Expression,
     /// expression statement
     ExpressionStatement,
     /// an expression the type checker gave no value type
@@ -135,8 +123,6 @@ pub enum ValueForm {
     ExternFunction,
     /// `extern` module
     ExternModule,
-    /// field
-    Field,
     /// field access
     FieldAccess,
     /// a field access that is not an item of a placed module
@@ -151,8 +137,6 @@ pub enum ValueForm {
     FieldOfTypeInValueType,
     /// `flip` type
     FlipType,
-    /// `fn` item
-    FnItem,
     /// `for` loop
     ForLoop,
     /// a `for` over anything but an array, a range or an iterator chain
@@ -161,8 +145,6 @@ pub enum ValueForm {
     ForPatternThatIsNotName,
     /// this form of an `Option` value
     FormOfOptionValue,
-    /// function parameter
-    FunctionParameter,
     /// a function returning an `Option` whose payload has no value in the IR
     FunctionReturningOptionWhosePayloadHasNo,
     /// a function returning an `Option` with no tail value
@@ -173,22 +155,16 @@ pub enum ValueForm {
     FunctionWithOptionParameterOrResultUsed,
     /// function without a body
     FunctionWithoutBody,
-    /// generation `for`/`if`
-    GenerationForIf,
     /// generic arguments on `{}`, which has no generic parameter
     GenericArgumentsOnWhichHasNoGeneric,
     /// generic function
     GenericFunction,
-    /// generic parameter
-    GenericParameter,
     /// a generic parameter read as a value
     GenericParameterReadAsValue,
     /// `if` expression
     IfExpression,
     /// `if let` condition
     IfLetCondition,
-    /// `impl` item
-    ImplItem,
     /// `include_str!`
     IncludeStr,
     /// index expression
@@ -243,8 +219,6 @@ pub enum ValueForm {
     LoweredMethodCall,
     /// malformed expression
     MalformedExpression,
-    /// malformed item
-    MalformedItem,
     /// `match` expression
     MatchExpression,
     /// `match` expression over `{}`
@@ -263,16 +237,6 @@ pub enum ValueForm {
     MethodOnNatureThatReturnsOption,
     /// a method outside the catalogue
     MethodOutsideCatalogue,
-    /// `mod` item
-    ModItem,
-    /// module-body `let`
-    ModuleBodyLet,
-    /// `module` item
-    ModuleItem,
-    /// module param
-    ModuleParam,
-    /// module port
-    ModulePort,
     /// this name as a value
     NameAsValue,
     /// a name of a child that is not one of its nodes, as a node
@@ -287,10 +251,6 @@ pub enum ValueForm {
     NameWithNoValueHere,
     /// a named argument of a constructor
     NamedArgumentOfConstructor,
-    /// `nature` item
-    NatureItem,
-    /// nature quantity
-    NatureQuantity,
     /// a node declared in generation of a module a parent reads through
     NodeDeclaredInGenerationOfModuleParent,
     /// a node of a child read as a value
@@ -301,8 +261,6 @@ pub enum ValueForm {
     NodeOrPortReadAsValue,
     /// a {} of a whole array of carriers or of a part of one: name an element
     OfWholeArrayOfCarriersOrOf,
-    /// `on` reaction
-    OnReaction,
     /// operator `+`
     OperatorAdd,
     /// operator `&`
@@ -373,6 +331,8 @@ pub enum ValueForm {
     PatternWithFieldsThatNamesNoVariant,
     /// a placement used as a value
     PlacementUsedAsValue,
+    /// {} `{}`
+    PrimitiveWithNoSignatureRow,
     /// range expression
     RangeExpression,
     /// a range of anything but integers
@@ -397,8 +357,6 @@ pub enum ValueForm {
     RowReadAsValueRatherThanAs,
     /// `self` parameter
     SelfParameter,
-    /// `signal` item
-    SignalItem,
     /// `signal` statement
     SignalStatement,
     /// a `simparam` name that is not a text literal
@@ -413,8 +371,6 @@ pub enum ValueForm {
     StructExpressionOfNameThatIsNo,
     /// a struct expression that names neither a struct nor a variant
     StructExpressionThatNamesNeitherStructNor,
-    /// `struct` item
-    StructItem,
     /// `struct` item used as a type: `{}` has a carrier field, a bundle
     StructItemUsedAsTypeHasCarrier,
     /// {} that reads a param
@@ -425,8 +381,8 @@ pub enum ValueForm {
     ThisType,
     /// the top module (its elaboration failed without a diagnostic)
     TopModuleItsElaborationFailedWithoutDiagnostic,
-    /// `trait` item
-    TraitItem,
+    /// `?` expression
+    TryExpression,
     /// tuple expression
     TupleExpression,
     /// a tuple `let` component that is not a name
@@ -457,8 +413,6 @@ pub enum ValueForm {
     UnitType,
     /// an unresolved name
     UnresolvedName,
-    /// `use` item
-    UseItem,
     /// {} used as a type
     UsedAsType,
     /// {} used as a value
@@ -504,7 +458,6 @@ impl ValueForm {
         ValueForm::AssignmentToNameThatIsNotLocal,
         ValueForm::AssignmentToPlaceWhoseTypeHasNo,
         ValueForm::AssignmentToRangeIndex,
-        ValueForm::BehaviorBlock,
         ValueForm::BinaryExpression,
         ValueForm::BlockExpression,
         ValueForm::Break,
@@ -532,27 +485,21 @@ impl ValueForm {
         ValueForm::ClosureWithAnotherNumberOfParametersThan,
         ValueForm::Commit,
         ValueForm::ComparisonOfValuesThatAreNeitherFloatBoolNorInteger,
-        ValueForm::ConstItem,
         ValueForm::ConstWithoutValue,
         ValueForm::ConstWithoutValueIn,
         ValueForm::Continue,
         ValueForm::Contribution,
         ValueForm::DeferredLetOfTypeWithNoZero,
         ValueForm::DeferredLetWhosePatternIsNotName,
-        ValueForm::Definition,
         ValueForm::DriveOfChildCarrierThatIsNot,
         ValueForm::EmitStatement,
         ValueForm::EmptyStatement,
-        ValueForm::EnumItem,
         ValueForm::EnumOfOneVariantWhoseTagHas,
-        ValueForm::EnumVariant,
         ValueForm::ExpectWithMessageThatIsNotString,
-        ValueForm::Expression,
         ValueForm::ExpressionStatement,
         ValueForm::ExpressionTypeCheckerGaveNoValueType,
         ValueForm::ExternFunction,
         ValueForm::ExternModule,
-        ValueForm::Field,
         ValueForm::FieldAccess,
         ValueForm::FieldAccessThatIsNotItemOf,
         ValueForm::FieldOfChildOfChild,
@@ -560,25 +507,20 @@ impl ValueForm {
         ValueForm::FieldOfSomethingThatIsNotName,
         ValueForm::FieldOfTypeInValueType,
         ValueForm::FlipType,
-        ValueForm::FnItem,
         ValueForm::ForLoop,
         ValueForm::ForOverAnythingButArrayRangeOr,
         ValueForm::ForPatternThatIsNotName,
         ValueForm::FormOfOptionValue,
-        ValueForm::FunctionParameter,
         ValueForm::FunctionReturningOptionWhosePayloadHasNo,
         ValueForm::FunctionReturningOptionWithNoTailValue,
         ValueForm::FunctionType,
         ValueForm::FunctionWithOptionParameterOrResultUsed,
         ValueForm::FunctionWithoutBody,
-        ValueForm::GenerationForIf,
         ValueForm::GenericArgumentsOnWhichHasNoGeneric,
         ValueForm::GenericFunction,
-        ValueForm::GenericParameter,
         ValueForm::GenericParameterReadAsValue,
         ValueForm::IfExpression,
         ValueForm::IfLetCondition,
-        ValueForm::ImplItem,
         ValueForm::IncludeStr,
         ValueForm::IndexExpression,
         ValueForm::IndexOfValueThatIsNotArray,
@@ -606,7 +548,6 @@ impl ValueForm {
         ValueForm::LoweredFunctionWithoutBody,
         ValueForm::LoweredMethodCall,
         ValueForm::MalformedExpression,
-        ValueForm::MalformedItem,
         ValueForm::MatchExpression,
         ValueForm::MatchExpressionOver,
         ValueForm::MatchWhoseLastArmHasGuard,
@@ -616,11 +557,6 @@ impl ValueForm {
         ValueForm::MethodOn,
         ValueForm::MethodOnNatureThatReturnsOption,
         ValueForm::MethodOutsideCatalogue,
-        ValueForm::ModItem,
-        ValueForm::ModuleBodyLet,
-        ValueForm::ModuleItem,
-        ValueForm::ModuleParam,
-        ValueForm::ModulePort,
         ValueForm::NameAsValue,
         ValueForm::NameOfChildThatIsNotOne,
         ValueForm::NameOfWhichHasFieldsUsedAs,
@@ -628,14 +564,11 @@ impl ValueForm {
         ValueForm::NameWhoseTypeIsUnknown,
         ValueForm::NameWithNoValueHere,
         ValueForm::NamedArgumentOfConstructor,
-        ValueForm::NatureItem,
-        ValueForm::NatureQuantity,
         ValueForm::NodeDeclaredInGenerationOfModuleParent,
         ValueForm::NodeOfChildReadAsValue,
         ValueForm::NodeOfChildReadByItsParent,
         ValueForm::NodeOrPortReadAsValue,
         ValueForm::OfWholeArrayOfCarriersOrOf,
-        ValueForm::OnReaction,
         ValueForm::OperatorAdd,
         ValueForm::OperatorBitAnd,
         ValueForm::OperatorBitOr,
@@ -671,6 +604,7 @@ impl ValueForm {
         ValueForm::PatternOtherThanNameOrTupleOf,
         ValueForm::PatternWithFieldsThatNamesNoVariant,
         ValueForm::PlacementUsedAsValue,
+        ValueForm::PrimitiveWithNoSignatureRow,
         ValueForm::RangeExpression,
         ValueForm::RangeOfAnythingButIntegers,
         ValueForm::RangeThatIsNotWrittenWhereIt,
@@ -683,7 +617,6 @@ impl ValueForm {
         ValueForm::RowReadAsValue,
         ValueForm::RowReadAsValueRatherThanAs,
         ValueForm::SelfParameter,
-        ValueForm::SignalItem,
         ValueForm::SignalStatement,
         ValueForm::SimparamNameThatIsNotTextLiteral,
         ValueForm::Statement,
@@ -691,13 +624,12 @@ impl ValueForm {
         ValueForm::StructExpression,
         ValueForm::StructExpressionOfNameThatIsNo,
         ValueForm::StructExpressionThatNamesNeitherStructNor,
-        ValueForm::StructItem,
         ValueForm::StructItemUsedAsTypeHasCarrier,
         ValueForm::ThatReadsParam,
         ValueForm::ThisExpression,
         ValueForm::ThisType,
         ValueForm::TopModuleItsElaborationFailedWithoutDiagnostic,
-        ValueForm::TraitItem,
+        ValueForm::TryExpression,
         ValueForm::TupleExpression,
         ValueForm::TupleLetComponentThatIsNotName,
         ValueForm::TupleLetOfAnotherNumberOfComponents,
@@ -713,7 +645,6 @@ impl ValueForm {
         ValueForm::UnderMatchArmWithGuard,
         ValueForm::UnitType,
         ValueForm::UnresolvedName,
-        ValueForm::UseItem,
         ValueForm::UsedAsType,
         ValueForm::UsedAsValue,
         ValueForm::ValueInputLeftOutReadAsValue,
@@ -741,12 +672,11 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::AsStructExpression), text: "{} as a struct expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Assignment), text: "assignment", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToFieldOfTypeThatHas), text: "an assignment to a field of a type that has none", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToFieldOrElement), text: "an assignment to a field or an element", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToFieldOrElement), text: "an assignment to a field or an element", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToLocalThatIsNotMutable), text: "an assignment to a local that is not mutable here", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToNameThatIsNotLocal), text: "an assignment to a name that is not a local", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToPlaceWhoseTypeHasNo), text: "an assignment to a place whose type has no value in the IR", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::AssignmentToRangeIndex), text: "an assignment to a range index", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::BehaviorBlock), text: "behavior block", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::BinaryExpression), text: "binary expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::BlockExpression), text: "block expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Break), text: "`break`", owner: RefusalOwner::Unswept },
@@ -774,27 +704,21 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::ClosureWithAnotherNumberOfParametersThan), text: "a closure with another number of parameters than the row gives it", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Commit), text: "commit `<-`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ComparisonOfValuesThatAreNeitherFloatBoolNorInteger), text: "comparison of values that are neither `f64`, `bool` nor an integer", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ConstItem), text: "`const` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ConstWithoutValue), text: "`const` without a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ConstWithoutValueIn), text: "a `const` without a value in {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Continue), text: "`continue`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Contribution), text: "contribution", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::DeferredLetOfTypeWithNoZero), text: "a deferred `let` of a type with no zero in the IR", owner: RefusalOwner::Gap("L84") },
         RefusalRow { form: RefusedForm::Value(ValueForm::DeferredLetWhosePatternIsNotName), text: "a deferred `let` whose pattern is not a name", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::Definition), text: "definition `=`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::DriveOfChildCarrierThatIsNot), text: "a drive of a child's carrier that is not of a resolved nature", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::EmitStatement), text: "`emit!` statement", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::EmptyStatement), text: "empty statement", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::EnumItem), text: "`enum` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::EnumOfOneVariantWhoseTagHas), text: "an enum of one variant, whose tag has no level,", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::EnumVariant), text: "`enum` variant", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ExpectWithMessageThatIsNotString), text: "`expect` with a message that is not a string literal", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::Expression), text: "`?` expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ExpressionStatement), text: "expression statement", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ExpressionTypeCheckerGaveNoValueType), text: "an expression the type checker gave no value type", owner: RefusalOwner::Gap("L86") },
         RefusalRow { form: RefusedForm::Value(ValueForm::ExternFunction), text: "`extern` function", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ExternModule), text: "`extern` module", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::Field), text: "field", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FieldAccess), text: "field access", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FieldAccessThatIsNotItemOf), text: "a field access that is not an item of a placed module", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FieldOfChildOfChild), text: "a field of a child of a child", owner: RefusalOwner::Unswept },
@@ -802,25 +726,20 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::FieldOfSomethingThatIsNotName), text: "a field of something that is not a name bound to a placement", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FieldOfTypeInValueType), text: "a field of type `{}` in a value type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FlipType), text: "`flip` type", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::FnItem), text: "`fn` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ForLoop), text: "`for` loop", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ForOverAnythingButArrayRangeOr), text: "a `for` over anything but an array, a range or an iterator chain", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ForPatternThatIsNotName), text: "a `for` pattern that is not a name", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FormOfOptionValue), text: "this form of an `Option` value", owner: RefusalOwner::Gap("L92") },
-        RefusalRow { form: RefusedForm::Value(ValueForm::FunctionParameter), text: "function parameter", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FunctionReturningOptionWhosePayloadHasNo), text: "a function returning an `Option` whose payload has no value in the IR", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FunctionReturningOptionWithNoTailValue), text: "a function returning an `Option` with no tail value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FunctionType), text: "function type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::FunctionWithOptionParameterOrResultUsed), text: "a function with an `Option` parameter or result used as a value", owner: RefusalOwner::Gap("L86") },
         RefusalRow { form: RefusedForm::Value(ValueForm::FunctionWithoutBody), text: "function without a body", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::GenerationForIf), text: "generation `for`/`if`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::GenericArgumentsOnWhichHasNoGeneric), text: "generic arguments on `{}`, which has no generic parameter", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::GenericFunction), text: "generic function", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::GenericParameter), text: "generic parameter", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::GenericParameterReadAsValue), text: "a generic parameter read as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::IfExpression), text: "`if` expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::IfLetCondition), text: "`if let` condition", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ImplItem), text: "`impl` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::IncludeStr), text: "`include_str!`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::IndexExpression), text: "index expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::IndexOfValueThatIsNotArray), text: "an index of a value that is not an array", owner: RefusalOwner::Unswept },
@@ -848,7 +767,6 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::LoweredFunctionWithoutBody), text: "a function without a body", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::LoweredMethodCall), text: "a method call", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MalformedExpression), text: "malformed expression", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::MalformedItem), text: "malformed item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MatchExpression), text: "`match` expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MatchExpressionOver), text: "`match` expression over `{}`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MatchWhoseLastArmHasGuard), text: "a `match` whose last arm has a guard", owner: RefusalOwner::Unswept },
@@ -858,11 +776,6 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::MethodOn), text: "method `{}` on `{}`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MethodOnNatureThatReturnsOption), text: "a method on a nature that returns an `Option`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::MethodOutsideCatalogue), text: "a method outside the catalogue", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ModItem), text: "`mod` item", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ModuleBodyLet), text: "module-body `let`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ModuleItem), text: "`module` item", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ModuleParam), text: "module param", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::ModulePort), text: "module port", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NameAsValue), text: "this name as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NameOfChildThatIsNotOne), text: "a name of a child that is not one of its nodes, as a node", owner: RefusalOwner::Gap("L96") },
         RefusalRow { form: RefusedForm::Value(ValueForm::NameOfWhichHasFieldsUsedAs), text: "the name of {}, which has fields, used as a value: build it with a call or a struct expression", owner: RefusalOwner::Unswept },
@@ -870,14 +783,11 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::NameWhoseTypeIsUnknown), text: "a name whose type is unknown", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NameWithNoValueHere), text: "a name with no value here", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NamedArgumentOfConstructor), text: "a named argument of a constructor", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::NatureItem), text: "`nature` item", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::NatureQuantity), text: "nature quantity", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NodeDeclaredInGenerationOfModuleParent), text: "a node declared in generation of a module a parent reads through", owner: RefusalOwner::Gap("L94") },
         RefusalRow { form: RefusedForm::Value(ValueForm::NodeOfChildReadAsValue), text: "a node of a child read as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NodeOfChildReadByItsParent), text: "a node of a child read by its parent that the child's body could not place where the parent expects it", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::NodeOrPortReadAsValue), text: "a node or a port read as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::OfWholeArrayOfCarriersOrOf), text: "a {} of a whole array of carriers or of a part of one: name an element", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::OnReaction), text: "`on` reaction", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::OperatorAdd), text: "operator `+`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::OperatorBitAnd), text: "operator `&`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::OperatorBitOr), text: "operator `|`", owner: RefusalOwner::Unswept },
@@ -913,6 +823,7 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::PatternOtherThanNameOrTupleOf), text: "a pattern other than a name, `_` or a tuple of them here", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::PatternWithFieldsThatNamesNoVariant), text: "a pattern with fields that names no variant", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::PlacementUsedAsValue), text: "a placement used as a value", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Value(ValueForm::PrimitiveWithNoSignatureRow), text: "{} `{}`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::RangeExpression), text: "range expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::RangeOfAnythingButIntegers), text: "a range of anything but integers", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::RangeThatIsNotWrittenWhereIt), text: "a range that is not written where it is used or bound by a `let`", owner: RefusalOwner::Unswept },
@@ -925,7 +836,6 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::RowReadAsValue), text: "a `{}` row read as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::RowReadAsValueRatherThanAs), text: "a `{}` row read as a value rather than as an `Option`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::SelfParameter), text: "`self` parameter", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::SignalItem), text: "`signal` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::SignalStatement), text: "`signal` statement", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::SimparamNameThatIsNotTextLiteral), text: "a `simparam` name that is not a text literal", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::Statement), text: "this statement", owner: RefusalOwner::Unswept },
@@ -933,13 +843,12 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::StructExpression), text: "struct expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::StructExpressionOfNameThatIsNo), text: "struct expression of a name that is no struct", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::StructExpressionThatNamesNeitherStructNor), text: "a struct expression that names neither a struct nor a variant", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::StructItem), text: "`struct` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::StructItemUsedAsTypeHasCarrier), text: "`struct` item used as a type: `{}` has a carrier field, a bundle", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ThatReadsParam), text: "{} that reads a param", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ThisExpression), text: "this expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ThisType), text: "this type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::TopModuleItsElaborationFailedWithoutDiagnostic), text: "the top module (its elaboration failed without a diagnostic)", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::TraitItem), text: "`trait` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Value(ValueForm::TryExpression), text: "`?` expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::TupleExpression), text: "tuple expression", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::TupleLetComponentThatIsNotName), text: "a tuple `let` component that is not a name", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::TupleLetOfAnotherNumberOfComponents), text: "a tuple `let` of another number of components", owner: RefusalOwner::Unswept },
@@ -955,7 +864,6 @@ impl ValueForm {
         RefusalRow { form: RefusedForm::Value(ValueForm::UnderMatchArmWithGuard), text: "{} under a `match` arm with a guard", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::UnitType), text: "unit type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::UnresolvedName), text: "an unresolved name", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Value(ValueForm::UseItem), text: "`use` item", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::UsedAsType), text: "{} used as a type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::UsedAsValue), text: "{} used as a value", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Value(ValueForm::ValueInputLeftOutReadAsValue), text: "a value input left out, read as a value", owner: RefusalOwner::Unswept },
@@ -1123,8 +1031,6 @@ pub enum AnalogForm {
     CallAsEvent,
     /// a call inside a `ddx` that expands to no expression
     CallInsideDdxThatExpandsToNo,
-    /// a call whose arguments the type checker did not bind, as an event
-    CallWhoseArgumentsTypeCheckerDidNot,
     /// a closure or an `Option` binding inside a `ddt` state
     ClosureOrOptionBindingInsideDdtState,
     /// a closure or an `Option` binding inside a `delay` input
@@ -1177,12 +1083,6 @@ pub enum AnalogForm {
     FormWithNoDerivativeRule,
     /// a function of §22.1 called with the wrong number of arguments
     FunctionOfCalledWithWrongNumberOf,
-    /// a function that returns an `Event` and has no body
-    FunctionThatReturnsEventAndHasNo,
-    /// a function that returns an `Event` that does not end in its event
-    FunctionThatReturnsEventThatDoesNot,
-    /// a function that returns an `Event` with an empty body
-    FunctionThatReturnsEventWithEmptyBody,
     /// a generated node outside the generation that declares it, without an index
     GeneratedNodeOutsideGenerationThatDeclaresIt,
     /// a guarded `ac_stim` whose input binds a local
@@ -1191,8 +1091,6 @@ pub enum AnalogForm {
     GuardedLimitWhoseInputBindsLocal,
     /// an `if let` in a `fn` called inside a `ddx`
     IfLetInFnCalledInsideDdx,
-    /// an `if let` in a function that returns an `Event`
-    IfLetInFunctionThatReturnsEvent,
     /// an index of a value that is no array of nodes
     IndexOfValueThatIsNoArray,
     /// a `{}` inside an `Option` method
@@ -1213,10 +1111,6 @@ pub enum AnalogForm {
     LogicOfPatternThatIsNoLiteral,
     /// `logic` without the standard library's `Logic`
     LogicWithoutStandardLibraryLogic,
-    /// a `match` arm whose pattern binds a name, in a function that returns an `Event`
-    MatchArmWhosePatternBindsNameIn,
-    /// a `match` arm with a guard in a function that returns an `Event`
-    MatchArmWithGuardInFunctionThat,
     /// a `matches_bits` subject that is not a `Logic<N>` of known width
     MatchesBitsSubjectThatIsNotLogic,
     /// this method as an event
@@ -1225,8 +1119,6 @@ pub enum AnalogForm {
     MethodOnBitItIsEdgeOf,
     /// method `{}` on this receiver
     MethodOnThisReceiver,
-    /// a method that returns an `Event` that no impl gives for this type
-    MethodThatReturnsEventThatNoImpl,
     /// this name as an event
     NameAsEvent,
     /// a name that is not a node of this module
@@ -1253,22 +1145,14 @@ pub enum AnalogForm {
     ProbeThroughUnresolvedName,
     /// a receiver that is not a carrier of this module
     ReceiverThatIsNotCarrierOfThis,
-    /// {} `{}`
-    Refused,
-    /// a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`
-    StatementThatIsNoLetAssignmentIf,
     /// a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`
     StatementThatIsNoLetOfName,
-    /// a statement that is no `let` of a name before the event of a function that returns an `Event`
-    StatementThatIsNoLetOfNameBefore,
     /// a `table_model` called with other than three arguments
     TableModelCalledWithOtherThanThree,
     /// a `table_model` table that is not an array of `(f64, f64)` pairs known at elaboration
     TableModelTableThatIsNotArray,
     /// {} that is not a constant or a param
     ThatIsNotConstantOrParam,
-    /// a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`
-    WhileLoopBreakContinueOrReturnWith,
     /// a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading
     WhileOrLoopInFnCalledInside,
     /// `{}` whose result type is not written (the array type is the `const`'s, §22.6.4 rule 2)
@@ -1286,7 +1170,6 @@ impl AnalogForm {
         AnalogForm::BreakContinueOrReturnWithNoValue,
         AnalogForm::CallAsEvent,
         AnalogForm::CallInsideDdxThatExpandsToNo,
-        AnalogForm::CallWhoseArgumentsTypeCheckerDidNot,
         AnalogForm::ClosureOrOptionBindingInsideDdtState,
         AnalogForm::ClosureOrOptionBindingInsideDelayInput,
         AnalogForm::ClosureOrOptionBindingInsideNoiseDensity,
@@ -1313,14 +1196,10 @@ impl AnalogForm {
         AnalogForm::FormOfEvent,
         AnalogForm::FormWithNoDerivativeRule,
         AnalogForm::FunctionOfCalledWithWrongNumberOf,
-        AnalogForm::FunctionThatReturnsEventAndHasNo,
-        AnalogForm::FunctionThatReturnsEventThatDoesNot,
-        AnalogForm::FunctionThatReturnsEventWithEmptyBody,
         AnalogForm::GeneratedNodeOutsideGenerationThatDeclaresIt,
         AnalogForm::GuardedAcStimWhoseInputBindsLocal,
         AnalogForm::GuardedLimitWhoseInputBindsLocal,
         AnalogForm::IfLetInFnCalledInsideDdx,
-        AnalogForm::IfLetInFunctionThatReturnsEvent,
         AnalogForm::IndexOfValueThatIsNoArray,
         AnalogForm::InsideOptionMethod,
         AnalogForm::LetInArgumentOfEvent,
@@ -1331,13 +1210,10 @@ impl AnalogForm {
         AnalogForm::LogicCallWhoseTypeIsNotLogic,
         AnalogForm::LogicOfPatternThatIsNoLiteral,
         AnalogForm::LogicWithoutStandardLibraryLogic,
-        AnalogForm::MatchArmWhosePatternBindsNameIn,
-        AnalogForm::MatchArmWithGuardInFunctionThat,
         AnalogForm::MatchesBitsSubjectThatIsNotLogic,
         AnalogForm::MethodAsEvent,
         AnalogForm::MethodOnBitItIsEdgeOf,
         AnalogForm::MethodOnThisReceiver,
-        AnalogForm::MethodThatReturnsEventThatNoImpl,
         AnalogForm::NameAsEvent,
         AnalogForm::NameThatIsNotNodeOfThis,
         AnalogForm::NatureWithoutPotential,
@@ -1351,14 +1227,10 @@ impl AnalogForm {
         AnalogForm::ProbeThroughThisName,
         AnalogForm::ProbeThroughUnresolvedName,
         AnalogForm::ReceiverThatIsNotCarrierOfThis,
-        AnalogForm::Refused,
-        AnalogForm::StatementThatIsNoLetAssignmentIf,
         AnalogForm::StatementThatIsNoLetOfName,
-        AnalogForm::StatementThatIsNoLetOfNameBefore,
         AnalogForm::TableModelCalledWithOtherThanThree,
         AnalogForm::TableModelTableThatIsNotArray,
         AnalogForm::ThatIsNotConstantOrParam,
-        AnalogForm::WhileLoopBreakContinueOrReturnWith,
         AnalogForm::WhileOrLoopInFnCalledInside,
         AnalogForm::WhoseResultTypeIsNotWrittenArray,
     ];
@@ -1366,65 +1238,57 @@ impl AnalogForm {
     /// The rows of the family, one per form in declaration order.
     const ROWS: &[RefusalRow] = &[
         RefusalRow { form: RefusedForm::Analog(AnalogForm::AnalysisOfKindOtherThanStaticDc), text: "`analysis` of a kind other than `Static`, `Dc`, `Transient`, `Ac` or `Noise`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::AssignmentToSomethingThatIsNoName), text: "an assignment to something that is no name of {}", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::AssignmentToSomethingThatIsNoName), text: "an assignment to something that is no name of {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::BoundStepInsideClosureOrOptionMethod), text: "a `bound_step` inside a closure or an `Option` method", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::BoundStepUnderConditionWhoseStepBinds), text: "a `bound_step` under a condition whose step binds a local", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::BreakContinueOrNestedWhileInLoop), text: "a `break`, a `continue` or a nested `while` in a loop of {}", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::BreakContinueOrReturnWithNoValue), text: "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::BreakContinueOrNestedWhileInLoop), text: "a `break`, a `continue` or a nested `while` in a loop of {}", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::BreakContinueOrReturnWithNoValue), text: "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::CallAsEvent), text: "this call as an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::CallInsideDdxThatExpandsToNo), text: "a call inside a `ddx` that expands to no expression", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::CallWhoseArgumentsTypeCheckerDidNot), text: "a call whose arguments the type checker did not bind, as an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ClosureOrOptionBindingInsideDdtState), text: "a closure or an `Option` binding inside a `ddt` state", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ClosureOrOptionBindingInsideDelayInput), text: "a closure or an `Option` binding inside a `delay` input", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ClosureOrOptionBindingInsideNoiseDensity), text: "a closure or an `Option` binding inside a `noise` density", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::CommitOutsideReactionBody), text: "commit `<-` outside a reaction body", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::CompoundAssignmentThroughOperatorOfTypeIn), text: "a compound assignment through an operator of a type, in {}", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::CompoundAssignmentThroughOperatorOfTypeIn), text: "a compound assignment through an operator of a type, in {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ContributionOutsideAnalogBlock), text: "contribution outside an `analog` block", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ContributionTargetThatIsNotProbe), text: "a contribution target that is not a probe", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ContributionToProbeOfMoreThanTwo), text: "a contribution to a probe of more than two nodes", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::CorePrimitive), text: "core primitive `{}`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::DdxWhoseDerivativeReadsValueOfFlow), text: "a `ddx` whose derivative reads the value of the flow of a branch with no potential contribution", owner: RefusalOwner::Gap("L73") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ElseThatIsNoBlockOrIf), text: "an `else` that is no block or `if` in {}", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ElseThatIsNoBlockOrIf), text: "an `else` that is no block or `if` in {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::EncodeOnValueWhoseLevelCountIs), text: "`encode` on a value whose level count is not known where it is lowered", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::EventThatIsNotEventRead), text: "an event that is not an event read", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ExpressionStatementThatIsNoAssignmentIf), text: "an expression statement that is no assignment, `if` or `for` in a `fn` called inside a `ddx`", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ExpressionStatementThatIsNoAssignmentIf), text: "an expression statement that is no assignment, `if` or `for` in a `fn` called inside a `ddx`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FieldOfElementOfArrayOfBundles), text: "a field of an element of an array of bundles that is no node", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FlowProbeOfBranchWithoutPotentialContribution), text: "a flow probe of a branch without a potential contribution", owner: RefusalOwner::Gap("L73") },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FlowProbeReadAsValue), text: "flow probe read as a value", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::FnCalledInsideDdxThatForksInto), text: "a `fn` called inside a `ddx` that forks into more than 4096 paths", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::FnWithNoValueInsideDdx), text: "a `fn` with no value inside a `ddx`", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForOfMoreThanIterationsIn), text: "a `for` of more than 4096 iterations in {}", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForThatIsNotOverRangeWith), text: "a `for` that is not over a range with both bounds, in {}", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForWhoseBoundsDoNotFoldTo), text: "a `for` whose bounds do not fold to constants, in {}", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForWhoseVariableIsNoNameIn), text: "a `for` whose variable is no name, in {}", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::FnCalledInsideDdxThatForksInto), text: "a `fn` called inside a `ddx` that forks into more than 4096 paths", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::FnWithNoValueInsideDdx), text: "a `fn` with no value inside a `ddx`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForOfMoreThanIterationsIn), text: "a `for` of more than 4096 iterations in {}", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForThatIsNotOverRangeWith), text: "a `for` that is not over a range with both bounds, in {}", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForWhoseBoundsDoNotFoldTo), text: "a `for` whose bounds do not fold to constants, in {}", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::ForWhoseVariableIsNoNameIn), text: "a `for` whose variable is no name, in {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FormOfEvent), text: "this form of an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FormWithNoDerivativeRule), text: "{}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::FunctionOfCalledWithWrongNumberOf), text: "a function of §22.1 called with the wrong number of arguments", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::FunctionThatReturnsEventAndHasNo), text: "a function that returns an `Event` and has no body", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::FunctionThatReturnsEventThatDoesNot), text: "a function that returns an `Event` that does not end in its event", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::FunctionThatReturnsEventWithEmptyBody), text: "a function that returns an `Event` with an empty body", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::GeneratedNodeOutsideGenerationThatDeclaresIt), text: "a generated node outside the generation that declares it, without an index", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::GuardedAcStimWhoseInputBindsLocal), text: "a guarded `ac_stim` whose input binds a local", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::GuardedLimitWhoseInputBindsLocal), text: "a guarded `limit` whose input binds a local", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::IfLetInFnCalledInsideDdx), text: "an `if let` in a `fn` called inside a `ddx`", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::IfLetInFunctionThatReturnsEvent), text: "an `if let` in a function that returns an `Event`", owner: RefusalOwner::Gap("L75") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::IfLetInFnCalledInsideDdx), text: "an `if let` in a `fn` called inside a `ddx`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::IndexOfValueThatIsNoArray), text: "an index of a value that is no array of nodes", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::InsideOptionMethod), text: "a `{}` inside an `Option` method", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LetInArgumentOfEvent), text: "a `let` in the argument of an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LetInDiscretePartOfGuard), text: "a `let` in the discrete part of a guard", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LetInGuardOfHeadSplitPer), text: "a `let` in the guard of a head split per disjunct", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::LetOfPatternThatIsNoName), text: "a `let` of a pattern that is no name in {}", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::LetOfPatternThatIsNoName), text: "a `let` of a pattern that is no name in {}", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LevelCastToTypeThatHasNo), text: "a level cast to a type that has no value type in the IR", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicCallWhoseTypeIsNotLogic), text: "a `logic` call whose type is not a `Logic<N>` of known width", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicOfPatternThatIsNoLiteral), text: "`logic` of a pattern that is no literal where no `Logic<N>` is expected", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicWithoutStandardLibraryLogic), text: "`logic` without the standard library's `Logic`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::MatchArmWhosePatternBindsNameIn), text: "a `match` arm whose pattern binds a name, in a function that returns an `Event`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::MatchArmWithGuardInFunctionThat), text: "a `match` arm with a guard in a function that returns an `Event`", owner: RefusalOwner::Gap("L75") },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MatchesBitsSubjectThatIsNotLogic), text: "a `matches_bits` subject that is not a `Logic<N>` of known width", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodAsEvent), text: "this method as an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodOnBitItIsEdgeOf), text: "method `{}` on `Bit<{}>`: it is the edge of a `Bit` of `bool` or of a `Logic` of one level", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodOnThisReceiver), text: "method `{}` on this receiver", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodThatReturnsEventThatNoImpl), text: "a method that returns an `Event` that no impl gives for this type", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::NameAsEvent), text: "this name as an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::NameThatIsNotNodeOfThis), text: "a name that is not a node of this module", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::NatureWithoutPotential), text: "nature `{}` without a potential", owner: RefusalOwner::Unswept },
@@ -1438,15 +1302,11 @@ impl AnalogForm {
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ProbeThroughThisName), text: "probe through this name", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ProbeThroughUnresolvedName), text: "probe through an unresolved name", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ReceiverThatIsNotCarrierOfThis), text: "a receiver that is not a carrier of this module", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::Refused), text: "{} `{}`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::StatementThatIsNoLetAssignmentIf), text: "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::StatementThatIsNoLetOfName), text: "a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`", owner: RefusalOwner::Gap("L74") },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::StatementThatIsNoLetOfNameBefore), text: "a statement that is no `let` of a name before the event of a function that returns an `Event`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::StatementThatIsNoLetOfName), text: "a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::TableModelCalledWithOtherThanThree), text: "a `table_model` called with other than three arguments", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::TableModelTableThatIsNotArray), text: "a `table_model` table that is not an array of `(f64, f64)` pairs known at elaboration", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::ThatIsNotConstantOrParam), text: "{} that is not a constant or a param", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::WhileLoopBreakContinueOrReturnWith), text: "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::WhileOrLoopInFnCalledInside), text: "a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading", owner: RefusalOwner::Gap("L74") },
+        RefusalRow { form: RefusedForm::Analog(AnalogForm::WhileOrLoopInFnCalledInside), text: "a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::WhoseResultTypeIsNotWrittenArray), text: "`{}` whose result type is not written (the array type is the `const`'s, §22.6.4 rule 2)", owner: RefusalOwner::Unswept },
     ];
 
@@ -2287,5 +2147,197 @@ impl ConstantForm {
 impl From<ConstantForm> for RefusedForm {
     fn from(form: ConstantForm) -> RefusedForm {
         RefusedForm::Constant(form)
+    }
+}
+
+/// The item forms the front end refuses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ItemForm {
+    /// behavior block
+    BehaviorBlock,
+    /// `const` item
+    ConstItem,
+    /// definition `=`
+    Definition,
+    /// `enum` item
+    EnumItem,
+    /// `enum` variant
+    EnumVariant,
+    /// field
+    Field,
+    /// `fn` item
+    FnItem,
+    /// function parameter
+    FunctionParameter,
+    /// generation `for`/`if`
+    GenerationForIf,
+    /// generic parameter
+    GenericParameter,
+    /// `impl` item
+    ImplItem,
+    /// malformed item
+    MalformedItem,
+    /// `mod` item
+    ModItem,
+    /// module-body `let`
+    ModuleBodyLet,
+    /// `module` item
+    ModuleItem,
+    /// module param
+    ModuleParam,
+    /// module port
+    ModulePort,
+    /// `nature` item
+    NatureItem,
+    /// nature quantity
+    NatureQuantity,
+    /// `on` reaction
+    OnReaction,
+    /// `signal` item
+    SignalItem,
+    /// `struct` item
+    StructItem,
+    /// `trait` item
+    TraitItem,
+    /// `use` item
+    UseItem,
+}
+
+impl ItemForm {
+    /// Every form of the family, in declaration order.
+    pub const ALL: &[ItemForm] = &[
+        ItemForm::BehaviorBlock,
+        ItemForm::ConstItem,
+        ItemForm::Definition,
+        ItemForm::EnumItem,
+        ItemForm::EnumVariant,
+        ItemForm::Field,
+        ItemForm::FnItem,
+        ItemForm::FunctionParameter,
+        ItemForm::GenerationForIf,
+        ItemForm::GenericParameter,
+        ItemForm::ImplItem,
+        ItemForm::MalformedItem,
+        ItemForm::ModItem,
+        ItemForm::ModuleBodyLet,
+        ItemForm::ModuleItem,
+        ItemForm::ModuleParam,
+        ItemForm::ModulePort,
+        ItemForm::NatureItem,
+        ItemForm::NatureQuantity,
+        ItemForm::OnReaction,
+        ItemForm::SignalItem,
+        ItemForm::StructItem,
+        ItemForm::TraitItem,
+        ItemForm::UseItem,
+    ];
+
+    /// The rows of the family, one per form in declaration order.
+    const ROWS: &[RefusalRow] = &[
+        RefusalRow { form: RefusedForm::Item(ItemForm::BehaviorBlock), text: "behavior block", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ConstItem), text: "`const` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::Definition), text: "definition `=`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::EnumItem), text: "`enum` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::EnumVariant), text: "`enum` variant", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::Field), text: "field", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::FnItem), text: "`fn` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::FunctionParameter), text: "function parameter", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::GenerationForIf), text: "generation `for`/`if`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::GenericParameter), text: "generic parameter", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ImplItem), text: "`impl` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::MalformedItem), text: "malformed item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ModItem), text: "`mod` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ModuleBodyLet), text: "module-body `let`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ModuleItem), text: "`module` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ModuleParam), text: "module param", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::ModulePort), text: "module port", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::NatureItem), text: "`nature` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::NatureQuantity), text: "nature quantity", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::OnReaction), text: "`on` reaction", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::SignalItem), text: "`signal` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::StructItem), text: "`struct` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::TraitItem), text: "`trait` item", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::Item(ItemForm::UseItem), text: "`use` item", owner: RefusalOwner::Unswept },
+    ];
+
+    /// The row of the form: its words and its owner.
+    pub fn row(self) -> &'static RefusalRow {
+        &Self::ROWS[self as usize]
+    }
+}
+
+impl From<ItemForm> for RefusedForm {
+    fn from(form: ItemForm) -> RefusedForm {
+        RefusedForm::Item(form)
+    }
+}
+
+/// The eventfunction forms the front end refuses.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventFunctionForm {
+    /// a call whose arguments the type checker did not bind, as an event
+    CallWhoseArgumentsTypeCheckerDidNot,
+    /// a function that returns an `Event` and has no body
+    FunctionThatReturnsEventAndHasNo,
+    /// a function that returns an `Event` that does not end in its event
+    FunctionThatReturnsEventThatDoesNot,
+    /// a function that returns an `Event` with an empty body
+    FunctionThatReturnsEventWithEmptyBody,
+    /// an `if let` in a function that returns an `Event`
+    IfLetInFunctionThatReturnsEvent,
+    /// a `match` arm whose pattern binds a name, in a function that returns an `Event`
+    MatchArmWhosePatternBindsNameIn,
+    /// a `match` arm with a guard in a function that returns an `Event`
+    MatchArmWithGuardInFunctionThat,
+    /// a method that returns an `Event` that no impl gives for this type
+    MethodThatReturnsEventThatNoImpl,
+    /// a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`
+    StatementThatIsNoLetAssignmentIf,
+    /// a statement that is no `let` of a name before the event of a function that returns an `Event`
+    StatementThatIsNoLetOfNameBefore,
+    /// a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`
+    WhileLoopBreakContinueOrReturnWith,
+}
+
+impl EventFunctionForm {
+    /// Every form of the family, in declaration order.
+    pub const ALL: &[EventFunctionForm] = &[
+        EventFunctionForm::CallWhoseArgumentsTypeCheckerDidNot,
+        EventFunctionForm::FunctionThatReturnsEventAndHasNo,
+        EventFunctionForm::FunctionThatReturnsEventThatDoesNot,
+        EventFunctionForm::FunctionThatReturnsEventWithEmptyBody,
+        EventFunctionForm::IfLetInFunctionThatReturnsEvent,
+        EventFunctionForm::MatchArmWhosePatternBindsNameIn,
+        EventFunctionForm::MatchArmWithGuardInFunctionThat,
+        EventFunctionForm::MethodThatReturnsEventThatNoImpl,
+        EventFunctionForm::StatementThatIsNoLetAssignmentIf,
+        EventFunctionForm::StatementThatIsNoLetOfNameBefore,
+        EventFunctionForm::WhileLoopBreakContinueOrReturnWith,
+    ];
+
+    /// The rows of the family, one per form in declaration order.
+    const ROWS: &[RefusalRow] = &[
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::CallWhoseArgumentsTypeCheckerDidNot), text: "a call whose arguments the type checker did not bind, as an event", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::FunctionThatReturnsEventAndHasNo), text: "a function that returns an `Event` and has no body", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::FunctionThatReturnsEventThatDoesNot), text: "a function that returns an `Event` that does not end in its event", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::FunctionThatReturnsEventWithEmptyBody), text: "a function that returns an `Event` with an empty body", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::IfLetInFunctionThatReturnsEvent), text: "an `if let` in a function that returns an `Event`", owner: RefusalOwner::Gap("L75") },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::MatchArmWhosePatternBindsNameIn), text: "a `match` arm whose pattern binds a name, in a function that returns an `Event`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::MatchArmWithGuardInFunctionThat), text: "a `match` arm with a guard in a function that returns an `Event`", owner: RefusalOwner::Gap("L75") },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::MethodThatReturnsEventThatNoImpl), text: "a method that returns an `Event` that no impl gives for this type", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::StatementThatIsNoLetAssignmentIf), text: "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::StatementThatIsNoLetOfNameBefore), text: "a statement that is no `let` of a name before the event of a function that returns an `Event`", owner: RefusalOwner::Unswept },
+        RefusalRow { form: RefusedForm::EventFunction(EventFunctionForm::WhileLoopBreakContinueOrReturnWith), text: "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`", owner: RefusalOwner::Unswept },
+    ];
+
+    /// The row of the form: its words and its owner.
+    pub fn row(self) -> &'static RefusalRow {
+        &Self::ROWS[self as usize]
+    }
+}
+
+impl From<EventFunctionForm> for RefusedForm {
+    fn from(form: EventFunctionForm) -> RefusedForm {
+        RefusedForm::EventFunction(form)
     }
 }

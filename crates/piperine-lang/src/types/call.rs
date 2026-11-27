@@ -2,8 +2,8 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
+use crate::refusal::RefusedForm;
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
@@ -301,7 +301,7 @@ impl Checker<'_> {
         let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
         let name = method.text.as_str();
         if generics.is_some() {
-            self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
+            self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
             return None;
         }
         if name == "others" && self.others_on_one_driver(expr, *recv, args) {
@@ -322,7 +322,7 @@ impl Checker<'_> {
                     if replaced {
                         self.refuse_with(file, node.span, ValueForm::MethodDefinedByProjectCheckerKnowsOnly, [name.to_string(), name.to_string()]);
                     } else {
-                        self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
+                        self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                     }
                     return None;
                 }
@@ -333,13 +333,13 @@ impl Checker<'_> {
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 "others" => return self.others_read(expr, *recv, args),
                 _ => {
-                    self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
+                    self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                     return None;
                 }
             },
             Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
             Resolution::Deferred(_) => {
-                self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
+                self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                 return None;
             }
         };

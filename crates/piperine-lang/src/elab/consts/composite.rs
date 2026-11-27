@@ -22,8 +22,7 @@ use piperine_ir::{AggregateId, Constant, Real};
 use super::super::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
-use crate::refusal::RefusedForm;
-use crate::refusal::forms::ConstantForm;
+use crate::refusal::forms::{ConstantForm, StructureForm, ValueForm};
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatId, PatKind, Resolution};
 use crate::types::{Method, Length, Nominal, Ty};
 
@@ -201,7 +200,7 @@ impl ConstEval<'_, '_> {
             Some(Ty::Struct(Nominal { decl, .. })) => decl,
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
-                _ => return Err(ConstFault::refused(expr, RefusedForm::struct_expression_that_names_neither_struct_nor())),
+                _ => return Err(ConstFault::refused(expr, ValueForm::StructExpressionThatNamesNeitherStructNor)),
             },
         };
         let layout: Vec<DeclId> = self.types.fields(owner).map(|fields| fields.iter().map(|f| f.decl).collect()).unwrap_or_default();
@@ -212,7 +211,7 @@ impl ConstEval<'_, '_> {
                 _ => None,
             };
             let Some(at) = at else {
-                return Err(ConstFault::refused(expr, RefusedForm::field_struct_does_not_have()));
+                return Err(ConstFault::refused(expr, ConstantForm::FieldStructDoesNotHave));
             };
             parts[at] = Some(self.fold(init.value, bindings)?);
         }
@@ -234,7 +233,7 @@ impl ConstEval<'_, '_> {
             DeclKind::Struct(_) => Ok(self.make(CompositeKind::Struct, parts)),
             DeclKind::Variant(_) => match EnumLayout::variant_tag(self.design, owner) {
                 Some(position) => Ok(self.make(CompositeKind::Variant(position as u32), parts)),
-                None => Err(ConstFault::refused(expr, RefusedForm::variant_outside_its_enum())),
+                None => Err(ConstFault::refused(expr, ValueForm::VariantOutsideItsEnum)),
             },
             _ => Err(ConstFault::refused(expr, ConstantForm::ValueBuiltFromNameThatIsNeither)),
         }
@@ -391,7 +390,7 @@ impl ConstEval<'_, '_> {
                 Some(element) => Ok(*element),
                 None => Err(ConstFault::Panic { expr, what: format!("the index {at} is out of range for an array of {} elements (§1.5.25)", elements.len()) }),
             },
-            _ => Err(ConstFault::refused(expr, RefusedForm::index_that_is_not_integer())),
+            _ => Err(ConstFault::refused(expr, StructureForm::IndexThatIsNotInteger)),
         }
     }
 
@@ -581,7 +580,7 @@ impl ConstEval<'_, '_> {
                     for field in &fields {
                         let Resolution::Decl(decl) = field.res else { return Err(ConstFault::refused(at, ConstantForm::FieldPatternThatNamesNoField)) };
                         let layout = this.pattern_layout(owner);
-                        let Some(position) = layout.iter().position(|f| *f == decl) else { return Err(ConstFault::refused(at, RefusedForm::field_struct_does_not_have())) };
+                        let Some(position) = layout.iter().position(|f| *f == decl) else { return Err(ConstFault::refused(at, ConstantForm::FieldStructDoesNotHave)) };
                         let part = parts[position];
                         match (field.pat, field.binding) {
                             (Some(sub), _) => {
@@ -807,7 +806,7 @@ impl ConstEval<'_, '_> {
                 let elements = self.elements_of(expr, receiver)?;
                 match self.fold(args[0], bindings)? {
                     Constant::Int(at) => Ok(self.optional(usize::try_from(at).ok().and_then(|at| elements.get(at)).copied())),
-                    _ => Err(ConstFault::refused(expr, RefusedForm::index_that_is_not_integer())),
+                    _ => Err(ConstFault::refused(expr, StructureForm::IndexThatIsNotInteger)),
                 }
             }
             Method::RangeContains => self.range_contains(expr, receiver, args[0], bindings),
@@ -818,7 +817,7 @@ impl ConstEval<'_, '_> {
                         Some(order) => known(!(if inclusive { order.is_le() } else { order.is_lt() })),
                         None => known(true),
                     },
-                    _ => Err(ConstFault::refused(expr, RefusedForm::is_empty_of_range_with_missing_bound())),
+                    _ => Err(ConstFault::refused(expr, ValueForm::IsEmptyOfRangeWithMissingBound)),
                 }
             }
             Method::IteratorMap | Method::IteratorFilter | Method::IteratorAny | Method::IteratorAll => {

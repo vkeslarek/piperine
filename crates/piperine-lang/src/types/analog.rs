@@ -1,7 +1,7 @@
 //! Analog forms: probes (`v(a, b)`, `potential`), contributions (`+>`) and the core primitives
 //! of the subset (`ddt`, `limit`, `ac_stim` and the environment functions of §14.4).
 
-use crate::refusal::forms::AnalogForm;
+use crate::refusal::forms::{AnalogForm, ValueForm};
 use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclId, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
 
 use super::catalogue::{Allowed, Core};
@@ -212,7 +212,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let Some(sig) = Core::signature(id) else {
             let what = if matches!(id.info().kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Statement | BuiltinKind::Event) { "core primitive" } else { "built-in" };
-            self.refuse_with(file, node.span, AnalogForm::Refused, [what.to_string(), id.name().to_string()]);
+            self.refuse_with(file, node.span, ValueForm::PrimitiveWithNoSignatureRow, [what.to_string(), id.name().to_string()]);
             return None;
         };
         let name = id.name();

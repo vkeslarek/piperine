@@ -2,7 +2,7 @@
 //! operator, a statement, a pattern or a type it does not type. Every `match` is exhaustive with no wildcard arm, so a
 //! new kind fails to compile until it is classified.
 
-use super::forms::{PatternForm, ValueForm};
+use super::forms::{ItemForm, PatternForm, ValueForm};
 use super::RefusedForm;
 use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind};
 
@@ -37,7 +37,7 @@ impl RefusedForm {
             ExprKind::Continue => ValueForm::Continue.into(),
             ExprKind::Return(_) => ValueForm::Return.into(),
             ExprKind::Closure { .. } => ValueForm::Closure.into(),
-            ExprKind::Try(_) => ValueForm::Expression.into(),
+            ExprKind::Try(_) => ValueForm::TryExpression.into(),
             ExprKind::Emit { .. } => ValueForm::EmitStatement.into(),
             ExprKind::IncludeStr(_) => ValueForm::IncludeStr.into(),
             ExprKind::Error => ValueForm::MalformedExpression.into(),
@@ -79,7 +79,7 @@ impl RefusedForm {
             StmtKind::Commit { .. } => ValueForm::Commit.into(),
             StmtKind::Empty => ValueForm::EmptyStatement.into(),
             StmtKind::Signal(_) => ValueForm::SignalStatement.into(),
-            StmtKind::Reaction(_) => ValueForm::OnReaction.into(),
+            StmtKind::Reaction(_) => ItemForm::OnReaction.into(),
         }
     }
 
@@ -117,31 +117,31 @@ impl RefusedForm {
     /// The form of a declaration the checker does not type where it is reached.
     pub fn item(kind: &DeclKind) -> RefusedForm {
         match kind {
-            DeclKind::Namespace(_) => ValueForm::ModItem.into(),
-            DeclKind::Use(_) => ValueForm::UseItem.into(),
-            DeclKind::Const(_) => ValueForm::ConstItem.into(),
-            DeclKind::Fn(_) => ValueForm::FnItem.into(),
-            DeclKind::FnParam(_) => ValueForm::FunctionParameter.into(),
-            DeclKind::Struct(_) => ValueForm::StructItem.into(),
-            DeclKind::Field(_) => ValueForm::Field.into(),
-            DeclKind::Enum(_) => ValueForm::EnumItem.into(),
-            DeclKind::Variant(_) => ValueForm::EnumVariant.into(),
-            DeclKind::Trait(_) => ValueForm::TraitItem.into(),
-            DeclKind::Impl(_) => ValueForm::ImplItem.into(),
-            DeclKind::GenericParam(_) => ValueForm::GenericParameter.into(),
-            DeclKind::Nature(_) => ValueForm::NatureItem.into(),
-            DeclKind::Quantity(_) => ValueForm::NatureQuantity.into(),
-            DeclKind::Module(_) => ValueForm::ModuleItem.into(),
-            DeclKind::Port(_) => ValueForm::ModulePort.into(),
-            DeclKind::Param(_) => ValueForm::ModuleParam.into(),
-            DeclKind::Signal(_) => ValueForm::SignalItem.into(),
-            DeclKind::Let(_) => ValueForm::ModuleBodyLet.into(),
+            DeclKind::Namespace(_) => ItemForm::ModItem.into(),
+            DeclKind::Use(_) => ItemForm::UseItem.into(),
+            DeclKind::Const(_) => ItemForm::ConstItem.into(),
+            DeclKind::Fn(_) => ItemForm::FnItem.into(),
+            DeclKind::FnParam(_) => ItemForm::FunctionParameter.into(),
+            DeclKind::Struct(_) => ItemForm::StructItem.into(),
+            DeclKind::Field(_) => ItemForm::Field.into(),
+            DeclKind::Enum(_) => ItemForm::EnumItem.into(),
+            DeclKind::Variant(_) => ItemForm::EnumVariant.into(),
+            DeclKind::Trait(_) => ItemForm::TraitItem.into(),
+            DeclKind::Impl(_) => ItemForm::ImplItem.into(),
+            DeclKind::GenericParam(_) => ItemForm::GenericParameter.into(),
+            DeclKind::Nature(_) => ItemForm::NatureItem.into(),
+            DeclKind::Quantity(_) => ItemForm::NatureQuantity.into(),
+            DeclKind::Module(_) => ItemForm::ModuleItem.into(),
+            DeclKind::Port(_) => ItemForm::ModulePort.into(),
+            DeclKind::Param(_) => ItemForm::ModuleParam.into(),
+            DeclKind::Signal(_) => ItemForm::SignalItem.into(),
+            DeclKind::Let(_) => ItemForm::ModuleBodyLet.into(),
             DeclKind::Binding(_) => PatternForm::BindingPattern.into(),
-            DeclKind::Definition(_) => ValueForm::Definition.into(),
-            DeclKind::Generation(_) => ValueForm::GenerationForIf.into(),
-            DeclKind::Behavior(_) => ValueForm::BehaviorBlock.into(),
-            DeclKind::Reaction(_) => ValueForm::OnReaction.into(),
-            DeclKind::Error => ValueForm::MalformedItem.into(),
+            DeclKind::Definition(_) => ItemForm::Definition.into(),
+            DeclKind::Generation(_) => ItemForm::GenerationForIf.into(),
+            DeclKind::Behavior(_) => ItemForm::BehaviorBlock.into(),
+            DeclKind::Reaction(_) => ItemForm::OnReaction.into(),
+            DeclKind::Error => ItemForm::MalformedItem.into(),
         }
     }
 

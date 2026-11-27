@@ -18,7 +18,7 @@ SRC = os.environ.get('REFUSAL_SRC') or os.path.join(ROOT, 'crates/piperine-lang/
 REGISTRY = os.environ.get('REFUSAL_REGISTRY') or os.path.join(os.path.dirname(__file__), 'registry.json')
 FORMS = os.path.join(SRC, 'refusal/forms.rs')
 
-FAMILIES = ['Value', 'Pattern', 'Analog', 'Digital', 'Structure', 'Generics', 'Constant']
+FAMILIES = ['Value', 'Pattern', 'Analog', 'Digital', 'Structure', 'Generics', 'Constant', 'Item', 'EventFunction']
 STOP = {'a', 'an', 'the', 'this', 'that', 'is', 'are', 'of', 'in', 'as', 'to', 'it', 'its', 'by', 'at', 'on', 'with', 'for', 'no', 'not'}
 KEEP_SHORT = {'no', 'not', 'on', 'in', 'as', 'of', 'with', 'by'}
 

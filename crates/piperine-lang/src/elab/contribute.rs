@@ -15,7 +15,6 @@ use super::elaborator::Elaboration;
 use super::derivatives::LeafRules;
 use super::lower::Scope;
 use super::selectors::ContributionRecord;
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
@@ -71,11 +70,11 @@ impl Elaboration<'_, '_> {
     fn contribution_target(&mut self, scope: &Scope, lhs: ExprId) -> Option<(QuantityRole, Terminal, Terminal)> {
         let node = self.design.expr_node(lhs).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else {
-            self.refuse(scope.file, node.span, RefusedForm::contribution_target_that_is_not_probe());
+            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let Some(role) = self.quantity_role(*callee) else {
-            self.refuse(scope.file, node.span, RefusedForm::contribution_target_that_is_not_probe());
+            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let role = match role {

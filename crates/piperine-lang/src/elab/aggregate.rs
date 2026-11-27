@@ -17,7 +17,6 @@ use super::elaborator::Elaboration;
 use super::elements::Lookup;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
 use crate::types::{Nominal, Ty};
@@ -75,7 +74,7 @@ impl Elaboration<'_, '_> {
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
-                    self.refuse(scope.file, self.design.expr_node(expr).span, RefusedForm::struct_expression_that_names_neither_struct_nor());
+                    self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
                     return None;
                 }
             },

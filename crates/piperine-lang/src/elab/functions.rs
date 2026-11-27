@@ -7,7 +7,6 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::instances::{ConcreteValue, Instance};
 use super::variants::{Half, Variants};
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 use crate::types::Ty;
@@ -33,7 +32,7 @@ impl Elaboration<'_, '_> {
             // of an `Option` local.
             if let Some(Ty::Option(payload)) = self.typed_local(param) {
                 let Some(payload) = self.value_type(&payload) else {
-                    self.refuse(data.file, self.design.decl_data(param).span, RefusedForm::option_parameter_whose_payload_has_no_value());
+                    self.refuse(data.file, self.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
                     ok = false;
                     continue;
                 };
@@ -62,7 +61,7 @@ impl Elaboration<'_, '_> {
             None => true,
         };
         let Some(body) = &f.body else {
-            self.refuse(data.file, data.span, RefusedForm::lowered_function_without_body());
+            self.refuse(data.file, data.span, ValueForm::LoweredFunctionWithoutBody);
             return None;
         };
         let lowered = self.lower_function_body(&mut scope, function, half, data.file, body)?;
