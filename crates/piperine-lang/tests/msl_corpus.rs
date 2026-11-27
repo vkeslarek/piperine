@@ -10,7 +10,7 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use spec_corpus::{Block, Class, corpus, extract, fragment_diagnostics};
 
 fn count(blocks: &[Block], class: Class) -> usize {
@@ -30,7 +30,7 @@ fn every_valid_spec_block_parses_clean() {
     let mut failures = Vec::new();
     for b in &blocks {
         let diags: Vec<String> = match b.class {
-            Class::Valid => parse(&b.text).diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect(),
+            Class::Valid => SourceParser::parse(&b.text).diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect(),
             Class::Fragment => fragment_diagnostics(&b.text),
             Class::CompileFail => continue,
         };
@@ -50,7 +50,7 @@ fn every_compile_fail_block_diagnoses() {
     // alone must report it (no context that would accept it).
     let silent: Vec<String> = fails
         .iter()
-        .filter(|b| parse(&b.text).diagnostics.is_empty())
+        .filter(|b| SourceParser::parse(&b.text).diagnostics.is_empty())
         .map(|b| format!("{}:{}", b.file, b.line))
         .collect();
     assert!(silent.is_empty(), "compile_fail blocks that parse clean: {silent:?}");
@@ -62,7 +62,7 @@ fn every_compile_fail_block_diagnoses() {
     let control = extract("control.md", "```rust,compile_fail\nfn f( { }\n```\n```rust\nfn f() {}\n```\n");
     assert_eq!(control.len(), 2);
     assert_eq!(control[0].class, Class::CompileFail);
-    assert!(!parse(&control[0].text).diagnostics.is_empty(), "a broken source diagnoses");
+    assert!(!SourceParser::parse(&control[0].text).diagnostics.is_empty(), "a broken source diagnoses");
     assert_eq!(control[1].class, Class::Valid);
-    assert!(parse(&control[1].text).diagnostics.is_empty());
+    assert!(SourceParser::parse(&control[1].text).diagnostics.is_empty());
 }

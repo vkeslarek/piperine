@@ -7,7 +7,7 @@ mod support;
 #[path = "support/lowering.rs"]
 mod lowering;
 
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::{DeclKind, NamespaceOrigin, Reflect};
 use lowering::lowering_codes;
 use support::build;
@@ -27,8 +27,8 @@ mod m { }
 pub module R(p: Electrical, n: Electrical) {}
 analog for R { }
 ";
-    let ast = parse(text).file;
-    assert!(parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
+    let ast = SourceParser::parse(text).file;
+    assert!(SourceParser::parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
     let design = build(text);
     assert!(lowering_codes(&design).is_empty());
     let root = design.root();

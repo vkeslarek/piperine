@@ -1,14 +1,14 @@
-//! Scope: the MSL lexer (`piperine_lang::msl::lex`) against
+//! Scope: the MSL lexer (`piperine_lang::msl::Lexer`) against
 //! `docs/spec/appendix_a_lexical.md` — SI-suffixed reals (A.2), `Unknown`
 //! (A.3), doc comments (A.4), the `+>` / `<-` operators (A.5), keyword
 //! classes (A.1) and the lexical error codes of A.6 (`E0902`, `E0905`).
 //! Requirement MSLP-01 (spec AC 1-7) and the non-UTF-8 edge of MSLP-06.
 
-use piperine_lang::msl::lexer::{Punct, Token, lex, lex_bytes};
+use piperine_lang::msl::lexer::{Lexer, Punct, Token};
 use piperine_lang::msl::{Diagnostic, Span};
 
 fn tokens(src: &str) -> Vec<Token> {
-    let (toks, diags) = lex(src);
+    let (toks, diags) = Lexer::lex(src);
     assert!(diags.is_empty(), "unexpected diagnostics for {src:?}: {diags:?}");
     toks.into_iter().map(|(t, _)| t).collect()
 }
@@ -20,7 +20,7 @@ fn one_token(src: &str) -> Token {
 }
 
 fn diagnostics(src: &str) -> Vec<Diagnostic> {
-    lex(src).1
+    Lexer::lex(src).1
 }
 
 fn plain(text: &str) -> Token {
@@ -105,7 +105,7 @@ fn dropped_token_class_reports_e0905() {
     }
     // The lifetime of a reference is part of the removed reference form (B.3.6): one E0905 and no
     // token, so the reference reports itself.
-    let (toks, diags) = lex("&'static str");
+    let (toks, diags) = Lexer::lex("&'static str");
     assert_eq!(toks.into_iter().map(|(t, _)| t).collect::<Vec<_>>(), vec![Token::Punct(Punct::And), Token::Ident("str".into())]);
     assert_eq!(diags.len(), 1);
 }
@@ -202,7 +202,7 @@ fn doc_comments_are_tokens() {
         ]
     );
     // The doc token's span covers the whole comment line.
-    let (toks, _) = lex("/// hi\nx");
+    let (toks, _) = Lexer::lex("/// hi\nx");
     assert_eq!(toks[0].1, Span::new(0, 6));
     assert_eq!(toks[1].1, Span::new(7, 8));
 }
@@ -212,7 +212,7 @@ fn unterminated_comment_and_string_one_diagnostic() {
     // Appendix A / MSLP-01 AC 7: one diagnostic at the opening position,
     // and lexing continues to end of file without another one.
     let src = "a /* never closed\nb c";
-    let (toks, diags) = lex(src);
+    let (toks, diags) = Lexer::lex(src);
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].span().start, 2);
     assert_eq!(toks[0].0, Token::Ident("a".into()));
@@ -220,7 +220,7 @@ fn unterminated_comment_and_string_one_diagnostic() {
     assert_eq!(toks.len(), 1, "{toks:?}");
 
     let src = "x = \"never closed\ny";
-    let (toks, diags) = lex(src);
+    let (toks, diags) = Lexer::lex(src);
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].span().start, 4);
     // `x`, `=`, then one error token standing for the string, which
@@ -235,12 +235,12 @@ fn unterminated_comment_and_string_one_diagnostic() {
 #[test]
 fn non_utf8_one_diagnostic() {
     // MSLP-06: invalid UTF-8 yields one diagnostic and no tokens.
-    let (toks, diags) = lex_bytes(b"let x = \xff\xfe;");
+    let (toks, diags) = Lexer::lex_bytes(b"let x = \xff\xfe;");
     assert!(toks.is_empty());
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].span().start, 8);
     // Valid UTF-8 bytes lex like the string.
-    let (toks, diags) = lex_bytes("x".as_bytes());
+    let (toks, diags) = Lexer::lex_bytes("x".as_bytes());
     assert!(diags.is_empty());
     assert_eq!(toks.len(), 1);
 }
@@ -249,7 +249,7 @@ fn non_utf8_one_diagnostic() {
 fn inherited_lexical_forms_lex() {
     // Appendix A.1: identifiers, literals and the value syntax are Rust's.
     // Raw strings: one string token, spanning `r#*"` to the closing run.
-    let (toks, diags) = lex(r###"r"a\b" r#"q"q"# r##"x"#y"##"###);
+    let (toks, diags) = Lexer::lex(r###"r"a\b" r#"q"q"# r##"x"#y"##"###);
     assert!(diags.is_empty(), "{diags:?}");
     assert_eq!(toks.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>(), vec![
         raw("a\\\\b", 0),
@@ -270,7 +270,7 @@ fn inherited_lexical_forms_lex() {
     // Non-ASCII identifiers, and a byte order mark that is not a token.
     assert_eq!(one_token("café"), Token::Ident("café".into()));
     assert_eq!(one_token("µ"), Token::Ident("µ".into()));
-    let (toks, diags) = lex("\u{FEFF}x");
+    let (toks, diags) = Lexer::lex("\u{FEFF}x");
     assert!(diags.is_empty());
     assert_eq!(toks, vec![(Token::Ident("x".into()), Span::new(3, 4))]);
 }
@@ -281,7 +281,7 @@ fn raw_identifier_of_an_added_keyword_is_an_identifier() {
     // is one raw identifier token holding the word without the prefix.
     for word in ["module", "nature", "signal", "on", "out", "flip", "after"] {
         let src = format!("r#{word}");
-        let (toks, diags) = lex(&src);
+        let (toks, diags) = Lexer::lex(&src);
         assert!(diags.is_empty(), "{src}: {diags:?}");
         assert_eq!(toks.len(), 1, "{src}: {toks:?}");
         assert_eq!(toks[0].0, Token::RawIdent(word.to_string()), "{src}");
@@ -295,7 +295,7 @@ fn raw_identifier_of_an_added_keyword_is_an_identifier() {
 }
 
 fn only_code(src: &str, code: &str, span: Span) {
-    let (toks, diags) = lex(src);
+    let (toks, diags) = Lexer::lex(src);
     assert_eq!(diags.len(), 1, "{src:?}: {diags:?}");
     assert_eq!(diags[0].code, code, "{src:?}");
     assert_eq!(diags[0].span(), span, "{src:?}");
@@ -307,7 +307,7 @@ fn only_code(src: &str, code: &str, span: Span) {
 fn float_literal_out_of_range_is_e0909() {
     // POL-13 AC 2, A.2 rule 8: an SI-suffixed literal is an `f64`, so its range is the lexer's; an unsuffixed one is read in
     // the format of its position, so `1e999` lexes clean (the checker refuses it as an `f64`, and `f128` holds it).
-    let (toks, diags) = lex("1e999");
+    let (toks, diags) = Lexer::lex("1e999");
     assert!(diags.is_empty() && toks.len() == 1, "an unsuffixed float is no lexer error: {diags:?}");
     let big = "9".repeat(310);
     let src = format!("{big}T");
@@ -340,13 +340,13 @@ fn invalid_string_escape_is_e0900() {
         (r#""ab\x9""#, Span::new(3, 6)),
         (r#""\u{110000}""#, Span::new(1, 11)),
     ] {
-        let (_, diags) = lex(src);
+        let (_, diags) = Lexer::lex(src);
         assert_eq!(diags.len(), 1, "{src}: {diags:?}");
         assert_eq!(diags[0].code, "E0900", "{src}");
         assert_eq!(diags[0].span(), span, "{src}");
     }
     // Two bad escapes, two diagnostics; the defined ones are clean.
-    assert_eq!(lex(r#""\q\z""#).1.len(), 2);
+    assert_eq!(Lexer::lex(r#""\q\z""#).1.len(), 2);
     assert!(
         diagnostics(r#""\n\r\t\\\0\'\"\x41\u{1F600}\u{41}""#).is_empty(),
         "every Rust escape is defined"
@@ -357,7 +357,7 @@ fn invalid_string_escape_is_e0900() {
 
 fn literal(src: &str) -> piperine_lang::msl::ast::Lit {
     use piperine_lang::msl::ast::ExprKind;
-    let (expr, diags) = piperine_lang::msl::parser::parse_expr(src);
+    let (expr, diags) = piperine_lang::msl::parser::ExpressionGrammar::parse(src);
     let _ = diags;
     match expr.expect("an expression").kind {
         ExprKind::Lit(l) => l,

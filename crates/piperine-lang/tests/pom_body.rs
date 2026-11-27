@@ -385,7 +385,7 @@ fn depth_256_builds_on_default_stack() {
 /// Parse `src`, build it, rebuild the tree from the arenas and demand the same
 /// tree, spans included (`Loc` equality ignores spans, `Debug` prints them).
 fn assert_round_trips(src: &str) {
-    let parsed = piperine_lang::msl::parser::parse(src).file;
+    let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
     let design = build(src);
     let rebuilt = design.files()[0].to_ast();
     assert_eq!(rebuilt, parsed, "structure differs for:\n{src}");

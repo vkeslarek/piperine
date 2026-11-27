@@ -9,8 +9,8 @@
 mod spec_corpus;
 
 use piperine_lang::msl::ast::File;
-use piperine_lang::msl::parser::parse;
-use piperine_lang::msl::print;
+use piperine_lang::msl::parser::SourceParser;
+use piperine_lang::msl::Printer;
 use spec_corpus::{Class, corpus};
 
 /// A fragment wrapped into the smallest context that parses it with no
@@ -25,7 +25,7 @@ fn fragment_source(text: &str) -> Option<String> {
         format!("fn fragment() {{\n{text}\n}}"),
     ]
     .into_iter()
-    .find(|src| parse(src).diagnostics.is_empty())
+    .find(|src| SourceParser::parse(src).diagnostics.is_empty())
 }
 
 /// Every source of the corpus that parses as a file: its label and text.
@@ -43,7 +43,7 @@ fn sources() -> Vec<(String, String)> {
 }
 
 fn parsed(label: &str, src: &str) -> File {
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert!(r.diagnostics.is_empty(), "{label}: {:?}\n{src}", r.diagnostics);
     r.file
 }
@@ -56,7 +56,7 @@ fn roundtrip_ast_equal_over_corpus() {
     println!("round-tripped {} corpus sources", sources.len());
     for (label, src) in &sources {
         let first = parsed(label, src);
-        let text = print(&first);
+        let text = Printer::print(&first);
         let second = parsed(&format!("{label} (printed)"), &text);
         // `File: PartialEq` ignores spans, so this is `strip_spans(a) == strip_spans(b)`.
         assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
@@ -66,8 +66,8 @@ fn roundtrip_ast_equal_over_corpus() {
 #[test]
 fn print_is_idempotent_over_corpus() {
     for (label, src) in &sources() {
-        let once = print(&parsed(label, src));
-        let twice = print(&parsed(&format!("{label} (printed)"), &once));
+        let once = Printer::print(&parsed(label, src));
+        let twice = Printer::print(&parsed(&format!("{label} (printed)"), &once));
         assert_eq!(once, twice, "{label}: printing is not idempotent");
     }
 }
@@ -165,13 +165,13 @@ extern \"osdi\" module M(
 }
 ";
     let first = parsed("fixture", src);
-    let text = print(&first);
+    let text = Printer::print(&first);
     assert_eq!(doc_lines(src), doc_lines(&text), "doc comments, in order:\n{text}");
     assert_eq!(attributes(src), attributes(&text), "attributes, in order:\n{text}");
     assert!(parsed("fixture (printed)", &text) == first);
     // And over the whole corpus: no doc comment or attribute is lost.
     for (label, src) in &sources() {
-        let text = print(&parsed(label, src));
+        let text = Printer::print(&parsed(label, src));
         assert_eq!(doc_lines(src), doc_lines(&text), "{label}: doc comments");
         assert_eq!(attributes(src), attributes(&text), "{label}: attributes");
     }
@@ -181,10 +181,10 @@ extern \"osdi\" module M(
 /// is a fixed point.
 fn assert_roundtrip(label: &str, src: &str) -> String {
     let first = parsed(label, src);
-    let text = print(&first);
+    let text = Printer::print(&first);
     let second = parsed(&format!("{label} (printed)"), &text);
     assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
-    assert_eq!(text, print(&second), "{label}: not idempotent");
+    assert_eq!(text, Printer::print(&second), "{label}: not idempotent");
     text
 }
 
@@ -237,9 +237,9 @@ fn long_chains_print_without_overflow() {
                 format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(5000)),
                 format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(5000)),
             ] {
-                let r = parse(&src);
+                let r = SourceParser::parse(&src);
                 assert!(r.diagnostics.iter().any(|d| d.code == "E0910"));
-                let _ = print(&r.file);
+                let _ = Printer::print(&r.file);
             }
         })
         .expect("spawn");
@@ -263,13 +263,13 @@ fn raw_identifiers_print_with_their_prefix() {
     // tree (the `raw` flag is part of tree equality) and a second print is the same.
     let src = "module M() {\n    signal r#out: Bit;\n    let x = r#out;\n    r#out = x;\n}\nfn r#on(r#flip: u8) -> u8 { r#flip }";
     let first = parsed("raw", src);
-    let text = print(&first);
+    let text = Printer::print(&first);
     for word in ["r#out", "r#on", "r#flip"] {
         assert!(text.contains(word), "{word} missing from:\n{text}");
     }
     let second = parsed("raw (printed)", &text);
     assert!(first == second, "reparse differs:\n{text}");
-    assert_eq!(print(&second), text);
+    assert_eq!(Printer::print(&second), text);
 }
 
 #[test]
@@ -279,12 +279,12 @@ fn field_shorthand_prints_as_written() {
     let short = "module T() { let x = R(a, b) { r }; let y = R { r, c: 1p }; }";
     let long = "module T() { let x = R(a, b) { r: r }; let y = R { r: r, c: 1p }; }";
     let (s, l) = (parsed("short", short), parsed("long", long));
-    let (st, lt) = (print(&s), print(&l));
+    let (st, lt) = (Printer::print(&s), Printer::print(&l));
     assert!(st.contains("{ r }") && st.contains("{ r, c: 1p }"), "{st}");
     assert!(lt.contains("{ r: r }") && lt.contains("{ r: r, c: 1p }"), "{lt}");
     assert!(s != l, "the two forms are different trees");
     assert!(parsed("short2", &st) == s && parsed("long2", &lt) == l);
-    assert_eq!(print(&parsed("short3", &st)), st);
+    assert_eq!(Printer::print(&parsed("short3", &st)), st);
 }
 
 #[test]
@@ -338,7 +338,7 @@ digital for M {
 }
 ";
     let first = parsed("docs", src);
-    let text = print(&first);
+    let text = Printer::print(&first);
     for doc in [
         "/// a let", "/// a call", "/// a block", "/// pot", "/// flow", "/// value", "/// def", "/// gen",
         "/// inner", "/// gen if", "/// contribution", "/// reaction", "/// commit", "/// dgen", "/// inner reaction",
@@ -347,7 +347,7 @@ digital for M {
     }
     let second = parsed("docs (printed)", &text);
     assert!(first == second, "the printed text parses to another tree:\n{text}");
-    assert_eq!(print(&second), text);
+    assert_eq!(Printer::print(&second), text);
 }
 
 #[test]
@@ -376,8 +376,8 @@ fn the_printer_and_the_object_model_hold_no_removed_form() {
         }
     }
     for (label, src) in sources() {
-        let printed = print(&parsed(&label, &src));
-        let (tokens, _) = piperine_lang::msl::lexer::lex(&printed);
+        let printed = Printer::print(&parsed(&label, &src));
+        let (tokens, _) = piperine_lang::msl::lexer::Lexer::lex(&printed);
         let marker = tokens.iter().find(|(t, _)| matches!(t, piperine_lang::msl::lexer::Token::Kw(piperine_lang::msl::lexer::Kw::Mut | piperine_lang::msl::lexer::Kw::Ref | piperine_lang::msl::lexer::Kw::Move)));
         assert!(marker.is_none(), "{label}: the printer wrote a marker: {marker:?}");
     }

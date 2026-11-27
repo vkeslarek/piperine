@@ -389,7 +389,7 @@ fn an_unreadable_crate_root_is_one_e0161() {
 fn every_crate_keeps_its_authored_tree() {
     let design = util_sources(Design::builder()).crates(app_util(std::path::Path::new(""))).build();
     for file in design.files() {
-        assert_eq!(file.to_ast(), piperine_lang::msl::parser::parse(file.text()).file, "{}", file.name());
+        assert_eq!(file.to_ast(), piperine_lang::msl::parser::SourceParser::parse(file.text()).file, "{}", file.name());
     }
     // The declarations of each crate hang under that crate's own root namespace.
     let (app, util) = (design.crates()[0], design.crates()[1]);

@@ -7,7 +7,6 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use piperine_lang::msl::diag;
 use piperine_lang::msl::format::Formatter;
 
 use crate::cli::Out;
@@ -121,7 +120,7 @@ impl FmtCommand {
             Ok(formatted) => formatted,
             Err(diagnostics) => {
                 for d in &diagnostics {
-                    let _ = writeln!(err, "{}", diag::render(d, shown, &text));
+                    let _ = writeln!(err, "{}", d.render(shown, &text));
                 }
                 return FmtCommand::fail(err, &format!("{shown} is left as it is: {} diagnostic(s)", diagnostics.len()));
             }

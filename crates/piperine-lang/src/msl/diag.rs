@@ -53,6 +53,19 @@ impl Diagnostic {
     pub fn span(&self) -> Span {
         self.primary.0
     }
+
+    /// Render this diagnostic as a `miette` graphical report (no color) against `src`,
+    /// named `name` in the report header.
+    pub fn render(&self, name: &str, src: &str) -> String {
+        let report = miette::Report::new(self.clone())
+            .with_source_code(NamedSource::new(name, src.to_string()));
+        let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor());
+        let mut out = String::new();
+        match handler.render_report(&mut out, report.as_ref()) {
+            Ok(()) => out,
+            Err(_) => format!("error[{}]: {}", self.code, self.message),
+        }
+    }
 }
 
 impl fmt::Display for Diagnostic {
@@ -79,18 +92,5 @@ impl miette::Diagnostic for Diagnostic {
             .iter()
             .map(|(s, l)| LabeledSpan::new_with_span(Some(l.clone()), *s));
         Some(Box::new(std::iter::once(primary).chain(rest)))
-    }
-}
-
-/// Render `diag` as a `miette` graphical report (no color) against `src`,
-/// named `name` in the report header.
-pub fn render(diag: &Diagnostic, name: &str, src: &str) -> String {
-    let report = miette::Report::new(diag.clone())
-        .with_source_code(NamedSource::new(name, src.to_string()));
-    let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor());
-    let mut out = String::new();
-    match handler.render_report(&mut out, report.as_ref()) {
-        Ok(()) => out,
-        Err(_) => format!("error[{}]: {}", diag.code, diag.message),
     }
 }

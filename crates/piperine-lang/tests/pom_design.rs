@@ -5,7 +5,7 @@
 #[path = "support/pom.rs"]
 mod support;
 
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::{Design, FileId, Reflect, SourceFile};
 use support::{build, codes};
 
@@ -17,13 +17,13 @@ fn build_retains_name_text_and_ast() {
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].name(), "top.msl");
     assert_eq!(files[0].text(), text);
-    assert_eq!(files[0].ast(), &parse(text).file);
+    assert_eq!(files[0].ast(), &SourceParser::parse(text).file);
 }
 
 #[test]
 fn parse_diagnostics_pass_through_with_file() {
     let text = "module M(\nconst N: u32 = ;\n";
-    let expected = parse(text).diagnostics;
+    let expected = SourceParser::parse(text).diagnostics;
     assert!(!expected.is_empty(), "the fixture must have a syntax error");
     let design = build(text);
     let got = design.diagnostics();
@@ -45,7 +45,7 @@ fn design_is_send_and_sync() {
 #[test]
 fn two_builds_dump_identical() {
     let text = "/// A resistor.\nmodule R(p: Electrical, n: Electrical) {}\nmod a { const N: u32 = 8; }\nnature V { potential: Voltage { access: v } }\n";
-    assert!(parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
+    assert!(SourceParser::parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
     let first = build(text).dump();
     let second = build(text).dump();
     assert!(!first.is_empty());
@@ -300,7 +300,7 @@ fn docs_keep_kind_and_file_across_mod_files() {
         let design = files_design(&[("top.msl", top), ("b.msl", b)]);
         assert!(codes(&design).is_empty(), "{top:?} + {b:?}: {:?}", design.diagnostics());
         for (file, text) in project_files(&design).iter().zip([top, b]) {
-            assert_eq!(file.to_ast(), parse(text).file, "{top:?} + {b:?}: {}", file.name());
+            assert_eq!(file.to_ast(), SourceParser::parse(text).file, "{top:?} + {b:?}: {}", file.name());
         }
     }
 }

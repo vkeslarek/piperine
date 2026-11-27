@@ -830,7 +830,7 @@ module Top() {
     assert_eq!(fields[0].node().res, Resolution::Decl(design.module("R").unwrap().param("r").unwrap().decl().id()));
     let ExprKind::Path(p) = fields[0].value().kind() else { panic!("a path value") };
     assert_eq!(design.path(*p).segments()[0].res, Resolution::Decl(top.param("r").unwrap().decl().id()));
-    let parsed = piperine_lang::msl::parser::parse(src).file;
+    let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
     let files = design.files();
     let top_file = files.iter().find(|f| !f.krate().is_std()).expect("the root file");
     assert_eq!(top_file.to_ast(), parsed);

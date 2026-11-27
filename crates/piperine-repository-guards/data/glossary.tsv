@@ -115,3 +115,4 @@ milestone	a stage of the project plan (M1), which a diagnostic must not name
 xor	the exclusive or
 unswept	a refused form no one has yet probed for its owner (spec-closure sweeps it)
 refutable	a pattern that can fail to match a value (`let` without `else` needs an irrefutable one)
+si	the International System of Units (the SI suffix letters of a number literal)

@@ -23,6 +23,7 @@ crates/piperine-ir/src/build.rs::IrBuilder::find_nature	kept: an IR builder host
 crates/piperine-ir/src/deps.rs::Body::param_changes	kept: an IR analysis host
 crates/piperine-ir/src/print.rs::Ir::print_structural	kept: an IR printing host
 crates/piperine-lang/src/elab/consts.rs::ConstEval::files_read	-
+crates/piperine-lang/src/msl/parser/expr.rs::ExpressionGrammar::parse_block	kept: test surface of ExpressionGrammar
 crates/piperine-lang/src/pom/design.rs::Design::dump	-
 crates/piperine-lang/src/pom/design.rs::Design::from_json	-
 crates/piperine-lang/src/pom/design.rs::Design::type_count	-

@@ -359,7 +359,7 @@ fn msl_fences_parse_clean() {
                 Some((at, body)) => {
                     if line.trim_start().starts_with("```") {
                         fences += 1;
-                        let parsed = piperine_lang::msl::parser::parse(body);
+                        let parsed = piperine_lang::msl::parser::SourceParser::parse(body);
                         assert!(parsed.diagnostics.is_empty(), "{file}:{at}: msl fence does not parse: {:?}", parsed.diagnostics);
                         open = None;
                     } else {

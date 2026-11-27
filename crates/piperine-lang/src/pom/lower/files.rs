@@ -37,7 +37,7 @@ impl Lowerer<'_> {
 
     /// Parse `bytes` as the file of namespace `id` and lower its items.
     fn load_file(&mut self, id: DeclId, path: PathBuf, bytes: &[u8]) {
-        let parsed = parser::parse_bytes(bytes);
+        let parsed = parser::SourceParser::parse_bytes(bytes);
         let data = SourceFileData {
             name: path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned()),
             path: Some(path.clone()),

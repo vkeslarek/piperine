@@ -5,7 +5,7 @@
 use piperine_numbers::decimal::DecimalText;
 use piperine_numbers::format::{BinaryFormat, FloatClass};
 
-use crate::msl::lexer;
+use crate::msl::lexer::NumberLiteral;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{ExprId, ExprKind, FileId, LitKind};
 
@@ -56,7 +56,7 @@ impl Checker<'_> {
     pub(super) fn bare_float_literal(&self, expr: ExprId) -> bool {
         match &self.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.bare_float_literal(*inner),
-            ExprKind::Lit(lit) => matches!(&lit.kind, LitKind::Float { raw, .. } if lexer::float_suffix(raw).is_empty()),
+            ExprKind::Lit(lit) => matches!(&lit.kind, LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix().is_empty()),
             _ => false,
         }
     }

@@ -13,7 +13,7 @@ mod spec_tables;
 use std::path::PathBuf;
 
 use piperine_lang::msl::ast::{Item, ItemKind};
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use spec_corpus::{Block, Class, corpus, extract};
 use spec_tables::{section, table_rows};
 
@@ -143,7 +143,7 @@ fn label(item: &Item) -> String {
 
 /// The top-level items of a file as units: attributes and docs included, behavior blocks flagged.
 fn units(text: &str) -> Vec<Unit> {
-    let file = parse(text).file;
+    let file = SourceParser::parse(text).file;
     file.items
         .iter()
         .map(|item| {
