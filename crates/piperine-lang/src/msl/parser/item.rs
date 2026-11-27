@@ -496,7 +496,7 @@ impl ItemGrammar {
             .rewind()
             .ignore_then(ExpressionGrammar::statement(h))
             .validate(|statement, _, emitter| {
-                emitter.emit(msl::misplaced_emit(statement.span.0));
+                emitter.emit(ModuleGrammar::misplaced_emit(statement.span.0));
                 ItemKind::Error
             })
             .boxed();
@@ -510,9 +510,9 @@ impl ItemGrammar {
             trait_decl.boxed(),
             use_decl.boxed(),
             mod_decl.boxed(),
-            msl::nature_decl(h),
-            msl::module_decl(h),
-            msl::behavior_block(h),
+            ModuleGrammar::nature_decl(h),
+            ModuleGrammar::module_decl(h),
+            ModuleGrammar::behavior_block(h),
             macro_rules.boxed(),
             type_alias,
             static_item,

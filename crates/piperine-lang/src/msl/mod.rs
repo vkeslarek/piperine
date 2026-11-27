@@ -14,7 +14,7 @@ pub mod parser;
 pub mod print;
 pub mod span;
 
-pub use diag::{Diagnostic, render};
+pub use diag::Diagnostic;
 pub use lexer::Lexer;
 pub use print::Printer;
 pub use span::Span;

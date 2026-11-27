@@ -6,7 +6,7 @@
 //! parse-phase row of the spec's error tables and the guard that keeps the
 //! fixtures complete; T15 checks the miette graphical rendering.
 
-use piperine_lang::msl::{Span, render};
+use piperine_lang::msl::Span;
 use piperine_lang::msl::parser::{ExpressionGrammar, MAX_DEPTH, SourceParser};
 
 #[test]
@@ -89,7 +89,7 @@ fn plus_gt_and_commit_inside_an_expression_report_e0907() {
     // Appendix A.5 rule 6 / A.6: neither token is an expression operator.
     for (src, at) in [("let x = a +> b;", 10), ("f(a <- b)", 4), ("c = (a +> b);", 7)] {
         let wrapped = format!("{{ {src} }}");
-        let (_, diags) = piperine_lang::msl::parser::parse_block(&wrapped);
+        let (_, diags) = piperine_lang::msl::parser::BlockGrammar::parse(&wrapped);
         assert!(!diags.is_empty(), "{src:?} must not parse");
         assert_eq!(diags[0].code, "E0907", "{src:?}: {diags:?}");
         assert_eq!(diags[0].span(), Span::new(at + 2, at + 4), "{src:?}");
@@ -659,7 +659,7 @@ fn rendered_output_is_miette_graphical() {
     ] {
         let r = SourceParser::parse(src);
         let d = r.diagnostics.iter().find(|d| d.code == code).unwrap_or_else(|| panic!("{code}: {:?}", r.diagnostics));
-        let out = render(d, "model.msl", src);
+        let out = d.render("model.msl", src);
         let lines: Vec<&str> = out.lines().collect();
 
         // The code, on its own line, and the message under the error mark.

@@ -373,24 +373,8 @@ impl SourceParser {
             items: Vec::new(),
             span: Loc(Span::new(0, src.len())),
         });
-        diagnostics.extend(check::file(&file));
+        diagnostics.extend(ParseCheck::file(&file));
         diagnostics.sort_by_key(|d| d.span().start);
         ParseResult { file, diagnostics }
     }
-}
-
-/// Parse `src` as one item of a module body.
-pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| msl::module_item(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
-}
-
-/// Parse `src` as one braced block `{ stmt* }`.
-pub fn parse_block(src: &str) -> Parsed<Block> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }

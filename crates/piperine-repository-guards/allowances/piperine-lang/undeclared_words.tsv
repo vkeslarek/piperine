@@ -172,10 +172,7 @@ crates/piperine-lang/src/msl/parser/base.rs::pat	1
 crates/piperine-lang/src/msl/parser/base.rs::pat1	1
 crates/piperine-lang/src/msl/parser/base.rs::ty	1
 crates/piperine-lang/src/msl/parser/check.rs::Ctx	1
-crates/piperine-lang/src/msl/parser/check.rs::expr	1
-crates/piperine-lang/src/msl/parser/check.rs::expr_inner	1
 crates/piperine-lang/src/msl/parser/check.rs::fn_decl	1
-crates/piperine-lang/src/msl/parser/check.rs::stmt	1
 crates/piperine-lang/src/msl/parser/entry.rs::lex_limited	1
 crates/piperine-lang/src/msl/parser/item.rs::Attr	1
 crates/piperine-lang/src/msl/parser/item.rs::Doc	1

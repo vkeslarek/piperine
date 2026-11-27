@@ -93,6 +93,19 @@ enum StatementTail {
     Last,
 }
 
+/// The grammar of a braced block `{ stmt* }` taken as a whole source fragment.
+pub struct BlockGrammar;
+
+impl BlockGrammar {
+    /// Parse `src` as one braced block `{ stmt* }`.
+    pub fn parse(src: &str) -> Parsed<Block> {
+        let (tokens, diags) = SourceParser::lex_limited(src);
+        let input = TokenInput::over(&tokens, src.len());
+        let h = Handles::declare();
+        ParseDiagnostics::finish(crate::stack::Stack::deep(|| h.block.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
+    }
+}
+
 impl ExpressionGrammar {
     /// Parse `src` as one expression.
     pub fn parse(src: &str) -> Parsed<Expr> {

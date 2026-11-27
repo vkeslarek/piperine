@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use piperine_lang::msl::{Diagnostic, render};
+use piperine_lang::msl::Diagnostic;
 
 /// A diagnostic of the `package` phase: the file it is about, the text its span indexes
 /// (empty when the file could not be read) and the diagnostic itself.
@@ -22,7 +22,7 @@ impl PackageError {
     /// A `miette` graphical report, named by the file's own name.
     pub fn render(&self) -> String {
         let name = self.file.file_name().map_or_else(|| self.file.display().to_string(), |n| n.to_string_lossy().into_owned());
-        render(&self.diagnostic, &name, &self.text)
+        self.diagnostic.render(&name, &self.text)
     }
 }
 

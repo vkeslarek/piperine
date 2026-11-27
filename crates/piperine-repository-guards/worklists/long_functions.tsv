@@ -63,13 +63,13 @@ crates/piperine-lang/src/elab/place.rs::Elaboration::place_instance	-
 crates/piperine-lang/src/elab/records.rs::Elaboration::lower_emit	-
 crates/piperine-lang/src/elab/returns.rs::Elaboration::lower_inlined_option_call	-
 crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
-crates/piperine-lang/src/msl/parser/check.rs::::expr_inner	-
-crates/piperine-lang/src/msl/parser/check.rs::::stmt	-
+crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	-
+crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::statement	-
 crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	-
 crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::definition	-
 crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::fn_decl	-
-crates/piperine-lang/src/msl/parser/msl.rs::::module_decl	-
-crates/piperine-lang/src/msl/parser/msl.rs::::recover_item	-
+crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::module_decl	-
+crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::recover_item	-
 crates/piperine-lang/src/msl/parser/pat.rs::PatternGrammar::definition	-
 crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::definition	-
 crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	-

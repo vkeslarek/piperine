@@ -7,7 +7,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, parse_block, GenericsGrammar, PatternGrammar, TypeGrammar};
+use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, BlockGrammar, GenericsGrammar, PatternGrammar, TypeGrammar};
 
 fn ty(src: &str) -> Type {
     let (t, diags) = TypeGrammar::parse(src);
@@ -28,7 +28,7 @@ fn expr(src: &str) -> Expr {
 }
 
 fn block(src: &str) -> Block {
-    let (b, diags) = parse_block(src);
+    let (b, diags) = BlockGrammar::parse(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     b.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }
@@ -585,7 +585,7 @@ fn text<'s>(src: &'s str, span: &Loc) -> &'s str {
 
 /// A module item, expecting no diagnostics.
 fn module_item(src: &str) -> ModuleItem {
-    let (it, diags) = piperine_lang::msl::parser::parse_module_item(src);
+    let (it, diags) = piperine_lang::msl::parser::ModuleGrammar::parse(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     it.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }
