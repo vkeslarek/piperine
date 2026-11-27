@@ -25,7 +25,7 @@ pub struct TightCapacitor;
 static TIGHT_CAPACITOR: OnceLock<ShapeRef> = OnceLock::new();
 
 impl TightCapacitor {
-    /// The shape helper `shape`.
+    /// The shape of `TightCapacitor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let c = s.pin(ShapeParts::param("c"));
@@ -129,7 +129,7 @@ pub struct Cubic;
 static CUBIC: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Cubic {
-    /// The shape helper `shape`.
+    /// The shape of `Cubic`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let k = s.pin(ShapeParts::param("k"));
@@ -254,7 +254,7 @@ pub struct CurrentSource {
 static SOURCE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl CurrentSource {
-    /// The shape helper `shape`.
+    /// The shape of `CurrentSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -298,7 +298,7 @@ pub struct CountedResistor {
 static COUNTED: OnceLock<ShapeRef> = OnceLock::new();
 
 impl CountedResistor {
-    /// The shape helper `shape`.
+    /// The shape of `CountedResistor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -342,7 +342,7 @@ pub struct RecordingConductance {
 static PROBE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl RecordingConductance {
-    /// The shape helper `shape`.
+    /// The shape of `RecordingConductance`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -392,7 +392,7 @@ pub struct ModeFaulty;
 static FAULTY: OnceLock<ShapeRef> = OnceLock::new();
 
 impl ModeFaulty {
-    /// The shape helper `shape`.
+    /// The shape of `ModeFaulty`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let mode = s.pin(ShapeParts::param("mode"));
@@ -445,7 +445,7 @@ pub struct PlainDiode;
 static PLAIN_DIODE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl PlainDiode {
-    /// The shape helper `shape`.
+    /// The shape of `PlainDiode`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let is = s.pin(ShapeParts::param("is"));
@@ -495,14 +495,14 @@ pub struct Clamp;
 static CLAMP: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Clamp {
-    /// The limit reads and partials helper `limit_reads_and_partials`.
+    /// The reads of a limit fixture (pins `a` and `k`, then `extra`) and its partials against the two pins.
     fn limit_reads_and_partials(a: u32, k: u32, extra: Vec<Cell>) -> (Vec<Cell>, Vec<Partial>) {
         let mut reads = vec![ShapeParts::pin(a), ShapeParts::pin(k)];
         reads.extend(extra);
         (reads, vec![ShapeParts::partial(0, 0), ShapeParts::partial(0, 1)])
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `Clamp`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let off = s.pin(ShapeParts::param("off"));
@@ -563,7 +563,7 @@ pub struct CorrectionOwner;
 static OWNER: OnceLock<ShapeRef> = OnceLock::new();
 
 impl CorrectionOwner {
-    /// The shape helper `shape`.
+    /// The shape of `CorrectionOwner`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let off = s.pin(ShapeParts::param("off"));
@@ -610,7 +610,7 @@ pub struct LimitReader {
 static READER: OnceLock<ShapeRef> = OnceLock::new();
 
 impl LimitReader {
-    /// The shape helper `shape`.
+    /// The shape of `LimitReader`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -656,7 +656,7 @@ pub struct Tracker {
 static TRACKER: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Tracker {
-    /// The shape helper `shape`.
+    /// The shape of `Tracker`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -716,7 +716,7 @@ pub struct DelayLine;
 static DELAY_LINE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl DelayLine {
-    /// The shape helper `shape`.
+    /// The shape of `DelayLine`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let td = s.pin(ShapeParts::param("td"));
@@ -763,7 +763,7 @@ pub struct Trio;
 static TRIO: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Trio {
-    /// The shape helper `shape`.
+    /// The shape of `Trio`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let (a, b, c, td) = (s.pin(ShapeParts::param("a")), s.pin(ShapeParts::param("b")), s.pin(ShapeParts::param("c")), s.pin(ShapeParts::param("td")));
@@ -812,7 +812,7 @@ pub struct AcVoltageSource;
 static AC_VSOURCE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl AcVoltageSource {
-    /// The shape helper `shape`.
+    /// The shape of `AcVoltageSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let (dc, re, im) = (s.pin(ShapeParts::param("dc")), s.pin(ShapeParts::param("re")), s.pin(ShapeParts::param("im")));
@@ -872,7 +872,7 @@ pub struct FixedTemperatureNoisyResistor;
 static NOISY: OnceLock<ShapeRef> = OnceLock::new();
 
 impl FixedTemperatureNoisyResistor {
-    /// The shape helper `shape`.
+    /// The shape of `FixedTemperatureNoisyResistor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let r = s.pin(ShapeParts::param("r"));
@@ -929,7 +929,7 @@ pub struct Split;
 static SPLIT: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Split {
-    /// The shape helper `shape`.
+    /// The shape of `Split`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let r = s.pin(ShapeParts::param("r"));
@@ -999,7 +999,7 @@ pub struct Flicker {
 static FLICKER: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Flicker {
-    /// The shape helper `shape`.
+    /// The shape of `Flicker`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(ShapeParts::param("tag"));
@@ -1052,12 +1052,12 @@ pub struct CapWatch;
 static CAPPER: OnceLock<ShapeRef> = OnceLock::new();
 
 impl CapWatch {
-    /// The cap watch helper `cap_watch`.
+    /// The `CAP` watch named `name` of the capper fixture.
     fn cap_watch(name: &'static str) -> WatchSpec<'static> {
         WatchSpec { name, origin: "fixture:capper", kind: watch::CAP, layout: &F64, event: 0, ttol: DEFAULT, etol: DEFAULT }
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `CapWatch`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let (c1, c2) = (s.pin(ShapeParts::param("c1")), s.pin(ShapeParts::param("c2")));
@@ -1106,7 +1106,7 @@ static HI_FIELDS: [Field; 2] = [
 pub static HI: Layout = Layout { size: 16, align: 8, fields: piperine_abi::raw::List::from_slice(&HI_FIELDS) };
 
 impl ThresholdTracer {
-    /// The shape helper `shape`.
+    /// The shape of `ThresholdTracer`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let p = s.pin(PinSpec::continuous("p", role::PORT));
@@ -1158,7 +1158,7 @@ pub struct SampleHold;
 static SAMPLE_HOLD: OnceLock<ShapeRef> = OnceLock::new();
 
 impl SampleHold {
-    /// The shape helper `shape`.
+    /// The shape of `SampleHold`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let inp_ = s.pin(PinSpec::continuous("inp", role::PORT));
@@ -1204,7 +1204,7 @@ pub struct ChargeDiode;
 static CHARGE_DIODE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl ChargeDiode {
-    /// The shape helper `shape`.
+    /// The shape of `ChargeDiode`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let is = s.pin(ShapeParts::param("is"));
@@ -1310,7 +1310,7 @@ impl FixtureModules {
 }
 
 impl RecordedCall {
-    /// The record helper `record`.
+    /// Appends to the recorded calls one call tagged `tag`: the bytes of every read and which of its `partials` were seeded.
     fn record(tag: u64, cx: &Eval, partials: usize) {
         let call = RecordedCall {
             tag,

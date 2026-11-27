@@ -47,7 +47,7 @@ static R_MODULE: OnceLock<Module> = OnceLock::new();
 const R_DEFAULT: [u8; 8] = 1.0e3_f64.to_le_bytes();
 
 impl Resistor {
-    /// The shape helper `shape`.
+    /// The shape of `Resistor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("r", &R_DEFAULT));
@@ -65,7 +65,7 @@ impl Resistor {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Resistor`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<Resistor>(&R_MODULE, "R")
     }
@@ -116,7 +116,7 @@ static ROPT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static ROPT_MODULE: OnceLock<Module> = OnceLock::new();
 
 impl OptionalResistor {
-    /// The shape helper `shape`.
+    /// The shape of `OptionalResistor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("r", &R_DEFAULT));
@@ -135,7 +135,7 @@ impl OptionalResistor {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `OptionalResistor`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<OptionalResistor>(&ROPT_MODULE, "ROpt")
     }
@@ -176,7 +176,7 @@ static C_MODULE: OnceLock<Module> = OnceLock::new();
 const C_DEFAULT: [u8; 8] = 1.0e-6_f64.to_le_bytes();
 
 impl Capacitor {
-    /// The shape helper `shape`.
+    /// The shape of `Capacitor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("c", &C_DEFAULT));
@@ -194,7 +194,7 @@ impl Capacitor {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Capacitor`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<Capacitor>(&C_MODULE, "C")
     }
@@ -234,7 +234,7 @@ static D_MODULE: OnceLock<Module> = OnceLock::new();
 const D_DEFAULT: [u8; 8] = 1.0e-14_f64.to_le_bytes();
 
 impl Diode {
-    /// The shape helper `shape`.
+    /// The shape of `Diode`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("is_sat", &D_DEFAULT));
@@ -252,7 +252,7 @@ impl Diode {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Diode`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<Diode>(&D_MODULE, "D")
     }
@@ -300,7 +300,7 @@ static VSRC_MODULE: OnceLock<Module> = OnceLock::new();
 const VSRC_DEFAULT: [u8; 8] = 10.0_f64.to_le_bytes();
 
 impl VoltageSource {
-    /// The shape helper `shape`.
+    /// The shape of `VoltageSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("dc", &VSRC_DEFAULT));
@@ -320,7 +320,7 @@ impl VoltageSource {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `VoltageSource`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<VoltageSource>(&VSRC_MODULE, "Vsrc")
     }
@@ -360,7 +360,7 @@ const VSINE_AMP: [u8; 8] = 5.0_f64.to_le_bytes();
 const VSINE_FREQ: [u8; 8] = 1.0e3_f64.to_le_bytes();
 
 impl SineSource {
-    /// The shape helper `shape`.
+    /// The shape of `SineSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("amp", &VSINE_AMP));
@@ -381,7 +381,7 @@ impl SineSource {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `SineSource`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<SineSource>(&VSINE_MODULE, "Vsine")
     }
@@ -416,7 +416,7 @@ static VRAMP_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static VRAMP_MODULE: OnceLock<Module> = OnceLock::new();
 
 impl RampSource {
-    /// The shape helper `shape`.
+    /// The shape of `RampSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let p = s.pin(PinSpec::continuous("p", role::PORT));
@@ -435,7 +435,7 @@ impl RampSource {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `RampSource`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<RampSource>(&VRAMP_MODULE, "Vramp")
     }
@@ -468,7 +468,7 @@ static IAC_MODULE: OnceLock<Module> = OnceLock::new();
 const IAC_DEFAULT: [u8; 8] = 1.0_f64.to_le_bytes();
 
 impl AcCurrentSource {
-    /// The shape helper `shape`.
+    /// The shape of `AcCurrentSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("i", &IAC_DEFAULT));
@@ -493,7 +493,7 @@ impl AcCurrentSource {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `AcCurrentSource`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<AcCurrentSource>(&IAC_MODULE, "Iac")
     }
@@ -530,7 +530,7 @@ static L_MODULE: OnceLock<Module> = OnceLock::new();
 const L_DEFAULT: [u8; 8] = 1.0e-3_f64.to_le_bytes();
 
 impl Inductor {
-    /// The shape helper `shape`.
+    /// The shape of `Inductor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("l", &L_DEFAULT));
@@ -551,7 +551,7 @@ impl Inductor {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Inductor`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<Inductor>(&L_MODULE, "L")
     }
@@ -591,7 +591,7 @@ static RN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static RN_MODULE: OnceLock<Module> = OnceLock::new();
 
 impl NoisyResistor {
-    /// The shape helper `shape`.
+    /// The shape of `NoisyResistor`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("r", &R_DEFAULT));
@@ -621,7 +621,7 @@ impl NoisyResistor {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `NoisyResistor`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<NoisyResistor>(&RN_MODULE, "Rn")
     }
@@ -660,7 +660,7 @@ static PAIR_MODULE: OnceLock<Module> = OnceLock::new();
 const PAIR_DEFAULT: [u8; 8] = (-1.0_f64).to_le_bytes();
 
 impl NoisePair {
-    /// The shape helper `shape`.
+    /// The shape of `NoisePair`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(CircuitParts::real_param("k", &PAIR_DEFAULT));
@@ -694,7 +694,7 @@ impl NoisePair {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `NoisePair`, built once from its shape.
     pub fn module() -> &'static Module {
         CircuitParts::module_of::<NoisePair>(&PAIR_MODULE, "Pair")
     }
@@ -729,27 +729,27 @@ impl Device for NoisePair {
 pub struct CircuitParts;
 
 impl CircuitParts {
-    /// The pin helper `pin`.
+    /// The cell of the value of pin `index`.
     fn pin(index: u32) -> Cell {
         Cell { kind: cell::PIN, index, part: part::VALUE }
     }
 
-    /// The term helper `term`.
+    /// The cell of the value of term `index`.
     fn term(index: u32) -> Cell {
         Cell { kind: cell::TERM, index, part: part::VALUE }
     }
 
-    /// The amb helper `amb`.
+    /// The cell of the ambient constant `constant`.
     fn ambient_cell(constant: u32) -> Cell {
         Cell { kind: cell::AMBIENT, index: constant, part: part::VALUE }
     }
 
-    /// The partial helper `partial`.
+    /// The partial of write `write` against read `read`: the first seed, against nothing else.
     fn partial(write: u32, read: u32) -> Partial {
         Partial { write, to: 0, read, at: 0 }
     }
 
-    /// The flow helper `flow`.
+    /// The term spec named `name` of operator `operator`, between pins `plus` and `minus`.
     fn flow(name: &'static str, operator: u32, plus: u32, minus: u32) -> TermSpec<'static> {
         TermSpec { name, origin: ORIGIN, op: operator, plus, minus, abstol: DEFAULT, max: DEFAULT }
     }
@@ -759,12 +759,12 @@ impl CircuitParts {
         PinSpec { flags: pin_flag::HAS_INIT, init: default, ..PinSpec::discrete(name, role::PARAM, &F64) }
     }
 
-    /// The shape of helper `shape_of`.
+    /// The shape `build` makes, built the first time and kept in `slot` so every instance shares it.
     fn shape_of(slot: &'static OnceLock<ShapeRef>, build: fn() -> ShapeRef) -> &'static ShapeRef {
         slot.get_or_init(build)
     }
 
-    /// The module of helper `module_of`.
+    /// The module of the device type `Kind` named `name`, built the first time and kept in `slot`.
     fn module_of<Kind: Device>(slot: &'static OnceLock<Module>, name: &'static str) -> &'static Module {
         slot.get_or_init(|| module::<Kind>(name))
     }
@@ -773,12 +773,12 @@ impl CircuitParts {
     // AC source and inductor
     // ---------------------------------------------------------------------------
 
-    /// The input cell helper `input_cell`.
+    /// The cell of part `part` of input `index`.
     fn input_cell(index: u32, part: u32) -> Cell {
         Cell { kind: cell::INPUT, index, part }
     }
 
-    /// The noise input helper `noise_input`.
+    /// The `NOISE` input named `name`.
     fn noise_input(name: &'static str) -> piperine_abi::shape::InputSpec<'static> {
         piperine_abi::shape::InputSpec { name, origin: ORIGIN, kind: piperine_abi::raw::input::NOISE }
     }

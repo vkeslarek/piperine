@@ -23,7 +23,7 @@ impl Bias {
         AnalysisParts::module_of::<Bias>(&BIAS_MODULE, "Bias")
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `Bias`, built once and shared by every instance.
     pub fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let p = s.pin(PinSpec::continuous("p", role::PORT));
@@ -116,7 +116,7 @@ impl Quadratic {
         AnalysisParts::module_of::<Quadratic>(&QUAD_MODULE, "Quadratic")
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `Quadratic`, built once and shared by every instance.
     pub fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         s.pin(AnalysisParts::param("k"));
@@ -157,27 +157,27 @@ impl Device for Quadratic {
 pub struct AnalysisParts;
 
 impl AnalysisParts {
-    /// The pin helper `pin`.
+    /// The cell of the value of pin `index`.
     fn pin(index: u32) -> Cell {
         Cell { kind: cell::PIN, index, part: part::VALUE }
     }
 
-    /// The term helper `term`.
+    /// The cell of the value of term `index`.
     fn term(index: u32) -> Cell {
         Cell { kind: cell::TERM, index, part: part::VALUE }
     }
 
-    /// The partial helper `partial`.
+    /// The partial of write `write` against read `read`: the first seed, against nothing else.
     fn partial(write: u32, read: u32) -> Partial {
         Partial { write, to: 0, read, at: 0 }
     }
 
-    /// The flow helper `flow`.
+    /// The term spec named `name` of operator `operator`, between pins `plus` and `minus`.
     fn flow(name: &'static str, operator: u32, plus: u32, minus: u32) -> TermSpec<'static> {
         TermSpec { name, origin: "test_devices.rs", op: operator, plus, minus, abstol: DEFAULT, max: DEFAULT }
     }
 
-    /// The param helper `param`.
+    /// The `F64` param pin named `name`.
     fn param(name: &'static str) -> PinSpec<'static> {
         PinSpec::discrete(name, role::PARAM, &F64)
     }
@@ -187,7 +187,7 @@ impl AnalysisParts {
         slot.get_or_init(build)
     }
 
-    /// The module of helper `module_of`.
+    /// The module of the device type `Kind` named `name`, built the first time and kept in `slot`.
     fn module_of<Kind: Device>(slot: &'static OnceLock<Module>, name: &'static str) -> &'static Module {
         slot.get_or_init(|| module::<Kind>(name))
     }

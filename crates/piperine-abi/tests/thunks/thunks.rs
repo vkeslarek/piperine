@@ -318,8 +318,6 @@ fn a_device_that_only_evaluates_reacts_and_continues() {
 pub struct ProbeCalls;
 
 impl ProbeCalls {
-     // 2.0f64
-
     /// pins: gain=0 (PARAM F64), x=1 (PORT continuous), q=2 (PORT BIT), e=3 (PRIVATE event)
     /// term T0 FLOW {x, GROUND}
     /// fn 0 "out": reads [x, gain] writes [T0] partials (0←0) (0←1)

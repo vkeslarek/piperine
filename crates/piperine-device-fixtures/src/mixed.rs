@@ -31,7 +31,7 @@ static COMPARATOR_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static COMPARATOR: OnceLock<Module> = OnceLock::new();
 
 impl Comparator {
-    /// The shape helper `shape`.
+    /// The shape of `Comparator`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let inp = s.pin(PinSpec::continuous("inp", role::PORT));
@@ -55,7 +55,7 @@ impl Comparator {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Comparator`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<Comparator>(&COMPARATOR, "Comparator")
     }
@@ -97,7 +97,7 @@ static DAC: OnceLock<Module> = OnceLock::new();
 const ONE_VOLT: [u8; 8] = 1.0_f64.to_le_bytes();
 
 impl BitDigitalToAnalog {
-    /// The shape helper `shape`.
+    /// The shape of `BitDigitalToAnalog`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let vref = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_VOLT, ..PinSpec::discrete("vref", role::PARAM, &F64) });
@@ -117,7 +117,7 @@ impl BitDigitalToAnalog {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `BitDigitalToAnalog`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<BitDigitalToAnalog>(&DAC, "Dac")
     }
@@ -148,7 +148,7 @@ static SETTLE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SETTLE: OnceLock<Module> = OnceLock::new();
 
 impl SettleCount {
-    /// The shape helper `shape`.
+    /// The shape of `SettleCount`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
@@ -156,7 +156,7 @@ impl SettleCount {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `SettleCount`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<SettleCount>(&SETTLE, "SettleCount")
     }
@@ -190,7 +190,7 @@ static GLOBALS_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static GLOBALS: OnceLock<Module> = OnceLock::new();
 
 impl Globals {
-    /// The shape helper `shape`.
+    /// The shape of `Globals`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let temp = s.pin(PinSpec { global: global::TEMPERATURE, ..PinSpec::discrete("temp", role::GLOBAL, &F64) });
@@ -211,7 +211,7 @@ impl Globals {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Globals`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<Globals>(&GLOBALS, "Globals")
     }
@@ -254,7 +254,7 @@ impl SettleTime {
         SETTLES.with(|s| s.borrow().clone())
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `SettleTime`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let settle = s.pin(PinSpec { global: global::SETTLE, ..PinSpec::event("settle", role::GLOBAL) });
@@ -268,7 +268,7 @@ impl SettleTime {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `SettleTime`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<SettleTime>(&SETTLE_TIME, "SettleTime")
     }
@@ -304,7 +304,7 @@ static DELAY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static DELAY: OnceLock<Module> = OnceLock::new();
 
 impl Delay {
-    /// The shape helper `shape`.
+    /// The shape of `Delay`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let at = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_US, ..PinSpec::discrete("at", role::PARAM, &F64) });
@@ -321,7 +321,7 @@ impl Delay {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Delay`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<Delay>(&DELAY, "Delay")
     }
@@ -354,7 +354,7 @@ static FINISHER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static FINISHER: OnceLock<Module> = OnceLock::new();
 
 impl Finisher {
-    /// The shape helper `shape`.
+    /// The shape of `Finisher`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let go = s.pin(PinSpec::event("go", role::PORT));
@@ -362,7 +362,7 @@ impl Finisher {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Finisher`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<Finisher>(&FINISHER, "Finisher")
     }
@@ -395,7 +395,7 @@ static TRACER: OnceLock<Module> = OnceLock::new();
 const TRACER_G: f64 = 1.0e-3;
 
 impl ConductanceTracer {
-    /// The shape helper `shape`.
+    /// The shape of `ConductanceTracer`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let p = s.pin(PinSpec::continuous("p", role::PORT));
@@ -412,7 +412,7 @@ impl ConductanceTracer {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `ConductanceTracer`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<ConductanceTracer>(&TRACER, "ConductanceTracer")
     }
@@ -459,7 +459,7 @@ impl FlakyConductance {
         FAULTED.with(|f| f.get())
     }
 
-    /// The shape helper `shape`.
+    /// The shape of `FlakyConductance`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let p = s.pin(PinSpec::continuous("p", role::PORT));
@@ -476,7 +476,7 @@ impl FlakyConductance {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `FlakyConductance`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<FlakyConductance>(&FLAKY, "FlakyG")
     }
@@ -514,7 +514,7 @@ static CAPPED_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static CAPPED: OnceLock<Module> = OnceLock::new();
 
 impl Capped {
-    /// The shape helper `shape`.
+    /// The shape of `Capped`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let cap = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_NS, ..PinSpec::discrete("cap", role::PARAM, &F64) });
@@ -530,7 +530,7 @@ impl Capped {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `Capped`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<Capped>(&CAPPED, "Capped")
     }
@@ -581,7 +581,7 @@ static CLOCK_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static CLOCK: OnceLock<Module> = OnceLock::new();
 
 impl ClockSource {
-    /// The shape helper `shape`.
+    /// The shape of `ClockSource`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let period = s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &ONE_MS, ..PinSpec::discrete("period", role::PARAM, &F64) });
@@ -620,7 +620,7 @@ impl ClockSource {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `ClockSource`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<ClockSource>(&CLOCK, "ClockSrc")
     }
@@ -671,7 +671,7 @@ static TOGGLE_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static TOGGLE: OnceLock<Module> = OnceLock::new();
 
 impl ToggleFlipFlop {
-    /// The shape helper `shape`.
+    /// The shape of `ToggleFlipFlop`, built once and shared by every instance.
     fn shape() -> ShapeRef {
         let mut s = ShapeBuf::new();
         let clk = s.pin(PinSpec::discrete("clk", role::PORT, &BIT));
@@ -695,7 +695,7 @@ impl ToggleFlipFlop {
         s.freeze()
     }
 
-    /// The module helper `module`.
+    /// The module of `ToggleFlipFlop`, built once from its shape.
     pub fn module() -> &'static Module {
         MixedParts::module_of::<ToggleFlipFlop>(&TOGGLE, "ToggleDff")
     }
@@ -741,42 +741,42 @@ pub struct MixedParts;
 impl MixedParts {
     // ─── Shape helpers ──────────────────────────────────────────────────────────
 
-    /// The pin helper `pin`.
+    /// The cell of the value of pin `index`.
     fn pin(index: u32) -> Cell {
         Cell { kind: cell::PIN, index, part: part::VALUE }
     }
 
-    /// The pin part helper `pin_part`.
+    /// The cell of part `part` (`PREVIOUS`, `CHANGED`, ...) of pin `index`.
     fn pin_part(index: u32, part: u32) -> Cell {
         Cell { kind: cell::PIN, index, part }
     }
 
-    /// The term helper `term`.
+    /// The cell of the value of term `index`.
     fn term(index: u32) -> Cell {
         Cell { kind: cell::TERM, index, part: part::VALUE }
     }
 
-    /// The watch cell helper `watch_cell`.
+    /// The cell of the value of watch `index`.
     fn watch_cell(index: u32) -> Cell {
         Cell { kind: cell::WATCH, index, part: part::VALUE }
     }
 
-    /// The partial helper `partial`.
+    /// The partial of write `write` against read `read`: the first seed, against nothing else.
     fn partial(write: u32, read: u32) -> Partial {
         Partial { write, to: 0, read, at: 0 }
     }
 
-    /// The statement helper `statement`.
+    /// The statement that writes `len` bytes of pin `pin` with `flags` and no minimum delay.
     fn statement(pin: u32, len: u32, flags: u32) -> Statement {
         Statement { pin, offset: 0, len, flags, min_after: 0.0 }
     }
 
-    /// The flow helper `flow`.
+    /// The term spec named `name` of operator `operator`, between pins `plus` and `minus`.
     fn flow(name: &'static str, plus: u32, minus: u32) -> TermSpec<'static> {
         TermSpec { name, origin: ORIGIN, op: op::FLOW, plus, minus, abstol: DEFAULT, max: DEFAULT }
     }
 
-    /// The watch spec helper `watch_spec`.
+    /// The `F64` watch named `name` of kind `kind`, firing the event pin `event`.
     fn watch_spec(name: &'static str, kind: u32, event: u32) -> WatchSpec<'static> {
         WatchSpec { name, origin: ORIGIN, kind, layout: &F64, event, ttol: DEFAULT, etol: DEFAULT }
     }
@@ -791,12 +791,12 @@ impl MixedParts {
         v.to_le_bytes()
     }
 
-    /// The shared helper `shared`.
+    /// The shape `build` makes, built the first time and kept in `slot` so every instance shares it.
     fn shared(slot: &'static OnceLock<ShapeRef>, build: fn() -> ShapeRef) -> &'static ShapeRef {
         slot.get_or_init(build)
     }
 
-    /// The module of helper `module_of`.
+    /// The module of the device type `Kind` named `name`, built the first time and kept in `slot`.
     fn module_of<Kind: Device>(slot: &'static OnceLock<Module>, name: &'static str) -> &'static Module {
         slot.get_or_init(|| module::<Kind>(name))
     }

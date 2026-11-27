@@ -122,27 +122,27 @@ impl CircuitBuilding {
         (circuit, map)
     }
 
-    /// The nodes helper `nodes`.
+    /// The two node ports `p` and `n` a two-terminal device is bound to.
     fn nodes(p: &AnalogReference, n: &AnalogReference) -> [Port; 2] {
         [Port::Node(p.clone()), Port::Node(n.clone())]
     }
 
-    /// The add resistor helper `add_resistor`.
+    /// Places a resistor of `r` ohms between `p` and `n` on the builder.
     pub fn add_resistor(b: &mut CircuitBuilder, path: &str, r: f64, p: &AnalogReference, n: &AnalogReference) {
         b.device(Resistor::module(), path, &[("r", ParamValue::Real(r))], &CircuitBuilding::nodes(p, n));
     }
 
-    /// The add capacitor helper `add_capacitor`.
+    /// Places a capacitor of `c` farads between `p` and `n` on the builder.
     pub fn add_capacitor(b: &mut CircuitBuilder, path: &str, c: f64, p: &AnalogReference, n: &AnalogReference) {
         b.device(Capacitor::module(), path, &[("c", ParamValue::Real(c))], &CircuitBuilding::nodes(p, n));
     }
 
-    /// The add diode helper `add_diode`.
+    /// Places a diode of saturation current `is_sat` between `p` and `n` on the builder.
     pub fn add_diode(b: &mut CircuitBuilder, path: &str, is_sat: f64, p: &AnalogReference, n: &AnalogReference) {
         b.device(Diode::module(), path, &[("is_sat", ParamValue::Real(is_sat))], &CircuitBuilding::nodes(p, n));
     }
 
-    /// The add voltage source helper `add_voltage_source`.
+    /// Places a DC voltage source of `dc` volts between `p` and `n` on the builder.
     pub fn add_voltage_source(b: &mut CircuitBuilder, path: &str, dc: f64, p: &AnalogReference, n: &AnalogReference) {
         b.device(VoltageSource::module(), path, &[("dc", ParamValue::Real(dc))], &CircuitBuilding::nodes(p, n));
     }

@@ -64,7 +64,7 @@ impl PartialsCheck {
         PartialsCheck::run(name, module, &[], fixtures);
     }
 
-    /// The run helper `run`.
+    /// Runs every function of `module` at the generic points, holding the reads in `fixed` and treating the functions in `fixtures` as fixtures of a failure path.
     fn run(name: &str, module: &'static Module, fixed: &[(u32, usize, f64)], fixtures: &[(u32, Fixture)]) {
         if module.prototype().functions.is_empty() {
             return;
