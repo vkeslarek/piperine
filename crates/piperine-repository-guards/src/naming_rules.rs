@@ -18,22 +18,40 @@ pub struct Glossary {
 impl Glossary {
     /// Reads `data/glossary.tsv`: one `term<TAB>meaning` row per line, with an optional third
     /// column listing, comma-separated, the names in which the term means something else.
+    /// Panics when the file cannot be read.
     pub fn read() -> Glossary {
-        let text = std::fs::read_to_string(SourceTree::guards_directory().join("data/glossary.tsv")).unwrap_or_default();
-        Glossary::parse(&text)
+        let path = SourceTree::guards_directory().join("data/glossary.tsv");
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
+        Glossary::parse("data/glossary.tsv", &text)
     }
 
-    /// Parses glossary text; `#` lines and blank lines are comments.
-    pub fn parse(text: &str) -> Glossary {
-        let rows: Vec<&str> = text.lines().filter(|line| !line.trim().is_empty() && !line.starts_with('#')).collect();
-        let terms = rows.iter().filter_map(|line| line.split('\t').next()).map(|term| term.trim().to_lowercase()).collect();
-        let other_meanings = rows.iter().filter_map(|line| line.split('\t').nth(2)).flat_map(|names| names.split(',')).map(|name| name.trim().to_string()).filter(|name| !name.is_empty()).collect();
+    /// Parses glossary text read from `origin`; `#` lines and blank lines are comments. Panics,
+    /// naming `origin` and the line, on a row that is not 2 or 3 tab-separated cells or whose term
+    /// is empty.
+    pub fn parse(origin: &str, text: &str) -> Glossary {
+        let mut terms = BTreeSet::new();
+        let mut other_meanings = BTreeSet::new();
+        for (index, line) in text.lines().enumerate().filter(|(_, line)| !line.trim().is_empty() && !line.starts_with('#')) {
+            let cells: Vec<&str> = line.split('\t').collect();
+            if !(2..=3).contains(&cells.len()) || cells[0].trim().is_empty() {
+                panic!("{origin}:{}: `{line}` is not `term<TAB>meaning[<TAB>names]`", index + 1);
+            }
+            terms.insert(cells[0].trim().to_lowercase());
+            if let Some(names) = cells.get(2) {
+                other_meanings.extend(names.split(',').map(str::trim).filter(|name| !name.is_empty()).map(str::to_string));
+            }
+        }
         Glossary { terms, other_meanings }
     }
 
     /// Whether the name is one in which a term means something other than its row says.
     pub fn means_otherwise_in(&self, name: &str) -> bool {
         self.other_meanings.contains(name)
+    }
+
+    /// The names of the third column: those in which a term means something else.
+    pub fn other_meaning_names(&self) -> &BTreeSet<String> {
+        &self.other_meanings
     }
 
     /// Whether the glossary holds the term.
@@ -121,6 +139,13 @@ impl NamingRules {
         findings
     }
 
+    /// The third-column names of the glossary that no scanned item declares: an entry left behind
+    /// once its name was renamed.
+    pub fn undeclared_other_meanings(scan: &ItemScan, glossary: &Glossary) -> Vec<String> {
+        let declared: BTreeSet<&str> = scan.items().iter().map(|item| item.name.as_str()).collect();
+        glossary.other_meaning_names().iter().filter(|name| !declared.contains(name.as_str())).cloned().collect()
+    }
+
     /// Whether every word of `name` is in the glossary or the dictionary, glossary compounds read
     /// whole, and the name is not one in which a glossary term means something else.
     fn is_made_of_words(name: &str, glossary: &Glossary, dictionary: &Dictionary) -> bool {
@@ -164,7 +189,7 @@ mod tests {
 
     #[test]
     fn a_name_of_words_and_glossary_terms_passes_and_an_abbreviation_fails() {
-        let glossary = Glossary::parse("msl\tthe language\nac_stim\tan analysis source\n");
+        let glossary = Glossary::parse("glossary", "msl\tthe language\nac_stim\tan analysis source\n");
         let dictionary = Dictionary::parse("lower\nexpression\nstimulus\n");
         assert!(NamingRules::is_made_of_words("MslLower", &glossary, &dictionary));
         assert!(NamingRules::is_made_of_words("lower_ac_stim", &glossary, &dictionary));
@@ -173,8 +198,27 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "glossary.tsv:3: `ir the representation` is not")]
+    fn a_glossary_row_without_a_tab_is_refused_with_its_line() {
+        Glossary::parse("glossary.tsv", "# terms\nmsl\tthe language\nir the representation\n");
+    }
+
+    #[test]
+    #[should_panic(expected = "glossary.tsv:1:")]
+    fn a_glossary_row_of_four_cells_is_refused() {
+        Glossary::parse("glossary.tsv", "rev\treversed order\tdiode_rev\textra\n");
+    }
+
+    #[test]
+    fn a_third_column_name_no_item_declares_is_reported() {
+        let glossary = Glossary::parse("glossary", "rev\treversed order\tdiode_rev, renamed_away\n");
+        let scan = ItemScan::of(&SourceTree::of_sources(&[("crates/demo/src/lib.rs", "fn diode_rev() {}\n")]));
+        assert_eq!(NamingRules::undeclared_other_meanings(&scan, &glossary), vec!["renamed_away".to_string()]);
+    }
+
+    #[test]
     fn a_name_in_which_a_term_means_something_else_fails() {
-        let glossary = Glossary::parse("rev\treversed order\tdiode_rev, other_rev\n");
+        let glossary = Glossary::parse("glossary", "rev\treversed order\tdiode_rev, other_rev\n");
         let dictionary = Dictionary::parse("diode\nlower\n");
         assert!(NamingRules::is_made_of_words("lower_rev", &glossary, &dictionary));
         assert!(!NamingRules::is_made_of_words("diode_rev", &glossary, &dictionary));

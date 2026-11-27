@@ -2716,6 +2716,7 @@ syntax
 synthesized
 synthetic
 system
+tab
 table
 tables
 tag
@@ -2762,6 +2763,7 @@ then
 there
 thermal
 they
+third
 thirteen
 this
 those

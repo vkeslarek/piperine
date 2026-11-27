@@ -7,7 +7,10 @@ use piperine_repository_guards::{Dictionary, Glossary, ItemScan, NamingRules, So
 #[test]
 fn every_declared_name_is_words_or_glossary() {
     let scan = ItemScan::of(&SourceTree::of_workspace());
-    let findings = NamingRules::undeclared_words(&scan, &Glossary::read(), &Dictionary::read());
+    let glossary = Glossary::read();
+    let left_behind = NamingRules::undeclared_other_meanings(&scan, &glossary);
+    assert!(left_behind.is_empty(), "data/glossary.tsv names, in a third column, names no item declares (delete them):\n{}", left_behind.join("\n"));
+    let findings = NamingRules::undeclared_words(&scan, &glossary, &Dictionary::read());
     findings.judge("undeclared_words").assert_clean("undeclared_words");
 }
 
