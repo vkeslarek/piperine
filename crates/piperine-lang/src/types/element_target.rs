@@ -94,14 +94,14 @@ impl Checker<'_> {
     /// target that is no carrier of this module's.
     pub(super) fn projected_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
         let file = self.file_of_expr(place);
-        let span = self.design.expr_node(place).span;
+        let span = self.state.design.expr_node(place).span;
         let (root, steps) = self.place_steps(place);
         let Some(decl) = self.carrier_root(root) else {
             self.coded(file, "E0222", span, format!("the target of a {what} is not a discrete carrier of this module (§8.2.10)"), "not a carrier");
             self.infer(place);
             return None;
         };
-        let (port_ty, direction) = match &self.design.decl_data(decl).kind {
+        let (port_ty, direction) = match &self.state.design.decl_data(decl).kind {
             DeclKind::Port(p) => (p.ty, p.dir),
             DeclKind::Signal(s) => (s.ty, None),
             _ => return None,
@@ -124,7 +124,7 @@ impl Checker<'_> {
         }
         if steps.len() < levels.len() || steps[..levels.len()].iter().any(|step| !matches!(step, Step::Index(_))) {
             self.refuse_with(file, span, ValueForm::OfWholeArrayOfCarriersOrOf, [what.to_string()]);
-            self.book.refused.insert(decl);
+            self.state.carriers.book.refused.insert(decl);
             self.infer(place);
             return None;
         }
@@ -138,7 +138,7 @@ impl Checker<'_> {
         let mut steps = Vec::new();
         let mut at = place;
         loop {
-            match &self.design.expr_node(at).kind {
+            match &self.state.design.expr_node(at).kind {
                 ExprKind::Paren(inner) => at = *inner,
                 ExprKind::Index { expr, index } => {
                     steps.push(Step::Index(*index));
@@ -146,7 +146,7 @@ impl Checker<'_> {
                 }
                 // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`pom/bundles.rs`),
                 // and the element of an array of bundles it is in names the first levels of that leaf (`rx[k].valid`)
-                ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(at).filter(|place| self.design.leaf_owner(place.decl).is_some()) => {
+                ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(at).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => {
                     steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
                     break;
                 }
@@ -163,12 +163,12 @@ impl Checker<'_> {
 
     /// The port or signal a place is rooted at: a name, or the leaf a field of a bundle stands for.
     fn carrier_root(&self, root: ExprId) -> Option<DeclId> {
-        if let Some(leaf) = self.design.bundle_field(root) {
+        if let Some(leaf) = self.state.design.bundle_field(root) {
             return Some(leaf);
         }
-        let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some(decl),
+        let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some(decl),
             _ => None,
         }
     }
@@ -178,7 +178,7 @@ impl Checker<'_> {
     pub(super) fn element_named_by(&mut self, expr: ExprId) -> Element {
         let (root, steps) = self.place_steps(expr);
         let Some(decl) = self.carrier_root(root).filter(|_| !steps.is_empty()) else { return Element::Whole };
-        let port_ty = match &self.design.decl_data(decl).kind {
+        let port_ty = match &self.state.design.decl_data(decl).kind {
             DeclKind::Port(p) => p.ty,
             DeclKind::Signal(s) => s.ty,
             _ => return Element::Whole,
@@ -193,7 +193,7 @@ impl Checker<'_> {
         if indexes.is_empty() {
             return Element::Whole;
         }
-        let port_ty = match &self.design.decl_data(decl).kind {
+        let port_ty = match &self.state.design.decl_data(decl).kind {
             DeclKind::Port(p) => p.ty,
             DeclKind::Signal(s) => s.ty,
             _ => return Element::Whole,
@@ -231,7 +231,7 @@ impl Checker<'_> {
     /// written inside generation, or of a carrier declared there, is [`Element::Unfolded`], since which iterations and
     /// arms elaborate it, and so which elements it reaches, is known per instance only (§8.2.23, §8.2.24).
     pub(super) fn judged_element(&self, place: ExprId, carrier: DeclId, written: Element) -> Element {
-        let generated = self.inside_generation(self.design.expr_node(place).owner) || self.inside_generation(carrier);
+        let generated = self.inside_generation(self.state.design.expr_node(place).owner) || self.inside_generation(carrier);
         if generated && written != Element::Any { Element::Unfolded } else { written }
     }
 

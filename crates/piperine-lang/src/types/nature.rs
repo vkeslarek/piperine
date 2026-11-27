@@ -40,10 +40,10 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The `impl`s of `nature` whose arguments type, in declaration order. The one-argument form
     /// `impl Resolve<V>` has `X = V` (spec Q4).
     pub(super) fn of(&mut self, nature: DeclId) -> Vec<ResolveImpl> {
-        if matches!(self.checker.design.decl_data(nature).kind, DeclKind::GenericParam(_)) {
+        if matches!(self.checker.state.design.decl_data(nature).kind, DeclKind::GenericParam(_)) {
             return self.of_parameter(nature);
         }
-        let table = std::rc::Rc::clone(&self.checker.impls);
+        let table = std::rc::Rc::clone(&self.checker.state.traits);
         let entries: Vec<ImplEntry> = table.impls().iter().filter(|entry| entry.builtin_trait == Some(RESOLVE_TRAIT) && entry.target == ImplTarget::Declared(nature)).cloned().collect();
         entries.iter().filter_map(|entry| self.typed(entry)).collect()
     }
@@ -51,7 +51,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// What the `Resolve<X, V>` bound of the nature parameter `parameter` says: one entry, whose `implementation` is the
     /// parameter itself (the concrete `impl` is the instance's nature's, found by `X` when the instance is lowered).
     fn of_parameter(&mut self, parameter: DeclId) -> Vec<ResolveImpl> {
-        let Some(arguments) = GenericSignature::resolve_bound(self.checker.design, parameter) else { return Vec::new() };
+        let Some(arguments) = GenericSignature::resolve_bound(self.checker.state.design, parameter) else { return Vec::new() };
         let types: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
         match types.as_deref() {
             Some([value]) => vec![ResolveImpl { implementation: parameter, driven: value.clone(), value: value.clone() }],
@@ -65,7 +65,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// `impl`s take; a literal several `impl`s accept is `E0181`. The pick is recorded for the
     /// elaborator; `None` after a report.
     pub(super) fn pick(&mut self, nature: DeclId, value: ExprId) -> Option<ResolveImpl> {
-        let design = self.checker.design;
+        let design = self.checker.state.design;
         let impls = self.of(nature);
         let nature_name = design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let takes = impls.iter().map(|candidate| format!("`{}`", candidate.driven.name(design))).collect::<Vec<_>>().join(", ");
@@ -109,7 +109,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
                 }
             }
         };
-        self.checker.drive_impls.insert(value, picked.implementation);
+        self.checker.state.result.drive_impls.insert(value, picked.implementation);
         Some(picked)
     }
 
@@ -133,7 +133,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// nature `N` with `V` its `value`, holding one `resolve` with one const parameter `N: usize`,
     /// one parameter `[X; N]` and the result `V` (§4 rule 8).
     pub(super) fn check(&mut self, decl: DeclId) {
-        let design = self.checker.design;
+        let design = self.checker.state.design;
         let DeclKind::Impl(data) = &design.decl_data(decl).kind else { return };
         let (file, span) = (design.decl_data(decl).file, design.decl_data(decl).span);
         let Some(nature) = (match design.type_resolution(data.self_ty) {
@@ -145,7 +145,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
         };
         let nature_name = design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let head = format!("`impl Resolve for {nature_name}`");
-        let table = std::rc::Rc::clone(&self.checker.impls);
+        let table = std::rc::Rc::clone(&self.checker.state.traits);
         let Some(entry) = table.impls().iter().find(|entry| entry.decl == decl) else { return };
         let Some(typed) = self.typed(entry) else {
             if entry.trait_arguments.len() != 1 && entry.trait_arguments.len() != 2 {
@@ -164,7 +164,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The type of the `value` field of `nature`, `None` when it is a type parameter of a generic
     /// nature (the carrier's type then depends on its arguments).
     fn nature_value(&mut self, nature: DeclId) -> Option<Ty> {
-        let design = self.checker.design;
+        let design = self.checker.state.design;
         let DeclKind::Nature(data) = &design.decl_data(nature).kind else { return None };
         let value = data.fields.iter().find_map(|field| match field {
             NatureFieldNode::Value { ty, .. } => Some(*ty),
@@ -178,7 +178,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
 
     /// The `resolve` of the `impl` `decl`: the only function, `fn resolve<const N: usize>(drives: [X; N]) -> V`.
     fn check_function(&mut self, decl: DeclId, head: &str, typed: &ResolveImpl) {
-        let design = self.checker.design;
+        let design = self.checker.state.design;
         let (file, span) = (design.decl_data(decl).file, design.decl_data(decl).span);
         let items: Vec<DeclId> = design.decl_data(decl).children.iter().copied().filter(|child| matches!(design.decl_data(*child).kind, DeclKind::Fn(_) | DeclKind::Const(_))).collect();
         let named = |item: DeclId| design.decl_data(item).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
@@ -214,7 +214,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// `E0203` when `function`, or a function it reaches, reads the environment of the solve or
     /// emits: `resolve` MUST be of class pure (§4 rule 8), since it runs wherever drives combine.
     fn check_purity(&mut self, function: DeclId, head: &str) {
-        let design = self.checker.design;
+        let design = self.checker.state.design;
         let class = self.checker.function_class(function, &mut std::collections::BTreeSet::new());
         let impure = if class.solve_reading {
             "solve-reading"
@@ -237,14 +237,14 @@ impl Checker<'_> {
     /// type of the `impl Resolve` its value picks (`ResolveImpls::pick`), any other the type it
     /// holds, mismatching with `code`.
     pub(super) fn check_drive_value(&mut self, target: &super::element_target::DriveTarget, value: ExprId, code: &'static str) {
-        let resolved = match self.carriers.get(&target.carrier).map(Ty::innermost) {
-            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.design, *nature).resolved && target.element == super::element_target::Element::Whole => Some(*nature),
+        let resolved = match self.state.result.carriers.get(&target.carrier).map(Ty::innermost) {
+            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.state.design, *nature).resolved && target.element == super::element_target::Element::Whole => Some(*nature),
             _ => None,
         };
         match resolved {
             Some(nature) => {
                 if let Some(picked) = ResolveImpls::new(self).pick(nature, value) {
-                    self.carrier_drive_impls.entry(target.carrier).or_default().push(picked.implementation);
+                    self.state.result.carrier_drive_impls.entry(target.carrier).or_default().push(picked.implementation);
                 }
             }
             None => self.check_as(value, &target.held, code),
@@ -258,7 +258,7 @@ impl Checker<'_> {
     pub(super) fn resolved_initial(&mut self, carrier: DeclId, nature: DeclId, init: ExprId) {
         self.within(super::check::Context::Const, |this| {
             if let Some(picked) = ResolveImpls::new(this).pick(nature, init) {
-                this.carrier_drive_impls.entry(carrier).or_default().push(picked.implementation);
+                this.state.result.carrier_drive_impls.entry(carrier).or_default().push(picked.implementation);
             }
         });
     }
@@ -266,21 +266,21 @@ impl Checker<'_> {
     /// `E0187` for a resolved carrier this module drives with no initial value whose driven type has no `Default`
     /// (§5.2.12): the drive has a value from `(0, 0)` on. An undelayed definition gives it one.
     pub(super) fn missing_resolved_initial_value(&mut self, carrier: DeclId) {
-        let driven_here = self.book.defined.contains_key(&carrier) || self.book.committed.contains_key(&carrier);
-        if !driven_here || self.has_initial(carrier) || self.book.undelayed.contains(&carrier) {
+        let driven_here = self.state.carriers.book.defined.contains_key(&carrier) || self.state.carriers.book.committed.contains_key(&carrier);
+        if !driven_here || self.has_initial(carrier) || self.state.carriers.book.undelayed.contains(&carrier) {
             return;
         }
-        let Some(implementation) = self.carrier_drive_impls.get(&carrier).and_then(|picked| picked.first().copied()) else { return };
-        let Some(Ty::Carrier { nature, .. }) = self.carriers.get(&carrier).cloned() else { return };
-        let Some(driven) = self.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
+        let Some(implementation) = self.state.result.carrier_drive_impls.get(&carrier).and_then(|picked| picked.first().copied()) else { return };
+        let Some(Ty::Carrier { nature, .. }) = self.state.result.carriers.get(&carrier).cloned() else { return };
+        let Some(driven) = self.state.result.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
         // a hand-written `Default` is a function the elaborator folds
         self.reach_written_defaults(&driven);
         if self.implements(&driven, super::derives::DerivedTrait::Default) {
             return;
         }
-        let item = self.design.decl_data(carrier).clone();
+        let item = self.state.design.decl_data(carrier).clone();
         let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let found = driven.name(self.design);
+        let found = driven.name(self.state.design);
         let message = format!("`{name}` has no initial value and its drive type `{found}` does not implement `Default`: a drive has a value from (0, 0) on (§5.2.12)");
         self.report(item.file, Diagnostic::new("E0187", message, item.span, "no initial value").with_help(format!("write `= value` after the type of `{name}`, or drive an `Option<{found}>`")));
     }

@@ -40,21 +40,21 @@ impl Checker<'_> {
     /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
     pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         Stack::deep(|| {
-            let node = self.design.expr_node(expr).clone();
+            let node = self.state.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
             if *expected == Ty::Event {
-                self.event_slot = Some(expr);
+                self.state.values.event_slot = Some(expr);
             }
             // A local bound to a bare literal takes the integer type its first use requires (§1.4.4).
             if self.fix_open_literal(expr, expected) {
-                self.exprs[expr.index()] = Some(expected.clone());
+                self.state.result.exprs[expr.index()] = Some(expected.clone());
                 return;
             }
             // An item read through a template takes the value type the context wants (§8.4.8, `template_items.rs`).
             if self.template_read_of(expr).is_some() && expected.is_value() {
                 self.infer(expr);
                 if self.fix_template_read(expr, expected) {
-                    self.exprs[expr.index()] = Some(expected.clone());
+                    self.state.result.exprs[expr.index()] = Some(expected.clone());
                     return;
                 }
             }
@@ -69,16 +69,16 @@ impl Checker<'_> {
                 ExprKind::Closure { .. } => self.closure(expr, expected),
                 ExprKind::If { cond, then, else_: Some(else_) } => {
                     self.condition(*cond);
-                    let before = self.flow.assigned.clone();
+                    let before = self.state.values.flow.assigned.clone();
                     self.statements_as(&then.stmts, Some(expected), code);
-                    let after_then = self.flow.end_branch(&before);
+                    let after_then = self.state.values.flow.end_branch(&before);
                     self.check_as(*else_, expected, code);
-                    self.flow.assigned = Assigned::join([after_then, self.flow.assigned.clone()]);
+                    self.state.values.flow.assigned = Assigned::join([after_then, self.state.values.flow.assigned.clone()]);
                     Some(expected.clone())
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
                 ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) && expected.is_float() => {
-                    self.mismatch_coded(file, node.span, code, &expected.name(self.design), "an integer literal");
+                    self.mismatch_coded(file, node.span, code, &expected.name(self.state.design), "an integer literal");
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
@@ -118,14 +118,14 @@ impl Checker<'_> {
                 ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_integer() => {
                     match self.integer_literal_text(*operand) {
                         Some(text) => {
-                            let span = self.design.expr_node(*operand).span;
+                            let span = self.state.design.expr_node(*operand).span;
                             let found = self.integer_literal(file, span, &text, Some(expected), true);
                             if let Some(found) = &found
                                 && found != expected
                             {
                                 self.mismatch(file, span, expected, found);
                             }
-                            self.exprs[operand.index()] = Some(expected.clone());
+                            self.state.result.exprs[operand.index()] = Some(expected.clone());
                         }
                         None => self.check(*operand, expected),
                     }
@@ -150,7 +150,7 @@ impl Checker<'_> {
                 }
                 // a call, a struct expression and a constructor name may take the arguments of a generic type from the type expected
                 ExprKind::Call { .. } | ExprKind::Struct { .. } | ExprKind::Path(_) => {
-                    self.call_expected = Some((expr, expected.clone()));
+                    self.state.values.call_expected = Some((expr, expected.clone()));
                     self.infer(expr)
                 }
                 _ => self.infer(expr),
@@ -159,21 +159,21 @@ impl Checker<'_> {
                 && !self.compatible(expr, &found, expected)
                 && found != Ty::Never
             {
-                if self.event_reads.contains(&expr) {
+                if self.state.result.event_reads.contains(&expr) {
                     self.event_where_another_type_is_expected(expr, expected);
                 } else {
-                    let (expected_name, found_name) = (expected.name(self.design), found.name(self.design));
+                    let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
                     self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
                 }
             }
-            self.exprs[expr.index()] = Some(expected.clone());
+            self.state.result.exprs[expr.index()] = Some(expected.clone());
         })
     }
 
     /// The function a plain path names, if it names one.
     fn function_named(&self, expr: ExprId) -> Option<crate::pom::DeclId> {
         match self.callee_resolution(expr) {
-            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) => Some(decl),
+            Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Fn(_)) => Some(decl),
             _ => None,
         }
     }
@@ -189,34 +189,34 @@ impl Checker<'_> {
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
     pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         Stack::deep(|| {
-            let in_event_position = self.event_slot == Some(expr);
+            let in_event_position = self.state.values.event_slot == Some(expr);
             let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
                 ty = Some(self.event_out_of_place(expr));
             }
             self.record_node_choice(expr, ty.as_ref());
-            self.exprs[expr.index()] = ty.clone();
+            self.state.result.exprs[expr.index()] = ty.clone();
             ty
         })
     }
 
     fn infer_kind(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         match &node.kind {
             ExprKind::Lit(lit) => self.literal(&lit.kind, file, node.span),
             ExprKind::Path(_) => self.path(expr),
             ExprKind::Paren(inner) => {
-                if self.event_slot == Some(expr) {
-                    self.event_slot = Some(*inner);
+                if self.state.values.event_slot == Some(expr) {
+                    self.state.values.event_slot = Some(*inner);
                 }
                 self.infer(*inner)
             }
             ExprKind::Unary { op: UnOp::Neg, expr: operand } => {
                 if let Some(text) = self.integer_literal_text(*operand) {
-                    let span = self.design.expr_node(*operand).span;
+                    let span = self.state.design.expr_node(*operand).span;
                     let ty = self.integer_literal(file, span, &text, None, true);
-                    self.exprs[operand.index()] = ty.clone();
+                    self.state.result.exprs[operand.index()] = ty.clone();
                     return ty;
                 }
                 match self.infer(*operand) {
@@ -228,7 +228,7 @@ impl Checker<'_> {
                         Some(Ty::F64)
                     }
                     Some(other) => {
-                        let span = self.design.expr_node(*operand).span;
+                        let span = self.state.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::F64, &other);
                         Some(Ty::F64)
                     }
@@ -236,7 +236,7 @@ impl Checker<'_> {
             }
             ExprKind::Unary { op: UnOp::Not, expr: operand } => {
                 // An `Event` operand is judged here, as `E0440`, not as an `Event` out of place.
-                self.event_slot = Some(*operand);
+                self.state.values.event_slot = Some(*operand);
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
@@ -244,7 +244,7 @@ impl Checker<'_> {
                     // a struct or an enum takes `!` from the `impl` of `Not` (Appendix H.10)
                     Some(t) if Self::takes_operator_traits(&t) => self.operator_call(expr, OperatorTrait::Not, *operand, &t, None),
                     Some(other) => {
-                        let span = self.design.expr_node(*operand).span;
+                        let span = self.state.design.expr_node(*operand).span;
                         self.mismatch(file, span, &Ty::Bool, &other);
                         Some(Ty::Bool)
                     }
@@ -290,8 +290,8 @@ impl Checker<'_> {
     /// `E0610`.
     fn include_str(&mut self, expr: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        let in_const_item = self.context == Context::Const && self.owner.is_some_and(|owner| matches!(self.design.decl_data(owner).kind, DeclKind::Const(_)));
+        let span = self.state.design.expr_node(expr).span;
+        let in_const_item = self.state.values.context == Context::Const && self.state.values.owner.is_some_and(|owner| matches!(self.state.design.decl_data(owner).kind, DeclKind::Const(_)));
         if !in_const_item {
             self.coded(file, "E0610", span, "`include_str!` outside a `const` item".to_string(), "`include_str!` is allowed in the initializer of a `const` item only");
             return None;
@@ -301,7 +301,7 @@ impl Checker<'_> {
 
     pub(super) fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(lhs);
-        let span = self.design.expr_node(whole).span;
+        let span = self.state.design.expr_node(whole).span;
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
                 let comparison = matches!(op, BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge);
@@ -328,11 +328,11 @@ impl Checker<'_> {
                     // when it implements `PartialEq`.
                     Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
                         self.check(second, &t);
-                        let span = self.design.expr_node(first).span;
+                        let span = self.state.design.expr_node(first).span;
                         self.require_trait(file, span, &t, DerivedTrait::PartialEq);
                     }
                     Some(_) => {
-                        let span = self.design.expr_node(first).span;
+                        let span = self.state.design.expr_node(first).span;
                         self.refuse(file, span, ValueForm::ComparisonOfValuesThatAreNeitherFloatBoolNorInteger);
                     }
                     None => {
@@ -397,7 +397,7 @@ impl Checker<'_> {
             Some(t) if ordering && (t.is_composite() || matches!(t, Ty::Param(_))) => {
                 self.check(second, &t);
                 let file = self.file_of_expr(first);
-                let span = self.design.expr_node(first).span;
+                let span = self.state.design.expr_node(first).span;
                 self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
@@ -412,7 +412,7 @@ impl Checker<'_> {
                     && found != Ty::F64
                 {
                     let file = self.file_of_expr(first);
-                    let span = self.design.expr_node(first).span;
+                    let span = self.state.design.expr_node(first).span;
                     self.mismatch(file, span, &Ty::F64, &found);
                 }
                 self.check(second, &Ty::F64);
@@ -442,8 +442,8 @@ impl Checker<'_> {
             Some(t) if t.is_integer() => {}
             Some(other) => {
                 let file = self.file_of_expr(rhs);
-                let span = self.design.expr_node(rhs).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.design));
+                let span = self.state.design.expr_node(rhs).span;
+                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
             }
             None => {}
         }
@@ -472,8 +472,8 @@ impl Checker<'_> {
             && !(numeric(&target) && (numeric(&source) || (source == Ty::Bool && target.is_integer())))
         {
             let file = self.file_of_expr(operand);
-            let span = self.design.expr_node(operand).span;
-            let (found, wanted) = (source.name(self.design), target.name(self.design));
+            let span = self.state.design.expr_node(operand).span;
+            let (found, wanted) = (source.name(self.state.design), target.name(self.state.design));
             self.coded(file, "E0182", span, format!("no `as` conversion from `{found}` to `{wanted}`"), &format!("`{found}` does not convert `as` `{wanted}`"));
         }
         Some(target)
@@ -483,29 +483,29 @@ impl Checker<'_> {
     /// without one, `()`.
     fn conditional(&mut self, cond: ExprId, then: &BlockNode, else_: Option<ExprId>) -> Option<Ty> {
         self.condition(cond);
-        let before = self.flow.assigned.clone();
+        let before = self.state.values.flow.assigned.clone();
         let (found, after_then, after_else) = match else_ {
             // `if c { 0 } else { count + 1 }`: the first arm that is not a bare integer literal gives
             // the type the literal takes (local literal typing).
             Some(else_) if self.block_waits(then) => {
                 let else_ty = self.infer(else_);
-                let after_else = self.flow.end_branch(&before);
+                let after_else = self.state.values.flow.end_branch(&before);
                 self.statements(&then.stmts, else_ty.as_ref());
-                (else_ty, self.flow.end_branch(&before), after_else)
+                (else_ty, self.state.values.flow.end_branch(&before), after_else)
             }
             _ => {
                 let then_ty = self.statements(&then.stmts, None);
-                let after_then = self.flow.end_branch(&before);
+                let after_then = self.state.values.flow.end_branch(&before);
                 let (found, after_else) = match (else_, then_ty) {
                     // a `then` that never completes takes the type of the `else`
-                    (Some(else_), Some(Ty::Never)) => (self.infer(else_), self.flow.end_branch(&before)),
+                    (Some(else_), Some(Ty::Never)) => (self.infer(else_), self.state.values.flow.end_branch(&before)),
                     (Some(else_), Some(t)) => {
                         self.check(else_, &t);
-                        (Some(t), self.flow.end_branch(&before))
+                        (Some(t), self.state.values.flow.end_branch(&before))
                     }
                     (Some(else_), None) => {
                         self.infer(else_);
-                        (None, self.flow.end_branch(&before))
+                        (None, self.state.values.flow.end_branch(&before))
                     }
                     (None, Some(Ty::Never)) => (Some(Ty::Unit), before.clone()),
                     (None, Some(t)) if t != Ty::Unit => {
@@ -518,7 +518,7 @@ impl Checker<'_> {
                 (found, after_then, after_else)
             }
         };
-        self.flow.assigned = Assigned::join([after_then, after_else]);
+        self.state.values.flow.assigned = Assigned::join([after_then, after_else]);
         found
     }
 
@@ -582,7 +582,7 @@ impl Checker<'_> {
         if let (Some(value), Some(max)) = (value, ty.literal_max(negated))
             && value > max
         {
-            let name = ty.name(self.design);
+            let name = ty.name(self.state.design);
             let message = format!("`{text}` is out of range: an integer literal beyond the range of `{name}`");
             self.report(file, Diagnostic::new("E0909", message, span, "literal out of range").with_help("write a value the type holds, or a wider type"));
         }
@@ -591,7 +591,7 @@ impl Checker<'_> {
 
     /// The text of `expr` when it is an integer literal without an `f64` suffix, through parens.
     pub(super) fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_text(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Int(text) if !FloatText::is(text) => Some(text.clone()),
@@ -605,7 +605,7 @@ impl Checker<'_> {
     /// suffix, or `None`.
     fn block_waits(&self, block: &BlockNode) -> bool {
         let Some(last) = block.stmts.last() else { return false };
-        match &self.design.stmt_node(*last).kind {
+        match &self.state.design.stmt_node(*last).kind {
             StmtKind::Expr { expr, semi: false } => self.integer_literal_waits(*expr) || self.is_none_literal(*expr),
             _ => false,
         }
@@ -618,7 +618,7 @@ impl Checker<'_> {
 
     /// The resolution of the callee of the call `expr`.
     fn callee_resolution_of_call(&self, expr: ExprId) -> Option<Resolution> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Call { callee, .. } => self.callee_resolution(*callee),
             _ => None,
         }
@@ -626,13 +626,13 @@ impl Checker<'_> {
 
     /// A name: a param, a constant, a parameter or local binding, or a function as a value.
     fn path(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Path(path) = &node.kind else { return None };
         let file = self.file_of_expr(expr);
-        let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+        let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
         match res {
             Resolution::Decl(decl) => {
-                let kind = self.design.decl_data(decl).kind.clone();
+                let kind = self.state.design.decl_data(decl).kind.clone();
                 match kind {
                     DeclKind::Const(c) => {
                         self.reach(decl);
@@ -642,7 +642,7 @@ impl Checker<'_> {
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     // a bundle is no value (§7 rule 9)
-                    DeclKind::Port(_) | DeclKind::Signal(_) if self.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
+                    DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => {
@@ -650,23 +650,23 @@ impl Checker<'_> {
                         let whole = self.binding_type(decl);
                         if let Some(read) = self.handle_read(decl) {
                             // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
-                            if self.is_bundle_type(&read) && !self.design.is_method_receiver(expr) && !self.design.is_field_base(expr) {
+                            if self.is_bundle_type(&read) && !self.state.design.is_method_receiver(expr) && !self.state.design.is_field_base(expr) {
                                 return self.bundle_as_value(expr);
                             }
                             return Some(read);
                         }
                         let local = whole.map(|whole| self.generated_local(expr, decl, whole));
                         // A read that requires no type gives the literal its default `i32` (§1.4.2).
-                        self.open_literals.remove(&decl);
+                        self.state.values.open_literals.remove(&decl);
                         if self.read_before_assignment(file, node.span, decl) {
                             return local;
                         }
-                        if self.pending_closures.contains_key(&decl) {
+                        if self.state.values.pending_closures.contains_key(&decl) {
                             let message = "a closure whose parameters have no written type is typed by its first call: call it before using it as a value (§1.4.4)".to_string();
                             self.coded(file, "E0181", node.span, message, "parameter type unknown");
                             return None;
                         }
-                        if local.is_none() && self.lets_open.contains_key(&decl) {
+                        if local.is_none() && self.state.modules.lets_open.contains_key(&decl) {
                             return self.self_read(file, node.span, decl);
                         }
                         // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
@@ -680,8 +680,8 @@ impl Checker<'_> {
                         {
                             return self.instance_as_value(file, node.span, decl, module.decl);
                         }
-                        if local.is_none() && !self.poisoned.contains(&decl) {
-                            if self.fn_where {
+                        if local.is_none() && !self.state.values.poisoned.contains(&decl) {
+                            if self.state.values.fn_where {
                                 self.refuse(file, node.span, ValueForm::ValueParameterInWhereOfFn);
                             } else {
                                 self.refuse(file, node.span, ValueForm::NameWhoseTypeIsUnknown);
@@ -743,8 +743,8 @@ impl Checker<'_> {
         for (i, stmt) in stmts.iter().enumerate() {
             let last = i + 1 == stmts.len();
             value = Some(Ty::Unit);
-            let node = self.design.stmt_node(*stmt).clone();
-            let file = self.design.decl_data(node.owner).file;
+            let node = self.state.design.stmt_node(*stmt).clone();
+            let file = self.state.design.decl_data(node.owner).file;
             match &node.kind {
                 StmtKind::Let { pat, ty, init, else_ } => self.let_statement(file, *pat, *ty, *init, else_.as_ref()),
                 StmtKind::Expr { expr, semi } => {
@@ -775,7 +775,7 @@ impl Checker<'_> {
     /// the binding takes the annotation, else the type of the initializer, else the type of its
     /// first assignment.
     fn let_statement(&mut self, file: crate::pom::FileId, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
-        let pat_node = self.design.pat_node(pat).clone();
+        let pat_node = self.state.design.pat_node(pat).clone();
         let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
             self.let_pattern(file, pat, ty, init, else_);
             return;
@@ -788,7 +788,7 @@ impl Checker<'_> {
             Some(t) => match self.lower_type(t).filter(|ty| {
                 let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
                 if carriers {
-                    self.refuse(file, self.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);
+                    self.refuse(file, self.state.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);
                 }
                 !carriers
             }) {
@@ -797,7 +797,7 @@ impl Checker<'_> {
                     if let Some(init) = init {
                         self.infer(init);
                     }
-                    self.poisoned.insert(*binding);
+                    self.state.values.poisoned.insert(*binding);
                     return;
                 }
             },
@@ -822,18 +822,18 @@ impl Checker<'_> {
             }
             (None, Some(init)) => self.infer(init),
             (annotated, None) => {
-                self.deferred.insert(*binding);
+                self.state.values.deferred.insert(*binding);
                 if let Some(t) = annotated {
-                    self.locals.insert(*binding, t);
+                    self.state.result.locals.insert(*binding, t);
                 }
                 return;
             }
         };
         if let Some(closure) = init.and_then(|i| self.closure_expr(i)) {
-            self.closure_locals.insert(*binding, closure);
+            self.state.values.closure_locals.insert(*binding, closure);
         }
         if let Some(init) = init {
-            self.let_values.insert(*binding, init);
+            self.state.values.let_values.insert(*binding, init);
         }
         match bound {
             Some(t) => {
@@ -841,10 +841,10 @@ impl Checker<'_> {
                     self.wait_for_use(*binding, init);
                     self.wait_for_template_use(*binding, init);
                 }
-                self.locals.insert(*binding, t);
+                self.state.result.locals.insert(*binding, t);
             }
             None => {
-                self.poisoned.insert(*binding);
+                self.state.values.poisoned.insert(*binding);
             }
         }
     }

@@ -16,14 +16,14 @@ impl Checker<'_> {
     /// name, of a child placed through a callable param), or the read a `let` with no type was bound to (through parentheses).
     /// `None` for any other expression.
     pub(super) fn template_read_of(&mut self, expr: ExprId) -> Option<ExprId> {
-        match self.design.expr_node(expr).kind.clone() {
+        match self.state.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.template_read_of(inner),
-            ExprKind::Path(path) => match self.design.path_node(path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(local)) => self.template_locals.get(&local).copied(),
+            ExprKind::Path(path) => match self.state.design.path_node(path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(local)) => self.state.modules.template_locals.get(&local).copied(),
                 _ => None,
             },
             ExprKind::Field { expr: receiver, res, .. } if !matches!(res, Resolution::Decl(_)) => {
-                let read = self.template_reads.contains(&expr) || self.placed_through_callable(receiver);
+                let read = self.state.modules.template_reads.contains(&expr) || self.placed_through_callable(receiver);
                 read.then_some(expr)
             }
             _ => None,
@@ -38,28 +38,28 @@ impl Checker<'_> {
         if !expected.is_value() {
             return false;
         }
-        if let Some(binding) = self.open_template_reads.remove(&read) {
-            let name = self.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+        if let Some(binding) = self.state.modules.open_template_reads.remove(&read) {
+            let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let (file, span) = (self.file_of_expr(read), self.state.design.expr_node(read).span);
             self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name through a value of its child (§8.2.16)"), "a `let` that reads itself");
-            self.poisoned.insert(binding);
+            self.state.values.poisoned.insert(binding);
             return true;
         }
-        self.template_items.insert(read, expected.clone());
-        self.exprs[read.index()] = Some(expected.clone());
+        self.state.result.template_items.insert(read, expected.clone());
+        self.state.result.exprs[read.index()] = Some(expected.clone());
         if let Some(local) = self.template_local_of(expr) {
-            self.template_locals.remove(&local);
-            self.locals.insert(local, expected.clone());
+            self.state.modules.template_locals.remove(&local);
+            self.state.result.locals.insert(local, expected.clone());
         }
         true
     }
 
     /// The `let` with no type that `expr` names, bound to a read through a template.
     fn template_local_of(&self, expr: ExprId) -> Option<DeclId> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.template_local_of(*inner),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(local)) if self.template_locals.contains_key(&local) => Some(local),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(local)) if self.state.modules.template_locals.contains_key(&local) => Some(local),
                 _ => None,
             },
             _ => None,
@@ -70,25 +70,25 @@ impl Checker<'_> {
     /// gives it its type.
     pub(super) fn wait_for_template_use(&mut self, binding: DeclId, init: ExprId) {
         if let Some(read) = self.template_read_of(init) {
-            self.template_locals.insert(binding, read);
+            self.state.modules.template_locals.insert(binding, read);
         }
     }
 
     /// `E0181` at the read through a template of every `let` with no type that no expression names, so no use gives it a type
     /// (§8.4.8).
     pub(super) fn report_unread_template_locals(&mut self) {
-        let named: std::collections::BTreeSet<DeclId> = (0..self.design.expr_count())
-            .filter_map(|index| match &self.design.expr_node(ExprId(index as u32)).kind {
-                ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                    Some(Resolution::Decl(decl)) if self.template_locals.contains_key(&decl) => Some(decl),
+        let named: std::collections::BTreeSet<DeclId> = (0..self.state.design.expr_count())
+            .filter_map(|index| match &self.state.design.expr_node(ExprId(index as u32)).kind {
+                ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                    Some(Resolution::Decl(decl)) if self.state.modules.template_locals.contains_key(&decl) => Some(decl),
                     _ => None,
                 },
                 _ => None,
             })
             .collect();
-        let unread: Vec<ExprId> = self.template_locals.iter().filter(|(local, _)| !named.contains(local)).map(|(_, read)| *read).collect();
+        let unread: Vec<ExprId> = self.state.modules.template_locals.iter().filter(|(local, _)| !named.contains(local)).map(|(_, read)| *read).collect();
         for read in unread {
-            let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+            let (file, span) = (self.file_of_expr(read), self.state.design.expr_node(read).span);
             self.report_untyped_template_read(file, span);
         }
     }
@@ -110,7 +110,7 @@ impl Checker<'_> {
     pub(super) fn untyped_template_operand(&mut self, operand: ExprId) -> bool {
         let Some(read) = self.template_read_of(operand) else { return false };
         self.infer(operand);
-        let (file, span) = (self.file_of_expr(read), self.design.expr_node(read).span);
+        let (file, span) = (self.file_of_expr(read), self.state.design.expr_node(read).span);
         self.report_untyped_template_read(file, span);
         true
     }
@@ -129,13 +129,13 @@ impl Checker<'_> {
         if found != "node" {
             return false;
         }
-        let Some(read) = self.template_reads.iter().copied().find(|read| {
-            let at = self.design.expr_node(*read).span;
+        let Some(read) = self.state.modules.template_reads.iter().copied().find(|read| {
+            let at = self.state.design.expr_node(*read).span;
             self.file_of_expr(*read) == file && span.start <= at.start && at.end <= span.end
         }) else {
             return false;
         };
-        let at = self.design.expr_node(read).span;
+        let at = self.state.design.expr_node(read).span;
         self.report_untyped_template_read(file, at);
         true
     }

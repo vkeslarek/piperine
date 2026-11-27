@@ -20,14 +20,14 @@ impl Checker<'_> {
     /// its end is `E0104` (§1.5.25).
     pub(super) fn range_index(&mut self, expr: ExprId, base: ExprId, range: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let found = self.infer(base)?;
         let Ty::Array(element, Length::Fixed(length)) = &found else {
-            let base_span = self.design.expr_node(base).span;
-            self.mismatch_text(file, base_span, "an array", &found.name(self.design));
+            let base_span = self.state.design.expr_node(base).span;
+            self.mismatch_text(file, base_span, "an array", &found.name(self.state.design));
             return None;
         };
-        let ExprKind::Range { lo, hi, inclusive } = self.design.expr_node(range).kind.clone() else { return None };
+        let ExprKind::Range { lo, hi, inclusive } = self.state.design.expr_node(range).kind.clone() else { return None };
         let low = self.range_bound(file, lo, 0)?;
         let high = match hi {
             None => u128::from(*length),
@@ -48,7 +48,7 @@ impl Checker<'_> {
         match self.fold_integer(bound, NESTING) {
             Some(value) => Some(value),
             None => {
-                let span = self.design.expr_node(bound).span;
+                let span = self.state.design.expr_node(bound).span;
                 let name = self.expression_name(bound);
                 self.coded(file, "E0188", span, format!("the bound {name} of a range index is not a const expression (§1.5.9)"), "not a const expression");
                 None
@@ -64,7 +64,7 @@ impl Checker<'_> {
     /// The value of the const expression `expr` when it is a non-negative integer the folder
     /// computes; `None` for anything else, an overflow or a division by zero included.
     pub(super) fn fold_integer(&self, expr: ExprId, nesting: u8) -> Option<u128> {
-        IntegerFolder::of(self.design).fold(expr, nesting)
+        IntegerFolder::of(self.state.design).fold(expr, nesting)
     }
 }
 

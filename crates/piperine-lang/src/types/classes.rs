@@ -13,15 +13,15 @@ impl Checker<'_> {
     /// context, naming the function and the position.
     pub(super) fn check_call_class(&mut self, expr: ExprId, function: DeclId) {
         // a definition that reads the solve is `E0336` (§8.2.5), the rule that names it: it is not asked twice
-        if self.context != Context::Const || self.in_definition > 0 {
+        if self.state.values.context != Context::Const || self.state.carriers.in_definition > 0 {
             return;
         }
         let position = "a const context";
         if !self.function_class(function, &mut std::collections::BTreeSet::new()).solve_reading {
             return;
         }
-        let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |name| name.text.clone());
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         let message = format!("the function `{name}` is solve-reading (it probes or reads the environment of the solve) and is called in {position}, where that class is not allowed (§3)");
         self.coded(file, "E0122", span, message, "a call out of its class");
     }

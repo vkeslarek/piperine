@@ -125,23 +125,23 @@ impl Checker<'_> {
     /// an argument cannot be found (`E0181`) or one is refused.
     pub(super) fn generic_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(function);
         let (params, ret) = self.declared_signature(function)?;
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, callee, function, file, span)?;
         self.argument_types(&mut inference, &params, args);
         self.callable_arguments(&mut inference, &params, args);
-        if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
+        if let Some(expected) = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&ret, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, function, function, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| self.recorded_argument(parameter, &params, args, &substitution)).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, function, file, span)?;
-        self.instantiations.insert(expr, Instantiation { item: function, arguments });
+        self.state.result.instantiations.insert(expr, Instantiation { item: function, arguments });
         let params: Vec<Ty> = params.iter().map(|param| self.substitute(&substitution, param)).collect();
         let ret = self.substitute(&substitution, &ret);
-        self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
+        self.state.result.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         self.finish_call(expr, callee, function, params, ret, args, false)
     }
 
@@ -155,10 +155,10 @@ impl Checker<'_> {
                 return Some(GenericValue::Closure(closure));
             }
             if let Some(Resolution::Decl(decl)) = self.callee_resolution(arg.value) {
-                if matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) {
+                if matches!(self.state.design.decl_data(decl).kind, DeclKind::Fn(_)) {
                     return Some(GenericValue::Function(decl));
                 }
-                if let Some(closure) = self.closure_locals.get(&decl) {
+                if let Some(closure) = self.state.values.closure_locals.get(&decl) {
                     return Some(GenericValue::Closure(*closure));
                 }
             }
@@ -170,20 +170,20 @@ impl Checker<'_> {
     /// parameters (§3.8.5); more than the list takes is `E0187`. `None` after a refusal.
     pub(super) fn explicit_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, callee: ExprId, function: DeclId, file: FileId, span: Span) -> Option<()> {
         // a template written in place (`G::<2> { k: 3.0 }(x)`, §8.4.3) names its arguments on the path of its head
-        let (ExprKind::Path(path) | ExprKind::Struct { path, .. }) = &self.design.expr_node(callee).kind else { return Some(()) };
-        let nodes = match self.design.path_node(*path).segments.last().and_then(|segment| segment.args.clone()) {
+        let (ExprKind::Path(path) | ExprKind::Struct { path, .. }) = &self.state.design.expr_node(callee).kind else { return Some(()) };
+        let nodes = match self.state.design.path_node(*path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             _ => return Some(()),
         };
         if nodes.len() > signature.parameters().len() {
-            let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             let message = format!("`{name}` takes at most {} generic arguments, found {} (§3.8.7)", signature.parameters().len(), nodes.len());
             self.coded(file, "E0187", span, message, "the wrong number of generic arguments");
             return None;
         }
         for (index, node) in nodes.iter().enumerate() {
             // `_` is as if left out (§1.2.12): the connections give the argument, else its default
-            if matches!(node, GenericArgNode::Type(ty) if matches!(self.design.type_node(*ty).kind, TypeKind::Infer)) {
+            if matches!(node, GenericArgNode::Type(ty) if matches!(self.state.design.type_node(*ty).kind, TypeKind::Infer)) {
                 continue;
             }
             let value = self.generic_argument(&signature.parameters()[index], node, file)?;
@@ -226,7 +226,7 @@ impl Checker<'_> {
             let expected = inference.found().apply(&wanted);
             let ty = if self.is_function_value(arg.value) && !self.mentions_open_parameter(&expected, inference) {
                 self.check(arg.value, &expected);
-                self.exprs[arg.value.index()].clone()
+                self.state.result.exprs[arg.value.index()].clone()
             } else {
                 self.infer(arg.value)
             };
@@ -288,14 +288,14 @@ impl Checker<'_> {
     /// What a diagnostic about the arguments of `item` calls the callee and how the turbofish is written: the item's own
     /// name, or for an `impl` (which has none) `Type::function` and `Type::<..>::function`, naming the function called.
     fn callee_names(&self, item: DeclId, function: DeclId) -> (String, String) {
-        let own = self.design.decl_data(item).name.as_ref().map(|n| n.text.clone());
+        let own = self.state.design.decl_data(item).name.as_ref().map(|n| n.text.clone());
         if let Some(name) = own {
             return (name.clone(), format!("{name}::<..>"));
         }
-        let function_name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let DeclKind::Impl(data) = &self.design.decl_data(item).kind else { return (function_name.clone(), format!("{function_name}::<..>")) };
-        let Resolution::Decl(owner) = self.design.type_resolution(data.self_ty) else { return (function_name.clone(), format!("{function_name}::<..>")) };
-        let type_name = self.design.decl_data(owner).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let function_name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let DeclKind::Impl(data) = &self.state.design.decl_data(item).kind else { return (function_name.clone(), format!("{function_name}::<..>")) };
+        let Resolution::Decl(owner) = self.state.design.type_resolution(data.self_ty) else { return (function_name.clone(), format!("{function_name}::<..>")) };
+        let type_name = self.state.design.decl_data(owner).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         (format!("{type_name}::{function_name}"), format!("{type_name}::<..>::{function_name}"))
     }
 }

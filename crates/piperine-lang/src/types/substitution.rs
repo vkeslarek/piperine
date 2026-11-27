@@ -157,11 +157,11 @@ impl Checker<'_> {
     pub(super) fn generic_nominal(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let arguments = self.written_arguments(path, decl, file, span)?;
         // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
-        let declared = if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
+        let declared = if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
         declared?;
         self.arguments_have_repr(decl, &arguments, file, span)?;
         let nominal = Nominal { decl, arguments };
-        Some(if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
+        Some(if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) })
     }
 
     /// The type `G<2>` of a template of the generic module `decl` written at `path` (§8.4.3): its arguments, a left-out one its
@@ -175,7 +175,7 @@ impl Checker<'_> {
     /// (§3.8.7). `None` after a diagnostic (`E0187` for the wrong number of arguments).
     fn written_arguments(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Vec<GenericValue>> {
         let signature = self.generic_signature(decl);
-        let nodes = match self.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
+        let nodes = match self.state.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             _ => Vec::new(),
         };
@@ -201,7 +201,7 @@ impl Checker<'_> {
     /// (§8.4.5) or a generic parameter of the caller bounded by the same `Fn` (the caller's template, forwarded); any other argument
     /// of it is `P0001` naming it. `None` after a refusal.
     pub(super) fn arguments_satisfy_bounds(&mut self, signature: &GenericSignature, arguments: &[GenericValue], item: DeclId, file: FileId, span: Span) -> Option<()> {
-        let item_name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let item_name = self.state.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut satisfied = true;
         for (parameter, argument) in signature.parameters().iter().zip(arguments) {
             let GenericValue::Type(ty) = argument else { continue };
@@ -213,7 +213,7 @@ impl Checker<'_> {
                     self.refuse_with(file, span, GenericsForm::TemplateParameterOfBoundedByFn, [parameter.name.to_string(), item_name.to_string()]);
                     satisfied = false;
                 } else if !BoundCheck::new(self).satisfies(ty, bound) {
-                    let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.design), self.bound_name(bound), parameter.name);
+                    let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.state.design), self.bound_name(bound), parameter.name);
                     self.coded(file, "E0187", span, message, "an argument that does not satisfy its bound");
                     satisfied = false;
                 }
@@ -228,12 +228,12 @@ impl Checker<'_> {
         if !self.derives(decl, "Repr") {
             return Some(());
         }
-        let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = self.state.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut holds = true;
         for argument in arguments {
             let GenericValue::Type(ty) = argument else { continue };
             if !ty.has_param() && self.repr_levels(ty).is_none() {
-                self.coded(file, "E0110", span, format!("`{name}` derives `Repr`, and its argument `{}` has no `Repr` (§2 rule 3)", ty.source_name(self.design)), "an argument without `Repr`");
+                self.coded(file, "E0110", span, format!("`{name}` derives `Repr`, and its argument `{}` has no `Repr` (§2 rule 3)", ty.source_name(self.state.design)), "an argument without `Repr`");
                 holds = false;
             }
         }
@@ -249,12 +249,12 @@ impl Checker<'_> {
             (ParameterKind::Const(_), GenericArgNode::Type(ty)) => match self.const_parameter_named_by(*ty) {
                 Some(named) => Some(GenericValue::Const(ConstTerm::Param(named))),
                 None => {
-                    self.coded(file, "E0187", self.design.type_node(*ty).span, format!("`{}` takes a constant here, found a type (§3.8.5)", parameter.name), "a constant");
+                    self.coded(file, "E0187", self.state.design.type_node(*ty).span, format!("`{}` takes a constant here, found a type (§3.8.5)", parameter.name), "a constant");
                     None
                 }
             },
             (ParameterKind::Type | ParameterKind::Nature, GenericArgNode::Const(expr)) => {
-                let at = self.design.expr_node(*expr).span;
+                let at = self.state.design.expr_node(*expr).span;
                 self.coded(file, "E0187", at, format!("`{}` takes a type here, found a constant (§3.8.5)", parameter.name), "a type");
                 None
             }
@@ -278,8 +278,8 @@ impl Checker<'_> {
 
     /// The const parameter a type node spells: `N` in `Delay<u8, N>` reads as a type name.
     pub(super) fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
-        let TypeKind::Path(path) = &self.design.type_node(ty).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
+        let TypeKind::Path(path) = &self.state.design.type_node(ty).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if self.is_const_parameter(decl) => Some(decl),
             _ => None,
         }
@@ -287,7 +287,7 @@ impl Checker<'_> {
 
     /// Whether `decl` is a const generic parameter.
     fn is_const_parameter(&self, decl: DeclId) -> bool {
-        matches!(self.design.decl_data(decl).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Const { .. }))
+        matches!(self.state.design.decl_data(decl).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Const { .. }))
     }
 
     /// A const generic argument as the checker knows it (§3.8.5): an integer or `bool` literal, a
@@ -295,7 +295,7 @@ impl Checker<'_> {
     /// (`{ N + 1 }`) which the elaborator folds per instantiation; a constant expression with no
     /// parameter is folded now. Anything else is `E0188`.
     pub(super) fn const_term(&mut self, expr: ExprId, file: FileId) -> Option<ConstTerm> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Bool(value) => return Some(ConstTerm::Bool(*value)),
@@ -313,7 +313,7 @@ impl Checker<'_> {
             }
             ExprKind::Paren(inner) => return self.const_term(*inner, file),
             // `{ N + 1 }`: a block of one expression is that expression (§3.8.5)
-            ExprKind::Block(block) if let [only] = block.stmts.as_slice() && let StmtKind::Expr { expr: inner, semi: false } = &self.design.stmt_node(*only).kind => return self.const_term(*inner, file),
+            ExprKind::Block(block) if let [only] = block.stmts.as_slice() && let StmtKind::Expr { expr: inner, semi: false } = &self.state.design.stmt_node(*only).kind => return self.const_term(*inner, file),
             ExprKind::Path(_) => {
                 if let Some(parameter) = self.generic_parameter_of(expr) {
                     return Some(ConstTerm::Param(parameter));
@@ -336,9 +336,9 @@ impl Checker<'_> {
 
     /// The generic parameter the const expression `expr` is the bare name of, if it is one.
     pub(super) fn generic_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-                Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::GenericParam(_)) => Some(decl),
+        match &self.state.design.expr_node(expr).kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
+                Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::GenericParam(_)) => Some(decl),
                 _ => None,
             },
             ExprKind::Paren(inner) => self.generic_parameter_of(*inner),
@@ -348,19 +348,19 @@ impl Checker<'_> {
 
     /// The type parameter `T` the const expression `expr` is `T::WIDTH` of (§2), if it is.
     pub(super) fn width_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
-        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
-        let [owner, member] = self.design.path_node(*path).segments.as_slice() else { return None };
+        let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return None };
+        let [owner, member] = self.state.design.path_node(*path).segments.as_slice() else { return None };
         let Resolution::Decl(parameter) = owner.res else { return None };
-        (member.name.text == "WIDTH" && matches!(self.design.decl_data(parameter).kind, DeclKind::GenericParam(GenericParamData::Type { .. }))).then_some(parameter)
+        (member.name.text == "WIDTH" && matches!(self.state.design.decl_data(parameter).kind, DeclKind::GenericParam(GenericParamData::Type { .. }))).then_some(parameter)
     }
 
     /// Whether the const expression `expr` names a generic parameter anywhere in it, or the `WIDTH` of one.
     pub(super) fn mentions_generic_parameter(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(_) => self.generic_parameter_of(expr).is_some() || self.width_parameter_of(expr).is_some(),
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.mentions_generic_parameter(*inner),
             ExprKind::Binary { lhs, rhs, .. } => self.mentions_generic_parameter(*lhs) || self.mentions_generic_parameter(*rhs),
-            ExprKind::Block(block) => block.stmts.iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
+            ExprKind::Block(block) => block.stmts.iter().any(|stmt| match &self.state.design.stmt_node(*stmt).kind {
                 StmtKind::Expr { expr, .. } => self.mentions_generic_parameter(*expr),
                 _ => false,
             }),
@@ -371,10 +371,10 @@ impl Checker<'_> {
     /// Whether the const expression `expr` reads a param of a module anywhere in it (`[Bit; n]`, `[Bit; n + 1]`): an
     /// array length the elaborator folds per body variant, which makes the param structural (§8.1.2).
     pub(super) fn reads_module_param(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(
-                self.design.path_node(*path).segments.last().map(|segment| segment.res),
-                Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_))
+                self.state.design.path_node(*path).segments.last().map(|segment| segment.res),
+                Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_))
             ),
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.reads_module_param(*inner),
             ExprKind::Binary { lhs, rhs, .. } => self.reads_module_param(*lhs) || self.reads_module_param(*rhs),

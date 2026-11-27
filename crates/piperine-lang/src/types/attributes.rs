@@ -70,14 +70,14 @@ impl Checker<'_> {
     /// One walk over every attribute of the design: each declaration's and each statement's. An
     /// attribute A.1 does not list, or one on the wrong kind of item, is `E0904` naming both.
     pub(super) fn check_attributes(&mut self) {
-        for index in 0..self.design.decl_count() {
+        for index in 0..self.state.design.decl_count() {
             let decl = DeclId(index as u32);
-            for attr in self.design.decl_data(decl).meta.attrs.clone() {
+            for attr in self.state.design.decl_data(decl).meta.attrs.clone() {
                 self.check_attribute(decl, &attr, true);
             }
         }
-        for index in 0..self.design.stmt_count() {
-            let node = self.design.stmt_node(StmtId(index as u32)).clone();
+        for index in 0..self.state.design.stmt_count() {
+            let node = self.state.design.stmt_node(StmtId(index as u32)).clone();
             for attr in &node.meta.attrs {
                 self.check_attribute(node.owner, attr, false);
             }
@@ -86,13 +86,13 @@ impl Checker<'_> {
 
     /// One attribute of `owner` (or of a statement in it, when `on_item` is false).
     fn check_attribute(&mut self, owner: DeclId, attr: &AttrNode, on_item: bool) {
-        let path = self.design.path_node(attr.path).clone();
+        let path = self.state.design.path_node(attr.path).clone();
         let name = path.segments.iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::");
-        let file = self.design.decl_data(owner).file;
-        let owner_name = self.design.decl_data(owner).name.as_ref().map_or_else(|| "an item".to_string(), |n| format!("`{}`", n.text));
+        let file = self.state.design.decl_data(owner).file;
+        let owner_name = self.state.design.decl_data(owner).name.as_ref().map_or_else(|| "an item".to_string(), |n| format!("`{}`", n.text));
         let message = match AttributeCatalogue::site(&name) {
             None => format!("the attribute `#[{name}]` is not one A.1 lists: attributes are not an extension point"),
-            Some(site) if on_item && !site.holds(self.design, owner) => format!("the attribute `#[{name}]` sits on {owner_name}, but A.1 allows it only on {}", site.describe()),
+            Some(site) if on_item && !site.holds(self.state.design, owner) => format!("the attribute `#[{name}]` sits on {owner_name}, but A.1 allows it only on {}", site.describe()),
             Some(AttributeSite::Any) => return,
             Some(site) if !on_item => format!("the attribute `#[{name}]` sits on a statement of {owner_name}, but A.1 allows it only on {}", site.describe()),
             Some(_) => return,

@@ -103,7 +103,7 @@ impl Checker<'_> {
 
     /// Whether a project's own `impl` of the trait of `operator` is written for `ty`.
     pub(super) fn has_operator_impl(&self, operator: OperatorTrait, ty: &Ty) -> bool {
-        !self.impls.builtin_functions(operator.trait_name(), operator.function(), ty).is_empty()
+        !self.state.traits.builtin_functions(operator.trait_name(), operator.function(), ty).is_empty()
     }
 
     /// The type of `whole`, `lhs op rhs` (or `op lhs` when `rhs` is `None`), where `lhs` has the type
@@ -112,8 +112,8 @@ impl Checker<'_> {
     /// after a diagnostic.
     pub(super) fn operator_call(&mut self, whole: ExprId, operator: OperatorTrait, lhs: ExprId, lhs_ty: &Ty, rhs: Option<ExprId>) -> Option<Ty> {
         let file = self.file_of_expr(whole);
-        let span = self.design.expr_node(whole).span;
-        let table = std::rc::Rc::clone(&self.impls);
+        let span = self.state.design.expr_node(whole).span;
+        let table = std::rc::Rc::clone(&self.state.traits);
         let candidates = table.builtin_functions(operator.trait_name(), operator.function(), lhs_ty);
         let chosen = match (candidates.as_slice(), rhs) {
             ([only], _) => Some(*only),
@@ -128,7 +128,7 @@ impl Checker<'_> {
             self.operator_refused(file, span, operator, lhs_ty, rhs, candidates.is_empty());
             return None;
         };
-        let args: Vec<Arg> = rhs.map(|value| Arg { name: None, value, res: Resolution::Unresolved, span: self.design.expr_node(value).span }).into_iter().collect();
+        let args: Vec<Arg> = rhs.map(|value| Arg { name: None, value, res: Resolution::Unresolved, span: self.state.design.expr_node(value).span }).into_iter().collect();
         self.method_call_of(whole, lhs, lhs_ty, function, &args)
     }
 
@@ -137,7 +137,7 @@ impl Checker<'_> {
     fn accepts_operand(&mut self, function: DeclId, lhs_ty: &Ty, rhs_ty: &Ty) -> bool {
         let Some((params, _)) = self.declared_signature(function) else { return false };
         let [own, wanted, ..] = params.as_slice() else { return false };
-        let generic_owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some());
+        let generic_owner = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some());
         let Some(owner) = generic_owner else { return rhs_ty.fits(wanted) };
         let signature = self.generic_signature(owner);
         let mut inference = Inference::new(&signature);
@@ -149,12 +149,12 @@ impl Checker<'_> {
     /// `E0180`: no `impl` of the operator's trait serves the operands. `missing` is true when the left type has
     /// no `impl` of the trait at all, false when it has some for other right operands.
     fn operator_refused(&mut self, file: FileId, span: Span, operator: OperatorTrait, lhs_ty: &Ty, rhs: Option<ExprId>, missing: bool) {
-        let name = lhs_ty.source_name(self.design);
+        let name = lhs_ty.source_name(self.state.design);
         let trait_name = operator.trait_name();
         let message = if missing {
             format!("mismatched types: `{name}` has no `{trait_name}`, so `{}` does not apply to it (Appendix H.10 rule 1)", operator.symbol())
         } else {
-            let found = rhs.and_then(|rhs| self.infer(rhs)).map_or_else(|| "the right operand".to_string(), |ty| ty.source_name(self.design));
+            let found = rhs.and_then(|rhs| self.infer(rhs)).map_or_else(|| "the right operand".to_string(), |ty| ty.source_name(self.state.design));
             format!("mismatched types: no `impl {trait_name}` of `{name}` takes `{found}` as its right operand (Appendix H.10 rule 1)")
         };
         self.coded(file, "E0180", span, message, "an operator no `impl` gives");
@@ -170,14 +170,14 @@ impl Checker<'_> {
     /// with the signature the trait gives under `Self = T` and the `Rhs` and `Out` the `impl` writes or their
     /// defaults. Each is `E0187` naming the trait and the type. The written arguments are typed here so every use sees them.
     pub(super) fn builtin_impl_rules(&mut self, decl: DeclId, self_ty: TypeId) {
-        let table = std::rc::Rc::clone(&self.impls);
+        let table = std::rc::Rc::clone(&self.state.traits);
         let Some(entry) = table.impls().iter().find(|entry| entry.decl == decl) else { return };
         let Some(trait_name) = entry.builtin_trait else { return };
-        let (file, span) = (self.design.decl_data(decl).file, self.design.decl_data(decl).span);
+        let (file, span) = (self.state.design.decl_data(decl).file, self.state.design.decl_data(decl).span);
         let Some(own) = self.lower_type(self_ty) else { return };
         let written: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect();
         let Some(written) = written else { return };
-        let head = format!("`impl {trait_name} for {}`", own.source_name(self.design));
+        let head = format!("`impl {trait_name} for {}`", own.source_name(self.state.design));
         let argument = |index: usize, default: Ty| written.get(index).cloned().unwrap_or(default);
         // (function, parameters after `self`, result)
         let wanted: Vec<(&str, Vec<Ty>, Ty)> = match (OperatorTrait::named(trait_name), trait_name) {
@@ -189,14 +189,14 @@ impl Checker<'_> {
             (_, "Default") => vec![("default", vec![], own.clone())],
             _ => return,
         };
-        let items: Vec<(String, DeclId)> = self.design.decl_data(decl).children.iter().filter(|child| matches!(self.design.decl_data(**child).kind, DeclKind::Fn(_) | DeclKind::Const(_))).filter_map(|child| Some((self.design.decl_data(*child).name.as_ref()?.text.clone(), *child))).collect();
+        let items: Vec<(String, DeclId)> = self.state.design.decl_data(decl).children.iter().filter(|child| matches!(self.state.design.decl_data(**child).kind, DeclKind::Fn(_) | DeclKind::Const(_))).filter_map(|child| Some((self.state.design.decl_data(*child).name.as_ref()?.text.clone(), *child))).collect();
         for (name, ..) in &wanted {
             if !items.iter().any(|(own_name, _)| own_name == name) {
                 self.coded(file, "E0187", span, format!("{head} leaves out `{name}` (Appendix H)"), "a function of the trait left out");
             }
         }
         for (name, item) in &items {
-            let (item_file, item_span) = (self.design.decl_data(*item).file, self.design.decl_data(*item).span);
+            let (item_file, item_span) = (self.state.design.decl_data(*item).file, self.state.design.decl_data(*item).span);
             let Some((_, parameters, result)) = wanted.iter().find(|(wanted_name, ..)| wanted_name == name) else {
                 self.coded(item_file, "E0187", item_span, format!("{head} defines `{name}`, which the trait does not have (Appendix H)"), "an item the trait lacks");
                 continue;
@@ -207,7 +207,7 @@ impl Checker<'_> {
             let found = Ty::Fn(params, Box::new(ret));
             let wanted_type = Ty::Fn(given, Box::new(result.clone()));
             if !found.fits(&wanted_type) {
-                self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (Appendix H)", found.name(self.design), wanted_type.name(self.design)), "a signature the trait does not give");
+                self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (Appendix H)", found.name(self.state.design), wanted_type.name(self.state.design)), "a signature the trait does not give");
             }
         }
     }

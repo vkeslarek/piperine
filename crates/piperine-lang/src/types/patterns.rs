@@ -58,20 +58,20 @@ impl Checker<'_> {
     /// What pattern `pat` covers of a scrutinee of type `scrut`, its bindings typed. `None` after
     /// a diagnostic.
     pub(super) fn pattern(&mut self, file: FileId, pat: PatId, scrut: &Ty) -> Option<Matched> {
-        let node = self.design.pat_node(pat).clone();
+        let node = self.state.design.pat_node(pat).clone();
         match &node.kind {
             PatKind::Wild => Some(Matched::covering(Covers::All)),
             PatKind::Ident { name, sub, binding, res: Resolution::Unresolved, .. } => self.binder(file, node.span, name, *binding, *sub, scrut),
             PatKind::Ident { sub: None, res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), .. } => self.path_pattern(file, node.span, *res, scrut),
             PatKind::Path(path) => {
-                let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+                let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 self.path_pattern(file, node.span, res, scrut)
             }
             PatKind::Lit(expr) => self.literal_pattern(file, node.span, *expr, scrut),
             PatKind::Range { lo, hi, inclusive } => self.range_pattern(file, node.span, *lo, *hi, *inclusive, scrut),
-            PatKind::TupleStruct { path, pats } if matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some") => {
+            PatKind::TupleStruct { path, pats } if matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some") => {
                 let Ty::Option(inner) = scrut else {
-                    self.mismatch_text(file, node.span, &scrut.name(self.design), "an `Option`");
+                    self.mismatch_text(file, node.span, &scrut.name(self.state.design), "an `Option`");
                     return None;
                 };
                 let [p] = pats.as_slice() else {
@@ -98,9 +98,9 @@ impl Checker<'_> {
     /// value it does not match.
     pub(super) fn irrefutable_pattern(&mut self, file: FileId, pat: PatId, ty: &Ty, what: &str) -> Option<Matched> {
         let matched = self.pattern(file, pat, ty)?;
-        let missing = Coverage::new(self.design, &self.layouts).missing(ty, &matched.covers);
+        let missing = Coverage::new(self.state.design, &self.state.result.layouts).missing(ty, &matched.covers);
         if let Some(missing) = missing {
-            let span = self.design.pat_node(pat).span;
+            let span = self.state.design.pat_node(pat).span;
             let message = format!("{what} takes an irrefutable pattern: this one does not match `{missing}` (§1.6.11)");
             self.coded(file, "E0184", span, message, "refutable pattern");
             return None;
@@ -112,7 +112,7 @@ impl Checker<'_> {
     /// (§1.7.3, §1.7.6): without `else` the pattern is irrefutable (`E0184`); with it the pattern
     /// may be refutable and the `else` block must not complete (`E0185`).
     pub(super) fn let_pattern(&mut self, file: FileId, pat: PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
-        let span = self.design.pat_node(pat).span;
+        let span = self.state.design.pat_node(pat).span;
         let Some(init) = init else {
             self.refuse(file, span, PatternForm::LetWithPatternAndNoValue);
             return;
@@ -145,9 +145,9 @@ impl Checker<'_> {
     /// `loop` without `break`, so it never completes; otherwise `E0185`. What it assigns is
     /// not assigned after the `let`.
     fn diverging_block(&mut self, file: FileId, block: &BlockNode) {
-        let before = self.flow.assigned.clone();
+        let before = self.state.values.flow.assigned.clone();
         let found = self.statements(&block.stmts, None);
-        self.flow.assigned = before;
+        self.state.values.flow.assigned = before;
         if found.is_some_and(|t| t != Ty::Never) {
             let message = "the `else` block of a `let … else` can complete: it must end in `return`, `break`, `continue` or a `loop` without `break` (§1.7.6)".to_string();
             self.coded(file, "E0185", block.span, message, "the block completes");
@@ -166,7 +166,7 @@ impl Checker<'_> {
             self.coded(file, "E0184", span, format!("the name `{}` is bound twice in one pattern (§1.6.10)", name.text), "bound twice");
             return None;
         }
-        self.locals.insert(binding, scrut.clone());
+        self.state.result.locals.insert(binding, scrut.clone());
         matched.bound.push(Bound { name: name.text.clone(), ty: scrut.clone() });
         Some(matched)
     }
@@ -212,7 +212,7 @@ impl Checker<'_> {
     /// plain mismatch.
     fn range_pattern(&mut self, file: FileId, span: Span, lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool, scrut: &Ty) -> Option<Matched> {
         if !(scrut.is_integer() || *scrut == Ty::F64) {
-            self.mismatch_text(file, span, &scrut.name(self.design), "a range pattern");
+            self.mismatch_text(file, span, &scrut.name(self.state.design), "a range pattern");
             return None;
         }
         for bound in lo.iter().chain(hi.iter()) {
@@ -257,7 +257,7 @@ impl Checker<'_> {
     /// The value of a literal bound, through parentheses and a minus; `None` for anything else (a
     /// `const` is not folded).
     fn literal_number(&self, expr: ExprId) -> Option<Number> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.literal_number(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Int(text) => crate::msl::lexer::NumberLiteral::new(text).int_value().and_then(|v| i128::try_from(v).ok()).map(Number::Int),
@@ -278,13 +278,13 @@ impl Checker<'_> {
             Resolution::Builtin(id) if id.info().name == "None" => match scrut {
                 Ty::Option(_) => Some(Matched::covering(Covers::Nothing)),
                 other => {
-                    self.mismatch_text(file, span, &other.name(self.design), "`None`");
+                    self.mismatch_text(file, span, &other.name(self.state.design), "`None`");
                     None
                 }
             },
-            Resolution::Decl(d) => match self.design.decl_data(d).kind.clone() {
+            Resolution::Decl(d) => match self.state.design.decl_data(d).kind.clone() {
                 DeclKind::Variant(_) => {
-                    let parent = self.design.decl_data(d).parent?;
+                    let parent = self.state.design.decl_data(d).parent?;
                     let found = self.enum_type(parent, file, span)?;
                     // a generic enum's variant is of its declaration, whatever arguments the scrutinee has
                     let same = matches!((&found, scrut), (Ty::Enum(open), Ty::Enum(given)) if open.decl == given.decl) || found == *scrut;
@@ -318,7 +318,7 @@ impl Checker<'_> {
     /// What a literal pattern covers: a `bool`, or an integer by its value; a float covers nothing
     /// the checker can list.
     fn literal_covers(&self, expr: ExprId) -> Covers {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Bool(_)) => match lit.kind {
                 LitKind::Bool(b) => Covers::Bool(b),
                 _ => Covers::Opaque,

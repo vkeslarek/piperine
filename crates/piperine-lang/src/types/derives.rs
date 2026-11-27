@@ -122,8 +122,8 @@ impl Checker<'_> {
     /// `impl PartialEq for T` whose `==` gives a `bool` (H.8). No other trait of H.8 is written by hand.
     fn written_impl(&self, ty: &Ty, which: DerivedTrait) -> bool {
         match which {
-            DerivedTrait::Default => self.impls.has_written_default(ty),
-            DerivedTrait::PartialEq => self.impls.has_plain_partial_eq(ty),
+            DerivedTrait::Default => self.state.traits.has_written_default(ty),
+            DerivedTrait::PartialEq => self.state.traits.has_plain_partial_eq(ty),
             _ => false,
         }
     }
@@ -133,8 +133,8 @@ impl Checker<'_> {
     /// `E0180` naming the trait, and a field without `Default` is `E0187` naming the field and its
     /// type. `false` when one is refused.
     pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
-        let is_enum = matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_));
-        let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.design);
+        let is_enum = matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_));
+        let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.state.design);
         let mut clean = true;
         let derived: Vec<DerivedTrait> = DerivedTrait::ALL.into_iter().filter(|t| self.derives(decl, t.name())).collect();
         for which in derived {
@@ -148,8 +148,8 @@ impl Checker<'_> {
                 clean = false;
             }
             if let Some(field) = fields.iter().find(|field| !field.ty.has_param() && !self.implements(&field.ty, which)) {
-                let type_name = field.ty.name(self.design);
-                if which == DerivedTrait::PartialEq && !self.impls.builtin_functions("PartialEq", "eq", &field.ty).is_empty() {
+                let type_name = field.ty.name(self.state.design);
+                if which == DerivedTrait::PartialEq && !self.state.traits.builtin_functions("PartialEq", "eq", &field.ty).is_empty() {
                     let field_name = field.name.as_deref().unwrap_or("a positional field");
                     let message = format!("`#[derive(PartialEq)]` on {name}: the field `{field_name}` of type `{type_name}` compares with an `impl PartialEq` whose result is not a `bool`, so the derived `==` has no `bool` to give (H.10, §22.1.2 rule 5)");
                     self.coded(file, "E0187", span, message, "a field whose `==` is not a `bool`");
@@ -177,7 +177,7 @@ impl Checker<'_> {
         if self.implements(ty, which) {
             return;
         }
-        let found = ty.name(self.design);
+        let found = ty.name(self.state.design);
         if let Ty::Param(_) = ty {
             let message = format!("mismatched types: `{found}` has no `{}`: the bounds of `{found}` do not give it (§3 rule 9), add `{found}: {}`", which.name(), which.name());
             self.coded(file, "E0180", span, message, "an operation no bound gives");
@@ -191,13 +191,13 @@ impl Checker<'_> {
     /// `T::default()` (H.8 rule 4): the call has no argument and `T` must implement `Default`; the
     /// call's type is `T`, recorded for the elaborator. `None` when `callee` is not such a path.
     pub(super) fn default_call(&mut self, expr: ExprId, callee: ExprId, argument_count: usize) -> Option<Option<Ty>> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        let segments = self.design.path_node(*path).segments.clone();
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        let segments = self.state.design.path_node(*path).segments.clone();
         let [owner, member] = segments.as_slice() else { return None };
         if member.name.text != "default" || !matches!(member.res, Resolution::Deferred(_) | Resolution::Builtin(_)) {
             return None;
         }
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let file = self.file_of_expr(expr);
         let owner_type = if owner.name.text == "Option" && matches!(owner.res, Resolution::Builtin(_)) { self.option_owner_type(file, span, owner.args.as_ref()) } else { self.path_owner_type(file, span, owner.res) };
         let Some(ty) = owner_type else { return Some(None) };
@@ -206,7 +206,7 @@ impl Checker<'_> {
             return Some(None);
         }
         self.require_trait(file, span, &ty, DerivedTrait::Default);
-        self.defaults.insert(expr, ty.clone());
+        self.state.result.defaults.insert(expr, ty.clone());
         Some(Some(ty))
     }
 }
@@ -231,7 +231,7 @@ impl Checker<'_> {
     /// type without `Repr`.
     pub(super) fn repr_levels(&mut self, ty: &Ty) -> Option<u32> {
         match ty {
-            Ty::Bool | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.design),
+            Ty::Bool | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.state.design),
             Ty::Tuple(items) => self.repr_sum(items),
             Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
@@ -284,9 +284,9 @@ impl Checker<'_> {
             if field.ty.has_param() || self.repr_levels(&field.ty).is_some() {
                 continue;
             }
-            let span = self.design.decl_data(field.decl).span;
+            let span = self.state.design.decl_data(field.decl).span;
             let name = field.name.clone().unwrap_or_else(|| position.to_string());
-            let ty = field.ty.name(self.design);
+            let ty = field.ty.name(self.state.design);
             self.coded(file, "E0110", span, format!("the field `{name}` has type `{ty}`, which has no `Repr`: `#[derive(Repr)]` needs a field that does (§2 rule 3)"), "a field without `Repr`");
             clean = false;
         }

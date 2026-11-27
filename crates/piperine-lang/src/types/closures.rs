@@ -31,11 +31,11 @@ pub(super) struct ClosureInfo {
 impl Checker<'_> {
     /// The closure expression `expr` stands for, through parentheses and the value of a block.
     pub(super) fn closure_expr(&self, expr: ExprId) -> Option<ExprId> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Closure { .. } => Some(expr),
             ExprKind::Paren(inner) => self.closure_expr(*inner),
             ExprKind::Block(block) => {
-                let last = self.design.stmt_node(*block.stmts.last()?);
+                let last = self.state.design.stmt_node(*block.stmts.last()?);
                 match &last.kind {
                     crate::pom::StmtKind::Expr { expr, semi: false } => self.closure_expr(*expr),
                     _ => None,
@@ -47,14 +47,14 @@ impl Checker<'_> {
 
     /// Whether the closure `expr` stands for has a parameter with no written type.
     pub(super) fn has_open_parameter(&self, expr: ExprId) -> bool {
-        matches!(&self.design.expr_node(expr).kind, ExprKind::Closure { params, .. } if params.iter().any(|p| p.ty.is_none()))
+        matches!(&self.state.design.expr_node(expr).kind, ExprKind::Closure { params, .. } if params.iter().any(|p| p.ty.is_none()))
     }
 
     /// A closure written where its position expects no type: every parameter must be written. Its
     /// parameters take the annotations; one left open is `E0181`, since only a `let` that is
     /// followed by a call can find it (`defer_closure`).
     pub(super) fn closure_value(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Closure { params, .. } = &node.kind else { return None };
         if self.has_open_parameter(expr) {
@@ -67,20 +67,20 @@ impl Checker<'_> {
             return None;
         }
         self.closure_typed(expr, &declared, None)?;
-        self.exprs[expr.index()].clone()
+        self.state.result.exprs[expr.index()].clone()
     }
 
     /// `let f = |x| ..;`: the closure waits for its first call to give `x` a type.
     pub(super) fn defer_closure(&mut self, binding: DeclId, closure: ExprId) {
-        self.pending_closures.insert(binding, closure);
-        self.closure_locals.insert(binding, closure);
+        self.state.values.pending_closures.insert(binding, closure);
+        self.state.values.closure_locals.insert(binding, closure);
     }
 
     /// `E0181` for each closure bound by `let` whose parameters were never given a type by a call.
     pub(super) fn report_uncalled_closures(&mut self) {
-        for closure in std::mem::take(&mut self.pending_closures).into_values() {
+        for closure in std::mem::take(&mut self.state.values.pending_closures).into_values() {
             let file = self.file_of_expr(closure);
-            let span = self.design.expr_node(closure).span;
+            let span = self.state.design.expr_node(closure).span;
             let message = "a closure parameter has no written type and the closure is never called: its type cannot be inferred (§1.4.4)".to_string();
             self.coded(file, "E0181", span, message, "parameter type unknown");
         }
@@ -88,30 +88,30 @@ impl Checker<'_> {
 
     /// The closure bound to the local `binding`, once its first call has typed it.
     pub(super) fn settle_pending(&mut self, binding: DeclId, args: &[Arg]) {
-        let Some(closure) = self.pending_closures.remove(&binding) else { return };
+        let Some(closure) = self.state.values.pending_closures.remove(&binding) else { return };
         let declared: Option<Vec<Ty>> = args.iter().map(|a| self.infer(a.value)).collect();
         let Some(declared) = declared else {
-            self.poisoned.insert(binding);
+            self.state.values.poisoned.insert(binding);
             return;
         };
         if let Some(found) = self.closure_typed(closure, &declared, None) {
-            self.locals.insert(binding, Ty::Fn(declared, Box::new(found)));
+            self.state.result.locals.insert(binding, Ty::Fn(declared, Box::new(found)));
         } else {
-            self.poisoned.insert(binding);
+            self.state.values.poisoned.insert(binding);
         }
     }
 
     /// Records the captures and the class of the closure `expr`, typed just now.
     pub(super) fn record_closure(&mut self, expr: ExprId) {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Closure { body, .. } = &node.kind else { return };
         let mut inside = Vec::new();
-        crate::pom::BodyWalk::new(self.design).descendants_depth_first(*body, &mut inside);
+        crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(*body, &mut inside);
         let mut captures = BTreeSet::new();
         for e in &inside {
-            let ExprKind::Path(path) = &self.design.expr_node(*e).kind else { continue };
-            let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { continue };
-            let data = self.design.decl_data(decl);
+            let ExprKind::Path(path) = &self.state.design.expr_node(*e).kind else { continue };
+            let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { continue };
+            let data = self.state.design.decl_data(decl);
             let local = matches!(data.kind, DeclKind::Binding(_) | DeclKind::FnParam(_) | DeclKind::Param(_) | DeclKind::Port(_) | DeclKind::Signal(_));
             let declared_inside = data.span.start >= node.span.start && data.span.end <= node.span.end;
             if local && !declared_inside {
@@ -119,7 +119,7 @@ impl Checker<'_> {
             }
         }
         let class = self.class_of_expressions(&inside, &mut BTreeSet::new());
-        self.closures.insert(expr, ClosureInfo { captures, class });
+        self.state.values.closures.insert(expr, ClosureInfo { captures, class });
     }
 
     /// The class of a body made of `exprs` (preorder): `emit!`, the environment functions, and the
@@ -129,16 +129,16 @@ impl Checker<'_> {
     fn class_of_expressions(&mut self, exprs: &[ExprId], visited: &mut BTreeSet<DeclId>) -> FunctionClass {
         let mut class = FunctionClass::default();
         for e in exprs {
-            match &self.design.expr_node(*e).kind {
+            match &self.state.design.expr_node(*e).kind {
                 ExprKind::Emit { .. } => class.emitting = true,
                 // a probe reads the solve: through a handle a function may write one (§3 rule 7, GN-12)
                 ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => class.solve_reading = true,
                 ExprKind::Call { callee, .. } => match self.callee_resolution(*callee) {
                     Some(Resolution::Builtin(id)) if SOLVE_READING.contains(&id.info().name) => class.solve_reading = true,
-                    Some(Resolution::Decl(decl)) => match self.design.decl_data(decl).kind {
+                    Some(Resolution::Decl(decl)) => match self.state.design.decl_data(decl).kind {
                         DeclKind::Fn(_) => class = class.union(self.function_class(decl, visited)),
                         DeclKind::Binding(_) | DeclKind::FnParam(_) => {
-                            if let Some(info) = self.closure_locals.get(&decl).and_then(|c| self.closures.get(c)) {
+                            if let Some(info) = self.state.values.closure_locals.get(&decl).and_then(|c| self.state.values.closures.get(c)) {
                                 class = class.union(info.class);
                             }
                         }
@@ -155,22 +155,22 @@ impl Checker<'_> {
     /// The class of the function `decl`, read off its source so that one not checked yet answers
     /// too; the union of its body's class and that of every function it reaches.
     pub(super) fn function_class(&mut self, decl: DeclId, visited: &mut BTreeSet<DeclId>) -> FunctionClass {
-        if let Some(known) = self.classes.get(&decl) {
+        if let Some(known) = self.state.values.classes.get(&decl) {
             return *known;
         }
         if !visited.insert(decl) {
             return FunctionClass::default();
         }
-        let DeclKind::Fn(f) = &self.design.decl_data(decl).kind else { return FunctionClass::default() };
+        let DeclKind::Fn(f) = &self.state.design.decl_data(decl).kind else { return FunctionClass::default() };
         let Some(body) = f.body.clone() else { return FunctionClass::default() };
         let mut inside = Vec::new();
-        for e in crate::pom::BodyWalk::new(self.design).block_expressions(&body) {
-            crate::pom::BodyWalk::new(self.design).descendants_depth_first(e, &mut inside);
+        for e in crate::pom::BodyWalk::new(self.state.design).block_expressions(&body) {
+            crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(e, &mut inside);
         }
         let class = self.class_of_expressions(&inside, visited);
         // memoized only for the function asked about first: inside a cycle the others are partial
         if visited.len() == 1 {
-            self.classes.insert(decl, class);
+            self.state.values.classes.insert(decl, class);
         }
         class
     }
@@ -179,10 +179,10 @@ impl Checker<'_> {
     /// solve-reading function in a const context, an emitting one in a const context or a module body, is
     /// `E0122` naming the function and the class. `emit!` written directly stays `E0601`.
     pub(super) fn refuse_outside_class(&mut self, expr: ExprId, function: DeclId) {
-        let Some(class) = self.function_class(function, &mut BTreeSet::new()).refused_in(self.context) else { return };
+        let Some(class) = self.function_class(function, &mut BTreeSet::new()).refused_in(self.state.values.context) else { return };
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        let name = self.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let span = self.state.design.expr_node(expr).span;
+        let name = self.state.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the function `{name}` is {class} and is called where that class is not allowed (§3)");
         self.coded(file, "E0122", span, message, "a call out of its class");
     }
@@ -192,7 +192,7 @@ impl Checker<'_> {
     /// allowed. There is no named function to record as the callee.
     pub(super) fn local_call(&mut self, expr: ExprId, decl: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         // a body `let` written after the call is typed first, so a closure it holds is settled by this call as in text order
         self.binding_type(decl);
         self.settle_pending(decl, args);
@@ -212,11 +212,11 @@ impl Checker<'_> {
                 Some(Ty::Module(_)) => {}
                 // the callee's position requires a function (or a template, which places): any other type is a mismatch (§1.5)
                 Some(found) => {
-                    let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                    let message = format!("`{name}` is called, but its type `{}` is no function and no template (§1.5)", found.name(self.design));
+                    let name = self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    let message = format!("`{name}` is called, but its type `{}` is no function and no template (§1.5)", found.name(self.state.design));
                     self.coded(file, "E0180", span, message, "a call of a value that is not a function");
                 }
-                None if !self.poisoned.contains(&decl) => self.refuse(file, span, ValueForm::CallOfValueWhoseTypeIsUnknown),
+                None if !self.state.values.poisoned.contains(&decl) => self.refuse(file, span, ValueForm::CallOfValueWhoseTypeIsUnknown),
                 None => {}
             }
             for arg in args {
@@ -224,16 +224,16 @@ impl Checker<'_> {
             }
             return None;
         };
-        if let Some(info) = self.closure_locals.get(&decl).and_then(|c| self.closures.get(c)).cloned()
-            && let Some(class) = info.class.refused_in(self.context)
+        if let Some(info) = self.state.values.closure_locals.get(&decl).and_then(|c| self.state.values.closures.get(c)).cloned()
+            && let Some(class) = info.class.refused_in(self.state.values.context)
         {
-            let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let name = self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("the closure `{name}` is {class} and is called where that class is not allowed (§3)");
             self.coded(file, "E0122", span, message, "a call out of its class");
         }
         // the callee is a read of the local: it has the local's function type, which the elaborator lowers and calls
-        if let ExprKind::Call { callee, .. } = &self.design.expr_node(expr).kind {
-            self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), result.clone()));
+        if let ExprKind::Call { callee, .. } = &self.state.design.expr_node(expr).kind {
+            self.state.result.exprs[callee.index()] = Some(Ty::Fn(params.clone(), result.clone()));
         }
         self.apply(expr, &params, args)?;
         Some(*result)
@@ -245,10 +245,10 @@ impl Checker<'_> {
         if self.closure_expr(expr).is_some() {
             return true;
         }
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.is_function_value(*inner),
             ExprKind::Path(_) => match self.callee_resolution(expr) {
-                Some(Resolution::Decl(decl)) => matches!(self.design.decl_data(decl).kind, DeclKind::Fn(_)) || self.closure_locals.contains_key(&decl),
+                Some(Resolution::Decl(decl)) => matches!(self.state.design.decl_data(decl).kind, DeclKind::Fn(_)) || self.state.values.closure_locals.contains_key(&decl),
                 _ => false,
             },
             _ => false,
@@ -257,14 +257,14 @@ impl Checker<'_> {
 
     /// Whether `expr` is a closure that captures something: no function pointer (§1.2.10).
     pub(super) fn is_capturing_closure(&self, expr: ExprId) -> bool {
-        let closure = match &self.design.expr_node(expr).kind {
+        let closure = match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(_) => match self.callee_resolution(expr) {
-                Some(Resolution::Decl(decl)) => self.closure_locals.get(&decl).copied(),
+                Some(Resolution::Decl(decl)) => self.state.values.closure_locals.get(&decl).copied(),
                 _ => None,
             },
             _ => self.closure_expr(expr),
         };
-        closure.and_then(|c| self.closures.get(&c)).is_some_and(|info| !info.captures.is_empty())
+        closure.and_then(|c| self.state.values.closures.get(&c)).is_some_and(|info| !info.captures.is_empty())
     }
 
     /// `P0001` where a closure that captures is written where a function pointer is required: a
@@ -273,7 +273,7 @@ impl Checker<'_> {
     pub(super) fn refuse_capturing_pointer(&mut self, expr: ExprId) {
         if self.is_capturing_closure(expr) {
             let file = self.file_of_expr(expr);
-            let span = self.design.expr_node(expr).span;
+            let span = self.state.design.expr_node(expr).span;
             self.refuse(file, span, ValueForm::ClosureThatCapturesWhereFunctionPointerFn);
         }
     }

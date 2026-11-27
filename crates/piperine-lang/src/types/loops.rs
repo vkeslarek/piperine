@@ -13,9 +13,9 @@ impl Checker<'_> {
     /// what the body assigns is not assigned after the loop (§1.8.16).
     pub(super) fn while_loop(&mut self, cond: ExprId, body: &BlockNode) -> Option<Ty> {
         self.condition(cond);
-        let after_condition = self.flow.assigned.clone();
+        let after_condition = self.state.values.flow.assigned.clone();
         self.loop_body(LoopFrame::new(false, None), body);
-        self.flow.assigned = after_condition;
+        self.state.values.flow.assigned = after_condition;
         Some(Ty::Unit)
     }
 
@@ -23,7 +23,7 @@ impl Checker<'_> {
     /// has no `break` (§1.8.8, §1.5.16). `expected` is the type the position gives it.
     pub(super) fn loop_expr(&mut self, body: &BlockNode, expected: Option<&Ty>) -> Option<Ty> {
         let frame = self.loop_body(LoopFrame::new(true, expected.cloned()), body);
-        self.flow.assigned = Assigned::join(frame.exits);
+        self.state.values.flow.assigned = Assigned::join(frame.exits);
         match (frame.broke, frame.value) {
             (false, _) => Some(Ty::Never),
             (true, value) => Some(value.unwrap_or(Ty::Unit)),
@@ -34,39 +34,39 @@ impl Checker<'_> {
     /// type, its elements ascend (§1.8.9); an array gives its elements by value, an iterator of H.7
     /// its own.
     pub(super) fn for_loop(&mut self, iter: ExprId, pat: PatId, body: &BlockNode) -> Option<Ty> {
-        let element = if matches!(self.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) };
+        let element = if matches!(self.state.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) };
         if let Some(element) = &element {
             self.for_binding(pat, element);
         }
-        let after_iter = self.flow.assigned.clone();
+        let after_iter = self.state.values.flow.assigned.clone();
         self.loop_body(LoopFrame::new(false, None), body);
-        self.flow.assigned = after_iter;
+        self.state.values.flow.assigned = after_iter;
         Some(Ty::Unit)
     }
 
     /// The block of a loop, checked inside `frame`: its type is `()` (§1.8.7). Gives the frame
     /// with what the body's `break`s recorded.
     fn loop_body(&mut self, frame: LoopFrame, body: &BlockNode) -> LoopFrame {
-        self.flow.loops.push(frame);
+        self.state.values.flow.loops.push(frame);
         self.statements(&body.stmts, Some(&Ty::Unit));
-        self.flow.loops.pop().unwrap_or_else(|| LoopFrame::new(false, None))
+        self.state.values.flow.loops.pop().unwrap_or_else(|| LoopFrame::new(false, None))
     }
 
     /// The element type of the range `iter` of a `for`: an integer type both bounds have.
     pub(super) fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(iter).clone();
+        let node = self.state.design.expr_node(iter).clone();
         let file = self.file_of_expr(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), .. } = &node.kind else { return None };
         let (first, second) = self.literal_last(*lo, *hi);
         match self.infer(first) {
             Some(t) if t.is_integer() => {
                 self.check(second, &t);
-                self.exprs[iter.index()] = Some(t.clone());
+                self.state.result.exprs[iter.index()] = Some(t.clone());
                 Some(t)
             }
             Some(other) => {
-                let span = self.design.expr_node(first).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.design));
+                let span = self.state.design.expr_node(first).span;
+                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
                 self.infer(second);
                 None
             }
@@ -79,7 +79,7 @@ impl Checker<'_> {
 
     /// The pattern of a `for`: irrefutable (§1.6.11), its names typed as the element.
     fn for_binding(&mut self, pat: PatId, element: &Ty) {
-        let file = self.design.decl_data(self.design.pat_node(pat).owner).file;
+        let file = self.state.design.decl_data(self.state.design.pat_node(pat).owner).file;
         self.irrefutable_pattern(file, pat, element, "a `for`");
     }
 
@@ -87,8 +87,8 @@ impl Checker<'_> {
     /// `loop` only and has the type of the loop's other `break`s. Its type is `!`.
     pub(super) fn break_expr(&mut self, expr: ExprId, value: Option<ExprId>) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        let Some(frame) = self.flow.loops.last().cloned() else {
+        let span = self.state.design.expr_node(expr).span;
+        let Some(frame) = self.state.values.flow.loops.last().cloned() else {
             self.coded(file, "E0185", span, "`break` outside a loop (§1.8.10)".to_string(), "not in a loop");
             if let Some(value) = value {
                 self.infer(value);
@@ -117,24 +117,24 @@ impl Checker<'_> {
                 Some(Ty::Unit)
             }
         };
-        let state = self.flow.assigned.clone();
-        if let Some(frame) = self.flow.loops.last_mut() {
+        let state = self.state.values.flow.assigned.clone();
+        if let Some(frame) = self.state.values.flow.loops.last_mut() {
             frame.broke = true;
             frame.value = frame.value.take().or(found);
             frame.exits.push(state);
         }
-        self.flow.assigned.diverge();
+        self.state.values.flow.assigned.diverge();
         Some(Ty::Never)
     }
 
     /// `continue` (§1.8.10): starts the innermost loop's next iteration. Its type is `!`.
     pub(super) fn continue_expr(&mut self, expr: ExprId) -> Option<Ty> {
-        if self.flow.loops.is_empty() {
+        if self.state.values.flow.loops.is_empty() {
             let file = self.file_of_expr(expr);
-            let span = self.design.expr_node(expr).span;
+            let span = self.state.design.expr_node(expr).span;
             self.coded(file, "E0185", span, "`continue` outside a loop (§1.8.10)".to_string(), "not in a loop");
         }
-        self.flow.assigned.diverge();
+        self.state.values.flow.assigned.diverge();
         Some(Ty::Never)
     }
 }

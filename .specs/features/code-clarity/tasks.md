@@ -1889,9 +1889,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Checker` has two fields; each table struct documents what it holds
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Golden
+- [x] `Checker` has two fields; each table struct documents what it holds
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

@@ -58,16 +58,16 @@ impl Checker<'_> {
     /// `emit!("stream", f = e, ..)`: an expression of type `()`.
     pub(super) fn emit(&mut self, expr: ExprId, stream: &Lit, fields: &[FieldInit]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let name = stream.str_value().unwrap_or_default();
-        match self.context {
+        match self.state.values.context {
             Context::Reaction | Context::Analog | Context::Function => {}
             Context::Module | Context::Const => {
                 let message = "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)".to_string();
                 self.coded(file, "E0601", span, message, "`emit!` out of place");
             }
         }
-        if self.context == Context::Analog {
+        if self.state.values.context == Context::Analog {
             // a stream other than `sim` and `checks` is a trace (§19 rule 4): it checks
             if is_reserved(&name) {
                 self.analog_writes_reserved(file, span, &name);
@@ -77,7 +77,7 @@ impl Checker<'_> {
         let mut typed = Vec::new();
         for field in fields {
             // An event is judged below, as a field that is not a value (`E0606`).
-            self.event_slot = Some(field.value);
+            self.state.values.event_slot = Some(field.value);
             let found = self.infer(field.value);
             let field_name = field.name.text.clone();
             if !seen.insert(field_name.clone()) {
@@ -87,21 +87,21 @@ impl Checker<'_> {
             }
             let Some(found) = found else { continue };
             if !(self.repr_ok(&found) || found == Ty::Str || self.is_plain_composite(&found, true)) {
-                let message = format!("the field `{field_name}` has type `{}`, which is not a value type (§19 rule 11)", found.name(self.design));
+                let message = format!("the field `{field_name}` has type `{}`, which is not a value type (§19 rule 11)", found.name(self.state.design));
                 self.coded(file, "E0606", field.span, message, "not a value");
                 continue;
             }
             if let Some(want) = reserved_field(&name, &field_name)
                 && want != found
             {
-                let message = format!("the field `{field_name}` of the stream `{name}` has type `{}`: the stdlib gives it `{}` (§19 rule 15)", found.name(self.design), want.name(self.design));
+                let message = format!("the field `{field_name}` of the stream `{name}` has type `{}`: the stdlib gives it `{}` (§19 rule 15)", found.name(self.state.design), want.name(self.state.design));
                 self.coded(file, "E0605", field.span, message, "type of a reserved field");
                 continue;
             }
             typed.push((field_name, found, field.span, file));
         }
-        if let Some(owner) = self.owner {
-            self.records.sites.push(Site { owner, stream: name, fields: typed });
+        if let Some(owner) = self.state.values.owner {
+            self.state.modules.records.sites.push(Site { owner, stream: name, fields: typed });
         }
         Some(Ty::Unit)
     }
@@ -119,12 +119,12 @@ impl Checker<'_> {
         if streams.is_empty() {
             return;
         }
-        if let Some(owner) = self.owner {
-            self.records.calls.entry(owner).or_default().push(function);
+        if let Some(owner) = self.state.values.owner {
+            self.state.modules.records.calls.entry(owner).or_default().push(function);
         }
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        if self.context == Context::Analog {
+        let span = self.state.design.expr_node(expr).span;
+        if self.state.values.context == Context::Analog {
             if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                 self.analog_writes_reserved(file, span, &stream.clone());
             }
@@ -134,28 +134,28 @@ impl Checker<'_> {
     /// The streams `function` writes, directly or through the functions it calls: read off the
     /// source, so a function not checked yet answers too.
     fn function_streams(&mut self, function: DeclId) -> BTreeSet<String> {
-        if let Some(known) = self.records.streams.get(&function) {
+        if let Some(known) = self.state.modules.records.streams.get(&function) {
             return known.clone();
         }
-        if self.records.open.contains(&function) {
+        if self.state.modules.records.open.contains(&function) {
             return BTreeSet::new();
         }
-        let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return BTreeSet::new() };
+        let DeclKind::Fn(f) = &self.state.design.decl_data(function).kind else { return BTreeSet::new() };
         let Some(body) = f.body.clone() else { return BTreeSet::new() };
-        self.records.open.push(function);
+        self.state.modules.records.open.push(function);
         let mut found = BTreeSet::new();
         let mut all = Vec::new();
-        for e in crate::pom::BodyWalk::new(self.design).block_expressions(&body) {
-            crate::pom::BodyWalk::new(self.design).descendants_depth_first(e, &mut all);
+        for e in crate::pom::BodyWalk::new(self.state.design).block_expressions(&body) {
+            crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(e, &mut all);
         }
         for e in all {
-            match &self.design.expr_node(e).kind {
+            match &self.state.design.expr_node(e).kind {
                 ExprKind::Emit { stream, .. } => {
                     found.insert(stream.str_value().unwrap_or_default());
                 }
                 ExprKind::Call { callee, .. } => {
                     if let Some(Resolution::Decl(g)) = self.callee_resolution(*callee)
-                        && matches!(self.design.decl_data(g).kind, DeclKind::Fn(_))
+                        && matches!(self.state.design.decl_data(g).kind, DeclKind::Fn(_))
                     {
                         found.extend(self.function_streams(g));
                     }
@@ -163,8 +163,8 @@ impl Checker<'_> {
                 _ => {}
             }
         }
-        self.records.open.pop();
-        self.records.streams.insert(function, found.clone());
+        self.state.modules.records.open.pop();
+        self.state.modules.records.streams.insert(function, found.clone());
         found
     }
 
@@ -172,19 +172,19 @@ impl Checker<'_> {
     /// included (`E0605`, §19 rule 12): the library's sites are read first, so the one that
     /// disagrees is the module's own.
     pub(super) fn record_conflicts(&mut self) {
-        let modules: Vec<DeclId> = self.reached.iter().copied().filter(|d| matches!(self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        let modules: Vec<DeclId> = self.state.result.reached.iter().copied().filter(|d| matches!(self.state.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         for module in modules {
             let mut owners = Vec::new();
             self.called_from(module, &mut owners);
             owners.push(module);
             let mut types: BTreeMap<(String, String), Ty> = BTreeMap::new();
             for owner in owners {
-                let sites: Vec<(String, Vec<(String, Ty, Span, FileId)>)> = self.records.sites.iter().filter(|s| s.owner == owner).map(|s| (s.stream.clone(), s.fields.clone())).collect();
+                let sites: Vec<(String, Vec<(String, Ty, Span, FileId)>)> = self.state.modules.records.sites.iter().filter(|s| s.owner == owner).map(|s| (s.stream.clone(), s.fields.clone())).collect();
                 for (stream, fields) in sites {
                     for (field, ty, span, file) in fields {
                         match types.get(&(stream.clone(), field.clone())) {
                             Some(first) if *first != ty => {
-                                let message = format!("the field `{field}` of the stream `{stream}` has type `{}` here and `{}` at another site (§19 rule 12)", ty.name(self.design), first.name(self.design));
+                                let message = format!("the field `{field}` of the stream `{stream}` has type `{}` here and `{}` at another site (§19 rule 12)", ty.name(self.state.design), first.name(self.state.design));
                                 self.coded(file, "E0605", span, message, "a field with two types");
                             }
                             Some(_) => {}
@@ -200,7 +200,7 @@ impl Checker<'_> {
 
     /// The functions `owner` calls that reach `emit!`, transitively, the deepest first.
     fn called_from(&self, owner: DeclId, out: &mut Vec<DeclId>) {
-        for callee in self.records.calls.get(&owner).into_iter().flatten() {
+        for callee in self.state.modules.records.calls.get(&owner).into_iter().flatten() {
             if !out.contains(callee) {
                 self.called_from(*callee, out);
                 if !out.contains(callee) {

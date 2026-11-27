@@ -82,13 +82,13 @@ impl Checker<'_> {
     pub(super) fn assignment(&mut self, expr: ExprId, op: Option<BinOp>, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let target = self.assignable(file, lhs);
-        let pending = target.as_ref().is_some_and(|root| !root.projected && self.deferred.contains(&root.local) && !self.locals.contains_key(&root.local));
+        let pending = target.as_ref().is_some_and(|root| !root.projected && self.state.values.deferred.contains(&root.local) && !self.state.result.locals.contains_key(&root.local));
         let open = target.as_ref().is_some_and(|root| !root.projected && self.open_literal_local(lhs) == Some(root.local));
         let place = match (op, pending) {
             (None, true) => None,
             (None, false) => self.place_type(lhs, target.as_ref()),
             // An open literal local is read by the operator, which lets the other operand fix it.
-            (Some(_), _) if open => target.as_ref().and_then(|root| self.locals.get(&root.local).cloned()),
+            (Some(_), _) if open => target.as_ref().and_then(|root| self.state.result.locals.get(&root.local).cloned()),
             (Some(_), _) => self.infer(lhs),
         };
         match (op, place) {
@@ -102,19 +102,19 @@ impl Checker<'_> {
             (None, None) => {
                 // `let x;` takes the type of its first assignment.
                 if let (Some(found), Some(root)) = (self.infer(rhs), &target) {
-                    self.locals.insert(root.local, found);
+                    self.state.result.locals.insert(root.local, found);
                 }
             }
             (Some(op), Some(place)) => {
                 let found = self.binary(expr, op, lhs, rhs);
                 let place = match &target {
-                    Some(root) if open => self.locals.get(&root.local).cloned().unwrap_or(place),
+                    Some(root) if open => self.state.result.locals.get(&root.local).cloned().unwrap_or(place),
                     _ => place,
                 };
                 if let Some(found) = found
                     && !self.compatible(expr, &found, &place)
                 {
-                    let span = self.design.expr_node(expr).span;
+                    let span = self.state.design.expr_node(expr).span;
                     self.mismatch(file, span, &place, &found);
                 }
             }
@@ -123,8 +123,8 @@ impl Checker<'_> {
             }
         }
         if let Some(root) = target {
-            self.flow.assigned.assign(root.local);
-            self.places.record(root.local, expr, rhs);
+            self.state.values.flow.assigned.assign(root.local);
+            self.state.values.places.record(root.local, expr, rhs);
         }
         Some(Ty::Unit)
     }
@@ -133,7 +133,7 @@ impl Checker<'_> {
     /// the type of the whole expression.
     fn place_type(&mut self, lhs: ExprId, target: Option<&Root>) -> Option<Ty> {
         match target {
-            Some(Root { local, projected: false }) => self.locals.get(local).cloned(),
+            Some(Root { local, projected: false }) => self.state.result.locals.get(local).cloned(),
             Some(_) => self.infer(lhs),
             None => None,
         }
@@ -142,16 +142,16 @@ impl Checker<'_> {
     /// The local `lhs` is rooted in, when `lhs` is a place that may be assigned; otherwise
     /// `E0183` naming the target, and `None`.
     fn assignable(&mut self, file: FileId, lhs: ExprId) -> Option<Root> {
-        let span = self.design.expr_node(lhs).span;
+        let span = self.state.design.expr_node(lhs).span;
         let Some((decl, projected)) = self.place_root(lhs) else {
             self.not_a_place(file, span, "the left side of an assignment is not a place".to_string());
             return None;
         };
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let why = match &data.kind {
             DeclKind::Binding(binding) => match binding.origin {
-                BindingOrigin::Local | BindingOrigin::MatchArm | BindingOrigin::For | BindingOrigin::IfLet if self.places.is_captured(data.span, span) => "a name a closure captures",
+                BindingOrigin::Local | BindingOrigin::MatchArm | BindingOrigin::For | BindingOrigin::IfLet if self.state.values.places.is_captured(data.span, span) => "a name a closure captures",
                 BindingOrigin::Local | BindingOrigin::MatchArm | BindingOrigin::For | BindingOrigin::IfLet => return Some(Root { local: decl, projected }),
                 BindingOrigin::ClosureParam => "a closure parameter",
                 BindingOrigin::BodyLet => "a body `let`",
@@ -160,7 +160,7 @@ impl Checker<'_> {
             DeclKind::FnParam(_) if name == "self" => "`self`, a copy of the receiver",
             DeclKind::FnParam(_) => "a function parameter",
             DeclKind::Param(_) => "a param",
-            DeclKind::Port(_) if !self.carriers.contains_key(&decl) => "a port",
+            DeclKind::Port(_) if !self.state.result.carriers.contains_key(&decl) => "a port",
             DeclKind::Port(_) | DeclKind::Signal(_) => "a carrier",
             DeclKind::Const(_) => "a `const`",
             _ => "not a place",
@@ -171,10 +171,10 @@ impl Checker<'_> {
 
     /// The local a place expression is rooted in: through parentheses, fields and indexes to a name.
     fn place_root(&self, expr: ExprId) -> Option<(DeclId, bool)> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.place_root(*inner),
             ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } => self.place_root(*expr).map(|(local, _)| (local, true)),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => Some((decl, false)),
                 _ => None,
             },
@@ -189,10 +189,10 @@ impl Checker<'_> {
 
     /// `E0183` for a read of a local declared without a value before it is assigned (§1.7.5).
     pub(super) fn read_before_assignment(&mut self, file: FileId, span: Span, local: DeclId) -> bool {
-        if !self.deferred.contains(&local) || self.flow.assigned.definitely(local) {
+        if !self.state.values.deferred.contains(&local) || self.state.values.flow.assigned.definitely(local) {
             return false;
         }
-        let name = self.design.decl_data(local).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let name = self.state.design.decl_data(local).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         self.coded(file, "E0183", span, format!("`{name}` is read before it is assigned on every path (§1.7.5)"), "read before assignment");
         true
     }

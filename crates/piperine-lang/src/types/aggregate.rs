@@ -33,31 +33,31 @@ impl Checker<'_> {
     /// self-containing type is `E0186`). A generic struct is typed over its own parameters; its uses
     /// carry the arguments (`generic_nominal`).
     pub(super) fn struct_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        if self.broken.contains(&decl) {
+        if self.state.values.broken.contains(&decl) {
             return None;
         }
-        if self.layouts.contains_key(&decl) {
+        if self.state.result.layouts.contains_key(&decl) {
             return Some(Ty::structure(decl));
         }
-        if self.declaring.contains(&decl) {
+        if self.state.values.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
         }
-        self.declaring.insert(decl);
+        self.state.values.declaring.insert(decl);
         let declared = self.declare_struct(decl, file, span);
-        self.declaring.remove(&decl);
+        self.state.values.declaring.remove(&decl);
         if declared {
             Some(Ty::structure(decl))
         } else {
-            self.broken.insert(decl);
+            self.state.values.broken.insert(decl);
             None
         }
     }
 
     /// A type met again while its own fields are being typed: `E0186` (§1.3.8).
     pub(super) fn cyclic_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        let kind = &self.design.decl_data(decl).kind;
+        let kind = &self.state.design.decl_data(decl).kind;
         let ty = if matches!(kind, DeclKind::Enum(_)) { Ty::enumeration(decl) } else { Ty::structure(decl) };
-        let name = ty.name(self.design);
+        let name = ty.name(self.state.design);
         self.coded(file, "E0186", span, format!("{name} contains itself: a value has a fixed size and there is no indirection (§1.3.8)"), "contains itself");
         None
     }
@@ -65,12 +65,12 @@ impl Checker<'_> {
     /// Types the fields of the struct `decl`: a struct with a carrier field is a bundle, not a
     /// value type (§1.3), and a duplicate field name is `E0186` (§1.3.2).
     fn declare_struct(&mut self, decl: DeclId, file: FileId, span: Span) -> bool {
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str());
-        let carries = data.children.iter().any(|c| matches!(&self.design.decl_data(*c).kind, DeclKind::Field(f) if f.dir.is_some()));
+        let carries = data.children.iter().any(|c| matches!(&self.state.design.decl_data(*c).kind, DeclKind::Field(f) if f.dir.is_some()));
         if matches!(&data.kind, DeclKind::Struct(s) if s.bundle == Some(true)) || carries {
             // the type of a handle: a bundle is named, never held (`bundle_handles.rs`)
-            if self.naming_bundle {
+            if self.state.modules.naming_bundle {
                 return true;
             }
             self.refuse_with(file, span, ValueForm::StructItemUsedAsTypeHasCarrier, [name.to_string()]);
@@ -82,13 +82,13 @@ impl Checker<'_> {
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.
     pub(super) fn fields_of(&mut self, owner: DeclId) -> Option<Vec<FieldType>> {
-        if let Some(found) = self.layouts.get(&owner) {
+        if let Some(found) = self.state.result.layouts.get(&owner) {
             return Some(found.clone());
         }
         let mut fields: Vec<FieldType> = Vec::new();
         let mut ok = true;
-        for child in self.design.decl_data(owner).children.clone() {
-            let field = self.design.decl_data(child).clone();
+        for child in self.state.design.decl_data(owner).children.clone() {
+            let field = self.state.design.decl_data(child).clone();
             let DeclKind::Field(data) = &field.kind else { continue };
             let name = field.name.as_ref().map(|n| n.text.clone());
             if let Some(name) = &name
@@ -101,7 +101,7 @@ impl Checker<'_> {
             match self.lower_type(data.ty) {
                 Some(ty) if self.is_field_type(&ty) => fields.push(FieldType { name, decl: child, ty }),
                 Some(ty) => {
-                    let what = ty.name(self.design);
+                    let what = ty.name(self.state.design);
                     self.refuse_with(field.file, field.span, ValueForm::FieldOfTypeInValueType, [what.to_string()]);
                     ok = false;
                 }
@@ -109,7 +109,7 @@ impl Checker<'_> {
             }
         }
         ok.then(|| {
-            self.layouts.insert(owner, fields.clone());
+            self.state.result.layouts.insert(owner, fields.clone());
             fields
         })
     }
@@ -126,7 +126,7 @@ impl Checker<'_> {
         for (ty, node) in types.iter().zip(items) {
             if !ty.is_value() {
                 let (file, span) = self.type_place(*node);
-                self.refuse_with(file, span, ValueForm::InsideTupleType, [ty.name(self.design).to_string()]);
+                self.refuse_with(file, span, ValueForm::InsideTupleType, [ty.name(self.state.design).to_string()]);
                 return None;
             }
         }
@@ -144,7 +144,7 @@ impl Checker<'_> {
             return Some(Ty::Array(Box::new(element), length));
         }
         if !element.is_value() && !matches!(element, Ty::Module(_)) {
-            self.refuse_with(file, span, ValueForm::ArrayOf, [element.name(self.design).to_string()]);
+            self.refuse_with(file, span, ValueForm::ArrayOf, [element.name(self.state.design).to_string()]);
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
@@ -188,8 +188,8 @@ impl Checker<'_> {
 
     /// The file and span of a type node.
     fn type_place(&self, ty: TypeId) -> (FileId, Span) {
-        let node = self.design.type_node(ty);
-        (self.design.decl_data(node.owner).file, node.span)
+        let node = self.state.design.type_node(ty);
+        (self.state.design.decl_data(node.owner).file, node.span)
     }
 
     // ---- struct expressions ----------------------------------------------------------------
@@ -198,9 +198,9 @@ impl Checker<'_> {
     /// checked against the field's type. A field left out, named twice or not in the type is
     /// `E0186` naming it.
     pub(super) fn struct_expression(&mut self, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit]) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
+        let Some(Resolution::Decl(target)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else {
             self.refuse(file, node.span, ValueForm::StructExpressionOfNameThatIsNo);
             return None;
         };
@@ -211,7 +211,7 @@ impl Checker<'_> {
         for init in fields {
             let name = init.name.text.as_str();
             let Some(position) = declared.iter().position(|f| f.name.as_deref() == Some(name)) else {
-                let of = open.name(self.design);
+                let of = open.name(self.state.design);
                 self.coded(file, "E0186", init.span, format!("{of} has no field `{name}` (§1.3.3)"), "no such field");
                 self.infer(init.value);
                 continue;
@@ -230,7 +230,7 @@ impl Checker<'_> {
         }
         let left_out: Vec<String> = layout.iter().filter_map(|f| f.name.as_deref()).filter(|n| !seen.contains(n)).map(|n| format!("`{n}`")).collect();
         if !left_out.is_empty() {
-            let of = ty.name(self.design);
+            let of = ty.name(self.state.design);
             self.coded(file, "E0186", node.span, format!("this struct expression for {of} leaves out the field {} (§1.3.3)", left_out.join(", ")), "field left out");
         }
         Some(ty)
@@ -239,10 +239,10 @@ impl Checker<'_> {
     /// The type a struct, a tuple struct or a variant constructs, with the declaration that owns
     /// its fields.
     pub(super) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
-        match &self.design.decl_data(target).kind {
+        match &self.state.design.decl_data(target).kind {
             DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.open_type(target), target)),
             DeclKind::Variant(_) => {
-                let parent = self.design.decl_data(target).parent?;
+                let parent = self.state.design.decl_data(target).parent?;
                 self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
             }
             other => {
@@ -255,7 +255,7 @@ impl Checker<'_> {
     /// `P(1.0, 2.0)`, `Tx::Data(3)` (§1.3.3, §1.3.6): a tuple struct or a variant with positional
     /// fields built by a call; each argument is checked against its field.
     pub(super) fn constructor_call(&mut self, expr: ExprId, target: DeclId, args: &[Arg]) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let (open, owner) = self.constructed_type(target, file, node.span)?;
         let declared = self.fields_of(owner)?;
@@ -266,7 +266,7 @@ impl Checker<'_> {
         let positional: Vec<(usize, ExprId)> = args.iter().enumerate().filter(|(_, arg)| arg.name.is_none()).map(|(position, arg)| (position, arg.value)).collect();
         let (ty, layout) = if declared.len() == args.len() { self.close_constructor(expr, open, declared, &positional, file, node.span)? } else { (open, declared) };
         if layout.len() != args.len() {
-            let message = format!("{} takes {} argument{}, found {}", ty.name(self.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
+            let message = format!("{} takes {} argument{}, found {}", ty.name(self.state.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
             self.mismatch_text(file, node.span, &format!("{} fields", layout.len()), &format!("{} arguments ({message})", args.len()));
             for arg in args {
                 self.infer(arg.value);
@@ -290,7 +290,7 @@ impl Checker<'_> {
         let declared = self.fields_of(owner)?;
         let (ty, layout) = self.close_constructor(expr, open, declared, &[], file, span)?;
         if !layout.is_empty() {
-            let name = ty.name(self.design);
+            let name = ty.name(self.state.design);
             self.refuse_with(file, span, ValueForm::NameOfWhichHasFieldsUsedAs, [name.to_string()]);
             return None;
         }
@@ -302,7 +302,7 @@ impl Checker<'_> {
     /// `s.x` and `t.0` (§1.3.4): the type of the field, or `E0186`
     /// naming the field a type does not have.
     pub(super) fn field_of_value(&mut self, expr: ExprId, receiver: ExprId, name: &Name) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let found = self.infer(receiver)?;
         match &found {
@@ -328,7 +328,7 @@ impl Checker<'_> {
 
     /// `E0186`: a field access or tuple index the type does not have (§1.3.4).
     fn no_field(&mut self, file: FileId, span: Span, ty: &Ty, name: &Name) -> Option<Ty> {
-        let of = ty.name(self.design);
+        let of = ty.name(self.state.design);
         self.coded(file, "E0186", span, format!("{of} has no field `{}` (§1.3.4)", name.text), "no such field");
         None
     }
@@ -359,8 +359,8 @@ impl Checker<'_> {
                 Some(ty) if ty.is_value() => types.push(ty),
                 Some(ty) => {
                     let file = self.file_of_expr(*item);
-                    let span = self.design.expr_node(*item).span;
-                    self.refuse_with(file, span, ValueForm::InsideTuple, [ty.name(self.design).to_string()]);
+                    let span = self.state.design.expr_node(*item).span;
+                    self.refuse_with(file, span, ValueForm::InsideTuple, [ty.name(self.state.design).to_string()]);
                     typed = false;
                 }
                 None => typed = false,
@@ -375,7 +375,7 @@ impl Checker<'_> {
     /// does not wait for another's type. An empty array has no element type of its own (`E0181`).
     pub(super) fn array_expression(&mut self, expr: ExprId, items: &[ExprId], expected: Option<&Ty>) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let element = match expected {
             Some(Ty::Array(element, _)) => Some((**element).clone()),
             _ => None,
@@ -391,8 +391,8 @@ impl Checker<'_> {
                 let ty = self.infer(first)?;
                 // an array of templates is a value of the elaboration (§8.4.1, GAPS L88)
                 if !ty.is_value() && !matches!(ty, Ty::Module(_)) {
-                    let span = self.design.expr_node(first).span;
-                    self.refuse_with(file, span, ValueForm::InsideArray, [ty.name(self.design).to_string()]);
+                    let span = self.state.design.expr_node(first).span;
+                    self.refuse_with(file, span, ValueForm::InsideArray, [ty.name(self.state.design).to_string()]);
                     return None;
                 }
                 for item in items.iter().filter(|i| **i != first) {
@@ -420,7 +420,7 @@ impl Checker<'_> {
         };
         // `[x; N + 1]`: a length over const parameters is generic, folded at an instantiation (§3.8.3)
         let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
-            let span = self.design.expr_node(len).span;
+            let span = self.state.design.expr_node(len).span;
             let what = self.expression_name(len);
             self.mismatch_text(file, span, "a constant array length", &what);
             return None;
@@ -432,7 +432,7 @@ impl Checker<'_> {
     /// `e[i]` reads an element of an array (§1.5.9); an index is
     /// any integer type.
     pub(super) fn index_expression(&mut self, expr: ExprId, base: ExprId, index: ExprId) -> Option<Ty> {
-        if matches!(self.design.expr_node(index).kind, ExprKind::Range { .. }) {
+        if matches!(self.state.design.expr_node(index).kind, ExprKind::Range { .. }) {
             return self.range_index(expr, base, index);
         }
         let file = self.file_of_expr(expr);
@@ -442,8 +442,8 @@ impl Checker<'_> {
         let element = match &found {
             Ty::Array(element, _) => (**element).clone(),
             other => {
-                let span = self.design.expr_node(base).span;
-                self.mismatch_text(file, span, "an array", &other.name(self.design));
+                let span = self.state.design.expr_node(base).span;
+                self.mismatch_text(file, span, "an array", &other.name(self.state.design));
                 return None;
             }
         };
@@ -456,8 +456,8 @@ impl Checker<'_> {
             Some(ty) if ty.is_integer() => {}
             Some(other) => {
                 let file = self.file_of_expr(index);
-                let span = self.design.expr_node(index).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.design));
+                let span = self.state.design.expr_node(index).span;
+                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
             }
             None => {}
         }
@@ -465,9 +465,9 @@ impl Checker<'_> {
 
     /// The name of a const expression for a message: a path as written, else a plain word.
     pub(super) fn expression_name(&self, expr: ExprId) -> String {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(path) => {
-                let segments: Vec<&str> = self.design.path_node(*path).segments.iter().map(|s| s.name.text.as_str()).collect();
+                let segments: Vec<&str> = self.state.design.path_node(*path).segments.iter().map(|s| s.name.text.as_str()).collect();
                 format!("`{}`", segments.join("::"))
             }
             ExprKind::Paren(inner) => self.expression_name(*inner),

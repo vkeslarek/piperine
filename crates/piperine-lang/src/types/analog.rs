@@ -13,14 +13,14 @@ impl Checker<'_> {
     /// The statement `lhs +> rhs;`: `lhs` is a probe of a branch (`E0410`), `rhs` is an `f64`
     /// (`E0417`).
     pub(super) fn contribution(&mut self, file: crate::pom::FileId, span: crate::msl::Span, lhs: ExprId, rhs: ExprId) {
-        if self.context != Context::Analog {
+        if self.state.values.context != Context::Analog {
             self.refuse(file, span, AnalogForm::ContributionOutsideAnalogBlock);
             return;
         }
-        let target = self.design.expr_node(lhs).clone();
+        let target = self.state.design.expr_node(lhs).clone();
         let is_probe = matches!(&target.kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
         if is_probe {
-            self.exprs[lhs.index()] = self.probe(lhs, true);
+            self.state.result.exprs[lhs.index()] = self.probe(lhs, true);
         } else {
             let message = "the left side of `+>` is not a potential or flow probe of a branch".to_string();
             self.coded(file, "E0410", target.span, message, "not a probe");
@@ -32,14 +32,14 @@ impl Checker<'_> {
     /// with `flow`, an `f64`. Anything else is `E0243`; it is a value, so on the left of `+>` it is
     /// `E0410` (`contribution`).
     pub(super) fn inflow_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        if matches!(self.context, Context::Function | Context::Const) {
+        if matches!(self.state.values.context, Context::Function | Context::Const) {
             self.coded(file, "E0450", node.span, "`inflow()` is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         self.apply(expr, &[], args)?;
         let measured = match self.declared_port(recv) {
-            Some((decl, Ty::Node(nature))) => matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) && NatureRules::of(self.design, nature).flow,
+            Some((decl, Ty::Node(nature))) => matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_)) && NatureRules::of(self.state.design, nature).flow,
             _ => false,
         };
         if !measured {
@@ -49,21 +49,21 @@ impl Checker<'_> {
             return None;
         }
         self.infer(recv);
-        self.builtins.insert(expr, super::Builtin::Inflow);
+        self.state.result.builtins.insert(expr, super::Builtin::Inflow);
         Some(Ty::F64)
     }
 
     /// A probe `v(a)`, `v(a, b)`, `potential(a, b)` or `flow(a, b)`: its nodes have one nature
     /// (`E0240`). Read as a value only a potential is in the subset; a flow probe is a target.
     pub(super) fn probe(&mut self, expr: ExprId, target: bool) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
-        let ExprKind::Path(path) = &self.design.expr_node(*callee).kind else { return None };
-        let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+        let ExprKind::Path(path) = &self.state.design.expr_node(*callee).kind else { return None };
+        let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
         let (role, nature) = match res {
-            Resolution::Decl(q) => match &self.design.decl_data(q).kind {
-                DeclKind::Quantity(data) => (data.role, self.design.decl_data(q).parent),
+            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
+                DeclKind::Quantity(data) => (data.role, self.state.design.decl_data(q).parent),
                 _ => {
                     self.refuse(file, node.span, AnalogForm::ProbeThroughThisName);
                     return None;
@@ -74,14 +74,14 @@ impl Checker<'_> {
             // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
             // name is read as a potential probe until then
             Resolution::Deferred(DeferReason::AmbiguousAccess) if self.reads_a_template_potential(*callee, args) => {
-                self.access_roles.insert(*callee, QuantityRole::Potential);
+                self.state.result.access_roles.insert(*callee, QuantityRole::Potential);
                 (QuantityRole::Potential, None)
             }
             // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4); the role is
             // recorded for the elaborator, which reads a probe and a contribution target alike through it
             Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(*callee, args) {
                 OperandAccess::Found(role, nature) => {
-                    self.access_roles.insert(*callee, role);
+                    self.state.result.access_roles.insert(*callee, role);
                     (role, Some(nature))
                 }
                 // `v(y)` with `let y = t;`, `t: Thermal`: what `v(t)` is at resolution (§6 rule 4, §6 rule 10, §11 rule 11)
@@ -103,8 +103,8 @@ impl Checker<'_> {
         };
         // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
         let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
-        let through_handles = self.context == Context::Function && self.probes_only_handles(&operands);
-        if matches!(self.context, Context::Function | Context::Const) && !through_handles {
+        let through_handles = self.state.values.context == Context::Function && self.probes_only_handles(&operands);
+        if matches!(self.state.values.context, Context::Function | Context::Const) && !through_handles {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
@@ -119,8 +119,8 @@ impl Checker<'_> {
                 // a handle generic over a nature: its nature is the instantiation's, known there
                 Some(generic) if self.is_nature_parameter(&generic) => {}
                 Some(other) => {
-                    let span = self.design.expr_node(arg.value).span;
-                    self.mismatch_text(file, span, "a node", &other.name(self.design));
+                    let span = self.state.design.expr_node(arg.value).span;
+                    self.mismatch_text(file, span, "a node", &other.name(self.state.design));
                 }
                 None => {}
             }
@@ -140,7 +140,7 @@ impl Checker<'_> {
         }
         // §11 rule 11, §6 rule 10: a node of a nature without `flow` has no flow to contribute to
         // (`E0413`) or to probe (`E0206`).
-        if role == QuantityRole::Flow && !natures.is_empty() && natures.iter().all(|n| !NatureRules::of(self.design, *n).flow) {
+        if role == QuantityRole::Flow && !natures.is_empty() && natures.iter().all(|n| !NatureRules::of(self.state.design, *n).flow) {
             if target {
                 self.coded(file, "E0413", node.span, "a flow contribution needs a nature with a `flow`: a signal-flow node takes potential contributions only (§11 rule 11)".to_string(), "no flow on this nature");
             } else {
@@ -152,7 +152,7 @@ impl Checker<'_> {
             (QuantityRole::Potential, _) | (QuantityRole::Flow, true) => Some(Ty::F64),
             // The flow of a branch the module drives with a potential (`v(p, n) +> ddt(l * i(p, n))`,
             // the inductor) is a value; the flow of a flow branch is no value, but a leaf of a `ddx` value (`differentiated`).
-            (QuantityRole::Flow, false) if self.contributes_potential_to(args) || self.differentiated > 0 => Some(Ty::F64),
+            (QuantityRole::Flow, false) if self.contributes_potential_to(args) || self.state.analog.differentiated > 0 => Some(Ty::F64),
             (QuantityRole::Flow, false) => {
                 self.refuse(file, node.span, AnalogForm::FlowProbeReadAsValue);
                 None
@@ -163,12 +163,12 @@ impl Checker<'_> {
     /// Whether an `analog` block of the module being checked contributes a potential to the branch
     /// `args` name (the same nodes, in the same order).
     fn contributes_potential_to(&self, args: &[Arg]) -> bool {
-        let Some(owner) = self.owner else { return false };
-        let DeclKind::Module(m) = &self.design.decl_data(owner).kind else { return false };
+        let Some(owner) = self.state.values.owner else { return false };
+        let DeclKind::Module(m) = &self.state.design.decl_data(owner).kind else { return false };
         let nodes = |args: &[Arg]| -> Vec<Resolution> {
             args.iter()
-                .map(|a| match &self.design.expr_node(a.value).kind {
-                    ExprKind::Path(path) => self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
+                .map(|a| match &self.state.design.expr_node(a.value).kind {
+                    ExprKind::Path(path) => self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
                     _ => Resolution::Unresolved,
                 })
                 .collect()
@@ -178,14 +178,14 @@ impl Checker<'_> {
             return false;
         }
         m.behaviors.iter().any(|b| {
-            let DeclKind::Behavior(block) = &self.design.decl_data(*b).kind else { return false };
+            let DeclKind::Behavior(block) = &self.state.design.decl_data(*b).kind else { return false };
             block.kind == crate::pom::BehaviorKind::Analog
-                && crate::pom::BodyWalk::new(self.design).nested_statements(&block.body).iter().any(|stmt| match &self.design.stmt_node(*stmt).kind {
-                    crate::pom::StmtKind::Contribution { lhs, .. } => match &self.design.expr_node(*lhs).kind {
+                && crate::pom::BodyWalk::new(self.state.design).nested_statements(&block.body).iter().any(|stmt| match &self.state.design.stmt_node(*stmt).kind {
+                    crate::pom::StmtKind::Contribution { lhs, .. } => match &self.state.design.expr_node(*lhs).kind {
                         ExprKind::Call { callee, args: lhs_args, class: crate::pom::CallClass::Probe, .. } => {
-                            let role = match &self.design.expr_node(*callee).kind {
-                                ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                                    Some(Resolution::Decl(q)) => match &self.design.decl_data(q).kind {
+                            let role = match &self.state.design.expr_node(*callee).kind {
+                                ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                                    Some(Resolution::Decl(q)) => match &self.state.design.decl_data(q).kind {
                                         DeclKind::Quantity(data) => Some(data.role),
                                         _ => None,
                                     },
@@ -208,7 +208,7 @@ impl Checker<'_> {
     /// core modules `ddt` and `limit`, whose misplacement is `E0350` (`fn`, closure) or `E0352`
     /// (const context).
     pub(super) fn core_call(&mut self, expr: ExprId, id: BuiltinId, args: &[Arg]) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let Some(sig) = Core::signature(id) else {
             let what = if matches!(id.info().kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Statement | BuiltinKind::Event) { "core primitive" } else { "built-in" };
@@ -216,11 +216,11 @@ impl Checker<'_> {
             return None;
         };
         let name = id.name();
-        if matches!(name.as_str(), "cross" | "at") && self.event_slot != Some(expr) {
+        if matches!(name.as_str(), "cross" | "at") && self.state.values.event_slot != Some(expr) {
             self.core_event_out_of_place(expr, &name, args);
             return None;
         }
-        match (sig.allowed, self.context) {
+        match (sig.allowed, self.state.values.context) {
             (Allowed::Everywhere, Context::Const) => {
                 let message = format!("`{name}` is an environment function and is not allowed in a const context");
                 self.coded(file, "E0323", node.span, message, "environment function in a const context");
@@ -252,7 +252,7 @@ impl Checker<'_> {
                 self.coded(file, "E0450", node.span, format!("`{name}` is not allowed in {place}"), "core primitive out of place");
             }
         }
-        self.callees.insert(expr, Callee::Core(id));
+        self.state.result.callees.insert(expr, Callee::Core(id));
         if name == "analysis" {
             return self.analysis_call(expr, args);
         }
@@ -272,9 +272,9 @@ impl Checker<'_> {
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
         let names = Self::core_parameter_names(&name);
         let named: Vec<Option<usize>> = args.iter().map(|a| a.name.as_ref().and_then(|n| names.iter().position(|p| *p == n.text))).collect();
-        self.placing.push(None);
+        self.state.modules.placing.push(None);
         let bound = self.bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
-        self.placing.pop();
+        self.state.modules.placing.pop();
         bound?;
         self.event_arguments(&name, args);
         Some(sig.result.ty())
@@ -294,22 +294,22 @@ impl Checker<'_> {
     /// and neither is a value or a handle). Both are read as `f64`; the result is an `f64`.
     fn ddx_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let [value, variable] = args else {
             self.arity_mismatch(file, span, 2, args);
             return None;
         };
-        self.differentiated += 1;
+        self.state.analog.differentiated += 1;
         self.check_argument(value.value, &Ty::F64);
-        self.differentiated -= 1;
-        let probe_call = matches!(&self.design.expr_node(variable.value).kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
+        self.state.analog.differentiated -= 1;
+        let probe_call = matches!(&self.state.design.expr_node(variable.value).kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
         if !probe_call {
-            let at = self.design.expr_node(variable.value).span;
+            let at = self.state.design.expr_node(variable.value).span;
             self.coded(file, "E0451", at, "the second argument of `ddx` must be a probe call of a potential or a flow of a branch of this module (§14.2.2); `p.inflow()` is not accepted".to_string(), "not a probe call");
             self.infer(variable.value);
             return None;
         }
-        self.exprs[variable.value.index()] = self.probe(variable.value, true);
+        self.state.result.exprs[variable.value.index()] = self.probe(variable.value, true);
         Some(Ty::F64)
     }
 
@@ -318,13 +318,13 @@ impl Checker<'_> {
     /// naming `analysis`.
     fn analysis_call(&mut self, expr: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let [arg] = args else {
             self.arity_mismatch(file, span, 1, args);
             return None;
         };
-        let kind = match &self.design.expr_node(arg.value).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+        let kind = match &self.state.design.expr_node(arg.value).kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) => Some(id.name()),
                 _ => None,
             },
@@ -363,13 +363,13 @@ impl Checker<'_> {
 
     /// The access name the callee `callee` of a probe writes (`v`, `i`).
     fn access_name(&self, callee: ExprId) -> Option<String> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        self.design.path_node(*path).segments.last().map(|segment| segment.name.text.clone())
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        self.state.design.path_node(*path).segments.last().map(|segment| segment.name.text.clone())
     }
 
     /// The role of the quantity of `nature` that declares the access `name`, `None` when it declares none.
     fn access_role_in(&self, nature: DeclId, name: &str) -> Option<QuantityRole> {
-        self.design.decl_data(nature).children.iter().find_map(|child| match &self.design.decl_data(*child).kind {
+        self.state.design.decl_data(nature).children.iter().find_map(|child| match &self.state.design.decl_data(*child).kind {
             DeclKind::Quantity(quantity) if self.is_accessed_as(quantity, name) => Some(quantity.role),
             _ => None,
         })
@@ -378,8 +378,8 @@ impl Checker<'_> {
     /// The diagnostic of the access `name` (the callee `callee`) that the nature of the probed node lacks, as resolution gives it for
     /// a node named directly: a flow access contributed to on a nature without `flow` is `E0413`, any other is `E0206`.
     fn missing_access(&mut self, file: crate::pom::FileId, callee: ExprId, name: &str, target: bool) {
-        let span = self.design.expr_node(callee).span;
-        let flow = (0..self.design.decl_count()).any(|index| match &self.design.decl_data(DeclId(index as u32)).kind {
+        let span = self.state.design.expr_node(callee).span;
+        let flow = (0..self.state.design.decl_count()).any(|index| match &self.state.design.decl_data(DeclId(index as u32)).kind {
             DeclKind::Quantity(quantity) => quantity.role == QuantityRole::Flow && self.is_accessed_as(quantity, name),
             _ => false,
         });
@@ -401,8 +401,8 @@ impl Checker<'_> {
 
     /// Whether `expr` is a path whose last segment is `name`.
     fn names_as_path(&self, expr: ExprId, name: &str) -> bool {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => self.design.path_node(*path).segments.last().is_some_and(|segment| segment.name.text == name),
+        match &self.state.design.expr_node(expr).kind {
+            ExprKind::Path(path) => self.state.design.path_node(*path).segments.last().is_some_and(|segment| segment.name.text == name),
             _ => false,
         }
     }
@@ -416,12 +416,12 @@ impl Checker<'_> {
 
     /// Whether every quantity the access name of `callee` stands for is a potential: the nature does not change the role.
     fn names_only_potentials(&self, callee: ExprId) -> bool {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return false };
-        let Some(segment) = self.design.path_node(*path).segments.last() else { return false };
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return false };
+        let Some(segment) = self.state.design.path_node(*path).segments.last() else { return false };
         let mut found = false;
-        for i in 0..self.design.decl_count() {
+        for i in 0..self.state.design.decl_count() {
             let decl = DeclId(i as u32);
-            let DeclKind::Quantity(quantity) = &self.design.decl_data(decl).kind else { continue };
+            let DeclKind::Quantity(quantity) = &self.state.design.decl_data(decl).kind else { continue };
             if self.is_accessed_as(quantity, &segment.name.text) {
                 if quantity.role != QuantityRole::Potential {
                     return false;
@@ -436,7 +436,7 @@ impl Checker<'_> {
     /// to one.
     fn reads_through_callable(&mut self, operand: ExprId) -> bool {
         let mut at = operand;
-        while let ExprKind::Index { expr: inner, .. } = &self.design.expr_node(at).kind {
+        while let ExprKind::Index { expr: inner, .. } = &self.state.design.expr_node(at).kind {
             at = *inner;
         }
         // the read itself, or a `let` bound to it (`let y = c0.sn; v(y)`, `template_items.rs`)

@@ -15,8 +15,8 @@ impl Checker<'_> {
     pub(super) fn generated_items(&self, items: &[DeclId]) -> Vec<DeclId> {
         let mut found = Vec::new();
         for item in items.iter().copied() {
-            match &self.design.decl_data(item).kind {
-                DeclKind::Generation(_) => found.extend(self.generated_items(&self.design.decl_data(item).children)),
+            match &self.state.design.decl_data(item).kind {
+                DeclKind::Generation(_) => found.extend(self.generated_items(&self.state.design.decl_data(item).children)),
                 _ => found.push(item),
             }
         }
@@ -26,9 +26,9 @@ impl Checker<'_> {
     /// The generation `for`s around the declaration `decl`, outermost first.
     pub(super) fn generation_loops(&self, decl: DeclId) -> Vec<DeclId> {
         let mut loops = Vec::new();
-        let mut at = self.design.decl_data(decl).parent;
+        let mut at = self.state.design.decl_data(decl).parent;
         while let Some(current) = at {
-            let data = self.design.decl_data(current);
+            let data = self.state.design.decl_data(current);
             if matches!(data.kind, DeclKind::Generation(GenerationData::For { .. })) {
                 loops.push(current);
             }
@@ -44,8 +44,8 @@ impl Checker<'_> {
     /// The number of iterations of the generation `for` `generation`: a length when both bounds fold, else the range itself,
     /// which the elaborator counts over the instance's params.
     fn loop_length(&self, generation: DeclId) -> Length {
-        let DeclKind::Generation(GenerationData::For { iter, .. }) = &self.design.decl_data(generation).kind else { return Length::Fixed(0) };
-        if let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = &self.design.expr_node(*iter).kind
+        let DeclKind::Generation(GenerationData::For { iter, .. }) = &self.state.design.decl_data(generation).kind else { return Length::Fixed(0) };
+        if let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = &self.state.design.expr_node(*iter).kind
             && let (Some(low), Some(high)) = (self.fold_integer(*lo, 16), self.fold_integer(*hi, 16))
         {
             return Length::Fixed(u64::try_from(high.saturating_sub(low) + u128::from(*inclusive)).unwrap_or(u64::MAX));
@@ -60,7 +60,7 @@ impl Checker<'_> {
 
     /// The generation `for`s of `decl` the reader `expr` is not inside: the levels of its array the reader sees whole.
     fn outside_loops(&self, decl: DeclId, expr: ExprId) -> Vec<DeclId> {
-        let inside = self.generation_loops_at(self.design.expr_node(expr).owner);
+        let inside = self.generation_loops_at(self.state.design.expr_node(expr).owner);
         self.generation_loops(decl).into_iter().filter(|generation| !inside.contains(generation)).collect()
     }
 
@@ -69,7 +69,7 @@ impl Checker<'_> {
         let mut loops = Vec::new();
         let mut at = Some(owner);
         while let Some(current) = at {
-            let data = self.design.decl_data(current);
+            let data = self.state.design.decl_data(current);
             if matches!(data.kind, DeclKind::Generation(GenerationData::For { .. })) {
                 loops.push(current);
             }
@@ -88,7 +88,7 @@ impl Checker<'_> {
     /// whole array: the levels of the generation `for`s the reader is inside are peeled.
     pub(super) fn generated_local(&self, expr: ExprId, decl: DeclId, whole: Ty) -> Ty {
         let around = self.generation_loops(decl);
-        let inside = self.generation_loops_at(self.design.expr_node(expr).owner);
+        let inside = self.generation_loops_at(self.state.design.expr_node(expr).owner);
         let mut ty = whole;
         for generation in around {
             if !inside.contains(&generation) {
@@ -104,16 +104,16 @@ impl Checker<'_> {
 
     /// The generation `decl` of a module body in `phase`: its header in the declarations, then its items as the module's own.
     pub(super) fn generation(&mut self, decl: DeclId, declarations: bool, mut item: impl FnMut(&mut Self, DeclId)) {
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let DeclKind::Generation(generation) = &data.kind else { return };
         if declarations {
             self.generation_header(decl, generation);
         }
         for child in data.children.iter().copied() {
-            match self.design.decl_data(child).kind {
+            match self.state.design.decl_data(child).kind {
                 DeclKind::Param(_) => {
                     if declarations {
-                        let child_data = self.design.decl_data(child).clone();
+                        let child_data = self.state.design.decl_data(child).clone();
                         let name = child_data.name.as_ref().map_or("", |n| n.text.as_str());
                         let message = format!("the param `{name}` is declared inside generation: a param is declared at the top level of the body (§8.1.20)");
                         self.coded(child_data.file, "E0322", child_data.span, message, "param inside generation");
@@ -127,7 +127,7 @@ impl Checker<'_> {
     /// The range of a generation `for`, or the condition of a generation `if`, as a const expression, and the pattern of the
     /// `for` bound to the element of the range.
     fn generation_header(&mut self, decl: DeclId, generation: &GenerationData) {
-        let file = self.design.decl_data(decl).file;
+        let file = self.state.design.decl_data(decl).file;
         match generation {
             GenerationData::For { pat, iter, .. } => {
                 let element = self.const_position(*iter, "a generation range").then(|| self.within(Context::Const, |this| this.generation_element(*iter))).flatten();
@@ -148,38 +148,38 @@ impl Checker<'_> {
 
     /// The element type of the range `iter` of a generation `for`.
     fn generation_element(&mut self, iter: ExprId) -> Option<Ty> {
-        if matches!(self.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) }
+        if matches!(self.state.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) }
     }
 
     /// Whether `expr` reads no carrier, node or probe; `E0340` naming `what` and the read when it does.
     fn const_position(&mut self, expr: ExprId, what: &str) -> bool {
         let Some(read) = self.runtime_read(expr) else { return true };
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         self.coded(file, "E0340", span, format!("{what} reads {read}: it is a const expression over params, constants and const generics (§8.2.7)"), "not a const expression");
         false
     }
 
     /// What `expr` reads that only exists over time: a port or a signal by name, or a probe.
     pub(super) fn runtime_read(&self, expr: ExprId) -> Option<String> {
-        let node = self.design.expr_node(expr);
+        let node = self.state.design.expr_node(expr);
         match &node.kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => {
-                    Some(format!("`{}`", self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str())))
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => {
+                    Some(format!("`{}`", self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str())))
                 }
                 _ => None,
             },
             ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => Some("a probe".to_string()),
-            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().find_map(|child| self.runtime_read(child)),
+            kind => crate::pom::BodyWalk::new(self.state.design).expression_children(kind).into_iter().find_map(|child| self.runtime_read(child)),
         }
     }
 
     /// The names of the pattern `pat` of a generation `for` whose range did not type: poisoned, so the items that read them add
     /// nothing to the one diagnostic.
     fn poison_pattern(&mut self, pat: crate::pom::PatId) {
-        match self.design.pat_node(pat).kind.clone() {
+        match self.state.design.pat_node(pat).kind.clone() {
             PatKind::Ident { binding, .. } => {
-                self.poisoned.insert(binding);
+                self.state.values.poisoned.insert(binding);
             }
             PatKind::Tuple(items) => items.into_iter().for_each(|item| self.poison_pattern(item)),
             _ => {}

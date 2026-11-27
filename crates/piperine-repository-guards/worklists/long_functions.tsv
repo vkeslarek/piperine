@@ -86,7 +86,6 @@ crates/piperine-lang/src/types/analog.rs::Checker::core_call	-
 crates/piperine-lang/src/types/analog.rs::Checker::probe	-
 crates/piperine-lang/src/types/call.rs::Checker::method_call	-
 crates/piperine-lang/src/types/check.rs::Checker::lower_type_node	-
-crates/piperine-lang/src/types/check.rs::Checker::new	-
 crates/piperine-lang/src/types/expr.rs::Checker::binary	-
 crates/piperine-lang/src/types/expr.rs::Checker::check_as	-
 crates/piperine-lang/src/types/expr.rs::Checker::closure	-

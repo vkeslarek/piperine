@@ -420,11 +420,7 @@ crates/piperine-lang/src/types/catalogue.rs::Res	1
 crates/piperine-lang/src/types/catalogue.rs::SelfTy	2
 crates/piperine-lang/src/types/catalogue.rs::U32	1
 crates/piperine-lang/src/types/catalogue.rs::ty	4
-crates/piperine-lang/src/types/check.rs::carrier_drive_impls	1
-crates/piperine-lang/src/types/check.rs::drive_impls	1
-crates/piperine-lang/src/types/check.rs::exprs	1
 crates/piperine-lang/src/types/check.rs::file_of_expr	1
-crates/piperine-lang/src/types/check.rs::impls	1
 crates/piperine-lang/src/types/check.rs::ret	1
 crates/piperine-lang/src/types/closures.rs::closure_expr	1
 crates/piperine-lang/src/types/coherence.rs::supertrait_rule	1

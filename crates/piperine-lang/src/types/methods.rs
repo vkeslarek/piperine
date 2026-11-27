@@ -17,11 +17,11 @@ impl Checker<'_> {
     /// the trait for a function declared in a trait (`Self` there is opaque until an `impl` gives
     /// it). `self` outside an `impl` and a trait, or not the first parameter, is `E0187`.
     pub(super) fn self_parameter(&mut self, function: DeclId, param: DeclId) -> Option<Ty> {
-        let data = self.design.decl_data(param);
+        let data = self.state.design.decl_data(param);
         let (file, span) = (data.file, data.span);
-        let first = self.design.decl_data(function).children.iter().find(|child| matches!(self.design.decl_data(**child).kind, DeclKind::FnParam(_))) == Some(&param);
-        let owner = self.design.decl_data(function).parent;
-        let Some(owner) = owner.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_) | DeclKind::Trait(_))) else {
+        let first = self.state.design.decl_data(function).children.iter().find(|child| matches!(self.state.design.decl_data(**child).kind, DeclKind::FnParam(_))) == Some(&param);
+        let owner = self.state.design.decl_data(function).parent;
+        let Some(owner) = owner.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_) | DeclKind::Trait(_))) else {
             self.coded(file, "E0187", span, "`self` is the first parameter of a function in an `impl` or a trait, and this one is in neither (§3.7)".to_string(), "`self` outside an `impl`");
             return None;
         };
@@ -35,11 +35,11 @@ impl Checker<'_> {
     /// `Self` in an `impl` or a trait: the type the `impl` is written for; for a trait, the trait's
     /// own opaque type. `None` after a refusal.
     pub(super) fn self_type(&mut self, owner: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        match &self.design.decl_data(owner).kind {
+        match &self.state.design.decl_data(owner).kind {
             DeclKind::Impl(data) => {
                 let self_ty = data.self_ty;
                 // `impl Diff { fn vd(self) }`: `self` is a handle to the bundle (§7 rule 13)
-                if self.design.bundle_struct_of_type(self_ty).is_some() {
+                if self.state.design.bundle_struct_of_type(self_ty).is_some() {
                     return self.bundle_type(self_ty);
                 }
                 self.lower_type(self_ty)
@@ -56,20 +56,20 @@ impl Checker<'_> {
     /// the receiver's type is unified with the `impl`'s self type (`Window<T>` against `Window<f64>`). Empty for
     /// a function of an `impl` with no parameter; `E0181` naming one the receiver does not give.
     fn impl_substitution(&mut self, call: ExprId, function: DeclId, own: &Ty, recv_ty: &Ty, file: FileId, span: Span) -> Option<Substitution> {
-        let Some(owner) = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some()) else { return Some(Substitution::new()) };
+        let Some(owner) = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some()) else { return Some(Substitution::new()) };
         let signature = self.generic_signature(owner);
         let mut inference = Inference::new(&signature);
         inference.unify(own, recv_ty);
         let substitution = self.complete_arguments(&mut inference, &signature, owner, function, file, span)?;
         // the call is an instantiation of the `impl`: the elaborator instantiates the method with its arguments (T35)
         let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
-        self.instantiations.insert(call, Instantiation { item: owner, arguments });
+        self.state.result.instantiations.insert(call, Instantiation { item: owner, arguments });
         Some(substitution)
     }
 
     /// Whether `function` is declared in a trait.
     pub(super) fn is_trait_function(&self, function: DeclId) -> bool {
-        self.design.decl_data(function).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)))
+        self.state.design.decl_data(function).parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Trait(_)))
     }
 
     /// `Tr::f(x, ..)` and `T::f(x, ..)`: a trait's function called by its path (§3.7.8). The first
@@ -77,7 +77,7 @@ impl Checker<'_> {
     /// parameter, the trait's own function. `E0187` when the type does not implement the trait.
     pub(super) fn trait_path_call(&mut self, expr: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let Some((first, rest)) = args.split_first() else {
             self.refuse(file, span, GenericsForm::CallOfTraitFunctionWithNoReceiver);
             return None;
@@ -86,11 +86,11 @@ impl Checker<'_> {
         if matches!(recv_ty, Ty::Param(_)) {
             return self.method_call_of(expr, first.value, &recv_ty, function, rest);
         }
-        let table = std::rc::Rc::clone(&self.impls);
+        let table = std::rc::Rc::clone(&self.state.traits);
         let item = table.implementation(function, &recv_ty, &mut |ty, bound| BoundCheck::new(self).satisfies(ty, bound));
         let Some(item) = item else {
-            let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            self.coded(file, "E0187", span, format!("`{}` does not implement the trait that gives `{name}` (§3.7.8)", recv_ty.name(self.design)), "a type that does not implement the trait");
+            let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            self.coded(file, "E0187", span, format!("`{}` does not implement the trait that gives `{name}` (§3.7.8)", recv_ty.name(self.state.design)), "a type that does not implement the trait");
             for arg in rest {
                 self.infer(arg.value);
             }
@@ -101,19 +101,19 @@ impl Checker<'_> {
 
     /// Whether `function` is a function written in an `impl` or a trait: a method of the project.
     pub(super) fn is_project_method(&self, function: DeclId) -> bool {
-        matches!(self.design.decl_data(function).kind, DeclKind::Fn(_))
-            && self.design.decl_data(function).parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Impl(_) | DeclKind::Trait(_)))
+        matches!(self.state.design.decl_data(function).kind, DeclKind::Fn(_))
+            && self.state.design.decl_data(function).parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Impl(_) | DeclKind::Trait(_)))
     }
 
     /// The function `name` that `recv_ty` has as a method: its inherent `impl`'s, else the one a trait
     /// gives it (§3.7.8). `None` when the project writes none for the type.
     pub(super) fn method_of(&mut self, recv_ty: &Ty, name: &str) -> Option<DeclId> {
-        if let Some(own) = self.impls.inherent(recv_ty, name) {
+        if let Some(own) = self.state.traits.inherent(recv_ty, name) {
             return Some(own);
         }
-        let table = std::rc::Rc::clone(&self.impls);
+        let table = std::rc::Rc::clone(&self.state.traits);
         let visible = table.visible(recv_ty, name, &mut |ty, bound| BoundCheck::new(self).satisfies(ty, bound));
-        visible.into_iter().find(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Fn(_)))
+        visible.into_iter().find(|item| matches!(self.state.design.decl_data(*item).kind, DeclKind::Fn(_)))
     }
 
     /// A call `recv.name(args)` of the method `function` of the project: the receiver is the `self`
@@ -121,15 +121,15 @@ impl Checker<'_> {
     /// `Callee::Method(function)`. `None` after a refusal.
     pub(super) fn method_call_of(&mut self, expr: ExprId, recv: ExprId, recv_ty: &Ty, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         self.reach(function);
         if matches!(recv_ty, Ty::Param(_)) {
-            let implementations = self.impls.implementations_of(function);
+            let implementations = self.state.traits.implementations_of(function);
             implementations.into_iter().for_each(|item| self.reach(item));
         }
-        let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (params, ret) = self.declared_signature(function)?;
-        let takes_self = matches!(self.design.decl_data(function).children.iter().find_map(|child| match &self.design.decl_data(*child).kind {
+        let takes_self = matches!(self.state.design.decl_data(function).children.iter().find_map(|child| match &self.state.design.decl_data(*child).kind {
             DeclKind::FnParam(param) => Some(param.clone()),
             _ => None,
         }), Some(FnParamData::SelfValue));
@@ -143,21 +143,21 @@ impl Checker<'_> {
         let (own, rest) = params.split_first()?;
         let mut substitution = self.impl_substitution(expr, function, own, recv_ty, file, span)?;
         // a call through a bound that writes the trait's arguments (`C: Convert<f64>`): they stand for the trait's parameters
-        if let Some(bound) = self.bound_substitution.take() {
+        if let Some(bound) = self.state.generics.bound_substitution.take() {
             for (parameter, value) in bound.entries() {
                 substitution.bind(parameter, value.clone());
             }
         }
         // a function a trait declares has `Self` for its receiver: the receiver's type stands for it
         if let Ty::Param(owner) = own
-            && matches!(self.design.decl_data(*owner).kind, DeclKind::Trait(_))
+            && matches!(self.state.design.decl_data(*owner).kind, DeclKind::Trait(_))
         {
             substitution.bind(*owner, GenericValue::Type(recv_ty.clone()));
         } else if !recv_ty.fits(&substitution.apply(own)) {
-            self.mismatch(file, self.design.expr_node(recv).span, own, recv_ty);
+            self.mismatch(file, self.state.design.expr_node(recv).span, own, recv_ty);
         }
         let callee = if matches!(recv_ty, Ty::Param(_)) { Callee::Bound { item: function } } else { Callee::Method(function) };
-        self.callees.insert(expr, callee);
+        self.state.result.callees.insert(expr, callee);
         let rest: Vec<Ty> = rest.iter().map(|param| substitution.apply(param)).collect();
         self.apply(expr, &rest, args)?;
         Some(substitution.apply(&ret))

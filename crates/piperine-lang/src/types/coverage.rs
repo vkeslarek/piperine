@@ -135,19 +135,19 @@ impl Checker<'_> {
     /// The carriers of this module a drive or a hand-over of which reaches elements only the elaborator folds: their
     /// overlaps are judged per instance (`Types::defers_drive_overlaps`).
     pub(super) fn defer_unfolded_overlaps(&mut self) {
-        let drives = self.book.elements.iter().map(|(carrier, element, _, _)| (*carrier, *element));
-        let handed = self.book.handed.iter().map(|(carrier, element, _, _)| (*carrier, *element));
+        let drives = self.state.carriers.book.elements.iter().map(|(carrier, element, _, _)| (*carrier, *element));
+        let handed = self.state.carriers.book.handed.iter().map(|(carrier, element, _, _)| (*carrier, *element));
         let unfolded: Vec<DeclId> = drives.chain(handed).filter(|(_, element)| *element == Element::Unfolded).map(|(carrier, _)| carrier).collect();
-        self.deferred_coverage.overlaps.extend(unfolded);
+        self.state.result.deferred_coverage.overlaps.extend(unfolded);
     }
 
     /// The elements of `decl` (of type `held`) an undelayed definition names.
     pub(super) fn undelayed_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
         let mut coverage = ElementCoverage::of(held);
-        if self.book.undelayed.contains(&decl) {
+        if self.state.carriers.book.undelayed.contains(&decl) {
             coverage.cover(Element::Whole);
         }
-        for (carrier, element, _) in &self.book.undelayed_elements {
+        for (carrier, element, _) in &self.state.carriers.book.undelayed_elements {
             if *carrier == decl {
                 coverage.cover(*element);
             }
@@ -159,10 +159,10 @@ impl Checker<'_> {
     /// handed to, or a drive refused as unsupported (the refusal is the diagnostic, no second one for the carrier).
     pub(super) fn driven_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
         let mut coverage = self.undelayed_coverage(decl, held);
-        if self.book.refused.contains(&decl) {
+        if self.state.carriers.book.refused.contains(&decl) {
             coverage.cover(Element::Whole);
         }
-        for (carrier, element, _, _) in &self.book.handed {
+        for (carrier, element, _, _) in &self.state.carriers.book.handed {
             if *carrier == decl {
                 coverage.cover(*element);
             }
@@ -173,22 +173,22 @@ impl Checker<'_> {
     /// `E0338` for an array of carriers with an initial value whose every element an undelayed definition names: the
     /// initial value would apply to no element (§8.2.21). With an element left, the initial value is that element's.
     pub(super) fn initial_values_under_element_definitions(&mut self, children: &[DeclId]) {
-        let defined: BTreeSet<DeclId> = self.book.undelayed_elements.iter().map(|(carrier, _, _)| *carrier).collect();
+        let defined: BTreeSet<DeclId> = self.state.carriers.book.undelayed_elements.iter().map(|(carrier, _, _)| *carrier).collect();
         for decl in children.iter().copied().filter(|decl| defined.contains(decl)) {
-            let Some(held) = self.carriers.get(&decl).cloned() else { continue };
+            let Some(held) = self.state.result.carriers.get(&decl).cloned() else { continue };
             if !self.has_initial(decl) {
                 continue;
             }
             let coverage = self.undelayed_coverage(decl, &held);
             if coverage.is_deferred() {
-                self.deferred_coverage.defined_initial.insert(decl);
+                self.state.result.deferred_coverage.defined_initial.insert(decl);
                 continue;
             }
             if !coverage.is_complete() {
                 continue;
             }
-            let Some((_, _, span)) = self.book.undelayed_elements.iter().find(|(carrier, _, _)| *carrier == decl).copied() else { continue };
-            let data = self.design.decl_data(decl);
+            let Some((_, _, span)) = self.state.carriers.book.undelayed_elements.iter().find(|(carrier, _, _)| *carrier == decl).copied() else { continue };
+            let data = self.state.design.decl_data(decl);
             let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("`{name}` has an initial value and an undelayed definition of every element: the definitions would replace it in the microstep that commits them (§8.2.21)");
             self.coded(data.file, "E0338", span, message, "initial value under an undelayed definition");

@@ -38,7 +38,7 @@ impl Checker<'_> {
     /// fields between.
     pub(super) fn tuple_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
         let Ty::Tuple(items) = scrut else {
-            self.mismatch_text(file, span, &scrut.name(self.design), "a tuple pattern");
+            self.mismatch_text(file, span, &scrut.name(self.state.design), "a tuple pattern");
             return None;
         };
         let columns = self.positions(file, span, pats, items.len())?;
@@ -78,7 +78,7 @@ impl Checker<'_> {
                     return None;
                 }
                 None => {
-                    let of = scrut.name(self.design);
+                    let of = scrut.name(self.state.design);
                     self.coded(file, "E0186", field.span, format!("{of} has no field `{}` (§1.6.6)", field.name.text), "no such field");
                     return None;
                 }
@@ -97,7 +97,7 @@ impl Checker<'_> {
                 Some(node) => match (node.pat, node.binding) {
                     (Some(pat), _) => self.pattern(file, pat, &field.ty)?,
                     (None, Some(binding)) => {
-                        self.locals.insert(binding, field.ty.clone());
+                        self.state.result.locals.insert(binding, field.ty.clone());
                         Matched::new(vec![Covers::All], vec![Bound::new(node.name.text.clone(), field.ty.clone())])
                     }
                     (None, None) => Matched::covering(Covers::All),
@@ -147,30 +147,30 @@ impl Checker<'_> {
 
     /// `E0184`-free mismatch for an array pattern over a value that is no array.
     fn not_an_array(&mut self, file: FileId, span: Span, scrut: &Ty) -> Option<Matched> {
-        self.mismatch_text(file, span, &scrut.name(self.design), "an array pattern");
+        self.mismatch_text(file, span, &scrut.name(self.state.design), "an array pattern");
         None
     }
 
     /// Whether `pat` is `..` or `name @ ..` (the rest of an array pattern).
     fn is_rest_pattern(&self, pat: PatId) -> bool {
-        match &self.design.pat_node(pat).kind {
+        match &self.state.design.pat_node(pat).kind {
             PatKind::Rest => true,
-            PatKind::Ident { sub: Some(sub), .. } => matches!(self.design.pat_node(*sub).kind, PatKind::Rest),
+            PatKind::Ident { sub: Some(sub), .. } => matches!(self.state.design.pat_node(*sub).kind, PatKind::Rest),
             _ => false,
         }
     }
 
     /// The binding of `name @ ..` typed as `ty`; nothing for a bare `..`.
     fn rest_binding(&mut self, pat: PatId, ty: &Ty) -> Option<Matched> {
-        let PatKind::Ident { name, binding, .. } = &self.design.pat_node(pat).kind.clone() else { return None };
-        self.locals.insert(*binding, ty.clone());
+        let PatKind::Ident { name, binding, .. } = &self.state.design.pat_node(pat).kind.clone() else { return None };
+        self.state.result.locals.insert(*binding, ty.clone());
         Some(Matched::new(vec![Covers::All], vec![Bound::new(name.text.clone(), ty.clone())]))
     }
 
     /// The pattern of each of `arity` fields, `..` standing for those between the patterns before
     /// it and after it; `None` marks a field a `..` skips.
     fn positions(&mut self, file: FileId, span: Span, pats: &[PatId], arity: usize) -> Option<Vec<Option<PatId>>> {
-        let rests: Vec<usize> = pats.iter().enumerate().filter(|(_, p)| matches!(self.design.pat_node(**p).kind, PatKind::Rest)).map(|(i, _)| i).collect();
+        let rests: Vec<usize> = pats.iter().enumerate().filter(|(_, p)| matches!(self.state.design.pat_node(**p).kind, PatKind::Rest)).map(|(i, _)| i).collect();
         match rests.as_slice() {
             [] if pats.len() == arity => Some(pats.iter().map(|p| Some(*p)).collect()),
             [] => {
@@ -241,7 +241,7 @@ impl Checker<'_> {
     /// The declaration owning the fields a struct or variant pattern names, and how its coverage is
     /// made: the struct's `Product`, a variant's `Constructor`. The scrutinee must be the type.
     fn constructor_of(&mut self, file: FileId, span: Span, path: PathId, scrut: &Ty) -> Option<(DeclId, Shape)> {
-        let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
+        let Some(Resolution::Decl(target)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else {
             self.refuse(file, span, PatternForm::PatternNamingSomethingThatIsNoStruct);
             return None;
         };
@@ -255,7 +255,7 @@ impl Checker<'_> {
             self.mismatch(file, span, scrut, &ty);
             return None;
         }
-        match self.design.decl_data(target).kind {
+        match self.state.design.decl_data(target).kind {
             DeclKind::Struct(_) => Some((owner, Shape::Fields)),
             _ => Some((owner, Shape::Variant(owner))),
         }

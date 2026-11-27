@@ -20,14 +20,14 @@ impl Checker<'_> {
     /// type arguments in order and falls back to each parameter's default; a nature whose `value`
     /// is not one of its parameters holds that type for every argument list.
     pub(super) fn discrete_carrier_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
-        let name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let DeclKind::Nature(data) = &self.design.decl_data(nature).kind else { return None };
+        let name = self.state.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let DeclKind::Nature(data) = &self.state.design.decl_data(nature).kind else { return None };
         let value_type = data.fields.iter().find_map(|f| match f {
             NatureFieldNode::Value { ty, .. } => Some(*ty),
             _ => None,
         })?;
-        let parameters: Vec<DeclId> = self.design.decl_data(nature).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::GenericParam(_))).collect();
-        let arguments = match self.design.path_node(path).segments.last().and_then(|s| s.args.clone()) {
+        let parameters: Vec<DeclId> = self.state.design.decl_data(nature).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::GenericParam(_))).collect();
+        let arguments = match self.state.design.path_node(path).segments.last().and_then(|s| s.args.clone()) {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             None => Vec::new(),
             Some(_) => {
@@ -39,7 +39,7 @@ impl Checker<'_> {
             self.refuse_with(file, span, DigitalForm::WithGenericArguments, [name.to_string(), arguments.len().to_string()]);
             return None;
         }
-        let held = match self.design.type_resolution(value_type) {
+        let held = match self.state.design.type_resolution(value_type) {
             Resolution::Decl(parameter) if parameters.contains(&parameter) => {
                 let position = parameters.iter().position(|p| *p == parameter)?;
                 match arguments.get(position) {
@@ -48,7 +48,7 @@ impl Checker<'_> {
                         self.refuse_with(file, span, DigitalForm::OfConstArgument, [name.to_string()]);
                         return None;
                     }
-                    None => match &self.design.decl_data(parameter).kind {
+                    None => match &self.state.design.decl_data(parameter).kind {
                         DeclKind::GenericParam(GenericParamData::Type { default: Some(default), .. }) => *default,
                         _ => {
                             self.refuse_with(file, span, DigitalForm::WithoutItsTypeArgument, [name.to_string()]);
@@ -61,18 +61,18 @@ impl Checker<'_> {
         };
         let value = self.carried_type(held)?;
         // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
-        for implementation in super::nature::ResolveImpls::declarations(&self.impls, nature) {
+        for implementation in super::nature::ResolveImpls::declarations(&self.state.traits, nature) {
             self.reach(implementation);
             // the body of `resolve` is run by the net's resolver (`elab/resolvers.rs`): it is checked and typed with the model
-            for item in self.design.decl_data(implementation).children.clone() {
-                if matches!(self.design.decl_data(item).kind, DeclKind::Fn(_)) {
+            for item in self.state.design.decl_data(implementation).children.clone() {
+                if matches!(self.state.design.decl_data(item).kind, DeclKind::Fn(_)) {
                     self.reach(item);
                 }
             }
         }
-        if NatureRules::of(self.design, nature).resolved && !self.resolve_tables.contains_key(&nature) {
+        if NatureRules::of(self.state.design, nature).resolved && !self.state.result.resolve_tables.contains_key(&nature) {
             let table = super::nature::ResolveImpls::new(self).of(nature);
-            self.resolve_tables.insert(nature, table);
+            self.state.result.resolve_tables.insert(nature, table);
         }
         Some(Ty::Carrier { nature, value: Box::new(value) })
     }
@@ -81,14 +81,14 @@ impl Checker<'_> {
     /// An enum that does not derive `Repr` is `E0112` as well; a single-variant enum has a tag of
     /// zero levels and is `P0001`.
     fn carried_type(&mut self, ty: TypeId) -> Option<Ty> {
-        let node = self.design.type_node(ty).clone();
-        let file = self.design.decl_data(node.owner).file;
-        if let Resolution::Decl(d) = self.design.type_resolution(ty)
-            && matches!(self.design.decl_data(d).kind, DeclKind::Enum(_))
+        let node = self.state.design.type_node(ty).clone();
+        let file = self.state.design.decl_data(node.owner).file;
+        if let Resolution::Decl(d) = self.state.design.type_resolution(ty)
+            && matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_))
             && !self.derives(d, "Repr")
-            && self.impls.hand_written_repr(&Ty::enumeration(d)).is_none()
+            && self.state.traits.hand_written_repr(&Ty::enumeration(d)).is_none()
         {
-            let name = self.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let name = self.state.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             self.no_repr(file, node.span, &format!("enum `{name}`"));
             return None;
         }
@@ -99,8 +99,8 @@ impl Checker<'_> {
                 self.coded(file, "E0441", node.span, message, "an `Event` is not carried");
                 None
             }
-            Ty::Enum(Nominal { decl: e, .. }) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
-                let name = self.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            Ty::Enum(Nominal { decl: e, .. }) if self.state.design.decl_data(*e).children.iter().filter(|c| matches!(self.state.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
+                let name = self.state.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.refuse_with(file, node.span, DigitalForm::CarrierOfSingleVariantEnumItsTag, [name.to_string()]);
                 None
             }
@@ -110,7 +110,7 @@ impl Checker<'_> {
                 Some(value)
             }
             other => {
-                let name = other.name(self.design);
+                let name = other.name(self.state.design);
                 self.no_repr(file, node.span, &name);
                 None
             }
@@ -125,11 +125,11 @@ impl Checker<'_> {
     /// The type of a port or a signal: a node of a conservative nature, a carrier of `Bit<T>`,
     /// or `P0001` and `None`.
     pub(super) fn port_type(&mut self, ty: TypeId) -> Option<Ty> {
-        let node = self.design.type_node(ty).clone();
-        let file = self.design.decl_data(node.owner).file;
+        let node = self.state.design.type_node(ty).clone();
+        let file = self.state.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
             Ty::Node(nature) => {
-                let rules = NatureRules::of(self.design, nature);
+                let rules = NatureRules::of(self.state.design, nature);
                 if rules.flow || rules.signal_flow {
                     // A conservative node, or a signal-flow node (§6 rule 2): both are nodes of the
                     // analog solver.
@@ -140,14 +140,14 @@ impl Checker<'_> {
             }
             carrier @ Ty::Carrier { .. } => Some(carrier),
             // a nature parameter of a generic module (`a: S`, `S: Nature`): a node of the nature the placement gives (GN-13)
-            Ty::Param(param) if GenericSignature::resolve_bound(self.design, param).is_some() => self.resolved_parameter_carrier(param),
+            Ty::Param(param) if GenericSignature::resolve_bound(self.state.design, param).is_some() => self.resolved_parameter_carrier(param),
             nature @ Ty::Param(_) if self.is_nature_parameter(&nature) => Some(nature),
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
-                self.refuse_with(file, node.span, DigitalForm::ValueInputPortOfType, [other.name(self.design).to_string()]);
+                self.refuse_with(file, node.span, DigitalForm::ValueInputPortOfType, [other.name(self.state.design).to_string()]);
                 None
             }
         }
@@ -159,7 +159,7 @@ impl Checker<'_> {
     fn resolved_parameter_carrier(&mut self, param: DeclId) -> Option<Ty> {
         let table = super::nature::ResolveImpls::new(self).of(param);
         let entry = table.first()?.clone();
-        self.resolve_tables.entry(param).or_insert(table);
+        self.state.result.resolve_tables.entry(param).or_insert(table);
         Some(Ty::Carrier { nature: param, value: Box::new(entry.value) })
     }
 
@@ -169,14 +169,14 @@ impl Checker<'_> {
         match self.port_type(ty)? {
             carrier @ Ty::Carrier { .. } => {
                 let held = self.generated_type(decl, carrier.clone());
-                self.carriers.insert(decl, held);
+                self.state.result.carriers.insert(decl, held);
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
             // an array of carriers reads as the array of their values; an array of nodes is the array itself
             array @ Ty::Array(..) if array.is_carrier_element() => {
                 let held = self.generated_type(decl, array.clone());
-                self.carriers.insert(decl, held);
+                self.state.result.carriers.insert(decl, held);
                 Some(array.read_value())
             }
             node => Some(node),
@@ -185,7 +185,7 @@ impl Checker<'_> {
 
     /// The port or signal `expr` reads, through parentheses, with the type of its declaration.
     pub(super) fn declared_port(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.declared_port(*inner),
             // one element of an array of carriers or of nodes (CV-24): the carrier the element is, of the array's declaration
             ExprKind::Index { expr: base, .. } => match self.declared_port(*base)? {
@@ -193,11 +193,11 @@ impl Checker<'_> {
                 _ => None,
             },
             ExprKind::Path(path) => {
-                let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
-                if self.design.is_bundle_owner(decl) || self.design.is_bundle_group(decl) {
+                let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+                if self.state.design.is_bundle_owner(decl) || self.state.design.is_bundle_group(decl) {
                     return None;
                 }
-                let ty = match &self.design.decl_data(decl).kind {
+                let ty = match &self.state.design.decl_data(decl).kind {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
                     // a handle is the carrier the caller passes (§3.1.5)
@@ -210,10 +210,10 @@ impl Checker<'_> {
             ExprKind::Field { .. } if self.bundle_handle_root(expr).is_some() => self.bundle_handle_field(expr).filter(|(_, ty)| !self.is_bundle_type(ty)),
             // a field of a bundle port or signal: the carrier or node its leaf stands for (§7 rule 12), at an element of an array of
             // bundles the element of the leaf (`rx[k].valid`)
-            ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(expr).filter(|place| self.design.leaf_owner(place.decl).is_some()) => self.bundle_field_type(&place),
+            ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(expr).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => self.bundle_field_type(&place),
             // `c.state`: a `pub` port or signal of a placed child (§8.2.8).
             ExprKind::Field { res: Resolution::Decl(decl), .. } => {
-                let ty = match &self.design.decl_data(*decl).kind {
+                let ty = match &self.state.design.decl_data(*decl).kind {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
                     _ => return None,
@@ -227,11 +227,11 @@ impl Checker<'_> {
     /// The initial value of a carrier or a node reads no carrier and no probe (`E0210`, §5.1.5).
     /// The nodes a probe names are part of the probe, not reads of their own.
     pub(super) fn initial_reads(&mut self, init: ExprId) {
-        let node = self.design.expr_node(init).clone();
+        let node = self.state.design.expr_node(init).clone();
         let file = self.file_of_expr(init);
         let what = match &node.kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some("a carrier"),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(d)) if matches!(self.state.design.decl_data(d).kind, DeclKind::Port(_) | DeclKind::Signal(_)) => Some("a carrier"),
                 _ => None,
             },
             ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => Some("a probe"),
@@ -242,7 +242,7 @@ impl Checker<'_> {
             self.report(file, Diagnostic::new("E0210", message, node.span, format!("{what} in an initial value")));
         }
         if what != Some("a probe") {
-            for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
+            for child in crate::pom::BodyWalk::new(self.state.design).expression_children(&node.kind) {
                 self.initial_reads(child);
             }
         }
@@ -251,12 +251,12 @@ impl Checker<'_> {
     /// Whether `f` is the stdlib's own item behind a built-in method (§3.3.7): a method of the
     /// `impl Bit` (`rise`, `fall`).
     pub(super) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
-        let data = self.design.decl_data(f);
+        let data = self.state.design.decl_data(f);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(f) {
             return None;
         }
         let name = data.name.as_ref()?.text.as_str();
-        let parent = data.parent.map(|p| self.design.decl_data(p))?;
+        let parent = data.parent.map(|p| self.state.design.decl_data(p))?;
         match (&parent.kind, name) {
             (DeclKind::Impl(_), "rise") => Some(Builtin::Rise),
             (DeclKind::Impl(_), "fall") => Some(Builtin::Fall),
@@ -280,8 +280,8 @@ impl Checker<'_> {
                 _ => None,
             },
             Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
-            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
-            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
             _ => None,
         }
     }
@@ -290,9 +290,9 @@ impl Checker<'_> {
     /// of `T`, a const `u32` (§2, US-02 AC 3). `None` when `expr` is not such a path, so the caller
     /// reports it as it reports any other built-in name.
     pub(super) fn width_read(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Path(path) = &node.kind else { return None };
-        let segments = self.design.path_node(*path).segments.clone();
+        let segments = self.state.design.path_node(*path).segments.clone();
         let [owner, member] = segments.as_slice() else { return None };
         if member.name.text != "WIDTH" || !matches!(member.res, Resolution::Deferred(_) | Resolution::Builtin(_)) {
             return None;
@@ -303,7 +303,7 @@ impl Checker<'_> {
             return self.parameter_width(param, file, node.span);
         }
         let levels = self.repr_levels(&owner_type)?;
-        self.widths.insert(expr, levels);
+        self.state.result.widths.insert(expr, levels);
         Some(Ty::UInt(32))
     }
 
@@ -313,13 +313,13 @@ impl Checker<'_> {
     /// resolved carrier is not this rule's (until the resolved carriers are typed it stays `P0001`).
     pub(super) fn others_on_one_driver(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> bool {
         let Some((decl, Ty::Carrier { nature, .. })) = self.declared_port(recv) else { return false };
-        if !NatureRules::of(self.design, nature).one_driver {
+        if !NatureRules::of(self.state.design, nature).one_driver {
             return false;
         }
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
-        let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let nature_name = self.design.decl_data(nature).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let span = self.state.design.expr_node(expr).span;
+        let name = self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let nature_name = self.state.design.decl_data(nature).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("`{name}.others()`: `{name}` is a carrier of `{nature_name}`, which has no `resolve`, so it has one drive and no other to read (§5.2.7)");
         self.coded(file, "E0224", span, message, "`others()` on a one-driver carrier");
         for arg in args {
@@ -332,11 +332,11 @@ impl Checker<'_> {
     /// carrier's value type (§5.3). On a node it is `E0230`.
     pub(super) fn prev_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {
             Some((_, Ty::Carrier { value, .. })) => {
                 self.apply(expr, &[], args)?;
-                self.builtins.insert(expr, Builtin::Prev);
+                self.state.result.builtins.insert(expr, Builtin::Prev);
                 self.infer(recv);
                 Some(*value)
             }
@@ -355,11 +355,11 @@ impl Checker<'_> {
     /// own, of the nature's `value` type. The one-driver carrier was `E0224` before this is asked.
     pub(super) fn others_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {
-            Some((_, Ty::Carrier { nature, value })) if NatureRules::of(self.design, nature).resolved => {
+            Some((_, Ty::Carrier { nature, value })) if NatureRules::of(self.state.design, nature).resolved => {
                 self.apply(expr, &[], args)?;
-                self.builtins.insert(expr, Builtin::Others);
+                self.state.result.builtins.insert(expr, Builtin::Others);
                 self.infer(recv);
                 Some(*value)
             }

@@ -29,35 +29,35 @@ impl Checker<'_> {
     /// carrier needs `#[derive(Repr)]`, checked where a carrier takes it; a duplicate variant or field and a self-containing
     /// type are `E0186`; a discriminant that does not fit or repeats is `E0111`).
     pub(super) fn enum_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
-        if self.broken.contains(&decl) {
+        if self.state.values.broken.contains(&decl) {
             return None;
         }
-        if self.declared.contains(&decl) {
+        if self.state.values.declared.contains(&decl) {
             return Some(Ty::enumeration(decl));
         }
-        if self.declaring.contains(&decl) {
+        if self.state.values.declaring.contains(&decl) {
             return self.cyclic_type(decl, file, span);
         }
-        self.declaring.insert(decl);
+        self.state.values.declaring.insert(decl);
         let declared = self.declare_enum(decl, file, span);
-        self.declaring.remove(&decl);
+        self.state.values.declaring.remove(&decl);
         if declared {
-            self.declared.insert(decl);
+            self.state.values.declared.insert(decl);
             Some(Ty::enumeration(decl))
         } else {
-            self.broken.insert(decl);
+            self.state.values.broken.insert(decl);
             None
         }
     }
 
     /// The variants of the enum `decl`, in declaration order.
     pub(super) fn variants_of(&self, decl: DeclId) -> Vec<DeclId> {
-        self.design.decl_data(decl).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Variant(_))).collect()
+        self.state.design.decl_data(decl).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Variant(_))).collect()
     }
 
     /// Whether some variant of the enum `decl` has fields: a payload enum.
     pub(super) fn has_payload(&self, decl: DeclId) -> bool {
-        self.variants_of(decl).into_iter().any(|v| matches!(&self.design.decl_data(v).kind, DeclKind::Variant(vd) if vd.form != FieldsForm::Unit))
+        self.variants_of(decl).into_iter().any(|v| matches!(&self.state.design.decl_data(v).kind, DeclKind::Variant(vd) if vd.form != FieldsForm::Unit))
     }
 
     /// Types every variant, then judges the tag: duplicate names (§1.3.2), the discriminants and
@@ -68,7 +68,7 @@ impl Checker<'_> {
         let mut names: Vec<String> = Vec::new();
         let mut typed_fields: Vec<FieldType> = Vec::new();
         for variant in &variants {
-            let data = self.design.decl_data(*variant).clone();
+            let data = self.state.design.decl_data(*variant).clone();
             let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
             if names.contains(&name) {
                 self.coded(data.file, "E0186", data.span, format!("the variant `{name}` is declared twice (§1.3.2)"), "declared twice");
@@ -93,7 +93,7 @@ impl Checker<'_> {
         let mut taken: Vec<(u128, String)> = Vec::new();
         let mut next: u128 = 0;
         for variant in variants {
-            let data = self.design.decl_data(*variant).clone();
+            let data = self.state.design.decl_data(*variant).clone();
             let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
             let DeclKind::Variant(vd) = &data.kind else { continue };
             let value = match vd.discriminant {
@@ -124,7 +124,7 @@ impl Checker<'_> {
         }
         if ok {
             let discriminants = taken.iter().map(|(value, _)| *value as i128).collect();
-            self.enum_tags.insert(decl, EnumTag { tag_levels: levels, discriminants });
+            self.state.result.enum_tags.insert(decl, EnumTag { tag_levels: levels, discriminants });
         }
         ok
     }
@@ -144,10 +144,10 @@ impl Checker<'_> {
     /// The `N` of `#[repr(uN)]` on `decl`: `None` without the attribute, `Some(None)` for another
     /// argument.
     pub(super) fn repr_width(&self, decl: DeclId) -> Option<Option<u32>> {
-        let attr = self.design.decl_data(decl).meta.attrs.iter().find(|a| matches!(self.design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"))?;
+        let attr = self.state.design.decl_data(decl).meta.attrs.iter().find(|a| matches!(self.state.design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"))?;
         let AttrInputNode::List(args) = &attr.input else { return Some(None) };
         let [AttrArgNode::Path(path)] = args.as_slice() else { return Some(None) };
-        let word = self.design.path_node(*path).segments.last().map(|s| s.name.text.clone()).unwrap_or_default();
+        let word = self.state.design.path_node(*path).segments.last().map(|s| s.name.text.clone()).unwrap_or_default();
         let width = word.strip_prefix('u').and_then(|digits| digits.parse::<u32>().ok()).filter(|w| (1..=64).contains(w));
         Some(width)
     }

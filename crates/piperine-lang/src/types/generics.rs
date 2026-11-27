@@ -205,10 +205,10 @@ impl Checker<'_> {
     /// is never followed by one without (§3.8.4), a const parameter is an integer or a `bool`
     /// (§3.8.3), and a bound names a trait (§3.8.6, `E0161`); a list that breaks one is `E0187`.
     pub(super) fn generic_signature(&mut self, item: DeclId) -> GenericSignature {
-        let signature = GenericSignature::of(self.design, item);
+        let signature = GenericSignature::of(self.state.design, item);
         let mut defaulted: Option<&GenericParameter> = None;
         for parameter in &signature.parameters {
-            let data = self.design.decl_data(parameter.decl);
+            let data = self.state.design.decl_data(parameter.decl);
             let (file, span) = (data.file, data.span);
             match (&defaulted, &parameter.default) {
                 (Some(earlier), None) => {
@@ -225,22 +225,22 @@ impl Checker<'_> {
 
     /// The per-parameter rules: a const parameter's type (§3.8.3) and the names of the bounds.
     fn parameter_rules(&mut self, parameter: &GenericParameter, file: FileId) {
-        let DeclKind::GenericParam(written) = &self.design.decl_data(parameter.decl).kind else { return };
+        let DeclKind::GenericParam(written) = &self.state.design.decl_data(parameter.decl).kind else { return };
         match written.clone() {
             GenericParamData::Const { ty, .. } => {
-                if GenericSignature::const_type(self.design, ty).is_none() {
-                    let type_span = self.design.type_node(ty).span;
+                if GenericSignature::const_type(self.state.design, ty).is_none() {
+                    let type_span = self.state.design.type_node(ty).span;
                     let message = format!("the const parameter `{}` has a type that is neither an integer nor `bool` (§3.8.3)", parameter.name);
                     self.coded(file, "E0187", type_span, message, "an integer type or `bool`");
                 }
             }
             GenericParamData::Type { bounds, .. } => {
                 for path in bounds {
-                    if let Some(Bound::Resolve { arguments }) = GenericSignature::bound(self.design, path) {
+                    if let Some(Bound::Resolve { arguments }) = GenericSignature::bound(self.state.design, path) {
                         self.resolve_bound_rules(parameter, &arguments, file);
                     }
-                    if GenericSignature::bound(self.design, path).is_none() {
-                        let node = self.design.path_node(path);
+                    if GenericSignature::bound(self.state.design, path).is_none() {
+                        let node = self.state.design.path_node(path);
                         let (named, at) = (node.segments.last().map_or_else(String::new, |s| s.name.text.clone()), node.span);
                         self.coded(file, "E0161", at, format!("`{named}` is not a trait, so it cannot bound `{}` (§3.8.6)", parameter.name), "a trait");
                     }
@@ -251,7 +251,7 @@ impl Checker<'_> {
 
     /// A `Resolve` bound names a nature and takes `<X>` or `<X, V>` (§4 rule 8): anything else is `E0187`.
     fn resolve_bound_rules(&mut self, parameter: &GenericParameter, arguments: &[TypeId], file: FileId) {
-        let (at, nature) = (self.design.decl_data(parameter.decl).span, parameter.bounds.contains(&Bound::Nature));
+        let (at, nature) = (self.state.design.decl_data(parameter.decl).span, parameter.bounds.contains(&Bound::Nature));
         if !nature {
             let message = format!("`{}` has the bound `Resolve` and no `Nature`: only a nature can resolve (§4 rule 8)", parameter.name);
             self.coded(file, "E0187", at, message, "add `Nature`");
@@ -265,12 +265,12 @@ impl Checker<'_> {
     /// Whether a use of `item` writes `written` generic arguments where its list takes
     /// `required..=all` (§3.8.7); a wrong number is `E0187` at `span`, naming the item.
     pub(super) fn generic_argument_count(&mut self, item: DeclId, written: usize, file: FileId, span: Span) -> bool {
-        let signature = GenericSignature::of(self.design, item);
+        let signature = GenericSignature::of(self.state.design, item);
         let (low, high) = (signature.required(), signature.parameters.len());
         if (low..=high).contains(&written) {
             return true;
         }
-        let name = self.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let name = self.state.design.decl_data(item).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let takes = if low == high { format!("{high}") } else { format!("{low} to {high}") };
         self.coded(file, "E0187", span, format!("`{name}` takes {takes} generic arguments, found {written} (§3.8.7)"), "the wrong number of generic arguments");
         false

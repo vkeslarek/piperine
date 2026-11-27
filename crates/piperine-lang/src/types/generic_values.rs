@@ -15,7 +15,7 @@ impl Checker<'_> {
     /// The type of the generic declaration `decl` written over its own parameters (`Pair<T, U>`), which
     /// the field types of its layout mention; the type itself, plain, for a declaration that is not generic.
     pub(super) fn open_type(&mut self, decl: DeclId) -> Ty {
-        let signature = GenericSignature::of(self.design, decl);
+        let signature = GenericSignature::of(self.state.design, decl);
         let arguments = signature
             .parameters()
             .iter()
@@ -25,12 +25,12 @@ impl Checker<'_> {
             })
             .collect();
         let nominal = Nominal { decl, arguments };
-        if matches!(self.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) }
+        if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal) } else { Ty::Struct(nominal) }
     }
 
     /// What the parameters of the type of `ty` are replaced by: its own arguments.
     pub(super) fn nominal_substitution(&self, nominal: &Nominal) -> Substitution {
-        Substitution::of(&GenericSignature::of(self.design, nominal.decl), &nominal.arguments)
+        Substitution::of(&GenericSignature::of(self.state.design, nominal.decl), &nominal.arguments)
     }
 
     /// The fields of `owner` (a struct, or a variant) as the instance `scrutinee` has them: the declared
@@ -63,14 +63,14 @@ impl Checker<'_> {
                 inference.unify(&field.ty, &given);
             }
         }
-        if let Some(expected) = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
+        if let Some(expected) = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&open, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, type_decl, type_decl, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.arguments_satisfy_bounds(&signature, &arguments, type_decl, file, span)?;
         let closed = Nominal { decl: type_decl, arguments };
-        let ty = if matches!(self.design.decl_data(type_decl).kind, DeclKind::Enum(_)) { Ty::Enum(closed) } else { Ty::Struct(closed) };
+        let ty = if matches!(self.state.design.decl_data(type_decl).kind, DeclKind::Enum(_)) { Ty::Enum(closed) } else { Ty::Struct(closed) };
         let fields = layout.into_iter().map(|field| FieldType { ty: self.substitute(&substitution, &field.ty), ..field }).collect();
         Some((ty, fields))
     }

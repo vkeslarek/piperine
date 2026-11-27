@@ -21,15 +21,15 @@ const REMOVED_FLAG_METHODS: &[&str] = &["known", "known_or", "is_known", "high",
 impl Checker<'_> {
     /// What a callee path names, if the callee is a plain path.
     pub(super) fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
-        match &self.design.expr_node(callee).kind {
-            ExprKind::Path(path) => self.design.path_node(*path).segments.last().map(|s| s.res),
+        match &self.state.design.expr_node(callee).kind {
+            ExprKind::Path(path) => self.state.design.path_node(*path).segments.last().map(|s| s.res),
             _ => None,
         }
     }
 
     /// The call `expr`: a call of a function, or of a name whose type is a function type.
     pub(super) fn call(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
         if params.is_some() && !matches!(class, CallClass::Instance { module: Some(_), .. }) {
@@ -70,7 +70,7 @@ impl Checker<'_> {
         }
         match self.callee_resolution(*callee) {
             Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
-            Some(Resolution::Decl(decl)) => match &self.design.decl_data(decl).kind {
+            Some(Resolution::Decl(decl)) => match &self.state.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
                 // A local that is no function and hides the function of its name is `E0180` (§3.5.4).
                 DeclKind::FnParam(_) | DeclKind::Binding(_) if self.hidden_function(decl).is_some() && matches!(self.infer(*callee), Some(ty) if !matches!(ty, Ty::Fn(..))) => self.hidden_function_call(expr, *callee, decl, args),
@@ -98,8 +98,8 @@ impl Checker<'_> {
             }
             found => {
                 if let Some(found) = found {
-                    let (file, span) = (self.file_of_expr(expr), self.design.expr_node(callee).span);
-                    let message = format!("the callee's type `{}` is no function and no template (§1.5)", found.name(self.design));
+                    let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(callee).span);
+                    let message = format!("the callee's type `{}` is no function and no template (§1.5)", found.name(self.state.design));
                     self.coded(file, "E0180", span, message, "a call of a value that is not a function");
                 }
                 for arg in args {
@@ -124,7 +124,7 @@ impl Checker<'_> {
         if self.is_trait_function(function) {
             return self.trait_path_call(expr, function, args);
         }
-        if self.design.decl_data(function).generics_span.is_some() {
+        if self.state.design.decl_data(function).generics_span.is_some() {
             return self.generic_call(expr, callee, function, args);
         }
         if let Some(owner) = self.generic_impl_of(function) {
@@ -139,22 +139,22 @@ impl Checker<'_> {
     /// parameters, the result the call's type. `pointers` holds a closure that captures out of a
     /// parameter of function type, which is a function pointer; a parameter bounded by `Fn` is not one.
     pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
-        self.callees.insert(expr, Callee::Function(function));
-        self.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
-        let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        self.state.result.callees.insert(expr, Callee::Function(function));
+        self.state.result.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
+        let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let required = params.len() - params.iter().rev().take_while(|ty| matches!(ty, Ty::Option(_))).count();
         let named: Vec<Option<usize>> = args
             .iter()
             .map(|arg| match (&arg.name, arg.res) {
-                (Some(_), Resolution::Decl(param)) => self.design.decl_data(param).parent.and_then(|owner| {
-                    self.design.decl_data(owner).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).position(|c| *c == param)
+                (Some(_), Resolution::Decl(param)) => self.state.design.decl_data(param).parent.and_then(|owner| {
+                    self.state.design.decl_data(owner).children.iter().filter(|c| matches!(self.state.design.decl_data(**c).kind, DeclKind::FnParam(_))).position(|c| *c == param)
                 }),
                 _ => None,
             })
             .collect();
         self.bind_arguments(expr, &name, &params, required, args, &named)?;
         // a parameter of function type is a function pointer: a closure that captures is refused
-        let slots = self.bindings.get(&expr).cloned().unwrap_or_default();
+        let slots = self.state.result.bindings.get(&expr).cloned().unwrap_or_default();
         for (slot, param) in slots.iter().zip(&params) {
             if let (true, Some(arg), Ty::Fn(..)) = (pointers, slot, param) {
                 self.refuse_capturing_pointer(*arg);
@@ -174,7 +174,7 @@ impl Checker<'_> {
     /// per call.
     pub(super) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], required: usize, args: &[Arg], named: &[Option<usize>]) -> Option<()> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let mut slots: Vec<Option<ExprId>> = vec![None; params.len()];
         let mut bound: Vec<(ExprId, usize)> = Vec::new();
         let mut ok = true;
@@ -220,7 +220,7 @@ impl Checker<'_> {
         if !ok {
             return None;
         }
-        self.bindings.insert(expr, slots);
+        self.state.result.bindings.insert(expr, slots);
         Some(())
     }
 
@@ -228,12 +228,12 @@ impl Checker<'_> {
     /// that `hider` hides: a `fn` of that name among the children of an enclosing namespace
     /// (Part I §3.5.4).
     fn hidden_function(&self, hider: DeclId) -> Option<DeclId> {
-        let name = &self.design.decl_data(hider).name.as_ref()?.text;
-        let mut scope = self.design.decl_data(hider).parent;
+        let name = &self.state.design.decl_data(hider).name.as_ref()?.text;
+        let mut scope = self.state.design.decl_data(hider).parent;
         while let Some(namespace) = scope {
-            let data = self.design.decl_data(namespace);
+            let data = self.state.design.decl_data(namespace);
             let hidden = data.children.iter().copied().find(|child| {
-                let child_data = self.design.decl_data(*child);
+                let child_data = self.state.design.decl_data(*child);
                 matches!(child_data.kind, DeclKind::Fn(_)) && child_data.name.as_ref().is_some_and(|candidate| candidate.text == *name)
             });
             if hidden.is_some() {
@@ -249,14 +249,14 @@ impl Checker<'_> {
     /// §3.5.4, L20). The arguments are still inferred, so the one mistake is one diagnostic.
     fn hidden_function_call(&mut self, expr: ExprId, callee: ExprId, hider: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(callee).span;
-        let found = self.infer(callee).map_or_else(|| "a value".to_string(), |ty| ty.name(self.design));
-        let name = self.design.decl_data(hider).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let span = self.state.design.expr_node(callee).span;
+        let found = self.infer(callee).map_or_else(|| "a value".to_string(), |ty| ty.name(self.state.design));
+        let name = self.state.design.decl_data(hider).name.as_ref().map_or_else(String::new, |name| name.text.clone());
         let mut diagnostic = crate::msl::Diagnostic::new("E0180", format!("expected a function, found `{found}`"), span, format!("`{name}` is a `{found}` here, not the function"));
         if let Some(function) = self.hidden_function(hider) {
-            let declaration = self.design.decl_data(function);
+            let declaration = self.state.design.decl_data(function);
             if declaration.file == file {
-                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", RefusedForm::declaration_name(&self.design.decl_data(hider).kind)));
+                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", RefusedForm::declaration_name(&self.state.design.decl_data(hider).kind)));
             }
         }
         self.report(file, diagnostic);
@@ -281,7 +281,7 @@ impl Checker<'_> {
     /// (`bind_arguments`); the callers of this one take positional arguments.
     pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         if args.len() != params.len() {
             self.arity_mismatch(file, span, params.len(), args);
             return None;
@@ -296,7 +296,7 @@ impl Checker<'_> {
     /// a `Deferred` or `Unresolved` one resolved against the Appendix H catalogue on the type of
     /// its receiver, the row recorded (DIG-02). Every other method is `P0001` naming it.
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
         let name = method.text.as_str();
@@ -355,9 +355,9 @@ impl Checker<'_> {
         }
         // §7 rule 13: a function of a bundle, called on a bundle carrier or on a bundle handle (`bundle_handles.rs`)
         if let Some(bundle) = self.bundle_named_type(*recv) {
-            self.exprs[recv.index()] = Some(bundle.clone());
+            self.state.result.exprs[recv.index()] = Some(bundle.clone());
             let Some(function) = self.method_of(&bundle, name) else {
-                let message = format!("no method `{name}` on `{}`", bundle.name(self.design));
+                let message = format!("no method `{name}` on `{}`", bundle.name(self.state.design));
                 self.coded(file, "E0161", method.span, message, "a bundle has the functions of its `impl` and no others");
                 return None;
             };
@@ -388,7 +388,7 @@ impl Checker<'_> {
                 if let Some(function) = self.method_of(&recv_ty, name) {
                     return self.method_call_of(expr, *recv, &recv_ty, function, args);
                 }
-                let type_name = recv_ty.name(self.design);
+                let type_name = recv_ty.name(self.state.design);
                 // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
                 let copy_method = name == "clone" && !self.project_defines(name);
                 // a struct or an enum has the project's methods and no others (§3.1.7), so a miss is absent
@@ -415,7 +415,7 @@ impl Checker<'_> {
         };
         // An argument of the receiver's type takes it when it is a literal (DIG-01 AC 2).
         self.apply(expr, &params, args)?;
-        self.methods.insert(expr, row);
+        self.state.result.methods.insert(expr, row);
         Some(result)
     }
 
@@ -426,7 +426,7 @@ impl Checker<'_> {
         if matches!(recv, Ty::Array(..) | Ty::Range { .. } | Ty::Iterator { .. }) {
             return self.sequence_row(expr, row, recv, args);
         }
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let payload = match recv {
             Ty::Option(inner) => (**inner).clone(),
@@ -439,9 +439,9 @@ impl Checker<'_> {
         let value = args[0].value;
         let result = match row {
             Method::Expect => {
-                if !matches!(&self.design.expr_node(value).kind, ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Str { .. })) {
+                if !matches!(&self.state.design.expr_node(value).kind, ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Str { .. })) {
                     self.infer(value);
-                    self.refuse(file, self.design.expr_node(value).span, ValueForm::ExpectWithMessageThatIsNotString);
+                    self.refuse(file, self.state.design.expr_node(value).span, ValueForm::ExpectWithMessageThatIsNotString);
                     return None;
                 }
                 self.check(value, &Ty::Str);
@@ -453,9 +453,9 @@ impl Checker<'_> {
                 payload
             }
             Method::Map | Method::AndThen | Method::Then => {
-                if !matches!(self.design.expr_node(value).kind, ExprKind::Closure { .. }) {
+                if !matches!(self.state.design.expr_node(value).kind, ExprKind::Closure { .. }) {
                     self.infer(value);
-                    self.refuse_with(file, self.design.expr_node(value).span, ValueForm::WithArgumentThatIsNotClosure, [match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }.to_string()]);
+                    self.refuse_with(file, self.state.design.expr_node(value).span, ValueForm::WithArgumentThatIsNotClosure, [match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }.to_string()]);
                     return None;
                 }
                 let params: Vec<Ty> = if row == Method::Then { vec![] } else { vec![payload] };
@@ -463,8 +463,8 @@ impl Checker<'_> {
                 match row {
                     Method::AndThen if matches!(body, Ty::Option(_)) => body,
                     Method::AndThen => {
-                        let span = self.design.expr_node(value).span;
-                        self.mismatch_text(file, span, "Option<_>", &body.name(self.design));
+                        let span = self.state.design.expr_node(value).span;
+                        self.mismatch_text(file, span, "Option<_>", &body.name(self.state.design));
                         return None;
                     }
                     _ => Ty::Option(Box::new(body)),
@@ -472,7 +472,7 @@ impl Checker<'_> {
             }
             _ => return None,
         };
-        self.methods.insert(expr, row);
+        self.state.result.methods.insert(expr, row);
         Some(result)
     }
 
@@ -488,7 +488,7 @@ impl Checker<'_> {
     /// inferred when `result` is `None` (the rows of Appendix H.3 and H.4 that take a closure,
     /// whose result type is the body's). Gives the type of the body.
     pub(super) fn closure_typed(&mut self, expr: ExprId, declared: &[Ty], result: Option<&Ty>) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Closure { params, ret, body, .. } = &node.kind else { return None };
         if params.len() != declared.len() {
@@ -497,7 +497,7 @@ impl Checker<'_> {
             return None;
         }
         for (param, ty) in params.iter().zip(declared) {
-            let pat = self.design.pat_node(param.pat).clone();
+            let pat = self.state.design.pat_node(param.pat).clone();
             let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
                 // §1.6.11: a closure parameter takes an irrefutable pattern
                 self.irrefutable_pattern(file, param.pat, ty, "a closure parameter");
@@ -507,22 +507,22 @@ impl Checker<'_> {
                 && let Some(written) = self.lower_type(annotation)
                 && written != *ty
             {
-                let span = self.design.type_node(annotation).span;
+                let span = self.state.design.type_node(annotation).span;
                 self.mismatch(file, span, ty, &written);
             }
-            self.locals.insert(*binding, ty.clone());
+            self.state.result.locals.insert(*binding, ty.clone());
         }
         let written = ret.and_then(|annotation| self.lower_type(annotation).map(|ty| (annotation, ty)));
         if let (Some(result), Some((annotation, written))) = (result, &written)
             && written != result
         {
-            let span = self.design.type_node(*annotation).span;
+            let span = self.state.design.type_node(*annotation).span;
             self.mismatch(file, span, result, written);
         }
-        let outer = std::mem::replace(&mut self.context, Context::Function);
-        self.places.enter_closure(node.span);
+        let outer = std::mem::replace(&mut self.state.values.context, Context::Function);
+        self.state.values.places.enter_closure(node.span);
         let given = result.or(written.as_ref().map(|(_, ty)| ty));
-        let enclosing = self.flow.enter_body(ExitFrame::new(given.cloned(), given.is_none()));
+        let enclosing = self.state.values.flow.enter_body(ExitFrame::new(given.cloned(), given.is_none()));
         let found = match given {
             Some(result) => {
                 self.check(*body, result);
@@ -530,11 +530,11 @@ impl Checker<'_> {
             }
             None => self.infer(*body),
         };
-        let returned = self.flow.leave_body(enclosing).and_then(|frame| frame.returned);
-        self.context = outer;
-        self.places.leave_closure();
+        let returned = self.state.values.flow.leave_body(enclosing).and_then(|frame| frame.returned);
+        self.state.values.context = outer;
+        self.state.values.places.leave_closure();
         let found = self.settle_result(file, node.span, found?, returned);
-        self.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
+        self.state.result.exprs[expr.index()] = Some(Ty::Fn(declared.to_vec(), Box::new(found.clone())));
         self.record_closure(expr);
         Some(found)
     }

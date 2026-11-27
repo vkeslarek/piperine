@@ -54,7 +54,7 @@ impl Checker<'_> {
     /// Whether `expr` is a float literal with no type suffix (`1.5`, `1e3`): it takes the float type
     /// its position requires (§1.4.2), `f64` when none.
     pub(super) fn bare_float_literal(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.bare_float_literal(*inner),
             ExprKind::Lit(lit) => matches!(&lit.kind, LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix().is_empty()),
             _ => false,
@@ -68,7 +68,7 @@ impl Checker<'_> {
         let digits = FloatText::digits(raw);
         let Some(pattern) = DecimalText::nearest(digits, format) else { return };
         if format.classify(pattern) == FloatClass::Infinite {
-            let name = ty.name(self.design);
+            let name = ty.name(self.state.design);
             let message = format!("`{raw}` is out of range: a float literal beyond the range of `{name}`");
             self.report(file, Diagnostic::new("E0909", message, span, "literal out of range").with_help("write a value the type holds, or a wider type"));
         }

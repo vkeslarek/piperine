@@ -17,15 +17,15 @@ impl Checker<'_> {
     /// `match scrutinee { arms }`: its type is that of its arms, checked against `expected`
     /// when the position gives one.
     pub(super) fn match_expr(&mut self, expr: ExprId, expected: Option<&Ty>) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Match { scrutinee, arms } = &node.kind else { return None };
         let scrut = self.infer(*scrutinee);
         if let Some(t) = &scrut
             && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
         {
-            let span = self.design.expr_node(*scrutinee).span;
-            self.refuse_with(file, span, ValueForm::MatchExpressionOver, [t.name(self.design).to_string()]);
+            let span = self.state.design.expr_node(*scrutinee).span;
+            self.refuse_with(file, span, ValueForm::MatchExpressionOver, [t.name(self.state.design).to_string()]);
         }
         let mut covered = Vec::new();
         // A refused pattern is its own diagnostic: the coverage is then not judged.
@@ -44,9 +44,9 @@ impl Checker<'_> {
             }
         }
         let ty = self.arms(arms, expected);
-        let missing = scrut.as_ref().filter(|_| patterns_typed).and_then(|t| Coverage::new(self.design, &self.layouts).missing(t, &covered));
+        let missing = scrut.as_ref().filter(|_| patterns_typed).and_then(|t| Coverage::new(self.state.design, &self.state.result.layouts).missing(t, &covered));
         if let (Some(t), Some(missing)) = (&scrut, missing) {
-            let message = format!("a `match` over `{}` is not exhaustive: `{missing}` is not covered (§1.8.6)", t.name(self.design));
+            let message = format!("a `match` over `{}` is not exhaustive: `{missing}` is not covered (§1.8.6)", t.name(self.state.design));
             self.coded(file, "E0184", node.span, message, "not exhaustive");
         }
         ty
@@ -56,10 +56,10 @@ impl Checker<'_> {
     /// Each arm starts from the state after the scrutinee; the state after the `match` is where
     /// they meet.
     fn arms(&mut self, arms: &[Arm], expected: Option<&Ty>) -> Option<Ty> {
-        let before = self.flow.assigned.clone();
+        let before = self.state.values.flow.assigned.clone();
         let mut after_arms = Vec::new();
         let ty = self.arm_types(arms, expected, &before, &mut after_arms);
-        self.flow.assigned = Assigned::join(after_arms);
+        self.state.values.flow.assigned = Assigned::join(after_arms);
         ty
     }
 
@@ -72,7 +72,7 @@ impl Checker<'_> {
         };
         for arm in arms {
             self.check(arm.body, &ty);
-            after_arms.push(self.flow.end_branch(before));
+            after_arms.push(self.state.values.flow.end_branch(before));
         }
         Some(ty)
     }
@@ -102,7 +102,7 @@ impl Checker<'_> {
                     self.infer(body);
                 }
             }
-            after_arms.push(self.flow.end_branch(before));
+            after_arms.push(self.state.values.flow.end_branch(before));
         }
         typed.unwrap_or(Some(Ty::Never))
     }
@@ -110,27 +110,27 @@ impl Checker<'_> {
     /// The condition of an `if` or a `while`: a `bool`, or `let pat = e` (§1.8.2) with a pattern of
     /// any form the checker knows, whose names are in scope in the first block.
     pub(super) fn condition(&mut self, cond: ExprId) {
-        let node = self.design.expr_node(cond).clone();
+        let node = self.state.design.expr_node(cond).clone();
         let ExprKind::Let { pat, expr } = &node.kind else {
             self.check(cond, &Ty::Bool);
             return;
         };
         let file = self.file_of_expr(cond);
         if let Some(found) = self.infer(*expr) {
-            let pat_node = self.design.pat_node(*pat).clone();
+            let pat_node = self.state.design.pat_node(*pat).clone();
             // `Some(p)` over a value that is no `Option` is a mismatch of the value.
             if self.is_some_pattern(&pat_node.kind) && !matches!(found, Ty::Option(_)) {
-                let span = self.design.expr_node(*expr).span;
-                self.mismatch_text(file, span, "an `Option`", &found.name(self.design));
+                let span = self.state.design.expr_node(*expr).span;
+                self.mismatch_text(file, span, "an `Option`", &found.name(self.state.design));
             } else {
                 self.pattern(file, *pat, &found);
             }
         }
-        self.exprs[cond.index()] = Some(Ty::Bool);
+        self.state.result.exprs[cond.index()] = Some(Ty::Bool);
     }
 
     /// Whether a pattern is `Some(p)`.
     fn is_some_pattern(&self, kind: &PatKind) -> bool {
-        matches!(kind, PatKind::TupleStruct { path, pats } if pats.len() == 1 && matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some"))
+        matches!(kind, PatKind::TupleStruct { path, pats } if pats.len() == 1 && matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some"))
     }
 }

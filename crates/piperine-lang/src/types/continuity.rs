@@ -77,33 +77,33 @@ fn bind_pattern(design: &Design, pat: PatId, init: ExprId, out: &mut BTreeMap<De
 impl Checker<'_> {
     /// The expression a `let` or a pattern binding stands for.
     pub(super) fn binding_init(&self, binding: DeclId) -> Option<ExprId> {
-        self.continuity.inits.get(&binding).copied()
+        self.state.analog.continuity.inits.get(&binding).copied()
     }
 
     /// Whether `expr` is a continuous expression.
     pub(super) fn continuous(&mut self, expr: ExprId) -> bool {
-        if let Some(known) = self.continuity.expressions.get(&expr) {
+        if let Some(known) = self.state.analog.continuity.expressions.get(&expr) {
             return *known;
         }
-        if self.continuity.open.contains(&expr) {
+        if self.state.analog.continuity.open.contains(&expr) {
             return false;
         }
-        self.continuity.open.push(expr);
+        self.state.analog.continuity.open.push(expr);
         let result = self.continuous_now(expr);
-        self.continuity.open.pop();
-        self.continuity.expressions.insert(expr, result);
+        self.state.analog.continuity.open.pop();
+        self.state.analog.continuity.expressions.insert(expr, result);
         result
     }
 
     fn continuous_now(&mut self, expr: ExprId) -> bool {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Call { class: CallClass::Probe, .. } => return true,
             // `p.inflow()` is a probe of the ammeter branch (§6 rule 5).
             ExprKind::MethodCall { res: Resolution::Builtin(id), .. } if id.info().name == "inflow" => return true,
             ExprKind::Path(path) => {
-                return match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                    Some(Resolution::Decl(d)) => match self.continuity.inits.get(&d).copied() {
+                return match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                    Some(Resolution::Decl(d)) => match self.state.analog.continuity.inits.get(&d).copied() {
                         Some(init) => self.continuous(init),
                         None => false,
                     },
@@ -111,13 +111,13 @@ impl Checker<'_> {
                 };
             }
             ExprKind::Call { callee, class, args, .. } => {
-                if let ExprKind::Path(path) = &self.design.expr_node(*callee).kind {
-                    match self.design.path_node(*path).segments.last().map(|s| s.res) {
+                if let ExprKind::Path(path) = &self.state.design.expr_node(*callee).kind {
+                    match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                         // `analysis(Dc)` and the other kinds are constant during an analysis
                         // (§14.4.1): only `analysis(Static)` is continuous
                         Some(Resolution::Builtin(id)) if id.info().name == "analysis" && !self.names_static(args) => {}
                         Some(Resolution::Builtin(id)) if CONTINUOUS_BUILTINS.contains(&id.info().name) => return true,
-                        Some(Resolution::Decl(f)) if matches!(self.design.decl_data(f).kind, DeclKind::Fn(_)) && self.function_continuous(f) => return true,
+                        Some(Resolution::Decl(f)) if matches!(self.state.design.decl_data(f).kind, DeclKind::Fn(_)) && self.function_continuous(f) => return true,
                         _ => {}
                     }
                 }
@@ -129,14 +129,14 @@ impl Checker<'_> {
             }
             _ => {}
         }
-        crate::pom::BodyWalk::new(self.design).expression_children(&node.kind).into_iter().any(|c| self.continuous(c))
+        crate::pom::BodyWalk::new(self.state.design).expression_children(&node.kind).into_iter().any(|c| self.continuous(c))
     }
 
     /// Whether the argument of an `analysis` call is the kind `Static`.
     fn names_static(&self, args: &[crate::pom::Arg]) -> bool {
         let [arg] = args else { return true };
-        match &self.design.expr_node(arg.value).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+        match &self.state.design.expr_node(arg.value).kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) => id.info().name == "Static",
                 _ => true,
             },
@@ -146,20 +146,20 @@ impl Checker<'_> {
 
     /// Whether a function reads a continuous value in its own body.
     fn function_continuous(&mut self, function: DeclId) -> bool {
-        if let Some(known) = self.continuity.functions.get(&function) {
+        if let Some(known) = self.state.analog.continuity.functions.get(&function) {
             return *known;
         }
-        self.continuity.functions.insert(function, false);
-        let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return false };
+        self.state.analog.continuity.functions.insert(function, false);
+        let DeclKind::Fn(f) = &self.state.design.decl_data(function).kind else { return false };
         let Some(body) = f.body.clone() else { return false };
-        let result = crate::pom::BodyWalk::new(self.design).block_expressions(&body).into_iter().any(|e| self.continuous(e));
-        self.continuity.functions.insert(function, result);
+        let result = crate::pom::BodyWalk::new(self.state.design).block_expressions(&body).into_iter().any(|e| self.continuous(e));
+        self.state.analog.continuity.functions.insert(function, result);
         result
     }
 
     /// Whether the result of a module reads a continuous value (`transition` reads `now()`).
     fn result_continuous(&mut self, module: DeclId) -> bool {
-        let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return false };
+        let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return false };
         match m.result {
             Some(result) => self.continuous(result),
             None => false,

@@ -50,8 +50,8 @@ pub enum Obligation {
 impl Checker<'_> {
     /// Records `obligation` under the generic function being checked, when there is one.
     pub(super) fn defer(&mut self, obligation: Obligation) {
-        if let Some(item) = self.generic_item {
-            let list = self.obligations.entry(item).or_default();
+        if let Some(item) = self.state.generics.generic_item {
+            let list = self.state.result.obligations.entry(item).or_default();
             if !list.contains(&obligation) {
                 list.push(obligation);
             }
@@ -61,7 +61,7 @@ impl Checker<'_> {
     /// Whether a value of type `found` may stand where `expected` is wanted ([`Ty::fits`]); each pair
     /// of lengths the definition could only accept, not decide, is recorded as an obligation at `at`.
     pub(super) fn compatible(&mut self, at: ExprId, found: &Ty, expected: &Ty) -> bool {
-        let (file, span) = (self.file_of_expr(at), self.design.expr_node(at).span);
+        let (file, span) = (self.file_of_expr(at), self.state.design.expr_node(at).span);
         self.compatible_at(file, span, found, expected)
     }
 
@@ -79,7 +79,7 @@ impl Checker<'_> {
     /// Records the const expression `expr` over const parameters under the generic function being
     /// checked: it must fold for each instantiation.
     pub(super) fn defer_constant(&mut self, expr: ExprId) {
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         self.defer(Obligation::Constant { expr, file, span });
     }
 
@@ -101,7 +101,7 @@ impl Checker<'_> {
         match ty {
             Ty::Array(element, length) => {
                 let folded = match length {
-                    Length::Generic(ConstTerm::Expr(expr)) => super::lengths::IntegerFolder::with_values(self.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
+                    Length::Generic(ConstTerm::Expr(expr)) => super::lengths::IntegerFolder::with_values(self.state.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
                     other => other.clone(),
                 };
                 Ty::Array(Box::new(self.fold_lengths(element, values)), folded)

@@ -36,7 +36,7 @@ impl Checker<'_> {
     /// type parameter bound by `Nature`.
     pub(super) fn note_handle(&mut self, param: DeclId, ty: &Ty) {
         if Self::is_handle_type(ty) || self.is_nature_parameter(ty) || self.is_bundle_type(ty) {
-            self.handles.insert(param);
+            self.state.result.handles.insert(param);
         }
     }
 
@@ -46,7 +46,7 @@ impl Checker<'_> {
         let read = self.infer(expr)?;
         match self.carrier_named(expr) {
             Some(carrier @ Ty::Carrier { .. }) => {
-                self.exprs[expr.index()] = Some(Self::handle_read_type(&carrier));
+                self.state.result.exprs[expr.index()] = Some(Self::handle_read_type(&carrier));
                 Some(carrier)
             }
             _ => Some(read),
@@ -55,10 +55,10 @@ impl Checker<'_> {
 
     /// The handle parameter `expr` names, through parentheses.
     pub(super) fn handle_named(&self, expr: ExprId) -> Option<DeclId> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.handle_named(*inner),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-                Some(Resolution::Decl(decl)) if self.handles.contains(&decl) => Some(decl),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
+                Some(Resolution::Decl(decl)) if self.state.result.handles.contains(&decl) => Some(decl),
                 _ => None,
             },
             _ => None,
@@ -68,7 +68,7 @@ impl Checker<'_> {
     /// Whether the handle `decl` is a node (a continuous carrier): a read of it is the node itself, which no value holds.
     /// A discrete carrier's read is its value (§3.1.6), so using it as a value is no handle kept.
     fn is_node_handle(&self, decl: DeclId) -> bool {
-        !matches!(self.locals.get(&decl), Some(Ty::Carrier { .. }))
+        !matches!(self.state.result.locals.get(&decl), Some(Ty::Carrier { .. }))
     }
 
     /// The expression of a handle that `expr` evaluates to: the handle's own path, or the one a block's tail, an
@@ -77,7 +77,7 @@ impl Checker<'_> {
         if self.handle_named(expr).is_some_and(|decl| self.is_node_handle(decl)) {
             return Some(expr);
         }
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Block(block) => self.handle_in_block(block),
             ExprKind::If { then, else_, .. } => self.handle_in_block(then).or_else(|| else_.and_then(|other| self.handle_held(other))),
             ExprKind::Match { arms, .. } => arms.iter().find_map(|arm| self.handle_held(arm.body)),
@@ -87,7 +87,7 @@ impl Checker<'_> {
 
     /// The handle a block's tail expression yields, if it has a tail.
     fn handle_in_block(&self, block: &crate::pom::BlockNode) -> Option<ExprId> {
-        match block.stmts.last().map(|stmt| &self.design.stmt_node(*stmt).kind) {
+        match block.stmts.last().map(|stmt| &self.state.design.stmt_node(*stmt).kind) {
             Some(StmtKind::Expr { expr, semi: false }) => self.handle_held(*expr),
             _ => None,
         }
@@ -96,10 +96,10 @@ impl Checker<'_> {
     /// What a read of the handle `decl` is: the value of a discrete carrier (§3.1.6), the node itself for a
     /// continuous one. `None` when `decl` is not a handle.
     pub(super) fn handle_read(&self, decl: DeclId) -> Option<Ty> {
-        if !self.handles.contains(&decl) {
+        if !self.state.result.handles.contains(&decl) {
             return None;
         }
-        match self.locals.get(&decl)? {
+        match self.state.result.locals.get(&decl)? {
             Ty::Carrier { value, .. } => Some((**value).clone()),
             node => Some(node.clone()),
         }
@@ -107,7 +107,7 @@ impl Checker<'_> {
 
     /// The carrier type of the handle `decl`, for the carrier methods and the arguments that pass it on.
     pub(super) fn handle_type(&self, decl: DeclId) -> Option<Ty> {
-        self.handles.contains(&decl).then(|| self.locals.get(&decl).cloned()).flatten()
+        self.state.result.handles.contains(&decl).then(|| self.state.result.locals.get(&decl).cloned()).flatten()
     }
 
     /// Whether every operand of a probe is a handle, which is what a function's probe may read (§3 rule 7).
@@ -118,7 +118,7 @@ impl Checker<'_> {
     /// An argument for a parameter of a nature type: the carrier it names (a port, a signal or a handle of the
     /// same nature and value) is passed on as it is (§3.1.5); anything else is the plain mismatch.
     pub(super) fn handle_argument(&mut self, expr: ExprId, expected: &Ty) {
-        let passed = match &self.design.expr_node(expr).kind {
+        let passed = match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(_) | ExprKind::Paren(_) | ExprKind::Index { .. } => self.carrier_named(expr),
             _ => None,
         };
@@ -126,10 +126,10 @@ impl Checker<'_> {
             // the argument is read as the value the carrier holds; the elaborator binds the carrier itself (`elab/handles.rs`)
             Some(found) if found == *expected => {
                 // an element `x[k]`: its base and its index are typed like any read
-                if matches!(self.design.expr_node(expr).kind, ExprKind::Index { .. }) {
+                if matches!(self.state.design.expr_node(expr).kind, ExprKind::Index { .. }) {
                     self.infer(expr);
                 }
-                self.exprs[expr.index()] = Some(Self::handle_read_type(&found));
+                self.state.result.exprs[expr.index()] = Some(Self::handle_read_type(&found));
             }
             _ => self.check(expr, expected),
         }
@@ -147,54 +147,54 @@ impl Checker<'_> {
     /// the function is a handle, a `return` names one, a `let`, a struct field, a tuple or array element or a closure
     /// holds one, or an assignment or a commit writes through one. Passing it as an argument is the use it is for.
     pub(super) fn check_handle_uses(&mut self, function: DeclId) {
-        if self.handles.is_empty() {
+        if self.state.result.handles.is_empty() {
             return;
         }
-        let file = self.design.decl_data(function).file;
+        let file = self.state.design.decl_data(function).file;
         let mut found: Vec<(Span, ExprId, &'static str)> = Vec::new();
         let mut written: Vec<ExprId> = Vec::new();
-        for index in 0..self.design.expr_count() as u32 {
+        for index in 0..self.state.design.expr_count() as u32 {
             let expr = ExprId(index);
-            let node = self.design.expr_node(expr);
+            let node = self.state.design.expr_node(expr);
             if node.owner != function {
                 continue;
             }
             match &node.kind {
                 ExprKind::Struct { fields, .. } => found.extend(fields.iter().filter(|field| self.handle_held(field.value).is_some()).map(|field| (field.span, field.value, "stored in a struct field"))),
-                ExprKind::Tuple(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in a tuple element"))),
-                ExprKind::Array(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.design.expr_node(*item).span, *item, "stored in an array element"))),
-                ExprKind::ArrayRepeat { elem, .. } if self.handle_held(*elem).is_some() => found.push((self.design.expr_node(*elem).span, *elem, "stored in an array element")),
-                ExprKind::Return(Some(value)) if self.handle_held(*value).is_some() => found.push((self.design.expr_node(*value).span, *value, "returned")),
-                ExprKind::Assign { lhs, .. } if self.handle_named(*lhs).is_some() => found.push((self.design.expr_node(*lhs).span, *lhs, "written through")),
+                ExprKind::Tuple(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.state.design.expr_node(*item).span, *item, "stored in a tuple element"))),
+                ExprKind::Array(items) => found.extend(items.iter().filter(|item| self.handle_held(**item).is_some()).map(|item| (self.state.design.expr_node(*item).span, *item, "stored in an array element"))),
+                ExprKind::ArrayRepeat { elem, .. } if self.handle_held(*elem).is_some() => found.push((self.state.design.expr_node(*elem).span, *elem, "stored in an array element")),
+                ExprKind::Return(Some(value)) if self.handle_held(*value).is_some() => found.push((self.state.design.expr_node(*value).span, *value, "returned")),
+                ExprKind::Assign { lhs, .. } if self.handle_named(*lhs).is_some() => found.push((self.state.design.expr_node(*lhs).span, *lhs, "written through")),
                 ExprKind::Assign { lhs, .. } if self.bundle_handle_root(*lhs).is_some() => written.push(*lhs),
                 ExprKind::Closure { body, .. } => {
                     let mut inside = Vec::new();
-                    crate::pom::BodyWalk::new(self.design).descendants_depth_first(*body, &mut inside);
-                    found.extend(inside.into_iter().filter(|inner| self.handle_held(*inner).is_some()).map(|inner| (self.design.expr_node(inner).span, inner, "captured by a closure")));
+                    crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(*body, &mut inside);
+                    found.extend(inside.into_iter().filter(|inner| self.handle_held(*inner).is_some()).map(|inner| (self.state.design.expr_node(inner).span, inner, "captured by a closure")));
                 }
                 _ => {}
             }
         }
-        for index in 0..self.design.stmt_count() as u32 {
-            let node = self.design.stmt_node(crate::pom::StmtId(index));
+        for index in 0..self.state.design.stmt_count() as u32 {
+            let node = self.state.design.stmt_node(crate::pom::StmtId(index));
             if node.owner != function {
                 continue;
             }
             match &node.kind {
-                StmtKind::Let { init: Some(init), .. } if self.handle_held(*init).is_some() => found.push((self.design.expr_node(*init).span, *init, "stored in a `let`")),
-                StmtKind::Commit { place, .. } if self.handle_named(*place).is_some() => found.push((self.design.expr_node(*place).span, *place, "written through")),
+                StmtKind::Let { init: Some(init), .. } if self.handle_held(*init).is_some() => found.push((self.state.design.expr_node(*init).span, *init, "stored in a `let`")),
+                StmtKind::Commit { place, .. } if self.handle_named(*place).is_some() => found.push((self.state.design.expr_node(*place).span, *place, "written through")),
                 StmtKind::Commit { place, .. } if self.bundle_handle_root(*place).is_some() => written.push(*place),
                 _ => {}
             }
         }
         for place in written {
-            let (span, field) = (self.design.expr_node(place).span, self.field_chain_text(place));
+            let (span, field) = (self.state.design.expr_node(place).span, self.field_chain_text(place));
             let message = format!("the field `{field}` of a bundle handle is written through: every field is read-only through a handle, whatever the view (§7 rule 13)");
             self.coded(file, "E0133", span, message, "a handle written through");
         }
         for (span, expr, how) in found {
             let expr = self.handle_held(expr).unwrap_or(expr);
-            let name = self.handle_named(expr).and_then(|decl| self.design.decl_data(decl).name.as_ref().map(|name| name.text.clone())).unwrap_or_default();
+            let name = self.handle_named(expr).and_then(|decl| self.state.design.decl_data(decl).name.as_ref().map(|name| name.text.clone())).unwrap_or_default();
             let message = format!("the handle `{name}` is {how}: a handle is read, probed, passed on and has carrier methods called on it, nothing else (§3.1.5)");
             self.coded(file, "E0133", span, message, "a handle kept past its call");
         }
@@ -203,8 +203,8 @@ impl Checker<'_> {
     /// Records `expr`, of the type `ty`, when it is an `if` or a `match` whose result is a node: a choice of hardware, judged once
     /// the whole design is typed (`judge_node_choices`), when every assignment is known. It is typed as the node meanwhile.
     pub(super) fn record_node_choice(&mut self, expr: ExprId, ty: Option<&Ty>) {
-        if matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) && matches!(self.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. }) {
-            self.node_choices.push(expr);
+        if matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) && matches!(self.state.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. }) {
+            self.state.modules.node_choices.push(expr);
         }
     }
 
@@ -212,8 +212,8 @@ impl Checker<'_> {
     /// condition, scrutinee or a guard reads a probe, a port, a signal, a core primitive of the run, or a variable whose value
     /// does. A choice over params, constants, generation indexes and `let`s of those is made at elaboration.
     pub(super) fn judge_node_choices(&mut self) {
-        for expr in std::mem::take(&mut self.node_choices) {
-            let (form, read) = match self.design.expr_node(expr).kind.clone() {
+        for expr in std::mem::take(&mut self.state.modules.node_choices) {
+            let (form, read) = match self.state.design.expr_node(expr).kind.clone() {
                 ExprKind::If { cond, .. } => ("an `if`", self.run_read(cond, &mut Vec::new())),
                 ExprKind::Match { scrutinee, arms } => {
                     let guards = arms.iter().filter_map(|arm| arm.guard).find_map(|guard| self.run_read(guard, &mut Vec::new()));
@@ -222,12 +222,12 @@ impl Checker<'_> {
                 _ => continue,
             };
             let Some(read) = read else { continue };
-            let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+            let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
             let message = format!(
                 "{form} whose result is a node chooses it by {read}: a node is hardware, chosen at elaboration or named (§1.4.7)"
             );
             self.coded(file, "E0133", span, message, "a node chosen at run time");
-            self.chosen_nodes.insert(expr);
+            self.state.modules.chosen_nodes.insert(expr);
         }
     }
 
@@ -240,23 +240,23 @@ impl Checker<'_> {
         if let Some(read) = self.runtime_read(expr) {
             return Some(read);
         }
-        let node = self.design.expr_node(expr);
+        let node = self.state.design.expr_node(expr);
         match &node.kind {
             ExprKind::Call { callee, .. } if let Some(primitive) = self.run_primitive(*callee) => Some(format!("`{primitive}()`")),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => self.run_variable(decl, followed).map(|read| {
-                    format!("the variable `{}`, whose value depends on the run: it reads {read}", self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()))
+                    format!("the variable `{}`, whose value depends on the run: it reads {read}", self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()))
                 }),
                 _ => None,
             },
-            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().find_map(|child| self.run_read(child, followed)),
+            kind => crate::pom::BodyWalk::new(self.state.design).expression_children(kind).into_iter().find_map(|child| self.run_read(child, followed)),
         }
     }
 
     /// The name of the core primitive the callee `callee` names (`now`), a value only the run gives (§14).
     fn run_primitive(&self, callee: ExprId) -> Option<String> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(Resolution::Builtin(id)) if super::catalogue::Core::signature(id).is_some() => Some(id.name()),
             _ => None,
         }
@@ -268,27 +268,27 @@ impl Checker<'_> {
     /// initializer, every value assigned to it and every condition around those fold at elaboration). A generation index is no
     /// variable of the run; a chain of `let`s deeper than 64 is taken as the run's.
     fn run_variable(&self, decl: DeclId, followed: &mut Vec<DeclId>) -> Option<String> {
-        match &self.design.decl_data(decl).kind {
+        match &self.state.design.decl_data(decl).kind {
             DeclKind::FnParam(_) => Some("a parameter its caller binds".to_string()),
             DeclKind::Binding(_) => {
-                let parent = self.design.decl_data(decl).parent;
-                if parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Generation(_))) || followed.contains(&decl) {
+                let parent = self.state.design.decl_data(decl).parent;
+                if parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Generation(_))) || followed.contains(&decl) {
                     return None;
                 }
                 if followed.len() >= 64 {
                     return Some("a chain of `let`s deeper than 64".to_string());
                 }
-                let body_value = parent.and_then(|parent| match &self.design.decl_data(parent).kind {
+                let body_value = parent.and_then(|parent| match &self.state.design.decl_data(parent).kind {
                     DeclKind::Let(data) => Some(data.value),
                     _ => None,
                 });
-                let Some(init) = self.let_values.get(&decl).copied().or(body_value) else {
+                let Some(init) = self.state.values.let_values.get(&decl).copied().or(body_value) else {
                     return Some("a value only a pattern or a loop binds".to_string());
                 };
                 // judged once: a variable met again is being judged or was found to depend on nothing of the run (one that does
                 // ends the search), so following it again adds nothing and the judgement ends
                 followed.push(decl);
-                self.run_read(init, followed).or_else(|| self.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
+                self.run_read(init, followed).or_else(|| self.state.values.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
             }
             _ => None,
         }
@@ -304,12 +304,12 @@ impl Checker<'_> {
         if let Some(read) = self.run_read(write.value, followed) {
             return Some(read);
         }
-        let at = self.design.expr_node(write.assignment).clone();
-        let declared = self.design.decl_data(decl).span;
+        let at = self.state.design.expr_node(write.assignment).clone();
+        let declared = self.state.design.decl_data(decl).span;
         let around = |span: Span| span.start <= at.span.start && at.span.end <= span.end && !(span.start <= declared.start && declared.end <= span.end);
         let mut conditions = Vec::new();
-        for index in 0..self.design.expr_count() as u32 {
-            let node = self.design.expr_node(ExprId(index));
+        for index in 0..self.state.design.expr_count() as u32 {
+            let node = self.state.design.expr_node(ExprId(index));
             if node.owner != at.owner || !around(node.span) {
                 continue;
             }
@@ -334,32 +334,32 @@ impl Checker<'_> {
 
     /// Every condition of an expression of `owner` written within `span`.
     fn conditions_within(&self, owner: DeclId, span: Span) -> Vec<ExprId> {
-        (0..self.design.expr_count() as u32)
+        (0..self.state.design.expr_count() as u32)
             .map(ExprId)
             .filter(|expr| {
-                let node = self.design.expr_node(*expr);
+                let node = self.state.design.expr_node(*expr);
                 node.owner == owner && span.start <= node.span.start && node.span.end <= span.end
             })
-            .flat_map(|expr| self.conditions_of(&self.design.expr_node(expr).kind))
+            .flat_map(|expr| self.conditions_of(&self.state.design.expr_node(expr).kind))
             .collect()
     }
 
     /// Whether the node operand `operand` was refused already: a node chosen by an expression (through parentheses), or a `let`
     /// whose value was refused.
     pub(super) fn operand_refused(&self, operand: ExprId) -> bool {
-        match &self.design.expr_node(operand).kind {
+        match &self.state.design.expr_node(operand).kind {
             ExprKind::Paren(inner) => self.operand_refused(*inner),
-            _ => self.chosen_nodes.contains(&operand) || self.reads_poisoned(operand),
+            _ => self.state.modules.chosen_nodes.contains(&operand) || self.reads_poisoned(operand),
         }
     }
 
     /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).
     pub(super) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
         let Some(ret) = ret.filter(|ty| Self::is_handle_type(ty)) else { return };
-        let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return };
-        let span = data.ret.map_or(self.design.decl_data(function).span, |ty| self.design.type_node(ty).span);
-        let file = self.design.decl_data(function).file;
-        let message = format!("a function returns `{}`, a handle: a handle is never returned (§3.1.5)", ret.name(self.design));
+        let DeclKind::Fn(data) = &self.state.design.decl_data(function).kind else { return };
+        let span = data.ret.map_or(self.state.design.decl_data(function).span, |ty| self.state.design.type_node(ty).span);
+        let file = self.state.design.decl_data(function).file;
+        let message = format!("a function returns `{}`, a handle: a handle is never returned (§3.1.5)", ret.name(self.state.design));
         self.coded(file, "E0133", span, message, "a handle returned");
     }
 }

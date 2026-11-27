@@ -29,8 +29,8 @@ impl Checker<'_> {
         };
         let element = self.infer(first)?;
         if !(element.is_integer() || element == Ty::F64) {
-            let span = self.design.expr_node(first).span;
-            self.mismatch_text(file, span, "an integer or a float type", &element.name(self.design));
+            let span = self.state.design.expr_node(first).span;
+            self.mismatch_text(file, span, "an integer or a float type", &element.name(self.state.design));
             return None;
         }
         if second != first {
@@ -60,8 +60,8 @@ impl Checker<'_> {
                 Some((element, _)) => Some(element.clone()),
                 None => {
                     let file = self.file_of_expr(iter);
-                    let span = self.design.expr_node(iter).span;
-                    self.mismatch_text(file, span, "an array, an integer range or an iterator", &found.name(self.design));
+                    let span = self.state.design.expr_node(iter).span;
+                    self.mismatch_text(file, span, "an array, an integer range or an iterator", &found.name(self.state.design));
                     None
                 }
             },
@@ -72,7 +72,7 @@ impl Checker<'_> {
     /// the element type: `contains` of an array, `map`, `filter`, `fold`, `sum`, `zip`, `any`, `all`.
     pub(super) fn sequence_row(&mut self, expr: ExprId, row: Method, recv: &Ty, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let result = match (row, recv) {
             (Method::ArrayContains, Ty::Array(element, _)) => self.array_contains(expr, element, args)?,
             (_, receiver) => {
@@ -81,7 +81,7 @@ impl Checker<'_> {
                 self.iterator_row(expr, row, &element, reversible, args, (file, span))?
             }
         };
-        self.methods.insert(expr, row);
+        self.state.result.methods.insert(expr, row);
         Some(result)
     }
 
@@ -89,7 +89,7 @@ impl Checker<'_> {
     fn array_contains(&mut self, expr: ExprId, element: &Ty, args: &[Arg]) -> Option<Ty> {
         self.apply(expr, std::slice::from_ref(element), args)?;
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         self.require_trait(file, span, element, DerivedTrait::PartialEq);
         Some(Ty::Bool)
     }
@@ -102,7 +102,7 @@ impl Checker<'_> {
             Method::IteratorSum => {
                 self.apply(expr, &[], args)?;
                 if !(element.is_integer() || *element == Ty::F64) {
-                    self.mismatch_text(file, span, "an integer or a float element type", &element.name(self.design));
+                    self.mismatch_text(file, span, "an integer or a float element type", &element.name(self.state.design));
                     return None;
                 }
                 Some(element.clone())
@@ -129,7 +129,7 @@ impl Checker<'_> {
     /// accumulator. An integer literal `init` over an integer element has the element's type.
     fn fold(&mut self, expr: ExprId, element: &Ty, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let [init, function] = args else {
             self.arity_mismatch(file, span, 2, args);
             return None;
@@ -147,15 +147,15 @@ impl Checker<'_> {
     /// `it.zip(other)` (H.7): `other` is an iterator; the pairs end when either does.
     fn zip(&mut self, expr: ExprId, element: &Ty, reversible: bool, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let [other] = args else {
             self.arity_mismatch(file, span, 1, args);
             return None;
         };
         let found = self.infer(other.value)?;
         let Some((second, second_reversible)) = Self::sequence_of(&found) else {
-            let span = self.design.expr_node(other.value).span;
-            self.mismatch_text(file, span, "an iterator", &found.name(self.design));
+            let span = self.state.design.expr_node(other.value).span;
+            self.mismatch_text(file, span, "an iterator", &found.name(self.state.design));
             return None;
         };
         Some(Ty::Iterator { element: Box::new(Ty::Tuple(vec![element.clone(), second.clone()])), reversible: reversible && second_reversible })
@@ -165,7 +165,7 @@ impl Checker<'_> {
     /// given. Gives the body's type.
     fn closure_argument(&mut self, expr: ExprId, args: &[Arg], params: &[Ty], result: Option<&Ty>) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let [function] = args else {
             self.arity_mismatch(file, span, 1, args);
             return None;
@@ -176,10 +176,10 @@ impl Checker<'_> {
     /// `argument` as a closure with parameters `params`; a value that is not a closure is outside
     /// the subset (a function pointer argument is the closure's own form).
     fn closure_of(&mut self, expr: ExprId, argument: &Arg, params: &[Ty], result: Option<&Ty>) -> Option<Ty> {
-        if !matches!(self.design.expr_node(argument.value).kind, ExprKind::Closure { .. }) {
+        if !matches!(self.state.design.expr_node(argument.value).kind, ExprKind::Closure { .. }) {
             let file = self.file_of_expr(expr);
             self.infer(argument.value);
-            self.refuse(file, self.design.expr_node(argument.value).span, ValueForm::IteratorRowWithArgumentThatIsNot);
+            self.refuse(file, self.state.design.expr_node(argument.value).span, ValueForm::IteratorRowWithArgumentThatIsNot);
             return None;
         }
         self.closure_typed(argument.value, params, result)

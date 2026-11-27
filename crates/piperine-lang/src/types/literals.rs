@@ -15,13 +15,13 @@ impl Checker<'_> {
     pub(super) fn wait_for_use(&mut self, binding: DeclId, init: ExprId) {
         let fits = self.integer_literal_waits(init) && self.integer_literal_value(init).is_some_and(|v| v <= i32::MAX as u128);
         if fits {
-            self.open_literals.insert(binding, init);
+            self.state.values.open_literals.insert(binding, init);
         }
     }
 
     /// The value of the bare integer literal `expr`, through parentheses.
     fn integer_literal_value(&self, expr: ExprId) -> Option<u128> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_value(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
                 crate::pom::LitKind::Int(text) => NumberLiteral::new(text).int_value(),
@@ -33,10 +33,10 @@ impl Checker<'_> {
 
     /// The open local `expr` names, through parentheses.
     pub(super) fn open_literal_local(&self, expr: ExprId) -> Option<DeclId> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.open_literal_local(*inner),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if self.open_literals.contains_key(&decl) => Some(decl),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if self.state.values.open_literals.contains_key(&decl) => Some(decl),
                 _ => None,
             },
             _ => None,
@@ -52,15 +52,15 @@ impl Checker<'_> {
         if !expected.is_integer() {
             return false;
         }
-        let Some(literal) = self.open_literals.remove(&local) else { return false };
+        let Some(literal) = self.state.values.open_literals.remove(&local) else { return false };
         if *expected != Ty::Int(32) {
             let file = self.file_of_expr(literal);
-            let span = self.design.expr_node(literal).span;
+            let span = self.state.design.expr_node(literal).span;
             if let Some(text) = self.integer_literal_text(literal) {
                 self.integer_literal(file, span, &text, Some(expected), false);
             }
-            self.exprs[literal.index()] = Some(expected.clone());
-            self.locals.insert(local, expected.clone());
+            self.state.result.exprs[literal.index()] = Some(expected.clone());
+            self.state.result.locals.insert(local, expected.clone());
         }
         true
     }

@@ -16,7 +16,7 @@ use super::{Builtin, Ty};
 impl Checker<'_> {
     /// `infer` of an expression written in an event position: an `Event` is allowed there.
     pub(super) fn infer_event_position(&mut self, expr: ExprId) -> Option<Ty> {
-        self.event_slot = Some(expr);
+        self.state.values.event_slot = Some(expr);
         self.infer(expr)
     }
 
@@ -38,20 +38,20 @@ impl Checker<'_> {
     /// Whether an `Event` stands for a `bool` here: inside a guard (§13 rule 9) and in a
     /// reaction body (§13 rule 2).
     fn reads_events(&self) -> bool {
-        self.in_guard || self.context == Context::Reaction
+        self.state.values.in_guard || self.state.values.context == Context::Reaction
     }
 
     /// `expr`, an `Event`, read as a `bool`: whether it fired in this microstep (§13 rule 2). The
     /// read is recorded for the elaborator (`Types::event_read`).
     pub(super) fn event_read_as_bool(&mut self, expr: ExprId) -> Ty {
-        self.event_reads.insert(expr);
+        self.state.result.event_reads.insert(expr);
         Ty::Bool
     }
 
     /// `E0441` for an `Event` that stands where no event may and no read makes it a `bool`: it is
     /// never carried or stored (§13 rule 8).
     fn event_outside_a_position(&mut self, expr: ExprId) {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let message = "an `Event` value outside an event position, a guard or a reaction body: an event is never carried or stored (§13 rule 8)".to_string();
         self.coded(file, "E0441", node.span, message, "an `Event` outside an event position");
@@ -60,9 +60,9 @@ impl Checker<'_> {
     /// `E0441` for an event read where a type other than `bool` is expected, a commit onto a
     /// carrier of another type (§13 rule 8; the read of §13 rule 2 is a `bool` only).
     pub(super) fn event_where_another_type_is_expected(&mut self, expr: ExprId, expected: &Ty) {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let message = format!("an `Event` where a `{}` is expected: an event reads as a `bool` only, it is never carried or stored (§13 rules 2 and 8)", expected.name(self.design));
+        let message = format!("an `Event` where a `{}` is expected: an event reads as a `bool` only, it is never carried or stored (§13 rules 2 and 8)", expected.name(self.state.design));
         self.coded(file, "E0441", node.span, message, "an `Event` where a value is expected");
     }
 
@@ -79,20 +79,20 @@ impl Checker<'_> {
     /// stands, like any other. Otherwise both operands are `bool`.
     pub(super) fn logical(&mut self, whole: ExprId, is_and: bool, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(whole);
-        let span = self.design.expr_node(whole).span;
-        let in_event_position = self.event_slot == Some(whole);
+        let span = self.state.design.expr_node(whole).span;
+        let in_event_position = self.state.values.event_slot == Some(whole);
         let left = self.infer_event_position(lhs);
         match (is_and, left) {
             (true, Some(Ty::Event)) => {
-                let outer = std::mem::replace(&mut self.in_guard, true);
+                let outer = std::mem::replace(&mut self.state.values.in_guard, true);
                 self.check(rhs, &Ty::Bool);
-                self.in_guard = outer;
+                self.state.values.in_guard = outer;
                 Some(Ty::Event)
             }
             (false, Some(Ty::Event)) => {
                 match self.infer_event_position(rhs) {
                     Some(Ty::Event) | None => {}
-                    Some(other) => self.mismatch(file, self.design.expr_node(rhs).span, &Ty::Event, &other),
+                    Some(other) => self.mismatch(file, self.state.design.expr_node(rhs).span, &Ty::Event, &other),
                 }
                 Some(Ty::Event)
             }
@@ -104,12 +104,12 @@ impl Checker<'_> {
                     None
                 }
                 Some(Ty::Event) => {
-                    self.mismatch(file, self.design.expr_node(lhs).span, &Ty::Event, &Ty::Bool);
+                    self.mismatch(file, self.state.design.expr_node(lhs).span, &Ty::Event, &Ty::Bool);
                     None
                 }
                 Some(Ty::Bool) => Some(Ty::Bool),
                 Some(other) => {
-                    self.mismatch(file, self.design.expr_node(rhs).span, &Ty::Bool, &other);
+                    self.mismatch(file, self.state.design.expr_node(rhs).span, &Ty::Bool, &other);
                     Some(Ty::Bool)
                 }
                 None => None,
@@ -120,7 +120,7 @@ impl Checker<'_> {
             }
             (_, left) => {
                 if let Some(other) = left.filter(|t| *t != Ty::Bool) {
-                    self.mismatch(file, self.design.expr_node(lhs).span, &Ty::Bool, &other);
+                    self.mismatch(file, self.state.design.expr_node(lhs).span, &Ty::Bool, &other);
                 }
                 self.check(rhs, &Ty::Bool);
                 Some(Ty::Bool)
@@ -134,11 +134,11 @@ impl Checker<'_> {
     pub(super) fn negated_event(&mut self, whole: ExprId, operand: ExprId) -> Option<Ty> {
         if self.reads_events() {
             self.event_read_as_bool(operand);
-            self.exprs[operand.index()] = Some(Ty::Bool);
+            self.state.result.exprs[operand.index()] = Some(Ty::Bool);
             return Some(Ty::Bool);
         }
         let file = self.file_of_expr(whole);
-        let span = self.design.expr_node(whole).span;
+        let span = self.state.design.expr_node(whole).span;
         let message = "`!` applied to an `Event` outside a guard or a reaction body: `!` applies to a `bool` (§13 rule 1)".to_string();
         self.coded(file, "E0440", span, message, "`!` on an `Event`");
         None
@@ -149,7 +149,7 @@ impl Checker<'_> {
     /// (`impl Bit<Logic>`, §22.1.5).
     pub(super) fn edge_read(&mut self, expr: ExprId, builtin: Builtin, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let name = match builtin {
             Builtin::Changed => "changed",
             Builtin::Rise => "rise",
@@ -159,11 +159,11 @@ impl Checker<'_> {
             Some((_, Ty::Carrier { value, .. })) if builtin == Builtin::Changed || *value == Ty::Bool || self.logic_width(&value) == Some(1) => {
                 self.apply(expr, &[], args)?;
                 self.infer(recv);
-                self.builtins.insert(expr, builtin);
+                self.state.result.builtins.insert(expr, builtin);
                 Some(Ty::Event)
             }
             Some((_, Ty::Carrier { value, .. })) => {
-                self.refuse_with(file, span, AnalogForm::MethodOnBitItIsEdgeOf, [name.to_string(), value.name(self.design).to_string()]);
+                self.refuse_with(file, span, AnalogForm::MethodOnBitItIsEdgeOf, [name.to_string(), value.name(self.state.design).to_string()]);
                 None
             }
             Some((_, Ty::Node(_))) => {
@@ -184,7 +184,7 @@ impl Checker<'_> {
                 let Some(arg) = args.first() else { return };
                 if self.continuous(arg.value) {
                     let file = self.file_of_expr(arg.value);
-                    let span = self.design.expr_node(arg.value).span;
+                    let span = self.state.design.expr_node(arg.value).span;
                     let message = "the argument of `at` reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)`: it must be a discrete expression (§13 rule 11)".to_string();
                     self.coded(file, "E0442", span, message, "a continuous `at`");
                 }
@@ -196,7 +196,7 @@ impl Checker<'_> {
     /// `cross` and `at` outside an event position: `E0443` (§13 rule 10).
     pub(super) fn core_event_out_of_place(&mut self, expr: ExprId, name: &str, args: &[Arg]) {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let message = format!("`{name}` is a core module with an `Event` result: it is placed in an event position only (§13 rule 10)");
         self.coded(file, "E0443", span, message, "not in an event position");
         for arg in args {
@@ -207,7 +207,7 @@ impl Checker<'_> {
     /// The `digital` block `behavior`: the head of each reaction is an `Event` (`E0430`), and a generation `for`/`if` around
     /// reactions is typed per iteration (GN-19); a reaction body is typed by `reaction.rs`.
     pub(super) fn digital_block(&mut self, behavior: DeclId) {
-        let block = self.design.decl_data(behavior).clone();
+        let block = self.state.design.decl_data(behavior).clone();
         debug_assert!(matches!(&block.kind, DeclKind::Behavior(b) if b.kind == BehaviorKind::Digital));
         for child in block.children.iter().copied() {
             self.digital_item(child);
@@ -216,7 +216,7 @@ impl Checker<'_> {
 
     /// One item of a `digital` block, or of a generation in it: a reaction, or a generation whose items are these.
     fn digital_item(&mut self, child: DeclId) {
-        let item = self.design.decl_data(child).clone();
+        let item = self.state.design.decl_data(child).clone();
         match &item.kind {
             DeclKind::Reaction(r) => self.reaction(&r.clone(), item.file),
             DeclKind::Generation(_) => self.generation(child, true, |this, inner| this.digital_item(inner)),

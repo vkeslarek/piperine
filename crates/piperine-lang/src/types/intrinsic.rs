@@ -44,11 +44,11 @@ impl Intrinsic {
 impl Checker<'_> {
     /// Which §22.1 function `function` is, when it is the stdlib's own (`std/values.msl`).
     pub(super) fn intrinsic_of(&self, function: DeclId) -> Option<Intrinsic> {
-        let data = self.design.decl_data(function);
+        let data = self.state.design.decl_data(function);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(function) {
             return None;
         }
-        let parent = data.parent.map(|p| self.design.decl_data(p))?;
+        let parent = data.parent.map(|p| self.state.design.decl_data(p))?;
         let namespace = matches!(parent.kind, DeclKind::Namespace(_)).then(|| parent.name.as_ref().map(|n| n.text.as_str())).flatten()?;
         Intrinsic::named(namespace, &data.name.as_ref()?.text)
     }
@@ -56,14 +56,14 @@ impl Checker<'_> {
     /// A call of one of the two: its type from the arguments, the turbofish or the type the
     /// context expects, the contract's errors reported (`E0701`, `E0702`), the callee recorded.
     pub(super) fn intrinsic_call(&mut self, expr: ExprId, intrinsic: Intrinsic, args: &[Arg]) -> Option<Ty> {
-        let expected = self.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty);
+        let expected = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty);
         let result = match intrinsic {
             Intrinsic::ParseTable | Intrinsic::ParseHex => self.parsed_array(expr, intrinsic, args, expected)?,
             Intrinsic::TableModel => self.table_model_call(expr, args)?,
             Intrinsic::Logic => self.logic_call(expr, args, expected)?,
             Intrinsic::MatchesBits => self.matches_bits_call(expr, args)?,
         };
-        self.callees.insert(expr, Callee::Intrinsic(intrinsic));
+        self.state.result.callees.insert(expr, Callee::Intrinsic(intrinsic));
         Some(result)
     }
 
@@ -72,7 +72,7 @@ impl Checker<'_> {
     /// type for a hex image. `None` after a diagnostic.
     fn parsed_array(&mut self, expr: ExprId, intrinsic: Intrinsic, args: &[Arg], expected: Option<Ty>) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         self.apply(expr, &[Ty::Str], args)?;
         let name = if intrinsic == Intrinsic::ParseTable { "parse_table" } else { "parse_hex" };
         let Some(array) = expected.filter(|ty| matches!(ty, Ty::Array(..))) else {
@@ -87,7 +87,7 @@ impl Checker<'_> {
         };
         if !fits {
             let wanted = if intrinsic == Intrinsic::ParseTable { "an array of `f64` or of a tuple of `f64`" } else { "an array of one integer type" };
-            let message = format!("`{name}` gives {wanted}, not `{}` (§22.6.4)", array.name(self.design));
+            let message = format!("`{name}` gives {wanted}, not `{}` (§22.6.4)", array.name(self.state.design));
             self.coded(file, "E0180", span, message, "the array type does not fit");
             return None;
         }
@@ -102,8 +102,8 @@ impl Checker<'_> {
         let table = match args.get(1).and_then(|arg| self.infer(arg.value)) {
             Some(table @ Ty::Array(..)) => table,
             Some(other) => {
-                let span = self.design.expr_node(args[1].value).span;
-                self.mismatch_text(file, span, "[(f64, f64); N]", &other.name(self.design));
+                let span = self.state.design.expr_node(args[1].value).span;
+                self.mismatch_text(file, span, "[(f64, f64); N]", &other.name(self.state.design));
                 return None;
             }
             None => return None,
@@ -111,8 +111,8 @@ impl Checker<'_> {
         if let Ty::Array(element, _) = &table
             && **element != pair
         {
-            let span = self.design.expr_node(args[1].value).span;
-            self.mismatch_text(file, span, "[(f64, f64); N]", &table.name(self.design));
+            let span = self.state.design.expr_node(args[1].value).span;
+            self.mismatch_text(file, span, "[(f64, f64); N]", &table.name(self.state.design));
             return None;
         }
         self.apply(expr, &[Ty::F64, table, Ty::Str], args)?;
@@ -123,9 +123,9 @@ impl Checker<'_> {
 impl Checker<'_> {
     /// The struct `Logic` of the standard library (`std/logic.msl`), when the design holds it.
     fn library_logic(&self) -> Option<DeclId> {
-        (0..self.design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| {
-            let data = self.design.decl_data(*decl);
-            let in_logic = data.parent.is_some_and(|parent| self.design.decl_data(parent).name.as_ref().is_some_and(|name| name.text == "logic"));
+        (0..self.state.design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| {
+            let data = self.state.design.decl_data(*decl);
+            let in_logic = data.parent.is_some_and(|parent| self.state.design.decl_data(parent).name.as_ref().is_some_and(|name| name.text == "logic"));
             matches!(data.kind, DeclKind::Struct(_)) && data.name.as_ref().is_some_and(|name| name.text == "Logic") && in_logic && self.is_std(*decl)
         })
     }
@@ -144,7 +144,7 @@ impl Checker<'_> {
 
     /// The text of a string literal argument, `None` for any other expression.
     fn literal_logic_pattern(&self, arg: &Arg) -> Option<String> {
-        match &self.design.expr_node(arg.value).kind {
+        match &self.state.design.expr_node(arg.value).kind {
             ExprKind::Lit(lit) => lit.str_value(),
             _ => None,
         }
@@ -154,7 +154,7 @@ impl Checker<'_> {
     /// `width` (§22.1.4 rule 2). The levels it names, `None` after the diagnostic.
     fn checked_pattern(&mut self, arg: &Arg, text: &str, width: Option<u64>) -> Option<usize> {
         let file = self.file_of_expr(arg.value);
-        let span = self.design.expr_node(arg.value).span;
+        let span = self.state.design.expr_node(arg.value).span;
         let pattern = match LogicPattern::parse(text) {
             Ok(pattern) => pattern,
             Err(character) => {
@@ -174,7 +174,7 @@ impl Checker<'_> {
     /// `logic(pattern)`: a `Logic<N>`, `N` from the expected type or from the length of the literal pattern.
     fn logic_call(&mut self, expr: ExprId, args: &[Arg], expected: Option<Ty>) -> Option<Ty> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         self.apply(expr, &[Ty::Str], args)?;
         let Some(logic) = self.library_logic() else {
             self.refuse(file, span, AnalogForm::LogicWithoutStandardLibraryLogic);
@@ -207,8 +207,8 @@ impl Checker<'_> {
         };
         let found = self.infer(subject.value)?;
         let Some(width) = self.logic_width(&found) else {
-            let span = self.design.expr_node(subject.value).span;
-            self.mismatch_text(file, span, "a `Logic<N>`", &found.name(self.design));
+            let span = self.state.design.expr_node(subject.value).span;
+            self.mismatch_text(file, span, "a `Logic<N>`", &found.name(self.state.design));
             return None;
         };
         self.apply(expr, &[found, Ty::Str], args)?;

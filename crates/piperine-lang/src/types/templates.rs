@@ -17,7 +17,7 @@ impl Checker<'_> {
         self.require_bound_params(expr, module, fields);
         self.require_const_params(fields);
         // a template of a generic module names its arguments or lets them be inferred (§8.4.3); they travel with the template
-        let arguments = if self.design.decl_data(module).generics_span.is_some() {
+        let arguments = if self.state.design.decl_data(module).generics_span.is_some() {
             let expected = match expected {
                 Some(Ty::Module(wanted)) if wanted.decl == module => Some(wanted),
                 _ => None,
@@ -30,16 +30,16 @@ impl Checker<'_> {
         // the template's module is placed at elaboration, through a callable param whose module the checker never names
         self.reach(module);
         let ty = Ty::Module(Nominal { decl: module, arguments });
-        self.exprs[expr.index()] = Some(ty.clone());
+        self.state.result.exprs[expr.index()] = Some(ty.clone());
         Some(ty)
     }
 
     /// The module a bare name `expr` names (`Cell`, read as the template `Cell {}`, §8.4.1 amendment), `None` for any other
     /// expression.
     pub(super) fn bare_module(&self, expr: ExprId) -> Option<DeclId> {
-        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-            Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, DeclKind::Module(_)) => Some(decl),
+        let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
+            Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Module(_)) => Some(decl),
             _ => None,
         }
     }
@@ -47,11 +47,11 @@ impl Checker<'_> {
     /// Every required param of `module` (§8.1.17, `ParamRequirement`) is bound in the template (§8.4.2), else `E0319` naming
     /// the first one; an `Option<T>` param left out is `None`, as at a placement.
     fn require_bound_params(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit]) {
-        let data = self.design.decl_data(module).clone();
+        let data = self.state.design.decl_data(module).clone();
         let module_name = data.name.as_ref().map_or("", |name| name.text.as_str()).to_string();
         let mut missing = None;
         for child in &data.children {
-            let child_data = self.design.decl_data(*child).clone();
+            let child_data = self.state.design.decl_data(*child).clone();
             let DeclKind::Param(param) = &child_data.kind else { continue };
             if fields.iter().any(|field| field.res == Resolution::Decl(*child)) {
                 continue;
@@ -63,7 +63,7 @@ impl Checker<'_> {
             }
         }
         let Some(name) = missing else { return };
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         let message = format!("the template of `{module_name}` leaves the required param `{name}` unbound (§8.4.2)");
         self.report(file, Diagnostic::new("E0319", message, span, "required param not bound"));
     }
@@ -72,7 +72,7 @@ impl Checker<'_> {
     fn require_const_params(&mut self, fields: &[FieldInit]) {
         for field in fields {
             let Some(read) = self.runtime_read(field.value) else { continue };
-            let (file, span) = (self.file_of_expr(field.value), self.design.expr_node(field.value).span);
+            let (file, span) = (self.file_of_expr(field.value), self.state.design.expr_node(field.value).span);
             let message = format!("a template is a const expression and this param value reads {read} (§8.4.6)");
             self.report(file, Diagnostic::new("E0362", message, span, "not a const expression"));
         }

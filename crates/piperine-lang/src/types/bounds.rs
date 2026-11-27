@@ -56,7 +56,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 }
                 let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
                 let Some(wanted) = wanted else { return false };
-                let table = std::rc::Rc::clone(&self.checker.impls);
+                let table = std::rc::Rc::clone(&self.checker.state.traits);
                 let checker = &mut *self.checker;
                 let entries = table.implementing(ty, *decl, &mut |candidate, bound| BoundCheck::new(&mut *checker).satisfies(candidate, bound));
                 // a bound with no arguments asks for the trait whatever it is written with
@@ -83,8 +83,8 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
 impl Checker<'_> {
     /// The bounds written on the type parameter `param`, in order.
     pub(super) fn bounds_of(&self, param: DeclId) -> Vec<Bound> {
-        let mut found: Vec<Bound> = match &self.design.decl_data(param).kind {
-            DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => bounds.iter().filter_map(|path| GenericSignature::bound(self.design, *path)).collect(),
+        let mut found: Vec<Bound> = match &self.state.design.decl_data(param).kind {
+            DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => bounds.iter().filter_map(|path| GenericSignature::bound(self.state.design, *path)).collect(),
             _ => Vec::new(),
         };
         // §3.1.2: the parameters of an `impl` take their bounds from the declaration of the type it is written for
@@ -95,13 +95,13 @@ impl Checker<'_> {
     /// The bounds the declaration gives the parameter `param` of an `impl` (`impl<T> Window<T>` with
     /// `struct Window<T: PartialOrd>`): those of the declaration's parameter written at the same place.
     fn inherited_bounds(&self, param: DeclId) -> Vec<Bound> {
-        let Some(owner) = self.design.decl_data(param).parent else { return Vec::new() };
-        let DeclKind::Impl(data) = &self.design.decl_data(owner).kind else { return Vec::new() };
-        let crate::pom::TypeKind::Path(path) = &self.design.type_node(data.self_ty).kind else { return Vec::new() };
-        let Some(segment) = self.design.path_node(*path).segments.last() else { return Vec::new() };
+        let Some(owner) = self.state.design.decl_data(param).parent else { return Vec::new() };
+        let DeclKind::Impl(data) = &self.state.design.decl_data(owner).kind else { return Vec::new() };
+        let crate::pom::TypeKind::Path(path) = &self.state.design.type_node(data.self_ty).kind else { return Vec::new() };
+        let Some(segment) = self.state.design.path_node(*path).segments.last() else { return Vec::new() };
         let (Resolution::Decl(target), Some(crate::pom::GenericArgsNode::Angle { args, .. })) = (segment.res, &segment.args) else { return Vec::new() };
-        let written = args.iter().position(|arg| matches!(arg, crate::pom::GenericArgNode::Type(ty) if matches!(self.design.type_resolution(*ty), Resolution::Decl(decl) if decl == param)));
-        let declared = GenericSignature::of(self.design, target);
+        let written = args.iter().position(|arg| matches!(arg, crate::pom::GenericArgNode::Type(ty) if matches!(self.state.design.type_resolution(*ty), Resolution::Decl(decl) if decl == param)));
+        let declared = GenericSignature::of(self.state.design, target);
         written.and_then(|at| declared.parameters().get(at)).map_or_else(Vec::new, |parameter| parameter.bounds.clone())
     }
 
@@ -117,12 +117,12 @@ impl Checker<'_> {
     /// The type of one input of an `Fn` bound: a bundle input (`Fn(Cell)`, `Fn(flip Cell)`) is named by its `struct`, as a port of that
     /// bundle is; the view is the bound's own, read with [`Checker::callable_views`].
     pub(super) fn bound_input_type(&mut self, input: TypeId) -> Option<Ty> {
-        if matches!(self.design.type_node(input).kind, TypeKind::Flip(_)) {
+        if matches!(self.state.design.type_node(input).kind, TypeKind::Flip(_)) {
             return self.bundle_type(input);
         }
-        let outer = std::mem::replace(&mut self.naming_bundle, true);
+        let outer = std::mem::replace(&mut self.state.modules.naming_bundle, true);
         let lowered = self.lower_type(input);
-        self.naming_bundle = outer;
+        self.state.modules.naming_bundle = outer;
         lowered
     }
 
@@ -140,7 +140,7 @@ impl Checker<'_> {
     /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
     pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
         let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return None };
-        if matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+        if matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return self.module_param_callable(decl).map(|_| decl);
         }
         let Some(Ty::Param(param)) = self.binding_type(decl) else { return None };
@@ -151,14 +151,14 @@ impl Checker<'_> {
     /// that failed to lower): the failure is already reported.
     pub(super) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
         let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return false };
-        let DeclKind::Param(data) = &self.design.decl_data(decl).kind else { return false };
-        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.design, parameter))
+        let DeclKind::Param(data) = &self.state.design.decl_data(decl).kind else { return false };
+        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.state.design, parameter))
     }
 
     /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
     /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
     pub(super) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
-        let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return None };
+        let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { return None };
         match self.lower_type(data.ty)? {
             Ty::Param(parameter) => self.callable_of(parameter),
             _ => None,
@@ -176,7 +176,7 @@ impl Checker<'_> {
             }
             return None;
         }
-        if matches!(self.design.decl_data(parameter).kind, DeclKind::Param(_)) {
+        if matches!(self.state.design.decl_data(parameter).kind, DeclKind::Param(_)) {
             let Some(Ty::Fn(params, result)) = self.module_param_callable(parameter) else { return None };
             let views = self.callable_views(parameter);
             self.connect_through_bound(expr, &params, &views, args)?;
@@ -190,7 +190,7 @@ impl Checker<'_> {
     /// argument of its type. `None` after an arity mismatch.
     fn connect_through_bound(&mut self, expr: ExprId, params: &[Ty], views: &[BundleView], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         if args.len() != params.len() {
             self.arity_mismatch(file, span, params.len(), args);
             return None;
@@ -225,16 +225,16 @@ impl Checker<'_> {
     /// The view each input of the `Fn` bound of the template param `param` takes a bundle in (`Fn(Pipe)` a producer, `Fn(flip Pipe)`
     /// a consumer, §7 rules 3 to 5), in order.
     fn callable_views(&mut self, param: DeclId) -> Vec<BundleView> {
-        let DeclKind::Param(data) = &self.design.decl_data(param).kind else { return Vec::new() };
+        let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { return Vec::new() };
         let Some(Ty::Param(parameter)) = self.lower_type(data.ty) else { return Vec::new() };
         let inputs = self.callable_bound(parameter).map(|(inputs, _)| inputs).unwrap_or_default();
-        inputs.iter().map(|input| BundleView::of_port(self.design, None, *input)).collect()
+        inputs.iter().map(|input| BundleView::of_port(self.state.design, None, *input)).collect()
     }
 
     /// The type parameter a path owner names (`T` of `T::WIDTH`), when it is one.
     pub(super) fn parameter_owner(&self, owner: Resolution) -> Option<DeclId> {
         match owner {
-            Resolution::Decl(decl) if matches!(self.design.decl_data(decl).kind, DeclKind::GenericParam(GenericParamData::Type { .. })) => Some(decl),
+            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::GenericParam(GenericParamData::Type { .. })) => Some(decl),
             _ => None,
         }
     }
@@ -260,11 +260,11 @@ impl Checker<'_> {
     /// `T::decode(levels)` on a type parameter bound by `Repr`: an `Option<T>` from `[bool; T::WIDTH]`
     /// (§2); `E0161` without the bound. `None` when `callee` is not such a path.
     pub(super) fn parameter_decode(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Option<Ty>> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        let segments = self.design.path_node(*path).segments.clone();
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        let segments = self.state.design.path_node(*path).segments.clone();
         let [owner, member] = segments.as_slice() else { return None };
         let param = self.parameter_owner(owner.res).filter(|_| member.name.text == "decode" && matches!(member.res, Resolution::Deferred(_) | Resolution::Builtin(_)))?;
-        let (file, span) = (self.file_of_expr(expr), self.design.expr_node(expr).span);
+        let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         if self.require_bound(param, &Bound::Repr, "decode", file, span).is_none() {
             return Some(None);
         }
@@ -286,14 +286,14 @@ impl Checker<'_> {
             // the arguments the bound writes for the trait's own parameters (`C: Convert<f64>`) replace them in the
             // signature, and the elaborator picks the `impl` of that argument list (GN-04)
             let wanted: Option<Vec<Ty>> = trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect();
-            if let (Some(wanted), Some(trait_decl)) = (wanted.filter(|wanted| !wanted.is_empty()), self.design.decl_data(function).parent) {
+            if let (Some(wanted), Some(trait_decl)) = (wanted.filter(|wanted| !wanted.is_empty()), self.state.design.decl_data(function).parent) {
                 let signature = self.generic_signature(trait_decl);
                 let mut bound = Substitution::new();
                 for (parameter, argument) in signature.parameters().iter().zip(&wanted) {
                     bound.bind(parameter.decl, GenericValue::Type(argument.clone()));
                 }
-                self.bound_substitution = Some(bound);
-                self.bound_arguments.insert(call.0, wanted);
+                self.state.generics.bound_substitution = Some(bound);
+                self.state.result.bound_arguments.insert(call.0, wanted);
             }
             return self.method_call_of(call.0, call.1, &Ty::Param(param), function, args);
         }
@@ -301,7 +301,7 @@ impl Checker<'_> {
             return self.parameter_encode(param, args, file, method_span);
         }
         let given: Vec<String> = self.bounds_of(param).iter().map(|bound| self.bound_name(bound)).collect();
-        let parameter = Ty::Param(param).name(self.design);
+        let parameter = Ty::Param(param).name(self.state.design);
         let hint = if name == "clone" {
             "every value is copied; delete the name".to_string()
         } else if let Some(bound) = Self::bound_giving(name) {
@@ -321,15 +321,15 @@ impl Checker<'_> {
     /// The function `name` a trait gives a value of the type parameter `param`: an item of a trait that
     /// bounds it (supertraits included), or, when `param` is a trait's own `Self`, of that trait.
     fn trait_method_of(&self, param: DeclId, name: &str) -> Option<(DeclId, Vec<TypeId>)> {
-        let own = matches!(self.design.decl_data(param).kind, DeclKind::Trait(_)).then_some((param, Vec::new()));
+        let own = matches!(self.state.design.decl_data(param).kind, DeclKind::Trait(_)).then_some((param, Vec::new()));
         let bounded = self.bounds_of(param).into_iter().filter_map(|bound| if let Bound::Trait { decl, arguments } = bound { Some((decl, arguments)) } else { None });
         let mut pending: Vec<(DeclId, Vec<TypeId>)> = own.into_iter().chain(bounded).collect();
         while let Some((tr, arguments)) = pending.pop() {
-            if let Some(item) = self.impls.item(tr, name).filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Fn(_))) {
+            if let Some(item) = self.state.traits.item(tr, name).filter(|item| matches!(self.state.design.decl_data(*item).kind, DeclKind::Fn(_))) {
                 return Some((item, arguments));
             }
             // a supertrait's arguments are its own, not the bound's
-            pending.extend(self.impls.supertraits(tr).into_iter().map(|supertrait| (supertrait, Vec::new())));
+            pending.extend(self.state.traits.supertraits(tr).into_iter().map(|supertrait| (supertrait, Vec::new())));
         }
         None
     }
@@ -339,7 +339,7 @@ impl Checker<'_> {
         if self.bounds_of(param).contains(bound) {
             return Some(());
         }
-        let parameter = Ty::Param(param).name(self.design);
+        let parameter = Ty::Param(param).name(self.state.design);
         let needed = self.bound_name(bound);
         let message = format!("`{parameter}::{member}` needs the bound `{needed}`, which the bounds of `{parameter}` do not give (§3 rule 9): add `{parameter}: {needed}`");
         self.coded(file, "E0161", span, message, "a member no bound gives");
@@ -349,7 +349,7 @@ impl Checker<'_> {
     /// The bound as it is written, for messages.
     pub(super) fn bound_name(&self, bound: &Bound) -> String {
         match bound {
-            Bound::Trait { decl, .. } => self.design.decl_data(*decl).name.as_ref().map_or_else(|| "a trait".to_string(), |n| n.text.clone()),
+            Bound::Trait { decl, .. } => self.state.design.decl_data(*decl).name.as_ref().map_or_else(|| "a trait".to_string(), |n| n.text.clone()),
             Bound::Library(name) => (*name).to_string(),
             Bound::Repr => "Repr".to_string(),
             Bound::Nature => "Nature".to_string(),
@@ -363,8 +363,8 @@ impl Checker<'_> {
 
     /// The name a type is written with: the last segment of its path, `_` for any other form.
     fn written_type_name(&self, ty: TypeId) -> String {
-        match &self.design.type_node(ty).kind {
-            crate::pom::TypeKind::Path(path) => self.design.path_node(*path).segments.last().map_or_else(|| "_".to_string(), |segment| segment.name.text.clone()),
+        match &self.state.design.type_node(ty).kind {
+            crate::pom::TypeKind::Path(path) => self.state.design.path_node(*path).segments.last().map_or_else(|| "_".to_string(), |segment| segment.name.text.clone()),
             _ => "_".to_string(),
         }
     }

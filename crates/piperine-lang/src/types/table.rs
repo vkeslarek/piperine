@@ -247,6 +247,41 @@ impl PartialEq for Types<'_> {
 }
 
 impl<'d> Types<'d> {
+    /// The empty table of a check of `design`, which the check fills as it goes.
+    pub(super) fn empty(design: &'d Design) -> Self {
+        Types {
+            design,
+            exprs: vec![None; design.expr_count()],
+            locals: BTreeMap::new(),
+            methods: BTreeMap::new(),
+            callees: BTreeMap::new(),
+            bindings: BTreeMap::new(),
+            reached: Vec::new(),
+            somes: BTreeSet::new(),
+            carriers: BTreeMap::new(),
+            deferred_coverage: super::coverage::DeferredCoverage::default(),
+            builtins: BTreeMap::new(),
+            event_reads: BTreeSet::new(),
+            widths: BTreeMap::new(),
+            defaults: BTreeMap::new(),
+            layouts: BTreeMap::new(),
+            enum_tags: BTreeMap::new(),
+            written: BTreeMap::new(),
+            obligations: BTreeMap::new(),
+            handles: BTreeSet::new(),
+            drive_impls: BTreeMap::new(),
+            carrier_drive_impls: BTreeMap::new(),
+            resolve_tables: BTreeMap::new(),
+            bound_arguments: BTreeMap::new(),
+            instantiations: BTreeMap::new(),
+            template_items: BTreeMap::new(),
+            access_roles: BTreeMap::new(),
+            continuous: BTreeSet::new(),
+            emits: BTreeMap::new(),
+            assigned: BTreeSet::new(),
+        }
+    }
+
     /// Check `top`, a module of the root crate, and everything it reaches.
     ///
     /// A design that already holds diagnostics gives them back and nothing is checked; so does

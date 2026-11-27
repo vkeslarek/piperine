@@ -16,7 +16,7 @@ impl Checker<'_> {
     /// (`Types::instantiation`); `None` after a diagnostic.
     pub(super) fn generic_placement(&mut self, expr: ExprId, callee: ExprId, module: DeclId, args: &[Arg], fields: &[FieldInit]) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
         let declared = self.module_port_types(module)?;
         let mut inference = Inference::new(&signature);
@@ -31,7 +31,7 @@ impl Checker<'_> {
     /// after a diagnostic, `E0181` for an argument nothing gives.
     pub(super) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Nominal>) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, expr, module, file, span)?;
@@ -53,11 +53,11 @@ impl Checker<'_> {
     /// instantiation of `expr` (a placement or a template).
     fn record_module_instantiation(&mut self, expr: ExprId, module: DeclId, signature: &GenericSignature, mut inference: Inference<'_>) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         let substitution = self.complete_arguments(&mut inference, signature, module, module, file, span)?;
         let arguments: Vec<GenericValue> = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.arguments_satisfy_bounds(signature, &arguments, module, file, span)?;
-        self.instantiations.insert(expr, Instantiation { item: module, arguments });
+        self.state.result.instantiations.insert(expr, Instantiation { item: module, arguments });
         Some(substitution)
     }
 
@@ -65,7 +65,7 @@ impl Checker<'_> {
     /// substitution its ports and result are read under.
     pub(super) fn template_substitution(&mut self, callee: ExprId, module: DeclId) -> Substitution {
         let mut substitution = Substitution::new();
-        let Some(Ty::Module(template)) = self.exprs[callee.index()].clone() else { return substitution };
+        let Some(Ty::Module(template)) = self.state.result.exprs[callee.index()].clone() else { return substitution };
         for (parameter, argument) in self.generic_signature(module).parameters().iter().zip(template.arguments) {
             substitution.bind(parameter.decl, argument);
         }
@@ -74,15 +74,15 @@ impl Checker<'_> {
 
     /// The type of each port of `module` as it is declared, its generic parameters opaque; `None` when one is refused.
     pub(super) fn module_port_types(&mut self, module: DeclId) -> Option<Vec<Ty>> {
-        let ports: Vec<(DeclId, TypeId)> = self.design.decl_data(module).children.iter().filter_map(|child| match &self.design.decl_data(*child).kind {
+        let ports: Vec<(DeclId, TypeId)> = self.state.design.decl_data(module).children.iter().filter_map(|child| match &self.state.design.decl_data(*child).kind {
             DeclKind::Port(port) => Some((*child, port.ty)),
             _ => None,
         }).collect();
-        let outer = std::mem::replace(&mut self.generic_item, Some(module));
+        let outer = std::mem::replace(&mut self.state.generics.generic_item, Some(module));
         // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), an array of bundles as the
         // array of it (`[Lane; N]`), so a connection can teach `T` and `N`
-        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.design.is_bundle_owner(*port) { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
-        self.generic_item = outer;
+        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.state.design.is_bundle_owner(*port) { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
+        self.state.generics.generic_item = outer;
         types
     }
 
@@ -96,13 +96,13 @@ impl Checker<'_> {
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
             let declared_parameter = match port.innermost() {
                 Ty::Param(parameter) => Some(parameter),
-                Ty::Carrier { nature, .. } if matches!(self.design.decl_data(*nature).kind, DeclKind::GenericParam(_)) => Some(nature),
+                Ty::Carrier { nature, .. } if matches!(self.state.design.decl_data(*nature).kind, DeclKind::GenericParam(_)) => Some(nature),
                 _ => None,
             };
             if let (Some(parameter), Ty::Node(nature) | Ty::Carrier { nature, .. }) = (declared_parameter, given.innermost()) {
                 match natures.iter().find(|(known, _)| known == parameter) {
-                    Some((_, first)) if !NatureRules::compatible(self.design, *first, *nature) => {
-                        let span = self.design.expr_node(arg.value).span;
+                    Some((_, first)) if !NatureRules::compatible(self.state.design, *first, *nature) => {
+                        let span = self.state.design.expr_node(arg.value).span;
                         self.mismatch(file, span, &Ty::Node(*first), &Ty::Node(*nature));
                         return None;
                     }
@@ -120,10 +120,10 @@ impl Checker<'_> {
     fn learn_from_templates(&mut self, inference: &mut Inference<'_>, module: DeclId, fields: &[FieldInit]) -> Option<()> {
         for field in fields {
             let Resolution::Decl(param) = field.res else { continue };
-            let DeclKind::Param(data) = &self.design.decl_data(param).kind else { continue };
-            let outer = std::mem::replace(&mut self.generic_item, Some(module));
+            let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { continue };
+            let outer = std::mem::replace(&mut self.state.generics.generic_item, Some(module));
             let declared = self.lower_type(data.ty);
-            self.generic_item = outer;
+            self.state.generics.generic_item = outer;
             let Some(declared @ Ty::Param(parameter)) = declared else { continue };
             if !self.bounds_of(parameter).iter().any(|bound| matches!(bound, super::Bound::Callable { .. })) {
                 continue;
@@ -137,16 +137,16 @@ impl Checker<'_> {
 
     /// The type of a port as a placement sees it: its declared type under the arguments the placement gives.
     pub(super) fn port_type_under_placement(&mut self, ty: TypeId) -> Option<Ty> {
-        let declared = match &self.placement_substitution {
+        let declared = match &self.state.generics.placement_substitution {
             Some(_) => {
-                let outer = std::mem::replace(&mut self.generic_item, self.placing.last().copied().flatten());
+                let outer = std::mem::replace(&mut self.state.generics.generic_item, self.state.modules.placing.last().copied().flatten());
                 let declared = self.port_type(ty);
-                self.generic_item = outer;
+                self.state.generics.generic_item = outer;
                 declared
             }
             None => self.port_type(ty),
         };
-        match (&self.placement_substitution, declared) {
+        match (&self.state.generics.placement_substitution, declared) {
             (Some(substitution), Some(declared)) => Some(substitution.apply(&declared)),
             (_, declared) => declared,
         }

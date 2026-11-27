@@ -26,16 +26,16 @@ impl Checker<'_> {
     pub(super) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
         let ty = self.port_type(port.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
-            self.carriers.insert(decl, carrier.clone());
+            self.state.result.carriers.insert(decl, carrier.clone());
         }
-        let span = self.design.type_node(port.ty).span;
+        let span = self.state.design.type_node(port.ty).span;
         // an array of carriers is directed as its element is (CV-23): the direction is the array's
         let kind = ty.as_ref().map(|t| t.innermost().clone());
         match (&kind, port.dir) {
-            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).one_driver => {
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.state.design, *nature).one_driver => {
                 self.coded(file, "E0310", span, "a port of a discrete nature takes `in` or `out` (§8.1.5)".to_string(), "no direction");
             }
-            (Some(Ty::Carrier { nature, .. }), Some(_)) if NatureRules::of(self.design, *nature).resolved => {
+            (Some(Ty::Carrier { nature, .. }), Some(_)) if NatureRules::of(self.state.design, *nature).resolved => {
                 self.coded(file, "E0310", span, "a port of a resolved nature takes no direction: its drives are combined by `resolve` (§8.1.5)".to_string(), "unexpected direction");
             }
             (Some(Ty::Node(_)), Some(_)) => {
@@ -55,12 +55,12 @@ impl Checker<'_> {
                 self.within(Context::Const, |this| this.check_as(default, &value, "E0210"));
             }
             // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
-            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.design, *nature).resolved => {
+            (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.state.design, *nature).resolved => {
                 self.initial_reads(default);
                 self.resolved_initial(decl, *nature, default);
             }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
-                let span = self.design.expr_node(default).span;
+                let span = self.state.design.expr_node(default).span;
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
                 self.infer(default);
             }
@@ -70,7 +70,7 @@ impl Checker<'_> {
                 self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
             }
             _ => {
-                let span = self.design.expr_node(default).span;
+                let span = self.state.design.expr_node(default).span;
                 self.refuse(file, span, StructureForm::PortDefaultValue);
                 self.infer(default);
             }
@@ -91,9 +91,9 @@ impl Checker<'_> {
             // a param of a type parameter bound by `Fn(P)` (`cell: C`, §8.4.1) holds a template of a module that fits `P`
             Ty::Param(parameter) if self.callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
             other => {
-                let node = self.design.type_node(param.ty).clone();
-                let file = self.design.decl_data(node.owner).file;
-                self.refuse_with(file, node.span, StructureForm::ParamOfType, [other.name(self.design).to_string()]);
+                let node = self.state.design.type_node(param.ty).clone();
+                let file = self.state.design.decl_data(node.owner).file;
+                self.refuse_with(file, node.span, StructureForm::ParamOfType, [other.name(self.state.design).to_string()]);
                 None
             }
         });
@@ -109,11 +109,11 @@ impl Checker<'_> {
     /// A `where` may read its own param and earlier ones only: a read of a param of the same
     /// module declared after `decl` is `E0318` naming it (§8.1.1).
     fn where_reads_later_param(&mut self, decl: DeclId, expr: ExprId) {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         if let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Decl(read)) = self.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(Resolution::Decl(read)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
         {
-            let (own, other) = (self.design.decl_data(decl), self.design.decl_data(read));
+            let (own, other) = (self.state.design.decl_data(decl), self.state.design.decl_data(read));
             if matches!(other.kind, DeclKind::Param(_)) && other.parent == own.parent && other.span.start > own.span.start {
                 let name = other.name.as_ref().map_or("?", |n| n.text.as_str()).to_string();
                 let file = self.file_of_expr(expr);
@@ -121,7 +121,7 @@ impl Checker<'_> {
                 self.report(file, Diagnostic::new("E0318", message, node.span, format!("`{name}` is declared later")));
             }
         }
-        for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
+        for child in crate::pom::BodyWalk::new(self.state.design).expression_children(&node.kind) {
             self.where_reads_later_param(decl, child);
         }
     }
@@ -133,19 +133,19 @@ impl Checker<'_> {
         let ty = self.port_type(signal.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             let held = self.generated_type(decl, carrier.clone());
-            self.carriers.insert(decl, held);
+            self.state.result.carriers.insert(decl, held);
         }
         // a generated node is an array of nodes, one level for each generation `for` around it (§8.2.23)
         if let Some(node @ Ty::Node(_)) = ty.as_ref()
             && !self.generation_loops(decl).is_empty()
         {
             let held = self.generated_type(decl, node.clone());
-            self.carriers.insert(decl, held);
+            self.state.result.carriers.insert(decl, held);
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
         self.initial_reads(init);
         if let Ty::Carrier { nature, .. } = &ty
-            && NatureRules::of(self.design, *nature).resolved
+            && NatureRules::of(self.state.design, *nature).resolved
         {
             return self.resolved_initial(decl, *nature, init);
         }
@@ -162,10 +162,10 @@ impl Checker<'_> {
     /// Types the `let` item `decl` of a module body once: in the body's order, or earlier where a read of its name needs its
     /// type (§8.2: the items of a body appear in any order, and every name is visible in the whole body).
     pub(super) fn type_module_let(&mut self, decl: DeclId) {
-        if !self.lets_typed.insert(decl) {
+        if !self.state.modules.lets_typed.insert(decl) {
             return;
         }
-        let DeclKind::Let(data) = self.design.decl_data(decl).kind.clone() else { return };
+        let DeclKind::Let(data) = self.state.design.decl_data(decl).kind.clone() else { return };
         // typed as the body types it, whatever position reads it first (a param default, a `where`)
         self.within(super::check::Context::Module, |this| this.module_let(decl, &data));
     }
@@ -174,14 +174,14 @@ impl Checker<'_> {
     /// text position is typed here first (§8.2: the items of a body appear in any order), so no site depends on text order.
     pub(super) fn binding_type(&mut self, binding: DeclId) -> Option<Ty> {
         self.type_module_let_read(binding);
-        self.locals.get(&binding).cloned()
+        self.state.result.locals.get(&binding).cloned()
     }
 
     /// Types the module-body `let` that binds `binding` when a read of it comes before it in the body (§8.2: items appear in any
     /// order); nothing for a binding typed already, one being typed (a self read, §8.2.16) or any other name.
     pub(super) fn type_module_let_read(&mut self, binding: DeclId) {
-        if !self.locals.contains_key(&binding)
-            && !self.lets_open.contains_key(&binding)
+        if !self.state.result.locals.contains_key(&binding)
+            && !self.state.modules.lets_open.contains_key(&binding)
             && let Some(item) = self.untyped_module_let(binding)
         {
             self.type_module_let(item);
@@ -190,17 +190,17 @@ impl Checker<'_> {
 
     /// The `let` item of a module body that binds `binding` and is not typed yet, outside generation (generation types its own).
     pub(super) fn untyped_module_let(&self, binding: DeclId) -> Option<DeclId> {
-        let item = self.design.decl_data(binding).parent?;
-        let DeclKind::Let(_) = self.design.decl_data(item).kind else { return None };
-        let owner = self.design.decl_data(item).parent?;
-        (matches!(self.design.decl_data(owner).kind, DeclKind::Module(_)) && !self.lets_typed.contains(&item)).then_some(item)
+        let item = self.state.design.decl_data(binding).parent?;
+        let DeclKind::Let(_) = self.state.design.decl_data(item).kind else { return None };
+        let owner = self.state.design.decl_data(item).parent?;
+        (matches!(self.state.design.decl_data(owner).kind, DeclKind::Module(_)) && !self.state.modules.lets_typed.contains(&item)).then_some(item)
     }
 
     /// `let x = value;` in a module body: the binding takes the type of the value (a placement
     /// gives it the placed module).
     pub(super) fn module_let(&mut self, decl: DeclId, data: &LetData) {
-        let pat = self.design.pat_node(data.pat).clone();
-        let file = self.design.decl_data(pat.owner).file;
+        let pat = self.state.design.pat_node(data.pat).clone();
+        let file = self.state.design.decl_data(pat.owner).file;
         if matches!(pat.kind, PatKind::Tuple(_)) {
             self.let_pattern(file, data.pat, None, Some(data.value), None);
             return;
@@ -210,10 +210,10 @@ impl Checker<'_> {
             self.infer_event_position(data.value);
             return;
         };
-        self.lets_open.insert(*binding, data.value);
+        self.state.modules.lets_open.insert(*binding, data.value);
         let reported = self.reported();
         let ty = self.infer_event_position(data.value);
-        self.lets_open.remove(binding);
+        self.state.modules.lets_open.remove(binding);
         // a template whose value was refused (a choice of two modules, `E0180`) holds no template to place: its reads and
         // calls add nothing to that diagnostic
         let ty = match ty {
@@ -221,20 +221,20 @@ impl Checker<'_> {
             other => other,
         };
         if let Some(closure) = self.closure_expr(data.value) {
-            self.closure_locals.insert(*binding, closure);
+            self.state.values.closure_locals.insert(*binding, closure);
         }
         match ty {
             Some(Ty::Str) => {
                 self.refuse(file, pat.span, StructureForm::StringLiteralBoundByLet);
-                self.poisoned.insert(*binding);
+                self.state.values.poisoned.insert(*binding);
             }
             Some(ty) => {
                 // inside a generation `for` the binding is the array of its element (§8.2.23)
                 let held = self.generated_type(decl, ty);
-                self.locals.insert(*binding, held);
+                self.state.result.locals.insert(*binding, held);
             }
             None => {
-                self.poisoned.insert(*binding);
+                self.state.values.poisoned.insert(*binding);
             }
         }
     }
@@ -243,17 +243,17 @@ impl Checker<'_> {
     /// reached; each node argument has the nature of its port, their count is the port count
     /// (`E0312`), each param value the type of its param.
     pub(super) fn placement(&mut self, expr: ExprId, module: DeclId) -> Option<Ty> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
         // §8.3.4: a function, a closure and a reaction body place no instance, nor does a const
         // context.
-        if matches!(self.context, Context::Function | Context::Reaction | Context::Const) {
-            let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            if self.context == Context::Const {
+        if matches!(self.state.values.context, Context::Function | Context::Reaction | Context::Const) {
+            let name = self.state.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            if self.state.values.context == Context::Const {
                 self.coded(file, "E0352", node.span, format!("`{name}` is placed in a const context: a result is not fixed during a solve (§8.3.4)"), "placement in a const context");
             } else {
-                let place = if self.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
+                let place = if self.state.values.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
                 self.coded(file, "E0350", node.span, format!("`{name}` is placed in {place}: it places no instance (§8.3.4)"), "placement out of place");
             }
             for arg in args {
@@ -261,17 +261,17 @@ impl Checker<'_> {
             }
             return None;
         }
-        let callee_node = self.design.expr_node(*callee).clone();
+        let callee_node = self.state.design.expr_node(*callee).clone();
         let mut through_value = false;
         let fields: Vec<FieldInit> = match &callee_node.kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module && params.is_none() => fields.clone(),
-            ExprKind::Path(_) if matches!(self.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
+            ExprKind::Path(_) if matches!(self.state.design.decl_data(module).kind, DeclKind::Module(_)) && self.callee_is(*callee, module) => params.clone().unwrap_or_default(),
             // `cell(c)`, `C1(c)` or `nch(l, w)(c)`: a call through a template value, a param, a `const` or a function's
             // result of module type (§8.4.4); the module's ports are connected, the param block belongs to the template, so
             // one on the placement is `E0361`
             _ if self.callee_is_template_of(*callee, module) => {
                 if params.is_some() {
-                    let name = self.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    let name = self.state.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     self.coded(file, "E0361", node.span, format!("a placement through a template value of module `{name}` takes no param block: the template holds the params (§8.4.4)"), "param block on a placement through a template value");
                 }
                 through_value = true;
@@ -280,8 +280,8 @@ impl Checker<'_> {
             // the head's value is no template of the module: a value of another type is a mismatch (§1.5); a head that has no
             // type was refused where it is typed, and the placement adds nothing to that
             _ => {
-                if let Some(found) = self.exprs[callee.index()].clone() {
-                    let message = format!("the head's type `{}` is no template of the module this call places (§8.4.4)", found.name(self.design));
+                if let Some(found) = self.state.result.exprs[callee.index()].clone() {
+                    let message = format!("the head's type `{}` is no template of the module this call places (§8.4.4)", found.name(self.state.design));
                     self.coded(file, "E0180", node.span, message, "a placement through a value that is not a template");
                 }
                 for arg in args {
@@ -291,18 +291,18 @@ impl Checker<'_> {
             }
         };
         // the arguments of a generic module placed through a template value are the ones its type names, `G<2>` (§8.4.3)
-        let generic = self.design.decl_data(module).generics_span.is_some();
+        let generic = self.state.design.decl_data(module).generics_span.is_some();
         let through_template = (generic && through_value).then(|| self.template_substitution(*callee, module));
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
-        self.placing.push(Some(module));
+        self.state.modules.placing.push(Some(module));
         // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
-        self.callees.insert(expr, Callee::Module(module));
-        self.exprs[callee.index()] = Some(Ty::module(module));
+        self.state.result.callees.insert(expr, Callee::Module(module));
+        self.state.result.exprs[callee.index()] = Some(Ty::module(module));
         let substitution = if through_template.is_some() {
             through_template
         } else if generic {
             let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
-                self.placing.pop();
+                self.state.modules.placing.pop();
                 self.keep_handed_after_failure(module, args);
                 return None;
             };
@@ -311,10 +311,10 @@ impl Checker<'_> {
             None
         };
         self.reach(module);
-        let outer = std::mem::replace(&mut self.placement_substitution, substitution.clone());
+        let outer = std::mem::replace(&mut self.state.generics.placement_substitution, substitution.clone());
         self.connections(expr, module, args, file);
-        self.placement_substitution = outer;
-        self.placing.pop();
+        self.state.generics.placement_substitution = outer;
+        self.state.modules.placing.pop();
         self.param_block(&fields, substitution.as_ref());
         let placed = self.placement_type(module)?;
         Some(substitution.map_or(placed.clone(), |substitution| substitution.apply(&placed)))
@@ -324,21 +324,21 @@ impl Checker<'_> {
     /// port stay handed over, so the failure is reported once, at the placement, and not again as a carrier nothing drives
     /// (§5.2.6; the placement's own diagnostic is the cause).
     fn keep_handed_after_failure(&mut self, module: DeclId, args: &[Arg]) {
-        let outs: Vec<Option<crate::msl::ast::Dir>> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+        let outs: Vec<Option<crate::msl::ast::Dir>> = self.state.design.decl_data(module).children.iter().filter_map(|c| match &self.state.design.decl_data(*c).kind {
             DeclKind::Port(p) => Some(p.dir),
             _ => None,
         }).collect();
-        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        let bound = crate::pom::PortArguments::bind(self.state.design, module, args);
         for (index, dir) in outs.into_iter().enumerate() {
             let Some(arg) = bound.at(index) else { continue };
             if dir != Some(crate::msl::ast::Dir::Out) {
                 continue;
             }
             if let Some((decl, Ty::Carrier { .. })) = self.declared_port(arg.value) {
-                let (file, span) = (self.file_of_expr(arg.value), self.design.expr_node(arg.value).span);
+                let (file, span) = (self.file_of_expr(arg.value), self.state.design.expr_node(arg.value).span);
                 // a placement is typed once per path that reaches it: it hands the carrier over once
-                if !self.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
-                    self.book.handed.push((decl, super::element_target::Element::Whole, span, file));
+                if !self.state.carriers.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
+                    self.state.carriers.book.handed.push((decl, super::element_target::Element::Whole, span, file));
                 }
             }
         }
@@ -346,8 +346,8 @@ impl Checker<'_> {
 
     /// Whether `expr` is a name whose value already raised a diagnostic.
     pub(super) fn reads_poisoned(&self, expr: ExprId) -> bool {
-        match &self.design.expr_node(expr).kind {
-            ExprKind::Path(path) => matches!(self.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.poisoned.contains(&d)),
+        match &self.state.design.expr_node(expr).kind {
+            ExprKind::Path(path) => matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.state.values.poisoned.contains(&d)),
             _ => false,
         }
     }
@@ -361,15 +361,15 @@ impl Checker<'_> {
         // through the `let`s that hold it (`let t = if sel { .. } else { .. };`): a choice of templates the run makes is no
         // const expression either
         if let Some(read) = self.run_read(callee, &mut Vec::new()) {
-            let (file, span) = (self.file_of_expr(callee), self.design.expr_node(callee).span);
+            let (file, span) = (self.file_of_expr(callee), self.state.design.expr_node(callee).span);
             self.coded(file, "E0362", span, format!("a template is a const expression and this placement's head reads {read} (§8.4.6)"), "not a const expression");
         }
         true
     }
 
     fn callee_is(&self, callee: ExprId, module: DeclId) -> bool {
-        match &self.design.expr_node(callee).kind {
-            ExprKind::Path(path) => self.design.path_node(*path).segments.last().map(|s| s.res) == Some(Resolution::Decl(module)),
+        match &self.state.design.expr_node(callee).kind {
+            ExprKind::Path(path) => self.state.design.path_node(*path).segments.last().map(|s| s.res) == Some(Resolution::Decl(module)),
             _ => false,
         }
     }
@@ -380,20 +380,20 @@ impl Checker<'_> {
     /// count (`E0312`), or for a module with value inputs or a result, from the required ones to
     /// all of them, a trailing `Option` input being left out as `None` (`E0141`).
     fn connections(&mut self, expr: ExprId, module: DeclId, args: &[Arg], file: FileId) {
-        let ports: Vec<(DeclId, TypeId, Option<crate::msl::ast::Dir>)> = self.design.decl_data(module).children.iter().filter_map(|c| match &self.design.decl_data(*c).kind {
+        let ports: Vec<(DeclId, TypeId, Option<crate::msl::ast::Dir>)> = self.state.design.decl_data(module).children.iter().filter_map(|c| match &self.state.design.decl_data(*c).kind {
             DeclKind::Port(p) => Some((*c, p.ty, p.dir)),
             _ => None,
         }).collect();
         // a bundle port has no type of its own: its fields are the leaves it stands for (`bundle.rs`)
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.design.is_bundle_owner(*decl) { None } else { self.port_type_under_placement(*ty) }).collect();
-        let call_rule = matches!(&self.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.state.design.is_bundle_owner(*decl) { None } else { self.port_type_under_placement(*ty) }).collect();
+        let call_rule = matches!(&self.state.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
         // a named connection that is no trailing `Option` input is `E0140` from the POM (`classify.rs`), before this check
         let positional = args.iter().filter(|arg| arg.name.is_none()).count();
         if positional < min || args.len() > max {
-            let span = self.design.expr_node(expr).span;
-            let name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let span = self.state.design.expr_node(expr).span;
+            let name = self.state.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             if call_rule {
                 let message = if min == max { format!("`{name}` takes {max} argument(s), found {}", args.len()) } else { format!("`{name}` takes {min} to {max} arguments, found {}", args.len()) };
                 self.coded(file, "E0141", span, message, "wrong number of arguments");
@@ -406,11 +406,11 @@ impl Checker<'_> {
             }
             return;
         }
-        let bound = crate::pom::PortArguments::bind(self.design, module, args);
+        let bound = crate::pom::PortArguments::bind(self.state.design, module, args);
         for (index, kind) in kinds.iter().cloned().enumerate() {
             let Some(arg) = bound.at(index) else { continue };
             let (port_decl, _, dir) = ports[index];
-            if self.design.is_bundle_owner(port_decl) {
+            if self.state.design.is_bundle_owner(port_decl) {
                 self.connect_bundle(arg.value, port_decl);
                 continue;
             }
@@ -419,14 +419,14 @@ impl Checker<'_> {
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
                     let Some(found) = self.infer(arg.value) else { continue };
-                    let name = self.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                    let name = self.state.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     self.connect(arg.value, &format!("the node port `{name}`"), &expected, &found);
                 }
                 // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
                 Some(expected) if self.is_nature_parameter(&expected) => {
                     let Some(found) = self.infer(arg.value) else { continue };
                     if found != expected && found != Ty::AnyNode {
-                        let span = self.design.expr_node(arg.value).span;
+                        let span = self.state.design.expr_node(arg.value).span;
                         self.mismatch(file, span, &expected, &found);
                     }
                 }
@@ -447,22 +447,22 @@ impl Checker<'_> {
     /// `in` port takes an expression, and a node port is never one (§8.1.11).
     pub(super) fn connect(&mut self, arg: ExprId, where_: &str, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
-        let span = self.design.expr_node(arg).span;
+        let span = self.state.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
         if let Some((_, Ty::Carrier { .. })) = self.declared_port(arg) {
-            let message = format!("a discrete carrier is connected to a port of {} (§6.1)", port.name(self.design));
+            let message = format!("a discrete carrier is connected to a port of {} (§6.1)", port.name(self.state.design));
             self.coded(file, "E0250", span, message, "discrete carrier at a continuous port");
             return;
         }
         match (port, found) {
-            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.design, *p, *f) => {}
+            (Ty::Node(p), Ty::Node(f)) if NatureRules::compatible(self.state.design, *p, *f) => {}
             (_, Ty::AnyNode) => {}
             (Ty::Node(_), Ty::Node(_)) => {
-                let message = format!("expected {}, found {}", port.name(self.design), found.name(self.design));
+                let message = format!("expected {}, found {}", port.name(self.state.design), found.name(self.state.design));
                 self.coded(file, "E0251", span, format!("a node of another nature is connected: {message}"), &message);
             }
             (Ty::Node(_), _) => {
-                let message = format!("an expression of type {} is connected to {where_}: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.design));
+                let message = format!("an expression of type {} is connected to {where_}: only an `in` port of a discrete nature takes an expression (§8.1.11)", found.name(self.state.design));
                 self.coded(file, "E0315", span, message, "expression at a node port");
             }
             _ => self.mismatch(file, span, port, found),
@@ -474,7 +474,7 @@ impl Checker<'_> {
     /// carrier the parent may hand to one driver, and nothing else (§8.1.11).
     fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
-        let span = self.design.expr_node(arg).span;
+        let span = self.state.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
         let found = self.infer(arg);
         match (&carrier, dir) {
@@ -486,7 +486,7 @@ impl Checker<'_> {
             }
             (Some((decl, held @ Ty::Carrier { .. })), dir) => {
                 if held != port {
-                    let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
+                    let message = format!("a carrier of `{}` is connected to a port of `{}`", held.name(self.state.design), port.name(self.state.design));
                     self.coded(file, "E0251", span, message, "carrier of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
                     self.hand_over(*decl, arg, span, file);
@@ -514,14 +514,14 @@ impl Checker<'_> {
     /// parent or an `out` port of the parent (an `in` port is not the parent's to hand over,
     /// `E0314`). The drive is the instance's from here on.
     pub(super) fn hand_over(&mut self, decl: DeclId, arg: ExprId, span: Span, file: FileId) {
-        if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
+        if matches!(&self.state.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
         let named = self.element_named_by(arg);
         let element = self.judged_element(arg, decl, named);
-        self.book.handed.push((decl, element, span, file));
+        self.state.carriers.book.handed.push((decl, element, span, file));
     }
 
     /// [`Checker::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
@@ -529,20 +529,20 @@ impl Checker<'_> {
     /// the expression that names the bundle: one written inside generation reaches the carrier in the iterations elaboration
     /// takes only.
     pub(super) fn hand_over_element(&mut self, decl: DeclId, element: super::element_target::Element, place: ExprId, span: Span, file: FileId) {
-        if matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
+        if matches!(&self.state.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
         let element = self.judged_element(place, decl, element);
-        self.book.handed.push((decl, element, span, file));
+        self.state.carriers.book.handed.push((decl, element, span, file));
     }
 
     /// One argument at an array port (§8.1.10): an array of carriers (or of nodes) of the port's shape, or a part of
     /// a nested one that has it. Another length or shape is `E0313` naming both; another element type `E0251`.
     fn connect_array(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
-        let span = self.design.expr_node(arg).span;
+        let span = self.state.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
         let found = self.infer(arg);
         match carrier {
@@ -550,7 +550,7 @@ impl Checker<'_> {
                 if !self.same_shape(&held, port) {
                     self.shape_mismatch(file, span, &held, port);
                 } else if !self.same_elements(&held, port) {
-                    let message = format!("an array of `{}` is connected to a port of `{}`", held.name(self.design), port.name(self.design));
+                    let message = format!("an array of `{}` is connected to a port of `{}`", held.name(self.state.design), port.name(self.state.design));
                     self.coded(file, "E0251", span, message, "array of another type");
                 } else if dir == Some(crate::msl::ast::Dir::Out) {
                     self.hand_over(decl, arg, span, file);
@@ -584,14 +584,14 @@ impl Checker<'_> {
     /// Whether the innermost elements of two arrays of one shape are the same carrier or compatible nodes.
     fn same_elements(&self, found: &Ty, port: &Ty) -> bool {
         match (found.innermost(), port.innermost()) {
-            (Ty::Node(f), Ty::Node(p)) => NatureRules::compatible(self.design, *p, *f),
+            (Ty::Node(f), Ty::Node(p)) => NatureRules::compatible(self.state.design, *p, *f),
             (found, port) => found == port,
         }
     }
 
     /// `E0313`: a connection of another array shape, naming both.
     fn shape_mismatch(&mut self, file: FileId, span: Span, found: &Ty, port: &Ty) {
-        let message = format!("`{}` is connected to a port of `{}`: the lengths or the shape differ (§8.1.10)", found.name(self.design), port.name(self.design));
+        let message = format!("`{}` is connected to a port of `{}`: the lengths or the shape differ (§8.1.10)", found.name(self.state.design), port.name(self.state.design));
         self.coded(file, "E0313", span, message, "another array shape");
     }
 
@@ -599,23 +599,23 @@ impl Checker<'_> {
     /// a definition or a commit of this module, is `E0220`. An initial value is the value of the elements no `out` port
     /// holds (§5.2.6, §8.2.21), so it is `E0223` only once every element is handed (`handed_initial_values`).
     pub(super) fn handed_drives(&mut self) {
-        let handed = std::mem::take(&mut self.book.handed);
+        let handed = std::mem::take(&mut self.state.carriers.book.handed);
         let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
         let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             // the element as the source names it: `mem[2]`, `lanes[1].a` for a field of an array of bundles
-            let name = self.design.element_naming(decl).name(&element.subscript());
+            let name = self.state.design.element_naming(decl).name(&element.subscript());
             // a resolved carrier has as many drives as modules hand it down or define it (§5.2.1): nothing here is a second one
-            if matches!(self.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.design, *nature).resolved) {
+            if matches!(self.state.result.carriers.get(&decl).map(Ty::innermost), Some(Ty::Carrier { nature, .. }) if NatureRules::of(self.state.design, *nature).resolved) {
                 continue;
             }
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
             // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
-            let whole_drive = element != super::element_target::Element::Unfolded && (self.book.defined.contains_key(&decl) || self.book.committed.contains_key(&decl));
-            let driven_here = whole_drive || self.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
-            let nature = match self.carriers.get(&decl).map(Ty::innermost) {
-                Some(Ty::Carrier { nature, .. }) => self.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+            let whole_drive = element != super::element_target::Element::Unfolded && (self.state.carriers.book.defined.contains_key(&decl) || self.state.carriers.book.committed.contains_key(&decl));
+            let driven_here = whole_drive || self.state.carriers.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            let nature = match self.state.result.carriers.get(&decl).map(Ty::innermost) {
+                Some(Ty::Carrier { nature, .. }) => self.state.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
                 _ => String::new(),
             };
             if twice {
@@ -636,18 +636,18 @@ impl Checker<'_> {
         let mut judged = BTreeSet::new();
         for (decl, _, span, file) in handed {
             // a leaf of a bundle starts at the default of its field, which the instance that holds the drive repeats: no second initial value
-            if !judged.insert(*decl) || !self.has_initial(*decl) || self.design.leaf_owner(*decl).is_some() {
+            if !judged.insert(*decl) || !self.has_initial(*decl) || self.state.design.leaf_owner(*decl).is_some() {
                 continue;
             }
-            let Some(held) = self.carriers.get(decl).cloned() else { continue };
+            let Some(held) = self.state.result.carriers.get(decl).cloned() else { continue };
             let mut coverage = ElementCoverage::of(&held);
             for (_, element, _, _) in handed.iter().filter(|(carrier, ..)| carrier == decl) {
                 coverage.cover(*element);
             }
             if coverage.is_deferred() {
-                self.deferred_coverage.handed_initial.insert(*decl);
+                self.state.result.deferred_coverage.handed_initial.insert(*decl);
             } else if coverage.is_complete() {
-                let name = self.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let name = self.state.design.decl_data(*decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.coded(*file, "E0223", *span, format!("`{name}` has an initial value and every element is handed to an `out` port: the instance holds the drive, so the declaring module may give none (§5.2.6)"), "initial value without the drive");
             }
         }
@@ -661,13 +661,13 @@ impl Checker<'_> {
     /// names the elements no driver names (`coverage.rs`). An `in` port is driven by its caller.
     pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
         for decl in children.iter().copied() {
-            let item = self.design.decl_data(decl).clone();
+            let item = self.state.design.decl_data(decl).clone();
             let is_carrier = match &item.kind {
                 DeclKind::Signal(_) => true,
                 DeclKind::Port(port) => port.dir == Some(crate::msl::ast::Dir::Out),
                 _ => false,
             };
-            let Some(held) = self.carriers.get(&decl).cloned() else { continue };
+            let Some(held) = self.state.result.carriers.get(&decl).cloned() else { continue };
             // an array of carriers has the rule of its elements: every element starts at the `Default` of the carried type
             let Some(Ty::Carrier { nature, value }) = (match held.innermost() {
                 carrier @ Ty::Carrier { .. } => Some(carrier.clone()),
@@ -675,7 +675,7 @@ impl Checker<'_> {
             }) else {
                 continue;
             };
-            if NatureRules::of(self.design, nature).resolved {
+            if NatureRules::of(self.state.design, nature).resolved {
                 self.missing_resolved_initial_value(decl);
                 continue;
             }
@@ -687,22 +687,22 @@ impl Checker<'_> {
             if !self.has_initial(decl) {
                 self.reach_written_defaults(&value);
             }
-            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
+            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.state.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
                 continue;
             }
             // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let coverage = self.driven_coverage(decl, &held);
             if coverage.is_deferred() {
-                self.deferred_coverage.missing_initial.insert(decl);
+                self.state.result.deferred_coverage.missing_initial.insert(decl);
                 continue;
             }
-            let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { continue };
-            let found = value.name(self.design);
+            let Some(unnamed) = coverage.unnamed(&self.state.design.element_naming(decl)) else { continue };
+            let found = value.name(self.state.design);
             let message = format!("`{unnamed}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
             // a bundle port takes no initial value (§7 rule 10): the field's own declaration gives it, written with the direction the
             // `struct` writes (`in ready: Bit = false` for a `flip` consumer that drives `ready`)
-            let help = match self.design.leaf_field(decl) {
+            let help = match self.state.design.leaf_field(decl) {
                 Some((field, dir)) => {
                     let written = match dir {
                         Some(Dir::In) => "in ",
@@ -722,7 +722,7 @@ impl Checker<'_> {
         for field in fields {
             self.no_placement_in(field.value);
             let param = match field.res {
-                Resolution::Decl(d) => match &self.design.decl_data(d).kind {
+                Resolution::Decl(d) => match &self.state.design.decl_data(d).kind {
                     DeclKind::Param(p) => Some(p.ty),
                     _ => None,
                 },
@@ -751,9 +751,9 @@ impl Checker<'_> {
     /// solve.
     fn no_placement_in(&mut self, value: ExprId) {
         let mut all = Vec::new();
-        crate::pom::BodyWalk::new(self.design).descendants_depth_first(value, &mut all);
+        crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(value, &mut all);
         for expr in all {
-            let node = self.design.expr_node(expr).clone();
+            let node = self.state.design.expr_node(expr).clone();
             if matches!(node.kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. }) {
                 let file = self.file_of_expr(expr);
                 self.coded(file, "E0352", node.span, "a bound param value places no instance: a result is not fixed during a solve (§8.3.4)".to_string(), "placement in a bound param value");
@@ -768,7 +768,7 @@ impl Checker<'_> {
     pub(super) fn reach_written_defaults(&mut self, ty: &Ty) {
         match ty {
             Ty::Struct(nominal) => {
-                let table = std::rc::Rc::clone(&self.impls);
+                let table = std::rc::Rc::clone(&self.state.traits);
                 if let Some(function) = table.builtin_functions("Default", "default", ty).first() {
                     self.reach(*function);
                 } else if self.derives(nominal.decl, "Default") {
