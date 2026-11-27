@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use crate::cargo_command::CargoTestCommand;
+use crate::cargo_command::{CargoCommandLine, CargoTestCommand};
 use crate::feature_file::FeatureFile;
 
 /// The proof a retired check carries instead of its removed test.
@@ -262,15 +262,14 @@ impl FeatureRewriter {
     }
 
     /// Replaces every unfenced command that `rewrite` gives a new text for.
-    fn rewrite_commands(&mut self, rewrite: impl Fn(&CargoTestCommand) -> Option<String>) {
+    fn rewrite_commands(&mut self, rewrite: impl Fn(&str) -> Option<String>) {
         for index in self.unfenced() {
             let commands = match FeatureFile::parse_build(&self.lines[index]) {
                 Some(commands) => commands,
                 None => Self::command_of(&self.lines[index]).into_iter().collect(),
             };
             for command in commands {
-                let Some(parsed) = CargoTestCommand::parse(&command) else { continue };
-                if let Some(new_command) = rewrite(&parsed) {
+                if let Some(new_command) = rewrite(&command) {
                     self.lines[index] = self.lines[index].replacen(&command, &new_command, 1);
                 }
             }
@@ -280,13 +279,14 @@ impl FeatureRewriter {
     /// Points every command that ran the moved target at its merged target.
     fn move_commands(&mut self, from_package: &str, from_target: &str, to_package: &str, to_target: &str, module: &str) {
         self.rewrite_commands(|command| {
+            let command = CargoTestCommand::parse(command)?;
             ((command.package() == Some(from_package) || command.package() == Some(to_package)) && command.targets().contains(&from_target)).then(|| command.moved(from_target, to_package, to_target, module))
         });
     }
 
-    /// Renames the package of every command that names the old crate.
+    /// Renames every `-p` of every `cargo` command (`build`, `test`, `run`, ...) that names the old crate.
     fn rename_commands(&mut self, old: &str, new: &str) {
-        self.rewrite_commands(|command| (command.package() == Some(old)).then(|| command.with_package(new)));
+        self.rewrite_commands(|command| CargoCommandLine::parse(command).with_package_renamed(old, new));
     }
 
     /// The file's runs, by name.
@@ -528,7 +528,7 @@ mod tests {
     fn a_crate_rename_changes_every_package_flag_and_prefix() {
         let fixture = Fixture::new();
         fixture.apply("T139", "rename-crate alpha gamma\n");
-        assert_eq!(fixture.read(".specs/features/demo/tasks.md"), Fixture::TASKS.replace("-p alpha", "-p gamma").replace("cargo build -p gamma", "cargo build -p alpha"));
+        assert_eq!(fixture.read(".specs/features/demo/tasks.md"), Fixture::TASKS.replace("-p alpha", "-p gamma"));
         assert_eq!(fixture.read("tests/book/inventory.tsv"), Fixture::INVENTORY.replace("alpha/", "gamma/"));
         assert_eq!(fixture.read("GAPS.md"), "see gamma/old_target and crates/gamma/tests, not gamma/old_target_two\n");
     }

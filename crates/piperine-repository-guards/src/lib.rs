@@ -39,7 +39,7 @@ mod worklist_rules;
 pub use item_scan::{FreeFunctionPermit, ScannedKind, ItemScan, CodeOrigin, ScannedItem};
 pub use module_declaration::ModuleDeclaration;
 pub use source_tree::{RustSource, SourceTree};
-pub use cargo_command::CargoTestCommand;
+pub use cargo_command::{CargoCommandLine, CargoTestCommand};
 pub use feature_file::{CheckLine, FeatureFile, LoneProofLine, ProofLine, RunLine};
 pub use proof_ledger::{DanglingReference, ProofLedger};
 pub use repoint::{RepointMap, RepointRow, Repointer, RetiredRow, TestReference};

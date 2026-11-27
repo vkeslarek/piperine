@@ -3,7 +3,7 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use crate::cargo_command::CargoTestCommand;
+use crate::cargo_command::{CargoCommandLine, CargoTestCommand};
 use crate::feature_file::{FeatureFile, ProofLine, RunLine};
 use crate::item_scan::ItemScan;
 use crate::source_tree::SourceTree;
@@ -70,9 +70,13 @@ impl ProofLedger {
         &self.features
     }
 
-    /// Why a `cargo test` command names nothing that exists, or `None` when it does (or is no
-    /// package-specific test run).
+    /// Why a command names nothing that exists, or `None` when it does: a `-p` of any `cargo`
+    /// command (`build`, `test`, `run`, ...) naming no workspace package, or a `cargo test` naming
+    /// no package or test target.
     pub fn command_problem(&self, command: &str) -> Option<String> {
+        if let Some(package) = CargoCommandLine::parse(command).packages().into_iter().find(|package| self.targets.package(package).is_none()) {
+            return Some(format!("no package {package}"));
+        }
         let parsed = CargoTestCommand::parse(command)?;
         let package = parsed.package()?;
         let Some(tests) = self.targets.package(package) else { return Some(format!("no package {package}")) };

@@ -1,4 +1,5 @@
-//! A `cargo test` command as the proof lines of `.specs/features/` write it.
+//! The `cargo` commands the proof and build lines of `.specs/features/` write: any command line's
+//! package flags, and a `cargo test` command's package and targets.
 
 /// The pieces of one `cargo test ...` command that name what it runs.
 pub struct CargoTestCommand {
@@ -86,14 +87,60 @@ impl CargoTestCommand {
         result.extend(kept);
         result.join(" ")
     }
+}
 
-    /// The command with its `-p` value replaced.
-    pub fn with_package(&self, package: &str) -> String {
-        let mut tokens = self.tokens.clone();
-        if let Some((at, _)) = self.value_after(&["-p", "--package"]) {
-            tokens[at] = package.to_string();
+/// A command line as a `**Build**:` line writes it, read for the packages its `cargo` commands
+/// name: every `-p`/`--package` of every `cargo` subcommand (`build`, `test`, `run`, ...), each
+/// command's flags read up to its `--` or the next shell operator.
+pub struct CargoCommandLine {
+    tokens: Vec<String>,
+}
+
+impl CargoCommandLine {
+    /// The tokens that end one command's flags.
+    const FLAGS_END: [&'static str; 5] = ["--", "|", "&&", ";", "||"];
+
+    /// Splits a command line into its tokens.
+    pub fn parse(command: &str) -> CargoCommandLine {
+        CargoCommandLine { tokens: command.split_whitespace().map(str::to_string).collect() }
+    }
+
+    /// The token index of every package a `cargo` command names, with the package, in order:
+    /// the value after `-p` or `--package`, or the text after `--package=`.
+    fn package_positions(&self) -> Vec<(usize, &str)> {
+        let mut positions = Vec::new();
+        let mut in_cargo_flags = false;
+        for (at, token) in self.tokens.iter().enumerate() {
+            if token == "cargo" {
+                in_cargo_flags = true;
+            } else if Self::FLAGS_END.contains(&token.as_str()) {
+                in_cargo_flags = false;
+            } else if in_cargo_flags && at > 0 && matches!(self.tokens[at - 1].as_str(), "-p" | "--package") {
+                positions.push((at, token.as_str()));
+            } else if in_cargo_flags && let Some(package) = token.strip_prefix("--package=") {
+                positions.push((at, package));
+            }
         }
-        tokens.join(" ")
+        positions
+    }
+
+    /// Every package the command line's `cargo` commands name, in order.
+    pub fn packages(&self) -> Vec<&str> {
+        self.package_positions().into_iter().map(|(_, package)| package).collect()
+    }
+
+    /// The command line with every package flag naming `old` naming `new`; `None` when no flag
+    /// names `old`.
+    pub fn with_package_renamed(&self, old: &str, new: &str) -> Option<String> {
+        let renamed: Vec<usize> = self.package_positions().into_iter().filter(|(_, package)| *package == old).map(|(at, _)| at).collect();
+        if renamed.is_empty() {
+            return None;
+        }
+        let mut tokens = self.tokens.clone();
+        for at in renamed {
+            tokens[at] = if tokens[at].starts_with("--package=") { format!("--package={new}") } else { new.to_string() };
+        }
+        Some(tokens.join(" "))
     }
 }
 
@@ -122,5 +169,19 @@ mod tests {
         assert_eq!(once, "cargo test -p g --test boundaries --test workspace_shape");
         let twice = CargoTestCommand::parse(&once).expect("a cargo test").moved("workspace_shape", "g", "boundaries", "workspace_shape");
         assert_eq!(twice, "cargo test -p g --test boundaries");
+    }
+
+    #[test]
+    fn a_command_line_names_the_packages_of_every_cargo_command() {
+        let line = CargoCommandLine::parse("cargo build -p a -p b --all-targets 2>&1 | tail -3 && cargo run -p c -- -p not_a_package && cargo test --package=d");
+        assert_eq!(line.packages(), vec!["a", "b", "c", "d"]);
+        assert!(CargoCommandLine::parse("grep -p x").packages().is_empty());
+    }
+
+    #[test]
+    fn a_rename_changes_every_package_flag_that_names_the_old_crate() {
+        let line = CargoCommandLine::parse("cargo build -p old -p other && cargo test --package=old --test t");
+        assert_eq!(line.with_package_renamed("old", "new").as_deref(), Some("cargo build -p new -p other && cargo test --package=new --test t"));
+        assert_eq!(line.with_package_renamed("missing", "new"), None);
     }
 }
