@@ -1485,3 +1485,47 @@ Each held point of the old copies is carried over unchanged as a `Check::Holding
 
 - `BadLimit` (`analog.rs:170`) and `Rogue` (`digital.rs:877`) assemble raw modules by hand, without `impl Device`, so `DeviceScan` cannot see them.
 - Both are deliberate rule-breakers, so leaving them unlisted is right. The scan's doc should say that it only reaches `impl Device` devices.
+
+## Phase 5 round 3
+
+**Verdict**: PASS (one Low note, not blocking)
+**Head**: 7009c644d on `feature/code-clarity-p5` (fix commit 7009c644d on 8e15d6703)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment as before, with the guard sources touched first.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-device-fixtures` | 4 passed: `its_devices_pass_the_partials_verifier`, `every_device_of_the_crate_is_in_the_list`, `a_check_of_another_module_does_not_count - should panic`, `a_row_takes_its_label_from_its_type` |
+| `cargo test -p piperine-solver` | 337 passed |
+| `cargo test -p piperine-repository-guards` | 121 passed (`proof_ledger` included) |
+
+### Closure of round 2
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P5R2-1 | 7009c644d | Each row is built as `ListedDevice::of::<T>(module, check)`, with the label taken from `type_name::<T>()`. `of` asserts `ptr::eq(module.prototype_ptr(), T::prototype())`. `a_check_of_another_module_does_not_count` is `#[should_panic(expected = "holds the module of another device")]` and plants round 2's repro (`of::<circuit::Resistor>(circuit::Capacitor::module())`). The C61 proof (`solver-hygiene/tasks.md:1194`) and the T38 `replace` row point at it |
+
+### Judgements
+
+1. **The prototype pointer ties a row to its type, with one harmless exception.**
+   - A throwaway test collected `prototype_ptr` over all 128 rows and found 127 distinct pointers.
+   - The one shared prototype belongs to `solver_devices::lifecycle::{Counted, Failing}`. Both return `LifecycleShapes::shared()` (`solver_devices/lifecycle.rs:31,51`).
+   - `of::<Counted>(Failing::module())` is accepted, which is a false pass. It is harmless: that shape has 0 functions, so `PartialsCheck::run` returns before checking anything for either device, and no function can go unchecked by the swap.
+   - A device whose instance shape varies (for example `Collapsible`) is still tied correctly. Its module's prototype is its type's static prototype, and the check runs on the shape that the module's own `create` returns.
+2. **The `#[should_panic]` test fails for the right reason.**
+   - `expected` names the assertion's message, and only `of`'s assertion carries that text. A panic for another cause would fail the test.
+   - As a throwaway, I replaced the assertion with `let _ = own;`. The test then FAILED ("should panic ... FAILED"), so it holds the rule.
+3. **C60 and C61 are honestly proved.**
+   - C61 ("a check of another module does not count") is the planted swap in the `#[should_panic]` test.
+   - C60 ("every hand-written device is in a partials check of its own module") is `every_device_of_the_crate_is_in_the_list`. It builds every row through `of`, so it fails on a wrong module as well as on a missing or stale row.
+   - The `sees` matcher of `check_proofs.py` requires the proof's words in order on one line. It accepts the printed `test a_check_of_another_module_does_not_count - should panic ... ok`.
+
+All the probes were reverted, and `git status` is clean.
+
+### Note (Low, not blocking)
+
+- **R3-1.** `Counted` and `Failing` share one prototype, so the type-to-module tie cannot tell them apart.
+- No check is lost today.
+- Fix: give `Failing` its own static shape, or assert in `every_device_of_the_crate_is_in_the_list` that the rows' prototype pointers are distinct.
