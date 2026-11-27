@@ -11,15 +11,9 @@ crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs::solver_ma
 crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs::the_root_package_is_a_re_export_and_nothing_else	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::IgnoredDocExamples	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::ModRsFiles	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::PhdlCorpus	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::collect_phdl	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::every_ignored_doc_example_is_registered	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::is_malformed_lrm_covers	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::lrm_covers_declarations_are_well_formed	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::mod_rs_declares_only	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::mod_rs_files	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::phdl_corpus_does_not_grow	1
-crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::phdl_files	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::registered_oversized_mod_rs	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::the_buck_readme_names_every_on_demand_target	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::the_detectors_recognise_what_they_forbid	1

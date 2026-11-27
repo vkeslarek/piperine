@@ -322,15 +322,6 @@ crates/piperine-solver/tests/pss.rs::build	1
 crates/piperine-solver/tests/pz_device_fault.rs::module_fault	1
 crates/piperine-solver/tests/pz_device_fault.rs::piperine_abi_test_vsrc	1
 crates/piperine-solver/tests/pz_device_fault.rs::shape	1
-crates/piperine-solver/tests/removed_surface.rs::defines_fn	1
-crates/piperine-solver/tests/removed_surface.rs::names_found	1
-crates/piperine-solver/tests/removed_surface.rs::names_in	1
-crates/piperine-solver/tests/removed_surface.rs::removed_names	1
-crates/piperine-solver/tests/removed_surface.rs::repo_root	1
-crates/piperine-solver/tests/removed_surface.rs::rust_files	1
-crates/piperine-solver/tests/removed_surface.rs::scan	1
-crates/piperine-solver/tests/removed_surface.rs::words_found	1
-crates/piperine-solver/tests/removed_surface.rs::words_in	1
 crates/piperine-solver/tests/sens.rs::build	1
 crates/piperine-solver/tests/sensitivity_fallback.rs::cell_of	1
 crates/piperine-solver/tests/sensitivity_fallback.rs::circuit	1

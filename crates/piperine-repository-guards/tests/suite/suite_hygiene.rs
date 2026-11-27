@@ -55,46 +55,6 @@ impl SourceLines {
         line.trim_start().starts_with("#[ignore")
     }
 
-    /// Whether one `//! LRM-COVERS:` line is malformed: not the canonical
-    /// comma-separated list of bare LRM-2-4 section ids
-    /// (`tests/lrm_section_coverage.rs::lrm_sections`'s own id shape — digit
-    /// groups, or a single `A`..`H` letter followed by digit groups, joined by
-    /// `.`). Declaring at all is optional; a line that does declare must be
-    /// parseable by the coverage gate, so `§4.5.3` (a section symbol, not the
-    /// gate's own id spelling), `4.5.3-4.5.5` (a range — the gate has no
-    /// concept of one, every covered id must be named), and an empty list all
-    /// fail here rather than silently scraping as zero declared ids.
-    fn is_malformed_lrm_covers(line: &str) -> bool {
-        let Some(rest) = line.trim_start().strip_prefix("//! LRM-COVERS:") else {
-            return false;
-        };
-        let rest = rest.trim();
-        if rest.is_empty() {
-            return true;
-        }
-        let ids: Vec<&str> = rest.split(',').map(str::trim).collect();
-        if ids.iter().any(|id| id.is_empty()) {
-            return true;
-        }
-        for id in &ids {
-            if id.contains('§') || id.contains('-') || id.contains(char::is_whitespace) {
-                return true;
-            }
-            let segments: Vec<&str> = id.split('.').collect();
-            let Some(first) = segments.first() else { return true };
-            let digit_group = |s: &str| !s.is_empty() && s.chars().all(|c| c.is_ascii_digit());
-            let numbered_head = digit_group(first);
-            let annex_head = first.len() == 1 && matches!(first.chars().next(), Some('A'..='H'));
-            if !(numbered_head || annex_head) {
-                return true;
-            }
-            if segments[1..].iter().any(|seg| !digit_group(seg)) {
-                return true;
-            }
-        }
-        false
-    }
-
     /// Whether one source line switches a lint off for a whole file. A file-scope
     /// `#![allow(…)]` is invisible from the item it excuses: P6 found twelve of
     /// them hiding 22 dead items across `piperine-solver` and `piperine-codegen`,
@@ -103,21 +63,6 @@ impl SourceLines {
     /// one-line reason a reader can check.
     fn is_file_scope_allow(line: &str) -> bool {
         line.trim_start().starts_with("#![allow(")
-    }
-
-    /// Which dead identifiers one source line mentions.
-    fn dead_architecture_identifiers_in(line: &str) -> Vec<&'static str> {
-        DEAD_ARCHITECTURE_IDENTIFIERS.into_iter().filter(|id| line.contains(id)).collect()
-    }
-
-    /// The registry of deliberate historical notes: file → (identifier, why it
-    /// survives). Empty today: the rename in MD-40 made every former
-    /// `piperine-ir`-as-dead-architecture mention either live again or stale,
-    /// and the stale ones were reworded. Registry + exhaustiveness (the
-    /// `capabilities_contract.rs` shape): a new note fails until it is recorded,
-    /// and a note that disappears fails just as loudly.
-    fn registered_historical_note(_path: &str) -> Option<(&'static str, &'static str)> {
-        None
     }
 
     /// The exemption marker (design D8). It sits **inside** the `mod.rs` it
@@ -233,38 +178,6 @@ impl RootTargetRules {
     }
 }
 
-/// The retired `.phdl` corpus, which must not grow back.
-struct PhdlCorpus;
-
-impl PhdlCorpus {
-    /// Every `.phdl`/`.ppr` file anywhere in the repository (recursive, skipping
-    /// `target`/`.git`) — a plain filesystem walk over every file extension, not
-    /// a `.rs`-source scan like [`rust_sources`]: the files this gate counts are
-    /// PHDL source, not Rust.
-    fn phdl_files() -> Vec<PathBuf> {
-        let root = SourceTree::workspace_root();
-        let mut out = Vec::new();
-        PhdlCorpus::collect_phdl(&root, &mut out);
-        out
-    }
-
-    /// Appends every `.phdl` or `.ppr` file under `dir` to `out`.
-    fn collect_phdl(dir: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(entries) = fs::read_dir(dir) else { return };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let name = entry.file_name();
-            if path.is_dir() {
-                if name != "target" && name != ".git" {
-                    PhdlCorpus::collect_phdl(&path, out);
-                }
-            } else if path.extension().is_some_and(|e| e == "phdl" || e == "ppr") {
-                out.push(path);
-            }
-        }
-    }
-}
-
 /// The library-source walk reaches the three solver crates and `piperine-lang`
 /// (feature `solver-restructure`, SR-07): a guard that cannot see a crate
 /// enforces nothing over it.
@@ -314,28 +227,6 @@ fn the_detectors_recognise_what_they_forbid() {
     }
 
     for offender in [
-        "//! LRM-COVERS: §4.5.3",
-        "//! LRM-COVERS: 4.5.3-4.5.5",
-        "//! LRM-COVERS:",
-        "//! LRM-COVERS: ",
-        "//! LRM-COVERS: 4.5.3,",
-        "//! LRM-COVERS: 4.5.x",
-        "//! LRM-COVERS: Z.1",
-    ] {
-        assert!(SourceLines::is_malformed_lrm_covers(offender), "must be flagged as malformed: {offender:?}");
-    }
-    for innocent in [
-        "//! LRM-COVERS: 4.5.3",
-        "//! LRM-COVERS: 4.5.3, 7.3.5",
-        "//! LRM-COVERS: A.1.2",
-        "//! LRM-COVERS: 1",
-        "// LRM-COVERS: §4.5.3 in a regular comment",
-        "",
-    ] {
-        assert!(!SourceLines::is_malformed_lrm_covers(innocent), "must not be flagged: {innocent:?}");
-    }
-
-    for offender in [
         "#![allow(dead_code)]",
         "  #![allow(unused_imports)]",
         "#![allow(clippy::all)]",
@@ -344,31 +235,6 @@ fn the_detectors_recognise_what_they_forbid() {
     }
     for innocent in ["#[allow(dead_code)]", "    #[allow(dead_code)]", "// #![allow(dead_code)]"] {
         assert!(!SourceLines::is_file_scope_allow(innocent), "must not be flagged: {innocent:?}");
-    }
-
-    for (offender, expected) in [
-        ("//! walks an [`crate::resolve::IrProgram`]'s top module", "IrProgram"),
-        ("/// no `IrModule` structural twin", "IrModule"),
-        ("//! dispatches on POM `Expr`, not `IrExpr`", "IrExpr"),
-        ("/// every module's `IrInstance.connections`", "IrInstance"),
-    ] {
-        assert_eq!(
-            SourceLines::dead_architecture_identifiers_in(offender),
-            vec![expected],
-            "must be flagged as dead architecture: {offender:?}"
-        );
-    }
-    for innocent in [
-        "//! the POM `Design`/`Module`/`Instance`",
-        "use piperine_lang::pom;",
-        "//! `piperine-ir` is the compiler's IR crate (MD-40)",
-        "use piperine_ir::core::Module;",
-        "",
-    ] {
-        assert!(
-            SourceLines::dead_architecture_identifiers_in(innocent).is_empty(),
-            "must not be flagged: {innocent:?}"
-        );
     }
 
     for offender in ["// hygiene-exempt: the frozen parse tree", "  // hygiene-exempt: x"] {
@@ -790,29 +656,6 @@ fn the_buck_readme_names_every_on_demand_target() {
     assert!(offences.is_empty(), "on-demand targets the buck README does not name:\n  {}", offences.join("\n  "));
 }
 
-// ─── 4a. LRM-COVERS declarations are well-formed (T6, lrm-conformance-wave2) ──
-
-/// Declaring `LRM-COVERS` is optional (T6's own rule); a declaration that
-/// exists must be well-formed, because `lrm_section_coverage.rs`'s gate
-/// derives the whole matrix from parsing exactly this shape.
-#[test]
-fn lrm_covers_declarations_are_well_formed() {
-    let mut offences = Vec::new();
-    for (path, text) in SourceWalk::rust_sources() {
-        for (index, line) in text.lines().enumerate() {
-            if SourceLines::is_malformed_lrm_covers(line) {
-                offences.push(format!("{path}:{}: {}", index + 1, line.trim()));
-            }
-        }
-    }
-    assert!(
-        offences.is_empty(),
-        "malformed LRM-COVERS declaration (must be a bare comma-separated id list — \
-         no `§`, no ranges, not empty):\n  {}",
-        offences.join("\n  ")
-    );
-}
-
 // ─── 5. No file-scope lint suppression (MD-33) ────────────────────────────────
 
 #[test]
@@ -830,50 +673,6 @@ fn no_file_scope_lint_suppression() {
         "file-scope lint suppression (MD-33 — move the exemption onto the item \
          it excuses and give it a one-line reason, or delete the item):\n  {}",
         offences.join("\n  ")
-    );
-}
-
-// ─── 6. No dead-architecture identifiers (MD-35) ──────────────────────────────
-
-/// The names of the deleted IR layer. There is no `IrProgram`/`IrModule`/
-/// `IrExpr`/`IrInstance` type: codegen resolves a POM `Design`/`Module`/
-/// `Instance` directly. P6 found sixteen comments defining the code by that
-/// dead architecture — two of them broken intra-doc links. A comment that
-/// can only be checked against a deleted type cannot be checked at all.
-///
-/// Note: `piperine-ir` and `piperine_ir` were on this list under MD-35
-/// before MD-40 renamed `piperine-signal` to `piperine-ir`; they are
-/// LIVE identifiers again (the `msl-ir` feature's object-model crate, a
-/// leaf with no in-tree dependency) and are no longer banned.
-const DEAD_ARCHITECTURE_IDENTIFIERS: [&str; 4] =
-    ["IrProgram", "IrModule", "IrExpr", "IrInstance"];
-
-#[test]
-fn no_dead_architecture_identifiers() {
-    let mut offences = Vec::new();
-    let mut notes_seen = Vec::new();
-    for (path, text) in SourceWalk::library_sources() {
-        for (index, line) in text.lines().enumerate() {
-            for id in SourceLines::dead_architecture_identifiers_in(line) {
-                match SourceLines::registered_historical_note(&path) {
-                    Some((allowed, _)) if allowed == id => notes_seen.push(path.clone()),
-                    _ => offences.push(format!("{path}:{}: `{id}`", index + 1)),
-                }
-            }
-        }
-    }
-    assert!(
-        offences.is_empty(),
-        "dead-architecture identifiers (MD-35 — say what the code does now; the \
-         `Ir*` types no longer exist, codegen resolves the POM \
-         `Design`/`Module`/`Instance` directly):\n  {}",
-        offences.join("\n  ")
-    );
-    assert!(
-        notes_seen.is_empty(),
-        "the registered-historical-note set is no longer empty — a new entry \
-         appeared; re-add it to `registered_historical_note` if deliberate: \
-         {notes_seen:?}"
     );
 }
 
@@ -1018,42 +817,6 @@ fn root_targets_match_the_naming_rule() {
         exempted, expected,
         "the exempted root-target set changed — record the exemption's reason in \
          `ROOT_TARGET_EXEMPTIONS` and move this assertion's expected set with it"
-    );
-}
-
-// ─── `.phdl` monotonic-shrink gate (VAMS-11, MD-31, T39) ──────────────────────
-
-/// The committed high-water mark for straggling PHDL/PPR source files during
-/// the Verilog-AMS migration (`.specs/features/verilog-ams-support/design.md`
-/// §7: "a dual-frontend period allowed S2-S4, bounded by a monotonic-shrink
-/// gate" — MD-31, the invariant lives in a test, not a promise). Set at T39
-/// (2026-08-13) to the count measured in the tree the day this gate landed —
-/// `piperine-lang`'s own PHDL *parser* is already gone (T21/T38); this counts
-/// the source *corpus* Phase 8 (T40-T46) still has to migrate one file at a
-/// time, deleting each `.phdl`/`.ppr` original in the same commit that adds
-/// its `.vams`/`.va` twin (VAMS-11's own requirement — "no `.phdl` file
-/// survives past its own migration task").
-///
-/// T46 brought the corpus to exactly zero — the mark is now `0` and the
-/// assertion below is exact-equality (VAMS-11's own closing requirement).
-/// No `.phdl`/`.ppr` file may ever exist in this repository again.
-const PHDL_HIGH_WATER_MARK: usize = 0;
-
-#[test]
-fn phdl_corpus_does_not_grow() {
-    let root = SourceTree::workspace_root();
-    let files = PhdlCorpus::phdl_files();
-    let count = files.len();
-    assert_eq!(
-        count, PHDL_HIGH_WATER_MARK,
-        "`.phdl`/`.ppr` file count is {count}, expected exactly {PHDL_HIGH_WATER_MARK} \
-         (VAMS-11) — PHDL is fully retired (MD-44); no `.phdl`/`.ppr` file may exist in this \
-         repository. Files found:\n  {}",
-        files
-            .iter()
-            .map(|p| p.strip_prefix(&root).unwrap_or(p).display().to_string())
-            .collect::<Vec<_>>()
-            .join("\n  ")
     );
 }
 

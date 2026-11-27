@@ -1,0 +1,23 @@
+# T9: guards against a retired architecture leave (CC-12 AC 2, P3).
+retire piperine-solver/removed_surface::disto_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::text_io_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::verification_channels_are_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::specify_timing_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::regions_are_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::the_dead_newton_hooks_are_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::the_phdl_port_text_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::simprobe_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::the_element_contract_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::the_old_digital_engine_is_gone a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::removed_tests_are_listed_with_their_item a guard against names a past refactor removed; no way back to them
+retire piperine-solver/removed_surface::the_scan_catches_a_planted_name a guard against names a past refactor removed; no way back to them
+retire piperine-repository-guards/boundaries::workspace_shape::retired_crates_are_gone a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::no_manifest_names_a_retired_crate a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::workflows_name_no_retired_crate a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::instructions_have_no_entry_for_a_retired_crate a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::host_crates_name_no_deleted_surface a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::instruction_files_and_state_name_the_abi_crate a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/boundaries::workspace_shape::hygiene_guard_lives_in_piperine_lang a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/suite::suite_hygiene::phdl_corpus_does_not_grow a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/suite::suite_hygiene::lrm_covers_declarations_are_well_formed a guard against a retired architecture; no way back to it
+retire piperine-repository-guards/suite::suite_hygiene::no_dead_architecture_identifiers a guard against a retired architecture; no way back to it

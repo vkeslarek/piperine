@@ -35,6 +35,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run docs**: `cargo test -p piperine-cli --test docs`
 **Run format**: `cargo test -p piperine-lang --test msl_format`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error, or deletes a user's comment: T1, T6, T14, T21, T25, T36, T41, T42, T44, T45, T46, T47. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
@@ -1346,8 +1347,8 @@ Proof: run usage | test the_binary_is_named_piperine ... ok
 **C3** - The root `src/lib.rs` holds `pub use piperine_api::*;` and no other item. (CLI-01, AC 3; T4)
 Proof: run shape | test the_root_package_is_a_re_export_and_nothing_else ... ok
 
-**C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5)
-Proof: run shape | test host_crates_name_no_deleted_surface ... ok
+**C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C5** - `piperine --help` lists `check`, `build`, `run`, `test`, `new`, `clean`, `fmt` and no other command, exit 0. (CLI-01, AC 5; T5)
 Proof: run usage | test help_lists_exactly_the_seven_commands ... ok

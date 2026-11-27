@@ -18,6 +18,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run digital**: `cargo test -p piperine-digital-solver`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run boundaries**: `cargo test -p piperine-repository-guards --test boundaries`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Do not set `CARGO_TARGET_DIR`. Never pass `--workspace` and never run `cargo clean`: five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root `piperine` shell) and are expected to stay that way through this feature. Do not push.
 
@@ -720,11 +721,11 @@ Proof: run solver | test rc_step_reads_one_minus_exp ... ok
 **C6** - A hand-written diode fed through a resistor satisfies its own current equation within 1e-9 A (SR-01, AC 4)
 Proof: run solver | test diode_satisfies_its_own_equation ... ok
 
-**C7** - The five retired crate directories do not exist (SR-02, AC 1)
-Proof: run boundaries | test workspace_shape::retired_crates_are_gone ... ok
+**C7** - The five retired crate directories do not exist (SR-02, AC 1) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C8** - No `Cargo.toml` names a retired crate and the root manifest has no Cranelift profile entry (SR-02, AC 2)
-Proof: run boundaries | test workspace_shape::no_manifest_names_a_retired_crate ... ok
+**C8** - No `Cargo.toml` names a retired crate and the root manifest has no Cranelift profile entry (SR-02, AC 2) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C9** - The workspace manifest loads (SR-02, AC 3)
 Proof: `cargo metadata --no-deps --format-version 1 > /dev/null`
@@ -738,29 +739,29 @@ Proof: run boundaries | test workspace_shape::examples_hold_no_vams_or_python ..
 **C12** - `default-members` is `piperine-lang` plus the three solver crates (SR-02, AC 6)
 Proof: run boundaries | test workspace_shape::default_members_are_the_green_crates ... ok
 
-**C13** - No workflow builds or tests a retired crate, and CI does not pass `--workspace` (SR-02, AC 7)
-Proof: run boundaries | test workspace_shape::workflows_name_no_retired_crate ... ok
+**C13** - No workflow builds or tests a retired crate, and CI does not pass `--workspace` (SR-02, AC 7) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C14** - No solver source names the distortion analysis, its hooks or its capability flags (SR-03, AC 1)
-Proof: run solver | test disto_is_gone ... ok
+**C14** - No solver source names the distortion analysis, its hooks or its capability flags (SR-03, AC 1) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C15** - No solver source names the text or file output surface, and `Context` has no `io` field (SR-03, AC 2)
-Proof: run solver | test text_io_is_gone ... ok
+**C15** - No solver source names the text or file output surface, and `Context` has no `io` field (SR-03, AC 2) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C16** - No solver source names a validation, margin or coverage item, a check posture or one of the five removed `Element` methods (SR-03, AC 3)
-Proof: run solver | test verification_channels_are_gone ... ok
+**C16** - No solver source names a validation, margin or coverage item, a check posture or one of the five removed `Element` methods (SR-03, AC 3) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C17** - No solver source names the `specify` delay or timing-check surface (SR-03, AC 4)
-Proof: run solver | test specify_timing_is_gone ... ok
+**C17** - No solver source names the `specify` delay or timing-check surface (SR-03, AC 4) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C18** - No solver source names a stratified-region item, and `DigitalEvent` has no `region` field (SR-03, AC 5)
-Proof: run solver | test regions_are_gone ... ok
+**C18** - No solver source names a stratified-region item, and `DigitalEvent` has no `region` field (SR-03, AC 5) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C19** - No solver source names `simprobe` or `SimprobeError` (SR-03, AC 6)
-Proof: run solver | test simprobe_is_gone ... ok
+**C19** - No solver source names `simprobe` or `SimprobeError` (SR-03, AC 6) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C20** - The guard's scan reports a removed name when a source text holds one (SR-03, AC 7)
-Proof: run solver | test the_scan_catches_a_planted_name ... ok
+**C20** - The guard's scan reports a removed name when a source text holds one (SR-03, AC 7) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C21** - The crates `piperine-solver`, `piperine-analog-solver` and `piperine-digital-solver` exist as workspace members (SR-04, AC 1)
 Proof: run boundaries | test crate_boundaries::the_three_solver_crates_exist ... ok
@@ -804,8 +805,8 @@ Proof: `! cargo build -p piperine-lang -p piperine-solver -p piperine-analog-sol
 **C34** - `CLAUDE.md` and `AGENTS.md` list the eight kept crates (SR-06, AC 1)
 Proof: run boundaries | test workspace_shape::instructions_list_the_kept_crates ... ok
 
-**C35** - The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` hold no entry for a retired crate (SR-06, AC 2)
-Proof: run boundaries | test workspace_shape::instructions_have_no_entry_for_a_retired_crate ... ok
+**C35** - The crate table of `CLAUDE.md` and the workspace map of `AGENTS.md` hold no entry for a retired crate (SR-06, AC 2) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C36** - `.specs/STATE.md` records the three-crate decision under `MD-60` (SR-06, AC 3)
 Proof: run boundaries | test workspace_shape::state_records_the_solver_structure_decision ... ok
@@ -828,8 +829,8 @@ Proof: `! grep -nE 'crates/piperine-(codegen|ir|python|plugin|plugin-macros)/' c
 **C42** - The guard's walk starts at the repository root and reaches the three solver crates and `piperine-lang` (SR-07, AC 3)
 Proof: run hygiene | test the_walk_covers_the_three_solver_crates ... ok
 
-**C43** - The guard lives in `crates/piperine-lang/tests/` with its helper, and none remains under the root `tests/` (SR-07, AC 1)
-Proof: run boundaries | test workspace_shape::hygiene_guard_lives_in_piperine_lang ... ok
+**C43** - The guard lives in `crates/piperine-lang/tests/` with its helper, and none remains under the root `tests/` (SR-07, AC 1) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C44** - No detector of the guard was loosened: its detector self-test is unchanged and passes (SR-07, AC 6)
 Proof: run hygiene | test the_detectors_recognise_what_they_forbid ... ok
