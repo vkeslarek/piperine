@@ -835,3 +835,55 @@ All three are unreachable after `validate`, and none is silent on a real path.
 | P4-7 test edits outside the exception | Low | |
 | P4-8 abi rows open; stale design reference | Low | |
 | P4-9 `bound()` still `Option` | Low | |
+
+## Phase 4 round 2
+
+**Verdict**: PASS. All nine round 1 findings are closed in code by 471de10ca. Two Low notes stay open for the coordinator and block nothing.
+**Head**: 471de10ca on `feature/code-clarity-p4`, base a0bba62cb
+**Verifier**: independent sub-agent (Opus; author != verifier). Gates were rerun in the foreground, with target dir `-d`.
+
+### Gates at 471de10ca
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line (`cargo build --workspace --all-targets`, filtered for `^(warning|error)`) | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 116 passed, 0 failed |
+| `cargo test -p piperine-abi` | 58 passed |
+| `cargo test -p piperine-analog-solver` | 111 passed |
+| `cargo test -p piperine-solver` | 371 passed |
+| `cargo test -p piperine-plan` | 68 passed |
+| `cargo test -p piperine-interp` | 72 passed |
+| `cargo test -p piperine-transpile` (the `golden` target included) | 172 passed |
+| `cargo test -p piperine-api` | 307 passed |
+| `cargo test -p piperine-cli` (the `twins` target included) | 144 passed |
+| `cargo test -p piperine-parity` | 645 passed |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| `cargo test -p piperine --test integrated` (`tests/integrated/package.rs` was edited) | 42 passed |
+| CC-09: `git diff a0bba62cb..HEAD` over goldens, twins, `docs/`, `examples/`, `.msl`, `tests/book*` and `contract.rs` | empty. The only change near a golden is `tests/golden.rs` dropping `.expect(..)` on `bound()`, a call path |
+
+### Closure of round 1
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P4-1 | 471de10ca | `GroundName::names` accepts `gnd`/`GND`/`vss`/`VSS` again (`core/ground.rs`). `edge_gnd_name_routes_to_ground` carries its base assertion (`assert_eq!(g, n2)`). The ground behaviour is now identical to a0bba62cb; only the owner changed. S21 is a T29 Deferred note to the user, with the `GND` label as the reason |
+| P4-2 | 471de10ca | The guard owner is `piperine-lang` (`inventory_types.rs:9`). The `LogicPattern` row moved from `allowances/piperine-lang/` to `allowances/piperine-api/inventory_types_in_two_crates.tsv` as `api/src/logic_pattern.rs::LogicPattern 1`. That is net-zero: one row out, one row in, the same count, and T52 deletes it |
+| P4-3 | 471de10ca | Owner lines exist as unticked Done-when items: T43 `lang::In`; T48 `InferredGenerics`; T49 `Ty::has_repr`; T50 `default_type`; T51 `round_integer` and `Limbs`; T55 the 7 `build.rs` panics. The T26, T30 and T32 boxes now say what is true, with the open parts unticked. Lane reach: see note R2-2 |
+| P4-4 | 471de10ca | `LinearSystem`, `SymbolicMatrix` and `SymbolicLinearSystem` are gone (`math/linear.rs` holds `AsIndex` and `Stamp`), and `NewtonRaphsonSolver<A, E>` has no `L`. The methods are inherent, with `///` on each. Test edits are the import at `support/system.rs`, the `Solver` alias and three `FaerSparseLinearSystem::new` ascriptions, which are type paths only. `reset_clears_stamps_without_reallocating` and the other faer tests are unchanged |
+| P4-5 | 471de10ca | `BodyPlan::new` is gone. Every `.expect("the body plans")` in `src` sits below a `#[cfg(test)]` line: `print/{analog,cross,digital,limit,shape,site}.rs` at 790/97/314/224/453/377. The two production callers, `interp/src/interpreter.rs:76` and `transpile/src/transpiler.rs:47`, `map_err` into `Rejected`. The vacuous `reject.rs` test is gone. The two new unit tests call `ValuePrinter::probe(Own, Ground)` and `ContributionSums::branch_text` on an `Own` branch. Both APIs exist at a0bba62cb (`analog.rs:80` `values()`, `contribution.rs:75`), where those exact arms are `panic!(..)` (base `value.rs:401`, `contribution.rs:80`), so both tests would fail there. "A checked Ir cannot reach them" holds: `probe` is called only with a branch's terminals (`analog.rs:659`), and `check.rs:318` refuses an `Own` branch terminal |
+| P4-6 | 471de10ca | pz asserts `Error::Simple { domain: Pz, .. }` with "infinite". pss is renamed `a_result_with_no_step_has_no_final_step_error` and asserts the `Transient` domain. The Done-when and the doc comment narrow the claim to the reader. Judgement below |
+| P4-7 | 471de10ca | The T23 Notes name the `sp.rs` setup change |
+| P4-8 | 471de10ca | The two `piperine-abi` rows are `kept: <host>`, with doc comments at `abi/src/raw.rs` and `abi/src/verify.rs`. `solver-abi-analog/design.md:92` now says the markers were deleted by T31 |
+| P4-9 | 471de10ca | `bound()` returns `&Bound` and `bound_mut()` returns `&mut Bound`. The api edits (`probe.rs:281,289`, `pins.rs:22`, `session.rs:721,793,888,938`) drop an `Option` path that could not be `None`. The removed `none("the circuit binds no design")` was unreachable. A normalised diff of every test edit (`BodyPlan::new(x)` → `build(x).expect(..)`, `.bound().expect/unwrap` → `.bound()`) leaves no other change, and no assertion moved |
+
+**P4-6 judgement.** T24's claim is "an empty shoot is an error, not a panic". After the fix, every one of the five `pss.rs` sites returns `Err` through `final_step()?`. The t=0 site returns through `ok_or_else(.. Pss ..)`. So no panic remains, which is the claim, and the reader's error is pinned by the test.
+
+The `?` is not dead code worth deleting. It is the T25-style replacement of an `unwrap` on an invariant: shooting records its first step, so the error path is unreachable today, and the `?` keeps a future empty result from becoming a panic. Removing it would bring back the `unwrap` T24 exists to remove. The narrowed wording is honest. I accept it.
+
+### Round 2 notes (Low, not blocking)
+
+- **R2-1.** `GroundName::TEXT` (`crates/piperine-solver/src/core/ground.rs:8`) is a new `pub` item that nothing references, which is the kind of item T30 removes. The type doc also says "whatever the case", but only four spellings match (`Gnd` does not). Fix: drop `TEXT`, or use it in `names`, and say "these four spellings".
+- **R2-2.** Two owner tasks reach paths that the design's Lanes table does not give their lane in their wave:
+  - T49 (lane F, wave 2, `{msl,pom}/**`) removes `Ty::has_repr` in `lang/src/types/ty.rs`, which is a wave-3 path.
+  - T55 (lane K, wave 2) edits `lang/src/elab/{place,resolvers}.rs`.
+
+  No other lane owns those paths in wave 2, so nothing collides. The table should still name them, or T49's item should move to a P10 task.
