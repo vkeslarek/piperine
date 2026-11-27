@@ -347,3 +347,101 @@ None. I probed the following, and every check held:
 - a tree-wide scan for name-grepping lone proofs.
 
 Phase 1 (T1 to T8) is verified. Every round 1 to round 5 finding is closed by the commits named in the rounds above.
+
+## Phase 3 (B4 Refusals have an owner, T15 to T22)
+
+**Verdict**: FAIL (one Medium finding, two Low)
+**Head**: 40a85da92 on `feature/code-clarity-p3`, base 4742ea9c5. It does not include Phase 2.
+**Verifier**: independent sub-agent (Opus; author != verifier). The implementer changed after T16. I reran the gates myself in the foreground, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors (the full log was read) |
+| `cargo test -p piperine-lang --no-fail-fast` | 84 result lines, 1 584 passed, 0 failed; `refusals` has 7 tests, all pass |
+| `cargo test -p piperine-repository-guards` | lib 46, boundaries 26, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 24, worklists 4: all pass |
+| `cargo test -p piperine-parity --no-fail-fast` | 64 result lines, 645 passed, 0 failed (the `rt.rs:335` panics in the log are the compiled-fault tests, which pass) |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| T15 `p0001_is_worded_in_one_place` | `refusals.rs`; `git grep` | yes. The literal is only in `refusal.rs:112`, and the other `P0001` mentions in `src/` are comments |
+| T16 label, no "M1 subset" in non-test files | `p0001_does_not_name_a_milestone`, `git grep "M1 subset"` | yes for `piperine-lang/src`. `api/src/session.rs:1044` is lane K's, as noted. No test pinned the old label: at the base the only Rust occurrences were the two `format!` labels and comments, so nothing needed re-pinning. GAPS §4.8's row is gone |
+| T15–T20: no message changes (CC-09) | A static diff. I took every string literal and every `format!` template passed to a base refusal site (420 + 66), normalised `{..}` to `{}`, and looked each up among the 526 head row texts | yes. All of them match except `{what} in {position}` (now `Refusal::in_position`) and `{what} is not supported yet` (now `Refusal::diagnostic`), both rebuilt byte for byte. No test, golden, twin, Book listing or `contract.rs` changed: `git diff --name-only` outside `piperine-lang/src`, `.specs` and allowances lists only `refusals.rs`, `unswept_count.txt`, GAPS, ROADMAP, the parity rename and the guards' data. 1 584 unedited lang tests pass |
+| T20 `RefusedForm` has no `Text` | `refusal.rs` | yes |
+| T17 "no `Refusal` of `types/` from `Text`" | `tasks.md:689` | it holds at the head (`Text` is deleted), but the box is unticked (finding P3-3) |
+| T21: no two sites build one form | `no_two_sites_build_the_same_refused_form`. Throwaway: `// ValueForm::Assignment ValueForm::Assignment` in `elab/mod.rs` | fails "ValueForm::Assignment x2"; reverted |
+| T21: `types/unsupported.rs`, `elab/unlowered.rs` gone | `the_catch_all_refusal_files_are_gone` | yes |
+| T21 R4, P0004 unreachable | read of `types/call.rs:441-446` against `elab/compound.rs:556-566`, and of `types/patterns.rs:278-314` against `elab/patterns.rs:314-333` | yes. The checker refuses an `expect` whose argument is not `ExprKind::Lit` of `LitKind::Str`, and the elaborator's guard fires only when the literal gives no string. The checker accepts a path pattern only for a variant or a `const`, and `path_value` handles exactly those two. `Elaborator::run` stops when `Types::check` fails (`elaborator.rs:54`). The dropped `scope`/`span` parameters fed only the removed refusals |
+| T22 `every_refused_form_has_a_row` | `refusals.rs:137` | yes. Every variant is in `ALL`, in declaration order, with a non-empty text |
+| T22 `the_unswept_count_only_shrinks` | throwaway: one `Gap("L83")` turned `Unswept`; one `Unswept` turned `Gap` | the first fails with "492 … the count never grows" and the second with "write 490"; both reverted |
+| T22 `every_gap_owner_names_a_gaps_row` | throwaway `Gap("L999")` | fails; reverted. But the test checks only that the row exists, not that it owns the form (finding P3-1) |
+| T22 ROADMAP | `ROADMAP.md:53` | yes. The `spec-closure` row hands over the sweep of `refusal/forms.rs` and ends at `unswept_count.txt` 0 |
+| Coordinator decisions in commit bodies | T15 (d6566fd93): `Box<Refusal>`, no file or span, Run refusals and C9 until T139, target plan 82. 4373846e4: `ActionRefusal`. T17 (9ef70b1af): the diagnostic-code token with its unit tests, several `{}`, the `ROWS` table. T19 (600bd8e2e): the IR's `NotDifferentiable` as one `{}` form. T21 (9e3d2ac54): R4 `P0004`, the 48 repeated forms | yes. T15's body still says `p` joined the glossary, but `glossary.tsv` has no `p` at the head; T17 replaced it with the token |
+| Naming-guard token | `naming_rules.rs` `a_diagnostic_code_is_one_accepted_part_and_a_bare_letter_or_short_number_is_not` | yes: `p0001` and `e0341` are accepted; `p`, `x12` and `p00012` are refused |
+| Generated Rust | `refusal/{forms,repeated,syntax}.rs` | no `macro_rules`, no free function, no `#[allow]`. Every item has a `///`. `syntax.rs`'s `match`es are exhaustive with no wildcard. The generators (`generate.py`, `share.py`, `syntax.py`, `registry.json`) are tracked only under `.specs/features/code-clarity/refusal-gen/` |
+| Allowances | `git diff` of `allowances/` | yes: 591 deletions and 0 additions. `undocumented_items`' `unsupported_decl` row came and went. Dictionary additions are real English: anything, catch, details, greater, here, image, inlining, less, rather, shrinks, these, tuple, unary, undefined, wildcard. `refutable`, `worded`, `milestone`, `xor` and `unswept` are glossary rows with a meaning |
+| T20 test edit | `p0001_does_not_name_a_milestone`, efbb748c8 | meaning unchanged. `Refusal::of(Text("a form"))` became `Refusal::of(ValueForm::Assignment)`, with the expected message moving from `"a form is not supported yet"` to `"assignment is not supported yet"`. It still asserts the full message, the label, and the absence of "M1 subset". The test is the task's own (T16), not one that existed before the feature |
+
+### P3-1 (Medium): the blanket L74 owner is wrong for the forms event functions raise, and for one general form
+
+The T22 commit gives `Gap(id)` to a form whose text a GAPS row quotes, "or, for elab/symbolic.rs, L74". Two kinds of row get the wrong owner from that.
+
+**Forms raised for both ddx and event functions.** `elab/symbolic.rs` serves two bodies: `ExpandedBody::Differentiated` ("a `fn` called inside a `ddx`", L74) and `ExpandedBody::EventFunction` ("a `fn` that returns an `Event`", L75). `event_functions.rs:176,196,204,233,246` runs the same steps with `EventFunction`. The forms whose `{}` is `body.describes()` or `context.describes()` are therefore raised for both bodies. Yet every one of them is `Gap("L74")`:
+
+- `LetOfPatternThatIsNoName`
+- `ForThatIsNotOverRangeWith`
+- `ForWhoseBoundsDoNotFoldTo`
+- `ForWhoseVariableIsNoNameIn`
+- `ForOfMoreThanIterationsIn`
+- `BreakContinueOrNestedWhileInLoop`
+- `ElseThatIsNoBlockOrIf`
+- `AssignmentToSomethingThatIsNoName`
+- `CompoundAssignmentThroughOperatorOfTypeIn`
+
+L75 names exactly the event-function side ("a `let` of a pattern that is no name, … a `while` or `loop`, a `break`…").
+
+Repro: `crates/piperine-lang/tests/elab_digital.rs:937` asserts the message "a `let` of a pattern that is no name in a `fn` that returns an `Event`". That is raised as `AnalogForm::LetOfPatternThatIsNoName`, whose row (`forms.rs:1416`) says `Gap("L74")`. When `spec-closure` closes L74, this L75 case goes with it.
+
+**A general form owned by a ddx gap.** `ValueForm::AssignmentToFieldOrElement` (`forms.rs:744`, `Gap("L74")`) is raised by `elab/control.rs:79`, `assigned_local`. That is the general assignment lowering behind `lower.rs:696` and `aggregate.rs:234`, not only a ddx body. No site cites L74 for it; L74's prose merely contains the phrase.
+
+**The guard cannot catch either.** `every_gap_owner_names_a_gaps_row` (`refusals.rs:145`) checks only that `| L74 |` exists.
+
+Fix:
+
+- Give the event-function context its own forms, or own the shared forms by context, and own the event-function ones by L75.
+- Return `AssignmentToFieldOrElement` to `Unswept`, unless it is shown to be reached only inside a ddx body.
+- Consider having the guard require that the owning GAPS row quote the row's text, with `{}` as a wildcard. That holds for the quoted rows; the blanket rows would then need an explicit note.
+
+### P3-2 (Low): three names stay vague or in the wrong family after deviation 7 ("names fixed")
+
+- `ValueForm::Expression` is the "`?` expression" (`forms.rs:792`, from `syntax.rs` `ExprKind::Try`). The `?` was stripped from the name. A fitting name is `TryExpression`.
+- `AnalogForm::Refused` (`forms.rs:1441`, text "{} `{}`", raised at `types/analog.rs:215`) is a core primitive or built-in with no signature row. The name says nothing, and the form is not analog.
+- The event-function forms above live in `AnalogForm` though `event_functions.rs` raises them for digital bodies, and the item kinds (`EnumItem`, `ModItem`, `ImplItem`, …) live in `ValueForm`.
+
+Fix:
+
+- Rename the first two, for example to `TryExpression` and `PrimitiveWithNoSignatureRow`.
+- Move the family classification with the P3-1 split.
+
+### P3-3 (Low): T17's first Done-when box is unticked
+
+`tasks.md:689`, "- [ ] No `Refusal` of `types/` is built from `RefusedForm::Text`". It holds at the head, because `Text` was deleted in T20, and T17's commit body asserts it. The tick was lost at the handoff.
+
+Fix: tick it.
+
+### Notes, not findings
+
+- **`refusal/repeated.rs` is indirection only.** It holds 48 one-line methods of the form `fn cast() -> RefusedForm { ConstantForm::Cast.into() }`. Each site still calls `refuse(file, span, RefusedForm::cast())`, so no owner logic moved into a method. It is what T21's Done-when asks for: the test counts constructions per variant. But since T17–T20 made each variant the one owner of its words, R3 already held without these methods, and the textual count is satisfied by any wrapper. Whether to keep 237 lines of pass-through is the user's call (code-cleanliness rules).
+- **Cross-lane allowance deletions.** The dictionary additions emptied about 190 stale `undeclared_words` rows in other crates' allowance files (parity 19, project 14, solver 12, root 123, numbers 4, transpile 4). Phase 2 (lane T) edits the same files, so expect merge conflicts at integration. They are deletions on both sides and resolve by taking both.
+- **T15's commit body is out of date.** It says `p` joined the glossary; that was replaced by the token in T17, which is the coordinator's decision. History only.
+
+### Phase 3 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| P3-1 wrong Gap owners: L74 blanket over L75 forms and a general form | Medium | `forms.rs:744,1369-1399,1416`; `event_functions.rs:176-246`; `elab_digital.rs:937`; `control.rs:79`; `refusals.rs:145` | split or own by context (L75); `AssignmentToFieldOrElement` to `Unswept`; make the guard check that the row quotes the text | |
+| P3-2 vague and misplaced form names | Low | `forms.rs:792,1441`; `types/analog.rs:215` | rename; reclassify with P3-1 | |
+| P3-3 T17 box unticked | Low | `tasks.md:689` | tick it | |
