@@ -11,6 +11,7 @@ pub struct RustSource {
     crate_name: String,
     is_test: bool,
     line_count: usize,
+    text: String,
     syntax: Result<syn::File, String>,
 }
 
@@ -34,6 +35,11 @@ impl RustSource {
     /// How many lines the file has.
     pub fn line_count(&self) -> usize {
         self.line_count
+    }
+
+    /// The file's text.
+    pub fn text(&self) -> &str {
+        &self.text
     }
 
     /// The parsed syntax, or the parse error as text.
@@ -102,6 +108,7 @@ impl SourceTree {
                 is_test: path.components().any(|c| c.as_os_str() == "tests"),
                 line_count: text.lines().count(),
                 syntax: syn::parse_file(&text).map_err(|error| error.to_string()),
+                text,
                 path,
             })
             .collect();

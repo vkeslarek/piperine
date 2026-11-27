@@ -3945,7 +3945,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled mid-build:** none
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
-**Progress:** T1 to T7 done.
+**Progress:** T1 to T8 done (the two timing columns of the before report are not taken, see suite-report.md).
 **Dispatched:** none
 **Walked:** none - the feature has no screen; each story's Independent Test is a guard target of `## Checks`.
 

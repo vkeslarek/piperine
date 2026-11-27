@@ -26,24 +26,19 @@ code-clarity	C21	run specstructure names no test the_revision_note_names_every_s
 code-clarity	C22	run srcio names no test a_user_wrapper_over_emit_writes_the_record
 code-clarity	C22	run srcio names no test emit_writes_the_records_it_wrote_before
 code-clarity	C22	run srcio names no test finish_and_check_are_the_writers_of_the_reserved_streams
-code-clarity	C24	run worklists names no test every_duplicate_of_the_inventory_has_a_verdict
-code-clarity	C25	run suite names no test no_crate_has_more_targets_than_its_plan
 code-clarity	C26	run suite names no test no_allow_in_test_code
 code-clarity	C26	run suite names no test no_test_support_is_shared_by_path
 code-clarity	C28	run suite names no test the_suite_report_has_before_and_after
 code-clarity	C3	run boundaries names no test no_type_of_the_inventory_is_defined_in_two_crates
-code-clarity	C8	run worklists names no test every_long_function_of_the_inventory_has_a_verdict
 code-clarity	C9	run refusals names no test every_refused_form_has_a_row
 code-clarity	C9	run refusals names no test p0001_is_worded_in_one_place
 code-clarity	C9	run refusals names no test the_unswept_count_only_shrinks
-code-clarity	C9	run worklists names no test every_single_implementor_trait_is_removed_or_justified
 code-clarity	Run book	no test target piperine/book
 code-clarity	Run refusals	no package piperine-language
 code-clarity	Run specstructure	no package piperine-language
 code-clarity	Run srcio	no test target piperine-parity/source_io
 code-clarity	Run stddecl	no package piperine-language
 code-clarity	Run variadics	no package piperine-language
-code-clarity	Run worklists	no test target piperine-repository-guards/worklists
 composite-values	C108	run srcagg names no test an_unknown_composite_is_refused_by_name
 composite-values	C143	run book names no test the_memory_bank_is_refused_for_its_generic_module
 composite-values	C143	run book names no test the_signal_list_elaborates_and_only_the_net_nature_is_missing

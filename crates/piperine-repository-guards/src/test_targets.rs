@@ -10,6 +10,8 @@ use crate::source_tree::SourceTree;
 struct ManifestText {
     package: String,
     explicit_tests: Vec<(String, String)>,
+    /// The names of the `[[test]]` targets declared `test = false`: run by name, not by `cargo test`.
+    on_demand: Vec<String>,
 }
 
 impl ManifestText {
@@ -18,6 +20,7 @@ impl ManifestText {
         let mut package = String::new();
         let mut explicit_tests = Vec::new();
         let mut section = String::new();
+        let mut on_demand = Vec::new();
         let mut pending: (Option<String>, Option<String>) = (None, None);
         let flush = |pending: &mut (Option<String>, Option<String>), tests: &mut Vec<(String, String)>| {
             if let (Some(name), Some(path)) = pending.clone() {
@@ -38,11 +41,12 @@ impl ManifestText {
                 ("[package]", "name") => package = value,
                 ("[[test]]", "name") => pending.0 = Some(value),
                 ("[[test]]", "path") => pending.1 = Some(value),
+                ("[[test]]", "test") if value == "false" => on_demand.push(pending.0.clone().unwrap_or_default()),
                 _ => {}
             }
         }
         flush(&mut pending, &mut explicit_tests);
-        ManifestText { package, explicit_tests }
+        ManifestText { package, explicit_tests, on_demand }
     }
 }
 
@@ -58,6 +62,8 @@ pub struct TestTarget {
 pub struct PackageTests {
     /// The integration-test targets.
     pub targets: Vec<TestTarget>,
+    /// The names of the targets run by name, not by `cargo test`.
+    pub on_demand: Vec<String>,
     /// Every `#[test]` function of the package's `src/`, the unit tests.
     pub unit_tests: BTreeSet<String>,
 }
@@ -129,7 +135,7 @@ impl TestTargets {
             .collect();
         let source_directory = directory.join("src");
         let unit_tests = found.iter().filter(|(path, _)| path.starts_with(&source_directory)).flat_map(|(_, names)| names.iter().cloned()).collect();
-        PackageTests { targets, unit_tests }
+        PackageTests { targets, on_demand: manifest.on_demand.clone(), unit_tests }
     }
 
     /// The package of that name, when the workspace has it.

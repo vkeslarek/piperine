@@ -1,0 +1,17 @@
+# The plan of integration-test targets per crate (CC-12): the targets each crate may hold. Tasks that merge targets lower it; nothing raises it.
+piperine	26
+piperine-abi	11
+piperine-analog-solver	13
+piperine-api	26
+piperine-cli	10
+piperine-digital-solver	16
+piperine-interp	7
+piperine-ir	15
+piperine-lang	81
+piperine-numbers	8
+piperine-parity	62
+piperine-plan	9
+piperine-project	5
+piperine-repository-guards	8
+piperine-solver	56
+piperine-transpile	29
