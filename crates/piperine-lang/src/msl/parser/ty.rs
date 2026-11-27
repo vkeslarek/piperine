@@ -72,6 +72,7 @@ impl TypeGrammar {
         TypeGrammar::path_with_sugar(h, false, true)
     }
 
+    /// A path; `in_expr` asks for the turbofish before generic arguments and `sugar` admits `Fn(A) -> R`.
     fn path_with_sugar<'a, I: In<'a>>(h: &Handles<'a, I>, in_expr: bool, sugar: bool) -> P<'a, I, Path> {
         let args = if sugar {
             TypeGrammar::generic_args(h, in_expr).or(TypeGrammar::fn_sugar(h)).or_not().boxed()

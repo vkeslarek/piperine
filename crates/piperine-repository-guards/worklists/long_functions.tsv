@@ -63,16 +63,16 @@ crates/piperine-lang/src/elab/place.rs::Elaboration::place_instance	-
 crates/piperine-lang/src/elab/records.rs::Elaboration::lower_emit	-
 crates/piperine-lang/src/elab/returns.rs::Elaboration::lower_inlined_option_call	-
 crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
-crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	-
-crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::statement	-
-crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	-
-crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::definition	-
-crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::fn_decl	-
-crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::module_decl	-
-crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::recover_item	-
-crates/piperine-lang/src/msl/parser/pat.rs::PatternGrammar::definition	-
-crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::definition	-
-crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	-
+crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	kept: an exhaustive match over the expression kinds, one short arm per kind; splitting it would only scatter the arms
+crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::statement	kept: an exhaustive match over the statement kinds, one short arm per kind
+crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	kept: one scan over the token vector with a single cursor and the two E0910 counters; every branch is a few lines of one state machine
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::definition	kept: a flat list of one `let` per item form joined by one `first_of`; no branching, each form reads on its own
+crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::fn_decl	kept: one combinator chain for the signature and body of a function; each stage is a line of the grammar production
+crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::module_decl	kept: one combinator chain for the module production of B.3; each stage is a line of the grammar
+crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::recover_item	kept: one list of recovery alternatives for a module item, one `let` per form joined by one `first_of`
+crates/piperine-lang/src/msl/parser/pat.rs::PatternGrammar::definition	kept: a flat list of one `let` per pattern form joined by one `first_of`; no branching
+crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::definition	kept: a flat list of one `let` per type form joined by one `first_of`; no branching
+crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	kept: an exhaustive match over the expression kinds, one short arm per kind
 crates/piperine-lang/src/pom/check.rs::Design::check_nodes	-
 crates/piperine-lang/src/pom/check.rs::Refs::decl	-
 crates/piperine-lang/src/pom/check.rs::Refs::expr	-

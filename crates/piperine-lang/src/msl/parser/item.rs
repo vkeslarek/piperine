@@ -4,7 +4,7 @@
 use super::*;
 
 /// The item grammar: attributes, doc comments, functions, structs, enums, impls, traits, constants and `use` trees.
-pub struct ItemGrammar;
+pub(crate) struct ItemGrammar;
 
 impl ItemGrammar {
     /// Doc comments and attributes in front of a declaration.
@@ -91,6 +91,7 @@ impl ItemGrammar {
             .boxed()
     }
 
+    /// A port direction: `in` or `out`.
     pub(crate) fn direction<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone {
         choice((TokenInput::keyword(Kw::In).to(Dir::In), TokenInput::keyword(Kw::Out).to(Dir::Out)))
     }

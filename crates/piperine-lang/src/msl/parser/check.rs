@@ -343,6 +343,7 @@ impl ParseCheck {
         }
     }
 
+    /// Check an expression and the expressions inside it against the context `ctx`.
     fn expression(e: &Expr, ctx: Ctx, out: &mut Vec<Diagnostic>) {
         crate::stack::Stack::deep(|| ParseCheck::expression_inner(e, ctx, out))
     }

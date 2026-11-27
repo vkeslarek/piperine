@@ -1230,7 +1230,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The crate's row for the file leaves the free-function allowance; `long_functions.tsv` rows of the file have a verdict
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `lex` and `lex_bytes`, now `Lexer::lex` and `Lexer::lex_bytes`)
 - [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1252,7 +1252,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited)
+- [x] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited but for the one exception: the calls of `print`, now `Printer::print`)
 - [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1275,10 +1275,10 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged (partly: `parse`, `parse_bytes` and the other 51 free functions are methods now; the six fragment entry points `parse_type`, `parse_pat`, `parse_generics`, `parse_expr`, `parse_module_item`, `parse_block` stay free functions, see Deferred)
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse` and `parse_bytes`, now `SourceParser::parse` and `SourceParser::parse_bytes`)
 - [x] Gate check passes: Quick
 
-**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr` (closed by T44: `ExpressionGrammar::parse`), T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block` (done: `ModuleGrammar::parse`, `BlockGrammar::parse`). All six are gone; the first box is ticked. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
+**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr` (closed by T44: `ExpressionGrammar::parse`), T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block` (done: `ModuleGrammar::parse`, `ExpressionGrammar::parse_block`). All six are gone; the first box is ticked. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1325,7 +1325,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The three files leave the free-function allowance
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_type`, `parse_pat` and `parse_generics`, now `TypeGrammar::parse`, `PatternGrammar::parse` and `GenericsGrammar::parse`)
 - [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1348,7 +1348,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] `crates/piperine-lang/src/msl` has no row in the free-function allowance
-- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_module_item`, `parse_block` and `render`, now `ModuleGrammar::parse`, `ExpressionGrammar::parse_block` and `Diagnostic::render`)
 - [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)

@@ -1,6 +1,5 @@
 # The words a declared name may be made of (CC-05), besides data/glossary.tsv: dictionary words and their regular forms.
 # A diagnostic code (one letter and four digits: `p0001`) is accepted by the guard itself and needs no entry.
-
 a
 abandon
 abbreviation

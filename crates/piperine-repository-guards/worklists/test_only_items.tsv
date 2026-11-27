@@ -23,6 +23,7 @@ crates/piperine-ir/src/build.rs::IrBuilder::find_nature	-
 crates/piperine-ir/src/deps.rs::Body::param_changes	-
 crates/piperine-ir/src/print.rs::Ir::print_structural	-
 crates/piperine-lang/src/elab/consts.rs::ConstEval::files_read	-
+crates/piperine-lang/src/msl/parser/expr.rs::ExpressionGrammar::parse_block	kept: test surface of ExpressionGrammar
 crates/piperine-lang/src/pom/design.rs::Design::dump	-
 crates/piperine-lang/src/pom/design.rs::Design::from_json	-
 crates/piperine-lang/src/pom/design.rs::Design::type_count	-

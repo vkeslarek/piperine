@@ -7,7 +7,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, BlockGrammar, GenericsGrammar, PatternGrammar, TypeGrammar};
+use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, GenericsGrammar, PatternGrammar, TypeGrammar};
 
 fn ty(src: &str) -> Type {
     let (t, diags) = TypeGrammar::parse(src);
@@ -28,7 +28,7 @@ fn expr(src: &str) -> Expr {
 }
 
 fn block(src: &str) -> Block {
-    let (b, diags) = BlockGrammar::parse(src);
+    let (b, diags) = ExpressionGrammar::parse_block(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     b.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }

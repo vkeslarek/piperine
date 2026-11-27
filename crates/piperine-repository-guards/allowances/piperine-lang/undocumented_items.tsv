@@ -76,7 +76,6 @@ crates/piperine-lang/src/msl/format.rs::Formatter::internal	1
 crates/piperine-lang/src/msl/format.rs::Placement::new	1
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::block	1
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::digital	1
-crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression	1
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	1
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::fn_decl	1
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::impl_items	1
@@ -92,11 +91,9 @@ crates/piperine-lang/src/msl/parser/entry.rs::Depth::close	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::close_angle	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::new	1
 crates/piperine-lang/src/msl/parser/entry.rs::Depth::open	1
-crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::direction	1
 crates/piperine-lang/src/msl/parser/item.rs::ItemGrammar::impl_items	1
 crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::Step	1
 crates/piperine-lang/src/msl/parser/msl.rs::ModuleGrammar::recover_item	1
-crates/piperine-lang/src/msl/parser/ty.rs::TypeGrammar::path_with_sugar	1
 crates/piperine-lang/src/msl/print.rs::Kid::new	1
 crates/piperine-lang/src/msl/print/expressions.rs::Printer::args	1
 crates/piperine-lang/src/msl/print.rs::Printer::attr	1

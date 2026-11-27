@@ -89,7 +89,7 @@ fn plus_gt_and_commit_inside_an_expression_report_e0907() {
     // Appendix A.5 rule 6 / A.6: neither token is an expression operator.
     for (src, at) in [("let x = a +> b;", 10), ("f(a <- b)", 4), ("c = (a +> b);", 7)] {
         let wrapped = format!("{{ {src} }}");
-        let (_, diags) = piperine_lang::msl::parser::BlockGrammar::parse(&wrapped);
+        let (_, diags) = piperine_lang::msl::parser::ExpressionGrammar::parse_block(&wrapped);
         assert!(!diags.is_empty(), "{src:?} must not parse");
         assert_eq!(diags[0].code, "E0907", "{src:?}: {diags:?}");
         assert_eq!(diags[0].span(), Span::new(at + 2, at + 4), "{src:?}");
