@@ -836,7 +836,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 **C57** - `ROADMAP.md` names multi-rate stepping, surrogate models and periodic steady state as what follows. (LR-18, AC 2; T22) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C58** - The buck's README describes the whole-start run. (LR-18, AC 3; T16)
+**C58** - The buck's README describes the whole-start run. (LR-18, AC 3; T16) (narrowed by code-clarity T10: the proof holds the README's command lines; its sentences and absences are no longer pinned)
 Proof: run suite | test repository_records::the_buck_readme_says_how_to_run_it ... ok
 
 **C59** - `.specs/STATE.md` holds MD-66: observation is the run's. (LR-07, AC 3; T23) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)

@@ -17,21 +17,13 @@ impl RepositoryRecords {
 
 #[test]
 fn the_buck_readme_says_how_to_run_it() {
-    // CLI-20 AC 5: `examples/buck/README.md` names `piperine run startup` and no longer says that
-    // nothing runs the converter but a Rust test
+    // CLI-20 AC 5 and long-run LR-18: `examples/buck/README.md` gives the command lines that run the
+    // buck: `piperine run startup`, `piperine test`, and the whole start on a fine grid from flags.
+    // Its prose is not pinned: the sentence and absence checks left with code-clarity T10.
     let readme = RepositoryRecords::read("examples/buck/README.md");
-    assert!(readme.contains("piperine run startup"), "the README names `piperine run startup`");
-    assert!(readme.contains("piperine test"), "the README names `piperine test`");
-    // long-run LR-18: `startup` prints the whole start, no longer the last microsecond only
-    assert!(readme.contains("prints the whole start"), "the README says `startup` prints the whole start");
-    assert!(readme.contains("--print-step 1e-8 --csv") && readme.contains("--plot"), "the README shows the fine-grid waveform from flags");
-    for stale in ["from = 599e-6", "last microsecond", "two-row table"] {
-        assert!(!readme.contains(stale), "the README still says `{stale}`");
+    for command in ["piperine run startup", "piperine test", "--print-step 1e-8 --csv", "--plot"] {
+        assert!(readme.contains(command), "the README gives the command line `{command}`");
     }
-    for stale in ["no host API or\nCLI runs MSL yet", "no host API or CLI runs MSL yet", "There is no testbench in MSL"] {
-        assert!(!readme.contains(stale), "the README still says `{stale}`");
-    }
-    assert!(readme.contains("No such host exists yet"), "the Python sketch says the host it sketches does not exist");
 }
 
 #[test]

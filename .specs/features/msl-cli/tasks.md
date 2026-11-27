@@ -1806,7 +1806,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 **C156** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate and `msl::format`. (CLI-20, AC 4; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C157** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
+**C157** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38) (narrowed by code-clarity T10: the proof holds the README's command lines; its sentences and absences are no longer pinned)
 Proof: run suite | test repository_records::the_buck_readme_says_how_to_run_it ... ok
 
 **C158** - Part VIII defines **bench**: a module without ports, written in MSL, that places the design with its sources, stimulus and monitors, chosen as the top by the host; the term is in the part's list of terms and in the index's term table. (CLI-21, AC 1; T41) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
