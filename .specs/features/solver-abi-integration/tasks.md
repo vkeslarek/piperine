@@ -15,6 +15,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-analog-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-digital-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run solver**: `cargo test -p piperine-solver`
 **Run guards**: `cargo test -p piperine-repository-guards --test boundaries crate_boundaries::`
+**Run drivers**: `cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report`
+**Run crossings**: `cargo test -p piperine-solver --test protocol_crossings`
 
 Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator decides per batch whether Opus implements instead (a different Opus then verifies): the feature is large (25 tasks); Phases 1 to 3 are numerically and protocol delicate, Phase 4 is numerically delicate by volume (the port), Phase 5 is mechanical. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`, after `solver-abi-digital` and `solver-abi-analog` are both merged into it. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push (the tag of T10 is local).
 
@@ -748,10 +750,17 @@ Proof: run solver | test globals_hold_the_session_values ... ok
 Proof: run solver | test sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference ... ok
 
 **C21** - The drivers take stamps, the veto and the continuation values from the assembly (SAI-11, Protocol AC 21): the DC, transient, AC and noise drivers read the analytic values on devices, an active `LIMIT` vetoes convergence, and the gmin step and the source scale reach a device through `GMIN` and `SOURCE_SCALE`
-Proof: `o=$(cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report 2>&1); for t in divider_reads_the_analytic_ratio_on_devices rc_step_reads_one_minus_exp_on_devices an_rlc_peak_matches_the_baseline_on_devices a_resistor_divider_has_its_thermal_noise_on_devices active_limiter_vetoes_newton_convergence gmin_stepping_reaches_a_device_through_the_ambient_input source_stepping_scales_sources_through_the_ambient_input; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done`
+Proof: run drivers | test divider_reads_the_analytic_ratio_on_devices ... ok
+Proof: run drivers | test rc_step_reads_one_minus_exp_on_devices ... ok
+Proof: run drivers | test an_rlc_peak_matches_the_baseline_on_devices ... ok
+Proof: run drivers | test a_resistor_divider_has_its_thermal_noise_on_devices ... ok
+Proof: run drivers | test active_limiter_vetoes_newton_convergence ... ok
+Proof: run drivers | test gmin_stepping_reaches_a_device_through_the_ambient_input ... ok
+Proof: run drivers | test source_stepping_scales_sources_through_the_ambient_input ... ok
 
 **C22** - The smallest `CAP` bounds the next step and a fired `CROSS` is committed at the landing (SAI-11, Protocol AC 22)
-Proof: `o=$(cargo test -p piperine-solver --test protocol_crossings 2>&1); for t in a_cap_watch_bounds_the_next_step a_fired_crossing_is_a_commit_at_the_landing; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done`
+Proof: run crossings | test a_cap_watch_bounds_the_next_step ... ok
+Proof: run crossings | test a_fired_crossing_is_a_commit_at_the_landing ... ok
 
 **C23** - The numeric assertions of `parity_baseline` are byte-identical to the base commit and the suite passes (SAI-12, Port AC 1)
 Proof: `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs | grep -E 'abs\(\) <|res\.len\(\)' > "$a"; grep -E 'abs\(\) <|res\.len\(\)' crates/piperine-solver/tests/parity_baseline.rs > "$b"; test -s "$a" && diff "$a" "$b" && cargo test -p piperine-solver`
@@ -766,7 +775,11 @@ Proof: run solver | test the_element_contract_is_gone ... ok
 Proof: run solver | test the_old_digital_engine_is_gone ... ok
 
 **C27** - Every function of every test device passes the partials verifier (SAI-15, Port AC 4): the helper libraries at a table of operating points and at generic points, each target's own devices (`parity_baseline`'s among them) in that target, and a guard names every hand-written device of the suite in a check (a failure fixture is held to its declared failure)
-Proof: `o=$(cargo test -p piperine-solver 2>&1); for t in every_device_function_passes_the_partials_verifier every_helper_device_passes_at_generic_points every_hand_written_device_is_in_a_partials_check; do printf '%s\n' "$o" | grep -q "test $t ... ok" || { echo "no pass line for $t"; exit 1; }; done; n=$(printf '%s\n' "$o" | grep -c "test its_devices_pass_the_partials_verifier ... ok"); m=$(grep -l 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests/*.rs | wc -l); test "$m" -gt 20 && test "$n" -eq "$m" || { echo "$n of $m targets"; exit 1; }`
+Proof: run solver | test every_device_function_passes_the_partials_verifier ... ok
+Proof: run solver | test every_helper_device_passes_at_generic_points ... ok
+Proof: run solver | test every_hand_written_device_is_in_a_partials_check ... ok
+Proof: run solver | test its_devices_pass_the_partials_verifier ... ok
+Proof: `o=$(cargo test -p piperine-solver 2>&1); n=$(printf '%s\n' "$o" | grep -cE '^test ([A-Za-z0-9_]+::)*its_devices_pass_the_partials_verifier \.\.\. ok$'); m=$(grep -rhow --include='*.rs' 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests | wc -l); test "$m" -gt 20 && test "$n" -eq "$m" || { echo "$n of $m declarations"; exit 1; }`
 
 **C28** - The analog sub-solver names no digital type (SAI-14, Port AC 6)
 Proof: run guards | test analog_sources_name_no_digital_type ... ok
