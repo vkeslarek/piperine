@@ -5,6 +5,7 @@
 //! An identifier pattern that resolves to a unit variant or a constant is a path and binds
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
 
+use crate::refusal::forms::ValueForm;
 use crate::pom::{Arm, ExprId, ExprKind, PatKind, Resolution};
 
 use super::check::Checker;
@@ -24,7 +25,7 @@ impl Checker<'_> {
             && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
         {
             let span = self.design.expr_node(*scrutinee).span;
-            self.unsupported(file, span, &format!("`match` expression over `{}`", t.name(self.design)));
+            self.refuse_with(file, span, ValueForm::MatchExpressionOver, [t.name(self.design).to_string()]);
         }
         let mut covered = Vec::new();
         // A refused pattern is its own diagnostic: the coverage is then not judged.

@@ -5,6 +5,7 @@
 //! An identifier pattern that resolves to a unit variant or a constant is a path and binds
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
 
+use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclKind, ExprId, ExprKind, FileId, LitKind, Name, PatId, PatKind, Resolution, UnOp};
 
@@ -86,7 +87,7 @@ impl Checker<'_> {
             PatKind::Struct { path, fields, rest } => self.struct_pattern(file, node.span, *path, fields, *rest, scrut),
             PatKind::Array(pats) => self.array_pattern(file, node.span, pats, scrut),
             other => {
-                self.unsupported(file, node.span, &format!("{} as a pattern", Unsupported::pat(other)));
+                self.refuse_with(file, node.span, PatternForm::AsPattern, [Unsupported::pat(other).to_string()]);
                 None
             }
         }
@@ -113,7 +114,7 @@ impl Checker<'_> {
     pub(super) fn let_pattern(&mut self, file: FileId, pat: PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let span = self.design.pat_node(pat).span;
         let Some(init) = init else {
-            self.unsupported(file, span, "a `let` with a pattern and no value");
+            self.refuse(file, span, PatternForm::LetWithPatternAndNoValue);
             return;
         };
         let annotated = ty.map(|t| self.lower_type(t));
@@ -303,12 +304,12 @@ impl Checker<'_> {
                     Some(Matched::covering(Covers::Opaque))
                 }
                 other => {
-                    self.unsupported(file, span, &format!("{} as a pattern", Unsupported::item(&other)));
+                    self.refuse_with(file, span, PatternForm::AsPattern, [Unsupported::item(&other).to_string()]);
                     None
                 }
             },
             _ => {
-                self.unsupported(file, span, "this name as a pattern");
+                self.refuse(file, span, PatternForm::NameAsPattern);
                 None
             }
         }

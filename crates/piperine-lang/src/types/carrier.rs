@@ -5,6 +5,7 @@
 //! the two edges of `Bit` and `prev` as built-ins only when the name
 //! resolved to the stdlib's own item (§3.3.7): a project item of the same name is `P0001`.
 
+use crate::refusal::forms::DigitalForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
@@ -30,12 +31,12 @@ impl Checker<'_> {
             Some(GenericArgsNode::Angle { args, .. }) => args,
             None => Vec::new(),
             Some(_) => {
-                self.unsupported(file, span, &format!("`{name}` with these generic arguments"));
+                self.refuse_with(file, span, DigitalForm::WithTheseGenericArguments, [name.to_string()]);
                 return None;
             }
         };
         if arguments.len() > parameters.len() {
-            self.unsupported(file, span, &format!("`{name}` with {} generic arguments", arguments.len()));
+            self.refuse_with(file, span, DigitalForm::WithGenericArguments, [name.to_string(), arguments.len().to_string()]);
             return None;
         }
         let held = match self.design.type_resolution(value_type) {
@@ -44,13 +45,13 @@ impl Checker<'_> {
                 match arguments.get(position) {
                     Some(GenericArgNode::Type(t)) => *t,
                     Some(GenericArgNode::Const(_)) => {
-                        self.unsupported(file, span, &format!("`{name}` of a const argument"));
+                        self.refuse_with(file, span, DigitalForm::OfConstArgument, [name.to_string()]);
                         return None;
                     }
                     None => match &self.design.decl_data(parameter).kind {
                         DeclKind::GenericParam(GenericParamData::Type { default: Some(default), .. }) => *default,
                         _ => {
-                            self.unsupported(file, span, &format!("`{name}` without its type argument"));
+                            self.refuse_with(file, span, DigitalForm::WithoutItsTypeArgument, [name.to_string()]);
                             return None;
                         }
                     },
@@ -100,7 +101,7 @@ impl Checker<'_> {
             }
             Ty::Enum(Nominal { decl: e, .. }) if self.design.decl_data(*e).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Variant(_))).count() == 1 => {
                 let name = self.design.decl_data(*e).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-                self.unsupported(file, node.span, &format!("a carrier of the single-variant enum `{name}` (its tag has zero levels)"));
+                self.refuse_with(file, node.span, DigitalForm::CarrierOfSingleVariantEnumItsTag, [name.to_string()]);
                 None
             }
             // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
@@ -146,7 +147,7 @@ impl Checker<'_> {
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
-                self.unsupported(file, node.span, &format!("value input port of type `{}`", other.name(self.design)));
+                self.refuse_with(file, node.span, DigitalForm::ValueInputPortOfType, [other.name(self.design).to_string()]);
                 None
             }
         }
@@ -344,7 +345,7 @@ impl Checker<'_> {
                 None
             }
             _ => {
-                self.unsupported(file, span, "method `prev` on this receiver");
+                self.refuse(file, span, DigitalForm::MethodPrevOnThisReceiver);
                 None
             }
         }
@@ -363,7 +364,7 @@ impl Checker<'_> {
                 Some(*value)
             }
             _ => {
-                self.unsupported(file, span, "method `others` on this receiver");
+                self.refuse(file, span, DigitalForm::MethodOthersOnThisReceiver);
                 None
             }
         }

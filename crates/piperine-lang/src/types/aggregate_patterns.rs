@@ -2,6 +2,7 @@
 //! patterns. Each types its names and says what it covers; the fields of a struct, a
 //! variant or a tuple are columns of the coverage judgement (`cover.rs`).
 
+use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, FieldPatNode, FileId, PatId, PatKind, PathId, Resolution};
 
@@ -241,7 +242,7 @@ impl Checker<'_> {
     /// made: the struct's `Product`, a variant's `Constructor`. The scrutinee must be the type.
     fn constructor_of(&mut self, file: FileId, span: Span, path: PathId, scrut: &Ty) -> Option<(DeclId, Shape)> {
         let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
-            self.unsupported(file, span, "a pattern naming something that is no struct or variant");
+            self.refuse(file, span, PatternForm::PatternNamingSomethingThatIsNoStruct);
             return None;
         };
         let (ty, owner) = self.constructed_type(target, file, span)?;

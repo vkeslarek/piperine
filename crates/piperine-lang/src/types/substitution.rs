@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 
+use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, GenericParamData, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
 
@@ -209,7 +210,7 @@ impl Checker<'_> {
                     // §8.4.5: a template of a module whose ports have the types of `P`
                     satisfied &= self.module_fits_callable(module, &parameter.name, inputs, file, span);
                 } else if matches!(bound, Bound::Callable { .. }) && !matches!(ty, Ty::Param(_)) {
-                    self.unsupported(file, span, &format!("the template parameter `{}` of `{item_name}`, bounded by `Fn`", parameter.name));
+                    self.refuse_with(file, span, GenericsForm::TemplateParameterOfBoundedByFn, [parameter.name.to_string(), item_name.to_string()]);
                     satisfied = false;
                 } else if !BoundCheck::new(self).satisfies(ty, bound) {
                     let message = format!("`{}` does not satisfy the bound `{}` of `{}` in `{item_name}` (§3.8.7)", ty.source_name(self.design), self.bound_name(bound), parameter.name);

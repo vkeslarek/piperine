@@ -6,6 +6,7 @@
 //! The rows with a fixed signature are in `catalogue.rs`; the rows with a closure, a second
 //! sequence or a condition on the element type are judged here.
 
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, ExprId, ExprKind, FileId};
 
@@ -22,7 +23,7 @@ impl Checker<'_> {
             (Some(lo), Some(hi)) => self.literal_last(lo, hi),
             (Some(only), None) | (None, Some(only)) => (only, only),
             (None, None) => {
-                self.unsupported(file, span, "the range `..` without a bound");
+                self.refuse(file, span, ValueForm::RangeWithoutBound);
                 return None;
             }
         };
@@ -178,7 +179,7 @@ impl Checker<'_> {
         if !matches!(self.design.expr_node(argument.value).kind, ExprKind::Closure { .. }) {
             let file = self.file_of_expr(expr);
             self.infer(argument.value);
-            self.unsupported(file, self.design.expr_node(argument.value).span, "an iterator row with an argument that is not a closure");
+            self.refuse(file, self.design.expr_node(argument.value).span, ValueForm::IteratorRowWithArgumentThatIsNot);
             return None;
         }
         self.closure_typed(argument.value, params, result)

@@ -5,6 +5,7 @@
 //! itself through them is `E0186` (§1.3.8). A discriminant is allowed only where no variant has a
 //! field, must fit the tag's levels, and is never repeated (`E0111`).
 
+use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, FieldsForm, FileId};
 
@@ -104,7 +105,7 @@ impl Checker<'_> {
                 Some(expr) => match self.fold_integer(expr, 16) {
                     Some(value) => value,
                     None => {
-                        self.unsupported(data.file, data.span, &format!("a discriminant of `{name}` that is not an integer literal, a `const` or integer arithmetic of them"));
+                        self.refuse_with(data.file, data.span, GenericsForm::DiscriminantOfThatIsNotIntegerLiteral, [name.to_string()]);
                         ok = false;
                         continue;
                     }
@@ -134,7 +135,7 @@ impl Checker<'_> {
             None => Some(usize::BITS - count.saturating_sub(1).leading_zeros()),
             Some(Some(width)) => Some(width),
             Some(None) => {
-                self.unsupported(file, span, "`#[repr(..)]` other than `#[repr(uN)]` with `N` from 1 to 64");
+                self.refuse(file, span, GenericsForm::ReprOtherThanSizedInteger);
                 None
             }
         }

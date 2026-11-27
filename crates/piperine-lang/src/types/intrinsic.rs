@@ -4,6 +4,7 @@
 //! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
 //! function of the same name is an ordinary function (§22 rule 3).
 
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind};
 
 use super::check::Checker;
@@ -75,7 +76,7 @@ impl Checker<'_> {
         self.apply(expr, &[Ty::Str], args)?;
         let name = if intrinsic == Intrinsic::ParseTable { "parse_table" } else { "parse_hex" };
         let Some(array) = expected.filter(|ty| matches!(ty, Ty::Array(..))) else {
-            self.unsupported(file, span, &format!("`{name}` whose result type is not written (the array type is the `const`'s, §22.6.4 rule 2)"));
+            self.refuse_with(file, span, AnalogForm::WhoseResultTypeIsNotWrittenArray, [name.to_string()]);
             return None;
         };
         let Ty::Array(element, _) = &array else { return None };
@@ -176,7 +177,7 @@ impl Checker<'_> {
         let span = self.design.expr_node(expr).span;
         self.apply(expr, &[Ty::Str], args)?;
         let Some(logic) = self.library_logic() else {
-            self.unsupported(file, span, "`logic` without the standard library's `Logic`");
+            self.refuse(file, span, AnalogForm::LogicWithoutStandardLibraryLogic);
             return None;
         };
         let wanted = expected.as_ref().and_then(|ty| self.logic_width(ty));
@@ -188,7 +189,7 @@ impl Checker<'_> {
             }
             (None, Some(wanted)) => wanted,
             (None, None) => {
-                self.unsupported(file, span, "`logic` of a pattern that is no literal where no `Logic<N>` is expected");
+                self.refuse(file, span, AnalogForm::LogicOfPatternThatIsNoLiteral);
                 return None;
             }
         };

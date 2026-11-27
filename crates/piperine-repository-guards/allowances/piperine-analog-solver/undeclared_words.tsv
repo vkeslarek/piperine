@@ -31,15 +31,11 @@ crates/piperine-analog-solver/src/device/ddt.rs::q	1
 crates/piperine-analog-solver/src/device/flow.rs::v	1
 crates/piperine-analog-solver/src/device/plan.rs::im	1
 crates/piperine-analog-solver/src/device/plan.rs::k	1
+crates/piperine-analog-solver/src/device/plan.rs::p	1
 crates/piperine-analog-solver/src/device/plan.rs::re	1
 crates/piperine-analog-solver/src/device/plan.rs::stim	1
 crates/piperine-analog-solver/src/device/plan.rs::td	1
 crates/piperine-analog-solver/src/device/watch.rs::var	1
-crates/piperine-analog-solver/src/error.rs::E0503	1
-crates/piperine-analog-solver/src/error.rs::E0504	1
-crates/piperine-analog-solver/src/error.rs::E0505	1
-crates/piperine-analog-solver/src/error.rs::E0507	1
-crates/piperine-analog-solver/src/error.rs::E0508	1
 crates/piperine-analog-solver/src/error.rs::Sens	1
 crates/piperine-analog-solver/src/lib.rs::config	1
 crates/piperine-analog-solver/src/math/faer.rs::FaerSparseLinearSystem	1
@@ -70,7 +66,6 @@ crates/piperine-analog-solver/src/math/mod.rs::iv	1
 crates/piperine-analog-solver/src/math/mod.rs::newton_raphson	1
 crates/piperine-analog-solver/src/math/mod.rs::num	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver	1
-crates/piperine-analog-solver/src/math/newton_raphson.rs::a_non_finite_solution_of_finite_stamps_is_e0503	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::assembly_ns	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::assembly_time_ns	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::rhs	1
@@ -81,7 +76,6 @@ crates/piperine-analog-solver/src/math/singular.rs::m	1
 crates/piperine-analog-solver/src/netlist.rs::idx	2
 crates/piperine-analog-solver/src/netlist.rs::last_seen_idx	1
 crates/piperine-analog-solver/src/netlist.rs::new_unmapped	1
-crates/piperine-analog-solver/src/stamp_validation.rs::a_non_finite_stamp_is_e0507_with_its_row	1
 crates/piperine-analog-solver/src/tolerances.rs::chgtol	1
 crates/piperine-analog-solver/src/tolerances.rs::gshunt	1
 crates/piperine-analog-solver/src/tolerances.rs::min_res	1
@@ -93,10 +87,7 @@ crates/piperine-analog-solver/tests/assembly_param.rs::rhs	1
 crates/piperine-analog-solver/tests/assembly_small_signal.rs::a_stim_input_is_the_right_side	1
 crates/piperine-analog-solver/tests/assembly_small_signal.rs::an_rc_low_pass_has_its_corner	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::TolComparator	1
-crates/piperine-analog-solver/tests/assembly_watch.rs::a_cap_of_minus_infinity_or_nan_is_e0509	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::a_var_watch_is_readable_at_an_accepted_solution	1
-crates/piperine-analog-solver/tests/assembly_watch.rs::accept_fails_with_e0509_on_an_invalid_cap	1
-crates/piperine-analog-solver/tests/assembly_watch.rs::accept_fails_with_e0510_on_an_invalid_tolerance	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::an_instance_lists_its_terms_and_var_watches_and_reads_a_term	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::tol_comparator	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::tol_comparator_shape	1

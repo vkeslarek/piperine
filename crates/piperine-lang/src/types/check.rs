@@ -3,6 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
@@ -372,7 +373,7 @@ impl<'d> Checker<'d> {
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
             DeclKind::Impl(_) => self.coherence(decl),
-            other => self.unsupported_decl(decl, Unsupported::item(other)),
+            other => self.refuse_declaration(decl, RefusedForm::item(other)),
         }
         self.report_uncalled_closures();
     }
@@ -416,15 +417,22 @@ impl<'d> Checker<'d> {
         self.diagnostics.len()
     }
 
-    /// `P0001`: a construct outside the supported subset, named.
-    pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
-        self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
+    /// `P0001` at `span`, naming `form`: a construct outside the supported subset.
+    pub(super) fn refuse(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        self.report(file, Refusal::of(form).diagnostic(span));
     }
 
-    fn unsupported_decl(&mut self, decl: DeclId, what: &str) {
+    /// `P0001` at `span`, naming `form` with `details` for the `{}` of its words.
+    pub(super) fn refuse_with(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) {
+        let refusal = details.into_iter().fold(Refusal::of(form), Refusal::with_detail);
+        self.report(file, refusal.diagnostic(span));
+    }
+
+    /// `P0001` at the declaration `decl`, naming `form`.
+    fn refuse_declaration(&mut self, decl: DeclId, form: RefusedForm) {
         let data = self.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        self.unsupported(file, span, what);
+        self.refuse(file, span, form);
     }
 
     /// `E0180`: a plain type mismatch at `span`, naming both types.
@@ -466,7 +474,7 @@ impl<'d> Checker<'d> {
             return true;
         }
         let name = self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        self.unsupported(file, span, &format!("generic arguments on `{name}`, which has no generic parameter"));
+        self.refuse_with(file, span, ValueForm::GenericArgumentsOnWhichHasNoGeneric, [name.to_string()]);
         false
     }
 
@@ -489,7 +497,7 @@ impl<'d> Checker<'d> {
                     ("Option", _) => self.option_type(file, node.span, *path),
                     ("Event", _) => Some(Ty::Event),
                     _ => {
-                        self.unsupported(file, node.span, &format!("type `{}`", id.name()));
+                        self.refuse_with(file, node.span, ValueForm::Type, [id.name().to_string()]);
                         None
                     }
                 },
@@ -508,11 +516,11 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) => self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span).then(|| Ty::module(d)),
                 Resolution::Decl(d) => {
                     let what = Unsupported::item(&self.design.decl_data(d).kind);
-                    self.unsupported(file, node.span, &format!("{what} used as a type"));
+                    self.refuse_with(file, node.span, ValueForm::UsedAsType, [what.to_string()]);
                     None
                 }
                 _ => {
-                    self.unsupported(file, node.span, "this type");
+                    self.refuse(file, node.span, ValueForm::TypeAgain);
                     None
                 }
             },
@@ -520,7 +528,7 @@ impl<'d> Checker<'d> {
             TypeKind::Tuple(items) => self.tuple_type(items),
             TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
             TypeKind::Flip(_) | TypeKind::Infer => {
-                self.unsupported(file, node.span, Unsupported::ty(&node.kind));
+                self.refuse(file, node.span, RefusedForm::type_form(&node.kind));
                 None
             }
             TypeKind::FnPtr { params, ret } => {
@@ -562,7 +570,7 @@ impl<'d> Checker<'d> {
             _ => None,
         };
         let Some(width) = width else {
-            self.unsupported(file, span, &format!("`{family}` with a width that is not an integer literal"));
+            self.refuse_with(file, span, ValueForm::WithWidthThatIsNotIntegerLiteral, [family.to_string()]);
             return None;
         };
         let written = format!("{family}<{width}>");
@@ -612,7 +620,7 @@ impl<'d> Checker<'d> {
                 let name = d.name.as_ref().map_or_else(String::new, |name| name.text.clone());
                 let in_trait = d.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_)));
                 if in_trait {
-                    self.unsupported(file, span, "`const` without a value");
+                    self.refuse(file, span, ValueForm::ConstWithoutValue);
                 } else {
                     // §3.9.2: a `const` has a value everywhere but in a trait.
                     self.coded(file, "E0188", span, format!("the `const` `{name}` has no value"), "a `const` outside a trait has a value");
@@ -628,7 +636,7 @@ impl<'d> Checker<'d> {
             // a use of a generic function binds its arguments after inference (T20, T21): until then
             // a call or a function value of one is outside the subset
             let (file, span) = (data.file, data.span);
-            self.unsupported(file, span, "generic function");
+            self.refuse(file, span, ValueForm::GenericFunction);
             return None;
         }
         let parts = self.signature_parts(decl)?;
@@ -674,7 +682,7 @@ impl<'d> Checker<'d> {
         // a generic `extern "intrinsic"` function (the library's `logic`, `matches_bits`, `parse_table`) is typed through
         // the generic path like any generic function; the other `extern` functions keep their refusal
         if f.abi.is_some() && data.generics_span.is_none() {
-            self.unsupported(data.file, data.span, "`extern` function");
+            self.refuse(data.file, data.span, ValueForm::ExternFunction);
             ok = false;
         }
         let mut params = Vec::new();
@@ -685,7 +693,7 @@ impl<'d> Checker<'d> {
                 FnParamData::SelfValue => self.self_parameter(decl, child),
                 FnParamData::Error => {
                     let d = self.design.decl_data(child);
-                    self.unsupported(d.file, d.span, "`self` parameter");
+                    self.refuse(d.file, d.span, ValueForm::SelfParameter);
                     None
                 }
             };
@@ -732,7 +740,7 @@ impl<'d> Checker<'d> {
                 // QC3: §3 rule 7 makes a nature parameter a handle and says nothing of an array of them
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => {
                     let (file, span) = (self.design.decl_data(param).file, self.design.decl_data(param).span);
-                    self.unsupported(file, span, "an array of carriers as a function parameter");
+                    self.refuse(file, span, ValueForm::ArrayOfCarriersAsFunctionParameter);
                     self.poisoned.insert(param);
                 }
                 Some(ty) => {
@@ -758,7 +766,7 @@ impl<'d> Checker<'d> {
             (None, _) if data.parent.is_some_and(|parent| matches!(self.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
             // an `extern` function is implemented outside the language: its signature is all there is to check
             (None, _) if f.abi.is_some() => {}
-            (None, _) => self.unsupported(data.file, data.span, "function without a body"),
+            (None, _) => self.refuse(data.file, data.span, ValueForm::FunctionWithoutBody),
         }
         self.context = Context::Module;
     }
@@ -805,7 +813,7 @@ impl<'d> Checker<'d> {
             // module that holds the closure, typed with it, not module items (design D9).
             (DeclKind::Binding(_), _) => {}
             (DeclKind::Generation(_), _) => self.generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
-            (other, ItemPhase::Declarations) => self.unsupported(item.file, item.span, &format!("{} inside a module", other.label().to_lowercase())),
+            (other, ItemPhase::Declarations) => self.refuse_with(item.file, item.span, ValueForm::InsideModule, [other.label().to_lowercase().to_string()]),
             (_, _) => {}
         }
     }
@@ -827,7 +835,7 @@ impl<'d> Checker<'d> {
             self.generic_signature(decl);
         }
         if m.abi.is_some() {
-            self.unsupported(data.file, data.span, "`extern` module");
+            self.refuse(data.file, data.span, ValueForm::ExternModule);
         }
         if let Some(cond) = m.where_ {
             // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.

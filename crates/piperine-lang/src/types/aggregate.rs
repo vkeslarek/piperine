@@ -6,6 +6,7 @@
 //! into [`FieldType`]s kept in `Checker::layouts`. A type that contains itself, directly or
 //! through structs, enums, tuples, arrays and `Option`, is `E0186` (§1.3.8).
 
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
@@ -71,7 +72,7 @@ impl Checker<'_> {
             if self.naming_bundle {
                 return true;
             }
-            self.unsupported(file, span, &format!("`struct` item used as a type: `{name}` has a carrier field, a bundle"));
+            self.refuse_with(file, span, ValueForm::StructItemUsedAsTypeHasCarrier, [name.to_string()]);
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
@@ -100,7 +101,7 @@ impl Checker<'_> {
                 Some(ty) if self.is_field_type(&ty) => fields.push(FieldType { name, decl: child, ty }),
                 Some(ty) => {
                     let what = ty.name(self.design);
-                    self.unsupported(field.file, field.span, &format!("a field of type `{what}` in a value type"));
+                    self.refuse_with(field.file, field.span, ValueForm::FieldOfTypeInValueType, [what.to_string()]);
                     ok = false;
                 }
                 None => ok = false,
@@ -124,7 +125,7 @@ impl Checker<'_> {
         for (ty, node) in types.iter().zip(items) {
             if !ty.is_value() {
                 let (file, span) = self.type_place(*node);
-                self.unsupported(file, span, &format!("a `{}` inside a tuple type", ty.name(self.design)));
+                self.refuse_with(file, span, ValueForm::InsideTupleType, [ty.name(self.design).to_string()]);
                 return None;
             }
         }
@@ -142,7 +143,7 @@ impl Checker<'_> {
             return Some(Ty::Array(Box::new(element), length));
         }
         if !element.is_value() && !matches!(element, Ty::Module(_)) {
-            self.unsupported(file, span, &format!("an array of `{}`", element.name(self.design)));
+            self.refuse_with(file, span, ValueForm::ArrayOf, [element.name(self.design).to_string()]);
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
@@ -199,7 +200,7 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let Some(Resolution::Decl(target)) = self.design.path_node(path).segments.last().map(|s| s.res) else {
-            self.unsupported(file, node.span, "struct expression of a name that is no struct");
+            self.refuse(file, node.span, ValueForm::StructExpressionOfNameThatIsNo);
             return None;
         };
         let (open, owner) = self.constructed_type(target, file, node.span)?;
@@ -244,7 +245,7 @@ impl Checker<'_> {
                 self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
             }
             other => {
-                self.unsupported(file, span, &format!("{} as a struct expression", super::unsupported::Unsupported::item(other)));
+                self.refuse_with(file, span, ValueForm::AsStructExpression, [super::unsupported::Unsupported::item(other).to_string()]);
                 None
             }
         }
@@ -258,7 +259,7 @@ impl Checker<'_> {
         let (open, owner) = self.constructed_type(target, file, node.span)?;
         let declared = self.fields_of(owner)?;
         if declared.iter().any(|f| f.name.is_some()) {
-            self.unsupported(file, node.span, "a call of a struct or variant with named fields: write a struct expression `Name { .. }`");
+            self.refuse(file, node.span, ValueForm::CallOfStructOrVariantWithNamed);
             return None;
         }
         let positional: Vec<(usize, ExprId)> = args.iter().enumerate().filter(|(_, arg)| arg.name.is_none()).map(|(position, arg)| (position, arg.value)).collect();
@@ -273,7 +274,7 @@ impl Checker<'_> {
         }
         for (arg, field) in args.iter().zip(&layout) {
             if arg.name.is_some() {
-                self.unsupported(file, arg.span, "a named argument of a constructor");
+                self.refuse(file, arg.span, ValueForm::NamedArgumentOfConstructor);
                 continue;
             }
             self.check(arg.value, &field.ty);
@@ -289,7 +290,7 @@ impl Checker<'_> {
         let (ty, layout) = self.close_constructor(expr, open, declared, &[], file, span)?;
         if !layout.is_empty() {
             let name = ty.name(self.design);
-            self.unsupported(file, span, &format!("the name of {name}, which has fields, used as a value: build it with a call or a struct expression"));
+            self.refuse_with(file, span, ValueForm::NameOfWhichHasFieldsUsedAs, [name.to_string()]);
             return None;
         }
         Some(ty)
@@ -358,7 +359,7 @@ impl Checker<'_> {
                 Some(ty) => {
                     let file = self.file_of_expr(*item);
                     let span = self.design.expr_node(*item).span;
-                    self.unsupported(file, span, &format!("a `{}` inside a tuple", ty.name(self.design)));
+                    self.refuse_with(file, span, ValueForm::InsideTuple, [ty.name(self.design).to_string()]);
                     typed = false;
                 }
                 None => typed = false,
@@ -390,7 +391,7 @@ impl Checker<'_> {
                 // an array of templates is a value of the elaboration (§8.4.1, GAPS L88)
                 if !ty.is_value() && !matches!(ty, Ty::Module(_)) {
                     let span = self.design.expr_node(first).span;
-                    self.unsupported(file, span, &format!("a `{}` inside an array", ty.name(self.design)));
+                    self.refuse_with(file, span, ValueForm::InsideArray, [ty.name(self.design).to_string()]);
                     return None;
                 }
                 for item in items.iter().filter(|i| **i != first) {

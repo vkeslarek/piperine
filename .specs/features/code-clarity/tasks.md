@@ -687,8 +687,8 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] No `Refusal` of `types/` is built from `RefusedForm::Text`
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

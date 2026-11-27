@@ -1,4 +1,5 @@
 # The words a declared name may be made of (CC-05), besides data/glossary.tsv: dictionary words and their regular forms.
+# A diagnostic code (one letter and four digits: `p0001`) is accepted by the guard itself and needs no entry.
 a
 abandon
 abbreviation
@@ -735,6 +736,7 @@ destroys
 destructuring
 detached
 detail
+details
 detector
 detectors
 determine
@@ -1198,6 +1200,7 @@ grandchild
 graph
 graphical
 graphs
+greater
 greatest
 green
 grew
@@ -1523,6 +1526,7 @@ length
 lengths
 lens
 lent
+less
 let
 lets
 letter
@@ -2762,6 +2766,7 @@ them
 then
 there
 thermal
+these
 they
 third
 thirteen
@@ -2859,6 +2864,7 @@ truncated
 truncation
 truth
 try
+tuple
 turned
 turns
 twentieth
@@ -2874,6 +2880,7 @@ typing
 unaffected
 unambiguous
 unannounced
+unary
 unbind
 unbound
 uncalled
@@ -3041,6 +3048,7 @@ widest
 width
 widths
 wild
+wildcard
 win
 window
 windows
@@ -3086,4 +3094,3 @@ zero
 zeroed
 zeros
 zip
-

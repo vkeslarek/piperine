@@ -1,0 +1,746 @@
+{
+ "`#[repr(..)]` other than `#[repr(uN)]` with `N` from 1 to 64": {
+  "family": "Generics",
+  "name": "ReprOtherThanSizedInteger"
+ },
+ "`?` expression": {
+  "family": "Value",
+  "name": "Expression"
+ },
+ "`@` pattern": {
+  "family": "Pattern",
+  "name": "Pattern"
+ },
+ "`Option::default()` without the payload type written as `Option::<T>::default()`": {
+  "family": "Generics",
+  "name": "OptionDefaultWithoutPayloadTypeWrittenAs"
+ },
+ "`Option` of a const argument": {
+  "family": "Value",
+  "name": "OptionOfConstArgument"
+ },
+ "`Option` without one type argument": {
+  "family": "Value",
+  "name": "OptionWithoutOneTypeArgument"
+ },
+ "`Self` outside an `impl` or a trait": {
+  "family": "Generics",
+  "name": "SelfOutsideImplOrTrait"
+ },
+ "`analysis` of a kind other than `Static`, `Dc`, `Transient`, `Ac` or `Noise`": {
+  "family": "Analog",
+  "name": "AnalysisOfKindOtherThanStaticDc"
+ },
+ "`as` cast": {
+  "family": "Value",
+  "name": "AsCast"
+ },
+ "`break`": {
+  "family": "Value",
+  "name": "Break"
+ },
+ "`const` item": {
+  "family": "Value",
+  "name": "ConstItem"
+ },
+ "`const` without a value": {
+  "family": "Value",
+  "name": "ConstWithoutValue"
+ },
+ "`continue`": {
+  "family": "Value",
+  "name": "Continue"
+ },
+ "`emit!` statement": {
+  "family": "Value",
+  "name": "EmitStatement"
+ },
+ "`enum` item": {
+  "family": "Value",
+  "name": "EnumItem"
+ },
+ "`enum` variant": {
+  "family": "Value",
+  "name": "EnumVariant"
+ },
+ "`expect` with a message that is not a string literal": {
+  "family": "Value",
+  "name": "ExpectWithMessageThatIsNotString"
+ },
+ "`extern` function": {
+  "family": "Value",
+  "name": "ExternFunction"
+ },
+ "`extern` module": {
+  "family": "Value",
+  "name": "ExternModule"
+ },
+ "`flip` type": {
+  "family": "Value",
+  "name": "FlipType"
+ },
+ "`fn` item": {
+  "family": "Value",
+  "name": "FnItem"
+ },
+ "`for` loop": {
+  "family": "Value",
+  "name": "ForLoop"
+ },
+ "`if let` condition": {
+  "family": "Value",
+  "name": "IfLetCondition"
+ },
+ "`if` expression": {
+  "family": "Value",
+  "name": "IfExpression"
+ },
+ "`impl` item": {
+  "family": "Value",
+  "name": "ImplItem"
+ },
+ "`include_str!`": {
+  "family": "Value",
+  "name": "IncludeStr"
+ },
+ "`let ... else`": {
+  "family": "Value",
+  "name": "LetElse"
+ },
+ "`let` statement": {
+  "family": "Value",
+  "name": "LetStatement"
+ },
+ "`logic` of a pattern that is no literal where no `Logic<N>` is expected": {
+  "family": "Analog",
+  "name": "LogicOfPatternThatIsNoLiteral"
+ },
+ "`logic` without the standard library's `Logic`": {
+  "family": "Analog",
+  "name": "LogicWithoutStandardLibraryLogic"
+ },
+ "`loop`": {
+  "family": "Value",
+  "name": "Loop"
+ },
+ "`match` expression": {
+  "family": "Value",
+  "name": "MatchExpression"
+ },
+ "`match` expression over `{}`": {
+  "family": "Value",
+  "name": "MatchExpressionOver"
+ },
+ "`mod` item": {
+  "family": "Value",
+  "name": "ModItem"
+ },
+ "`module` item": {
+  "family": "Value",
+  "name": "ModuleItem"
+ },
+ "`nature` item": {
+  "family": "Value",
+  "name": "NatureItem"
+ },
+ "`on` reaction": {
+  "family": "Value",
+  "name": "OnReaction"
+ },
+ "`return`": {
+  "family": "Value",
+  "name": "Return"
+ },
+ "`self` parameter": {
+  "family": "Value",
+  "name": "SelfParameter"
+ },
+ "`signal` item": {
+  "family": "Value",
+  "name": "SignalItem"
+ },
+ "`signal` statement": {
+  "family": "Value",
+  "name": "SignalStatement"
+ },
+ "`struct` item": {
+  "family": "Value",
+  "name": "StructItem"
+ },
+ "`struct` item used as a type: `{}` has a carrier field, a bundle": {
+  "family": "Value",
+  "name": "StructItemUsedAsTypeHasCarrier"
+ },
+ "`trait` item": {
+  "family": "Value",
+  "name": "TraitItem"
+ },
+ "`use` item": {
+  "family": "Value",
+  "name": "UseItem"
+ },
+ "`while` loop": {
+  "family": "Value",
+  "name": "WhileLoop"
+ },
+ "`{}` literal": {
+  "family": "Value",
+  "name": "Literal"
+ },
+ "`{}` of a const argument": {
+  "family": "Digital",
+  "name": "OfConstArgument"
+ },
+ "`{}` whose result type is not written (the array type is the `const`'s, \u00a722.6.4 rule 2)": {
+  "family": "Analog",
+  "name": "WhoseResultTypeIsNotWrittenArray"
+ },
+ "`{}` with a width that is not an integer literal": {
+  "family": "Value",
+  "name": "WithWidthThatIsNotIntegerLiteral"
+ },
+ "`{}` with an argument that is not a closure": {
+  "family": "Value",
+  "name": "WithArgumentThatIsNotClosure"
+ },
+ "`{}` with these generic arguments": {
+  "family": "Digital",
+  "name": "WithTheseGenericArguments"
+ },
+ "`{}` with {} generic arguments": {
+  "family": "Digital",
+  "name": "WithGenericArguments"
+ },
+ "`{}` without its type argument": {
+  "family": "Digital",
+  "name": "WithoutItsTypeArgument"
+ },
+ "a `let` of a child whose type is not known": {
+  "family": "Structure",
+  "name": "LetOfChildWhoseTypeIsNot"
+ },
+ "a `let` with a pattern and no value": {
+  "family": "Pattern",
+  "name": "LetWithPatternAndNoValue"
+ },
+ "a `{}` inside a tuple": {
+  "family": "Value",
+  "name": "InsideTuple"
+ },
+ "a `{}` inside a tuple type": {
+  "family": "Value",
+  "name": "InsideTupleType"
+ },
+ "a `{}` inside an array": {
+  "family": "Value",
+  "name": "InsideArray"
+ },
+ "a call of a struct or variant with named fields: write a struct expression `Name { .. }`": {
+  "family": "Value",
+  "name": "CallOfStructOrVariantWithNamed"
+ },
+ "a call of a trait's function with no `self`": {
+  "family": "Generics",
+  "name": "CallOfTraitFunctionWithNoReceiver"
+ },
+ "a call of a value whose type is unknown": {
+  "family": "Value",
+  "name": "CallOfValueWhoseTypeIsUnknown"
+ },
+ "a carrier of the single-variant enum `{}` (its tag has zero levels)": {
+  "family": "Digital",
+  "name": "CarrierOfSingleVariantEnumItsTag"
+ },
+ "a closure that captures where a function pointer `fn(..) -> R` is expected (only a closure that captures nothing coerces to one)": {
+  "family": "Value",
+  "name": "ClosureThatCapturesWhereFunctionPointerFn"
+ },
+ "a discriminant of `{}` that is not an integer literal, a `const` or integer arithmetic of them": {
+  "family": "Generics",
+  "name": "DiscriminantOfThatIsNotIntegerLiteral"
+ },
+ "a field of type `{}` in a value type": {
+  "family": "Value",
+  "name": "FieldOfTypeInValueType"
+ },
+ "a name whose type is unknown": {
+  "family": "Value",
+  "name": "NameWhoseTypeIsUnknown"
+ },
+ "a named argument of a constructor": {
+  "family": "Value",
+  "name": "NamedArgumentOfConstructor"
+ },
+ "a pattern naming something that is no struct or variant": {
+  "family": "Pattern",
+  "name": "PatternNamingSomethingThatIsNoStruct"
+ },
+ "a string literal bound by a `let`": {
+  "family": "Structure",
+  "name": "StringLiteralBoundByLet"
+ },
+ "a value parameter in the `where` of a `fn`": {
+  "family": "Value",
+  "name": "ValueParameterInWhereOfFn"
+ },
+ "a {} of a whole array of carriers or of a part of one: name an element": {
+  "family": "Value",
+  "name": "OfWholeArrayOfCarriersOrOf"
+ },
+ "an array of `{}`": {
+  "family": "Value",
+  "name": "ArrayOf"
+ },
+ "an array of carriers as a `let` type": {
+  "family": "Value",
+  "name": "ArrayOfCarriersAsLetType"
+ },
+ "an array of carriers as a function parameter": {
+  "family": "Value",
+  "name": "ArrayOfCarriersAsFunctionParameter"
+ },
+ "an iterator row with an argument that is not a closure": {
+  "family": "Value",
+  "name": "IteratorRowWithArgumentThatIsNot"
+ },
+ "an unresolved name": {
+  "family": "Value",
+  "name": "UnresolvedName"
+ },
+ "array expression": {
+  "family": "Value",
+  "name": "ArrayExpression"
+ },
+ "array pattern": {
+  "family": "Pattern",
+  "name": "ArrayPattern"
+ },
+ "array repeat expression": {
+  "family": "Value",
+  "name": "ArrayRepeatExpression"
+ },
+ "array type": {
+  "family": "Value",
+  "name": "ArrayType"
+ },
+ "assignment": {
+  "family": "Value",
+  "name": "Assignment"
+ },
+ "behavior block": {
+  "family": "Value",
+  "name": "BehaviorBlock"
+ },
+ "binary expression": {
+  "family": "Value",
+  "name": "BinaryExpression"
+ },
+ "binding": {
+  "family": "Pattern",
+  "name": "BindingPattern"
+ },
+ "block expression": {
+  "family": "Value",
+  "name": "BlockExpression"
+ },
+ "built-in `{}`": {
+  "family": "Value",
+  "name": "BuiltIn"
+ },
+ "call": {
+  "family": "Value",
+  "name": "Call"
+ },
+ "call of this declaration": {
+  "family": "Value",
+  "name": "CallOfThisDeclaration"
+ },
+ "call that is not a function call": {
+  "family": "Value",
+  "name": "CallThatIsNotFunctionCall"
+ },
+ "closure": {
+  "family": "Value",
+  "name": "Closure"
+ },
+ "commit `<-`": {
+  "family": "Value",
+  "name": "Commit"
+ },
+ "commit `<-` outside a reaction body": {
+  "family": "Analog",
+  "name": "CommitOutsideReactionBody"
+ },
+ "comparison of values that are neither `f64`, `bool` nor an integer": {
+  "family": "Value",
+  "name": "ComparisonOfValuesThatAreNeitherFloatBoolNorInteger"
+ },
+ "contribution": {
+  "family": "Value",
+  "name": "Contribution"
+ },
+ "contribution outside an `analog` block": {
+  "family": "Analog",
+  "name": "ContributionOutsideAnalogBlock"
+ },
+ "definition `=`": {
+  "family": "Value",
+  "name": "Definition"
+ },
+ "empty statement": {
+  "family": "Value",
+  "name": "EmptyStatement"
+ },
+ "expression statement": {
+  "family": "Value",
+  "name": "ExpressionStatement"
+ },
+ "field": {
+  "family": "Value",
+  "name": "Field"
+ },
+ "field access": {
+  "family": "Value",
+  "name": "FieldAccess"
+ },
+ "flow probe read as a value": {
+  "family": "Analog",
+  "name": "FlowProbeReadAsValue"
+ },
+ "function parameter": {
+  "family": "Value",
+  "name": "FunctionParameter"
+ },
+ "function type": {
+  "family": "Value",
+  "name": "FunctionType"
+ },
+ "function without a body": {
+  "family": "Value",
+  "name": "FunctionWithoutBody"
+ },
+ "generation `for`/`if`": {
+  "family": "Value",
+  "name": "GenerationForIf"
+ },
+ "generic arguments on `{}`, which has no generic parameter": {
+  "family": "Value",
+  "name": "GenericArgumentsOnWhichHasNoGeneric"
+ },
+ "generic function": {
+  "family": "Value",
+  "name": "GenericFunction"
+ },
+ "generic parameter": {
+  "family": "Value",
+  "name": "GenericParameter"
+ },
+ "index expression": {
+  "family": "Value",
+  "name": "IndexExpression"
+ },
+ "inferred type `_`": {
+  "family": "Value",
+  "name": "InferredType"
+ },
+ "integer type `{}`": {
+  "family": "Value",
+  "name": "IntegerType"
+ },
+ "item inside a block": {
+  "family": "Value",
+  "name": "ItemInsideBlock"
+ },
+ "literal": {
+  "family": "Value",
+  "name": "LiteralExpression"
+ },
+ "literal pattern": {
+  "family": "Pattern",
+  "name": "LiteralPattern"
+ },
+ "malformed expression": {
+  "family": "Value",
+  "name": "MalformedExpression"
+ },
+ "malformed item": {
+  "family": "Value",
+  "name": "MalformedItem"
+ },
+ "method `others` on this receiver": {
+  "family": "Digital",
+  "name": "MethodOthersOnThisReceiver"
+ },
+ "method `prev` on this receiver": {
+  "family": "Digital",
+  "name": "MethodPrevOnThisReceiver"
+ },
+ "method `{}`": {
+  "family": "Value",
+  "name": "Method"
+ },
+ "method `{}` defined by the project (the checker knows only the stdlib's own `{}`)": {
+  "family": "Value",
+  "name": "MethodDefinedByProjectCheckerKnowsOnly"
+ },
+ "method `{}` on `Bit<{}>`: it is the edge of a `Bit` of `bool` or of a `Logic` of one level": {
+  "family": "Analog",
+  "name": "MethodOnBitItIsEdgeOf"
+ },
+ "method `{}` on `{}`": {
+  "family": "Value",
+  "name": "MethodOn"
+ },
+ "method `{}` on this receiver": {
+  "family": "Analog",
+  "name": "MethodOnThisReceiver"
+ },
+ "method call": {
+  "family": "Value",
+  "name": "MethodCall"
+ },
+ "module param": {
+  "family": "Value",
+  "name": "ModuleParam"
+ },
+ "module port": {
+  "family": "Value",
+  "name": "ModulePort"
+ },
+ "module result": {
+  "family": "Structure",
+  "name": "ModuleResult"
+ },
+ "module-body `let`": {
+  "family": "Value",
+  "name": "ModuleBodyLet"
+ },
+ "nature quantity": {
+  "family": "Value",
+  "name": "NatureQuantity"
+ },
+ "operator `!=`": {
+  "family": "Value",
+  "name": "OperatorNotEqual"
+ },
+ "operator `%`": {
+  "family": "Value",
+  "name": "OperatorRemainder"
+ },
+ "operator `&&`": {
+  "family": "Value",
+  "name": "OperatorLogicalAnd"
+ },
+ "operator `&`": {
+  "family": "Value",
+  "name": "OperatorBitAnd"
+ },
+ "operator `*`": {
+  "family": "Value",
+  "name": "OperatorMultiply"
+ },
+ "operator `+`": {
+  "family": "Value",
+  "name": "OperatorAdd"
+ },
+ "operator `-`": {
+  "family": "Value",
+  "name": "OperatorSubtract"
+ },
+ "operator `/`": {
+  "family": "Value",
+  "name": "OperatorDivide"
+ },
+ "operator `<<`": {
+  "family": "Value",
+  "name": "OperatorShiftLeft"
+ },
+ "operator `<=`": {
+  "family": "Value",
+  "name": "OperatorLessOrEqual"
+ },
+ "operator `<`": {
+  "family": "Value",
+  "name": "OperatorLess"
+ },
+ "operator `==`": {
+  "family": "Value",
+  "name": "OperatorEqual"
+ },
+ "operator `>=`": {
+  "family": "Value",
+  "name": "OperatorGreaterOrEqual"
+ },
+ "operator `>>`": {
+  "family": "Value",
+  "name": "OperatorShiftRight"
+ },
+ "operator `>`": {
+  "family": "Value",
+  "name": "OperatorGreater"
+ },
+ "operator `^`": {
+  "family": "Value",
+  "name": "OperatorBitXor"
+ },
+ "operator `|`": {
+  "family": "Value",
+  "name": "OperatorBitOr"
+ },
+ "operator `||`": {
+  "family": "Value",
+  "name": "OperatorLogicalOr"
+ },
+ "or-pattern": {
+  "family": "Pattern",
+  "name": "OrPattern"
+ },
+ "param block on a call": {
+  "family": "Value",
+  "name": "ParamBlockOnCall"
+ },
+ "param of type `{}`": {
+  "family": "Structure",
+  "name": "ParamOfType"
+ },
+ "parenthesized expression": {
+  "family": "Value",
+  "name": "ParenthesizedExpression"
+ },
+ "path expression": {
+  "family": "Value",
+  "name": "PathExpression"
+ },
+ "path pattern": {
+  "family": "Pattern",
+  "name": "PathPattern"
+ },
+ "port default value": {
+  "family": "Structure",
+  "name": "PortDefaultValue"
+ },
+ "probe through an access that names several natures": {
+  "family": "Analog",
+  "name": "ProbeThroughAccessThatNamesSeveralNatures"
+ },
+ "probe through an unresolved name": {
+  "family": "Analog",
+  "name": "ProbeThroughUnresolvedName"
+ },
+ "probe through this name": {
+  "family": "Analog",
+  "name": "ProbeThroughThisName"
+ },
+ "range expression": {
+  "family": "Value",
+  "name": "RangeExpression"
+ },
+ "range pattern": {
+  "family": "Pattern",
+  "name": "RangePattern"
+ },
+ "rest pattern": {
+  "family": "Pattern",
+  "name": "RestPattern"
+ },
+ "struct expression": {
+  "family": "Value",
+  "name": "StructExpression"
+ },
+ "struct expression of a name that is no struct": {
+  "family": "Value",
+  "name": "StructExpressionOfNameThatIsNo"
+ },
+ "struct pattern": {
+  "family": "Pattern",
+  "name": "StructPattern"
+ },
+ "the feedback of `{}` through an instance whose value is not a placement of a module with a result": {
+  "family": "Structure",
+  "name": "FeedbackOfThroughInstanceWhoseValueIs"
+ },
+ "the name of {}, which has fields, used as a value: build it with a call or a struct expression": {
+  "family": "Value",
+  "name": "NameOfWhichHasFieldsUsedAs"
+ },
+ "the range `..` without a bound": {
+  "family": "Value",
+  "name": "RangeWithoutBound"
+ },
+ "the template parameter `{}` of `{}`, bounded by `Fn`": {
+  "family": "Generics",
+  "name": "TemplateParameterOfBoundedByFn"
+ },
+ "this name as a pattern": {
+  "family": "Pattern",
+  "name": "NameAsPattern"
+ },
+ "this type": {
+  "family": "Value",
+  "name": "TypeAgain"
+ },
+ "tuple expression": {
+  "family": "Value",
+  "name": "TupleExpression"
+ },
+ "tuple pattern": {
+  "family": "Pattern",
+  "name": "TuplePattern"
+ },
+ "tuple type": {
+  "family": "Value",
+  "name": "TupleType"
+ },
+ "tuple-struct pattern": {
+  "family": "Pattern",
+  "name": "TupleStructPattern"
+ },
+ "type": {
+  "family": "Value",
+  "name": "TypeName"
+ },
+ "type `{}`": {
+  "family": "Value",
+  "name": "Type"
+ },
+ "unary expression": {
+  "family": "Value",
+  "name": "UnaryExpression"
+ },
+ "unit type": {
+  "family": "Value",
+  "name": "UnitType"
+ },
+ "value input port of type `{}`": {
+  "family": "Digital",
+  "name": "ValueInputPortOfType"
+ },
+ "wildcard pattern": {
+  "family": "Pattern",
+  "name": "WildcardPattern"
+ },
+ "{} `{}`": {
+  "family": "Analog",
+  "name": "Refused"
+ },
+ "{} as a pattern": {
+  "family": "Pattern",
+  "name": "AsPattern"
+ },
+ "{} as a struct expression": {
+  "family": "Value",
+  "name": "AsStructExpression"
+ },
+ "{} inside a module": {
+  "family": "Value",
+  "name": "InsideModule"
+ },
+ "{} used as a type": {
+  "family": "Value",
+  "name": "UsedAsType"
+ },
+ "{} used as a value": {
+  "family": "Value",
+  "name": "UsedAsValue"
+ }
+}

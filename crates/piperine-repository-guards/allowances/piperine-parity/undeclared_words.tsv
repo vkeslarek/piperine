@@ -67,13 +67,10 @@ crates/piperine-parity/tests/parity_tran.rs::tran_rc	1
 crates/piperine-parity/tests/parity_tran.rs::tran_rc_with_a_scaled_derivative	1
 crates/piperine-parity/tests/parity_tran.rs::uic_rc	1
 crates/piperine-parity/tests/parity_tran.rs::uic_rc_runs_and_prints_the_skip_line_without_ngspice	1
-crates/piperine-parity/tests/run_errors.rs::a_division_by_zero_under_known_control_fails_the_run_with_e0105	1
-crates/piperine-parity/tests/run_errors.rs::a_floating_node_from_source_is_e0503	1
 crates/piperine-parity/tests/run_errors.rs::a_loop_of_two_vsources_from_source_is_e0503	1
-crates/piperine-parity/tests/run_errors.rs::a_nan_contribution_from_source_is_e0507	1
-crates/piperine-parity/tests/run_errors.rs::an_unwrap_of_none_under_known_control_fails_the_run_with_e0105	1
 crates/piperine-parity/tests/source/widths.rs::ty	1
 crates/piperine-parity/tests/source_aggregates.rs::Msg	2
+crates/piperine-parity/tests/source_aggregates.rs::P	2
 crates/piperine-parity/tests/source_aggregates.rs::Rect	1
 crates/piperine-parity/tests/source_aggregates.rs::Tx	1
 crates/piperine-parity/tests/source_aggregates.rs::_x	1
@@ -81,7 +78,6 @@ crates/piperine-parity/tests/source_aggregates.rs::b	2
 crates/piperine-parity/tests/source_aggregates.rs::every_row_of_h5_to_h7_gives_rusts_result	1
 crates/piperine-parity/tests/source_aggregates.rs::options_of_aggregates_behave_as_enums	1
 crates/piperine-parity/tests/source_aggregates.rs::the_zi_nd_reaction_value_code_runs_as_a_function	1
-crates/piperine-parity/tests/source_aggregates.rs::tuple_patterns_bind_each_component	1
 crates/piperine-parity/tests/source_aggregates.rs::tuples_give_rusts_values	1
 crates/piperine-parity/tests/source_aggregates.rs::x	2
 crates/piperine-parity/tests/source_aggregates.rs::y	3
@@ -105,7 +101,6 @@ crates/piperine-parity/tests/source_delay.rs::a_negative_td_or_a_non_positive_ma
 crates/piperine-parity/tests/source_delay.rs::a_varying_delay_reads_back_td_and_max_while_td_exceeds_it	1
 crates/piperine-parity/tests/source_delay.rs::before_td_the_delay_reads_the_operating_point	1
 crates/piperine-parity/tests/source_derivative.rs::a_derivative_times_a_probe_is_k_v_dv_dt	1
-crates/piperine-parity/tests/source_environment.rs::a_non_positive_bound_step_is_e0509	1
 crates/piperine-parity/tests/source_environment.rs::freq_follows_the_ac_sweep	1
 crates/piperine-parity/tests/source_environment.rs::freq_in_a_reaction_is_zero	1
 crates/piperine-parity/tests/source_environment.rs::freq_is_zero_outside_a_sweep	1
@@ -113,7 +108,6 @@ crates/piperine-parity/tests/source_events.rs::a_guard_reading_events_fires_only
 crates/piperine-parity/tests/source_events.rs::handshake_fires_when_req_rises_with_ack_high	1
 crates/piperine-parity/tests/source_events.rs::pfd3_rising_apart_steps_up_then_down	1
 crates/piperine-parity/tests/source_events.rs::pfd3_rising_together_leaves_state_unchanged	1
-crates/piperine-parity/tests/source_fixes.rs::a_cross_ttol_that_is_not_positive_is_e0510	1
 crates/piperine-parity/tests/source_fixes.rs::absdelta_fires_every_two_tenths_of_a_volt	1
 crates/piperine-parity/tests/source_fixes.rs::rc_crossing	1
 crates/piperine-parity/tests/source_generics.rs::B	1
@@ -122,7 +116,6 @@ crates/piperine-parity/tests/source_generics.rs::D	1
 crates/piperine-parity/tests/source_generics.rs::Pt	1
 crates/piperine-parity/tests/source_generics.rs::Rect	1
 crates/piperine-parity/tests/source_generics.rs::Sq	1
-crates/piperine-parity/tests/source_generics.rs::a_cast_to_a_tuple_holding_an_enum_runs	1
 crates/piperine-parity/tests/source_generics.rs::a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance	1
 crates/piperine-parity/tests/source_generics.rs::b	3
 crates/piperine-parity/tests/source_generics.rs::c	1
@@ -131,7 +124,6 @@ crates/piperine-parity/tests/source_generics.rs::h	1
 crates/piperine-parity/tests/source_generics.rs::hi	1
 crates/piperine-parity/tests/source_generics.rs::lo	1
 crates/piperine-parity/tests/source_generics.rs::n	1
-crates/piperine-parity/tests/source_generics.rs::to_tuple	1
 crates/piperine-parity/tests/source_generics.rs::w	1
 crates/piperine-parity/tests/source_generics.rs::x	2
 crates/piperine-parity/tests/source_generics.rs::y	2
@@ -140,14 +132,11 @@ crates/piperine-parity/tests/source_host.rs::a_host_driven_rc_matches_ac_rc_in_a
 crates/piperine-parity/tests/source_host.rs::a_host_driven_rc_step_matches_tran_rc	1
 crates/piperine-parity/tests/source_host.rs::a_host_pwl_into_the_rc_matches_tran_pwl_rc	1
 crates/piperine-parity/tests/source_host.rs::a_host_square_into_the_rc_matches_tran_square_rc	1
-crates/piperine-parity/tests/source_implicit.rs::multiplicity_in_a_param_default_is_e0321	1
 crates/piperine-parity/tests/source_limexp.rs::limexp_and_pnjlim_diodes_agree_at_the_operating_point	1
 crates/piperine-parity/tests/source_limexp.rs::limexp_elaborates_from_the_stdlib_with_its_closure	1
 crates/piperine-parity/tests/source_limexp.rs::limexp_moves_its_argument_at_most_one_per_iteration	1
 crates/piperine-parity/tests/source_limexp.rs::the_derivative_of_limexp_is_limexp	1
 crates/piperine-parity/tests/source_limexp.rs::the_limexp_diode_series_twin_agrees_with_ngspice	1
-crates/piperine-parity/tests/source_logic.rs::xor	1
-crates/piperine-parity/tests/source_logic.rs::xor_follows_the_four_state_table	1
 crates/piperine-parity/tests/source_modules.rs::a_lag_under_an_untaken_branch_keeps_integrating	1
 crates/piperine-parity/tests/source_modules.rs::feedback_through_integ_decays_exponentially	1
 crates/piperine-parity/tests/source_modules.rs::integ_holds_ic_while_reset_then_integrates	1
@@ -170,16 +159,12 @@ crates/piperine-parity/tests/source_nets.rs::tgate_joins_while_s_high_or_sn_low	
 crates/piperine-parity/tests/source_nets.rs::tribuf_drives_strong_or_high_impedance	1
 crates/piperine-parity/tests/source_nets.rs::two_bidirs_alone_stop_the_run_with_e0511	1
 crates/piperine-parity/tests/source_noise.rs::a_density_reading_freq_is_evaluated_at_each_sweep_frequency	1
-crates/piperine-parity/tests/source_noise.rs::a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency	1
-crates/piperine-parity/tests/source_noise.rs::a_negative_density_fails_with_e0454_naming_the_frequency	1
 crates/piperine-parity/tests/source_noise.rs::flicker_noise_falls_as_one_over_f_to_the_exponent	1
 crates/piperine-parity/tests/source_number_widths.rs::a_carried_f128_is_a_u64_field_of_count_two	1
 crates/piperine-parity/tests/source_number_widths.rs::a_carried_f32_is_the_f32_leaf	1
-crates/piperine-parity/tests/source_number_widths.rs::a_wide_literal_past_its_type_is_e0909	1
 crates/piperine-parity/tests/source_number_widths.rs::f128_is_ieee_binary128_bit_for_bit_in_every_operation_and_method	1
 crates/piperine-parity/tests/source_number_widths.rs::f16_is_ieee_binary16_bit_for_bit	1
 crates/piperine-parity/tests/source_number_widths.rs::f32_computes_what_rust_f32_computes	1
-crates/piperine-parity/tests/source_number_widths.rs::unary	1
 crates/piperine-parity/tests/source_number_widths.rs::wide_integers_wrap_modulo_two_to_the_n_in_every_operation	1
 crates/piperine-parity/tests/source_number_widths.rs::x	1
 crates/piperine-parity/tests/source_number_widths.rs::y	1
@@ -188,7 +173,6 @@ crates/piperine-parity/tests/source_reach.rs::the_parent_probes_a_pub_node_of_it
 crates/piperine-parity/tests/source_reach.rs::the_parent_reads_a_pub_carrier_of_its_child	1
 crates/piperine-parity/tests/source_reach.rs::the_parent_reads_a_pub_carrier_of_its_child_in_a_reaction_and_a_definition	1
 crates/piperine-parity/tests/source_reach.rs::the_parent_reads_a_pub_param_and_a_pub_let_of_its_child	1
-crates/piperine-parity/tests/source_resolved.rs::a_loop_that_does_not_settle_stops_the_run_with_e0511_naming_its_drives	1
 crates/piperine-parity/tests/source_resolved.rs::an_undriven_resolved_carrier_holds_resolve_of_no_drive	1
 crates/piperine-parity/tests/source_stdlib_generic.rs::an_improper_or_unpaired_laplace_is_refused	1
 crates/piperine-parity/tests/source_stdlib_generic.rs::an_unpaired_zi_pole_is_refused	1
@@ -196,7 +180,6 @@ crates/piperine-parity/tests/source_stdlib_generic.rs::the_zi_family_follows_its
 crates/piperine-parity/tests/source_switch.rs::a_junction_enabled_after_the_operating_point_reaches_the_rdiode_solution	1
 crates/piperine-parity/tests/source_switch.rs::a_limit_under_an_untaken_branch_neither_vetoes_nor_moves	1
 crates/piperine-parity/tests/source_switch.rs::an_untaken_contribution_leaves_the_branch_with_zero_flow	1
-crates/piperine-parity/tests/source_switch.rs::both_kinds_enabled_in_one_solve_fail_with_e0418	1
 crates/piperine-parity/tests/source_switch.rs::capic_has_the_admittance_of_a_capacitor_in_ac	1
 crates/piperine-parity/tests/source_switch.rs::rdiode_drop	1
 crates/piperine-parity/tests/source_tables.rs::extrapolation_c_and_l_at_each_end	1

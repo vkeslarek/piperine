@@ -7,6 +7,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
@@ -128,7 +129,7 @@ impl Checker<'_> {
                 Some(DriveTarget { carrier: decl, held: *value, element: Element::Whole, reached: false })
             }
             array @ Ty::Array(..) if matches!(array.innermost(), Ty::Carrier { .. }) => {
-                self.unsupported(file, node.span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+                self.refuse_with(file, node.span, ValueForm::OfWholeArrayOfCarriersOrOf, [what.to_string()]);
                 self.book.refused.insert(decl);
                 None
             }

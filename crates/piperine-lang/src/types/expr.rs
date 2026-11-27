@@ -2,6 +2,8 @@
 //! otherwise. A mismatch is one `E0180` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::ValueForm;
 use crate::msl::lexer;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
@@ -278,7 +280,7 @@ impl Checker<'_> {
             ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.literal_outside_connection(expr),
                         ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
             other => {
-                self.unsupported(file, node.span, Unsupported::expr(other));
+                self.refuse(file, node.span, RefusedForm::expression(other));
                 None
             }
         }
@@ -332,7 +334,7 @@ impl Checker<'_> {
                     }
                     Some(_) => {
                         let span = self.design.expr_node(first).span;
-                        self.unsupported(file, span, "comparison of values that are neither `f64`, `bool` nor an integer");
+                        self.refuse(file, span, ValueForm::ComparisonOfValuesThatAreNeitherFloatBoolNorInteger);
                     }
                     None => {
                         self.infer(second);
@@ -354,7 +356,7 @@ impl Checker<'_> {
                 match self.operands_of(first_ty, lhs, rhs, false, |t| t.is_integer() || (bitwise && *t == Ty::Bool)) {
                     Some(t) => Some(t),
                     None => {
-                        self.unsupported(file, span, Unsupported::binary(op));
+                        self.refuse(file, span, RefusedForm::binary_operator(op));
                         None
                     }
                 }
@@ -366,7 +368,7 @@ impl Checker<'_> {
                 }
                 Some(t) if Self::takes_operator_traits(&t) => OperatorTrait::of_binary(op).and_then(|operator| self.operator_call(whole, operator, lhs, &t, Some(rhs))),
                 _ => {
-                    self.unsupported(file, span, Unsupported::binary(op));
+                    self.refuse(file, span, RefusedForm::binary_operator(op));
                     None
                 }
             },
@@ -562,11 +564,11 @@ impl Checker<'_> {
                     ("u", 1..=128) => Ty::UInt(u32::from(width)),
                     ("i", 1..=128) => Ty::Int(u32::from(width)),
                     ("u" | "i", _) => {
-                        self.unsupported(file, span, &format!("integer type `{suffix}`"));
+                        self.refuse_with(file, span, ValueForm::IntegerType, [suffix.to_string()]);
                         return None;
                     }
                     _ => {
-                        self.unsupported(file, span, &format!("`{suffix}` literal"));
+                        self.refuse_with(file, span, ValueForm::Literal, [suffix.to_string()]);
                         return None;
                     }
                 }
@@ -680,8 +682,11 @@ impl Checker<'_> {
                             return self.instance_as_value(file, node.span, decl, module.decl);
                         }
                         if local.is_none() && !self.poisoned.contains(&decl) {
-                            let what = if self.fn_where { "a value parameter in the `where` of a `fn`" } else { "a name whose type is unknown" };
-                            self.unsupported(file, node.span, what);
+                            if self.fn_where {
+                                self.refuse(file, node.span, ValueForm::ValueParameterInWhereOfFn);
+                            } else {
+                                self.refuse(file, node.span, ValueForm::NameWhoseTypeIsUnknown);
+                            }
                         }
                         local
                     }
@@ -691,7 +696,7 @@ impl Checker<'_> {
                     // §8.4.1 amendment: a module's name is the template `Name {}`, every param at its default
                     DeclKind::Module(_) => self.template_value(expr, decl, &[], None),
                     other => {
-                        self.unsupported(file, node.span, &format!("{} used as a value", Unsupported::item(&other)));
+                        self.refuse_with(file, node.span, ValueForm::UsedAsValue, [Unsupported::item(&other).to_string()]);
                         None
                     }
                 }
@@ -706,19 +711,19 @@ impl Checker<'_> {
             Resolution::Builtin(id) => match self.width_read(expr) {
                 Some(width) => Some(width),
                 None => {
-                    self.unsupported(file, node.span, &format!("built-in `{}`", id.name()));
+                    self.refuse_with(file, node.span, ValueForm::BuiltIn, [id.name().to_string()]);
                     None
                 }
             },
             Resolution::Deferred(_) => match self.width_read(expr) {
                 Some(width) => Some(width),
                 None => {
-                    self.unsupported(file, node.span, "an unresolved name");
+                    self.refuse(file, node.span, ValueForm::UnresolvedName);
                     None
                 }
             },
             Resolution::Unresolved => {
-                self.unsupported(file, node.span, "an unresolved name");
+                self.refuse(file, node.span, ValueForm::UnresolvedName);
                 None
             }
         }
@@ -760,7 +765,7 @@ impl Checker<'_> {
                 StmtKind::Contribution { lhs, rhs } => self.contribution(file, node.span, *lhs, *rhs),
                 StmtKind::Commit { place, value, after } => self.commit(file, node.span, *place, *value, *after),
                 StmtKind::Item(_) | StmtKind::Signal(_) | StmtKind::Reaction(_) => {
-                    self.unsupported(file, node.span, Unsupported::stmt(&node.kind));
+                    self.refuse(file, node.span, RefusedForm::statement(&node.kind));
                 }
             }
         }
@@ -784,7 +789,7 @@ impl Checker<'_> {
             Some(t) => match self.lower_type(t).filter(|ty| {
                 let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
                 if carriers {
-                    self.unsupported(file, self.design.type_node(t).span, "an array of carriers as a `let` type");
+                    self.refuse(file, self.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);
                 }
                 !carriers
             }) {

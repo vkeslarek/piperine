@@ -5,6 +5,7 @@
 //! is the type of those levels (§12.1.9). One drive per element: the book tells a definition of one element from the
 //! commits of another (`E0221` only when they share an element).
 
+use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
@@ -122,7 +123,7 @@ impl Checker<'_> {
             at = element;
         }
         if steps.len() < levels.len() || steps[..levels.len()].iter().any(|step| !matches!(step, Step::Index(_))) {
-            self.unsupported(file, span, &format!("a {what} of a whole array of carriers or of a part of one: name an element"));
+            self.refuse_with(file, span, ValueForm::OfWholeArrayOfCarriersOrOf, [what.to_string()]);
             self.book.refused.insert(decl);
             self.infer(place);
             return None;

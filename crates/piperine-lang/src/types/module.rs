@@ -3,6 +3,8 @@
 
 use std::collections::BTreeSet;
 
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::StructureForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
@@ -10,7 +12,6 @@ use super::check::{Checker, Context};
 use super::coverage::ElementCoverage;
 use super::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
-use super::unsupported::Unsupported;
 use super::{Callee, Substitution, Ty};
 
 impl Checker<'_> {
@@ -70,7 +71,7 @@ impl Checker<'_> {
             }
             _ => {
                 let span = self.design.expr_node(default).span;
-                self.unsupported(file, span, "port default value");
+                self.refuse(file, span, StructureForm::PortDefaultValue);
                 self.infer(default);
             }
         }
@@ -92,7 +93,7 @@ impl Checker<'_> {
             other => {
                 let node = self.design.type_node(param.ty).clone();
                 let file = self.design.decl_data(node.owner).file;
-                self.unsupported(file, node.span, &format!("param of type `{}`", other.name(self.design)));
+                self.refuse_with(file, node.span, StructureForm::ParamOfType, [other.name(self.design).to_string()]);
                 None
             }
         });
@@ -205,7 +206,7 @@ impl Checker<'_> {
             return;
         }
         let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
-            self.unsupported(file, pat.span, Unsupported::pat(&pat.kind));
+            self.refuse(file, pat.span, RefusedForm::pattern(&pat.kind));
             self.infer_event_position(data.value);
             return;
         };
@@ -224,7 +225,7 @@ impl Checker<'_> {
         }
         match ty {
             Some(Ty::Str) => {
-                self.unsupported(file, pat.span, "a string literal bound by a `let`");
+                self.refuse(file, pat.span, StructureForm::StringLiteralBoundByLet);
                 self.poisoned.insert(*binding);
             }
             Some(ty) => {

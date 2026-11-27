@@ -141,8 +141,6 @@ crates/piperine-solver/tests/checkpoint_restore.rs::its_devices_pass_the_partial
 crates/piperine-solver/tests/checkpoint_restore.rs::pnjlim	1
 crates/piperine-solver/tests/context_init.rs::context_default_does_not_init_globals	1
 crates/piperine-solver/tests/crossing_rules.rs::TolComparator	1
-crates/piperine-solver/tests/crossing_rules.rs::an_invalid_step_cap_fails_the_analysis_with_e0509	1
-crates/piperine-solver/tests/crossing_rules.rs::an_invalid_ttol_or_etol_fails_the_analysis_with_e0510	1
 crates/piperine-solver/tests/crossing_rules.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/crossing_rules.rs::tol_comparator	1
 crates/piperine-solver/tests/crossing_rules.rs::tol_shape	1
@@ -150,12 +148,6 @@ crates/piperine-solver/tests/digital_settle_subscriber.rs::its_devices_pass_the_
 crates/piperine-solver/tests/digital_settle_subscriber.rs::the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_accept_snapshot	1
 crates/piperine-solver/tests/environment.rs::EnvProbe	1
 crates/piperine-solver/tests/environment.rs::its_devices_pass_the_partials_verifier	1
-crates/piperine-solver/tests/failure_rules.rs::a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier	1
-crates/piperine-solver/tests/failure_rules.rs::a_non_finite_contribution_is_e0507_and_names_the_instance	1
-crates/piperine-solver/tests/failure_rules.rs::a_singular_ac_point_is_e0503_naming_the_node	1
-crates/piperine-solver/tests/failure_rules.rs::a_singular_transient_step_is_e0503_naming_both_sources	1
-crates/piperine-solver/tests/failure_rules.rs::a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time	1
-crates/piperine-solver/tests/failure_rules.rs::an_equilibrium_that_never_converges_is_e0505_with_its_unknowns	1
 crates/piperine-solver/tests/failure_rules.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/failure_rules.rs::section_12_unresolvable_noise_output_node_is_an_analysis_error	1
 crates/piperine-solver/tests/failure_rules.rs::section_12_unresolvable_noise_reference_node_is_an_analysis_error	1
@@ -204,7 +196,6 @@ crates/piperine-solver/tests/host_set.rs::its_devices_pass_the_partials_verifier
 crates/piperine-solver/tests/host_set.rs::reshape_is_refused_in_a_transient_and_rebinds_between_analyses	1
 crates/piperine-solver/tests/host_set.rs::v_mid	1
 crates/piperine-solver/tests/host_surface.rs::sine_rc	1
-crates/piperine-solver/tests/jump_retake.rs::endless_retakes_fail_with_e0504	1
 crates/piperine-solver/tests/jump_retake.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/jump_retake.rs::precharged_rc	1
 crates/piperine-solver/tests/jump_step.rs::an_ideal_step_is_read_by_an_rc_to_one_minus_e_to_the_minus_one	1
@@ -219,7 +210,6 @@ crates/piperine-solver/tests/live_params.rs::v_mid	1
 crates/piperine-solver/tests/mixed_signal.rs::clock_src_reads_its_waveform	1
 crates/piperine-solver/tests/noise_report.rs::RcWithCurrentInput	1
 crates/piperine-solver/tests/noise_report.rs::its_device_passes_the_partials_verifier	1
-crates/piperine-solver/tests/operating_point.rs::operating_point_rounds_beyond_the_bound_are_e0506	1
 crates/piperine-solver/tests/parity_baseline.rs::GatedISink	1
 crates/piperine-solver/tests/parity_baseline.rs::SineVsrc	1
 crates/piperine-solver/tests/parity_baseline.rs::its_devices_pass_the_partials_verifier	1
@@ -236,13 +226,11 @@ crates/piperine-solver/tests/protocol_crossings.rs::tol_comparator	1
 crates/piperine-solver/tests/protocol_crossings.rs::tol_shape	1
 crates/piperine-solver/tests/protocol_epoch.rs::rebases	1
 crates/piperine-solver/tests/protocol_host.rs::reshape_is_refused_in_a_transient_and_reported_outside_one	1
-crates/piperine-solver/tests/protocol_operating_point.rs::rounds_beyond_the_bound_are_e0506_naming_the_nets	1
 crates/piperine-solver/tests/protocol_real.rs::FlakyG	1
 crates/piperine-solver/tests/protocol_real.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/protocol_real.rs::rc	1
 crates/piperine-solver/tests/protocol_sink.rs::obs	1
 crates/piperine-solver/tests/protocol_transient.rs::a_proposal_a_few_ulps_short_of_a_tick_is_that_tick	1
-crates/piperine-solver/tests/protocol_transient.rs::an_unsettled_loop_is_e0511_naming_its_drives	1
 crates/piperine-solver/tests/protocol_transient.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/pss.rs::digital_divider_reports_k_times_period	1
 crates/piperine-solver/tests/pss.rs::sine_rc_converges_to_the_analytic_phasor	1

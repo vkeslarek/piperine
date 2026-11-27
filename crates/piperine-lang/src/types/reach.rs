@@ -4,6 +4,7 @@
 //! definition of a child's carrier is `E0222` (`definition.rs`). A field of anything else keeps
 //! the `field access` refusal.
 
+use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
@@ -253,7 +254,7 @@ impl Checker<'_> {
                 self.check_ahead(module);
                 let found = self.locals.get(&item).cloned();
                 if found.is_none() && !self.poisoned.contains(&item) {
-                    self.unsupported(file, span, "a `let` of a child whose type is not known");
+                    self.refuse(file, span, StructureForm::LetOfChildWhoseTypeIsNot);
                 }
                 found
             }

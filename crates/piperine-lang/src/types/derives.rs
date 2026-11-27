@@ -6,6 +6,7 @@
 //! `Default` is never derived on an enum (rule 4). `Clone` and `Copy` are not traits: a value is
 //! copied where it is used (§1.4.6), so the table holds seven.
 
+use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, Resolution};
 
@@ -217,7 +218,7 @@ impl Checker<'_> {
         match args {
             Some(crate::pom::GenericArgsNode::Angle { args, .. }) if let [crate::pom::GenericArgNode::Type(payload)] = args.as_slice() => Some(Ty::Option(Box::new(self.lower_type(*payload)?))),
             _ => {
-                self.unsupported(file, span, "`Option::default()` without the payload type written as `Option::<T>::default()`");
+                self.refuse(file, span, GenericsForm::OptionDefaultWithoutPayloadTypeWrittenAs);
                 None
             }
         }

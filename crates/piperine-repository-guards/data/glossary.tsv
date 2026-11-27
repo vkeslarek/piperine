@@ -1,6 +1,7 @@
 # The domain glossary of CC-05 (findings.md 1.3 (a), with `eval`, `spec` and `param`, Q2): terms the
 # domain spells in short form, which a name may hold. term<TAB>what it is[<TAB>names, comma-separated,
-# in which the term means something else and so does not clear the name].
+# in which the term means something else and so does not clear the name]. A diagnostic code (`p0001`, `e0341`: one letter, four
+# digits) needs no row: the naming guard accepts it as a part of its own kind.
 msl	the mixed-signal language
 pom	the object model of a design
 ir	the intermediate representation
@@ -109,6 +110,7 @@ usize	unsigned pointer-sized integer type, Appendix H's `usize`
 isize	signed pointer-sized integer type, Appendix H's `isize`
 eval	evaluate, the ABI contract's own word
 spec	specification, as the ABI's descriptions are named
-p	the letter of the P0001 diagnostic code (a form Piperine refuses); the naming guard drops digits, so `p0001` reads as `p`
 worded	given its words: the one place a diagnostic's text is worded (`P0001`)
 milestone	a stage of the project plan (M1), which a diagnostic must not name
+xor	the exclusive or
+unswept	a refused form no one has yet probed for its owner (spec-closure sweeps it)

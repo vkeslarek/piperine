@@ -6,6 +6,7 @@
 //! subset and refused by name. A tuple is the initializer of a tuple `let` and nothing else:
 //! the elaborator gives each component its own local.
 
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
 
@@ -25,12 +26,12 @@ impl Checker<'_> {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
                 GenericArgNode::Type(t) => Some(Ty::Option(Box::new(self.lower_type(*t)?))),
                 GenericArgNode::Const(_) => {
-                    self.unsupported(file, span, "`Option` of a const argument");
+                    self.refuse(file, span, ValueForm::OptionOfConstArgument);
                     None
                 }
             },
             _ => {
-                self.unsupported(file, span, "`Option` without one type argument");
+                self.refuse(file, span, ValueForm::OptionWithoutOneTypeArgument);
                 None
             }
         }

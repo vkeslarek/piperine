@@ -66,9 +66,7 @@ crates/piperine-cli/tests/run.rs::a_failure_before_the_analysis_prints_nothing_o
 crates/piperine-cli/tests/run.rs::a_fatal_run_prints_its_msg_and_exits_1	1
 crates/piperine-cli/tests/run.rs::a_first_compile_is_announced_on_stderr	1
 crates/piperine-cli/tests/run.rs::dir	1
-crates/piperine-cli/tests/run.rs::no_manifest_is_e0170_and_exit_1	1
 crates/piperine-cli/tests/run.rs::rc	1
-crates/piperine-cli/tests/run.rs::run_of_a_top_with_a_node_port_is_e0810	1
 crates/piperine-cli/tests/run.rs::stdout	1
 crates/piperine-cli/tests/run.rs::stdout_is_the_same_from_two_caches_and_two_directories	1
 crates/piperine-cli/tests/run.rs::stdout_of	1

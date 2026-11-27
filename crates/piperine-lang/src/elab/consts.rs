@@ -175,8 +175,13 @@ pub enum Exit {
 impl ConstFault {
     /// The fault of a form the evaluator does not fold: `P0001` naming `form` at `expr`. The refusal is boxed so the fault stays
     /// small: a fault travels in every `Result` of the recursive evaluator.
-    pub fn refused(expr: ExprId, form: RefusedForm) -> ConstFault {
-        ConstFault::Refused { expr, refusal: Box::new(Refusal::of(form)) }
+    pub fn refused(expr: ExprId, form: impl Into<RefusedForm>) -> ConstFault {
+        ConstFault::refused_with(expr, form, [])
+    }
+
+    /// [`refused`](Self::refused) with `details` for the `{}` of the form's words.
+    pub fn refused_with(expr: ExprId, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) -> ConstFault {
+        ConstFault::Refused { expr, refusal: Box::new(details.into_iter().fold(Refusal::of(form), Refusal::with_detail)) }
     }
 
     /// The expression the fault sits on; none for a `const` item without a value.

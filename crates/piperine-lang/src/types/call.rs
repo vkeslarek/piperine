@@ -2,6 +2,7 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
@@ -32,7 +33,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, class } = &node.kind else { return None };
         if params.is_some() && !matches!(class, CallClass::Instance { module: Some(_), .. }) {
-            self.unsupported(file, node.span, "param block on a call");
+            self.refuse(file, node.span, ValueForm::ParamBlockOnCall);
             return None;
         }
         if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some") {
@@ -63,7 +64,7 @@ impl Checker<'_> {
             CallClass::Instance { module: None, .. } => return self.value_call(expr, *callee, args),
             CallClass::Probe => return self.probe(expr, false),
             CallClass::Unclassified => {
-                self.unsupported(file, node.span, "call that is not a function call");
+                self.refuse(file, node.span, ValueForm::CallThatIsNotFunctionCall);
                 return None;
             }
         }
@@ -77,7 +78,7 @@ impl Checker<'_> {
                 DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_call(expr, decl, args),
                 DeclKind::Param(_) | DeclKind::Const(_) | DeclKind::Let(_) if self.hidden_function(decl).is_some() => self.hidden_function_call(expr, *callee, decl, args),
                 _ => {
-                    self.unsupported(file, node.span, "call of this declaration");
+                    self.refuse(file, node.span, ValueForm::CallOfThisDeclaration);
                     None
                 }
             },
@@ -300,7 +301,7 @@ impl Checker<'_> {
         let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
         let name = method.text.as_str();
         if generics.is_some() {
-            self.unsupported(file, node.span, &format!("method `{name}`"));
+            self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
             return None;
         }
         if name == "others" && self.others_on_one_driver(expr, *recv, args) {
@@ -318,8 +319,11 @@ impl Checker<'_> {
                 None if self.is_project_method(*f) => None,
                 None => {
                     let replaced = matches!(name, "rise" | "fall");
-                    let what = if replaced { format!("method `{name}` defined by the project (the checker knows only the stdlib's own `{name}`)") } else { format!("method `{name}`") };
-                    self.unsupported(file, node.span, &what);
+                    if replaced {
+                        self.refuse_with(file, node.span, ValueForm::MethodDefinedByProjectCheckerKnowsOnly, [name.to_string(), name.to_string()]);
+                    } else {
+                        self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
+                    }
                     return None;
                 }
             },
@@ -329,13 +333,13 @@ impl Checker<'_> {
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 "others" => return self.others_read(expr, *recv, args),
                 _ => {
-                    self.unsupported(file, node.span, &format!("method `{name}`"));
+                    self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                     return None;
                 }
             },
             Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
             Resolution::Deferred(_) => {
-                self.unsupported(file, node.span, &format!("method `{name}`"));
+                self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                 return None;
             }
         };
@@ -401,7 +405,7 @@ impl Checker<'_> {
                     };
                     self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
                 } else {
-                    self.unsupported(file, method.span, &format!("method `{name}` on `{type_name}`"));
+                    self.refuse_with(file, method.span, ValueForm::MethodOn, [name.to_string(), type_name.to_string()]);
                 }
                 for arg in args {
                     self.infer(arg.value);
@@ -437,7 +441,7 @@ impl Checker<'_> {
             Method::Expect => {
                 if !matches!(&self.design.expr_node(value).kind, ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Str { .. })) {
                     self.infer(value);
-                    self.unsupported(file, self.design.expr_node(value).span, "`expect` with a message that is not a string literal");
+                    self.refuse(file, self.design.expr_node(value).span, ValueForm::ExpectWithMessageThatIsNotString);
                     return None;
                 }
                 self.check(value, &Ty::Str);
@@ -451,7 +455,7 @@ impl Checker<'_> {
             Method::Map | Method::AndThen | Method::Then => {
                 if !matches!(self.design.expr_node(value).kind, ExprKind::Closure { .. }) {
                     self.infer(value);
-                    self.unsupported(file, self.design.expr_node(value).span, &format!("`{}` with an argument that is not a closure", match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }));
+                    self.refuse_with(file, self.design.expr_node(value).span, ValueForm::WithArgumentThatIsNotClosure, [match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }.to_string()]);
                     return None;
                 }
                 let params: Vec<Ty> = if row == Method::Then { vec![] } else { vec![payload] };

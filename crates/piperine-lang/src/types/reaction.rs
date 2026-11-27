@@ -3,6 +3,7 @@
 //! definition (`E0222`, `E0220`), the value type of its target (`E0432`) and an `f64` delay
 //! (`E0433`); a carrier is driven by definitions or by commits of a module, never both (`E0221`).
 
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, FileId, ReactionData};
 
 use super::check::{Checker, Context};
@@ -28,7 +29,7 @@ impl Checker<'_> {
     /// `place <- value [after delay];`
     pub(super) fn commit(&mut self, file: FileId, span: crate::msl::Span, place: ExprId, value: ExprId, after: Option<ExprId>) {
         if self.context != Context::Reaction {
-            self.unsupported(file, span, "commit `<-` outside a reaction body");
+            self.refuse(file, span, AnalogForm::CommitOutsideReactionBody);
             return;
         }
         let place_span = self.design.expr_node(place).span;

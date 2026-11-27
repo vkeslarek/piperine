@@ -1,6 +1,7 @@
 //! Analog forms: probes (`v(a, b)`, `potential`), contributions (`+>`) and the core primitives
 //! of the subset (`ddt`, `limit`, `ac_stim` and the environment functions of §14.4).
 
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclId, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
 
 use super::catalogue::{Allowed, Core};
@@ -13,7 +14,7 @@ impl Checker<'_> {
     /// (`E0417`).
     pub(super) fn contribution(&mut self, file: crate::pom::FileId, span: crate::msl::Span, lhs: ExprId, rhs: ExprId) {
         if self.context != Context::Analog {
-            self.unsupported(file, span, "contribution outside an `analog` block");
+            self.refuse(file, span, AnalogForm::ContributionOutsideAnalogBlock);
             return;
         }
         let target = self.design.expr_node(lhs).clone();
@@ -64,7 +65,7 @@ impl Checker<'_> {
             Resolution::Decl(q) => match &self.design.decl_data(q).kind {
                 DeclKind::Quantity(data) => (data.role, self.design.decl_data(q).parent),
                 _ => {
-                    self.unsupported(file, node.span, "probe through this name");
+                    self.refuse(file, node.span, AnalogForm::ProbeThroughThisName);
                     return None;
                 }
             },
@@ -91,12 +92,12 @@ impl Checker<'_> {
                 // an operand refused already (`E0133` for a chosen node, or a `let` of one) is no second diagnostic
                 OperandAccess::NoNode if args.first().is_some_and(|arg| self.operand_refused(arg.value)) => return None,
                 OperandAccess::NoNode => {
-                    self.unsupported(file, node.span, "probe through an access that names several natures");
+                    self.refuse(file, node.span, AnalogForm::ProbeThroughAccessThatNamesSeveralNatures);
                     return None;
                 }
             },
             Resolution::Deferred(_) | Resolution::Unresolved => {
-                self.unsupported(file, node.span, "probe through an unresolved name");
+                self.refuse(file, node.span, AnalogForm::ProbeThroughUnresolvedName);
                 return None;
             }
         };
@@ -153,7 +154,7 @@ impl Checker<'_> {
             // the inductor) is a value; the flow of a flow branch is no value, but a leaf of a `ddx` value (`differentiated`).
             (QuantityRole::Flow, false) if self.contributes_potential_to(args) || self.differentiated > 0 => Some(Ty::F64),
             (QuantityRole::Flow, false) => {
-                self.unsupported(file, node.span, "flow probe read as a value");
+                self.refuse(file, node.span, AnalogForm::FlowProbeReadAsValue);
                 None
             }
         }
@@ -211,7 +212,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let Some(sig) = Core::signature(id) else {
             let what = if matches!(id.info().kind, BuiltinKind::Fn | BuiltinKind::Module | BuiltinKind::Statement | BuiltinKind::Event) { "core primitive" } else { "built-in" };
-            self.unsupported(file, node.span, &format!("{what} `{}`", id.name()));
+            self.refuse_with(file, node.span, AnalogForm::Refused, [what.to_string(), id.name().to_string()]);
             return None;
         };
         let name = id.name();
@@ -330,7 +331,7 @@ impl Checker<'_> {
             _ => None,
         };
         if !matches!(kind.as_deref(), Some("Static" | "Dc" | "Transient" | "Ac" | "Noise")) {
-            self.unsupported(file, span, "`analysis` of a kind other than `Static`, `Dc`, `Transient`, `Ac` or `Noise`");
+            self.refuse(file, span, AnalogForm::AnalysisOfKindOtherThanStaticDc);
             return None;
         }
         Some(Ty::Bool)

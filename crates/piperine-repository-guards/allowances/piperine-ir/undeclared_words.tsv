@@ -65,7 +65,6 @@ crates/piperine-ir/src/handle.rs::ty	1
 crates/piperine-ir/src/ids.rs::ExprId	1
 crates/piperine-ir/src/ids.rs::StmtId	1
 crates/piperine-ir/src/lib.rs::deps	1
-crates/piperine-ir/src/model.rs::BitXor	1
 crates/piperine-ir/src/model.rs::Env	2
 crates/piperine-ir/src/model.rs::Expr	3
 crates/piperine-ir/src/model.rs::ExprData	1
@@ -84,10 +83,7 @@ crates/piperine-ir/src/model.rs::Lt	1
 crates/piperine-ir/src/model.rs::NodeRef	1
 crates/piperine-ir/src/model.rs::Stim	1
 crates/piperine-ir/src/model.rs::Stmt	1
-crates/piperine-ir/src/model.rs::Tuple	3
 crates/piperine-ir/src/model.rs::UInt	1
-crates/piperine-ir/src/model.rs::Unary	1
-crates/piperine-ir/src/model.rs::UnaryOp	1
 crates/piperine-ir/src/model.rs::col	1
 crates/piperine-ir/src/model.rs::deps	1
 crates/piperine-ir/src/model.rs::exprs	1
@@ -106,7 +102,6 @@ crates/piperine-ir/src/print.rs::stmt_form	1
 crates/piperine-ir/src/print.rs::stmt_ids	1
 crates/piperine-ir/src/statements.rs::Expr	1
 crates/piperine-ir/src/statements.rs::Stmt	1
-crates/piperine-ir/src/typing.rs::unary	1
 crates/piperine-ir/tests/aggregates.rs::copyable	1
 crates/piperine-ir/tests/aggregates.rs::derives_imply_what_h8_says	1
 crates/piperine-ir/tests/aggregates.rs::e	1
@@ -155,7 +150,6 @@ crates/piperine-ir/tests/support/devices.rs::if_f64	1
 crates/piperine-ir/tests/support/devices.rs::isource	1
 crates/piperine-ir/tests/support/devices.rs::pnjlim	1
 crates/piperine-ir/tests/support/devices.rs::stim	1
-crates/piperine-ir/tests/support/devices.rs::unary	1
 crates/piperine-ir/tests/support/devices.rs::vsource	1
 crates/piperine-ir/tests/support/devices.rs::vt	1
 crates/piperine-ir/tests/support/digital.rs::Dx	1

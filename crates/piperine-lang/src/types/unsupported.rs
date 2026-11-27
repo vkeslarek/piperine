@@ -1,7 +1,7 @@
 //! The one place that names a construct outside the supported subset. Every `match` is exhaustive with
 //! no wildcard arm, so a new POM variant fails to compile until it is classified.
 
-use crate::pom::{BinOp, DeclKind, ExprKind, PatKind, StmtKind, TypeKind};
+use crate::pom::{DeclKind, ExprKind, PatKind};
 
 pub(crate) struct Unsupported;
 
@@ -43,45 +43,6 @@ impl Unsupported {
         }
     }
 
-    /// The name of a binary operator the subset does not type.
-    pub(super) fn binary(op: BinOp) -> &'static str {
-        match op {
-            BinOp::Add => "operator `+`",
-            BinOp::Sub => "operator `-`",
-            BinOp::Mul => "operator `*`",
-            BinOp::Div => "operator `/`",
-            BinOp::Rem => "operator `%`",
-            BinOp::BitXor => "operator `^`",
-            BinOp::BitAnd => "operator `&`",
-            BinOp::BitOr => "operator `|`",
-            BinOp::Shl => "operator `<<`",
-            BinOp::Shr => "operator `>>`",
-            BinOp::And => "operator `&&`",
-            BinOp::Or => "operator `||`",
-            BinOp::Eq => "operator `==`",
-            BinOp::Ne => "operator `!=`",
-            BinOp::Lt => "operator `<`",
-            BinOp::Le => "operator `<=`",
-            BinOp::Gt => "operator `>`",
-            BinOp::Ge => "operator `>=`",
-        }
-    }
-
-    /// The name of a statement form.
-    pub(super) fn stmt(kind: &StmtKind) -> &'static str {
-        match kind {
-            StmtKind::Let { else_: Some(_), .. } => "`let ... else`",
-            StmtKind::Let { .. } => "`let` statement",
-            StmtKind::Expr { .. } => "expression statement",
-            StmtKind::Item(_) => "item inside a block",
-            StmtKind::Contribution { .. } => "contribution",
-            StmtKind::Commit { .. } => "commit `<-`",
-            StmtKind::Empty => "empty statement",
-            StmtKind::Signal(_) => "`signal` statement",
-            StmtKind::Reaction(_) => "`on` reaction",
-        }
-    }
-
     /// The name of a pattern form.
     pub(super) fn pat(kind: &PatKind) -> &'static str {
         match kind {
@@ -97,19 +58,6 @@ impl Unsupported {
             PatKind::Or(_) => "or-pattern",
             PatKind::Range { .. } => "range pattern",
             PatKind::Array(_) => "array pattern",
-        }
-    }
-
-    /// The name of a type form outside the subset.
-    pub(super) fn ty(kind: &TypeKind) -> &'static str {
-        match kind {
-            TypeKind::Path(_) => "type",
-            TypeKind::Array { .. } => "array type",
-            TypeKind::Tuple(items) if items.is_empty() => "unit type",
-            TypeKind::Tuple(_) => "tuple type",
-            TypeKind::Flip(_) => "`flip` type",
-            TypeKind::FnPtr { .. } => "function type",
-            TypeKind::Infer => "inferred type `_`",
         }
     }
 

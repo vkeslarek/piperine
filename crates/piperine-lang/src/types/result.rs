@@ -3,6 +3,7 @@
 //! `let` that reads itself is `E0332`, or `E0353` when the cycle passes through a result that depends
 //! directly on its input (§8.3.5).
 
+use crate::refusal::forms::StructureForm;
 use crate::msl::Span;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, Resolution};
 
@@ -27,7 +28,7 @@ impl Checker<'_> {
             }
             (None, Some(result)) => {
                 let span = self.design.expr_node(result).span;
-                self.unsupported(file, span, "module result");
+                self.refuse(file, span, StructureForm::ModuleResult);
                 self.infer(result);
             }
             (None, None) => {}
@@ -160,7 +161,7 @@ impl Checker<'_> {
             let message = format!("the `let` `{name}` reads its own name through other `let`s, {cycle}, and no module on the way has a result to feed back (§8.2.16)");
             self.coded(file, "E0332", span, message, "a `let` that reads itself");
         } else {
-            self.unsupported(file, span, &format!("the feedback of `{name}` through an instance whose value is not a placement of a module with a result"));
+            self.refuse_with(file, span, StructureForm::FeedbackOfThroughInstanceWhoseValueIs, [name.to_string()]);
         }
         self.poisoned.insert(binding);
         None

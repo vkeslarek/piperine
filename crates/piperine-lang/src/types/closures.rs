@@ -7,6 +7,7 @@
 
 use std::collections::BTreeSet;
 
+use crate::refusal::forms::ValueForm;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::check::Checker;
@@ -215,7 +216,7 @@ impl Checker<'_> {
                     let message = format!("`{name}` is called, but its type `{}` is no function and no template (§1.5)", found.name(self.design));
                     self.coded(file, "E0180", span, message, "a call of a value that is not a function");
                 }
-                None if !self.poisoned.contains(&decl) => self.unsupported(file, span, "a call of a value whose type is unknown"),
+                None if !self.poisoned.contains(&decl) => self.refuse(file, span, ValueForm::CallOfValueWhoseTypeIsUnknown),
                 None => {}
             }
             for arg in args {
@@ -273,7 +274,7 @@ impl Checker<'_> {
         if self.is_capturing_closure(expr) {
             let file = self.file_of_expr(expr);
             let span = self.design.expr_node(expr).span;
-            self.unsupported(file, span, "a closure that captures where a function pointer `fn(..) -> R` is expected (only a closure that captures nothing coerces to one)");
+            self.refuse(file, span, ValueForm::ClosureThatCapturesWhereFunctionPointerFn);
         }
     }
 }

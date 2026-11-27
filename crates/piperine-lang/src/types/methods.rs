@@ -3,6 +3,7 @@
 //! resolves through the inherent `impl` of its type and then through the traits that give the name
 //! (§3.7.8), and `Type::f` and `Type::NAME` name an associated function and a constant.
 
+use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, FileId, FnParamData};
 
@@ -45,7 +46,7 @@ impl Checker<'_> {
             }
             DeclKind::Trait(_) => Some(Ty::Param(owner)),
             _ => {
-                self.unsupported(file, span, "`Self` outside an `impl` or a trait");
+                self.refuse(file, span, GenericsForm::SelfOutsideImplOrTrait);
                 None
             }
         }
@@ -78,7 +79,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.design.expr_node(expr).span;
         let Some((first, rest)) = args.split_first() else {
-            self.unsupported(file, span, "a call of a trait's function with no `self`");
+            self.refuse(file, span, GenericsForm::CallOfTraitFunctionWithNoReceiver);
             return None;
         };
         let recv_ty = self.infer(first.value)?;

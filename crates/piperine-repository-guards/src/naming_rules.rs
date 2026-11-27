@@ -89,14 +89,26 @@ impl Dictionary {
 }
 
 /// Splits a declared name into its lower-case word parts: on `_`, on case changes (an acronym run
-/// is one word: `ABIError` is `abi`, `error`) and around digits, which are dropped.
+/// is one word: `ABIError` is `abi`, `error`) and around digits, which are dropped. A diagnostic code
+/// (one letter and exactly four digits between underscores: `p0001`, `e0341`) is the exception: it is
+/// one part of its own kind, kept whole, so a test may be named for the code it pins.
 pub struct NameWords;
 
 impl NameWords {
+    /// Whether `piece` is a diagnostic code: one ASCII letter followed by exactly four ASCII digits.
+    pub fn is_diagnostic_code(piece: &str) -> bool {
+        let characters: Vec<char> = piece.chars().collect();
+        characters.len() == 5 && characters[0].is_ascii_alphabetic() && characters[1..].iter().all(char::is_ascii_digit)
+    }
+
     /// The word parts of `name`.
     pub fn of(name: &str) -> Vec<String> {
         let mut words = Vec::new();
         for piece in name.split('_') {
+            if Self::is_diagnostic_code(piece) {
+                words.push(piece.to_lowercase());
+                continue;
+            }
             let characters: Vec<char> = piece.chars().collect();
             let mut current = String::new();
             for (at, &character) in characters.iter().enumerate() {
@@ -156,7 +168,7 @@ impl NamingRules {
         for compound in glossary.compounds() {
             remaining = remaining.replace(compound.as_str(), "_");
         }
-        remaining.split('_').filter(|word| !word.is_empty()).all(|word| glossary.holds(word) || dictionary.holds(word))
+        remaining.split('_').filter(|word| !word.is_empty()).all(|word| glossary.holds(word) || dictionary.holds(word) || NameWords::is_diagnostic_code(word))
     }
 
     /// No type name is declared twice in product code, in one crate or across crates.
@@ -185,6 +197,18 @@ mod tests {
         assert_eq!(NameWords::of("TrBdf2"), vec!["tr", "bdf"]);
         assert_eq!(NameWords::of("atan2"), vec!["atan"]);
         assert_eq!(NameWords::of("HostCx"), vec!["host", "cx"]);
+    }
+
+    #[test]
+    fn a_diagnostic_code_is_one_accepted_part_and_a_bare_letter_or_short_number_is_not() {
+        assert_eq!(NameWords::of("bound_step_is_p0001"), vec!["bound", "step", "is", "p0001"]);
+        assert_eq!(NameWords::of("e0341_chain"), vec!["e0341", "chain"]);
+        let glossary = Glossary::parse("glossary", "");
+        let dictionary = Dictionary::parse("is\nrefused\n");
+        assert!(NamingRules::is_made_of_words("refused_is_p0001", &glossary, &dictionary));
+        assert!(!NamingRules::is_made_of_words("refused_is_p", &glossary, &dictionary));
+        assert!(!NamingRules::is_made_of_words("refused_is_x12", &glossary, &dictionary));
+        assert!(!NamingRules::is_made_of_words("refused_is_p00012", &glossary, &dictionary));
     }
 
     #[test]

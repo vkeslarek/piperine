@@ -7,6 +7,7 @@
 //! a reaction body it reads as a `bool` that says whether it fired in the microstep (part IV §13
 //! rules 2 and 9), recorded as an event read for the elaborator.
 
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, BehaviorKind, DeclId, DeclKind, ExprId};
 
 use super::check::{Checker, Context};
@@ -162,7 +163,7 @@ impl Checker<'_> {
                 Some(Ty::Event)
             }
             Some((_, Ty::Carrier { value, .. })) => {
-                self.unsupported(file, span, &format!("method `{name}` on `Bit<{}>`: it is the edge of a `Bit` of `bool` or of a `Logic` of one level", value.name(self.design)));
+                self.refuse_with(file, span, AnalogForm::MethodOnBitItIsEdgeOf, [name.to_string(), value.name(self.design).to_string()]);
                 None
             }
             Some((_, Ty::Node(_))) => {
@@ -170,7 +171,7 @@ impl Checker<'_> {
                 None
             }
             _ => {
-                self.unsupported(file, span, &format!("method `{name}` on this receiver"));
+                self.refuse_with(file, span, AnalogForm::MethodOnThisReceiver, [name.to_string()]);
                 None
             }
         }
