@@ -75,7 +75,7 @@ crates/piperine-lang/src/msl/parser/msl.rs::::module_decl	-
 crates/piperine-lang/src/msl/parser/msl.rs::::recover_item	-
 crates/piperine-lang/src/msl/parser/pat.rs::::build	-
 crates/piperine-lang/src/msl/parser/ty.rs::::build	-
-crates/piperine-lang/src/msl/print.rs::Printer::expr_inner	-
+crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	-
 crates/piperine-lang/src/pom/check.rs::Design::check_nodes	-
 crates/piperine-lang/src/pom/check.rs::Refs::decl	-
 crates/piperine-lang/src/pom/check.rs::Refs::expr	-

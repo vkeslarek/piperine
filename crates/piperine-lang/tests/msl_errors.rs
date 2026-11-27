@@ -75,7 +75,7 @@ fn nesting_without_delimiters_is_also_bounded() {
                     "{kind}: no E0910 at 20000: {:?}",
                     deep.diagnostics.iter().map(|d| &*d.code).collect::<Vec<_>>()
                 );
-                let _ = piperine_lang::msl::print(&deep.file);
+                let _ = piperine_lang::msl::Printer::print(&deep.file);
                 let ok = parse(&chain_source(kind, 100));
                 assert!(ok.diagnostics.is_empty(), "{kind} at 100: {:?}", ok.diagnostics);
             }
@@ -1183,7 +1183,7 @@ fn flat_chains_up_to_4096_links_are_not_nesting() {
                 let src = flat_source(kind, 4096);
                 let r = parse(&src);
                 assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
-                let printed = piperine_lang::msl::print(&r.file);
+                let printed = piperine_lang::msl::Printer::print(&r.file);
                 assert!(printed.len() > 4096, "{kind}");
                 let design = piperine_lang::pom::Design::builder().source("f.msl", src.as_str()).build();
                 for file in design.files() {
@@ -1209,7 +1209,7 @@ fn flat_chain_past_4096_links_is_e0910() {
                 assert_eq!(e.len(), 1, "{n} terms: {:?}", r.diagnostics);
                 assert!(e[0].message.contains("4096"), "{}", e[0].message);
                 assert_eq!(r.diagnostics.len(), 1, "{n} terms: {:?}", r.diagnostics);
-                let _ = piperine_lang::msl::print(&r.file);
+                let _ = piperine_lang::msl::Printer::print(&r.file);
             }
             let nested = format!("fn f() -> f64 {{ {}1{}{} }}", "(".repeat(10), "+1".repeat(4097), ")".repeat(10));
             let r = parse(&nested);
@@ -1340,7 +1340,7 @@ fn flat_chains_survive_a_default_2_mib_thread() {
                 let src = flat_source(kind, 4096);
                 let r = parse(&src);
                 assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
-                let printed = piperine_lang::msl::print(&r.file);
+                let printed = piperine_lang::msl::Printer::print(&r.file);
                 assert!(printed.len() > 4096, "{kind}");
                 let design = piperine_lang::pom::Design::builder().source("f.msl", src.as_str()).build();
                 for file in design.files() {

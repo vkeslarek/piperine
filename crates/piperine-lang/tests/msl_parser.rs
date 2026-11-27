@@ -440,9 +440,9 @@ fn a_struct_field_takes_an_initial_value_after_its_type() {
     let ItemKind::Struct(s) = only_item("struct Hand { in ready: Bit = true }").kind else { panic!() };
     let Fields::Named(fields) = s.fields else { panic!("named fields") };
     assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Lit(_), .. })), "{:?}", fields[0].init);
-    assert!(piperine_lang::msl::print::print(&parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
+    assert!(piperine_lang::msl::print::Printer::print(&parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
     // the printer writes it back, and reading that gives the same tree
-    let printed = piperine_lang::msl::print::print(&parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
+    let printed = piperine_lang::msl::print::Printer::print(&parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
     assert!(printed.contains("out q: Bit<u8> = 1 + 2"), "{printed}");
     assert!(parse(&printed).diagnostics.is_empty(), "{printed}");
 }
@@ -1063,7 +1063,7 @@ fn negative_literal_is_a_const_generic_argument() {
     // Both spellings print and reparse to the same tree.
     for src in ["module M(a: Bit<Int< -1 >>) {}", "module M(a: Bit<Int<{ -1 }>>) {}"] {
         let first = file(src);
-        let text = piperine_lang::msl::print::print(&first);
+        let text = piperine_lang::msl::print::Printer::print(&first);
         let again = file(&text);
         assert!(first == again, "{src}: printed as {text}");
         assert!(text.contains("-1"), "{text}");
@@ -1113,7 +1113,7 @@ fn function_pointer_types_parse() {
     ];
     for src in sources {
         let first = file(src);
-        let text = piperine_lang::msl::print::print(&first);
+        let text = piperine_lang::msl::print::Printer::print(&first);
         assert!(text.contains("fn("), "{src}: printed as {text}");
         assert!(first == file(&text), "{src}: printed as {text}");
     }

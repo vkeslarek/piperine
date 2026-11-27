@@ -617,7 +617,7 @@ struct Tree;
 impl Tree {
     /// The text of the printed tree of `src`: what `piperine_lang::msl::print` writes for its parse.
     fn printed(src: &str) -> String {
-        piperine_lang::msl::print::print(&parse(src).file)
+        piperine_lang::msl::print::Printer::print(&parse(src).file)
     }
 }
 

@@ -1252,8 +1252,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited)
-- [ ] Gate check passes: Quick
+- [x] No free function in the printer; the formatter's output is byte-identical (the crate's `msl_*` tests, unedited)
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
