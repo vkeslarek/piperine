@@ -1,6 +1,6 @@
 # The uncited tests of code-clarity CC-12 AC 2 (findings 3.6): a `#[test]` that no proof, task check, inventory row, GAPS.md line or Book claim names.
 # crate<TAB>target<TAB>test<TAB>verdict. Every row is `kept`: a body, assert-set and similarity comparison of each uncited test with every other test of the repository (and a read of the closest pairs) found no test asserting the same rule on the same input, so none was removed.
-# T12 holds the three solver crates; T13 appends the other crates and the root package.
+# T12 holds the three solver crates; T13 appends the other crates (lang, parity, api, transpile, root, interp, ir, cli, abi, plan).
 piperine-analog-solver	(unit tests) convergence.rs	source_stepping_backs_off_after_failure	kept: it alone proves that source stepping backs off after failure; no other test asserts it on the same input
 piperine-analog-solver	(unit tests) convergence.rs	source_stepping_gives_up_when_backoff_exhausts	kept: it alone proves that source stepping gives up when backoff exhausts; no other test asserts it on the same input
 piperine-analog-solver	(unit tests) convergence.rs	source_stepping_ramp_schedule	kept: it alone proves that source stepping ramp schedule; no other test asserts it on the same input
@@ -160,3 +160,215 @@ piperine-solver	transient_reentry	a_stop_inside_the_reentry_tick_fails_loud	kept
 piperine-solver	transient_reentry	an_off_grid_reentry_reaches_a_stop_within_the_next_tick_once	kept: it alone proves that an off grid reentry reaches a stop within the next tick once; no other test asserts it on the same input
 piperine-solver	transient_reentry	every_step_carries_the_digital_net_values	kept: it alone proves that every step carries the digital net values; no other test asserts it on the same input
 piperine-solver	truncation	its_corner_source_passes_the_partials_verifier	kept: it alone proves that its corner source passes the partials verifier; no other test asserts it on the same input
+piperine	tests/book	a_bit_in_an_if_is_read_as_its_value	kept: it alone proves that a bit in an if is read as its value; no other test asserts it on the same input
+piperine	tests/book	a_loop_of_undelayed_definitions_is_refused_when_the_design_is_built_naming_its_functions	kept: it alone proves that a loop of undelayed definitions is refused when the design is built naming its functions; no other test asserts it on the same input
+piperine	tests/book	a_reaction_on_a_changed_carrier_emits_the_inputs	kept: it alone proves that a reaction on a changed carrier emits the inputs; no other test asserts it on the same input
+piperine	tests/book	an_analog_read_of_a_digital_carrier_is_no_error	kept: it alone proves that an analog read of a digital carrier is no error; no other test asserts it on the same input
+piperine	tests/book	e0161_an_enum_has_no_other_variant	kept: it alone proves that e0161 an enum has no other variant; no other test asserts it on the same input
+piperine	tests/book	require_writes_to_checks_as_a_pass_or_a_failure	kept: it alone proves that require writes to checks as a pass or a failure; no other test asserts it on the same input
+piperine	tests/book	the_read_of_the_carrier_in_the_worked_example_is_no_error	kept: it alone proves that the read of the carrier in the worked example is no error; no other test asserts it on the same input
+piperine	tests/integrated	a_failed_run_panics_every_asker_with_its_message_and_an_unknown_run_is_named	kept: it alone proves that a failed run panics every asker with its message and an unknown run is named; no other test asserts it on the same input
+piperine	tests/integrated	a_node_relaxes_then_holds_then_relaxes_again	kept: it alone proves that a node relaxes then holds then relaxes again; no other test asserts it on the same input
+piperine-abi	(unit tests) device.rs	react_lens_reads_and_commits	kept: it alone proves that react lens reads and commits; no other test asserts it on the same input
+piperine-abi	(unit tests) device.rs	reads_and_writes_through_the_eval_lens	kept: it alone proves that reads and writes through the eval lens; no other test asserts it on the same input
+piperine-abi	caller	a_commit_reaches_the_owner	kept: it alone proves that a commit reaches the owner; no other test asserts it on the same input
+piperine-abi	shape	shape_ref_is_send_and_sync	kept: it alone proves that shape ref is send and sync; no other test asserts it on the same input
+piperine-abi	thunks	library_fills_its_header	kept: it alone proves that library fills its header; no other test asserts it on the same input
+piperine-api	(unit tests) composite.rs	a_shape_holds_the_payload_leaf_of_a_variant_the_value_does_not_hold	kept: it alone proves that a shape holds the payload leaf of a variant the value does not hold; no other test asserts it on the same input
+piperine-api	(unit tests) composite.rs	a_struct_reads_its_fields_and_prints_as_a_literal	kept: it alone proves that a struct reads its fields and prints as a literal; no other test asserts it on the same input
+piperine-api	(unit tests) composite.rs	an_enum_reads_its_variant_name_and_a_tag_no_variant_names_is_a_failure	kept: it alone proves that an enum reads its variant name and a tag no variant names is a failure; no other test asserts it on the same input
+piperine-api	(unit tests) held.rs	a_change_applies_after_the_step_to_its_time	kept: it alone proves that a change applies after the step to its time; no other test asserts it on the same input
+piperine-api	(unit tests) held.rs	the_bytes_read_back_as_the_cell_of_the_type	kept: it alone proves that the bytes read back as the cell of the type; no other test asserts it on the same input
+piperine-api	(unit tests) metadata.rs	a_param_no_placement_gave_a_value_is_the_absent_cell	kept: it alone proves that a param no placement gave a value is the absent cell; no other test asserts it on the same input
+piperine-api	(unit tests) param_text.rs	an_integer_above_2_pow_53_is_read_exactly	kept: it alone proves that an integer above 2 pow 53 is read exactly; no other test asserts it on the same input
+piperine-api	(unit tests) param_text.rs	an_integer_literal_is_read_in_its_radix_and_range	kept: it alone proves that an integer literal is read in its radix and range; no other test asserts it on the same input
+piperine-api	(unit tests) plot.rs	a_non_finite_value_breaks_the_run	kept: it alone proves that a non finite value breaks the run; no other test asserts it on the same input
+piperine-api	(unit tests) recorder.rs	a_change_within_rounding_after_a_row_already_made_reaches_it	kept: it alone proves that a change within rounding after a row already made reaches it; no other test asserts it on the same input
+piperine-api	(unit tests) recorder.rs	a_resumed_run_seeds_its_nets_from_the_reader	kept: it alone proves that a resumed run seeds its nets from the reader; no other test asserts it on the same input
+piperine-api	(unit tests) recorder.rs	a_zero_net_value_is_a_value	kept: it alone proves that a zero net value is a value; no other test asserts it on the same input
+piperine-api	(unit tests) recorder.rs	several_changes_and_steps_within_the_slack_of_a_made_row_all_reach_it	kept: it alone proves that several changes and steps within the slack of a made row all reach it; no other test asserts it on the same input
+piperine-api	(unit tests) table.rs	a_leaf_a_row_does_not_hold_is_the_absent_cell_and_a_missing_cell_is_a_failure	kept: it alone proves that a leaf a row does not hold is the absent cell and a missing cell is a failure; no other test asserts it on the same input
+piperine-api	(unit tests) table.rs	a_real_column_that_stops_being_real_cannot_be_interpolated	kept: it alone proves that a real column that stops being real cannot be interpolated; no other test asserts it on the same input
+piperine-api	(unit tests) verdict.rs	only_a_false_pass_fails_a_check	kept: it alone proves that only a false pass fails a check; no other test asserts it on the same input
+piperine-api	analyses	a_where_holds_at_equality_and_reads_the_other_params	kept: it alone proves that a where holds at equality and reads the other params; no other test asserts it on the same input
+piperine-api	analyses	pss_takes_the_sessions_step_budget	kept: it alone proves that pss takes the sessions step budget; no other test asserts it on the same input
+piperine-api	composites	only_the_librarys_logic_prints_as_a_pattern	kept: it alone proves that only the librarys logic prints as a pattern; no other test asserts it on the same input
+piperine-api	digital_only	a_finish_ends_the_run_ok_when_the_sim_stream_is_not_kept	kept: it alone proves that a finish ends the run ok when the sim stream is not kept; no other test asserts it on the same input
+piperine-api	host_actions	an_undriven_top_input_keeps_its_initial_value	kept: it alone proves that an undriven top input keeps its initial value; no other test asserts it on the same input
+piperine-api	power_stage_bench	the_power_stage_time_per_step_against_ngspice_is_printed	kept: it alone proves that the power stage time per step against ngspice is printed; no other test asserts it on the same input
+piperine-api	probes	a_merged_node_is_printed_as_the_node_that_survives	kept: it alone proves that a merged node is printed as the node that survives; no other test asserts it on the same input
+piperine-api	session	a_described_option_and_leaf_reach_the_child	kept: it alone proves that a described option and leaf reach the child; no other test asserts it on the same input
+piperine-api	session	a_description_shows_the_values_a_run_reads_for_every_param_kind	kept: it alone proves that a description shows the values a run reads for every param kind; no other test asserts it on the same input
+piperine-api	session	a_leaf_text_is_read_by_the_leafs_type	kept: it alone proves that a leaf text is read by the leafs type; no other test asserts it on the same input
+piperine-api	session	a_refused_text_is_named_as_the_user_wrote_it	kept: it alone proves that a refused text is named as the user wrote it; no other test asserts it on the same input
+piperine-api	session	a_structural_enum_passed_through_a_wrapper_selects_the_variant	kept: it alone proves that a structural enum passed through a wrapper selects the variant; no other test asserts it on the same input
+piperine-api	session	describing_a_rust_request_shows_the_values_a_run_derives_of_every_param_type	kept: it alone proves that describing a rust request shows the values a run derives of every param type; no other test asserts it on the same input
+piperine-api	session	describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan	kept: it alone proves that describing a set the interpreter cannot derive names the interpreter not the plan; no other test asserts it on the same input
+piperine-cli	(unit tests) cli.rs	a_param_is_kept_as_text_for_its_type	kept: it alone proves that a param is kept as text for its type; no other test asserts it on the same input
+piperine-cli	(unit tests) render/json.rs	the_absent_cell_is_null	kept: it alone proves that the absent cell is null; no other test asserts it on the same input
+piperine-cli	book	every_listing_selects_lines_inside_its_block	kept: it alone proves that every listing selects lines inside its block; no other test asserts it on the same input
+piperine-cli	commands	check_without_a_run_types_the_whole_package	kept: it alone proves that check without a run types the whole package; no other test asserts it on the same input
+piperine-cli	run	a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe	kept: it alone proves that a guarded record prints when its guard holds and no record carries a maybe; no other test asserts it on the same input
+piperine-cli	usage	help_lists_exactly_the_eight_commands	kept: it alone proves that help lists exactly the eight commands; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	a_constant_among_seeded_keeps_the_tangent_of_the_seeded	kept: it alone proves that a constant among seeded keeps the tangent of the seeded; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	add_and_sub_follow_the_sum_rule	kept: it alone proves that add and sub follow the sum rule; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	constants_allocate_no_tangent	kept: it alone proves that constants allocate no tangent; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	div_follows_the_quotient_rule	kept: it alone proves that div follows the quotient rule; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	exp_ln_sqrt_have_their_analytic_derivatives	kept: it alone proves that exp ln sqrt have their analytic derivatives; no other test asserts it on the same input
+piperine-interp	(unit tests) dual.rs	neg_flips_value_and_tangent	kept: it alone proves that neg flips value and tangent; no other test asserts it on the same input
+piperine-interp	circuit	a_checked_ir_is_accepted	kept: it alone proves that a checked ir is accepted; no other test asserts it on the same input
+piperine-interp	circuit	the_held_circuit_holds_out_at_zero	kept: it alone proves that the held circuit holds out at zero; no other test asserts it on the same input
+piperine-ir	aggregates	a_type_that_contains_itself_is_refused	kept: it alone proves that a type that contains itself is refused; no other test asserts it on the same input
+piperine-ir	amendments	the_guard_of_an_event_reads_another_events_fired_never_its_own	kept: it alone proves that the guard of an event reads another events fired never its own; no other test asserts it on the same input
+piperine-ir	control	a_loop_trip_count_reaches_what_the_loop_assigns	kept: it alone proves that a loop trip count reaches what the loop assigns; no other test asserts it on the same input
+piperine-ir	control	an_assignment_is_typed_by_its_target	kept: it alone proves that an assignment is typed by its target; no other test asserts it on the same input
+piperine-ir	operators	a_call_a_block_with_lets_and_a_second_derivative_differentiate	kept: it alone proves that a call a block with lets and a second derivative differentiate; no other test asserts it on the same input
+piperine-ir	operators	a_delay_read_out_of_range_or_in_a_function_is_broken	kept: it alone proves that a delay read out of range or in a function is broken; no other test asserts it on the same input
+piperine-ir	operators	a_noise_read_out_of_range_or_in_a_function_is_broken	kept: it alone proves that a noise read out of range or in a function is broken; no other test asserts it on the same input
+piperine-ir	operators	a_session_parameter_read_out_of_range_or_typed_as_a_real_is_broken	kept: it alone proves that a session parameter read out of range or typed as a real is broken; no other test asserts it on the same input
+piperine-lang	(unit tests) elab/elaborator.rs	a_composite_constant_with_no_form_at_its_type_is_an_internal_error_not_a_panic	kept: it alone proves that a composite constant with no form at its type is an internal error not a panic; no other test asserts it on the same input
+piperine-lang	(unit tests) elab/elaborator.rs	an_ill_formed_ir_becomes_an_internal_error_and_no_ir	kept: it alone proves that an ill formed ir becomes an internal error and no ir; no other test asserts it on the same input
+piperine-lang	book	the_book_has_two_parts_and_the_second_starts_at_the_object_model	kept: it alone proves that the book has two parts and the second starts at the object model; no other test asserts it on the same input
+piperine-lang	book	the_book_teaches_the_language_on_its_own_terms	kept: it alone proves that the book teaches the language on its own terms; no other test asserts it on the same input
+piperine-lang	book	the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet	kept: it alone proves that the cli chapter closes the fundamentals before the cheat sheet; no other test asserts it on the same input
+piperine-lang	buck_example	every_source_file_is_loaded	kept: it alone proves that every source file is loaded; no other test asserts it on the same input
+piperine-lang	buck_example	no_member_stays_unresolved	kept: it alone proves that no member stays unresolved; no other test asserts it on the same input
+piperine-lang	buck_example	the_hierarchy_reads_back_as_written	kept: it alone proves that the hierarchy reads back as written; no other test asserts it on the same input
+piperine-lang	buck_example	the_package_builds_with_no_diagnostics	kept: it alone proves that the package builds with no diagnostics; no other test asserts it on the same input
+piperine-lang	buck_example	the_package_is_a_package	kept: it alone proves that the package is a package; no other test asserts it on the same input
+piperine-lang	buck_example	the_package_passes_check	kept: it alone proves that the package passes check; no other test asserts it on the same input
+piperine-lang	buck_example	the_package_uses_the_std_items_it_showcases	kept: it alone proves that the package uses the std items it showcases; no other test asserts it on the same input
+piperine-lang	elab_aggregates	a_function_over_an_array_of_options_reads_each_element_as_a_pair	kept: it alone proves that a function over an array of options reads each element as a pair; no other test asserts it on the same input
+piperine-lang	elab_bundles	a_template_placed_through_a_bound_has_the_bundle_in_the_bounds_view	kept: it alone proves that a template placed through a bound has the bundle in the bounds view; no other test asserts it on the same input
+piperine-lang	elab_carrier_arrays	an_analog_function_reads_the_carrier_an_element_of_an_array_is_given_to	kept: it alone proves that an analog function reads the carrier an element of an array is given to; no other test asserts it on the same input
+piperine-lang	elab_carrier_arrays	arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes	kept: it alone proves that arrays of carriers and nodes declare one carrier and k nodes; no other test asserts it on the same input
+piperine-lang	elab_digital	a_generic_event_function_runs_for_the_nature_it_is_called_at	kept: it alone proves that a generic event function runs for the nature it is called at; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_function_as_the_result_of_a_module_is_its_event_in_the_module_frame	kept: it alone proves that an event function as the result of a module is its event in the module frame; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_function_body_may_hold_lets_before_its_event	kept: it alone proves that an event function body may hold lets before its event; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_function_may_recurse_while_its_decisions_fold	kept: it alone proves that an event function may recurse while its decisions fold; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_function_that_emits_or_loops_without_end_is_refused_by_name	kept: it alone proves that an event function that emits or loops without end is refused by name; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_function_with_an_arm_it_cannot_guard_is_refused_by_name	kept: it alone proves that an event function with an arm it cannot guard is refused by name; no other test asserts it on the same input
+piperine-lang	elab_digital	an_event_method_runs_the_function_its_impl_gives	kept: it alone proves that an event method runs the function its impl gives; no other test asserts it on the same input
+piperine-lang	elab_explicit	a_known_real_goes_through_each_analog_form	kept: it alone proves that a known real goes through each analog form; no other test asserts it on the same input
+piperine-lang	elab_explicit	analog_has_no_refusal_of_a_flag	kept: it alone proves that analog has no refusal of a flag; no other test asserts it on the same input
+piperine-lang	elab_explicit	known_values_fold_by_the_level_rules	kept: it alone proves that known values fold by the level rules; no other test asserts it on the same input
+piperine-lang	elab_explicit	unknown_decides_no_structure_because_it_is_no_value	kept: it alone proves that unknown decides no structure because it is no value; no other test asserts it on the same input
+piperine-lang	elab_generation	an_item_only_some_iterations_elaborate_is_refused_by_name	kept: it alone proves that an item only some iterations elaborate is refused by name; no other test asserts it on the same input
+piperine-lang	elab_generics	a_struct_that_holds_a_generic_instance_has_the_instances_entry	kept: it alone proves that a struct that holds a generic instance has the instances entry; no other test asserts it on the same input
+piperine-lang	elab_generics	cast_between_widths_is_e0127_naming_both_types	kept: it alone proves that cast between widths is e0127 naming both types; no other test asserts it on the same input
+piperine-lang	elab_instances	a_childs_own_signal_is_own_in_the_authored_child_and_real_in_the_instance_table	kept: it alone proves that a childs own signal is own in the authored child and real in the instance table; no other test asserts it on the same input
+piperine-lang	elab_instances	a_node_init_that_reads_a_param_is_folded_per_variant	kept: it alone proves that a node init that reads a param is folded per variant; no other test asserts it on the same input
+piperine-lang	elab_instances	a_raw_signal_name_is_a_node_without_the_prefix	kept: it alone proves that a raw signal name is a node without the prefix; no other test asserts it on the same input
+piperine-lang	elab_operators	noise_table_places_with_its_array_param	kept: it alone proves that noise table places with its array param; no other test asserts it on the same input
+piperine-lang	elab_params	a_phase_a_form_in_a_bound_value_is_evaluated	kept: it alone proves that a phase a form in a bound value is evaluated; no other test asserts it on the same input
+piperine-lang	elab_structure	a_match_on_a_param_picks_its_arm_and_makes_the_param_structural	kept: it alone proves that a match on a param picks its arm and makes the param structural; no other test asserts it on the same input
+piperine-lang	elab_structure	a_match_on_a_probe_stays_a_run_time_selector	kept: it alone proves that a match on a probe stays a run time selector; no other test asserts it on the same input
+piperine-lang	elab_structure	a_merged_node_keeps_its_authored_path_as_an_alias_of_its_survivor	kept: it alone proves that a merged node keeps its authored path as an alias of its survivor; no other test asserts it on the same input
+piperine-lang	elab_structure	a_node_a_child_reaches_into_a_grandchild_is_named_own_too	kept: it alone proves that a node a child reaches into a grandchild is named own too; no other test asserts it on the same input
+piperine-lang	elab_structure	a_payload_enum_param_elaborates	kept: it alone proves that a payload enum param elaborates; no other test asserts it on the same input
+piperine-lang	elab_structure	a_zero_potential_enabled_through_a_value_input_merges_the_nodes	kept: it alone proves that a zero potential enabled through a value input merges the nodes; no other test asserts it on the same input
+piperine-lang	elab_structure	both_kinds_enabled_through_a_value_input_bound_to_a_param_are_e0415	kept: it alone proves that both kinds enabled through a value input bound to a param are e0415; no other test asserts it on the same input
+piperine-lang	elab_structure	the_stdlib_idt_is_the_generic_module_at_its_default_nature	kept: it alone proves that the stdlib idt is the generic module at its default nature; no other test asserts it on the same input
+piperine-lang	elab_templates	a_cell_of_a_generated_bank_is_read_through_its_indexes	kept: it alone proves that a cell of a generated bank is read through its indexes; no other test asserts it on the same input
+piperine-lang	elab_templates	a_node_of_a_child_of_a_child_is_reached_without_a_template	kept: it alone proves that a node of a child of a child is reached without a template; no other test asserts it on the same input
+piperine-lang	elab_unlowered	a_for_loop_in_a_digital_block_lowers	kept: it alone proves that a for loop in a digital block lowers; no other test asserts it on the same input
+piperine-lang	elab_unlowered	a_match_arm_guard_lowers	kept: it alone proves that a match arm guard lowers; no other test asserts it on the same input
+piperine-lang	elab_unlowered	an_option_arm_with_a_block_body_is_refused_once	kept: it alone proves that an option arm with a block body is refused once; no other test asserts it on the same input
+piperine-lang	msl_errors	an_emit_statement_at_the_top_of_a_file_reports_e0601	kept: it alone proves that an emit statement at the top of a file reports e0601; no other test asserts it on the same input
+piperine-lang	msl_errors	an_emit_statement_in_a_module_body_reports_e0601	kept: it alone proves that an emit statement in a module body reports e0601; no other test asserts it on the same input
+piperine-lang	msl_errors	an_on_every_inside_a_reaction_is_a_placement_in_a_reaction_body_e0350	kept: it alone proves that an on every inside a reaction is a placement in a reaction body e0350; no other test asserts it on the same input
+piperine-lang	msl_errors	comparisons_do_not_chain	kept: it alone proves that comparisons do not chain; no other test asserts it on the same input
+piperine-lang	msl_errors	macros_other_than_emit_and_include_str_report_e0901	kept: it alone proves that macros other than emit and include str report e0901; no other test asserts it on the same input
+piperine-lang	msl_errors	module_forms_report_e0302_and_e0303	kept: it alone proves that module forms report e0302 and e0303; no other test asserts it on the same input
+piperine-lang	msl_errors	plus_gt_and_commit_inside_an_expression_report_e0907	kept: it alone proves that plus gt and commit inside an expression report e0907; no other test asserts it on the same input
+piperine-lang	pom_body	check_reports_a_broken_parent_table	kept: it alone proves that check reports a broken parent table; no other test asserts it on the same input
+piperine-lang	pom_crates	a_reserved_root_file_stem_is_reported_and_never_names_std	kept: it alone proves that a reserved root file stem is reported and never names std; no other test asserts it on the same input
+piperine-lang	pom_crates	an_e0163_labels_the_local_item_it_clashes_with	kept: it alone proves that an e0163 labels the local item it clashes with; no other test asserts it on the same input
+piperine-lang	pom_crates	an_import_that_reported_e0163_is_an_errored_binding_that_reports_once	kept: it alone proves that an import that reported e0163 is an errored binding that reports once; no other test asserts it on the same input
+piperine-lang	pom_docs	the_pom_docs_that_wait_for_the_code_stay_honest	kept: it alone proves that the pom docs that wait for the code stay honest; no other test asserts it on the same input
+piperine-lang	pom_reflect	a_nature_field_that_names_no_quantity_is_an_err_not_a_panic	kept: it alone proves that a nature field that names no quantity is an err not a panic; no other test asserts it on the same input
+piperine-lang	pom_reflect	member_references_are_listed	kept: it alone proves that member references are listed; no other test asserts it on the same input
+piperine-lang	pom_resolve	a_blanket_trait_out_of_scope_never_links	kept: it alone proves that a blanket trait out of scope never links; no other test asserts it on the same input
+piperine-lang	pom_resolve	a_local_item_named_like_a_prelude_trait_keeps_its_methods	kept: it alone proves that a local item named like a prelude trait keeps its methods; no other test asserts it on the same input
+piperine-lang	pom_resolve	a_trait_imported_under_an_alias_is_in_scope	kept: it alone proves that a trait imported under an alias is in scope; no other test asserts it on the same input
+piperine-lang	pom_resolve	two_visible_blankets_keep_declaration_order	kept: it alone proves that two visible blankets keep declaration order; no other test asserts it on the same input
+piperine-lang	spec_structure	b1_counts_60_constructs	kept: it alone proves that b1 counts 60 constructs; no other test asserts it on the same input
+piperine-lang	std_library	a_std_file_sees_another_namespace_through_the_prelude	kept: it alone proves that a std file sees another namespace through the prelude; no other test asserts it on the same input
+piperine-lang	std_library	laplace_nd_requires_a_nonzero_leading_denominator_coefficient	kept: it alone proves that laplace nd requires a nonzero leading denominator coefficient; no other test asserts it on the same input
+piperine-lang	std_library	pnjlim_follows_ngspice_devpnjlim_branch_by_branch	kept: it alone proves that pnjlim follows ngspice devpnjlim branch by branch; no other test asserts it on the same input
+piperine-lang	std_library	prelude_reexports_every_namespace	kept: it alone proves that prelude reexports every namespace; no other test asserts it on the same input
+piperine-lang	types_analog	simparam_types_with_a_name_as_an_option	kept: it alone proves that simparam types with a name as an option; no other test asserts it on the same input
+piperine-lang	types_bundles	a_literal_given_through_a_flipped_bound_is_handed_over_by_the_bounds_view	kept: it alone proves that a literal given through a flipped bound is handed over by the bounds view; no other test asserts it on the same input
+piperine-lang	types_bundles	a_template_of_another_view_than_the_bound_is_e0360_naming_the_port	kept: it alone proves that a template of another view than the bound is e0360 naming the port; no other test asserts it on the same input
+piperine-lang	types_bundles	a_template_of_the_bounds_own_view_is_accepted_through_the_bound	kept: it alone proves that a template of the bounds own view is accepted through the bound; no other test asserts it on the same input
+piperine-lang	types_bundles	a_trait_is_not_implemented_for_a_bundle	kept: it alone proves that a trait is not implemented for a bundle; no other test asserts it on the same input
+piperine-lang	types_bundles	an_array_field_of_a_bundle_is_an_array_of_carriers	kept: it alone proves that an array field of a bundle is an array of carriers; no other test asserts it on the same input
+piperine-lang	types_bundles	an_array_of_bundles_gives_each_element_its_fields	kept: it alone proves that an array of bundles gives each element its fields; no other test asserts it on the same input
+piperine-lang	types_carriers	a_loop_of_definitions_is_reported_beside_an_initial_value	kept: it alone proves that a loop of definitions is reported beside an initial value; no other test asserts it on the same input
+piperine-lang	types_compound	a_match_that_is_not_exhaustive_is_e0180	kept: it alone proves that a match that is not exhaustive is e0180; no other test asserts it on the same input
+piperine-lang	types_compound	an_enum_that_derives_no_repr_is_a_value	kept: it alone proves that an enum that derives no repr is a value; no other test asserts it on the same input
+piperine-lang	types_events	a_function_returning_event_is_the_result_of_a_module	kept: it alone proves that a function returning event is the result of a module; no other test asserts it on the same input
+piperine-lang	types_events	a_generic_function_returning_event_is_an_event_at_each_nature	kept: it alone proves that a generic function returning event is an event at each nature; no other test asserts it on the same input
+piperine-lang	types_explicit	a_cast_into_a_sequence_that_holds_an_enum_is_typed	kept: it alone proves that a cast into a sequence that holds an enum is typed; no other test asserts it on the same input
+piperine-lang	types_explicit	an_in_port_may_carry_an_initial_value	kept: it alone proves that an in port may carry an initial value; no other test asserts it on the same input
+piperine-lang	types_generics	a_generic_argument_that_does_not_satisfy_its_bound_is_e0187	kept: it alone proves that a generic argument that does not satisfy its bound is e0187; no other test asserts it on the same input
+piperine-lang	types_generics	a_length_over_const_parameters_fits_until_the_item_is_instantiated	kept: it alone proves that a length over const parameters fits until the item is instantiated; no other test asserts it on the same input
+piperine-lang	types_generics	a_parameter_list_that_breaks_the_rules_of_3_8_is_refused	kept: it alone proves that a parameter list that breaks the rules of 3 8 is refused; no other test asserts it on the same input
+piperine-lang	types_generics	a_substitution_replaces_parameters_through_every_part_of_a_type	kept: it alone proves that a substitution replaces parameters through every part of a type; no other test asserts it on the same input
+piperine-lang	types_generics	a_written_use_is_recorded_as_an_instantiation	kept: it alone proves that a written use is recorded as an instantiation; no other test asserts it on the same input
+piperine-lang	types_generics	an_array_length_may_name_a_const_parameter	kept: it alone proves that an array length may name a const parameter; no other test asserts it on the same input
+piperine-lang	types_integers	a_bare_literal_takes_the_type_its_later_uses_fix	kept: it alone proves that a bare literal takes the type its later uses fix; no other test asserts it on the same input
+piperine-lang	types_integers	a_read_that_requires_no_type_closes_the_literal_at_i32	kept: it alone proves that a read that requires no type closes the literal at i32; no other test asserts it on the same input
+piperine-lang	types_structure	a_parent_may_drive_a_childs_pub_resolved_signal	kept: it alone proves that a parent may drive a childs pub resolved signal; no other test asserts it on the same input
+piperine-lang	types_structure	changed_and_prev_of_a_param_type_as_an_event_and_the_params_type	kept: it alone proves that changed and prev of a param type as an event and the params type; no other test asserts it on the same input
+piperine-lang	types_traits	a_bound_with_trait_arguments_is_met_by_the_impl_naming_them	kept: it alone proves that a bound with trait arguments is met by the impl naming them; no other test asserts it on the same input
+piperine-lang	types_traits	a_trait_impl_on_a_module_type_is_accepted_and_binds_self_to_the_template	kept: it alone proves that a trait impl on a module type is accepted and binds self to the template; no other test asserts it on the same input
+piperine-lang	types_traits	an_impl_is_written_in_the_crate_of_the_trait_or_of_the_type	kept: it alone proves that an impl is written in the crate of the trait or of the type; no other test asserts it on the same input
+piperine-lang	types_values	a_closure_takes_its_parameter_types_from_where_it_stands	kept: it alone proves that a closure takes its parameter types from where it stands; no other test asserts it on the same input
+piperine-parity	(unit tests) deviation.rs	the_table_has_one_line_per_deviation	kept: it alone proves that the table has one line per deviation; no other test asserts it on the same input
+piperine-parity	(unit tests) scenario/column.rs	a_label_equal_to_the_name_and_a_label_ending_in_it_are_both_found	kept: it alone proves that a label equal to the name and a label ending in it are both found; no other test asserts it on the same input
+piperine-parity	(unit tests) scenario/column.rs	two_matching_labels_panic_naming_both	kept: it alone proves that two matching labels panic naming both; no other test asserts it on the same input
+piperine-parity	(unit tests) scenario/discrete.rs	peak_to_peak_is_the_largest_value_minus_the_smallest	kept: it alone proves that peak to peak is the largest value minus the smallest; no other test asserts it on the same input
+piperine-parity	(unit tests) scenario/discrete.rs	value_at_is_the_row_at_or_before_the_time	kept: it alone proves that value at is the row at or before the time; no other test asserts it on the same input
+piperine-parity	(unit tests) scenario/trace.rs	largest_rise_is_the_biggest_step_up_and_negative_on_a_decay	kept: it alone proves that largest rise is the biggest step up and negative on a decay; no other test asserts it on the same input
+piperine-parity	source_aggregates	a_braced_literal_in_a_condition_keeps_its_parentheses	kept: it alone proves that a braced literal in a condition keeps its parentheses; no other test asserts it on the same input
+piperine-parity	source_aggregates	a_tag_the_cast_names_is_a_variant	kept: it alone proves that a tag the cast names is a variant; no other test asserts it on the same input
+piperine-parity	source_aggregates	an_index_reads_and_writes_the_element_it_names	kept: it alone proves that an index reads and writes the element it names; no other test asserts it on the same input
+piperine-parity	source_aggregates	two_sites_giving_a_field_different_composite_types_are_refused	kept: it alone proves that two sites giving a field different composite types are refused; no other test asserts it on the same input
+piperine-parity	source_bundles	a_bundle_goes_through_a_template_in_the_view_its_bound_writes	kept: it alone proves that a bundle goes through a template in the view its bound writes; no other test asserts it on the same input
+piperine-parity	source_bundles	an_array_field_of_a_bundle_connects_its_elements	kept: it alone proves that an array field of a bundle connects its elements; no other test asserts it on the same input
+piperine-parity	source_carrier_arrays	a_transient_with_an_array_no_analog_function_reads_stays_sparse	kept: it alone proves that a transient with an array no analog function reads stays sparse; no other test asserts it on the same input
+piperine-parity	source_carrier_arrays	an_analog_function_reads_an_element_a_bundle_leaf_element_and_an_array_port	kept: it alone proves that an analog function reads an element a bundle leaf element and an array port; no other test asserts it on the same input
+piperine-parity	source_events	an_event_function_binds_named_and_left_out_arguments	kept: it alone proves that an event function binds named and left out arguments; no other test asserts it on the same input
+piperine-parity	source_events	an_event_function_chooses_between_events_by_a_value_read_at_the_instant	kept: it alone proves that an event function chooses between events by a value read at the instant; no other test asserts it on the same input
+piperine-parity	source_explicit	a_carrier_a_definition_drives_has_not_risen_at_the_start	kept: it alone proves that a carrier a definition drives has not risen at the start; no other test asserts it on the same input
+piperine-parity	source_explicit	a_math_function_of_a_value_is_a_value	kept: it alone proves that a math function of a value is a value; no other test asserts it on the same input
+piperine-parity	source_explicit	an_emit_under_a_guard_is_a_plain_record	kept: it alone proves that an emit under a guard is a plain record; no other test asserts it on the same input
+piperine-parity	source_explicit	an_emitting_function_runs_in_a_value_position_of_a_reaction	kept: it alone proves that an emitting function runs in a value position of a reaction; no other test asserts it on the same input
+piperine-parity	source_explicit	an_if_in_a_cross_argument_picks_its_arm	kept: it alone proves that an if in a cross argument picks its arm; no other test asserts it on the same input
+piperine-parity	source_logic	a_logic_bit_rises_into_one_and_falls_into_zero	kept: it alone proves that a logic bit rises into one and falls into zero; no other test asserts it on the same input
+piperine-parity	source_logic	a_logic_of_a_hundred_levels_runs	kept: it alone proves that a logic of a hundred levels runs; no other test asserts it on the same input
+piperine-parity	source_logic	an_inferred_logic_of_seventy_levels_runs	kept: it alone proves that an inferred logic of seventy levels runs; no other test asserts it on the same input
+piperine-parity	source_logic	an_operator_on_a_library_type_runs_its_impl	kept: it alone proves that an operator on a library type runs its impl; no other test asserts it on the same input
+piperine-parity	source_number_widths	a_carried_f128_is_a_u64_field_of_count_two	kept: it alone proves that a carried f128 is a u64 field of count two; no other test asserts it on the same input
+piperine-parity	source_number_widths	a_param_of_each_width_holds_its_exact_default	kept: it alone proves that a param of each width holds its exact default; no other test asserts it on the same input
+piperine-parity	source_number_widths	a_wide_integer_division_by_zero_fails_the_analysis_naming_it	kept: it alone proves that a wide integer division by zero fails the analysis naming it; no other test asserts it on the same input
+piperine-parity	source_stdlib_generic	an_unpaired_zi_pole_is_refused	kept: it alone proves that an unpaired zi pole is refused; no other test asserts it on the same input
+piperine-parity	source_time	rise_and_fall_fire_on_transitions	kept: it alone proves that rise and fall fire on transitions; no other test asserts it on the same input
+piperine-plan	(unit tests) netlist.rs	with_time_point_rule_reaches_the_digital_engine	kept: it alone proves that with time point rule reaches the digital engine; no other test asserts it on the same input
+piperine-plan	nan_param	a_nan_param_default_is_the_librarys_nan	kept: it alone proves that a nan param default is the librarys nan; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/text.rs	a_generic_instance_spells_with_the_marks_of_design_d8	kept: it alone proves that a generic instance spells with the marks of design d8; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/text.rs	a_template_argument_spells_as_the_module_it_names	kept: it alone proves that a template argument spells as the module it names; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/text.rs	a_variants_type_spelling_keeps_its_capitals	kept: it alone proves that a variants type spelling keeps its capitals; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/text.rs	an_msl_name_never_prints_as_a_generated_one	kept: it alone proves that an msl name never prints as a generated one; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/value.rs	each_new_row_prints_as_its_method	kept: it alone proves that each new row prints as its method; no other test asserts it on the same input
+piperine-transpile	(unit tests) print/value.rs	integer_expressions_print	kept: it alone proves that integer expressions print; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/commits.rs	a_finish_ends_the_run_when_true	kept: it alone proves that a finish ends the run when true; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/commits.rs	every_commit_reaches_the_host_in_the_order_made	kept: it alone proves that every commit reaches the host in the order made; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/control.rs	a_raised_panic_reaches_the_thunk_as_the_text_a_panic_has	kept: it alone proves that a raised panic reaches the thunk as the text a panic has; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/pin.rs	a_cast_keeps_the_levels_under_another_type	kept: it alone proves that a cast keeps the levels under another type; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/pin.rs	a_pin_holds_the_value_and_nothing_else	kept: it alone proves that a pin holds the value and nothing else; no other test asserts it on the same input
+piperine-transpile	(unit tests) rt/pin.rs	same_compares_every_level	kept: it alone proves that same compares every level; no other test asserts it on the same input
+piperine-transpile	amended	a_past_time_does_not_fire	kept: it alone proves that a past time does not fire; no other test asserts it on the same input
+piperine-transpile	analog_if	an_if_in_an_analog_block_runs_the_arm_its_carrier_names	kept: it alone proves that an if in an analog block runs the arm its carrier names; no other test asserts it on the same input
+piperine-transpile	carrierless	a_reaction_with_no_carrier_runs_and_its_record_arrives	kept: it alone proves that a reaction with no carrier runs and its record arrives; no other test asserts it on the same input

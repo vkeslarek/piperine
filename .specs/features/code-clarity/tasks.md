@@ -591,9 +591,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every uncited test of these crates has a verdict
-- [ ] The commit body lists each removal with its survivor
-- [ ] Gate check passes: Ledger
+- [x] Every uncited test of these crates has a verdict
+- [x] The commit body lists each removal with its survivor
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
