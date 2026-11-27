@@ -16,10 +16,10 @@ struct DriveSources {
 /// The sources of the events of a body: what each guard, `cross`, `at` and tolerance reads.
 struct EventSources {
     guards: Vec<Sources>,
-    ttols: Vec<Sources>,
-    etols: Vec<Sources>,
+    time_tolerances: Vec<Sources>,
+    error_tolerances: Vec<Sources>,
     crosses: Vec<Sources>,
-    ats: Vec<Sources>,
+    times: Vec<Sources>,
 }
 
 impl<'a> Walk<'a> {
@@ -50,11 +50,11 @@ impl<'a> Walk<'a> {
             drive_afters: drives.afters,
             guards: events.guards,
             crosses: events.crosses,
-            ats: events.ats,
+            ats: events.times,
             reactions,
             caps: walk.caps,
-            ttols: events.ttols,
-            etols: events.etols,
+            ttols: events.time_tolerances,
+            etols: events.error_tolerances,
             derivative_states,
             derivative_abstols,
             delay_inputs,
@@ -120,7 +120,7 @@ impl<'a> Walk<'a> {
     /// What each event's `cross`, tolerances, `at` and guard read.
     fn event_sources(&mut self, data: &BodyData, owner: &str) -> EventSources {
         let count = data.events.len();
-        let mut events = EventSources { guards: Vec::with_capacity(count), ttols: Vec::with_capacity(count), etols: Vec::with_capacity(count), crosses: Vec::with_capacity(count), ats: Vec::with_capacity(count) };
+        let mut events = EventSources { guards: Vec::with_capacity(count), time_tolerances: Vec::with_capacity(count), error_tolerances: Vec::with_capacity(count), crosses: Vec::with_capacity(count), times: Vec::with_capacity(count) };
         for event in &data.events {
             let cross = match event.source {
                 EventSource::Cross { e, .. } => Some(e),
@@ -131,17 +131,17 @@ impl<'a> Walk<'a> {
                 EventSource::Cross { ttol, .. } => ttol,
                 EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
-            events.ttols.push(self.root_sources(data, owner, ttol));
+            events.time_tolerances.push(self.root_sources(data, owner, ttol));
             let etol = match event.source {
                 EventSource::Cross { etol, .. } => etol,
                 EventSource::Changed(_) | EventSource::At(_) | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
-            events.etols.push(self.root_sources(data, owner, etol));
+            events.error_tolerances.push(self.root_sources(data, owner, etol));
             let at = match event.source {
                 EventSource::At(e) => Some(e),
                 EventSource::Changed(_) | EventSource::Cross { .. } | EventSource::ParamChanged(_) | EventSource::Settle | EventSource::ElementChanged { .. } => None,
             };
-            events.ats.push(self.root_sources(data, owner, at));
+            events.times.push(self.root_sources(data, owner, at));
             events.guards.push(self.root_sources(data, owner, event.guard));
         }
         events

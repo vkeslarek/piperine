@@ -162,37 +162,35 @@ impl<'a> Printer<'a> {
             }
             Stmt::Trace { site, fields } => {
                 next.push(Piece::Text(format!("trace{site} {{")));
-                for (i, f) in fields.iter().enumerate() {
-                    if i > 0 {
-                        next.push(Piece::Text(", ".into()));
-                    }
-                    match f {
-                        EmitField::Value { field, value } => {
-                            next.push(Piece::Text(format!("f{field} = ")));
-                            next.push(Piece::Expr(*value));
-                        }
-                        EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
-                    }
-                }
+                Printer::emit_fields(next, fields, &|field| format!("f{field}"));
                 next.push(Piece::Text("}".into()));
             }
             Stmt::Emit { stream, fields } => {
-                let name = scope.streams.get(*stream as usize).map_or(format!("<bad stream {stream}>"), |s| Printer::name(&s.name));
+                let stream_plan = scope.streams.get(*stream as usize);
+                let name = stream_plan.map_or(format!("<bad stream {stream}>"), |s| Printer::name(&s.name));
                 next.push(Piece::Text(format!("emit {name}(")));
-                for (i, f) in fields.iter().enumerate() {
-                    if i > 0 {
-                        next.push(Piece::Text(", ".into()));
-                    }
-                    match f {
-                        EmitField::Value { field, value } => {
-                            let field = scope.streams.get(*stream as usize).and_then(|s| s.fields.get(*field as usize));
-                            next.push(Piece::Text(format!("{} = ", field.map_or("<bad field>".to_string(), |f| Printer::name(&f.name)))));
-                            next.push(Piece::Expr(*value));
-                        }
-                        EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
-                    }
-                }
+                let field_name = |field: u32| {
+                    stream_plan.and_then(|s| s.fields.get(field as usize)).map_or("<bad field>".to_string(), |f| Printer::name(&f.name))
+                };
+                Printer::emit_fields(next, fields, &field_name);
                 next.push(Piece::Text(")".into()));
+            }
+        }
+    }
+
+    /// The fields of a `trace` or an `emit`, separated by `, `: a value as `<name> = <expr>`, a text as
+    /// `<name> = "<text>"`; `value_name` names the field a value is written to.
+    fn emit_fields(next: &mut Vec<Piece>, fields: &[EmitField], value_name: &dyn Fn(u32) -> String) {
+        for (i, f) in fields.iter().enumerate() {
+            if i > 0 {
+                next.push(Piece::Text(", ".into()));
+            }
+            match f {
+                EmitField::Value { field, value } => {
+                    next.push(Piece::Text(format!("{} = ", value_name(*field))));
+                    next.push(Piece::Expr(*value));
+                }
+                EmitField::Text { name, text } => next.push(Piece::Text(format!("{} = {text:?}", Printer::name(name)))),
             }
         }
     }

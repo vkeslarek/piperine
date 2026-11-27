@@ -308,9 +308,16 @@ impl Walk<'_> {
                 }
             }
         }
+        let mut source = self.dependency_source(key, name, entry, path, git)?;
+        ok &= self.apply_references(name, &mut source, &refs);
+        ok.then(|| Dependency { name: name.to_string(), name_span: Span::new(key.span().start, key.span().end), source, requirement, package })
+    }
+
+    /// The source a dependency names; `None` (reported) unless exactly one of `path` and `git` is given.
+    fn dependency_source(&mut self, key: &Key<'_>, name: &str, entry: &DeTable<'_>, path: Option<String>, git: Option<String>) -> Option<Source> {
         // A source key of the wrong type was reported at its value: it is not also a missing source.
         let (has_path, has_git) = (entry.contains_key("path"), entry.contains_key("git"));
-        let source = match (path, git) {
+        match (path, git) {
             (Some(path), None) => Some(Source::Path(path)),
             (None, Some(url)) => Some(Source::Git { url, reference: GitRef::DefaultBranch }),
             (None, None) if has_path != has_git => None,
@@ -318,34 +325,54 @@ impl Walk<'_> {
                 self.fault(key.span(), format!("dependency `{name}` needs exactly one of `path` and `git`"), "name a `path` or a `git` source", None);
                 None
             }
-        };
-        let mut source = source?;
-        match &mut source {
+        }
+    }
+
+    /// Applies the `branch`/`tag`/`rev` keys to `source`; `false` when one is faulty (reported).
+    fn apply_references(&mut self, name: &str, source: &mut Source, refs: &[(&str, Range<usize>, String)]) -> bool {
+        match source {
             Source::Git { reference, .. } => {
-                if let Some((first, rest)) = refs.split_first() {
-                    if let Some((second, span, _)) = rest.first() {
-                        let message = format!("dependency `{name}` names `{}` and `{second}`: at most one of `branch`, `tag` and `rev`", first.0);
-                        self.fault(span.clone(), message, "one reference only", None);
-                        ok = false;
-                    } else {
-                        *reference = match first.0 {
-                            "branch" => GitRef::Branch(first.2.clone()),
-                            "tag" => GitRef::Tag(first.2.clone()),
-                            _ => GitRef::Rev(first.2.clone()),
-                        };
-                    }
+                let Some((first, rest)) = refs.split_first() else { return true };
+                if let Some((second, span, _)) = rest.first() {
+                    let message = format!("dependency `{name}` names `{}` and `{second}`: at most one of `branch`, `tag` and `rev`", first.0);
+                    self.fault(span.clone(), message, "one reference only", None);
+                    return false;
                 }
+                *reference = match first.0 {
+                    "branch" => GitRef::Branch(first.2.clone()),
+                    "tag" => GitRef::Tag(first.2.clone()),
+                    _ => GitRef::Rev(first.2.clone()),
+                };
+                true
             }
             Source::Path(_) => {
-                if let Some((which, span, _)) = refs.first() {
-                    self.fault(span.clone(), format!("`{which}` needs a `git` source, but dependency `{name}` has a `path`"), "a reference belongs to a `git` dependency", None);
+                let Some((which, span, _)) = refs.first() else { return true };
+                self.fault(span.clone(), format!("`{which}` needs a `git` source, but dependency `{name}` has a `path`"), "a reference belongs to a `git` dependency", None);
+                false
+            }
+        }
+    }
+
+    /// Appends the author names of `value` to `authors`; `false` when it is not an array of strings (reported).
+    fn authors(&mut self, value: &Value<'_>, authors: &mut Vec<String>) -> bool {
+        let Some(items) = value.get_ref().as_array() else {
+            self.mistyped("authors", value, "an array of strings");
+            return false;
+        };
+        let mut ok = true;
+        for item in items.iter() {
+            match item.get_ref().as_str() {
+                Some(s) => authors.push(s.to_string()),
+                None => {
+                    self.mistyped("authors", item, "an array of strings");
                     ok = false;
                 }
             }
         }
-        ok.then(|| Dependency { name: name.to_string(), name_span: Span::new(key.span().start, key.span().end), source, requirement, package })
+        ok
     }
 
+    /// The `[package]` table; `None` when a key is faulty or `name`/`version` is missing (each reported once).
     fn package(&mut self, header: &Key<'_>, table: &DeTable<'_>) -> Option<Package> {
         let (mut name, mut version) = (None, None);
         let (mut authors, mut description) = (Vec::new(), String::new());
@@ -378,23 +405,7 @@ impl Walk<'_> {
                         broken = true;
                     }
                 },
-                "authors" => match value.get_ref().as_array() {
-                    Some(items) => {
-                        for item in items.iter() {
-                            match item.get_ref().as_str() {
-                                Some(s) => authors.push(s.to_string()),
-                                None => {
-                                    self.mistyped("authors", item, "an array of strings");
-                                    broken = true;
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        self.mistyped("authors", value, "an array of strings");
-                        broken = true;
-                    }
-                },
+                "authors" => broken |= !self.authors(value, &mut authors),
                 "description" => match value.get_ref().as_str() {
                     Some(s) => description = s.to_string(),
                     None => {

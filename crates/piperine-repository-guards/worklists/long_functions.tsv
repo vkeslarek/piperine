@@ -6,7 +6,6 @@ crates/piperine-analog-solver/src/device/plan.rs::::bind_instance	-
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve	-
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve_with_strategy	-
 crates/piperine-api/src/probe.rs::Probe::resolve	-
-crates/piperine-api/src/request/run_table.rs::Source::key	-
 crates/piperine-digital-solver/src/dag.rs::Dag::build	-
 crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-
 crates/piperine-digital-solver/src/plan.rs::::analyze	-
@@ -17,7 +16,7 @@ crates/piperine-digital-solver/src/run.rs::::relax	-
 crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
-crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	-
+crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	kept: one arm per variant, every arm a one-line name
 crates/piperine-ir/src/deps/walk/expressions.rs::Walk::leaf_value	kept: one arm per variant
 crates/piperine-ir/src/differentiate.rs::Differentiation::method	-
 crates/piperine-ir/src/print/arenas.rs::Printer::form	kept: one arm per variant
@@ -84,10 +83,7 @@ crates/piperine-lang/src/types/expr.rs::Checker::let_statement	-
 crates/piperine-lang/src/types/expr.rs::Checker::path	-
 crates/piperine-lang/src/types/module.rs::Checker::connections	-
 crates/piperine-lang/src/types/module.rs::Checker::placement	-
-crates/piperine-plan/src/digital/reactions.rs::Digital::functions	-
 crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
-crates/piperine-project/src/manifest.rs::Walk::dependency	-
-crates/piperine-project/src/manifest.rs::Walk::package	-
 crates/piperine-solver/src/analyses/adjoint.rs::AdjointSolver::solve	-
 crates/piperine-solver/src/analyses/noise.rs::NoiseSolver::solve	-
 crates/piperine-solver/src/analyses/pss.rs::PssSolver::solve	-

@@ -900,7 +900,7 @@ T152 → T153 → T154 → T155
 **Tests**: integration
 **Gate**: golden
 
-- [ ] (deferred to T55) the 7 out-of-range panics of `ir/src/build.rs` return the builder's error
+- [ ] (6 of the 7 done in T55; the 7th, `IrBuilder::body_data`, is owned by T96 — coordinator decision, user AFK, pending review) the out-of-range panics of `ir/src/build.rs` return the builder's error
 
 **Commit**: `fix(plan): refuse an unchecked ir with an error`
 
@@ -1570,7 +1570,8 @@ T152 → T153 → T154 → T155
 
 - [x] Every `piperine_ir::model::…` path compiles unchanged across the workspace
 - [x] `crates/piperine-ir/src/build.rs` holds no `panic!` on an out-of-range net, instance or slot: the 6 sites of `resolve_net`, `bind_nets`, `bind_reached_node` and `bind_reached_net` return the typed `BuildError`; the five call sites in `piperine-lang/src/elab/{place,resolvers}.rs` are **call-site changes only** (each reports `Elaboration::internal_error` with the error's text), and the test calls take `.unwrap()`
-- [ ] (open, not owned by a later task) the 7th site, `body_data` (`IrBuilder::body_data`, behind 22 builder methods such as `carrier`, `drive`, `event`): returning an error changes those 22 signatures and about 30 call sites in `piperine-lang/src/elab/{carriers,resolvers,body,children}.rs`, which is lane F's code, more than call-site edits; reported to the coordinator
+- [ ] (owned by T96, coordinator decision, user AFK, pending review: `DigitalLowering` moves most of the callers) the 7th site, `body_data` (`IrBuilder::body_data`, behind 22 builder methods such as `carrier`, `drive`, `event`): returning an error changes those 22 signatures and about 30 call sites in `piperine-lang/src/elab/{carriers,resolvers,body,children}.rs`, which is lane F's code, more than call-site edits; reported to the coordinator
+- [x] The error path has a test: `build::tests::a_builder_call_with_an_id_it_never_handed_out_names_the_id_and_the_count` drives each of the four `BuildError` variants and reads its message (fix round 1, P8-5)
 - [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1617,7 +1618,7 @@ T152 → T153 → T154 → T155
 - [x] The crate's tests pass unedited; `BodyPlan::new`'s row is `split`
 - [x] Gate check passes: Golden
 
-**Left open**: `Digital::functions` (`plan/src/digital/reactions.rs`, 85 lines) keeps its `-` row in `long_functions.tsv`: no owner. (The T57 commit body names T59 by mistake; T59 is the interpreter walk.)
+- [x] `Digital::functions` verdict `split` (fix round 1, P8-2): one method per function family (`cross_functions`, `tolerance_functions`, `drive_functions`, `event_functions`, `delayed_functions`, `rearm_functions`) and `declare_function`; the row is gone because every part is under 60 lines
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1662,6 +1663,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The crate's tests pass unedited
+- [x] `Walk::form_name` verdict `kept: one arm per variant, every arm a one-line name` (fix round 1, P8-2): all 60 arms are `Expr::X { .. } => "X"`
 - [x] Gate check passes: Quick, and `cargo test -p piperine-cli --test twins`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1684,6 +1686,8 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The crate has no row in the free-function allowance; the cli's and api's calls follow in the same commit
+- [x] `Walk::dependency` and `Walk::package` verdict `split` (fix round 1, P8-2): `dependency_source`, `apply_references` and `authors` are methods; both rows are gone
+- [x] The fifth owner is `ProjectRoot`, not the design's `Project` (coordinator decision, pending review): `piperine-api` declares `Project` (`api/src/project.rs`) and `repeated_type_names` refuses a second type of that name; `ProjectRoot` holds the two F12 functions `find_root` and `load` (fix round 1, P8-4)
 - [x] Gate check passes: Quick, and `cargo test -p piperine-cli`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -1728,6 +1732,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [x] The crate has no row in the free-function allowance; the request tests pass unedited
+- [x] `Source::key` verdict `split` (fix round 1, P8-2): the table arms are `numbers` and `simparam_table`, the refusal of an unknown key is `unknown_key`; the function is 59 lines and its row is gone
 - [x] Gate check passes: Quick, and `cargo test -p piperine-cli`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
@@ -2493,6 +2498,7 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] No `impl Elaboration` in `elab/digital/`
+- [ ] `IrBuilder::body_data` (`crates/piperine-ir/src/build.rs`) returns `Result<_, BuildError>` instead of panicking on an out-of-range body id, and the ~22 builder methods behind it and the elab callers (`carriers`, `resolvers`, `body`, `children`) propagate it as `Elaboration::internal_error`, the way T55 did for the other six sites (owner of T26's and T55's open box; coordinator decision, user AFK, pending review)
 - [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_carriers`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)

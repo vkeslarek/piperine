@@ -663,3 +663,58 @@ impl IrBuilder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The builders of these tests.
+    struct Fixture;
+
+    impl Fixture {
+        /// The origin every node of these tests is written at.
+        fn origin() -> Origin {
+            Origin { file: "build.rs".into(), line: 1, col: 1 }
+        }
+
+        /// A builder holding one body, one instance of it (with one node slot and no nets) and one net.
+        fn builder() -> (IrBuilder, InstanceId, NetId) {
+            let mut builder = IrBuilder::new();
+            let body = builder.body(BodySpec {
+                name: "Top".into(),
+                origin: Fixture::origin(),
+                params: vec![],
+                nodes: vec![],
+                branches: vec![],
+                limits: vec![],
+                stims: vec![],
+                locals: vec![],
+                analog: None,
+                children: vec![],
+            });
+            let instance = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: Fixture::origin() });
+            let net = builder.net(NetSpec { path: "Top.n".into(), ty: ValueType::F64, declared_by: instance, init: None, origin: Fixture::origin() });
+            (builder, instance, net)
+        }
+    }
+
+    #[test]
+    fn a_builder_call_with_an_id_it_never_handed_out_names_the_id_and_the_count() {
+        let (mut builder, instance, net) = Fixture::builder();
+        let resolution = Resolution { resolver: instance, driven: ValueType::F64, drives: vec![], holders: vec![], others: vec![] };
+        let stale_net = NetId(7);
+        let stale_instance = InstanceId(9);
+
+        let net_error = builder.resolve_net(stale_net, resolution).unwrap_err();
+        let instance_error = builder.bind_nets(stale_instance, vec![net]).unwrap_err();
+        let node_error = builder.bind_reached_node(instance, 3, NodeRef::Ground).unwrap_err();
+        let carrier_error = builder.bind_reached_net(instance, 2, net).unwrap_err();
+
+        assert_eq!(net_error, BuildError::NetOutOfRange { net: stale_net, count: 1 });
+        assert_eq!(net_error.to_string(), "net id 7 out of range (1 nets)");
+        assert_eq!(instance_error, BuildError::InstanceOutOfRange { instance: stale_instance, count: 1 });
+        assert_eq!(instance_error.to_string(), "instance id 9 out of range (1 instances)");
+        assert_eq!(node_error.to_string(), "instance Top: node slot 3 out of range (1 nodes)");
+        assert_eq!(carrier_error.to_string(), "instance Top: carrier 2 out of range (0 nets bound)");
+    }
+}

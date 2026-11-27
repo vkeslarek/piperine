@@ -402,7 +402,7 @@ One task per finding; the owner names are the inventory's.
 | G10 `BodyPlan::new` (292 lines), `plan/src/digital.rs` | `BodyPlanBuilder`; `digital/{carriers,records,reactions}.rs` | T57 |
 | G5 `ValuePrinter` (116 methods) | `ExpressionPrinter`, `StatementPrinter`, `RecordPrinter` | T58 |
 | `interp/src/walk.rs`; Q10 | `walk/` by statement family; the crate doc says "reference for the analog core" and no refusal test is added | T59 |
-| F12 project (20) | `Resolver`, `Lockfile`, `Version`, `GitCheckout`, `Project` | T60 |
+| F12 project (20) | `Resolver`, `Lockfile`, `Version`, `GitCheckout`, `ProjectRoot` | T60 (`ProjectRoot` instead of `Project`: `piperine-api` declares `Project`, and `repeated_type_names` refuses a second one; coordinator decision, pending review) |
 | G8 `Session`, G9 `Keys`, F13 | one runner per analysis family behind `Session::analysis`; `request/{run_table,overrides,options,grid}.rs` | T61, T62 |
 | F11 abi (32), `raw.rs` | `Validator`, `Thunk<D>`; `raw/{views,shape,calls,constants}.rs` (`unsafe` stays in `raw`, `thunk`, `caller`) | T77, T78 |
 | F8 analog (31) | `DdtStamp`, `FlowStamp`, `DelayStamp`, `LimitState`, `Watches`, `SmallSignal`; `AnalogPlan::bind_instance` split | T79, T80 |

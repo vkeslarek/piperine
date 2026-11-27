@@ -104,32 +104,56 @@ impl StatementPlan {
 }
 
 impl Digital {
-    /// Declares the discrete functions of `body`: `drive:*`, `event:*`, `drive:*.changed`,
-    /// `at:*.*`.
+    /// Declares the discrete functions of `body`: `cross:*`, `ttol:*`, `etol:*`, `drive:*`,
+    /// `event:*`, `drive:*.changed`, `at:*.*`.
     pub(crate) fn functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>) -> Vec<FunctionPlan> {
         let mut functions = Vec::new();
-        let mut add = |s: &mut ShapeBuf, name: String, origin: &Origin, plan: FunctionPlan| {
-            BodyPlan::declare(s, pins, &[], body, &name, &Self::at(origin), &plan);
-            functions.push(plan);
-        };
+        Self::cross_functions(s, pins, body, &mut functions);
+        Self::tolerance_functions(s, pins, body, &mut functions);
+        Self::drive_functions(s, pins, body, &mut functions);
+        Self::event_functions(s, pins, body, &mut functions);
+        Self::delayed_functions(s, pins, body, &mut functions);
+        Self::rearm_functions(s, pins, body, &mut functions);
+        functions
+    }
+
+    /// Declares `plan` as function `name` of `body` and appends it to `functions`.
+    fn declare_function(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>, name: String, origin: &Origin, plan: FunctionPlan) {
+        BodyPlan::declare(s, pins, &[], body, &name, &Self::at(origin), &plan);
+        functions.push(plan);
+    }
+
+    /// The `cross:*` functions, one per crossing event.
+    fn cross_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, e) in body.events().iter().enumerate() {
             let EventSource::Cross { .. } = e.source else { continue };
             let k = k as u32;
             let set = ReadSet::target(body, Query::Cross(k));
-            add(s, format!("cross:{k}"), &e.origin, BodyPlan::function(Mode::Cross(k), &set, vec![(Target::Watch(k), Some(&set))]));
+            let plan = BodyPlan::function(Mode::Cross(k), &set, vec![(Target::Watch(k), Some(&set))]);
+            Self::declare_function(s, pins, body, functions, format!("cross:{k}"), &e.origin, plan);
         }
+    }
+
+    /// The `ttol:*` and `etol:*` functions of the crossing events that carry a tolerance.
+    fn tolerance_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, e) in body.events().iter().enumerate() {
             let k = k as u32;
             let EventSource::Cross { ttol, etol, .. } = e.source else { continue };
             if ttol.is_some() {
                 let set = ReadSet::target(body, Query::Ttol(k));
-                add(s, format!("ttol:{k}"), &e.origin, BodyPlan::function(Mode::Ttol(k), &set, vec![(Target::Ttol(k), None)]));
+                let plan = BodyPlan::function(Mode::Ttol(k), &set, vec![(Target::Ttol(k), None)]);
+                Self::declare_function(s, pins, body, functions, format!("ttol:{k}"), &e.origin, plan);
             }
             if etol.is_some() {
                 let set = ReadSet::target(body, Query::Etol(k));
-                add(s, format!("etol:{k}"), &e.origin, BodyPlan::function(Mode::Etol(k), &set, vec![(Target::Etol(k), None)]));
+                let plan = BodyPlan::function(Mode::Etol(k), &set, vec![(Target::Etol(k), None)]);
+                Self::declare_function(s, pins, body, functions, format!("etol:{k}"), &e.origin, plan);
             }
         }
+    }
+
+    /// The `drive:*` functions, one per drive.
+    fn drive_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, d) in body.drives().iter().enumerate() {
             let k = k as u32;
             let set = ReadSet::target(body, Query::Drive(k));
@@ -140,8 +164,13 @@ impl Digital {
                 (false, false) => Target::Carrier(d.carrier),
             };
             let name = Self::drive_name(body, k);
-            add(s, name, &d.origin, BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]));
+            let plan = BodyPlan::function(Mode::Drive(k), &set, vec![(write, None)]);
+            Self::declare_function(s, pins, body, functions, name, &d.origin, plan);
         }
+    }
+
+    /// The `event:*` functions, one per event a function has to gate.
+    fn event_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, e) in body.events().iter().enumerate() {
             let k = k as u32;
             let mut set = ReadSet::target(body, Query::Guard(k));
@@ -168,8 +197,13 @@ impl Digital {
                     set.0.extend([Source::Element(carrier, element, part::VALUE), Source::Element(carrier, element, part::CHANGED)]);
                 }
             }
-            add(s, format!("event:{k}"), &e.origin, BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]));
+            let plan = BodyPlan::function(Mode::Event(k), &set, vec![(Target::EventPin(k), None)]);
+            Self::declare_function(s, pins, body, functions, format!("event:{k}"), &e.origin, plan);
         }
+    }
+
+    /// The `drive:*.changed` functions of the delayed drives.
+    fn delayed_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, d) in body.drives().iter().enumerate() {
             if d.after.is_none() {
                 continue;
@@ -177,18 +211,22 @@ impl Digital {
             let k = k as u32;
             let set = ReadSet([Source::Delayed(k), Source::DelayedChanged(k)].into_iter().collect());
             let name = format!("drive:{}.changed", Self::carrier_name(body, d.carrier));
-            add(s, name, &d.origin, BodyPlan::function(Mode::DelayedEvent(k), &set, vec![(Target::DelayedEventPin(k), None)]));
+            let plan = BodyPlan::function(Mode::DelayedEvent(k), &set, vec![(Target::DelayedEventPin(k), None)]);
+            Self::declare_function(s, pins, body, functions, name, &d.origin, plan);
         }
+    }
+
+    /// The `at:*.*` functions that re-arm an event when a carrier changes.
+    fn rearm_functions(s: &mut ShapeBuf, pins: &Pins, body: Body<'_>, functions: &mut Vec<FunctionPlan>) {
         for (k, e) in body.events().iter().enumerate() {
             let event = k as u32;
             for &(carrier, _) in pins.rearms.get(k).map_or(&[][..], Vec::as_slice) {
                 let set = ReadSet([Source::CarrierChanged(carrier)].into_iter().collect());
                 let name = format!("at:{k}.{}", Self::carrier_name(body, carrier));
                 let plan = BodyPlan::function(Mode::Rearm { event, carrier }, &set, vec![(Target::Rearm { event, carrier }, None)]);
-                add(s, name, &e.origin, plan);
+                Self::declare_function(s, pins, body, functions, name, &e.origin, plan);
             }
         }
-        functions
     }
 
     /// The name of drive `k`'s function: `drive:<carrier>`, `drive:<carrier>[<element>]` for one element.

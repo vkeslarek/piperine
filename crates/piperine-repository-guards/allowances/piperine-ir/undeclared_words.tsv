@@ -41,9 +41,6 @@ crates/piperine-ir/src/deps/walk.rs::affine	1
 crates/piperine-ir/src/deps/walk.rs::pop_n	1
 crates/piperine-ir/src/deps/walk.rs::stims	1
 crates/piperine-ir/src/deps/walk/expressions.rs::expr	1
-crates/piperine-ir/src/deps/walk/roots.rs::ats	1
-crates/piperine-ir/src/deps/walk/roots.rs::etols	1
-crates/piperine-ir/src/deps/walk/roots.rs::ttols	1
 crates/piperine-ir/src/deps/walk/statements.rs::stmt	1
 crates/piperine-ir/src/differentiate.rs::add_expr	1
 crates/piperine-ir/src/handle.rs::expr	1

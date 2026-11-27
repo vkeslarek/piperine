@@ -86,13 +86,7 @@ impl Source {
             "points" => keys.points = Some(count()?),
             "print" => keys.print = strings()?,
             "streams" => keys.streams = strings()?,
-            "params" => {
-                let table = v.as_table().ok_or_else(|| wrong("a table of param paths and numbers"))?;
-                for (path, n) in Keys::entries(table) {
-                    let Some(n) = Keys::number(n.get_ref()) else { return Err(wrong("a table of param paths and numbers")) };
-                    keys.params.push((path.get_ref().to_string(), n));
-                }
-            }
+            "params" => keys.params.extend(self.numbers(v, "a table of param paths and numbers", &wrong)?),
             "backend" => keys.backend = Some(text()?),
             "csv" => keys.csv = Some(path()?),
             "records" => keys.records = Some(path()?),
@@ -112,29 +106,37 @@ impl Source {
             "wrt" => keys.wrt = Some(Given { value: strings()?, at }),
             "period" => keys.period = Some(real()?),
             "tstab" => keys.tstab = Some(real()?),
-            "nodeset" => {
-                let table = v.as_table().ok_or_else(|| wrong("a table of node paths and numbers"))?;
-                for (path, n) in Keys::entries(table) {
-                    let Some(n) = Keys::number(n.get_ref()) else { return Err(wrong("a table of node paths and numbers")) };
-                    keys.nodeset.push((path.get_ref().to_string(), n));
-                }
-            }
-            "simparam" => {
-                let table = v.as_table().ok_or_else(|| wrong("a table of names and numbers"))?;
-                for (entry, n) in Keys::entries(table) {
-                    let Some(number) = Keys::number(n.get_ref()) else {
-                        let message = format!("`simparam` entry `{}` must be a number, found {}", entry.get_ref(), n.get_ref().type_str());
-                        return Err(self.fault(Some(Keys::span(entry.span())), message, "not a number"));
-                    };
-                    keys.simparam.push((entry.get_ref().to_string(), number));
-                }
-            }
-            _ => {
-                let message = format!("unknown key `{name}` in a run: a run takes {}", RUN_KEYS.join(", "));
-                return Err(self.fault(Some(Keys::span(key.span())), message, "not a key of a run"));
-            }
+            "nodeset" => keys.nodeset.extend(self.numbers(v, "a table of node paths and numbers", &wrong)?),
+            "simparam" => keys.simparam.extend(self.simparam_table(v, &wrong)?),
+            _ => return Err(self.unknown_key(key)),
         }
         Ok(())
+    }
+
+    /// The fault of a key no run takes.
+    fn unknown_key(&self, key: &Key<'_>) -> Failure {
+        let message = format!("unknown key `{}` in a run: a run takes {}", key.get_ref(), RUN_KEYS.join(", "));
+        self.fault(Some(Keys::span(key.span())), message, "not a key of a run")
+    }
+
+    /// The `path = number` entries of the table `v`; a fault named by `wants` when it is no such table.
+    fn numbers(&self, v: &DeValue<'_>, wants: &str, wrong: &dyn Fn(&str) -> Failure) -> Result<Vec<(String, f64)>, Failure> {
+        let table = v.as_table().ok_or_else(|| wrong(wants))?;
+        Keys::entries(table).into_iter().map(|(path, n)| Keys::number(n.get_ref()).map(|n| (path.get_ref().to_string(), n)).ok_or_else(|| wrong(wants))).collect()
+    }
+
+    /// The `name = number` entries of the `simparam` table `v`; a fault at the first entry that is no number.
+    fn simparam_table(&self, v: &DeValue<'_>, wrong: &dyn Fn(&str) -> Failure) -> Result<Vec<(String, f64)>, Failure> {
+        let table = v.as_table().ok_or_else(|| wrong("a table of names and numbers"))?;
+        let mut entries = Vec::new();
+        for (entry, n) in Keys::entries(table) {
+            let Some(number) = Keys::number(n.get_ref()) else {
+                let message = format!("`simparam` entry `{}` must be a number, found {}", entry.get_ref(), n.get_ref().type_str());
+                return Err(self.fault(Some(Keys::span(entry.span())), message, "not a number"));
+            };
+            entries.push((entry.get_ref().to_string(), number));
+        }
+        Ok(entries)
     }
 }
 
