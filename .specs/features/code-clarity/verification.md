@@ -1305,3 +1305,109 @@ T41 (`msl_lexer.rs`, `msl_print.rs`, `spec_structure.rs`), T42, T43 (16 test fil
 | P6-2 `BlockGrammar` shell; six test-only `parse`s invisible to the worklist | Low | open |
 | P6-3 ten `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
 | P6-4 "no existing test edited" boxes untrue as worded | Low | open |
+
+## Phase 7 (B6a Owners in `pom/`, and the front end's small defects, T47 to T52)
+
+**Verdict**: PASS (no Medium or High finding; seven Low findings and three notes)
+**Head**: ed23b656a on `feature/code-clarity-p7`, base 4e027c56b.
+**Verifier**: independent sub-agent (Opus; author != verifier). Sonnet wrote T47–T52. I reran the gates myself, one at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`, after touching `crates/piperine-repository-guards/src/*.rs`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 117 passed, 0 failed |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed |
+| `cargo test -p piperine-numbers` (`purity` included) | 10 result lines, 22 passed, 0 failed |
+| `cargo test -p piperine-api` (`host_patterns` included) | 28 result lines, 307 passed, 0 failed |
+| `cargo test -p piperine-project` | 7 result lines, 53 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-transpile --test golden` | 7 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory` | 18 passed, 0 failed |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| CC-09 behaviour: `DynamicInteger` (T51) | `diff` of the base `lang/src/elab/consts/integers.rs` against the head's `numbers/src/dynamic.rs` | yes. The only differences are the module `//!` line, three `use piperine_numbers::…` → `use super::…`, and `pub(in crate::elab)` → `pub` on 31 items. No body line changed, so every integer result is the old one. `tests/purity.rs` passes with the new file. `dynamic.rs` is not in `transpile/src/rt.rs`'s `NUMBER_FILES`, so generated code does not move |
+| CC-09 behaviour: E0702 text (T52) | A side-by-side read of the base `api/src/logic_pattern.rs::parse` against the head's `LogicPattern::parse_with_width` + `Failure::logic_pattern`, with my own cases (`""` at width 4, `" 10xz "`, `10X1`, `10xz1`) | yes, byte-identical. Both trim the text and check the character before the length. Both accept only lowercase `0 1 x z`, and the level count equals `chars().count()`. The two format strings are the same character for character, including `(§22.1.4)`. `what` was not dropped. It moved from `parse` to `Failure::logic_pattern(fault, text, width, what)`, and both host call sites (`host.rs:88`, `param_text.rs:110`) pass the same `what` as before (`the port \`{port}\``, `` `{label}` ``) |
+| CC-09 behaviour: the pin bytes (T52) | Read of the base and head `bytes` | yes. The same plane layout, with `PatternLevel::{Zero,One,Z,X}` in place of `'0' '1' 'z' _`. `CellShape::logic_planes` is the old `planes_of`, verbatim. `host_patterns` passes unedited in its assertions |
+| CC-09 behaviour: out-of-range float (T52) | Read of the two removed blocks against `LiteralText::is_out_of_range` (`override_text.rs:36`) | yes. The infinite class and the spelled `inf`/`infinity` (sign-stripped, lowercase) predicate are the same expression the elaborator and the host each wrote |
+| CC-09 behaviour, whole front end | lang (unedited assertions), the CLI twins, parity, transpile goldens, `book_inventory` | yes, all green (table above) |
+| Owner lines closed by earlier deferrals | `grep` over `crates/`, `docs/`, `tests/` | yes. `DeferReason::InferredGenerics`, `Ty::has_repr`, `GenericParam::default_type` and `BinaryFormat::round_integer` have no definition and no use, and their `docs/pom` rows are gone. The api `LogicPattern` file is deleted. `piperine_api::LogicPattern` is now a re-export of `piperine_lang::types::LogicPattern`. `numbers::Limbs` has a `kept:` verdict (see P7-1) |
+| `inventory_types_in_two_crates` empty | `ls allowances/*/inventory_types_in_two_crates.tsv`; `boundaries/inventory_types.rs` | yes. Both files are deleted, and the guard's `OWNERS` (`LogicPattern`→lang, `DynamicInteger`→numbers, `Backend`→api) passes with no allowance |
+| `ShapeCheck` → `DeclarationShapeCheck` (T48) | `data/owners.tsv:19`, `resolve/shape.rs:16`, `transpile/src/shape_check.rs:10` | yes, honest. `piperine-transpile` already declares a public `ShapeCheck`, and the inventory guard would have flagged a second one. The renamed row names a real type with a `run` method that owns the pass. No row was dropped, because `NameResolution`, `MemberResolution` and `LeafResolution` still sit next to it. The four `owners` allowance rows they replace are deleted |
+| Impls away from their type: `Lowerer`, `Decl` | `lower/mod.rs` + `lower/lowerer.rs`; `reflect/mod.rs` + `reflect/handle.rs`, `module.rs`, `nature.rs`, `behavior.rs` | yes, it meets the owner intent. Each struct is declared once, in the `mod.rs` of the family whose files extend it, and every impl sits in a child file of that module. A struct in `lowerer.rs` or `handle.rs` would put `body.rs`/`items.rs`'s `impl Lowerer` and `module.rs`'s `Decl::as_module` beside it rather than below it, which is what the guard measures. Each `mod.rs` `//!` names the file that holds the core impl. Both `mod.rs` files are under the 60-line ceiling |
+| SPEC_DEVIATION comments (T49) | `msl-pom/design.md` diff; `msl-elab/spec.md:151` | partly; see P7-6. The two `pom` ones were design-text divergences (`QuantityRole` because `Quantity` is taken in `pom`, and `ModLayout`'s `is_root`). Amending the feature's design text is the closure that T31's approved text and design.md:612 name, and these are designs that could not be built as written, not a deviation from the spec. They are fixed. The third, in `tests/elab_unlowered.rs`, is a spec-level divergence (ELAB-06 AC 3 says `P0001`, the code gives `E0320`). Its comment now cites amendment (d), which predates this phase. That relabels it; it does not fix it |
+| `suite_hygiene` registry → 0 | `suite_hygiene.rs` diff | stricter, not weaker. The registry now returns `None` for every path and the count is 0, so any `mod.rs` over 60 lines fails. The removed "the walk reaches the three registered files" assertion only existed to prove the exemptions were visible; the `> 10` floor still guards blindness. Leftovers are in P7-3 |
+| Test edits are call paths only | `git diff 4e027c56b..HEAD -- '*/tests/*'` | yes. `is_crate_name` → `CrateGraph::is_crate_name` (3 sites and the `use`); `LogicPattern::parse(t, w, what)` → `parse_with_width(t, w)` plus `Failure::logic_pattern` in the error arm; one comment in `elab_unlowered.rs`; the hygiene registry. No assertion, literal or expected value changed. `BodyWalk::new(design)` is `pub(crate)`, so tests do not call it |
+| Allowances only delete or move | Row multiset diff by item name of `allowances/` and `worklists/` | yes. `free_functions` −86, `owners` −6, `undocumented_items` −26 net (every `+` row is a moved item with a deleted twin), `undeclared_words` −11 net (the four `decl` rows sum 14 → 14, `imports.rs` 1 → `context.rs` 1, and `from_i128`/`to_i128` move lang → numbers), `repeated_type_names` −1 lang/−1 api, `crate_docs` −1, `impls_away` 1 renamed, `long_functions` 2 renamed (see P7-7) |
+| `test_only_items` reflection rows "kept" | `grep` of each of the 15 methods in `docs/pom/reflection.md` | yes. Each one has its own method row (for example `is_binding` at :900, `bundle_view` at :782, `is_intrinsic` at :460, `struct_named` at :70, `is_pub` at :251). They are documented public reflection API with no in-tree consumer yet, which is the honest verdict for a library surface |
+| No free fn, no macro, no `#[allow]`, no `#[expect]` in new code | `grep` of the `+` lines under `crates/*/src` | yes, none. The 5 `unreachable!` are moved from `reflect/hardware.rs` (5 removed, 5 added) and sit on handle-kind invariants, not on user input |
+| No `unwrap` on user-input paths | same grep | yes. `dynamic.rs` uses `unwrap_or_default` on `minus` results that are non-negative by construction, as before |
+| Full words, `///` on new items | read of `BodyWalk`, `NameResolution`, `MemberResolution`, `LeafResolution`, `DeclarationShapeCheck`, `Classifier`, `PatternFault`, `Failure::logic_pattern`, `CellShape::logic_planes`, `LiteralText::is_out_of_range`, `CrateGraph::is_crate_name` | yes. Every new item is documented and spelled in full (`expression_children`, `statement_own_expressions`, `descendants_depth_first`). The undocumented `Decl::{new,id,design,kind}` and `Lowerer` fields are moved code that keeps its rows |
+| Every public path of `piperine_lang::pom` unchanged (T50) | `pub use` lines of base `reflect/mod.rs` against head | yes for T50: the same names are re-exported from `pom`. T49 removed `pom::is_crate_name` (it is now `CrateGraph::is_crate_name`); that is the intended free-fn removal, and every caller was edited |
+| Commits, one per task, `tasks.md` in each | `git show --stat` | yes |
+
+### P7-1 (Low): `Limbs` is kept, but its reason is not written on the trait
+
+T51's Done-when reads "the trait is removed, or kept with its reason written on it (T32)". The verdict exists only in `worklists/single_implementor_traits.tsv:2`. The trait's doc at `crates/piperine-numbers/src/limbs.rs:9` still says only "Arithmetic on a magnitude held as little-endian `u64` limbs." Compare `In` (`msl/parser/base.rs:97-101`) and `NetRead` (`solver/src/protocol/step.rs:18-19`), which carry their reason on the item. Repro: `grep -n -B3 'pub trait Limbs' crates/piperine-numbers/src/limbs.rs`. The row also says "the file is embedded verbatim" as if that blocked the edit. It does not: no transpile golden holds the text of `limbs.rs` (`grep -rl 'Arithmetic on a magnitude' crates/piperine-transpile/tests` is empty), so one `///` line on the trait closes this.
+
+### P7-2 (Low): `docs/pom/model.md` still documents the free `is_crate_name`
+
+T49 removed `piperine_lang::pom::is_crate_name` and made it `CrateGraph::is_crate_name`. `docs/pom/model.md:266` (`InvalidName` unless `is_crate_name(name)`) and `:270` (`` `is_crate_name(name: &str) -> bool` is true for … ``) still describe a free function. It should be a row of the `CrateGraph` method table above it. Repro: `grep -n is_crate_name docs/pom/model.md`.
+
+### P7-3 (Low): `suite_hygiene.rs` keeps dead scaffolding after the registry emptied
+
+These are in `crates/piperine-repository-guards/tests/suite/suite_hygiene.rs`:
+
+- At :91-92 the comment is two half-sentences spliced together ("so the floor is 10; the walk / no `mod.rs` is registered as oversized any more").
+- The `registered_oversized_mod_rs` doc at :102-111 still says "Two remain …", although the registry is now empty.
+- The registry itself is `fn registered_oversized_mod_rs(_path: &str) -> Option<&'static str> { None }`, a function whose parameter is ignored.
+
+The guard is stricter, as it should be. Only the text and the dead registry are wrong. Either keep the registry as a documented empty table or delete it and the two calls in `mod_rs_declares_only` (:692, :698), together with the `exempted` count.
+
+### P7-4 (Low): "no existing test edited" boxes and commit bodies are untrue as worded (P6-4 again)
+
+- T48 and T50 tick "`cargo test -p piperine-lang` passes with no existing test edited", and their commit bodies say "No test edited", yet each edits `tests/suite/suite_hygiene.rs`.
+- T49's box says the same, while its commit edits `lang/tests/pom_crates.rs` and `lang/tests/elab_unlowered.rs`. Its body does say so.
+
+Every edit is a call path, a comment or the exemption registry the task required deleting, so the substance holds. The wording does not.
+
+### P7-5 (Low): the deferral boxes of T30 and T32 stay unticked although Phase 7 closed them
+
+`tasks.md:992` (T30: "The other 4 (`round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics`) are removed by T51, T50, T49 and T48") and `tasks.md:1038` (T32: "no open row: `lang::In` (T43) and `numbers::Limbs` (T51)") are still `[ ]`. Their closing tasks have landed (T32's row waits on P7-1). Repro: `sed -n '992p;1038p' .specs/features/code-clarity/tasks.md`.
+
+### P7-6 (Low, for the user): ELAB-06 AC 3 is relabeled, not fixed
+
+`crates/piperine-lang/tests/elab_unlowered.rs:82` replaced `SPEC_DEVIATION (ELAB-06 AC 3)` with "ELAB-06 AC 3 is met earlier than written (msl-elab spec, amendment (d))".
+
+- The criterion (`.specs/features/msl-elab/spec.md:169`) still says a placement that sets `m`/`dtemp` is `P0001`, while the code returns `E0320` from the front end.
+- Amendment (d) (`:151`) was accepted by an orchestrator "under the user's standing delegation", not in the user's words.
+- Under the project rule (code follows spec; a divergence is a defect, never an accepted documented state), the comment change only moved the record.
+
+This comment was not one of M5's nine, the amendment predates this phase, and the model is still refused with no `Ir`. It is not a regression of this phase. The user should decide whether to fix the code (`P0001` at the placement) or rewrite AC 3 itself.
+
+### P7-7 (Low): two renamed `long_functions` rows with no verdict (P6-3 again)
+
+`worklists/long_functions.tsv` renamed `pom/index.rs::::build` → `IndexBuilder::build` and `pom/resolve/mod.rs::::run` → `NameResolution::run`, both still `-`. Both are appended at the end of the file, out of path order (:132-133). design.md:412 asks each task to give its files' rows a verdict.
+
+### Notes (not findings)
+
+- **The `piperine-api` public surface moved in T52.** `pub mod logic_pattern` is gone. `piperine_api::LogicPattern` is the lang type, so `parse` now takes one argument and returns `Result<_, char>`, and `planes_of` became `CellShape::logic_planes`. A host that called the old `parse(text, width, what)` fails to compile; it does not misbehave silently. Nothing in `docs/`, the Book or Python names it. It is a consequence of "declared once", and the commit body states it.
+- `pom/resolve/classify.rs:189`: the doc of `Classifier::run` is indented 8 spaces instead of 4. This is cosmetic.
+- `Classifier` holds `design` only. T47's "holds the `Ctx` they thread" reads loosely: the base functions threaded `design: &Design`, not a `Ctx`, so this is correct.
+
+### Phase 7 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P7-1 `Limbs` reason not on the trait | Low | open |
+| P7-2 `model.md` documents a free `is_crate_name` | Low | open |
+| P7-3 `suite_hygiene` dead registry and stale comments | Low | open |
+| P7-4 "no existing test edited" untrue as worded (T48–T50) | Low | open |
+| P7-5 T30/T32 deferral boxes unticked | Low | open |
+| P7-6 ELAB-06 AC 3 relabeled, not fixed | Low | open (user decision) |
+| P7-7 two `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
