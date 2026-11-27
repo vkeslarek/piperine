@@ -1546,8 +1546,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The printed IR is byte-identical (the crate's text tests, unedited)
-- [ ] Gate check passes: Golden
+- [x] The printed IR is byte-identical (the crate's text tests, unedited)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

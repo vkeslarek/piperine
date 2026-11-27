@@ -27,11 +27,9 @@ crates/piperine-ir/src/deps.rs::Walk::expr	-
 crates/piperine-ir/src/deps.rs::Walk::finish	-
 crates/piperine-ir/src/deps.rs::Walk::run	-
 crates/piperine-ir/src/differentiate.rs::Differentiation::method	-
-crates/piperine-ir/src/print.rs::Printer::arenas	-
-crates/piperine-ir/src/print.rs::Printer::body	-
-crates/piperine-ir/src/print.rs::Printer::expr	-
-crates/piperine-ir/src/print.rs::Printer::form	-
-crates/piperine-ir/src/print.rs::Printer::stmt	-
+crates/piperine-ir/src/print/expression.rs::Printer::expr	kept: one arm per variant
+crates/piperine-ir/src/print/arenas.rs::Printer::form	kept: one arm per variant
+crates/piperine-ir/src/print/expression.rs::Printer::stmt	kept: one arm per variant
 crates/piperine-ir/src/statements.rs::Statements::of	-
 crates/piperine-lang/src/elab/body.rs::Elaboration::lower_body_under_substitution	-
 crates/piperine-lang/src/elab/carriers.rs::Elaboration::lower_carrier	-
