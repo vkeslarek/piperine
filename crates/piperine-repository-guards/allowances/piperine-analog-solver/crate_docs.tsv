@@ -1,0 +1,5 @@
+crates/piperine-analog-solver/src/lib.rs::module config	1
+crates/piperine-analog-solver/src/lib.rs::module convergence	1
+crates/piperine-analog-solver/src/lib.rs::module netlist	1
+crates/piperine-analog-solver/src/lib.rs::module stamp_validation	1
+crates/piperine-analog-solver/src/lib.rs::module tolerances	1

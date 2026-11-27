@@ -10,17 +10,22 @@
 //! - `scan_visitor`: the walk over one file's syntax that produces those items;
 //! - `feature_file`, `cargo_command`, `test_targets`, `proof_ledger`: the proofs of every feature
 //!   folder read and checked against the tests that exist;
+//! - `allowance`, `ownership_rules`, `structure_rules`: the ratchet guards, their allowance files
+//!   and the rules they judge;
 //! - `repoint`: the rewrite that keeps those proofs true while tests move, merge and are removed.
 #![deny(missing_docs)]
 
+mod allowance;
 mod cargo_command;
 mod feature_file;
 mod item_scan;
 mod module_declaration;
+mod ownership_rules;
 mod proof_ledger;
 mod repoint;
 mod scan_visitor;
 mod source_tree;
+mod structure_rules;
 mod test_targets;
 
 pub use item_scan::{FreeFunctionPermit, ItemKind, ItemScan, Origin, ScannedItem};
@@ -31,3 +36,6 @@ pub use feature_file::{CheckLine, FeatureFile, LoneProofLine, ProofLine, RunLine
 pub use proof_ledger::{DanglingReference, ProofLedger};
 pub use repoint::{RepointMap, RepointRow, Repointer, RetiredRow, TestReference};
 pub use test_targets::{PackageTests, TestTarget, TestTargets};
+pub use allowance::{Allowance, Findings, Verdict};
+pub use ownership_rules::OwnershipRules;
+pub use structure_rules::StructureRules;

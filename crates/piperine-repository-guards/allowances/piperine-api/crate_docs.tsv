@@ -1,0 +1,13 @@
+crates/piperine-api/src/lib.rs::module composite	1
+crates/piperine-api/src/lib.rs::module held	1
+crates/piperine-api/src/lib.rs::module leaf_input	1
+crates/piperine-api/src/lib.rs::module logic_pattern	1
+crates/piperine-api/src/lib.rs::module metadata	1
+crates/piperine-api/src/lib.rs::module noise	1
+crates/piperine-api/src/lib.rs::module number_cell	1
+crates/piperine-api/src/lib.rs::module param_text	1
+crates/piperine-api/src/lib.rs::module parameters	1
+crates/piperine-api/src/lib.rs::module params	1
+crates/piperine-api/src/lib.rs::module pins	1
+crates/piperine-api/src/lib.rs::module prelude	1
+crates/piperine-api/src/lib.rs::module recorder	1

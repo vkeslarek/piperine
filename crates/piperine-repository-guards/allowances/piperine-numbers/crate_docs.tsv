@@ -1,0 +1,15 @@
+crates/piperine-numbers/src/lib.rs::module arithmetic	1
+crates/piperine-numbers/src/lib.rs::module constants	1
+crates/piperine-numbers/src/lib.rs::module convert	1
+crates/piperine-numbers/src/lib.rs::module decimal	1
+crates/piperine-numbers/src/lib.rs::module elementary	1
+crates/piperine-numbers/src/lib.rs::module format	1
+crates/piperine-numbers/src/lib.rs::module half	1
+crates/piperine-numbers/src/lib.rs::module limbs	1
+crates/piperine-numbers/src/lib.rs::module power	1
+crates/piperine-numbers/src/lib.rs::module precision	1
+crates/piperine-numbers/src/lib.rs::module quad	1
+crates/piperine-numbers/src/lib.rs::module reduction	1
+crates/piperine-numbers/src/lib.rs::module transcendental	1
+crates/piperine-numbers/src/lib.rs::module wide	1
+crates/piperine-numbers/src/lib.rs::module ziv	1

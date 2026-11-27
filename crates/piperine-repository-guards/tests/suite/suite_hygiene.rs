@@ -456,15 +456,12 @@ fn no_ignored_tests() {
 
 // ─── 3. Every ignored doc example is accounted for ────────────────────────────
 
-/// A ```` ```ignore ```` doc fence cannot carry a reason inline, so the reason
-/// lives here: the registry below is the complete set of illustrative examples
-/// that are deliberately not compiled. A new one fails this test until someone
-/// records why — the same "registry + exhaustiveness" shape
-/// `capabilities_contract.rs` uses for capability flags.
-#[test]
-fn every_ignored_doc_example_is_registered() {
+/// The registry of the doc examples that are deliberately not compiled.
+struct IgnoredDocExamples;
+
+impl IgnoredDocExamples {
     /// Why each file's `ignore` fence is not a runnable example.
-    fn reason(path: &str) -> Option<&'static str> {
+    pub fn reason(path: &str) -> Option<&'static str> {
         Some(match path {
                 "crates/piperine-solver/src/analyses/ac.rs" => {
                 "illustrative sweep snippet: needs a built circuit the doc does not construct"
@@ -478,14 +475,22 @@ fn every_ignored_doc_example_is_registered() {
             _ => return None,
         })
     }
+}
 
+/// A ```` ```ignore ```` doc fence cannot carry a reason inline, so the reason
+/// lives here: the registry below is the complete set of illustrative examples
+/// that are deliberately not compiled. A new one fails this test until someone
+/// records why — the same "registry + exhaustiveness" shape
+/// `capabilities_contract.rs` uses for capability flags.
+#[test]
+fn every_ignored_doc_example_is_registered() {
     let mut unregistered = Vec::new();
     let mut seen = Vec::new();
     for (path, text) in SourceWalk::rust_sources() {
         if !text.contains("```ignore") {
             continue;
         }
-        match reason(&path) {
+        match IgnoredDocExamples::reason(&path) {
             Some(_) => seen.push(path),
             None => unregistered.push(path),
         }

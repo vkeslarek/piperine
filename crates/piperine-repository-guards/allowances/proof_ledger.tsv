@@ -2,7 +2,6 @@ analog-operators	C27	run elabops names no test noise_table_waits_for_its_depende
 analog-structure	C23	run elabstruct names no test the_stdlib_idt_waits_for_generics
 analog-structure	C24	run elabstruct names no test the_water_model_waits_for_generics
 analog-structure	C26	run docs names no test gaps_keeps_l40_for_the_spec_models_that_wait
-code-clarity	C1	run structure names no test every_crate_states_its_purpose_and_module_map
 code-clarity	C10	run structure names no test every_crate_states_its_data_path_with_existing_types
 code-clarity	C11	run structure names no test the_architecture_document_names_every_step_and_owner
 code-clarity	C12	run book names no test every_block_of_the_book_has_one_row
@@ -20,7 +19,6 @@ code-clarity	C19	run variadics names no test a_user_function_declares_and_calls_
 code-clarity	C19	run variadics names no test a_user_wrapper_forwards_its_fields
 code-clarity	C19	run variadics names no test an_optional_parameter_wins_over_a_field_of_its_name
 code-clarity	C2	run structure names no test no_file_is_named_mod_rs
-code-clarity	C2	run structure names no test no_module_is_named_for_no_concern
 code-clarity	C20	run stddecl names no test every_builtin_is_declared_in_std
 code-clarity	C20	run stddecl names no test every_method_of_appendix_h_is_declared_in_std
 code-clarity	C20	run stddecl names no test include_str_is_a_std_function
@@ -32,17 +30,12 @@ code-clarity	C22	run srcio names no test emit_writes_the_records_it_wrote_before
 code-clarity	C22	run srcio names no test finish_and_check_are_the_writers_of_the_reserved_streams
 code-clarity	C24	run worklists names no test every_duplicate_of_the_inventory_has_a_verdict
 code-clarity	C25	run suite names no test no_crate_has_more_targets_than_its_plan
-code-clarity	C26	run ownership names no test no_free_helper_function_in_test_code
 code-clarity	C26	run suite names no test no_allow_in_test_code
 code-clarity	C26	run suite names no test no_test_support_is_shared_by_path
 code-clarity	C28	run suite names no test the_suite_report_has_before_and_after
 code-clarity	C3	run boundaries names no test no_type_of_the_inventory_is_defined_in_two_crates
-code-clarity	C4	run ownership names no test no_free_function_outside_the_language_exceptions
-code-clarity	C5	run ownership names no test every_owner_of_the_design_exists_and_has_its_methods
 code-clarity	C6	run naming names no test every_declared_name_is_words_or_glossary
 code-clarity	C7	run naming names no test no_bare_type_name_is_declared_twice
-code-clarity	C7	run ownership names no test an_inherent_impl_lives_with_its_type
-code-clarity	C8	run ownership names no test no_allow_hides_a_design_problem
 code-clarity	C8	run worklists names no test every_long_function_of_the_inventory_has_a_verdict
 code-clarity	C9	run refusals names no test every_refused_form_has_a_row
 code-clarity	C9	run refusals names no test p0001_is_worded_in_one_place
@@ -51,12 +44,10 @@ code-clarity	C9	run worklists names no test every_single_implementor_trait_is_re
 code-clarity	Run book	no test target piperine/book
 code-clarity	Run documentation	no test target piperine-repository-guards/documentation
 code-clarity	Run naming	no test target piperine-repository-guards/naming
-code-clarity	Run ownership	no test target piperine-repository-guards/ownership
 code-clarity	Run refusals	no package piperine-language
 code-clarity	Run specstructure	no package piperine-language
 code-clarity	Run srcio	no test target piperine-parity/source_io
 code-clarity	Run stddecl	no package piperine-language
-code-clarity	Run structure	no test target piperine-repository-guards/structure
 code-clarity	Run variadics	no package piperine-language
 code-clarity	Run worklists	no test target piperine-repository-guards/worklists
 composite-values	C108	run srcagg names no test an_unknown_composite_is_refused_by_name

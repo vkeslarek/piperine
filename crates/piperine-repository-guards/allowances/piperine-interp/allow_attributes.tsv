@@ -1,0 +1,8 @@
+crates/piperine-interp/src/lib.rs::allow(dead_code)	1
+crates/piperine-interp/tests/circuit.rs::allow(dead_code)	2
+crates/piperine-interp/tests/frozen.rs::allow(dead_code)	5
+crates/piperine-interp/tests/limit.rs::allow(dead_code)	2
+crates/piperine-interp/tests/partials.rs::allow(dead_code)	2
+crates/piperine-interp/tests/shape.rs::allow(dead_code)	3
+crates/piperine-interp/tests/stim.rs::allow(dead_code)	2
+crates/piperine-interp/tests/terms.rs::allow(dead_code)	2

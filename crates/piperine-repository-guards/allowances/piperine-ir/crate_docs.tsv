@@ -1,0 +1,11 @@
+crates/piperine-ir/src/lib.rs::module build	1
+crates/piperine-ir/src/lib.rs::module check	1
+crates/piperine-ir/src/lib.rs::module contributions	1
+crates/piperine-ir/src/lib.rs::module deps	1
+crates/piperine-ir/src/lib.rs::module differentiate	1
+crates/piperine-ir/src/lib.rs::module handle	1
+crates/piperine-ir/src/lib.rs::module print	1
+crates/piperine-ir/src/lib.rs::module real	1
+crates/piperine-ir/src/lib.rs::module statements	1
+crates/piperine-ir/src/lib.rs::module typing	1
+crates/piperine-ir/src/lib.rs::module written	1

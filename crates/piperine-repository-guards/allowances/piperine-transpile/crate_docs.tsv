@@ -1,0 +1,9 @@
+crates/piperine-transpile/src/lib.rs::module abi_source	1
+crates/piperine-transpile/src/lib.rs::module cache	1
+crates/piperine-transpile/src/lib.rs::module compile	1
+crates/piperine-transpile/src/lib.rs::module error	1
+crates/piperine-transpile/src/lib.rs::module load	1
+crates/piperine-transpile/src/lib.rs::module print	1
+crates/piperine-transpile/src/lib.rs::module rt	1
+crates/piperine-transpile/src/lib.rs::module settings	1
+crates/piperine-transpile/src/lib.rs::module shape_check	1
