@@ -1,8 +1,8 @@
 # Nested Reach verification
 
-**Verdict**: FAIL (round 5, at f64497daa)
-**Round**: 5
-**Proofs**: `proofs.md` at f64497daa (`check_proofs.py` rerun by the Verifier: 38 pass, 0 fail). Round 4 was at 11c0c6b8f (31 pass), round 3 at bf43b1b18 (28), round 2 at 1c69c6df2 (25), round 1 at 13c4c1357 (21).
+**Verdict**: PASS (round 6, at a7cea429c)
+**Round**: 6
+**Proofs**: `proofs.md` at the merge of origin/main onto a7cea429c (`check_proofs.py` rerun by the Verifier: 41 pass). Round 5 was at f64497daa (38 pass), round 4 at 11c0c6b8f (31), round 3 at bf43b1b18 (28), round 2 at 1c69c6df2 (25), round 1 at 13c4c1357 (21).
 **Verifier**: independent sub-agent (author != verifier), Opus
 
 ## Checks
@@ -45,6 +45,9 @@
 | C34 | `source_nested_reach.rs` `a_cell_in_generation_whose_param_reads_a_param_and_the_loop_variable_runs_at_each_iteration` | yes |
 | C35 | `elab_nested_reach.rs` `a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_levels` | yes - fails with `structural.rs` of 03ce77fff restored locally (then put back) |
 | C36 | `source_nested_reach.rs` `the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_three_levels_down` | yes |
+| C37 | `elab_nested_reach.rs` `a_body_reads_the_param_of_its_own_generated_child_over_a_param_and_the_loop_variable` | yes - fails with `reach/fields.rs` of 3f73fd61d restored locally (then put back) |
+| C38 | `elab_nested_reach.rs` `a_condition_over_the_param_of_an_own_generated_child_reads_the_iterations_value` | yes - fails on the same pre-fix file |
+| C39 | `source_nested_reach.rs` `a_body_reads_the_params_of_its_own_cells_in_generation_one_level_down` | yes |
 
 ## What was probed (throwaway tests, not committed)
 
@@ -193,3 +196,26 @@ The final full suite was not run: the head carries a finding, and the gate polic
 | Finding | Evidence | Fix | Closed |
 | --- | --- | --- | --- |
 | 13. **Medium** - the loop-variable change moves a neighbour from an honest `P0001` to a wrong user error: a body that reads the param of its own generated child (`c[1].k`, one level, `k: m + (j as f64)`) is now `E0321`, which tells the author the param's value is not an expression over params and constants - it is one. The same read three levels down runs (C35), so the one-level read, the simplest form, is the one left refused, under an `E` code. | `structural.rs:169-170` lets `ParamReads::of` return `{m}` for `m + (j as f64)`; `m` becomes a key and the key value is then folded without the iteration's loop variable bound (`consts.rs:591`, `ConstFault::Dynamic` "a name with no value yet", reported as `E0321`). Repro: `module Cell(a: Electrical) { pub k: f64 = 1.0; pub signal sn: Electrical; } analog for Cell { i(a, sn) +> v(a, sn) * k; }` / `module Ac(a: Electrical, o: Electrical) { m: f64 = 0.5; for j in 0..2 { pub let c = Cell(a) { k: m + (j as f64) }; } } analog for Ac { potential(o) +> c[1].k; }` / `module Top() { signal a: Electrical; signal o: Electrical; let p = Ac(a, o) { m: 0.25 }; } analog for Top { potential(a) +> 1.0; }` | bind the iteration's loop variables wherever a key value of a generated placement is folded at one level (as the three-level path does), so `c[1].k` reads 1.25; pin it with and without a condition. If deferred, it must stay a named `P0001` with a GAPS row, never `E0321` || be27b7a20 - C37, C38, C39 (a child of the body placed in generation is made through `frame_of_iteration`) |
+
+## Round 6 (at a7cea429c)
+
+be27b7a20 makes a child of the body placed in generation through `frame_of_iteration` (`reach/fields.rs` `child_frame`), so the
+placement's values read the iteration's loop variables. Throwaway probes at HEAD (not committed), every value checked by hand:
+
+| Probe | Result |
+| --- | --- |
+| finding 13's repro, `c[1].k` with `k: m + (j as f64)`, `m = 0.25` | 1.25 |
+| the same under `if c[1].k > 1.0 { .. } else { .. }` | `if (1.25 > 1.0)` |
+| `c[0].twice + v(c[1].sn)` | `(0.25 * 2.0) + probe("c[1].sn", gnd)` |
+| one level, two loop variables of nested generations (`k: m + i*10 + j`), `c[1][2].k + c[0][1].twice` | `12.25 + (1.25 * 2.0)` |
+| an index past the range: `c[5].k`, `v(c[5].sn)`, `c[2][0].k` (outer), `c[1][3].k` (inner) | `E0342` naming the element and the count, each |
+| an analog `for i in 0..2 { potential(o) +> c[i].k; }` | 0.25 and 1.25 |
+| an index folded from a param, `c[n - 1].k` with `for j in 0..n` | 1.25 |
+| a generated sibling connected to `c.sn` in the same iteration, `v(d[1].sn) + c[1].k` | `d[0]` bound to `c[0].sn`; 1.25 |
+| round 5 again: nested generations read from the top (`p.c[1][2].k + p.c[0][1].twice`) | `12.25 + (1.25 * 2.0)` |
+| a loop variable named like a param (`k: f64 = 100.0; for k in 0..2`), from the top and at one level | 1.25, both |
+| a loop variable in a generation `if`, the instances, and a one-level read `c[2].k` | `p` has `c[2]` (3.5), `q` `c[1]`, `c[2]`; `c[2].k` = 2.25 |
+| a loop variable only (`k: (j as f64) + 0.5`) | 1.5 |
+| a carrier's initial value in generation over the loop variable and a param (`signal s: Bit<u8> = (j as u8) + n`) | `P0001` "a carrier's initial value that reads a param", unchanged from 03ce77fff - outside this feature (no reach), noted for `GAPS.md`, not a finding of `nested-reach` |
+
+No finding. The final full suite runs at the merged head (table in the report of this round).
