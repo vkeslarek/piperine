@@ -614,9 +614,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `every_duplicate_of_the_inventory_has_a_verdict` passes under `**Run worklists**` with no open row
-- [ ] `the_parity_oracles_are_not_reduced` passes under `**Run ledger**`
-- [ ] Gate check passes: Ledger
+- [x] `every_duplicate_of_the_inventory_has_a_verdict` passes under `**Run worklists**` with no open row
+- [x] `the_parity_oracles_are_not_reduced` passes under `**Run ledger**`
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

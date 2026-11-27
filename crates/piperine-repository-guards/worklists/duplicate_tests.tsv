@@ -1,58 +1,58 @@
-a_carried_type_without_repr_is_e0112	-
-a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	-
-a_let_bound_to_a_node_is_a_contribution_target	-
-a_let_bound_to_a_node_probes_the_node	-
-a_limited_diode_reaches_the_unlimited_operating_point	-
-a_non_finite_value_is_written_as_is	-
-a_panic_in_compiled_code_is_a_fault_and_the_instance_survives	-
-a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override	-
-a_simparam_entry_naming_an_option_is_p0010	-
-abs_has_the_derivative_of_sign	-
-ac_rc	-
-an_array_of_carriers_as_a_field_is_driven_and_read_by_index	-
-an_unbound_option_param_is_none	-
-an_unchanged_commit_fires_nothing	-
-an_unknown_top_is_one_diagnostic	-
-an_unsettled_loop_is_e0511_naming_its_drives	-
-delay_tline	-
-diode_iv	-
-diode_rev	-
-diode_rs	-
-diode_series	-
-divider	-
-e0180_a_logic_read_in_analog_is_a_mismatch	-
-e0404_a_commit_belongs_in_a_reaction	-
-e0414_a_branch_that_switches_kind_on_a_probe_is_refused	-
-e0901_there_is_no_println	-
-every_fixture_shape_is_valid	-
-isrc_r	-
-its_device_passes_the_partials_verifier	-
-its_devices_pass_the_partials_verifier	-
-m_and_dtemp_are_ordinary_names	-
-noise_diode	-
-noise_rc	-
-noise_switch	-
-pss_rc	-
-pz_lowpass	-
-sens_divider	-
-simparam_flag_is_repeatable_and_a_non_number_is_p0010	-
-temp_res	-
-tf_divider	-
-the_adc_commits_the_rounded_code_after_tconv	-
-the_comparator_trips_at_its_thresholds	-
-the_crate_depends_on_the_abi_crate_only	-
-the_dpwm_dithers_keeps_dead_time_and_never_overlaps	-
-the_later_statement_wins	-
-the_oscillator_toggles_every_half_period	-
-the_ramp_and_the_pid_follow_their_difference_equations	-
-tnom_res	-
-traces_are_recorded_only_for_a_named_stream	-
-tran_corner	-
-tran_dq	-
-tran_floor	-
-tran_jump	-
-tran_rc	-
-two_commits_exchange_two_carriers	-
-two_runs_give_the_same_changes	-
-two_statements_make_a_pulse	-
-uic_rc	-
+a_carried_type_without_repr_is_e0112	kept: types_aggregates drives aggregate carried types (tuple, array, Option of a plain struct), types_carriers drives str, unit, Option<str>, a plain enum and Event
+a_form_not_run_yet_is_stopped_before_the_run_with_p0001_naming_it	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
+a_let_bound_to_a_node_is_a_contribution_target	kept: the parity definition runs the operating point of the placed design, the lang definition checks the source types
+a_let_bound_to_a_node_probes_the_node	kept: the parity definition runs the values the probes read, the lang definition checks the lowering of the probe
+a_limited_diode_reaches_the_unlimited_operating_point	kept: the solver definition solves through the circuit builder, the analog-solver definition assembles the plan directly; two layers
+a_non_finite_value_is_written_as_is	kept: transpile checks both backends against each other, interp checks the reference interpreter alone
+a_panic_in_compiled_code_is_a_fault_and_the_instance_survives	kept: reaction.rs drives an integer divide by zero, compiled.rs injects a panic through a wrapped rustc
+a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override	kept: the parity definition runs the placed design, the lang definition checks the elaborated placement
+a_simparam_entry_naming_an_option_is_p0010	kept: the cli definition drives the --simparam flag, the api definition drives the manifest table
+abs_has_the_derivative_of_sign	kept: the transpile runtime dual and the interp dual are two implementations, each held to the rule
+ac_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+an_array_of_carriers_as_a_field_is_driven_and_read_by_index	kept: the parity definition runs the bench and reads its records, the lang definition type-checks the source
+an_unbound_option_param_is_none	kept: the parity definition runs the placement, the lang definition reads the elaborated instance params
+an_unchanged_commit_fires_nothing	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+an_unknown_top_is_one_diagnostic	kept: types_entry checks the type checker's diagnostic and its P0003 code, elab_entry the elaborator's
+an_unsettled_loop_is_e0511_naming_its_drives	kept: the digital-solver definition runs the relaxation loop, the solver definition runs the loop through a transient
+delay_tline	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+diode_iv	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+diode_rev	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+diode_rs	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+diode_series	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+divider	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+e0180_a_logic_read_in_analog_is_a_mismatch	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
+e0404_a_commit_belongs_in_a_reaction	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
+e0414_a_branch_that_switches_kind_on_a_probe_is_refused	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
+e0901_there_is_no_println	kept: each Book target ties a different quoted claim of its own chapter to a run (the claims carry different ids)
+every_fixture_shape_is_valid	kept: each crate validates the shapes of its own fixtures
+isrc_r	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+its_device_passes_the_partials_verifier	kept: each target verifies the partials of its own device (TwinFlicker, CubicCapacitor)
+its_devices_pass_the_partials_verifier	kept: each of the 27 targets verifies the partials of the devices of its own file
+m_and_dtemp_are_ordinary_names	kept: pom_resolve checks name resolution (E0161), types_implicit checks the placement binding (E0320)
+noise_diode	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+noise_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+noise_switch	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+pss_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+pz_lowpass	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+sens_divider	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+simparam_flag_is_repeatable_and_a_non_number_is_p0010	kept: the cli definition drives the flag, the api definition drives the manifest table and the merge order
+temp_res	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+tf_divider	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+the_adc_commits_the_rounded_code_after_tconv	kept: parity oracle (Q9) over the MSL source; the other definition drives the buck's own ADC boundary, so each proves its own layer
+the_comparator_trips_at_its_thresholds	kept: parity oracle (Q9) over the MSL source; the other definition drives the buck's own network, so each proves its own layer
+the_crate_depends_on_the_abi_crate_only	kept: each crate guards its own manifest
+the_dpwm_dithers_keeps_dead_time_and_never_overlaps	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+the_later_statement_wins	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+the_oscillator_toggles_every_half_period	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+the_ramp_and_the_pid_follow_their_difference_equations	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+tnom_res	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+traces_are_recorded_only_for_a_named_stream	kept: parity oracle (Q9) over the source; the api definition drives the host library with a named stream
+tran_corner	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+tran_dq	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+tran_floor	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+tran_jump	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+tran_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
+two_commits_exchange_two_carriers	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+two_runs_give_the_same_changes	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+two_statements_make_a_pulse	kept: parity oracle (Q9) over the MSL source; the other definition drives hand-built IR through the transpile layer, so each proves its own layer
+uic_rc	kept: parity oracle (Q9): the parity target reproduces the ngspice case from the source and tests/scenarios.rs runs the same named case through the host; both stay
