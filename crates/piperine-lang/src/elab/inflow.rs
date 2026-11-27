@@ -15,6 +15,7 @@ use super::body::NodePlan;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::selectors::ContributionRecord;
+use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprKind, Resolution};
 use crate::types::Builtin;
 
@@ -61,7 +62,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let Some(branch) = branch else {
-            self.unsupported(scope.file, span, "`inflow()` of a port of a module that is placed in an expression");
+            self.refuse(scope.file, span, ValueForm::InflowOfPortOfModuleThatIs);
             return None;
         };
         Some(self.emit(Expr::Flow { branch }, ValueType::F64, origin))

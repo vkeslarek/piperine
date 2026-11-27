@@ -2,6 +2,7 @@
 
 use super::consts::ConstFault;
 use super::elaborator::Elaboration;
+use crate::refusal::forms::ValueForm;
 use crate::msl::Diagnostic;
 use crate::refusal::Refusal;
 
@@ -53,15 +54,15 @@ impl Elaboration<'_, '_> {
             ConstFault::File { fault, .. } => self.report(file, Diagnostic::new(fault.code(), fault.message(), span, "the file named here")),
             // §22.6.4: the text does not fit the `const`'s type (`E0614`) or is not in the format (`E0706`).
             ConstFault::Table { code, message, .. } => self.report(file, Diagnostic::new(code, message.clone(), span, "the text parsed here")),
-            ConstFault::UnboundParam { .. } => self.unsupported(file, span, &format!("{position} that reads a param")),
+            ConstFault::UnboundParam { .. } => self.refuse_with(file, span, ValueForm::ThatReadsParam, [position.to_string()]),
             ConstFault::Dynamic { what, .. } => {
                 let message = format!("{position} is not an expression over params and constants: it reads {what}");
                 self.report(file, Diagnostic::new("E0321", message, span, "not constant"));
             }
             ConstFault::Refused { refusal, .. } => self.report(file, Refusal::clone(refusal).in_position(position).diagnostic(span)),
-            ConstFault::NoValue { .. } => self.unsupported(file, span, &format!("a `const` without a value in {position}")),
+            ConstFault::NoValue { .. } => self.refuse_with(file, span, ValueForm::ConstWithoutValueIn, [position.to_string()]),
             ConstFault::Ungenerated { message, .. } => self.report(file, Diagnostic::new("E0342", message.clone(), span, "no such generated item")),
-            ConstFault::Leaves { .. } => self.unsupported(file, span, &format!("a `break`, `continue` or `return` outside the loop or function it leaves in {position}")),
+            ConstFault::Leaves { .. } => self.refuse_with(file, span, ValueForm::BreakContinueOrReturnOutsideLoopOr, [position.to_string()]),
             ConstFault::Panic { what, .. } => {
                 let message = format!("{position} panics while it is evaluated at elaboration: {what}");
                 self.report(file, Diagnostic::new("E0104", message, span, "panics"));

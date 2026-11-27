@@ -10,6 +10,7 @@ use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::elements::Lookup;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::DigitalForm;
 use crate::pom::{BundlePlace, DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
 
 /// What a placement binds at the ports of the child so far: the terminals of its node ports, the carriers of its carrier ports
@@ -56,7 +57,7 @@ impl Elaboration<'_, '_> {
             Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
             Lookup::Failed => None,
             Lookup::No => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of an element of an array of bundles that is no carrier, read as a value");
+                self.refuse(scope.file, self.design.expr_node(expr).span, DigitalForm::FieldOfElementOfArrayOfBundles);
                 None
             }
         }
@@ -170,7 +171,7 @@ impl Elaboration<'_, '_> {
                 LeafSource::Leaf(from) => self.leaf_node_run(scope, from).and_then(|nodes| nodes.first().copied()),
             };
             let Some(terminal) = terminal else {
-                self.unsupported(scope.file, span, "a field of a bundle that is no node of this module");
+                self.refuse(scope.file, span, DigitalForm::FieldOfBundleThatIsNoNode);
                 return false;
             };
             bound.terminals.push(terminal);
@@ -185,7 +186,7 @@ impl Elaboration<'_, '_> {
             },
         };
         let Some((carrier, window)) = found else {
-            self.unsupported(scope.file, span, "a field of a bundle that is no carrier of this module");
+            self.refuse(scope.file, span, DigitalForm::FieldOfBundleThatIsNoCarrier);
             return false;
         };
         if matches!(&self.design.decl_data(port).kind, DeclKind::Port(data) if data.dir == Some(Dir::Out)) {

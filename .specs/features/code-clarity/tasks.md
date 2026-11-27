@@ -732,9 +732,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No file of `elab/` outside `consts/` builds a `Refusal` from `RefusedForm::Text`
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] No file of `elab/` outside `consts/` builds a `Refusal` from `RefusedForm::Text`
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

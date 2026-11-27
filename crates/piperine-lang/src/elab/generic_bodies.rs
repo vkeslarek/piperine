@@ -9,6 +9,7 @@ use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::lower::Scope;
 use super::structural::BodyKey;
+use crate::refusal::forms::GenericsForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FileId, TypeId};
 use crate::types::Ty;
@@ -38,7 +39,7 @@ impl Elaboration<'_, '_> {
         let (file, span) = (self.design.decl_data(self.design.expr_node(call).owner).file, self.design.expr_node(call).span);
         if self.types.instantiation(call).is_none() {
             // never a silent loss: a placement whose instance nothing recorded is refused where it stands
-            self.unsupported(file, span, "a placement of a generic module whose arguments the checker did not record");
+            self.refuse(file, span, GenericsForm::PlacementOfGenericModuleWhoseArgumentsChecker);
             return None;
         }
         let instance = self.concrete_instance(call)?;

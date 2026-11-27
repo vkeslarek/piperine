@@ -18,6 +18,7 @@
 
 use piperine_ir::Constant;
 
+use crate::refusal::forms::ValueForm;
 use crate::elab::consts::Bindings;
 use crate::elab::elaborator::Elaboration;
 use crate::elab::generation::Iteration;
@@ -237,7 +238,7 @@ impl Elaboration<'_, '_> {
             let made = self.frame_node(entry.frame, entry.item);
             if made != Some(piperine_ir::Terminal::Node(slot)) {
                 let span = self.design.decl_data(entry.item).span;
-                self.unsupported(scope.file, span, "a node of a child read by its parent that the child's body could not place where the parent expects it");
+                self.refuse(scope.file, span, ValueForm::NodeOfChildReadByItsParent);
             }
         }
     }
@@ -249,7 +250,7 @@ impl Elaboration<'_, '_> {
             let made = self.frame_carrier(entry.frame, entry.item);
             if made != Some(slot) {
                 let span = self.design.decl_data(entry.item).span;
-                self.unsupported(scope.file, span, "a carrier of a child read by its parent that the child's body could not place where the parent expects it");
+                self.refuse(scope.file, span, ValueForm::CarrierOfChildReadByItsParent);
             }
         }
     }

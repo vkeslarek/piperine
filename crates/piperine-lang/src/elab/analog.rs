@@ -5,6 +5,7 @@ use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as Lowered
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::nested_stmts;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
@@ -66,7 +67,7 @@ impl Elaboration<'_, '_> {
             [plus] => (plus, Terminal::Ground),
             [plus, minus] => (plus, minus),
             _ => {
-                self.unsupported(scope.file, node.span, "a probe of more than two nodes");
+                self.refuse(scope.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
                 return None;
             }
         };
@@ -86,7 +87,7 @@ impl Elaboration<'_, '_> {
             Some(found) => found,
             None if scope.differentiated => self.flow_leaf_branch(scope, plus, minus),
             None => {
-                self.unsupported(scope.file, span, "a flow probe of a branch without a potential contribution");
+                self.refuse(scope.file, span, AnalogForm::FlowProbeOfBranchWithoutPotentialContribution);
                 return None;
             }
         };
@@ -199,7 +200,7 @@ impl Elaboration<'_, '_> {
             "noise" => self.lower_noise(scope, expr, args, origin),
             "simparam" => self.lower_simparam(scope, args, origin),
             name => {
-                self.unsupported(scope.file, span, &format!("core primitive `{name}`"));
+                self.refuse_with(scope.file, span, AnalogForm::CorePrimitive, [name.to_string()]);
                 None
             }
         }
@@ -254,7 +255,7 @@ impl Elaboration<'_, '_> {
                     None => None,
                 };
                 if !standalone.locals.is_empty() {
-                    self.unsupported(scope.file, span, "a guarded `limit` whose input binds a local");
+                    self.refuse(scope.file, span, AnalogForm::GuardedLimitWhoseInputBindsLocal);
                     return None;
                 }
                 let seed = match seed {
@@ -290,7 +291,7 @@ impl Elaboration<'_, '_> {
             scope.adopt_standalone(&mut standalone);
         }
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a guarded `ac_stim` whose input binds a local");
+            self.refuse(scope.file, span, AnalogForm::GuardedAcStimWhoseInputBindsLocal);
             return None;
         }
         let mut lowered = lowered.into_iter();
@@ -308,7 +309,7 @@ impl Elaboration<'_, '_> {
     /// (`P0001`; a closure is `E0350` from the type checker before this runs).
     fn core_site_allowed(&mut self, scope: &Scope, span: crate::msl::Span, name: &str) -> bool {
         if scope.nesting > 0 {
-            self.unsupported(scope.file, span, &format!("a `{name}` inside an `Option` method"));
+            self.refuse_with(scope.file, span, AnalogForm::InsideOptionMethod, [name.to_string()]);
             return false;
         }
         true
@@ -326,7 +327,7 @@ impl Elaboration<'_, '_> {
             _ => return None,
         }
         if scope.nesting > 0 {
-            self.unsupported(scope.file, node.span, "a `bound_step` inside a closure or an `Option` method");
+            self.refuse(scope.file, node.span, AnalogForm::BoundStepInsideClosureOrOptionMethod);
             return Some(false);
         }
         let [arg] = &args[..] else { return Some(false) };
@@ -338,7 +339,7 @@ impl Elaboration<'_, '_> {
         let mut standalone = Self::standalone_scope(scope);
         let value = if nested { self.lower_expr(&mut standalone, arg.value) } else { self.lower_expr(scope, arg.value) }?;
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, node.span, "a `bound_step` under a condition whose step binds a local");
+            self.refuse(scope.file, node.span, AnalogForm::BoundStepUnderConditionWhoseStepBinds);
             return Some(false);
         }
         let site = scope.bounds;
@@ -365,7 +366,7 @@ impl Elaboration<'_, '_> {
             // a node field of an element of an array of bundles (`d[k].p`) is that node of its leaf (struct of arrays, `bundles.rs`)
             if self.bundle_leaf(scope, arg).is_some_and(|place| !place.elements.is_empty()) {
                 return self.node_element(scope, arg)?.or_else(|| {
-                    self.unsupported(file, node.span, "a field of an element of an array of bundles that is no node");
+                    self.refuse(file, node.span, AnalogForm::FieldOfElementOfArrayOfBundles);
                     None
                 });
             }
@@ -374,12 +375,12 @@ impl Elaboration<'_, '_> {
         if let ExprKind::Index { .. } = &node.kind {
             // one node of an array of nodes: its index folds, per iteration of an unrolled loop (CV-26)
             return self.node_element(scope, arg)?.or_else(|| {
-                self.unsupported(file, node.span, "an index of a value that is no array of nodes");
+                self.refuse(file, node.span, AnalogForm::IndexOfValueThatIsNoArray);
                 None
             });
         }
         let ExprKind::Path(path) = &node.kind else {
-            self.unsupported(file, node.span, "a node argument that is not a name");
+            self.refuse(file, node.span, AnalogForm::NodeArgumentThatIsNotName);
             return None;
         };
         match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
@@ -392,20 +393,20 @@ impl Elaboration<'_, '_> {
                     return None;
                 }
                 self.node_element(scope, arg)?.or_else(|| {
-                    self.unsupported(file, node.span, "a generated node outside the generation that declares it, without an index");
+                    self.refuse(file, node.span, AnalogForm::GeneratedNodeOutsideGenerationThatDeclaresIt);
                     None
                 })
             }
             Resolution::Decl(decl) => match self.frame_node(scope.frame, decl) {
                 Some(terminal) => Some(terminal),
                 None => {
-                    self.unsupported(file, node.span, "a name that is not a node of this module");
+                    self.refuse(file, node.span, AnalogForm::NameThatIsNotNodeOfThis);
                     None
                 }
             },
             Resolution::Builtin(builtin) if builtin.info().kind == BuiltinKind::Node => Some(Terminal::Ground),
             _ => {
-                self.unsupported(file, node.span, "a node argument that is not a node");
+                self.refuse(file, node.span, AnalogForm::NodeArgumentThatIsNotNode);
                 None
             }
         }

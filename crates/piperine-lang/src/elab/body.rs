@@ -11,6 +11,7 @@ use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::structural::BodyKey;
 use super::lower::Scope;
+use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use crate::types::Ty;
 
@@ -283,7 +284,7 @@ impl Elaboration<'_, '_> {
         let stored = self.typed_written(ty).and_then(|t| self.stored_type(&t));
         if stored.is_none() {
             let span = self.design.type_node(ty).span;
-            self.unsupported(file, span, "a param of a type that has no value in the IR");
+            self.refuse(file, span, StructureForm::ParamOfTypeThatHasNoValue);
         }
         stored
     }
@@ -389,15 +390,15 @@ impl Elaboration<'_, '_> {
             Some(expr) => match self.consts.value(expr, &self.frame_bindings(frame)) {
                 Ok(Constant::Real(value)) => Some(value),
                 Ok(Constant::Bool(_)) => {
-                    self.unsupported(data.file, self.design.expr_node(expr).span, "a `bool` initial value");
+                    self.refuse(data.file, self.design.expr_node(expr).span, StructureForm::BoolInitialValue);
                     return None;
                 }
                 Ok(Constant::Int(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
-                    self.unsupported(data.file, self.design.expr_node(expr).span, "an integer or number-width initial value");
+                    self.refuse(data.file, self.design.expr_node(expr).span, StructureForm::IntegerOrNumberWidthInitialValue);
                     return None;
                 }
                 Ok(Constant::Aggregate(_)) => {
-                    self.unsupported(data.file, self.design.expr_node(expr).span, "a composite initial value");
+                    self.refuse(data.file, self.design.expr_node(expr).span, StructureForm::CompositeInitialValue);
                     return None;
                 }
                 Err(fault) => {

@@ -5,6 +5,7 @@ use piperine_ir::{Constant, NatureId, Quantity, Real};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprKind, FileId, QuantityRole};
@@ -39,7 +40,7 @@ impl Elaboration<'_, '_> {
         let potential = self.quantity(nature, QuantityRole::Potential);
         let flow = self.quantity(nature, QuantityRole::Flow);
         let Some(potential) = potential else {
-            self.unsupported(file, span, &format!("nature `{name}` without a potential"));
+            self.refuse_with(file, span, AnalogForm::NatureWithoutPotential, [name.to_string()]);
             return None;
         };
         self.check_access_names(nature, &potential, flow.as_ref());

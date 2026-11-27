@@ -13,6 +13,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, St
 use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::GenericsForm;
 use crate::pom::{BinOp, ExprId};
 
 /// Which operand of a comparison a read names.
@@ -64,7 +65,7 @@ impl Elaboration<'_, '_> {
             BinOp::Le => self.option_not_above(&operands, Side::Left),
             BinOp::Ge => self.option_not_above(&operands, Side::Right),
             _ => {
-                self.unsupported(scope.file, span, "an operator other than a comparison on `Option`s");
+                self.refuse(scope.file, span, GenericsForm::OperatorOtherThanComparisonOnOptions);
                 return None;
             }
         };

@@ -8,6 +8,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as Lo
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::ValueForm;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
 use crate::types::Callee;
 
@@ -19,14 +20,14 @@ impl Elaboration<'_, '_> {
     /// read, so the IR local starts as the zero of its type and is assignable. `false` after a diagnostic.
     pub(super) fn lower_deferred_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: PatId, file: FileId, span: crate::msl::Span) -> bool {
         let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind.clone() else {
-            self.unsupported(file, span, "a deferred `let` whose pattern is not a name");
+            self.refuse(file, span, ValueForm::DeferredLetWhosePatternIsNotName);
             return false;
         };
         let Some(local) = self.bind_local(scope, binding) else { return false };
         let ty = scope.locals[local as usize].ty.clone();
         let origin = self.locator.origin(file, span);
         let Some(init) = self.zero(&ty, origin) else {
-            self.unsupported(file, span, "a deferred `let` of a type with no zero in the IR");
+            self.refuse(file, span, ValueForm::DeferredLetOfTypeWithNoZero);
             return false;
         };
         let slot = &mut scope.locals[local as usize];
@@ -42,7 +43,7 @@ impl Elaboration<'_, '_> {
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return false };
         let Some(place) = self.place_of(scope, lhs) else { return false };
         if self.place_type(scope, &place).is_none() {
-            self.unsupported(scope.file, node.span, "an assignment to a place whose type has no value in the IR");
+            self.refuse(scope.file, node.span, ValueForm::AssignmentToPlaceWhoseTypeHasNo);
             return false;
         }
         // `a &= b` on a library type is `a = a & b`: the call of the operator's `impl` function (Appendix H.10 rule 4)
@@ -74,17 +75,17 @@ impl Elaboration<'_, '_> {
     pub(super) fn assigned_local(&mut self, scope: &Scope, target: ExprId) -> Option<u32> {
         let node = self.design.expr_node(self.peel_parens(target)).clone();
         let ExprKind::Path(path) = &node.kind else {
-            self.unsupported(scope.file, node.span, "an assignment to a field or an element");
+            self.refuse(scope.file, node.span, ValueForm::AssignmentToFieldOrElement);
             return None;
         };
         let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
-            self.unsupported(scope.file, node.span, "an assignment to a name that is not a local");
+            self.refuse(scope.file, node.span, ValueForm::AssignmentToNameThatIsNotLocal);
             return None;
         };
         match scope.local_index.get(&decl) {
             Some(index) if scope.locals[*index as usize].mutable => Some(*index),
             _ => {
-                self.unsupported(scope.file, node.span, "an assignment to a local that is not mutable here");
+                self.refuse(scope.file, node.span, ValueForm::AssignmentToLocalThatIsNotMutable);
                 None
             }
         }
@@ -159,7 +160,7 @@ impl Elaboration<'_, '_> {
                 Some((scope.locals.len() as u32 - 1, None))
             }
             _ => {
-                self.unsupported(scope.file, node.span, "a `for` pattern that is not a name");
+                self.refuse(scope.file, node.span, ValueForm::ForPatternThatIsNotName);
                 None
             }
         }
@@ -168,7 +169,7 @@ impl Elaboration<'_, '_> {
     /// `break` or `break value`: leaves the innermost loop.
     pub(super) fn lower_break(&mut self, scope: &mut Scope, value: Option<ExprId>, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
         if scope.loops.is_empty() {
-            self.unsupported(scope.file, span, "a `break` outside a loop");
+            self.refuse(scope.file, span, ValueForm::BreakOutsideLoop);
             return None;
         }
         let value = match value {

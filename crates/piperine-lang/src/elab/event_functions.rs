@@ -20,6 +20,7 @@ use super::lower::Scope;
 use super::patterns::Subject;
 use super::symbolic::{ExpandedBody, Flow, Step};
 use super::unroll::Expansion;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::Span;
 use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, StmtId, StmtKind};
 use crate::types::{Callee, Substitution, Ty};
@@ -37,7 +38,7 @@ impl Elaboration<'_, '_> {
     /// parameters the call binds (§13 rule 7). `None` after a diagnostic.
     pub(super) fn event_function_disjuncts(&mut self, scope: &mut Scope, call: ExprId, function: DeclId) -> Option<Vec<Disjunct>> {
         let Some(slots) = self.types.binding(call).map(<[_]>::to_vec) else {
-            self.unsupported(scope.file, self.design.expr_node(call).span, "a call whose arguments the type checker did not bind, as an event");
+            self.refuse(scope.file, self.design.expr_node(call).span, AnalogForm::CallWhoseArgumentsTypeCheckerDidNot);
             return None;
         };
         // a function generic over a nature runs for the nature the call is instantiated at
@@ -63,7 +64,7 @@ impl Elaboration<'_, '_> {
         let receiver_type = self.typed(receiver)?;
         let target = if self.is_trait_function(named) {
             let Some(target) = self.bound_implementation(call, named, &receiver_type) else {
-                self.unsupported(scope.file, span, "a method that returns an `Event` that no impl gives for this type");
+                self.refuse(scope.file, span, AnalogForm::MethodThatReturnsEventThatNoImpl);
                 return None;
             };
             target
@@ -112,7 +113,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(function_data) = &data.kind else { return None };
         let Some(body) = function_data.body.as_ref() else {
-            self.unsupported(scope.file, data.span, "a function that returns an `Event` and has no body");
+            self.refuse(scope.file, data.span, AnalogForm::FunctionThatReturnsEventAndHasNo);
             return None;
         };
         slots.resize(data.children.iter().filter(|child| matches!(self.design.decl_data(**child).kind, DeclKind::FnParam(_))).count(), None);
@@ -135,7 +136,7 @@ impl Elaboration<'_, '_> {
     /// the body is its event (§13: the return value of a function). `None` after a diagnostic.
     fn run_event_body(&mut self, scope: &mut Scope, stmts: &[StmtId], at: Span) -> Option<Vec<Disjunct>> {
         if stmts.is_empty() {
-            self.unsupported(scope.file, at, "a function that returns an `Event` with an empty body");
+            self.refuse(scope.file, at, AnalogForm::FunctionThatReturnsEventWithEmptyBody);
             return None;
         }
         let mut steps = Vec::new();
@@ -162,7 +163,7 @@ impl Elaboration<'_, '_> {
                 return Some(disjuncts);
             }
         }
-        self.unsupported(scope.file, at, "a function that returns an `Event` that does not end in its event");
+        self.refuse(scope.file, at, AnalogForm::FunctionThatReturnsEventThatDoesNot);
         None
     }
 
@@ -176,7 +177,7 @@ impl Elaboration<'_, '_> {
                 Some(Flow::Next)
             }
             _ => {
-                self.unsupported(scope.file, node.span, "a statement that is no `let` of a name before the event of a function that returns an `Event`");
+                self.refuse(scope.file, node.span, AnalogForm::StatementThatIsNoLetOfNameBefore);
                 None
             }
         }
@@ -206,12 +207,12 @@ impl Elaboration<'_, '_> {
             ExprKind::If { cond, then, else_ } => self.run_event_if(scope, *cond, then, *else_, value, steps, at),
             ExprKind::Match { scrutinee, arms } if value => self.run_event_match(scope, *scrutinee, arms, steps, at),
             ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::Break(_) | ExprKind::Continue | ExprKind::Return(None) => {
-                self.unsupported(scope.file, node.span, "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`");
+                self.refuse(scope.file, node.span, AnalogForm::WhileLoopBreakContinueOrReturnWith);
                 None
             }
             _ if value => Some(Flow::Done(self.disjuncts(scope, expr)?)),
             _ => {
-                self.unsupported(scope.file, node.span, "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`");
+                self.refuse(scope.file, node.span, AnalogForm::StatementThatIsNoLetAssignmentIf);
                 None
             }
         }
@@ -223,7 +224,7 @@ impl Elaboration<'_, '_> {
     fn run_event_if(&mut self, scope: &mut Scope, cond: ExprId, then: &crate::pom::BlockNode, else_: Option<ExprId>, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow<Vec<Disjunct>>> {
         let span = self.design.expr_node(cond).span;
         if matches!(self.design.expr_node(cond).kind, ExprKind::Let { .. }) {
-            self.unsupported(scope.file, span, "an `if let` in a function that returns an `Event`");
+            self.refuse(scope.file, span, AnalogForm::IfLetInFunctionThatReturnsEvent);
             return None;
         }
         if let Some(holds) = self.folded_decision(scope, cond) {
@@ -284,11 +285,11 @@ impl Elaboration<'_, '_> {
         for arm in arms {
             let span = self.design.expr_node(arm.body).span;
             if arm.guard.is_some() {
-                self.unsupported(scope.file, span, "a `match` arm with a guard in a function that returns an `Event`");
+                self.refuse(scope.file, span, AnalogForm::MatchArmWithGuardInFunctionThat);
                 return None;
             }
             if !self.test_pattern(scope, &subject, arm.pat)?.bindings.is_empty() {
-                self.unsupported(scope.file, span, "a `match` arm whose pattern binds a name, in a function that returns an `Event`");
+                self.refuse(scope.file, span, AnalogForm::MatchArmWhosePatternBindsNameIn);
                 return None;
             }
         }

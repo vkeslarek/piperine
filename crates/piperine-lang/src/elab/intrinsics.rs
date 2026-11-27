@@ -8,6 +8,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::ExprId;
 use crate::types::{ConstTerm, GenericValue, Intrinsic, LogicPattern, Nominal, Ty};
 use piperine_ir::BinaryOp;
@@ -20,11 +21,11 @@ impl Elaboration<'_, '_> {
             (Intrinsic::MatchesBits, [subject, pattern]) => self.lower_matches_bits(scope, expr, *subject, *pattern, origin),
             (Intrinsic::TableModel, _) => self.lower_table_model(scope, expr, args, origin),
             (Intrinsic::ParseTable | Intrinsic::ParseHex, _) => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "`parse_table` or `parse_hex` outside a `const`: a run never reads a file (§20)");
+                self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::ParseTableOrParseHexOutsideConst);
                 None
             }
             _ => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a function of §22.1 called with the wrong number of arguments");
+                self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::FunctionOfCalledWithWrongNumberOf);
                 None
             }
         }
@@ -44,7 +45,7 @@ impl Elaboration<'_, '_> {
     fn call_pattern(&mut self, scope: &Scope, pattern: ExprId, levels: u32) -> Option<LogicPattern> {
         let span = self.design.expr_node(pattern).span;
         let Some(text) = self.text_of(scope, pattern) else {
-            self.unsupported(scope.file, span, "a pattern that is not a text known where it is read");
+            self.refuse(scope.file, span, AnalogForm::PatternThatIsNotTextKnownWhere);
             return None;
         };
         let parsed = match LogicPattern::parse(&text) {
@@ -67,7 +68,7 @@ impl Elaboration<'_, '_> {
     fn lower_logic_pattern(&mut self, scope: &mut Scope, expr: ExprId, pattern: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let ty = self.typed(expr)?;
         let (Some(levels), Some(stored)) = (self.logic_levels(&ty), self.value_type(&ty)) else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `logic` call whose type is not a `Logic<N>` of known width");
+            self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::LogicCallWhoseTypeIsNotLogic);
             return None;
         };
         let (binary, value) = self.call_pattern(scope, pattern, levels)?.planes();
@@ -81,7 +82,7 @@ impl Elaboration<'_, '_> {
     fn lower_matches_bits(&mut self, scope: &mut Scope, expr: ExprId, subject: ExprId, pattern: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let subject_type = self.typed(subject)?;
         let Some(levels) = self.logic_levels(&subject_type) else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `matches_bits` subject that is not a `Logic<N>` of known width");
+            self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::MatchesBitsSubjectThatIsNotLogic);
             return None;
         };
         let masks = self.call_pattern(scope, pattern, levels)?.masks();

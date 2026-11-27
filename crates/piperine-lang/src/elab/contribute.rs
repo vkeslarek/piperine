@@ -15,6 +15,7 @@ use super::elaborator::Elaboration;
 use super::derivatives::LeafRules;
 use super::lower::Scope;
 use super::selectors::ContributionRecord;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
 use crate::types::Callee;
@@ -69,11 +70,11 @@ impl Elaboration<'_, '_> {
     fn contribution_target(&mut self, scope: &Scope, lhs: ExprId) -> Option<(QuantityRole, Terminal, Terminal)> {
         let node = self.design.expr_node(lhs).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else {
-            self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
+            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let Some(role) = self.quantity_role(*callee) else {
-            self.unsupported(scope.file, node.span, "a contribution target that is not a probe");
+            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let role = match role {
@@ -88,7 +89,7 @@ impl Elaboration<'_, '_> {
             [plus] => Some((role, plus, Terminal::Ground)),
             [plus, minus] => Some((role, plus, minus)),
             _ => {
-                self.unsupported(scope.file, node.span, "a contribution to a probe of more than two nodes");
+                self.refuse(scope.file, node.span, AnalogForm::ContributionToProbeOfMoreThanTwo);
                 None
             }
         }

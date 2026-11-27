@@ -13,6 +13,7 @@ use piperine_ir::{DelaySite, Env, Expr, ExprId as LoweredExpr, Origin, ValueType
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::pom::ExprId;
 
@@ -34,7 +35,7 @@ impl Elaboration<'_, '_> {
         let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
         scope.adopt_standalone(&mut standalone);
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `delay` input");
+            self.refuse(scope.file, span, AnalogForm::ClosureOrOptionBindingInsideDelayInput);
             return None;
         }
         if maximum.is_none() && !self.constant_during_an_analysis(time) {

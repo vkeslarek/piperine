@@ -11,6 +11,7 @@ use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, DeclId, ExprId, FileId, ExprKind, Resolution};
 use crate::types::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
@@ -77,7 +78,7 @@ impl Elaboration<'_, '_> {
                 // §2 rule 3: a derived layout (`f64`, struct, enum, tuple, array) is its levels, read as `[bool; WIDTH]`;
                 // every level pattern is such an array, so the `Option` of the cast is always `Some` and its value is taken
                 let Some(levels) = result.filter(|result| matches!(result, Ty::Array(_, Length::Fixed(_)))) else {
-                    self.unsupported(scope.file, span, "`encode` on a value whose level count is not known where it is lowered");
+                    self.refuse(scope.file, span, AnalogForm::EncodeOnValueWhoseLevelCountIs);
                     return None;
                 };
                 self.level_cast_pair(value, &levels, span, scope.file, origin).map(|pair| pair.val)
@@ -90,7 +91,7 @@ impl Elaboration<'_, '_> {
     /// (§22.1.3). `None` after a diagnostic.
     pub(super) fn level_cast_pair(&mut self, operand: LoweredExpr, to: &Ty, span: crate::msl::Span, file: FileId, origin: Origin) -> Option<Pair> {
         let Some(target) = self.value_type(to) else {
-            self.unsupported(file, span, "a level cast to a type that has no value type in the IR");
+            self.refuse(file, span, AnalogForm::LevelCastToTypeThatHasNo);
             return None;
         };
         let tags = match to {

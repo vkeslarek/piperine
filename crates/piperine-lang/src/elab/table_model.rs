@@ -7,6 +7,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Extrapolation, Origin, 
 use super::consts::{Bindings, CompositeKind, ConstTree};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::pom::ExprId;
 
@@ -81,7 +82,7 @@ impl Elaboration<'_, '_> {
     /// `Expr::Table` over `x` and the samples. `None` after a diagnostic (`E0703`, `E0704`).
     pub(super) fn lower_table_model(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [x, table, control] = args else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `table_model` called with other than three arguments");
+            self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::TableModelCalledWithOtherThanThree);
             return None;
         };
         let (control_span, table_span) = (self.design.expr_node(*control).span, self.design.expr_node(*table).span);
@@ -131,7 +132,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if samples.is_none() {
-            self.unsupported(scope.file, span, "a `table_model` table that is not an array of `(f64, f64)` pairs known at elaboration");
+            self.refuse(scope.file, span, AnalogForm::TableModelTableThatIsNotArray);
         }
         samples
     }

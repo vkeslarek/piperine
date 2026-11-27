@@ -27,6 +27,7 @@ use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::lower::Scope;
 use super::reach::placement_params::PlacementSite;
+use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
 use crate::pom::{BehaviorKind, DeclId, DeclKind, ExprId, ExprKind, FieldInit, PatKind, PortArguments, StructClass};
 use crate::types::Callee;
@@ -331,7 +332,7 @@ impl Elaboration<'_, '_> {
         for (port, arg) in out_ports {
             let (carrier, window) = self.lower_carrier_argument(scope, &name, port, arg?)?;
             if window.is_some() {
-                self.unsupported(file, node.span, "a window of an array of carriers at the `out` port of a hoisted module");
+                self.refuse(file, node.span, StructureForm::WindowOfArrayOfCarriersAtOut);
                 return None;
             }
             frame.carriers.insert(port, carrier);
@@ -475,7 +476,7 @@ impl Elaboration<'_, '_> {
         let DeclKind::Module(m) = &data.kind else { return false };
         let refuse = |this: &mut Self, what: &str| {
             this.refused_modules.insert(module);
-            this.unsupported(file, span, &format!("a hoisted module that holds {what},"));
+            this.refuse_with(file, span, StructureForm::HoistedModuleThatHolds, [what.to_string()]);
             false
         };
         if m.instances.iter().any(|c| matches!(self.types.callee(*c), Some(Callee::Module(_))) && self.hoisted_callee(*c).is_none()) {

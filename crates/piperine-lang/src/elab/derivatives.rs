@@ -20,6 +20,7 @@ use piperine_ir::{Derivative, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
 /// What makes a `ddt` leaf of a contribution a whole addend: the contribution is unconditional,
@@ -131,7 +132,7 @@ impl Elaboration<'_, '_> {
         };
         scope.adopt_standalone(&mut standalone);
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `ddt` state");
+            self.refuse(scope.file, span, AnalogForm::ClosureOrOptionBindingInsideDdtState);
             return None;
         }
         let site = self.structure.derivatives.len() as u32;

@@ -63,6 +63,10 @@
   "family": "Value",
   "name": "EmitStatement"
  },
+ "`encode` on a value whose level count is not known where it is lowered": {
+  "family": "Analog",
+  "name": "EncodeOnValueWhoseLevelCountIs"
+ },
  "`enum` item": {
   "family": "Value",
   "name": "EnumItem"
@@ -111,6 +115,10 @@
   "family": "Value",
   "name": "IncludeStr"
  },
+ "`inflow()` of a port of a module that is placed in an expression": {
+  "family": "Value",
+  "name": "InflowOfPortOfModuleThatIs"
+ },
  "`is_empty` of a range with a missing bound": {
   "family": "Value",
   "name": "IsEmptyOfRangeWithMissingBound"
@@ -158,6 +166,10 @@
  "`on` reaction": {
   "family": "Value",
   "name": "OnReaction"
+ },
+ "`parse_table` or `parse_hex` outside a `const`: a run never reads a file (\u00a720)": {
+  "family": "Analog",
+  "name": "ParseTableOrParseHexOutsideConst"
  },
  "`return`": {
   "family": "Value",
@@ -227,6 +239,26 @@
   "family": "Digital",
   "name": "WithoutItsTypeArgument"
  },
+ "a `bool` initial value": {
+  "family": "Structure",
+  "name": "BoolInitialValue"
+ },
+ "a `bound_step` inside a closure or an `Option` method": {
+  "family": "Analog",
+  "name": "BoundStepInsideClosureOrOptionMethod"
+ },
+ "a `bound_step` under a condition whose step binds a local": {
+  "family": "Analog",
+  "name": "BoundStepUnderConditionWhoseStepBinds"
+ },
+ "a `break` outside a loop": {
+  "family": "Value",
+  "name": "BreakOutsideLoop"
+ },
+ "a `break`, `continue` or `return` outside the loop or function it leaves in {}": {
+  "family": "Value",
+  "name": "BreakContinueOrReturnOutsideLoopOr"
+ },
  "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`": {
   "family": "Analog",
   "name": "BreakContinueOrReturnWithNoValue"
@@ -234,6 +266,14 @@
  "a `break`, a `continue` or a nested `while` in a loop of {}": {
   "family": "Analog",
   "name": "BreakContinueOrNestedWhileInLoop"
+ },
+ "a `const` without a value in {}": {
+  "family": "Value",
+  "name": "ConstWithoutValueIn"
+ },
+ "a `ddx` whose derivative reads the value of the flow of a branch with no potential contribution": {
+  "family": "Analog",
+  "name": "DdxWhoseDerivativeReadsValueOfFlow"
  },
  "a `fn` called inside a `ddx` that forks into more than 4096 paths": {
   "family": "Analog",
@@ -251,6 +291,10 @@
   "family": "Value",
   "name": "ForOverAnythingButArrayRangeOr"
  },
+ "a `for` pattern that is not a name": {
+  "family": "Value",
+  "name": "ForPatternThatIsNotName"
+ },
  "a `for` that is not over a range with both bounds, in {}": {
   "family": "Analog",
   "name": "ForThatIsNotOverRangeWith"
@@ -263,9 +307,25 @@
   "family": "Analog",
   "name": "ForWhoseVariableIsNoNameIn"
  },
+ "a `let` declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps), read as an array": {
+  "family": "Structure",
+  "name": "LetDeclaredInGenerationIfThatNot"
+ },
  "a `let` in a param value": {
   "family": "Structure",
   "name": "LetInParamValue"
+ },
+ "a `let` in the argument of an event": {
+  "family": "Analog",
+  "name": "LetInArgumentOfEvent"
+ },
+ "a `let` in the discrete part of a guard": {
+  "family": "Analog",
+  "name": "LetInDiscretePartOfGuard"
+ },
+ "a `let` in the guard of a head split per disjunct": {
+  "family": "Analog",
+  "name": "LetInGuardOfHeadSplitPer"
  },
  "a `let` inside a definition": {
   "family": "Digital",
@@ -287,6 +347,34 @@
   "family": "Pattern",
   "name": "LetWithPatternAndNoValue"
  },
+ "a `let` written in generation read as no array": {
+  "family": "Structure",
+  "name": "LetWrittenInGenerationReadAsNo"
+ },
+ "a `logic` call whose type is not a `Logic<N>` of known width": {
+  "family": "Analog",
+  "name": "LogicCallWhoseTypeIsNotLogic"
+ },
+ "a `match` arm whose pattern binds a name, in a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "MatchArmWhosePatternBindsNameIn"
+ },
+ "a `match` arm with a guard in a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "MatchArmWithGuardInFunctionThat"
+ },
+ "a `match` whose last arm has a guard": {
+  "family": "Value",
+  "name": "MatchWhoseLastArmHasGuard"
+ },
+ "a `matches_bits` subject that is not a `Logic<N>` of known width": {
+  "family": "Analog",
+  "name": "MatchesBitsSubjectThatIsNotLogic"
+ },
+ "a `noise` name that is not a text literal": {
+  "family": "Analog",
+  "name": "NoiseNameThatIsNotTextLiteral"
+ },
  "a `return` outside a function that returns early": {
   "family": "Value",
   "name": "ReturnOutsideFunctionThatReturnsEarly"
@@ -299,13 +387,37 @@
   "family": "Value",
   "name": "RevOfIteratorThatWasFiltered"
  },
+ "a `simparam` name that is not a text literal": {
+  "family": "Value",
+  "name": "SimparamNameThatIsNotTextLiteral"
+ },
+ "a `str` that is not a text after expansion, inside a `ddx`": {
+  "family": "Structure",
+  "name": "StrThatIsNotTextAfterExpansion"
+ },
  "a `str` that is not a text after inlining": {
   "family": "Value",
   "name": "StrThatIsNotTextAfterInlining"
  },
+ "a `table_model` called with other than three arguments": {
+  "family": "Analog",
+  "name": "TableModelCalledWithOtherThanThree"
+ },
+ "a `table_model` table that is not an array of `(f64, f64)` pairs known at elaboration": {
+  "family": "Analog",
+  "name": "TableModelTableThatIsNotArray"
+ },
+ "a `where` that is not a `bool`": {
+  "family": "Value",
+  "name": "WhereThatIsNotBool"
+ },
  "a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading": {
   "family": "Analog",
   "name": "WhileOrLoopInFnCalledInside"
+ },
+ "a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "WhileLoopBreakContinueOrReturnWith"
  },
  "a `zip` of an iterator that was filtered": {
   "family": "Value",
@@ -318,6 +430,10 @@
  "a `{}` inside a tuple type": {
   "family": "Value",
   "name": "InsideTupleType"
+ },
+ "a `{}` inside an `Option` method": {
+  "family": "Analog",
+  "name": "InsideOptionMethod"
  },
  "a `{}` inside an array": {
   "family": "Value",
@@ -339,9 +455,21 @@
   "family": "Value",
   "name": "BuiltInNameUsedAsValue"
  },
+ "a call inside a `ddx` that expands to no expression": {
+  "family": "Analog",
+  "name": "CallInsideDdxThatExpandsToNo"
+ },
+ "a call of a function that emits inside a `ddx`": {
+  "family": "Structure",
+  "name": "CallOfFunctionThatEmitsInsideDdx"
+ },
  "a call of a function with no body (an `extern` function) that must be inlined": {
   "family": "Value",
   "name": "CallOfFunctionWithNoBodyExtern"
+ },
+ "a call of a function with no body inside a `ddx`": {
+  "family": "Structure",
+  "name": "CallOfFunctionWithNoBodyInside"
  },
  "a call of a struct or variant with named fields: write a struct expression `Name { .. }`": {
   "family": "Value",
@@ -363,6 +491,10 @@
   "family": "Value",
   "name": "CallOfGenericExternFunction"
  },
+ "a call that leaves out an argument, inside a `ddx`": {
+  "family": "Structure",
+  "name": "CallThatLeavesOutArgumentInsideDdx"
+ },
  "a call the type checker did not resolve": {
   "family": "Value",
   "name": "CallTypeCheckerDidNotResolve"
@@ -371,17 +503,53 @@
   "family": "Value",
   "name": "CallWhoseArgumentsTypeCheckerDidNot"
  },
+ "a call whose arguments the type checker did not bind, as an event": {
+  "family": "Analog",
+  "name": "CallWhoseArgumentsTypeCheckerDidNot"
+ },
+ "a call whose arguments the type checker did not bind, inside a `ddx`": {
+  "family": "Structure",
+  "name": "CallWhoseArgumentsTypeCheckerDidNot"
+ },
  "a callee whose function value has no function type once lowered": {
   "family": "Value",
   "name": "CalleeWhoseFunctionValueHasNoFunction"
+ },
+ "a carrier of a child read by its parent that the child's body could not place where the parent expects it": {
+  "family": "Value",
+  "name": "CarrierOfChildReadByItsParent"
  },
  "a carrier of the single-variant enum `{}` (its tag has zero levels)": {
   "family": "Digital",
   "name": "CarrierOfSingleVariantEnumItsTag"
  },
+ "a carrier whose value type has no value in the IR": {
+  "family": "Digital",
+  "name": "CarrierWhoseValueTypeHasNoValue"
+ },
+ "a choice of arrays of templates with no array in the arm it takes": {
+  "family": "Structure",
+  "name": "ChoiceOfArraysOfTemplatesWithNo"
+ },
  "a closure argument that is not a closure literal": {
   "family": "Value",
   "name": "ClosureArgumentThatIsNotClosureLiteral"
+ },
+ "a closure of more than one parameter": {
+  "family": "Value",
+  "name": "ClosureOfMoreThanOneParameter"
+ },
+ "a closure or an `Option` binding inside a `ddt` state": {
+  "family": "Analog",
+  "name": "ClosureOrOptionBindingInsideDdtState"
+ },
+ "a closure or an `Option` binding inside a `delay` input": {
+  "family": "Analog",
+  "name": "ClosureOrOptionBindingInsideDelayInput"
+ },
+ "a closure or an `Option` binding inside a `noise` density": {
+  "family": "Analog",
+  "name": "ClosureOrOptionBindingInsideNoiseDensity"
  },
  "a closure parameter that is not a name": {
   "family": "Value",
@@ -399,9 +567,45 @@
   "family": "Digital",
   "name": "CommitOrDefinitionOfWholeArrayOf"
  },
+ "a composite initial value": {
+  "family": "Structure",
+  "name": "CompositeInitialValue"
+ },
+ "a composite value of a type that has no value type": {
+  "family": "Structure",
+  "name": "CompositeValueOfTypeThatHasNo"
+ },
  "a compound assignment through an operator of a type, in {}": {
   "family": "Analog",
   "name": "CompoundAssignmentThroughOperatorOfTypeIn"
+ },
+ "a condition that is not a `bool`": {
+  "family": "Structure",
+  "name": "ConditionThatIsNotBool"
+ },
+ "a const argument that is not an integer or a `bool`": {
+  "family": "Structure",
+  "name": "ConstArgumentThatIsNotIntegerOr"
+ },
+ "a const argument that is still a parameter": {
+  "family": "Structure",
+  "name": "ConstArgumentThatIsStillParameter"
+ },
+ "a contribution target that is not a probe": {
+  "family": "Analog",
+  "name": "ContributionTargetThatIsNotProbe"
+ },
+ "a contribution to a probe of more than two nodes": {
+  "family": "Analog",
+  "name": "ContributionToProbeOfMoreThanTwo"
+ },
+ "a deferred `let` of a type with no zero in the IR": {
+  "family": "Value",
+  "name": "DeferredLetOfTypeWithNoZero"
+ },
+ "a deferred `let` whose pattern is not a name": {
+  "family": "Value",
+  "name": "DeferredLetWhosePatternIsNotName"
  },
  "a delayed definition of an element of an array of carriers": {
   "family": "Digital",
@@ -423,6 +627,14 @@
   "family": "Value",
   "name": "FieldAccessThatIsNotItemOf"
  },
+ "a field of a bundle that is no carrier of this module": {
+  "family": "Digital",
+  "name": "FieldOfBundleThatIsNoCarrier"
+ },
+ "a field of a bundle that is no node of this module": {
+  "family": "Digital",
+  "name": "FieldOfBundleThatIsNoNode"
+ },
  "a field of a child of a child": {
   "family": "Value",
   "name": "FieldOfChildOfChild"
@@ -439,6 +651,14 @@
   "family": "Value",
   "name": "FieldOfElementOfArrayOfBundles"
  },
+ "a field of an element of an array of bundles that is no carrier, read as a value": {
+  "family": "Digital",
+  "name": "FieldOfElementOfArrayOfBundles"
+ },
+ "a field of an element of an array of bundles that is no node": {
+  "family": "Analog",
+  "name": "FieldOfElementOfArrayOfBundles"
+ },
  "a field of something that is not a name bound to a placement": {
   "family": "Value",
   "name": "FieldOfSomethingThatIsNotName"
@@ -446,6 +666,14 @@
  "a field of type `{}` in a value type": {
   "family": "Value",
   "name": "FieldOfTypeInValueType"
+ },
+ "a flow probe of a branch without a potential contribution": {
+  "family": "Analog",
+  "name": "FlowProbeOfBranchWithoutPotentialContribution"
+ },
+ "a function of \u00a722.1 called with the wrong number of arguments": {
+  "family": "Analog",
+  "name": "FunctionOfCalledWithWrongNumberOf"
  },
  "a function returning an `Option` whose payload has no value in the IR": {
   "family": "Value",
@@ -455,6 +683,18 @@
   "family": "Value",
   "name": "FunctionReturningOptionWithNoTailValue"
  },
+ "a function that returns an `Event` and has no body": {
+  "family": "Analog",
+  "name": "FunctionThatReturnsEventAndHasNo"
+ },
+ "a function that returns an `Event` that does not end in its event": {
+  "family": "Analog",
+  "name": "FunctionThatReturnsEventThatDoesNot"
+ },
+ "a function that returns an `Event` with an empty body": {
+  "family": "Analog",
+  "name": "FunctionThatReturnsEventWithEmptyBody"
+ },
  "a function with an `Option` parameter or result used as a value": {
   "family": "Value",
   "name": "FunctionWithOptionParameterOrResultUsed"
@@ -463,13 +703,49 @@
   "family": "Value",
   "name": "LoweredFunctionWithoutBody"
  },
+ "a generated node outside the generation that declares it, without an index": {
+  "family": "Analog",
+  "name": "GeneratedNodeOutsideGenerationThatDeclaresIt"
+ },
+ "a generation `for` over anything but a range with both bounds": {
+  "family": "Structure",
+  "name": "GenerationForOverAnythingButRangeWith"
+ },
+ "a generation `for` whose variable is not a name": {
+  "family": "Structure",
+  "name": "GenerationForWhoseVariableIsNotName"
+ },
+ "a generation condition that is not a `bool`": {
+  "family": "Structure",
+  "name": "GenerationConditionThatIsNotBool"
+ },
+ "a generic argument that is still a parameter": {
+  "family": "Structure",
+  "name": "GenericArgumentThatIsStillParameter"
+ },
  "a generic parameter read as a value": {
   "family": "Value",
   "name": "GenericParameterReadAsValue"
  },
+ "a guarded `ac_stim` whose input binds a local": {
+  "family": "Analog",
+  "name": "GuardedAcStimWhoseInputBindsLocal"
+ },
+ "a guarded `limit` whose input binds a local": {
+  "family": "Analog",
+  "name": "GuardedLimitWhoseInputBindsLocal"
+ },
+ "a hoisted module that holds {},": {
+  "family": "Structure",
+  "name": "HoistedModuleThatHolds"
+ },
  "a length or a bound that is not an integer constant": {
   "family": "Value",
   "name": "LengthOrBoundThatIsNotInteger"
+ },
+ "a level cast to a type that has no value type in the IR": {
+  "family": "Analog",
+  "name": "LevelCastToTypeThatHasNo"
  },
  "a method call": {
   "family": "Value",
@@ -491,6 +767,10 @@
   "family": "Value",
   "name": "MethodOutsideCatalogue"
  },
+ "a method that returns an `Event` that no impl gives for this type": {
+  "family": "Analog",
+  "name": "MethodThatReturnsEventThatNoImpl"
+ },
  "a name bound by a pattern in a definition": {
   "family": "Pattern",
   "name": "NameBoundByPatternInDefinition"
@@ -498,6 +778,10 @@
  "a name of a child that is not one of its nodes, as a node": {
   "family": "Value",
   "name": "NameOfChildThatIsNotOne"
+ },
+ "a name that is not a node of this module": {
+  "family": "Analog",
+  "name": "NameThatIsNotNodeOfThis"
  },
  "a name whose type is not a value type": {
   "family": "Value",
@@ -515,6 +799,14 @@
   "family": "Value",
   "name": "NamedArgumentOfConstructor"
  },
+ "a node argument that is not a name": {
+  "family": "Analog",
+  "name": "NodeArgumentThatIsNotName"
+ },
+ "a node argument that is not a node": {
+  "family": "Analog",
+  "name": "NodeArgumentThatIsNotNode"
+ },
  "a node declared in generation of a module a parent reads through": {
   "family": "Value",
   "name": "NodeDeclaredInGenerationOfModuleParent"
@@ -522,6 +814,10 @@
  "a node of a child read as a value": {
   "family": "Value",
   "name": "NodeOfChildReadAsValue"
+ },
+ "a node of a child read by its parent that the child's body could not place where the parent expects it": {
+  "family": "Value",
+  "name": "NodeOfChildReadByItsParent"
  },
  "a node or a port read as a value": {
   "family": "Value",
@@ -531,9 +827,17 @@
   "family": "Value",
   "name": "ParamOfChildThatNoPlacementValue"
  },
+ "a param of a type that has no value in the IR": {
+  "family": "Structure",
+  "name": "ParamOfTypeThatHasNoValue"
+ },
  "a param of another module": {
   "family": "Value",
   "name": "ParamOfAnotherModule"
+ },
+ "a part of a nested array of carriers as a value: name an element": {
+  "family": "Digital",
+  "name": "PartOfNestedArrayOfCarriersAs"
  },
  "a part of an array of generated instances as the receiver of a field: name an instance": {
   "family": "Value",
@@ -547,6 +851,10 @@
   "family": "Value",
   "name": "PatternOtherThanNameOrTupleOf"
  },
+ "a pattern that is not a text known where it is read": {
+  "family": "Analog",
+  "name": "PatternThatIsNotTextKnownWhere"
+ },
  "a pattern with fields over a value that is not a struct, a tuple or an enum": {
   "family": "Pattern",
   "name": "PatternWithFieldsOverValueThatIs"
@@ -554,6 +862,10 @@
  "a pattern with fields that names no variant": {
   "family": "Value",
   "name": "PatternWithFieldsThatNamesNoVariant"
+ },
+ "a placement of a generic module whose arguments the checker did not record": {
+  "family": "Generics",
+  "name": "PlacementOfGenericModuleWhoseArgumentsChecker"
  },
  "a placement that sets `{}`": {
   "family": "Structure",
@@ -567,6 +879,10 @@
   "family": "Value",
   "name": "PlacementUsedAsValue"
  },
+ "a probe of more than two nodes": {
+  "family": "Analog",
+  "name": "ProbeOfMoreThanTwoNodes"
+ },
  "a range of anything but integers": {
   "family": "Value",
   "name": "RangeOfAnythingButIntegers"
@@ -574,6 +890,10 @@
  "a range that is not written where it is used or bound by a `let`": {
   "family": "Value",
   "name": "RangeThatIsNotWrittenWhereIt"
+ },
+ "a receiver that is not a carrier of this module": {
+  "family": "Analog",
+  "name": "ReceiverThatIsNotCarrierOfThis"
  },
  "a recursion reached from `analog` whose function returns early or returns an `Option`": {
   "family": "Structure",
@@ -591,9 +911,17 @@
   "family": "Value",
   "name": "ResolvedCarrierWhoseDriveTypeHasNo"
  },
+ "a statement that is no `let` of a name before the event of a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "StatementThatIsNoLetOfNameBefore"
+ },
  "a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`": {
   "family": "Analog",
   "name": "StatementThatIsNoLetOfName"
+ },
+ "a statement that is no `let`, assignment, `if`, `match` or `for` before the event of a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "StatementThatIsNoLetAssignmentIf"
  },
  "a string literal bound by a `let`": {
   "family": "Structure",
@@ -606,6 +934,18 @@
  "a target that is not a carrier of this module": {
   "family": "Digital",
   "name": "TargetThatIsNotCarrierOfThis"
+ },
+ "a tuple `let` component that is not a name": {
+  "family": "Value",
+  "name": "TupleLetComponentThatIsNotName"
+ },
+ "a tuple `let` of another number of components": {
+  "family": "Value",
+  "name": "TupleLetOfAnotherNumberOfComponents"
+ },
+ "a tuple `let` whose value is not a tuple expression": {
+  "family": "Value",
+  "name": "TupleLetWhoseValueIsNotTuple"
  },
  "a tuple pattern over a value that is not a tuple": {
   "family": "Value",
@@ -631,6 +971,10 @@
   "family": "Value",
   "name": "VariantOutsideItsEnum"
  },
+ "a window of an array of carriers at the `out` port of a hoisted module": {
+  "family": "Structure",
+  "name": "WindowOfArrayOfCarriersAtOut"
+ },
  "a {} of a whole array of carriers or of a part of one: name an element": {
   "family": "Value",
   "name": "OfWholeArrayOfCarriersOrOf"
@@ -639,9 +983,21 @@
   "family": "Value",
   "name": "OptionParameterWhosePayloadHasNoValue"
  },
+ "an `Option` parameter whose payload has no zero in the IR": {
+  "family": "Value",
+  "name": "OptionParameterWhosePayloadHasNoZero"
+ },
  "an `Option` record field whose payload has no value in the IR": {
   "family": "Value",
   "name": "OptionRecordFieldWhosePayloadHasNo"
+ },
+ "an `Option` whose payload has no value in the IR": {
+  "family": "Value",
+  "name": "OptionWhosePayloadHasNoValueIn"
+ },
+ "an `Option` whose payload has no zero in the IR": {
+  "family": "Value",
+  "name": "OptionWhosePayloadHasNoZeroIn"
  },
  "an `else` that is no block or `if` in {}": {
   "family": "Analog",
@@ -651,6 +1007,10 @@
   "family": "Analog",
   "name": "IfLetInFnCalledInsideDdx"
  },
+ "an `if let` in a function that returns an `Event`": {
+  "family": "Analog",
+  "name": "IfLetInFunctionThatReturnsEvent"
+ },
  "an `if let` of `Option` values whose block is more than its value": {
   "family": "Pattern",
   "name": "IfLetOfOptionValuesWhoseBlock"
@@ -658,6 +1018,10 @@
  "an analog loop whose variable is not a name": {
   "family": "Structure",
   "name": "AnalogLoopWhoseVariableIsNotName"
+ },
+ "an argument at an array port of nodes that is no array of nodes": {
+  "family": "Digital",
+  "name": "ArgumentAtArrayPortOfNodesThat"
  },
  "an array of `{}`": {
   "family": "Value",
@@ -671,6 +1035,30 @@
   "family": "Value",
   "name": "ArrayOfCarriersAsFunctionParameter"
  },
+ "an array of nodes, or a part of a nested one, as a node argument: name an element": {
+  "family": "Digital",
+  "name": "ArrayOfNodesOrPartOfNested"
+ },
+ "an array of resolved carriers": {
+  "family": "Digital",
+  "name": "ArrayOfResolvedCarriers"
+ },
+ "an array of templates inside an array of templates": {
+  "family": "Structure",
+  "name": "ArrayOfTemplatesInsideArrayOfTemplates"
+ },
+ "an array of templates that is not an array": {
+  "family": "Structure",
+  "name": "ArrayOfTemplatesThatIsNotArray"
+ },
+ "an array of templates that is not written out, held by a `let`, a `const` or a `param`": {
+  "family": "Structure",
+  "name": "ArrayOfTemplatesThatIsNotWritten"
+ },
+ "an array of {} whose length is not a constant yet": {
+  "family": "Digital",
+  "name": "ArrayOfWhoseLengthIsNotConstant"
+ },
  "an array that is not an array value": {
   "family": "Value",
   "name": "ArrayThatIsNotArrayValue"
@@ -679,9 +1067,25 @@
   "family": "Value",
   "name": "AssignmentToFieldOfTypeThatHas"
  },
+ "an assignment to a field or an element": {
+  "family": "Value",
+  "name": "AssignmentToFieldOrElement"
+ },
  "an assignment to a local of type `Option`": {
   "family": "Pattern",
   "name": "AssignmentToLocalOfTypeOption"
+ },
+ "an assignment to a local that is not mutable here": {
+  "family": "Value",
+  "name": "AssignmentToLocalThatIsNotMutable"
+ },
+ "an assignment to a name that is not a local": {
+  "family": "Value",
+  "name": "AssignmentToNameThatIsNotLocal"
+ },
+ "an assignment to a place whose type has no value in the IR": {
+  "family": "Value",
+  "name": "AssignmentToPlaceWhoseTypeHasNo"
  },
  "an assignment to a range index": {
   "family": "Value",
@@ -695,9 +1099,17 @@
   "family": "Digital",
   "name": "ElementOfValueThatIsNoArray"
  },
+ "an element of an array whose length is not a constant yet": {
+  "family": "Digital",
+  "name": "ElementOfArrayWhoseLengthIsNot"
+ },
  "an enum of one variant, whose tag has no level,": {
   "family": "Value",
   "name": "EnumOfOneVariantWhoseTagHas"
+ },
+ "an event that is not an event read": {
+  "family": "Analog",
+  "name": "EventThatIsNotEventRead"
  },
  "an expression at an `out` carrier port": {
   "family": "Structure",
@@ -711,9 +1123,45 @@
   "family": "Value",
   "name": "ExpressionTypeCheckerGaveNoValueType"
  },
+ "an index of a value that is no array of nodes": {
+  "family": "Analog",
+  "name": "IndexOfValueThatIsNoArray"
+ },
  "an index of a value that is not an array": {
   "family": "Value",
   "name": "IndexOfValueThatIsNotArray"
+ },
+ "an index of an array of carriers past its levels": {
+  "family": "Digital",
+  "name": "IndexOfArrayOfCarriersPastIts"
+ },
+ "an index of an array of nodes past its levels": {
+  "family": "Digital",
+  "name": "IndexOfArrayOfNodesPastIts"
+ },
+ "an index that is not an integer": {
+  "family": "Structure",
+  "name": "IndexThatIsNotInteger"
+ },
+ "an initial value of a nested array of carriers other than `[x; K]`": {
+  "family": "Digital",
+  "name": "InitialValueOfNestedArrayOfCarriers"
+ },
+ "an initial value of an array of nodes other than `[x; K]` or `[a, b, c]`": {
+  "family": "Digital",
+  "name": "InitialValueOfArrayOfNodesOther"
+ },
+ "an initial value of an array of nodes that is not an `f64`": {
+  "family": "Digital",
+  "name": "InitialValueOfArrayOfNodesThat"
+ },
+ "an integer or number-width initial value": {
+  "family": "Structure",
+  "name": "IntegerOrNumberWidthInitialValue"
+ },
+ "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)": {
+  "family": "Structure",
+  "name": "ItemDeclaredInGenerationIfThatNot"
  },
  "an item of a child placed in generation, read without naming its iteration: index every loop": {
   "family": "Value",
@@ -734,6 +1182,10 @@
  "an iterator that is not a chain written where it is used or bound by a `let`": {
   "family": "Value",
   "name": "IteratorThatIsNotChainWrittenWhere"
+ },
+ "an operator other than a comparison on `Option`s": {
+  "family": "Generics",
+  "name": "OperatorOtherThanComparisonOnOptions"
  },
  "an unresolved name": {
   "family": "Value",
@@ -814,6 +1266,10 @@
  "contribution outside an `analog` block": {
   "family": "Analog",
   "name": "ContributionOutsideAnalogBlock"
+ },
+ "core primitive `{}`": {
+  "family": "Analog",
+  "name": "CorePrimitive"
  },
  "definition `=`": {
   "family": "Value",
@@ -946,6 +1402,10 @@
  "module-body `let`": {
   "family": "Value",
   "name": "ModuleBodyLet"
+ },
+ "nature `{}` without a potential": {
+  "family": "Analog",
+  "name": "NatureWithoutPotential"
  },
  "nature quantity": {
   "family": "Value",
@@ -1107,9 +1567,25 @@
   "family": "Value",
   "name": "TopModuleItsElaborationFailedWithoutDiagnostic"
  },
+ "this call as an event": {
+  "family": "Analog",
+  "name": "CallAsEvent"
+ },
  "this expression": {
   "family": "Value",
   "name": "ThisExpression"
+ },
+ "this form of an `Option` value": {
+  "family": "Value",
+  "name": "FormOfOptionValue"
+ },
+ "this form of an event": {
+  "family": "Analog",
+  "name": "FormOfEvent"
+ },
+ "this method as an event": {
+  "family": "Analog",
+  "name": "MethodAsEvent"
  },
  "this name as a pattern": {
   "family": "Pattern",
@@ -1118,6 +1594,10 @@
  "this name as a value": {
   "family": "Value",
   "name": "NameAsValue"
+ },
+ "this name as an event": {
+  "family": "Analog",
+  "name": "NameAsEvent"
  },
  "this pattern": {
   "family": "Pattern",
@@ -1179,6 +1659,10 @@
   "family": "Pattern",
   "name": "WildcardPattern"
  },
+ "{}": {
+  "family": "Analog",
+  "name": "FormWithNoDerivativeRule"
+ },
  "{} `{}`": {
   "family": "Analog",
   "name": "Refused"
@@ -1194,6 +1678,14 @@
  "{} inside a module": {
   "family": "Value",
   "name": "InsideModule"
+ },
+ "{} that is not a constant or a param": {
+  "family": "Analog",
+  "name": "ThatIsNotConstantOrParam"
+ },
+ "{} that reads a param": {
+  "family": "Value",
+  "name": "ThatReadsParam"
  },
  "{} under a `match` arm with a guard": {
   "family": "Value",

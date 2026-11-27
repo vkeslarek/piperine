@@ -10,6 +10,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Origin, ValueType};
 use super::carrier_arrays::ArrayShape;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::DigitalForm;
 use crate::msl::Diagnostic;
 use crate::pom::{ExprId, ExprKind, Resolution};
 
@@ -115,11 +116,11 @@ impl Elaboration<'_, '_> {
         }
         let Some(carrier) = self.frame_carrier(scope.frame, decl) else { return Lookup::No };
         let Some(shape) = self.shape_in(&array, scope.frame) else {
-            self.unsupported(scope.file, span, "an element of an array whose length is not a constant yet");
+            self.refuse(scope.file, span, DigitalForm::ElementOfArrayWhoseLengthIsNot);
             return Lookup::Failed;
         };
         if generated.len() + indexes.len() != shape.dims.len() {
-            self.unsupported(scope.file, span, "a part of a nested array of carriers as a value: name an element");
+            self.refuse(scope.file, span, DigitalForm::PartOfNestedArrayOfCarriersAs);
             return Lookup::Failed;
         }
         match self.flat_element(scope, carrier, &shape, (&generated, &indexes), span) {
@@ -387,7 +388,7 @@ impl Elaboration<'_, '_> {
             flat = flat * length + ordinal;
         }
         if indexes.len() + implicit.len() > shape.dims.len() {
-            self.unsupported(scope.file, span, "an index of an array of nodes past its levels");
+            self.refuse(scope.file, span, DigitalForm::IndexOfArrayOfNodesPastIts);
             return None;
         }
         for (index, length) in indexes.iter().zip(&shape.dims[implicit.len()..]) {
@@ -421,7 +422,7 @@ impl Elaboration<'_, '_> {
         match self.node_run(scope, arg)? {
             Some((first, _, true)) => Some(Some(piperine_ir::Terminal::Node(first))),
             Some(_) => {
-                self.unsupported(scope.file, self.design.expr_node(arg).span, "an array of nodes, or a part of a nested one, as a node argument: name an element");
+                self.refuse(scope.file, self.design.expr_node(arg).span, DigitalForm::ArrayOfNodesOrPartOfNested);
                 None
             }
             None => Some(None),
@@ -434,7 +435,7 @@ impl Elaboration<'_, '_> {
         match self.node_run(scope, arg)? {
             Some((first, length, false)) => Some((0..length as u32).map(|k| piperine_ir::Terminal::Node(first + k)).collect()),
             _ => {
-                self.unsupported(scope.file, self.design.expr_node(arg).span, "an argument at an array port of nodes that is no array of nodes");
+                self.refuse(scope.file, self.design.expr_node(arg).span, DigitalForm::ArgumentAtArrayPortOfNodesThat);
                 None
             }
         }
@@ -478,7 +479,7 @@ impl Elaboration<'_, '_> {
         let generated = self.generated_carrier_levels(scope, at);
         let levels = generated.len() + indexes.len();
         if levels > shape.dims.len() {
-            self.unsupported(scope.file, span, "an index of an array of carriers past its levels");
+            self.refuse(scope.file, span, DigitalForm::IndexOfArrayOfCarriersPastIts);
             return Some(None);
         }
         if levels == 0 {

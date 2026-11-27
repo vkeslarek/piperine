@@ -12,6 +12,7 @@ use piperine_ir::{Env, Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionPa
 use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::ValueForm;
 use crate::pom::ExprId;
 
 impl Elaboration<'_, '_> {
@@ -20,7 +21,7 @@ impl Elaboration<'_, '_> {
         let [name] = args else { return None };
         let span = self.design.expr_node(*name).span;
         let Some(text) = self.text_of(scope, *name) else {
-            self.unsupported(scope.file, span, "a `simparam` name that is not a text literal");
+            self.refuse(scope.file, span, ValueForm::SimparamNameThatIsNotTextLiteral);
             return None;
         };
         let parameter = match self.structure.session_parameters.iter().position(|p| p.name == text) {

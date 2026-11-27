@@ -14,6 +14,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, NoiseSource, Origin, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {
@@ -31,7 +32,7 @@ impl Elaboration<'_, '_> {
         let density = self.lower_expr(&mut standalone, *density)?;
         scope.adopt_standalone(&mut standalone);
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, "a closure or an `Option` binding inside a `noise` density");
+            self.refuse(scope.file, span, AnalogForm::ClosureOrOptionBindingInsideNoiseDensity);
             return None;
         }
         let group = self.noise_group(scope, rest.first().copied())?;
@@ -64,7 +65,7 @@ impl Elaboration<'_, '_> {
         match self.text_of(scope, arg) {
             Some(text) => Some(Some(text)),
             None => {
-                self.unsupported(scope.file, node.span, "a `noise` name that is not a text literal");
+                self.refuse(scope.file, node.span, AnalogForm::NoiseNameThatIsNotTextLiteral);
                 None
             }
         }

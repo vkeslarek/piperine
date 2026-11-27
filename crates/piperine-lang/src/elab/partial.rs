@@ -14,6 +14,7 @@ use piperine_ir::{BodyId, Differentiation, Expr, ExprId as LoweredExpr, Origin, 
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, QuantityRole};
 
 impl Elaboration<'_, '_> {
@@ -30,20 +31,20 @@ impl Elaboration<'_, '_> {
         let expr = self.lower_expr(&mut standalone, *value)?;
         scope.adopt_standalone(&mut standalone);
         if self.reads_a_function(expr) {
-            self.unsupported(scope.file, span, "a call inside a `ddx` that expands to no expression");
+            self.refuse(scope.file, span, AnalogForm::CallInsideDdxThatExpandsToNo);
             return None;
         }
         // the body of the derivative is the one being lowered: it has no id yet and the pass reads none of it
         let derivative = match Differentiation::new(&mut self.ir, BodyId(0), unknown).of(expr) {
             Ok(derivative) => derivative,
             Err(refused) => {
-                self.unsupported(scope.file, span, refused.form);
+                self.refuse_with(scope.file, span, AnalogForm::FormWithNoDerivativeRule, [refused.form.to_string()]);
                 return None;
             }
         };
         self.adopt_built_expressions();
         if self.reads_a_flow_leaf(derivative, &scope.flow_leaves.clone()) {
-            self.unsupported(scope.file, span, "a `ddx` whose derivative reads the value of the flow of a branch with no potential contribution");
+            self.refuse(scope.file, span, AnalogForm::DdxWhoseDerivativeReadsValueOfFlow);
             return None;
         }
         let derivative = if reversed { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: derivative }, ValueType::F64, origin.clone()) } else { derivative };
@@ -68,7 +69,7 @@ impl Elaboration<'_, '_> {
             [plus] => (plus, Terminal::Ground),
             [plus, minus] => (plus, minus),
             _ => {
-                self.unsupported(scope.file, node.span, "a probe of more than two nodes");
+                self.refuse(scope.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
                 return None;
             }
         };

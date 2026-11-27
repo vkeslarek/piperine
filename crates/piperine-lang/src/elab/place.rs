@@ -16,6 +16,7 @@ use super::instances::Instance;
 use super::structural::BodyKey;
 use super::host_sources::{HostPort, HostSources};
 use super::resolvers::{DeclaredNet, ResolvedUse};
+use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 use piperine_ir::NodeRole;
@@ -344,7 +345,7 @@ impl Elaboration<'_, '_> {
                     ok = false;
                 }
                 Ok(Constant::Real(_) | Constant::Int(_) | Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
-                    self.unsupported(placing.file, at, "a `where` that is not a `bool`");
+                    self.refuse(placing.file, at, ValueForm::WhereThatIsNotBool);
                     ok = false;
                 }
                 Err(fault) => {

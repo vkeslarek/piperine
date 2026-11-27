@@ -11,6 +11,7 @@ use piperine_ir::{AggregateData, Constant, NodeArray, ValueType};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, ExprId, ExprKind};
 use crate::types::{Length, Ty};
 
@@ -94,7 +95,7 @@ impl Elaboration<'_, '_> {
                 let message = format!("the length of an array of {what} is {length}: a length is known and not negative (§1.2.3)");
                 self.report(file, crate::msl::Diagnostic::new("E0104", message, span, "negative length"));
             }
-            LengthFault::NotConstant => self.unsupported(file, span, &format!("an array of {what} whose length is not a constant yet")),
+            LengthFault::NotConstant => self.refuse_with(file, span, DigitalForm::ArrayOfWhoseLengthIsNotConstant, [what.to_string()]),
         }
         None
     }
@@ -157,7 +158,7 @@ impl Elaboration<'_, '_> {
         match self.stored_type(value) {
             Some(element) => Some((shape, element)),
             None => {
-                self.unsupported(file, span, "a carrier whose value type has no value in the IR");
+                self.refuse(file, span, DigitalForm::CarrierWhoseValueTypeHasNoValue);
                 None
             }
         }
@@ -178,7 +179,7 @@ impl Elaboration<'_, '_> {
             return Some(self.ir_constant(value, element));
         }
         if shape.dims.len() > 1 {
-            self.unsupported(file, node.span, "an initial value of a nested array of carriers other than `[x; K]`");
+            self.refuse(file, node.span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
             return None;
         }
         let value = self.carrier_init(init, frame)?;
@@ -218,7 +219,7 @@ impl Elaboration<'_, '_> {
         }
         if inner.dims.len() > 1 {
             let span = self.design.expr_node(init).span;
-            self.unsupported(self.design.decl_data(decl).file, span, "an initial value of a nested array of carriers other than `[x; K]`");
+            self.refuse(self.design.decl_data(decl).file, span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
             return None;
         }
         match self.carrier_init_over(init, bindings)? {
@@ -267,7 +268,7 @@ impl Elaboration<'_, '_> {
         let real = |this: &mut Self, expr: ExprId| match this.consts.value(expr, &bindings) {
             Ok(Constant::Real(value)) => Some(value),
             Ok(_) => {
-                this.unsupported(file, this.design.expr_node(expr).span, "an initial value of an array of nodes that is not an `f64`");
+                this.refuse(file, this.design.expr_node(expr).span, DigitalForm::InitialValueOfArrayOfNodesThat);
                 None
             }
             Err(fault) => {
@@ -282,7 +283,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Array(items) if items.len() == count => items.iter().map(|item| real(self, *item).map(Some)).collect(),
             _ => {
-                self.unsupported(file, self.design.expr_node(init).span, "an initial value of an array of nodes other than `[x; K]` or `[a, b, c]`");
+                self.refuse(file, self.design.expr_node(init).span, DigitalForm::InitialValueOfArrayOfNodesOther);
                 None
             }
         }

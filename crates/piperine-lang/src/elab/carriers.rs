@@ -14,6 +14,7 @@ use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildVa
 use super::body::NodePlan;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use crate::refusal::forms::{DigitalForm, ValueForm};
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::{Length, Nominal, Ty};
 
@@ -221,7 +222,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if carried.is_none() {
-            self.unsupported(file, span, "a carrier whose value type has no value in the IR");
+            self.refuse(file, span, DigitalForm::CarrierWhoseValueTypeHasNoValue);
         }
         carried
     }
@@ -240,7 +241,7 @@ impl Elaboration<'_, '_> {
         let resolved = match self.consts.typed_carrier(decl).as_ref() {
             Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
             Some(array) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { nature, .. } if self.design.is_resolved_nature(*nature)) => {
-                self.unsupported(data.file, data.span, "an array of resolved carriers");
+                self.refuse(data.file, data.span, DigitalForm::ArrayOfResolvedCarriers);
                 return None;
             }
             _ => None,
@@ -298,7 +299,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl).clone();
         let (chosen, picked) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
-            self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
+            self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };
         let ty = self.carried_type(decl)?;

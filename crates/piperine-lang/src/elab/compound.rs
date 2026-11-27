@@ -24,6 +24,7 @@ use super::elements::Lookup;
 use super::patterns::Subject;
 use super::selectors::ArmCondition;
 use super::lower::Scope;
+use crate::refusal::forms::{PatternForm, ValueForm};
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
 use crate::types::{Method, Ty};
 
@@ -172,7 +173,7 @@ impl Elaboration<'_, '_> {
             };
             if last && arm.guard.is_some() {
                 let span = self.design.expr_node(arm.body).span;
-                self.unsupported(scope.file, span, "a `match` whose last arm has a guard");
+                self.refuse(scope.file, span, ValueForm::MatchWhoseLastArmHasGuard);
                 ok = false;
                 continue;
             }
@@ -271,12 +272,12 @@ impl Elaboration<'_, '_> {
         }
         let origin = self.expr_origin(at);
         let Some(payload) = self.value_type(payload) else {
-            self.unsupported(scope.file, self.design.expr_node(at).span, "an `Option` parameter whose payload has no value in the IR");
+            self.refuse(scope.file, self.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
             return None;
         };
         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
         let Some(val) = self.zero(&payload, origin) else {
-            self.unsupported(scope.file, self.design.expr_node(at).span, "an `Option` parameter whose payload has no zero in the IR");
+            self.refuse(scope.file, self.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoZero);
             return None;
         };
         Some([is, val])
@@ -302,8 +303,8 @@ impl Elaboration<'_, '_> {
         let node = self.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         let (file, span) = (scope.file, node.span);
-        let unsupported = |this: &mut Self| {
-            this.unsupported(file, span, "this form of an `Option` value");
+        let refused = |this: &mut Self| {
+            this.refuse(file, span, ValueForm::FormOfOptionValue);
             None
         };
         if self.types.implicit_some(expr) {
@@ -312,7 +313,7 @@ impl Elaboration<'_, '_> {
             return Some(Pair { is, val, literal: Some(true) });
         }
         let Some(payload) = self.payload_type(expr) else {
-            self.unsupported(scope.file, node.span, "an `Option` whose payload has no value in the IR");
+            self.refuse(scope.file, node.span, ValueForm::OptionWhosePayloadHasNoValueIn);
             return None;
         };
         match &node.kind {
@@ -342,7 +343,7 @@ impl Elaboration<'_, '_> {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
                 Resolution::Builtin(id) if id.info().name == "None" => {
                     let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                    let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
+                    let Some(val) = self.zero(&payload, origin) else { return refused(self) };
                     Some(Pair { is, val, literal: Some(false) })
                 }
                 // an `Option` parameter or `let` of a `fn` expanded in a differentiated value: the pair it holds
@@ -360,7 +361,7 @@ impl Elaboration<'_, '_> {
                     // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
                     (None, Some(None)) => {
                         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                        let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
+                        let Some(val) = self.zero(&payload, origin) else { return refused(self) };
                         Some(Pair { is, val, literal: Some(false) })
                     }
                     // A body `let` or a `const` of `Option` type reads its initializer where it is
@@ -387,10 +388,10 @@ impl Elaboration<'_, '_> {
                     }
                     (None, None) => match self.body_let_value(decl).or_else(|| self.const_value(decl)) {
                         Some(value) => self.lower_option(scope, value),
-                        None => unsupported(self),
+                        None => refused(self),
                     },
                 },
-                _ => unsupported(self),
+                _ => refused(self),
             },
             // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
             ExprKind::Call { .. } if self.result_callee(expr).is_some() => self.lower_result_pair(scope, expr),
@@ -399,7 +400,7 @@ impl Elaboration<'_, '_> {
             // `temperature()`: whether the run set it and the run's kelvin, the two environment reads (`session.rs`)
             ExprKind::Call { .. } if matches!(self.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "temperature") => Some(self.lower_temperature_pair(origin)),
             ExprKind::Call { args, .. } if matches!(self.typed(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
-                let [arg] = args.as_slice() else { return unsupported(self) };
+                let [arg] = args.as_slice() else { return refused(self) };
                 let val = self.lower_expr(scope, arg.value)?;
                 let is = self.emit(Expr::Bool(true), ValueType::Bool, origin);
                 Some(Pair { is, val, literal: Some(true) })
@@ -407,7 +408,7 @@ impl Elaboration<'_, '_> {
             // `Option::<T>::default()` is `None` (H.8 rule 4).
             ExprKind::Call { .. } if matches!(self.types.default_of(expr), Some(Ty::Option(_))) => {
                 let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                let Some(val) = self.zero(&payload, origin) else { return unsupported(self) };
+                let Some(val) = self.zero(&payload, origin) else { return refused(self) };
                 Some(Pair { is, val, literal: Some(false) })
             }
             // `T::decode(levels)` of a `T: Repr` parameter: the value the levels give, per instance (`levels.rs`).
@@ -447,7 +448,7 @@ impl Elaboration<'_, '_> {
                     Method::CheckedSub => (IrMethod::SubOverflows, BinaryOp::Sub),
                     _ => (IrMethod::MulOverflows, BinaryOp::Mul),
                 };
-                let [arg] = args.as_slice() else { return unsupported(self) };
+                let [arg] = args.as_slice() else { return refused(self) };
                 let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
                 let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, ValueType::Bool, origin.clone());
                 let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, ValueType::Bool, origin.clone());
@@ -458,13 +459,13 @@ impl Elaboration<'_, '_> {
             // `o.map(|x| e)`, `o.and_then(|x| p)`, `a.or(b)`, `c.then(|| v)`, `c.then_some(v)` (H.3, H.4).
             ExprKind::MethodCall { recv, args, .. } if matches!(self.types.method(expr), Some(Method::Map | Method::AndThen | Method::Or | Method::Then | Method::ThenSome)) => {
                 let method = self.types.method(expr)?;
-                let [arg] = args.as_slice() else { return unsupported(self) };
+                let [arg] = args.as_slice() else { return refused(self) };
                 self.lower_option_row(scope, method, *recv, arg.value, payload, origin)
             }
             // `if c { a } else { b }` of `Option`s: the flag and the payload each an `if` on `c`.
             ExprKind::If { cond, then, else_: Some(else_) } if !matches!(self.design.expr_node(*cond).kind, ExprKind::Let { .. }) => {
-                let [stmt] = then.stmts.as_slice() else { return unsupported(self) };
-                let crate::pom::StmtKind::Expr { expr: then_value, semi: false } = self.design.stmt_node(*stmt).kind.clone() else { return unsupported(self) };
+                let [stmt] = then.stmts.as_slice() else { return refused(self) };
+                let crate::pom::StmtKind::Expr { expr: then_value, semi: false } = self.design.stmt_node(*stmt).kind.clone() else { return refused(self) };
                 let first = self.lower_expr(scope, *cond)?;
                 scope.nesting += 1;
                 let (then, otherwise) = (self.lower_option(scope, then_value), self.lower_option(scope, *else_));
@@ -500,11 +501,11 @@ impl Elaboration<'_, '_> {
             ExprKind::Block(block) => match block.stmts.as_slice() {
                 [stmt] => match self.design.stmt_node(*stmt).kind.clone() {
                     crate::pom::StmtKind::Expr { expr: value, semi: false } => self.lower_option(scope, value),
-                    _ => unsupported(self),
+                    _ => refused(self),
                 },
-                _ => unsupported(self),
+                _ => refused(self),
             },
-            _ => unsupported(self),
+            _ => refused(self),
         }
     }
 
@@ -559,7 +560,7 @@ impl Elaboration<'_, '_> {
                     _ => None,
                 };
                 if method == Method::Expect && message.is_none() {
-                    self.unsupported(scope.file, self.design.expr_node(recv).span, "`expect` with a message that is not a string literal");
+                    self.refuse(scope.file, self.design.expr_node(recv).span, ValueForm::ExpectWithMessageThatIsNotString);
                     return None;
                 }
                 match pair.literal {
@@ -595,7 +596,7 @@ impl Elaboration<'_, '_> {
     fn closure_parts(&mut self, scope: &mut Scope, closure: ExprId) -> Option<(Option<DeclId>, ExprId)> {
         let node = self.design.expr_node(closure).clone();
         let ExprKind::Closure { params, body, .. } = node.kind else {
-            self.unsupported(scope.file, node.span, "a closure argument that is not a closure literal");
+            self.refuse(scope.file, node.span, ValueForm::ClosureArgumentThatIsNotClosureLiteral);
             return None;
         };
         match params.as_slice() {
@@ -604,12 +605,12 @@ impl Elaboration<'_, '_> {
                 PatKind::Ident { binding, sub: None, .. } => Some((Some(binding), body)),
                 PatKind::Wild => Some((None, body)),
                 _ => {
-                    self.unsupported(scope.file, node.span, "a closure parameter that is not a name");
+                    self.refuse(scope.file, node.span, ValueForm::ClosureParameterThatIsNotName);
                     None
                 }
             },
             _ => {
-                self.unsupported(scope.file, node.span, "a closure of more than one parameter");
+                self.refuse(scope.file, node.span, ValueForm::ClosureOfMoreThanOneParameter);
                 None
             }
         }
@@ -661,7 +662,7 @@ impl Elaboration<'_, '_> {
                 scope.nesting -= 1;
                 let value = value?;
                 let Some(zero) = self.zero(&payload, origin.clone()) else {
-                    self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                    self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                     return None;
                 };
                 let val_ty = payload;
@@ -687,7 +688,7 @@ impl Elaboration<'_, '_> {
                         Some(true) => value,
                         _ => {
                             let Some(zero) = zero_of(self, &payload) else {
-                                self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                                self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                                 return None;
                             };
                             let ty = payload;
@@ -701,7 +702,7 @@ impl Elaboration<'_, '_> {
                 let is_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.is))?;
                 let val_inner = self.closure_block(scope, binding, local, pair.val, span, |this, scope| this.lower_option(scope, body).map(|p| p.val))?;
                 let (Some(no), Some(zero)) = (Some(self.emit(Expr::Bool(false), ValueType::Bool, origin.clone())), zero_of(self, &payload)) else {
-                    self.unsupported(scope.file, span, "an `Option` whose payload has no zero in the IR");
+                    self.refuse(scope.file, span, ValueForm::OptionWhosePayloadHasNoZeroIn);
                     return None;
                 };
                 let is_ty = ValueType::Bool;
@@ -717,7 +718,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_option_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, binding: DeclId, init: ExprId) -> bool {
         if self.types.is_assigned(binding) {
             let span = self.design.decl_data(binding).span;
-            self.unsupported(scope.file, span, "an assignment to a local of type `Option`");
+            self.refuse(scope.file, span, PatternForm::AssignmentToLocalOfTypeOption);
             return false;
         }
         let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -740,11 +741,11 @@ impl Elaboration<'_, '_> {
     /// `let (a, b) = (x, y);`: one local per component, in order.
     pub(super) fn lower_tuple_let(&mut self, scope: &mut Scope, out: &mut Vec<StmtId>, pats: &[PatId], init: ExprId, file: FileId, span: crate::msl::Span) -> bool {
         let ExprKind::Tuple(items) = self.design.expr_node(self.peel_parens(init)).kind.clone() else {
-            self.unsupported(file, span, "a tuple `let` whose value is not a tuple expression");
+            self.refuse(file, span, ValueForm::TupleLetWhoseValueIsNotTuple);
             return false;
         };
         if items.len() != pats.len() {
-            self.unsupported(file, span, "a tuple `let` of another number of components");
+            self.refuse(file, span, ValueForm::TupleLetOfAnotherNumberOfComponents);
             return false;
         }
         let mut ok = true;
@@ -763,7 +764,7 @@ impl Elaboration<'_, '_> {
                 }
                 _ => {
                     let at = self.design.pat_node(*pat).span;
-                    self.unsupported(file, at, "a tuple `let` component that is not a name");
+                    self.refuse(file, at, ValueForm::TupleLetComponentThatIsNotName);
                     ok = false;
                 }
             }

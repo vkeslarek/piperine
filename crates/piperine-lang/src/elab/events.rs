@@ -32,6 +32,7 @@ use piperine_ir::{BinaryOp, Env, Event, EventSource, Expr, ExprId as LoweredExpr
 use super::elaborator::Elaboration;
 use super::elements::{ElementRef, Lookup};
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtId};
 use crate::types::{Builtin, Callee};
 
@@ -127,7 +128,7 @@ impl Elaboration<'_, '_> {
         }
         let span = self.design.expr_node(r.event).span;
         if !head.locals.is_empty() {
-            self.unsupported(scope.file, span, "a `let` in the guard of a head split per disjunct");
+            self.refuse(scope.file, span, AnalogForm::LetInGuardOfHeadSplitPer);
             return;
         }
         // One reaction on every disjunct's event, run once per microstep whichever fired (abi.md
@@ -246,7 +247,7 @@ impl Elaboration<'_, '_> {
                 }
                 _ if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
                 _ => {
-                    self.unsupported(scope.file, node.span, "this method as an event");
+                    self.refuse(scope.file, node.span, AnalogForm::MethodAsEvent);
                     None
                 }
             },
@@ -294,7 +295,7 @@ impl Elaboration<'_, '_> {
                     lowered
                 }
                 _ => {
-                    self.unsupported(scope.file, node.span, "this call as an event");
+                    self.refuse(scope.file, node.span, AnalogForm::CallAsEvent);
                     None
                 }
             },
@@ -309,12 +310,12 @@ impl Elaboration<'_, '_> {
                     self.disjuncts(scope, value)
                 }
                 _ => {
-                    self.unsupported(scope.file, node.span, "this name as an event");
+                    self.refuse(scope.file, node.span, AnalogForm::NameAsEvent);
                     None
                 }
             },
             _ => {
-                self.unsupported(scope.file, node.span, "this form of an event");
+                self.refuse(scope.file, node.span, AnalogForm::FormOfEvent);
                 None
             }
         }
@@ -346,7 +347,7 @@ impl Elaboration<'_, '_> {
         if self.continuous(conjunct) || self.reads_local(conjunct) {
             d.continuous.push(conjunct);
         } else if scope.locals.len() > locals {
-            self.unsupported(scope.file, span, "a `let` in the discrete part of a guard");
+            self.refuse(scope.file, span, AnalogForm::LetInDiscretePartOfGuard);
             return None;
         } else {
             d.discrete.push(conjunct);
@@ -374,7 +375,7 @@ impl Elaboration<'_, '_> {
         let lowered = self.lower_expr(scope, arg)?;
         if scope.locals.len() > before {
             let span = self.design.expr_node(arg).span;
-            self.unsupported(scope.file, span, "a `let` in the argument of an event");
+            self.refuse(scope.file, span, AnalogForm::LetInArgumentOfEvent);
             return None;
         }
         Some(lowered)
@@ -412,7 +413,7 @@ impl Elaboration<'_, '_> {
             _ => {}
         }
         if !self.constant_or_param(scope, arg) {
-            self.unsupported(scope.file, node.span, &format!("{what} that is not a constant or a param"));
+            self.refuse_with(scope.file, node.span, AnalogForm::ThatIsNotConstantOrParam, [what.to_string()]);
             return None;
         }
         Some(Some(self.event_argument(scope, arg)?))
@@ -469,7 +470,7 @@ impl Elaboration<'_, '_> {
         {
             return Some(index);
         }
-        self.unsupported(scope.file, node.span, "a receiver that is not a carrier of this module");
+        self.refuse(scope.file, node.span, AnalogForm::ReceiverThatIsNotCarrierOfThis);
         None
     }
 
@@ -587,7 +588,7 @@ impl Elaboration<'_, '_> {
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
             // edge that reaches this arm stands where no event read does.
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {
-                self.unsupported(scope.file, span, "an event that is not an event read");
+                self.refuse(scope.file, span, AnalogForm::EventThatIsNotEventRead);
                 None
             }
         }

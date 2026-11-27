@@ -11,6 +11,7 @@ use piperine_ir::Constant;
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
+use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData};
 use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Obligation, Substitution, Ty};
 use crate::msl::{Diagnostic, Span};
@@ -141,7 +142,7 @@ impl Elaboration<'_, '_> {
             GenericValue::Type(ty) => {
                 let ty = self.consts.substitution().apply(ty);
                 if ty.has_param() {
-                    self.unsupported(file, span, "a generic argument that is still a parameter");
+                    self.refuse(file, span, StructureForm::GenericArgumentThatIsStillParameter);
                     return None;
                 }
                 Some(ConcreteValue::Type(ty))
@@ -166,7 +167,7 @@ impl Elaboration<'_, '_> {
                     Ok(Constant::Int(value)) => Some(ConcreteValue::Const(value)),
                     Ok(Constant::Bool(value)) => Some(ConcreteValue::Bool(value)),
                     Ok(_) => {
-                        self.unsupported(file, span, "a const argument that is not an integer or a `bool`");
+                        self.refuse(file, span, StructureForm::ConstArgumentThatIsNotIntegerOr);
                         None
                     }
                     Err(fault) => {
@@ -176,7 +177,7 @@ impl Elaboration<'_, '_> {
                 }
             }
             ConstTerm::Param(_) | ConstTerm::Width(_) => {
-                self.unsupported(file, span, "a const argument that is still a parameter");
+                self.refuse(file, span, StructureForm::ConstArgumentThatIsStillParameter);
                 None
             }
         }

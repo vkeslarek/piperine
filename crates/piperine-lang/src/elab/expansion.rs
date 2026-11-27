@@ -19,6 +19,7 @@ use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::unroll::{DEPTH, Expansion};
+use crate::refusal::forms::StructureForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use super::instances::ConcreteValue;
@@ -103,7 +104,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let Some(binding) = self.types.binding(call).map(<[_]>::to_vec) else {
-            self.unsupported(scope.file, self.design.expr_node(call).span, "a call whose arguments the type checker did not bind, inside a `ddx`");
+            self.refuse(scope.file, self.design.expr_node(call).span, StructureForm::CallWhoseArgumentsTypeCheckerDidNot);
             return Some(None);
         };
         // a generic `fn` runs for the arguments the checker read from the call
@@ -140,11 +141,11 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let Some(body) = f.body.clone() else {
-            self.unsupported(scope.file, span, "a call of a function with no body inside a `ddx`");
+            self.refuse(scope.file, span, StructureForm::CallOfFunctionWithNoBodyInside);
             return None;
         };
         if self.types.emits(function).is_some() {
-            self.unsupported(scope.file, span, "a call of a function that emits inside a `ddx`");
+            self.refuse(scope.file, span, StructureForm::CallOfFunctionThatEmitsInsideDdx);
             return None;
         }
         if !self.may_expand(scope, function, span) {
@@ -191,14 +192,14 @@ impl Elaboration<'_, '_> {
                     Argument::Option { param: *param, flag, payload }
                 }
                 (_, None) => {
-                    self.unsupported(scope.file, span, "a call that leaves out an argument, inside a `ddx`");
+                    self.refuse(scope.file, span, StructureForm::CallThatLeavesOutArgumentInsideDdx);
                     return None;
                 }
                 (_, Some(arg)) if self.types.handle(*param) => Argument::Handle { param: *param, target: self.handle_argument_target(scope, arg) },
                 (Some(Ty::Str), Some(arg)) => match self.text_of(scope, arg) {
                     Some(text) => Argument::Text { param: *param, text },
                     None => {
-                        self.unsupported(scope.file, self.design.expr_node(arg).span, "a `str` that is not a text after expansion, inside a `ddx`");
+                        self.refuse(scope.file, self.design.expr_node(arg).span, StructureForm::StrThatIsNotTextAfterExpansion);
                         return None;
                     }
                 },

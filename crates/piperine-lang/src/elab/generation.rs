@@ -16,6 +16,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Origin, ValueType};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 
 /// The most iterations one generation `for` unrolls into.
@@ -138,13 +139,13 @@ impl Elaboration<'_, '_> {
         match kind {
             GenerationData::For { pat, iter, body } => {
                 let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(*iter).kind else {
-                    self.unsupported(data.file, self.design.expr_node(*iter).span, "a generation `for` over anything but a range with both bounds");
+                    self.refuse(data.file, self.design.expr_node(*iter).span, StructureForm::GenerationForOverAnythingButRangeWith);
                     self.mark_untaken(body);
                     return;
                 };
                 let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(*pat).kind else {
                     if !matches!(self.design.pat_node(*pat).kind, PatKind::Wild) {
-                        self.unsupported(data.file, self.design.pat_node(*pat).span, "a generation `for` whose variable is not a name");
+                        self.refuse(data.file, self.design.pat_node(*pat).span, StructureForm::GenerationForWhoseVariableIsNotName);
                     }
                     return self.expand_range(generation, body, lo, hi, inclusive, None, now, &scope_values);
                 };
@@ -164,7 +165,7 @@ impl Elaboration<'_, '_> {
                     }
                 }
                 Some(_) => {
-                    self.unsupported(data.file, self.design.expr_node(*cond).span, "a generation condition that is not a `bool`");
+                    self.refuse(data.file, self.design.expr_node(*cond).span, StructureForm::GenerationConditionThatIsNotBool);
                     self.mark_untaken(then);
                     self.mark_untaken_else(else_);
                 }
@@ -266,7 +267,7 @@ impl Elaboration<'_, '_> {
         }
         if self.generated.refused.insert(decl) {
             let data = self.design.decl_data(decl).clone();
-            self.unsupported(data.file, data.span, "an item declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps)");
+            self.refuse(data.file, data.span, StructureForm::ItemDeclaredInGenerationIfThatNot);
         }
         false
     }
@@ -328,13 +329,13 @@ impl Elaboration<'_, '_> {
             return lowered;
         }
         let ValueType::Array(element, length) = &ty else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `let` written in generation read as no array");
+            self.refuse(scope.file, self.design.expr_node(expr).span, StructureForm::LetWrittenInGenerationReadAsNo);
             return None;
         };
         let ordinals: BTreeSet<u32> = reached.iter().filter_map(|iteration| GeneratedLevels::new(loops, iteration).at(level)).collect();
         // an arm some iterations skip leaves a gap: the array the type names has an element the generation never made
         if ordinals.len() as u64 != *length || ordinals.iter().enumerate().any(|(position, ordinal)| position as u32 != *ordinal) {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a `let` declared in a generation `if` that not every iteration of the `for` around it elaborates (a generated array with gaps), read as an array");
+            self.refuse(scope.file, self.design.expr_node(expr).span, StructureForm::LetDeclaredInGenerationIfThatNot);
             return None;
         }
         let mut parts = Vec::with_capacity(ordinals.len());
