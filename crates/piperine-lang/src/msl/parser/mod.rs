@@ -29,4 +29,5 @@ pub(crate) use diagnostics::ParseDiagnostics;
 pub(crate) use input::TokenInput;
 pub(crate) use recovery::Recovery;
 pub use base::Custom;
-pub use entry::{MAX_CHAIN, MAX_DEPTH, ParseResult, SourceParser, parse_block, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};
+pub use expr::ExpressionGrammar;
+pub use entry::{MAX_CHAIN, MAX_DEPTH, ParseResult, SourceParser, parse_block, parse_generics, parse_module_item, parse_pat, parse_type};

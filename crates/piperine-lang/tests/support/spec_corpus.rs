@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use piperine_lang::msl::parser::{SourceParser, parse_block, parse_expr};
+use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, parse_block};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
@@ -110,7 +110,7 @@ pub fn fragment_diagnostics(text: &str) -> Vec<String> {
         .map(|l| l.split("//").next().unwrap_or("").trim())
         .filter(|l| !l.is_empty())
         .collect();
-    if !lines.is_empty() && lines.iter().all(|l| parse_expr(l).1.is_empty()) {
+    if !lines.is_empty() && lines.iter().all(|l| ExpressionGrammar::parse(l).1.is_empty()) {
         return Vec::new();
     }
     as_file.diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect()

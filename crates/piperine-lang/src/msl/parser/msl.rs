@@ -299,7 +299,7 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         select! { Token::Ident(s) if s == "emit" => () }.then(TokenInput::punctuation(Punct::Not)).rewind().ignored().boxed(),
     ]);
     let stray = starts_behavior
-        .ignore_then(expr::stmt(h))
+        .ignore_then(ExpressionGrammar::statement(h))
         .validate(|s, e, emitter| {
             if matches!(&s.kind, StmtKind::Expr { expr, .. } if matches!(expr.kind, ExprKind::Emit { .. })) {
                 // an `emit!` statement: the output runs when behavior runs (§19 rule 10)
@@ -451,7 +451,7 @@ fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
         .map_with(|(meta, r), e| DigitalItem { meta, kind: DigitalItemKind::Reaction(r), span: Loc(e.span()) })
         .boxed();
     let wrap = |g: Gen<DigitalItem>, meta: Meta| DigitalItem { span: g.span, meta, kind: DigitalItemKind::Gen(g) };
-    let stray = expr::stmt(h)
+    let stray = ExpressionGrammar::statement(h)
         .validate(|_, e, emitter| {
             emitter.emit(Rich::custom(
                 e.span(),
@@ -485,7 +485,7 @@ pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item
     };
     let analog = head("analog")
         .then(
-            expr::stmt(h)
+            ExpressionGrammar::statement(h)
                 .repeated()
                 .collect::<Vec<_>>()
                 .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)),

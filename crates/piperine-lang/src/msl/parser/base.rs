@@ -130,11 +130,11 @@ impl<'a, I: In<'a>> Handles<'a, I> {
         let (pat, pat1) = pat::build(&h);
         h.pat.define(pat);
         h.pat1.define(pat1);
-        let p = expr::build(&h, true, h.expr.clone());
+        let p = expr::ExpressionGrammar::expression(&h, true, h.expr.clone());
         h.expr.define(p);
-        let p = expr::build(&h, false, h.expr_ns.clone());
+        let p = expr::ExpressionGrammar::expression(&h, false, h.expr_ns.clone());
         h.expr_ns.define(p);
-        let p = expr::block(&h);
+        let p = expr::ExpressionGrammar::block(&h);
         h.block.define(p);
         let p = item::build(&h);
         h.item.define(p);

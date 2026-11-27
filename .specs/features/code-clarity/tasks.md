@@ -1278,7 +1278,7 @@ T152 → T153 → T154 → T155
 - [x] `cargo test -p piperine-lang` passes with no existing test edited
 - [x] Gate check passes: Quick
 
-**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr`, T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block`. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
+**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr` (closed by T44: `ExpressionGrammar::parse`), T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block`. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -1299,9 +1299,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The file leaves the free-function allowance; `build`'s row of `long_functions.tsv` is `split`
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [x] The file leaves the free-function allowance; `build`'s row of `long_functions.tsv` is `split` (the rows of `build`, `block_like` and `stmt` are deleted: every method of `ExpressionGrammar` is under 60 lines, and the guard fails a row whose item is gone)
+- [x] `cargo test -p piperine-lang` passes with no existing test edited (the one exception: the calls of `parse_expr`, now `ExpressionGrammar::parse`)
+- [x] Gate check passes: Quick
+
+**Closed from T43**: `parse_expr` is `ExpressionGrammar::parse` (its `free_functions` and `undeclared_words` rows deleted, none added). `parse` is a word product code spells on many lines, so the worklist guard does not list it in `test_only_items.tsv`.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

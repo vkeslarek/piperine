@@ -403,14 +403,6 @@ pub fn parse_generics(src: &str) -> Parsed<Generics> {
     ParseDiagnostics::finish(crate::stack::Stack::deep(|| ty::generics(&h).then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
 }
 
-/// Parse `src` as one expression.
-pub fn parse_expr(src: &str) -> Parsed<Expr> {
-    let (tokens, diags) = SourceParser::lex_limited(src);
-    let input = TokenInput::over(&tokens, src.len());
-    let h = Handles::declare();
-    ParseDiagnostics::finish(crate::stack::Stack::deep(|| h.expr.clone().then_ignore(end()).parse(input).into_output_errors()), diags, &tokens)
-}
-
 /// Parse `src` as one item of a module body.
 pub fn parse_module_item(src: &str) -> Parsed<ModuleItem> {
     let (tokens, diags) = SourceParser::lex_limited(src);

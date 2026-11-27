@@ -7,7 +7,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{SourceParser, parse_block, parse_expr, parse_generics, parse_pat, parse_type};
+use piperine_lang::msl::parser::{ExpressionGrammar, SourceParser, parse_block, parse_generics, parse_pat, parse_type};
 
 fn ty(src: &str) -> Type {
     let (t, diags) = parse_type(src);
@@ -22,7 +22,7 @@ fn pat(src: &str) -> Pat {
 }
 
 fn expr(src: &str) -> Expr {
-    let (e, diags) = parse_expr(src);
+    let (e, diags) = ExpressionGrammar::parse(src);
     assert!(diags.is_empty(), "{src:?}: {diags:?}");
     e.unwrap_or_else(|| panic!("{src:?} did not parse"))
 }
@@ -1044,7 +1044,7 @@ fn nested_tuple_index() {
     assert_eq!(text(src, &inner.span), "x.0");
     // Three levels, and an ordinary float field is not one.
     assert!(matches!(&expr("a.0.1.2").kind, ExprKind::Field { name, .. } if name.name == "2"));
-    assert!(!parse_expr("x.1.5e3").1.is_empty());
+    assert!(!ExpressionGrammar::parse("x.1.5e3").1.is_empty());
 }
 
 #[test]

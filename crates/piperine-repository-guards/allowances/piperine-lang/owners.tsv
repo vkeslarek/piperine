@@ -6,7 +6,6 @@ CheckState	1
 Classifier	1
 DigitalLowering	1
 ElaborationState	1
-ExpressionGrammar	1
 ExpressionTyping	1
 FunctionLowering	1
 GenericsSolver	1

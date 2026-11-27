@@ -66,9 +66,6 @@ crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
 crates/piperine-lang/src/msl/parser/check.rs::::expr_inner	-
 crates/piperine-lang/src/msl/parser/check.rs::::stmt	-
 crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	-
-crates/piperine-lang/src/msl/parser/expr.rs::::block_like	-
-crates/piperine-lang/src/msl/parser/expr.rs::::build	-
-crates/piperine-lang/src/msl/parser/expr.rs::::stmt	-
 crates/piperine-lang/src/msl/parser/item.rs::::build	-
 crates/piperine-lang/src/msl/parser/item.rs::::fn_decl	-
 crates/piperine-lang/src/msl/parser/msl.rs::::module_decl	-

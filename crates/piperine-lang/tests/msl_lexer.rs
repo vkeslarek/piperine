@@ -357,7 +357,7 @@ fn invalid_string_escape_is_e0900() {
 
 fn literal(src: &str) -> piperine_lang::msl::ast::Lit {
     use piperine_lang::msl::ast::ExprKind;
-    let (expr, diags) = piperine_lang::msl::parser::parse_expr(src);
+    let (expr, diags) = piperine_lang::msl::parser::ExpressionGrammar::parse(src);
     let _ = diags;
     match expr.expect("an expression").kind {
         ExprKind::Lit(l) => l,

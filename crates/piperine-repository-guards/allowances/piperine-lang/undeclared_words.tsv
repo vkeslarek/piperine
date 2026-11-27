@@ -177,17 +177,7 @@ crates/piperine-lang/src/msl/parser/check.rs::expr_inner	1
 crates/piperine-lang/src/msl/parser/check.rs::fn_decl	1
 crates/piperine-lang/src/msl/parser/check.rs::stmt	1
 crates/piperine-lang/src/msl/parser/entry.rs::lex_limited	1
-crates/piperine-lang/src/msl/parser/entry.rs::parse_expr	1
 crates/piperine-lang/src/msl/parser/entry.rs::parse_pat	1
-crates/piperine-lang/src/msl/parser/expr.rs::EmitArg	1
-crates/piperine-lang/src/msl/parser/expr.rs::Ge	1
-crates/piperine-lang/src/msl/parser/expr.rs::Gt	1
-crates/piperine-lang/src/msl/parser/expr.rs::GtOp	1
-crates/piperine-lang/src/msl/parser/expr.rs::eq_tok	1
-crates/piperine-lang/src/msl/parser/expr.rs::gt	1
-crates/piperine-lang/src/msl/parser/expr.rs::gt_op	1
-crates/piperine-lang/src/msl/parser/expr.rs::mk	1
-crates/piperine-lang/src/msl/parser/expr.rs::stmt	1
 crates/piperine-lang/src/msl/parser/item.rs::Attr	1
 crates/piperine-lang/src/msl/parser/item.rs::Doc	1
 crates/piperine-lang/src/msl/parser/item.rs::dir	1

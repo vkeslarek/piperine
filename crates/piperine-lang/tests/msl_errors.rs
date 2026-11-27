@@ -7,7 +7,7 @@
 //! fixtures complete; T15 checks the miette graphical rendering.
 
 use piperine_lang::msl::{Span, render};
-use piperine_lang::msl::parser::{MAX_DEPTH, SourceParser, parse_expr};
+use piperine_lang::msl::parser::{ExpressionGrammar, MAX_DEPTH, SourceParser};
 
 #[test]
 fn depth_over_256_is_diagnostic_not_overflow() {
@@ -15,7 +15,7 @@ fn depth_over_256_is_diagnostic_not_overflow() {
     // parser neither overflows the stack nor keeps descending.
     assert_eq!(MAX_DEPTH, 256);
     let src = format!("{}1{}", "(".repeat(300), ")".repeat(300));
-    let (expr, diags) = parse_expr(&src);
+    let (expr, diags) = ExpressionGrammar::parse(&src);
     assert!(expr.is_some(), "a partial tree is still returned");
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].code, "E0910");
@@ -24,23 +24,23 @@ fn depth_over_256_is_diagnostic_not_overflow() {
 
     // Exactly at the limit is fine.
     let src = format!("{}1{}", "(".repeat(256), ")".repeat(256));
-    let (_, diags) = parse_expr(&src);
+    let (_, diags) = ExpressionGrammar::parse(&src);
     assert!(diags.is_empty(), "{diags:?}");
 
     // Blocks, `if` bodies and calls nest through more grammar layers per
     // level than parentheses; the limit holds for them too.
     for (open, close) in [("{ ", " }"), ("if a { ", " }"), ("f(", ")"), ("[", "]")] {
         let src = format!("{}1{}", open.repeat(255), close.repeat(255));
-        let (_, diags) = parse_expr(&src);
+        let (_, diags) = ExpressionGrammar::parse(&src);
         assert!(diags.is_empty(), "{open:?} at depth 255: {diags:?}");
         let src = format!("{}1{}", open.repeat(400), close.repeat(400));
-        let (_, diags) = parse_expr(&src);
+        let (_, diags) = ExpressionGrammar::parse(&src);
         assert!(diags.iter().all(|d| d.code == "E0910") && !diags.is_empty(), "{open:?} at 400: {diags:?}");
     }
 
     // A much deeper source (and other delimiters) is still one diagnostic.
     let src = format!("{}1{}", "[".repeat(5000), "]".repeat(5000));
-    let (_, diags) = parse_expr(&src);
+    let (_, diags) = ExpressionGrammar::parse(&src);
     assert_eq!(diags.len(), 1, "{diags:?}");
     assert_eq!(diags[0].code, "E0910");
 }
@@ -180,11 +180,11 @@ fn depth_limit_fits_8mib_stack_in_debug() {
         .spawn(|| {
             for (open, close) in [("(", ")"), ("{ ", " }"), ("[", "]"), ("f(", ")"), ("if a { ", " }")] {
                 let src = format!("{}1{}", open.repeat(256), close.repeat(256));
-                let (expr, diags) = parse_expr(&src);
+                let (expr, diags) = ExpressionGrammar::parse(&src);
                 assert!(expr.is_some(), "{open:?} at 256");
                 assert!(diags.is_empty(), "{open:?} at 256: {diags:?}");
                 let src = format!("{}1{}", open.repeat(300), close.repeat(300));
-                let (_, diags) = parse_expr(&src);
+                let (_, diags) = ExpressionGrammar::parse(&src);
                 assert!(
                     !diags.is_empty() && diags.iter().all(|d| d.code == "E0910"),
                     "{open:?} at 300: {diags:?}"
@@ -774,11 +774,11 @@ fn comparisons_do_not_chain() {
     // Rust 2024 makes `==`, `!=`, `<`, `<=`, `>`, `>=` one non-associative
     // level: a chain is an error, a parenthesized one is not.
     for src in ["a < b < c", "a == b == c", "a <= b > c", "a != b < c", "a as u8 < b"] {
-        let (_, diags) = parse_expr(src);
+        let (_, diags) = ExpressionGrammar::parse(src);
         assert!(!diags.is_empty() && diags.iter().all(|d| d.code == "E0900"), "{src:?}: {diags:?}");
     }
     for src in ["(a < b) == (c < d)", "a == b && c < d", "a < b || c > d", "a as u8 > b as u8"] {
-        let (_, diags) = parse_expr(src);
+        let (_, diags) = ExpressionGrammar::parse(src);
         assert!(diags.is_empty(), "{src:?}: {diags:?}");
     }
 }

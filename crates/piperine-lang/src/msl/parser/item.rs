@@ -489,7 +489,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
     let stray_emit = select! { Token::Ident(s) if s == "emit" => () }
         .then(TokenInput::punctuation(Punct::Not))
         .rewind()
-        .ignore_then(expr::stmt(h))
+        .ignore_then(ExpressionGrammar::statement(h))
         .validate(|statement, _, emitter| {
             emitter.emit(msl::misplaced_emit(statement.span.0));
             ItemKind::Error
