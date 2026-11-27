@@ -116,10 +116,19 @@ struct QuotedMessages {
 }
 
 impl QuotedMessages {
-    /// The openers of a form's context clause: a punctuated clause (`: it has no finite symbolic reading`, `, in a
-    /// function that returns an `Event``, the bare `,` after a detail) or a place (` in a `fn` called inside a `ddx``,
-    /// ` before the event of ..`).
-    const CONTEXT_OPENERS: [&'static str; 4] = [":", ",", " in ", " before "];
+    /// The openers of a form's context clause, read off the clauses GAPS leaves off when it quotes: a reason (`: it has
+    /// no finite symbolic reading`), a body (` in a `fn` called inside a `ddx``, ` in a function that returns an
+    /// `Event``) or a moment (` before the event of ..`). An ` in ` that names no body (`a `let` in a param value`) is part
+    /// of the subject, not a clause. A bare `,` that ends the words is a clause of its own.
+    const CONTEXT_OPENERS: [&'static str; 4] = [": ", " in a `fn` ", " in a function ", " before the event "];
+
+    /// The endings whose `{}` is the body the form is raised in (`a `let` of a pattern that is no name in {}`, `an
+    /// assignment to something that is no name of {}`): the last clause of the words.
+    const BODY_DETAILS: [&'static str; 2] = [" in {}", " of {}"];
+
+    /// The fewest characters the words left after the cut keep, so a short quote (`a `let``) never owns a form by its
+    /// first words.
+    const DISTINCTIVE: usize = 20;
 
     /// The messages quoted by the row `id` of `gaps`, or `None` when it has no such row or the row has no `P0001` column.
     fn of_row(gaps: &str, id: &str) -> Option<QuotedMessages> {
@@ -138,7 +147,13 @@ impl QuotedMessages {
     /// Where the last context clause of `text` starts: the last opener in it, taken with the comma right before it
     /// (`, in ..` is one clause), or `None` when the words have no clause.
     fn context_clause(text: &str) -> Option<usize> {
-        let last = (0..text.len()).rev().find(|at| text.is_char_boundary(*at) && QuotedMessages::CONTEXT_OPENERS.iter().any(|opener| text[*at..].starts_with(opener)))?;
+        let opener = |at: &usize| text.is_char_boundary(*at) && QuotedMessages::CONTEXT_OPENERS.iter().any(|opener| text[*at..].starts_with(opener));
+        let body = QuotedMessages::BODY_DETAILS.iter().find(|detail| text.ends_with(*detail));
+        let last = match body {
+            Some(detail) => text.len() - detail.len(),
+            None if text.ends_with(',') => text.len() - 1,
+            None => (0..text.len()).rev().find(opener)?,
+        };
         let joined = last > 0 && text[..last].ends_with(',') && !text[last..].starts_with(',');
         Some(if joined { last - 1 } else { last })
     }
@@ -146,13 +161,13 @@ impl QuotedMessages {
     /// Whether the last `{}` of `text` is its context clause, the body the form is raised in (`a `let` of a pattern that
     /// is no name in {}`): such a form is shared by the bodies that fill it, so no one gap owns it.
     fn detail_is_context(text: &str) -> bool {
-        QuotedMessages::context_clause(text).is_some_and(|start| text[start..].contains("{}"))
+        QuotedMessages::BODY_DETAILS.iter().any(|detail| text.ends_with(detail))
     }
 
-    /// Whether `quote` is `text`, or `text` without its last context clause, with each `{}` of the words read as the
-    /// detail it stands for (any non-empty text).
+    /// Whether `quote` is `text`, or `text` without its last context clause when what is left keeps `DISTINCTIVE`
+    /// characters, with each `{}` of the words read as the detail it stands for (any non-empty text).
     fn message_names(quote: &str, text: &str) -> bool {
-        let cut = QuotedMessages::context_clause(text).map(|start| &text[..start]);
+        let cut = QuotedMessages::context_clause(text).map(|start| &text[..start]).filter(|words| words.len() >= QuotedMessages::DISTINCTIVE);
         QuotedMessages::fills(quote, text) || cut.is_some_and(|words| QuotedMessages::fills(quote, words))
     }
 
@@ -177,7 +192,8 @@ impl QuotedMessages {
 /// message whole, or abbreviated by leaving off its trailing context clause (`a `while` or `loop` in a `fn` called inside
 /// a `ddx`` for the words `..: it has no finite symbolic reading`; `a `match` arm whose pattern binds a name` for
 /// `.., in a function that returns an `Event``), and fills a `{}` with an example detail (`value input port of type
-/// `module ..``). Only the last context clause is left off, so a quote cannot own a form by its first words alone. The
+/// `module ..``). Only the last context clause is left off, a clause opens with a reason, a body or a moment (never any ` in `), and the
+/// words left keep at least 20 characters, so a quote cannot own a form by its first words alone. The
 /// row's prose is never read: L74's prose mentions "an assignment to a field or an element", a form it does not own. A form
 /// whose last `{}` is its context clause (the body it is raised in, shared by ddx and event-function bodies) has no
 /// `Gap` owner: each body is its own gap.
