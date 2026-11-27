@@ -1361,9 +1361,57 @@ The other three new `kept` rows (`Printer::expr`, `Printer::form`, `Walk::leaf_v
 
 | Finding | Severity | Closed |
 | --- | --- | --- |
-| P8-1 `body_data` panic has no owner | Medium | |
-| P8-2 five long-function rows of the phase's files have no verdict | Medium | |
-| P8-3 T56 adds three `undeclared_words` rows | Low | |
-| P8-4 `ProjectRoot` departs from design.md:405, unrecorded | Low | |
-| P8-5 `BuildError` error path untested | Low | |
-| P8-6 `Printer::stmt` verdict not true | Low | |
+| P8-1 `body_data` panic has no owner | Medium | 6f58d85f4 (round 2) |
+| P8-2 five long-function rows of the phase's files have no verdict | Medium | 6f58d85f4 (round 2) |
+| P8-3 T56 adds three `undeclared_words` rows | Low | 6f58d85f4 (round 2) |
+| P8-4 `ProjectRoot` departs from design.md:405, unrecorded | Low | 6f58d85f4 (round 2) |
+| P8-5 `BuildError` error path untested | Low | 6f58d85f4 (round 2) |
+| P8-6 `Printer::stmt` verdict not true | Low | 6f58d85f4 (round 2) |
+
+## Phase 8 round 2
+
+**Verdict**: PASS. All six round 1 findings are closed in code or in the task records by 6f58d85f4. Two Low notes stay open for the coordinator and block nothing.
+**Head**: 6f58d85f4 on `feature/code-clarity-p8`, base 97d327d58
+**Verifier**: independent sub-agent (Opus; author != verifier). The gates were rerun one at a time, with target dir `-d` and the guard sources touched first.
+
+### Gates at 6f58d85f4
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line (`cargo build --workspace --all-targets`, filtered for `^(warning|error)`) | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 117 passed |
+| `cargo test -p piperine-ir` | 163 passed (one more: the new `build.rs` unit test) |
+| `cargo test -p piperine-plan` | 68 passed |
+| `cargo test -p piperine-interp` | 72 passed |
+| `cargo test -p piperine-project` | 53 passed |
+| `cargo test -p piperine-transpile` (the `golden` target included) | 172 passed |
+| `cargo test -p piperine-api` | 307 passed |
+| `cargo test -p piperine-parity` | 645 passed |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| CC-09: `git diff 42c3fa3ac..HEAD` over goldens, twins, `docs/`, `examples/`, `.msl`, `tests/`, parity and every `*/tests/*` | empty. No test file is edited |
+| CC-09: `piperine check`/`run`, base CLI (97d327d58) against the round 2 head | byte-identical over 29 scenarios. These are round 1's 22, plus 7 new ones on the paths this fix split. The run table covers a non-number in `params`, a non-number `simparam` entry, a `nodeset` that is no table, and an unknown key. The manifest covers an `authors` item that is no string, an `authors` that is no array, a `branch` on a `path` dependency, `branch` with `tag`, both `path` and `git`, and neither |
+
+### Closure of round 1
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P8-1 | 6f58d85f4 | T96 (`tasks.md` ~2501) carries an unticked Done-when line: `IrBuilder::body_data` returns `Result<_, BuildError>`, and the ~22 builder methods and the elab callers propagate it to `internal_error`. T26's and T55's open boxes point at T96. Coordinator decision, recorded as pending the user's review |
+| P8-2 | 6f58d85f4 | The four functions are split, and every part is ≤ 60 lines (measured: `Walk::dependency` 52, `Walk::package` 59, `Source::key` 59; the `Digital::functions` parts are each under 30). The four rows are deleted from `long_functions.tsv`. `Walk::form_name` is `kept: one arm per variant, every arm a one-line name`: every line between `match expr {` and `}` matches `Expr::X[ { .. }|(_)] => "X",` (61 arms; the note says 60) |
+| P8-3 | 6f58d85f4 | `EventSources` fields are `time_tolerances`, `error_tolerances` and `times` (`deps/walk/roots.rs:19-22`). The three `roots.rs` rows are gone from `piperine-ir/undeclared_words.tsv`, so its sum is again below the base |
+| P8-4 | 6f58d85f4 | design.md:405 reads `ProjectRoot`, with the reason. T60 carries a ticked note naming the two F12 functions it holds |
+| P8-5 | 6f58d85f4 | `build.rs` `#[cfg(test)]` `a_builder_call_with_an_id_it_never_handed_out_names_the_id_and_the_count` drives all four variants on a one-body builder. It asserts `NetOutOfRange` and `InstanceOutOfRange` by value and message, and the node-slot and carrier-slot variants by message, which names the path, the slot and the count. Against the base it fails: `unwrap_err` on a `()` return does not compile, and the old code panics. Citing it in T55's Done-when instead of adding an `uncited_tests.tsv` row is right: `UnnamedTests::inventory` (`repository-guards/src/unnamed_tests.rs:36-55`) leaves out any test whose name appears in a `tasks*.md`, so a row for it would be stale and the guard would fail |
+| P8-6 | 6f58d85f4 | `Printer::emit_fields` is shared by `Trace` (`f{field}`) and `Emit` (the stream's field name, or `<bad field>`). The separator, the `name = ` prefix, the `Expr` piece and the text form `{name} = {text:?}` are the base code moved. The ir text test `operators.rs:152` (`trace0 {f0 = probe(a, gnd), who = "diode"}`) and lang `elab_operators.rs:195` pass. `Printer::stmt` is 62 lines now; its remaining multi-line arms (`Contribute`, `Commit`) are short, so the `kept` verdict is fair |
+
+**Behaviour of the splits.**
+- `Digital::functions` calls the six family methods in the base loop order: cross, tolerances, drives, events, delayed, rearm. Each declares with the same name, origin and plan.
+- `Source::numbers` collects in table order and fails on the first entry that is no number, with the base message.
+- `unknown_key` prints `key.get_ref()`, which is the base's `name`.
+- `Walk::dependency` returns `None` on a missing source before the reference keys are read, as before. `apply_references` reports the same fault at the same span and returns `false` where the base set `ok = false`.
+- `authors` reports every non-string item, and then the non-array case, as the base did. `broken |= !self.authors(..)` always runs it.
+
+The scenario diff above confirms these on real input.
+
+### Round 2 notes (Low, not blocking)
+
+- **R2-1.** T96 is lane F, but its new Done-when line changes `ir/src/build.rs`, a lane K path. That is the mirror of T55's cross-lane edit. The design's Lanes table should name it when T96 is scheduled. The decision is the coordinator's and is pending the user's review.
+- **R2-2.** `Digital::declare_function` (`plan/src/digital/reactions.rs`) takes 7 parameters, past the design's "about 5" reviewer heuristic, which is not a rule. A small value carrying `(s, pins, body, functions)` would fold four of them. Leave it for B9/B10, or for T79–T82 if they touch `plan`.
