@@ -7,6 +7,7 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::instances::{ConcreteValue, Instance};
 use super::variants::{Half, Variants};
+use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 use crate::types::Ty;
 
@@ -31,7 +32,7 @@ impl Elaboration<'_, '_> {
             // of an `Option` local.
             if let Some(Ty::Option(payload)) = self.typed_local(param) {
                 let Some(payload) = self.value_type(&payload) else {
-                    self.unsupported(data.file, self.design.decl_data(param).span, "an `Option` parameter whose payload has no value in the IR");
+                    self.refuse(data.file, self.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
                     ok = false;
                     continue;
                 };
@@ -60,7 +61,7 @@ impl Elaboration<'_, '_> {
             None => true,
         };
         let Some(body) = &f.body else {
-            self.unsupported(data.file, data.span, "a function without a body");
+            self.refuse(data.file, data.span, ValueForm::LoweredFunctionWithoutBody);
             return None;
         };
         let lowered = self.lower_function_body(&mut scope, function, half, data.file, body)?;
@@ -139,11 +140,10 @@ impl Elaboration<'_, '_> {
         let lowered = self.typed_written(ty).and_then(|t| self.value_type(&t));
         if lowered.is_none() {
             let span = self.design.type_node(ty).span;
-            let what = match self.typed_written(ty) {
-                Some(crate::types::Ty::Enum(_)) => "an enum of one variant, whose tag has no level,",
-                _ => "a type that has no value in the IR",
-            };
-            self.unsupported(file, span, what);
+            match self.typed_written(ty) {
+                Some(crate::types::Ty::Enum(_)) => self.refuse(file, span, ValueForm::EnumOfOneVariantWhoseTagHas),
+                _ => self.refuse(file, span, ValueForm::TypeThatHasNoValueInIr),
+            }
         }
         lowered
     }

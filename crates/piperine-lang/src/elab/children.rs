@@ -15,7 +15,7 @@ use super::generation::Iteration;
 use super::instances::Instance;
 use super::lower::Scope;
 use super::templates::TemplateValue;
-use super::unlowered::Unlowered;
+use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
 use crate::types::Ty;
@@ -264,7 +264,7 @@ impl Elaboration<'_, '_> {
             _ => false,
         };
         if !placed {
-            self.unsupported(file, node.span, "a placement through a template value");
+            self.refuse(file, node.span, StructureForm::PlacementThroughTemplateValue);
             return None;
         }
         let Ok(through) = self.template_through(scope, call, class) else { return None };
@@ -398,7 +398,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg).map(|carrier| (carrier, None)),
             // The checker refuses an expression at an `out` port first (`E0314`).
             _ => {
-                self.unsupported(scope.file, node.span, "an expression at an `out` carrier port");
+                self.refuse(scope.file, node.span, StructureForm::ExpressionAtOutCarrierPort);
                 None
             }
         }
@@ -430,7 +430,7 @@ impl Elaboration<'_, '_> {
                 _ => None,
             };
             let Some(index) = index else {
-                self.refuse(file, field.span, Unlowered::PlacementSets(&field.name.text));
+                self.refuse_with(file, field.span, StructureForm::PlacementThatSets, [field.name.text.to_string()]);
                 ok = false;
                 continue;
             };
@@ -452,7 +452,7 @@ impl Elaboration<'_, '_> {
                             out.push((index as u32, None, field.value));
                         }
                         Some(_) => {
-                            self.unsupported(file, self.design.expr_node(field.value).span, "a `let` in a param value");
+                            self.refuse(file, self.design.expr_node(field.value).span, StructureForm::LetInParamValue);
                             ok = false;
                         }
                         None => ok = false,

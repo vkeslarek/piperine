@@ -9,6 +9,8 @@ use piperine_ir::{CommitTarget, ExprId as LoweredExpr, Projection, ValueType};
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::DigitalForm;
 use crate::pom::{ExprId, ExprKind};
 
 /// A place a commit or a definition writes, lowered.
@@ -71,7 +73,7 @@ impl Elaboration<'_, '_> {
                 match steps.next() {
                     Some(Step::Index(index)) => indexes.push(index),
                     _ => {
-                        self.unsupported(scope.file, span, "a commit or a definition of a whole array of carriers, or of a part of one: name an element");
+                        self.refuse(scope.file, span, DigitalForm::CommitOrDefinitionOfWholeArrayOf);
                         return None;
                     }
                 }
@@ -87,18 +89,18 @@ impl Elaboration<'_, '_> {
                     path.push(Projection::Index(self.lower_expr(scope, index)?));
                     ty = match ty {
                         ValueType::Array(element, _) => *element,
-                        _ => return self.refuse_place(scope, place, "an element of a value that is no array"),
+                        _ => return self.refuse_place(scope, place, DigitalForm::ElementOfValueThatIsNoArray),
                     };
                 }
                 Step::Field { inner, name } => {
                     let Some(index) = self.typed(inner).and_then(|inner_ty| self.field_index(&inner_ty, &name)) else {
-                        return self.refuse_place(scope, place, "a field of a type that has none");
+                        return self.refuse_place(scope, place, DigitalForm::FieldOfTypeThatHasNone);
                     };
                     path.push(Projection::Field(index));
                     ty = match ty {
                         ValueType::Tuple(parts) => parts.get(index as usize)?.clone(),
                         ValueType::Struct(id) => self.type_arena.field_types(id).get(index as usize)?.clone(),
-                        _ => return self.refuse_place(scope, place, "a field of a value that is no tuple or struct"),
+                        _ => return self.refuse_place(scope, place, DigitalForm::FieldOfValueThatIsNoTuple),
                     };
                 }
             }
@@ -146,8 +148,8 @@ impl Elaboration<'_, '_> {
     }
 
     /// The refusal of a place step that does not apply: `P0001` naming it, `None`.
-    fn refuse_place(&mut self, scope: &Scope, place: ExprId, form: &str) -> Option<PlaceTarget> {
-        self.unsupported(scope.file, self.design.expr_node(place).span, form);
+    fn refuse_place(&mut self, scope: &Scope, place: ExprId, form: impl Into<RefusedForm>) -> Option<PlaceTarget> {
+        self.refuse(scope.file, self.design.expr_node(place).span, form);
         None
     }
 }

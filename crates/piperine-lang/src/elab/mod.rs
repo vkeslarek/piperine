@@ -49,7 +49,6 @@ mod signal_flow;
 mod structural;
 mod templates;
 mod types;
-mod unlowered;
 mod unroll;
 mod variants;
 

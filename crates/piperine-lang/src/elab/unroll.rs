@@ -21,6 +21,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, St
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::StructureForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution, StmtKind};
 use crate::types::{Callee, Ty};
@@ -123,7 +124,7 @@ impl Elaboration<'_, '_> {
             PatKind::Ident { binding, sub: None, .. } => Some(binding),
             PatKind::Wild => None,
             _ => {
-                self.unsupported(scope.file, node.span, "an analog loop whose variable is not a name");
+                self.refuse(scope.file, node.span, StructureForm::AnalogLoopWhoseVariableIsNotName);
                 return Some(false);
             }
         };
@@ -375,11 +376,11 @@ impl Elaboration<'_, '_> {
         let DeclKind::Fn(f) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(body) = f.body.clone() else {
-            self.unsupported(scope.file, span, "a recursion through a function without a body");
+            self.refuse(scope.file, span, StructureForm::RecursionThroughFunctionWithoutBody);
             return None;
         };
         if self.calls_option_function(expr).is_some() || self.expands_forms_it_cannot(&body) {
-            self.unsupported(scope.file, span, "a recursion reached from `analog` whose function returns early or returns an `Option`");
+            self.refuse(scope.file, span, StructureForm::RecursionReachedFromAnalogWhoseFunctionReturns);
             return None;
         }
         if scope.expanding.len() >= DEPTH {
@@ -392,7 +393,7 @@ impl Elaboration<'_, '_> {
         }
         let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         if params.iter().any(|p| matches!(self.typed_local(*p), Some(Ty::Option(_)))) {
-            self.unsupported(scope.file, span, "a recursion reached from `analog` with an `Option` parameter");
+            self.refuse(scope.file, span, StructureForm::RecursionReachedFromAnalogWithOptionParameter);
             return None;
         }
         // The arguments are read where the call stands, before any parameter is rebound.

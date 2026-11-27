@@ -12,6 +12,7 @@ use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, 
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::ValueForm;
 use crate::pom::{BinOp, BlockNode, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
 
@@ -89,7 +90,7 @@ impl Elaboration<'_, '_> {
                     None if self.names_unreadable_file(field.value) => ok = false,
                     None => {
                         let span = self.design.expr_node(field.value).span;
-                        self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                         ok = false;
                     }
                 }
@@ -101,7 +102,7 @@ impl Elaboration<'_, '_> {
                     Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
                     None => {
                         let span = self.design.expr_node(field.value).span;
-                        self.unsupported(scope.file, span, "an `Option` record field whose payload has no value in the IR");
+                        self.refuse(scope.file, span, ValueForm::OptionRecordFieldWhosePayloadHasNo);
                         None
                     }
                 },
@@ -166,7 +167,7 @@ impl Elaboration<'_, '_> {
             }
             None => {
                 let span = self.design.expr_node(init).span;
-                self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+                self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                 false
             }
         }
@@ -177,7 +178,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(left), Some(right)) = (self.text_of(scope, lhs), self.text_of(scope, rhs)) else {
             let span = self.design.expr_node(lhs).span;
-            self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+            self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
             return None;
         };
         Some(self.emit(Expr::Bool((left == right) == (op == BinOp::Eq)), ValueType::Bool, origin))
@@ -228,7 +229,7 @@ impl Elaboration<'_, '_> {
         let DeclKind::Fn(f) = &data.kind else { return None };
         let Some(body) = f.body.clone() else {
             // an `extern` function has no body to inline: its call is refused by name, never dropped
-            self.unsupported(scope.file, data.span, "a call of a function with no body (an `extern` function) that must be inlined");
+            self.refuse(scope.file, data.span, ValueForm::CallOfFunctionWithNoBodyExtern);
             return None;
         };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -248,7 +249,7 @@ impl Elaboration<'_, '_> {
                     }
                     None => {
                         let span = self.design.expr_node(*arg).span;
-                        self.unsupported(scope.file, span, "a `str` that is not a text after inlining");
+                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                         ok = false;
                     }
                 }

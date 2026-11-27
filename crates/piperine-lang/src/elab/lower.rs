@@ -19,6 +19,8 @@ use super::consts::Bindings;
 use super::unroll::Expansion;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
@@ -288,15 +290,15 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_expr(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         let lowered = self.lower_expr_unchecked(scope, expr);
         if lowered.is_none() && self.diagnostics.is_empty() {
-            self.refuse_silent_failure(scope.file, self.design.expr_node(expr).span, "this expression");
+            self.refuse_silent_failure(scope.file, self.design.expr_node(expr).span, ValueForm::ThisExpression);
         }
         lowered
     }
 
     /// `P0001` for something that failed to lower while no diagnostic was reported: the one place the elaborator says
     /// "nothing vanishes silently".
-    pub(super) fn refuse_silent_failure(&mut self, file: FileId, span: Span, what: &str) {
-        self.unsupported(file, span, what);
+    pub(super) fn refuse_silent_failure(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        self.refuse(file, span, form);
     }
 
     fn lower_expr_unchecked(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
@@ -309,7 +311,7 @@ impl Elaboration<'_, '_> {
             other => other.and_then(|t| self.value_type(&t)),
         };
         let Some(ty) = ty else {
-            self.unsupported(file, node.span, "an expression the type checker gave no value type");
+            self.refuse(file, node.span, ValueForm::ExpressionTypeCheckerGaveNoValueType);
             return None;
         };
         // An event read as a `bool` is `fired(k)` (§13 rules 2 and 9, `event_reads.rs`).
@@ -460,7 +462,7 @@ impl Elaboration<'_, '_> {
                     if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, *recv, &method_name.text, origin.clone()) {
                         return levels;
                     }
-                    self.unsupported(file, node.span, "a method outside the catalogue");
+                    self.refuse(file, node.span, ValueForm::MethodOutsideCatalogue);
                     return None;
                 };
                 let f = match method {
@@ -486,7 +488,7 @@ impl Elaboration<'_, '_> {
                     // The rest are `Option`s (`checked_*`, `map`, `and_then`, `or`, `then`, `then_some`): they lower
                     // on their pair, never as one value.
                     _ => {
-                        self.unsupported(file, node.span, &format!("a `{method:?}` row read as a value rather than as an `Option`"));
+                        self.refuse_with(file, node.span, ValueForm::RowReadAsValueRatherThanAs, [format!("{:?}", method)]);
                         return None;
                     }
                 };
@@ -507,7 +509,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
-                self.unsupported(file, node.span, crate::types::unsupported::Unsupported::expr(other));
+                self.refuse(file, node.span, RefusedForm::expression(other));
                 None
             }
         }
@@ -530,7 +532,7 @@ impl Elaboration<'_, '_> {
             // refused by name until the feature that runs it (`params-and-io`: `parse_table`, `parse_hex`, `table_model`)
             if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
                 let name = self.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                self.unsupported(scope.file, span, &format!("a call of the generic `extern` function `{name}`"));
+                self.refuse_with(scope.file, span, ValueForm::CallOfGenericExternFunction, [name.to_string()]);
                 return None;
             }
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
@@ -571,7 +573,7 @@ impl Elaboration<'_, '_> {
             // A module with a result is hoisted: its result is read where the placement stands.
             (_, Some(Callee::Module(_)) | None) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
-                self.unsupported(scope.file, span, "a placement used as a value");
+                self.refuse(scope.file, span, ValueForm::PlacementUsedAsValue);
                 None
             }
             // A method of the project is typed (generics T25) and lowered by its own task (T35).
@@ -579,7 +581,7 @@ impl Elaboration<'_, '_> {
             (_, Some(Callee::Method(function))) if let Some((receiver, rest)) = args.split_first() => self.lower_method_call(scope, expr, function, *receiver, rest, origin),
             (_, Some(Callee::Bound { item })) if let Some((receiver, rest)) = args.split_first() => self.lower_bound_call(scope, expr, item, *receiver, rest, origin),
             (_, Some(Callee::Method(_) | Callee::Bound { .. })) => {
-                self.unsupported(scope.file, span, "a method call");
+                self.refuse(scope.file, span, ValueForm::LoweredMethodCall);
                 None
             }
             // Typed by `types::intrinsic`, lowered by its §22.1 contract (`intrinsics.rs`).
@@ -593,7 +595,7 @@ impl Elaboration<'_, '_> {
                 self.lower_expression_call(scope, callee, args, origin)
             }
             (_, None) => {
-                self.unsupported(scope.file, span, "a call the type checker did not resolve");
+                self.refuse(scope.file, span, ValueForm::CallTypeCheckerDidNotResolve);
                 None
             }
         }
@@ -604,7 +606,7 @@ impl Elaboration<'_, '_> {
     /// its flag and its payload, a parameter left out `(false, zero)`. `None` after a diagnostic.
     pub(super) fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
         let Some(binding) = self.types.binding(expr).map(<[_]>::to_vec) else {
-            self.unsupported(scope.file, self.design.expr_node(expr).span, "a call whose arguments the type checker did not bind");
+            self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::CallWhoseArgumentsTypeCheckerDidNot);
             return None;
         };
         let params: Vec<DeclId> = self.design.decl_data(function).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
@@ -648,7 +650,7 @@ impl Elaboration<'_, '_> {
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
         let Some(ty) = self.typed_local(binding).and_then(|t| self.value_type(&t)) else {
-            self.unsupported(file, span, "a name whose type is not a value type");
+            self.refuse(file, span, ValueForm::NameWhoseTypeIsNotValueType);
             return None;
         };
         let index = scope.locals.len() as u32;
@@ -707,13 +709,13 @@ impl Elaboration<'_, '_> {
                 StmtKind::Contribution { lhs, rhs } => ok &= self.lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
                 StmtKind::Commit { place, value, after } => ok &= self.lower_commit(scope, &mut out, *place, *value, *after),
                 _ => {
-                    self.unsupported(file, node.span, "this statement");
+                    self.refuse(file, node.span, ValueForm::Statement);
                     ok = false;
                 }
             }
             // a statement that failed to lower while nothing was reported is refused by name: nothing vanishes silently (a failure that rests on an earlier diagnostic, such as an unreadable file, keeps that one)
             if !ok && self.diagnostics.is_empty() {
-                self.refuse_silent_failure(file, node.span, "this statement");
+                self.refuse_silent_failure(file, node.span, ValueForm::Statement);
             }
             ok &= carried;
             // a statement that is the value of its block leaves the flag to the code that takes the value
@@ -771,7 +773,7 @@ impl Elaboration<'_, '_> {
             PatKind::Tuple(pats) if self.is_component_let(&pats, init) => self.lower_tuple_let(scope, out, &pats, init, file, span),
             PatKind::Tuple(_) | PatKind::TupleStruct { .. } | PatKind::Struct { .. } | PatKind::Array(_) => self.lower_destructuring_let(scope, out, pat, init),
             _ => {
-                self.unsupported(file, span, "a `let` pattern that is not a name");
+                self.refuse(file, span, ValueForm::LetPatternThatIsNotName);
                 false
             }
         }
@@ -858,7 +860,7 @@ impl Elaboration<'_, '_> {
             return Some(self.constant_expr(Constant::Int(i128::from(levels)), ty, origin));
         }
         let Resolution::Decl(decl) = res else {
-            self.unsupported(scope.file, node.span, "a built-in name used as a value");
+            self.refuse(scope.file, node.span, ValueForm::BuiltInNameUsedAsValue);
             return None;
         };
         match &self.design.decl_data(decl).kind {
@@ -875,7 +877,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Variant(_) => match (EnumLayout::variant_tag(self.design, decl), &ty) {
                 (Some(position), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: position as u32, fields: Vec::new() }, ty, origin)),
                 _ => {
-                    self.unsupported(scope.file, node.span, "a variant outside its enum");
+                    self.refuse(scope.file, node.span, ValueForm::VariantOutsideItsEnum);
                     None
                 }
             },
@@ -886,7 +888,7 @@ impl Elaboration<'_, '_> {
                 // a param of a reach frame whose given value does not fold is read in place (`reach/placement_params.rs`)
                 _ if scope.frame != 0 && self.frames.get(scope.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.lower_deferred_param(scope, decl),
                 _ => {
-                    self.unsupported(scope.file, node.span, "a param of another module");
+                    self.refuse(scope.file, node.span, ValueForm::ParamOfAnotherModule);
                     None
                 }
             },
@@ -901,13 +903,13 @@ impl Elaboration<'_, '_> {
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
                 (None, Some(None)) => {
-                    self.unsupported(scope.file, node.span, "a value input left out, read as a value");
+                    self.refuse(scope.file, node.span, ValueForm::ValueInputLeftOutReadAsValue);
                     None
                 }
                 // an array of carriers of length 0 read whole is the empty array (§1.2.3)
                 (None, None) if self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) => Some(self.emit(Expr::Array(Vec::new()), ty, origin)),
                 (None, None) => {
-                    self.unsupported(scope.file, node.span, "a node or a port read as a value");
+                    self.refuse(scope.file, node.span, ValueForm::NodeOrPortReadAsValue);
                     None
                 }
             },
@@ -935,7 +937,7 @@ impl Elaboration<'_, '_> {
                     self.lower_expr(scope, source)
                 }
                 None => {
-                    self.unsupported(scope.file, node.span, "a name with no value here");
+                    self.refuse(scope.file, node.span, ValueForm::NameWithNoValueHere);
                     None
                 }
             },
@@ -944,14 +946,14 @@ impl Elaboration<'_, '_> {
                 Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value))) => Some(self.constant_expr(piperine_ir::Constant::Int(*value), ty, origin)),
                 Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Bool(flag))) => Some(self.constant_expr(piperine_ir::Constant::Bool(*flag), ty, origin)),
                 _ => {
-                    self.unsupported(scope.file, node.span, "a generic parameter read as a value");
+                    self.refuse(scope.file, node.span, ValueForm::GenericParameterReadAsValue);
                     None
                 }
             },
             DeclKind::Fn(_) => self.lower_function_value(scope, decl, ty, node.span, origin),
             DeclKind::Struct(_) => self.lower_unit_struct(ty, origin),
             _ => {
-                self.unsupported(scope.file, node.span, "this name as a value");
+                self.refuse(scope.file, node.span, ValueForm::NameAsValue);
                 None
             }
         }

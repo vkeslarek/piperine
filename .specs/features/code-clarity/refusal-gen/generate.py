@@ -106,7 +106,7 @@ OPERATORS = {'+': 'Add', '-': 'Subtract', '*': 'Multiply', '/': 'Divide', '%': '
              '<=': 'LessOrEqual', '>': 'Greater', '>=': 'GreaterOrEqual'}
 
 # names the words of the text cannot give: it collides with another form's words
-OVERRIDES = {'`#[repr(..)]` other than `#[repr(uN)]` with `N` from 1 to 64': 'ReprOtherThanSizedInteger', "`logic` without the standard library's `Logic`": 'LogicWithoutStandardLibraryLogic', "a call of a trait's function with no `self`": 'CallOfTraitFunctionWithNoReceiver', 'comparison of values that are neither `f64`, `bool` nor an integer': 'ComparisonOfValuesThatAreNeitherFloatBoolNorInteger', 'literal': 'LiteralExpression', 'type': 'TypeName', 'binding': 'BindingPattern', 'unit type': 'UnitType'}
+OVERRIDES = {'an iterator method outside Appendix H.7': 'IteratorMethodOutsideAppendix', 'this expression': 'ThisExpression', 'a function without a body': 'LoweredFunctionWithoutBody', 'a method call': 'LoweredMethodCall', 'this type': 'ThisType', 'this pattern': 'ThisPattern', '`#[repr(..)]` other than `#[repr(uN)]` with `N` from 1 to 64': 'ReprOtherThanSizedInteger', "`logic` without the standard library's `Logic`": 'LogicWithoutStandardLibraryLogic', "a call of a trait's function with no `self`": 'CallOfTraitFunctionWithNoReceiver', 'comparison of values that are neither `f64`, `bool` nor an integer': 'ComparisonOfValuesThatAreNeitherFloatBoolNorInteger', 'literal': 'LiteralExpression', 'type': 'TypeName', 'binding': 'BindingPattern', 'unit type': 'UnitType'}
 
 
 class Registry:
@@ -210,6 +210,8 @@ CHANNELS = [
     (re.compile(r'\bself\.unsupported_unless_refused\('), 'unless', 3),
     (re.compile(r'\bConstFault::refused\('), 'const', 1),
     (re.compile(r'\bSelf::unsupported\('), 'const', 1),
+    (re.compile(r'\bself\.refuse_place\('), 'diagnostic', 2),
+    (re.compile(r'\bself\.refuse_silent_failure\('), 'diagnostic', 2),
 ]
 
 

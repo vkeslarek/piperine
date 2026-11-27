@@ -17,6 +17,7 @@ use super::elaborator::Elaboration;
 use super::elements::Lookup;
 use super::lower::Scope;
 use super::patterns::{PatternTest, Subject};
+use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
 use crate::types::{Nominal, Ty};
 
@@ -73,7 +74,7 @@ impl Elaboration<'_, '_> {
             _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
-                    self.unsupported(scope.file, self.design.expr_node(expr).span, "a struct expression that names neither a struct nor a variant");
+                    self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
                     return None;
                 }
             },
@@ -212,7 +213,7 @@ impl Elaboration<'_, '_> {
             ExprKind::Field { expr, name, .. } => {
                 let index = self.field_index(&self.typed(*expr)?, &name.text);
                 let Some(index) = index else {
-                    self.unsupported(scope.file, node.span, "an assignment to a field of a type that has none");
+                    self.refuse(scope.file, node.span, ValueForm::AssignmentToFieldOfTypeThatHas);
                     return None;
                 };
                 let mut place = self.place_of(scope, *expr)?;
@@ -221,7 +222,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Index { expr, index } => {
                 if matches!(self.design.expr_node(*index).kind, ExprKind::Range { .. }) {
-                    self.unsupported(scope.file, node.span, "an assignment to a range index");
+                    self.refuse(scope.file, node.span, ValueForm::AssignmentToRangeIndex);
                     return None;
                 }
                 let mut place = self.place_of(scope, *expr)?;
@@ -277,7 +278,7 @@ impl Elaboration<'_, '_> {
         match self.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
             Some(count) => Some(count),
             None => {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a length or a bound that is not an integer constant");
+                self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::LengthOrBoundThatIsNotInteger);
                 None
             }
         }
@@ -295,7 +296,7 @@ impl Elaboration<'_, '_> {
         }
         let whole = self.lower_expr(scope, base)?;
         let ValueType::Array(element, length) = self.type_of(whole) else {
-            self.unsupported(scope.file, span, "an index of a value that is not an array");
+            self.refuse(scope.file, span, ValueForm::IndexOfValueThatIsNotArray);
             return None;
         };
         if let ExprKind::Range { lo, hi, inclusive } = self.design.expr_node(index).kind.clone() {
@@ -388,7 +389,7 @@ impl Elaboration<'_, '_> {
         let variant = match self.design.path_node(path).segments.last().map(|s| s.res) {
             Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Variant(_)) => d,
             _ => {
-                self.unsupported(scope.file, node.span, "a pattern with fields that names no variant");
+                self.refuse(scope.file, node.span, ValueForm::PatternWithFieldsThatNamesNoVariant);
                 return None;
             }
         };

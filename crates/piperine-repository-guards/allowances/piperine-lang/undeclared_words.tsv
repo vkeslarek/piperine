@@ -54,7 +54,6 @@ crates/piperine-lang/src/elab/lower.rs::peel_parens	1
 crates/piperine-lang/src/elab/lower.rs::stims	1
 crates/piperine-lang/src/elab/lower.rs::stmt	1
 crates/piperine-lang/src/elab/mod.rs::consts	1
-crates/piperine-lang/src/elab/mod.rs::unlowered	1
 crates/piperine-lang/src/elab/node_choice.rs::let_initializer	1
 crates/piperine-lang/src/elab/origin.rs::Locator	1
 crates/piperine-lang/src/elab/origin.rs::decl	1
@@ -73,7 +72,6 @@ crates/piperine-lang/src/elab/selectors.rs::unselected	1
 crates/piperine-lang/src/elab/structural.rs::rhs	1
 crates/piperine-lang/src/elab/structural.rs::terminal_decl	1
 crates/piperine-lang/src/elab/structural.rs::unkeyed	1
-crates/piperine-lang/src/elab/unlowered.rs::Unlowered	1
 crates/piperine-lang/src/elab/unroll.rs::body_exprs	1
 crates/piperine-lang/src/elab/unroll.rs::unfoldable_recursion	1
 crates/piperine-lang/src/elab/variants.rs::specs	1
@@ -535,7 +533,6 @@ crates/piperine-lang/src/types/ty.rs::Int	1
 crates/piperine-lang/src/types/ty.rs::Ty	1
 crates/piperine-lang/src/types/ty.rs::UInt	1
 crates/piperine-lang/src/types/ty.rs::decl	1
-crates/piperine-lang/src/types/unsupported.rs::expr	1
 crates/piperine-lang/src/types/unsupported.rs::pat	1
 crates/piperine-lang/tests/book.rs::book_dir	1
 crates/piperine-lang/tests/book.rs::build_py_writes_an_ignored_index	1

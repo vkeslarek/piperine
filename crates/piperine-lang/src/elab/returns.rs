@@ -18,6 +18,7 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
 use super::instances::ConcreteValue;
+use crate::refusal::forms::{GenericsForm, ValueForm};
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, StmtKind};
 use crate::types::{Callee, Ty};
@@ -64,7 +65,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if matches!(declared, Some(Ty::Option(_))) && (payload.is_none() || half == Half::Whole) {
-            self.unsupported(file, body.span, "a function returning an `Option` whose payload has no value in the IR");
+            self.refuse(file, body.span, ValueForm::FunctionReturningOptionWhosePayloadHasNo);
             return None;
         }
         let base = match (&payload, half) {
@@ -134,14 +135,14 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_return(&mut self, scope: &mut Scope, value: Option<ExprId>, span: Span, origin: Origin) -> Option<LoweredExpr> {
         if !scope.inline_exits.is_empty() {
             let Some(value) = value else {
-                self.unsupported(scope.file, span, "a `return` with no value in an inlined function that returns an `Option`");
+                self.refuse(scope.file, span, ValueForm::ReturnWithNoValueInInlinedFunction);
                 return None;
             };
             let pair = self.lower_option(scope, value)?;
             return self.leave_inlined(scope, pair.is, pair.val, origin);
         }
         let Some(result) = scope.result.clone() else {
-            self.unsupported(scope.file, span, "a `return` outside a function that returns early");
+            self.refuse(scope.file, span, ValueForm::ReturnOutsideFunctionThatReturnsEarly);
             return None;
         };
         let lowered = match (value, &result.payload) {
@@ -162,7 +163,7 @@ impl Elaboration<'_, '_> {
             return self.lower_inlined_try(scope, inner, span, origin);
         }
         let Some((result, payload)) = scope.result.clone().and_then(|r| r.payload.clone().map(|p| (r, p))) else {
-            self.unsupported(scope.file, span, "`?` outside a function that returns an `Option`");
+            self.refuse(scope.file, span, ValueForm::OutsideFunctionThatReturnsOption);
             return None;
         };
         let pair = self.lower_option(scope, inner)?;
@@ -171,7 +172,7 @@ impl Elaboration<'_, '_> {
             _ => match self.zero(&payload, origin.clone()) {
                 Some(zero) => zero,
                 None => {
-                    self.unsupported(scope.file, span, "`?` where the payload has no zero in the IR");
+                    self.refuse(scope.file, span, ValueForm::WherePayloadHasNoZeroInIr);
                     return None;
                 }
             },
@@ -224,7 +225,7 @@ impl Elaboration<'_, '_> {
         let tail = match body.stmts.last().map(|s| self.design.stmt_node(*s).kind.clone()) {
             Some(StmtKind::Expr { expr, semi: false }) => expr,
             _ => {
-                self.unsupported(scope.file, span, "a function returning an `Option` with no tail value");
+                self.refuse(scope.file, span, ValueForm::FunctionReturningOptionWithNoTailValue);
                 return None;
             }
         };
@@ -292,7 +293,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let Some(payload) = payload else {
-            self.unsupported(scope.file, span, "a function returning an `Option` whose payload has no value in the IR");
+            self.refuse(scope.file, span, ValueForm::FunctionReturningOptionWhosePayloadHasNo);
             return None;
         };
         let is = self.declare_typed(scope, "option.is", ValueType::Bool, origin)?;
@@ -326,7 +327,7 @@ impl Elaboration<'_, '_> {
         let payload = scope.locals[frame.val as usize].ty.clone();
         let none = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
         let Some(zero) = self.zero(&payload, origin.clone()) else {
-            self.unsupported(scope.file, span, "`?` where the payload has no zero in the IR");
+            self.refuse(scope.file, span, ValueForm::WherePayloadHasNoZeroInIr);
             return None;
         };
         let exit = self.leave_inlined(scope, none, zero, origin.clone())?;
@@ -396,14 +397,14 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_option_instance_method(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId]) -> Option<Pair> {
         let span = self.design.expr_node(expr).span;
         if self.is_inlined(function) {
-            self.unsupported(scope.file, span, "a method on a nature that returns an `Option`");
+            self.refuse(scope.file, span, ValueForm::MethodOnNatureThatReturnsOption);
             return None;
         }
         let origin = self.expr_origin(expr);
         let receiver_type = self.typed(receiver)?;
         let instance = if self.is_generic_impl_item(function) {
             let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
-                self.unsupported(scope.file, span, "a method of a generic impl whose parameters the receiver leaves open");
+                self.refuse(scope.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
                 return None;
             };
             values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect::<Option<Vec<_>>>()?

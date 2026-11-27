@@ -62,7 +62,6 @@ crates/piperine-lang/src/elab/symbolic.rs::Elaboration	1
 crates/piperine-lang/src/elab/table_model.rs::Elaboration	1
 crates/piperine-lang/src/elab/templates.rs::Elaboration	1
 crates/piperine-lang/src/elab/types.rs::Elaboration	1
-crates/piperine-lang/src/elab/unlowered.rs::Elaboration	1
 crates/piperine-lang/src/elab/unroll.rs::Elaboration	1
 crates/piperine-lang/src/elab/variants.rs::Elaboration	1
 crates/piperine-lang/src/pom/bundles.rs::Design	1

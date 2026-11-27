@@ -10,6 +10,7 @@ use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
 use super::lower::Scope;
 use super::variants::Half;
+use crate::refusal::forms::GenericsForm;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use crate::types::Ty;
 
@@ -46,7 +47,7 @@ impl Elaboration<'_, '_> {
         let receiver_type = self.typed(receiver)?;
         let span = self.design.expr_node(expr).span;
         let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
-            self.unsupported(scope.file, span, "a method of a generic impl whose parameters the receiver leaves open");
+            self.refuse(scope.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
             return None;
         };
         values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect()
@@ -59,7 +60,7 @@ impl Elaboration<'_, '_> {
         let span = self.design.expr_node(expr).span;
         let receiver_type = self.typed(receiver)?;
         let Some(target) = self.bound_implementation(expr, item, &receiver_type) else {
-            self.unsupported(scope.file, span, "a method call through a bound that no impl gives for this type");
+            self.refuse(scope.file, span, GenericsForm::MethodCallThroughBoundThatNoImpl);
             return None;
         };
         self.lower_method_call(scope, expr, target, receiver, arguments, origin)

@@ -1,48 +1,11 @@
 //! The one place that names a construct outside the supported subset. Every `match` is exhaustive with
 //! no wildcard arm, so a new POM variant fails to compile until it is classified.
 
-use crate::pom::{DeclKind, ExprKind, PatKind};
+use crate::pom::{DeclKind, PatKind};
 
 pub(crate) struct Unsupported;
 
 impl Unsupported {
-    /// The name the specification gives an expression form.
-    pub(crate) fn expr(kind: &ExprKind) -> &'static str {
-        match kind {
-            ExprKind::Lit(_) => "literal",
-            ExprKind::Path(_) => "path expression",
-            ExprKind::Unary { .. } => "unary expression",
-            ExprKind::Binary { .. } => "binary expression",
-            ExprKind::Assign { .. } => "assignment",
-            ExprKind::Cast { .. } => "`as` cast",
-            ExprKind::Call { .. } => "call",
-            ExprKind::MethodCall { .. } => "method call",
-            ExprKind::Field { .. } => "field access",
-            ExprKind::Index { .. } => "index expression",
-            ExprKind::Range { .. } => "range expression",
-            ExprKind::Paren(_) => "parenthesized expression",
-            ExprKind::Tuple(_) => "tuple expression",
-            ExprKind::Array(_) => "array expression",
-            ExprKind::ArrayRepeat { .. } => "array repeat expression",
-            ExprKind::Struct { .. } => "struct expression",
-            ExprKind::Block(_) => "block expression",
-            ExprKind::If { .. } => "`if` expression",
-            ExprKind::Let { .. } => "`if let` condition",
-            ExprKind::Match { .. } => "`match` expression",
-            ExprKind::While { .. } => "`while` loop",
-            ExprKind::Loop { .. } => "`loop`",
-            ExprKind::For { .. } => "`for` loop",
-            ExprKind::Break(_) => "`break`",
-            ExprKind::Continue => "`continue`",
-            ExprKind::Return(_) => "`return`",
-            ExprKind::Closure { .. } => "closure",
-            ExprKind::Try(_) => "`?` expression",
-            ExprKind::Emit { .. } => "`emit!` statement",
-            ExprKind::IncludeStr(_) => "`include_str!`",
-            ExprKind::Error => "malformed expression",
-        }
-    }
-
     /// The name of a pattern form.
     pub(super) fn pat(kind: &PatKind) -> &'static str {
         match kind {

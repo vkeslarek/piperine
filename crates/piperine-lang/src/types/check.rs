@@ -520,7 +520,7 @@ impl<'d> Checker<'d> {
                     None
                 }
                 _ => {
-                    self.refuse(file, node.span, ValueForm::TypeAgain);
+                    self.refuse(file, node.span, ValueForm::ThisType);
                     None
                 }
             },

@@ -17,6 +17,7 @@ use super::compound::EnumLayout;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::selectors::ArmCondition;
+use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 use crate::types::Ty;
@@ -90,7 +91,7 @@ impl Elaboration<'_, '_> {
                     ValueType::Enum(_) => self.test_variant_pattern(scope, subject, pat, &base, origin),
                     ValueType::Tuple(_) | ValueType::Struct(_) => self.test_aggregate_pattern(scope, subject, pat, &base, origin),
                     _ => {
-                        self.unsupported(scope.file, node.span, "a pattern with fields over a value that is not a struct, a tuple or an enum");
+                        self.refuse(scope.file, node.span, PatternForm::PatternWithFieldsOverValueThatIs);
                         None
                     }
                 }
@@ -120,7 +121,7 @@ impl Elaboration<'_, '_> {
             }
             PatKind::Ident { res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), sub: None, .. } => self.test_named_value(scope, subject, *res, node.span, origin),
             _ => {
-                self.unsupported(scope.file, node.span, "this pattern");
+                self.refuse(scope.file, node.span, PatternForm::ThisPattern);
                 None
             }
         }
@@ -244,7 +245,7 @@ impl Elaboration<'_, '_> {
             _ => {}
         }
         let PatKind::TupleStruct { pats, .. } = &node.kind else {
-            self.unsupported(scope.file, node.span, "this pattern of an `Option`");
+            self.refuse(scope.file, node.span, PatternForm::PatternOfOption);
             return None;
         };
         let [inner] = pats.as_slice() else { return None };
@@ -283,7 +284,7 @@ impl Elaboration<'_, '_> {
         let value = match &node.kind {
             PatKind::Wild => return Some(PatternTest::when(present)),
             PatKind::Ident { res: Resolution::Unresolved, sub: None, .. } => {
-                self.unsupported(scope.file, node.span, "a binding inside `Some` in a definition");
+                self.refuse(scope.file, node.span, PatternForm::BindingInsideSomeInDefinition);
                 return None;
             }
             PatKind::Lit(expr) => self.lower_expr(scope, *expr)?,
@@ -299,7 +300,7 @@ impl Elaboration<'_, '_> {
                 self.path_value(scope, *res, &base, node.span, origin.clone())?
             }
             _ => {
-                self.unsupported(scope.file, node.span, "this pattern inside `Some` in a definition");
+                self.refuse(scope.file, node.span, PatternForm::PatternInsideSomeInDefinition);
                 return None;
             }
         };
@@ -324,7 +325,7 @@ impl Elaboration<'_, '_> {
                 }
             },
             _ => {
-                self.unsupported(scope.file, span, "this name as a pattern");
+                self.refuse(scope.file, span, PatternForm::NameAsPattern);
                 None
             }
         }
@@ -363,7 +364,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn bind_names(&mut self, scope: &mut Scope, bindings: &[(DeclId, LoweredExpr)]) -> Option<Vec<(u32, LoweredExpr)>> {
         if scope.no_locals && !bindings.is_empty() {
             let span = self.design.decl_data(bindings[0].0).span;
-            self.unsupported(scope.file, span, "a name bound by a pattern in a definition");
+            self.refuse(scope.file, span, PatternForm::NameBoundByPatternInDefinition);
             return None;
         }
         let mut names = Vec::with_capacity(bindings.len());
@@ -385,7 +386,7 @@ impl Elaboration<'_, '_> {
         let data = self.design.decl_data(decl);
         let (name, span) = (data.name.as_ref().map_or_else(String::new, |n| n.text.clone()), data.span);
         if self.types.is_assigned(decl) {
-            self.unsupported(scope.file, span, "an assignment to a local of type `Option`");
+            self.refuse(scope.file, span, PatternForm::AssignmentToLocalOfTypeOption);
             return None;
         }
         let ValueType::Option(payload) = self.type_of(packed) else { return None };
@@ -459,11 +460,11 @@ impl Elaboration<'_, '_> {
     /// that is more than its tail expression.
     fn bound_half(&mut self, scope: &mut Scope, lets: Vec<LoweredStmt>, stmts: &[StmtId], span: Span, half: LevelPart) -> Option<LoweredExpr> {
         let [stmt] = stmts else {
-            self.unsupported(scope.file, span, "an `if let` of `Option` values whose block is more than its value");
+            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
         let StmtKind::Expr { expr, semi: false } = self.design.stmt_node(*stmt).kind.clone() else {
-            self.unsupported(scope.file, span, "an `if let` of `Option` values whose block is more than its value");
+            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
         let origin = self.locator.origin(scope.file, span);

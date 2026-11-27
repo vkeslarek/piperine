@@ -15,6 +15,7 @@ use super::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
 use super::unroll::CallCycles;
 use super::variants::Variants;
+use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
@@ -252,7 +253,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         // the last net: an elaboration that placed no top and said nothing is refused by name, never an empty `Err`
         if top_instance.is_none() && self.diagnostics.is_empty() {
             let (file, span) = (self.design.decl_data(top).file, self.design.decl_data(top).span);
-            self.refuse_silent_failure(file, span, "the top module (its elaboration failed without a diagnostic)");
+            self.refuse_silent_failure(file, span, ValueForm::TopModuleItsElaborationFailedWithoutDiagnostic);
         }
         match top_instance {
             Some(instance) if self.diagnostics.is_empty() => {
@@ -341,17 +342,28 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.report(file, Diagnostic::new("P0004", format!("internal error: {what}"), span, "this is a bug in the elaborator, not in the model"));
     }
 
-    /// `P0001`: a construct inside the type-checked subset that elaboration does not lower yet.
+    /// `P0001`: a construct inside the type-checked subset that elaboration does not lower yet, in free text.
     pub(super) fn unsupported(&mut self, file: FileId, span: Span, what: &str) {
         self.report(file, Refusal::of(RefusedForm::Text(what.to_string())).diagnostic(span));
     }
 
-    /// [`unsupported`](Self::unsupported) unless the read through the frame `frame` passes through a module refused for its own
+    /// `P0001` at `span`, naming `form`: a construct inside the type-checked subset that elaboration does not lower.
+    pub(super) fn refuse(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        self.report(file, Refusal::of(form).diagnostic(span));
+    }
+
+    /// [`refuse`](Self::refuse) with `details` for the `{}` of the form's words.
+    pub(super) fn refuse_with(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) {
+        let refusal = details.into_iter().fold(Refusal::of(form), Refusal::with_detail);
+        self.report(file, refusal.diagnostic(span));
+    }
+
+    /// [`refuse`](Self::refuse) unless the read through the frame `frame` passes through a module refused for its own
     /// cause (`refused_modules`): that refusal is the read's, reported once. Any other refusal of the run, of another module or of
     /// another read, hides nothing.
-    pub(super) fn unsupported_unless_refused(&mut self, frame: usize, file: FileId, span: Span, what: &str) {
+    pub(super) fn refuse_unless_refused(&mut self, frame: usize, file: FileId, span: Span, form: impl Into<RefusedForm>) {
         if !self.reads_through_refused(frame) {
-            self.unsupported(file, span, what);
+            self.refuse(file, span, form);
         }
     }
 

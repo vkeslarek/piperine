@@ -19,6 +19,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr};
 use super::elaborator::Elaboration;
 use super::expansion::Environment;
 use super::lower::Scope;
+use crate::refusal::forms::AnalogForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, PatKind, Resolution, StmtId, StmtKind};
 use crate::types::Ty;
@@ -98,7 +99,7 @@ impl Elaboration<'_, '_> {
                 return Some(value);
             }
         }
-        self.unsupported(scope.file, at, "a `fn` with no value inside a `ddx`");
+        self.refuse(scope.file, at, AnalogForm::FnWithNoValueInsideDdx);
         None
     }
 
@@ -124,7 +125,7 @@ impl Elaboration<'_, '_> {
                 Some(Flow::Next)
             }
             _ => {
-                self.unsupported(file, node.span, "a statement that is no `let` of a name, assignment, `if` or `for` in a `fn` called inside a `ddx`");
+                self.refuse(file, node.span, AnalogForm::StatementThatIsNoLetOfName);
                 None
             }
         }
@@ -133,7 +134,7 @@ impl Elaboration<'_, '_> {
     /// `let name = init;`: the name holds the lowered initializer (an `Option` its pair, a `str` its text).
     pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span, body: ExpandedBody) -> Option<()> {
         let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind else {
-            self.unsupported(scope.file, span, &format!("a `let` of a pattern that is no name in {}", body.describes()));
+            self.refuse_with(scope.file, span, AnalogForm::LetOfPatternThatIsNoName, [body.describes().to_string()]);
             return None;
         };
         match self.typed_local(binding) {
@@ -185,16 +186,16 @@ impl Elaboration<'_, '_> {
                 Some(Flow::Next)
             }
             ExprKind::While { .. } | ExprKind::Loop { .. } => {
-                self.unsupported(file, node.span, "a `while` or `loop` in a `fn` called inside a `ddx`: it has no finite symbolic reading");
+                self.refuse(file, node.span, AnalogForm::WhileOrLoopInFnCalledInside);
                 None
             }
             ExprKind::Break(_) | ExprKind::Continue | ExprKind::Return(None) => {
-                self.unsupported(file, node.span, "a `break`, a `continue` or a `return` with no value in a `fn` called inside a `ddx`");
+                self.refuse(file, node.span, AnalogForm::BreakContinueOrReturnWithNoValue);
                 None
             }
             _ if value => Some(Flow::Done(self.lower_expr(scope, expr)?)),
             _ => {
-                self.unsupported(file, node.span, "an expression statement that is no assignment, `if` or `for` in a `fn` called inside a `ddx`");
+                self.refuse(file, node.span, AnalogForm::ExpressionStatementThatIsNoAssignmentIf);
                 None
             }
         }
@@ -213,12 +214,12 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let Some(decl) = named else {
-            self.unsupported(scope.file, node.span, &format!("an assignment to something that is no name of {}", body.describes()));
+            self.refuse_with(scope.file, node.span, AnalogForm::AssignmentToSomethingThatIsNoName, [body.describes().to_string()]);
             return None;
         };
         let Some(op) = op else { return self.set_expanded_name(scope, decl, rhs) };
         if matches!(self.types.callee(assignment), Some(crate::types::Callee::Method(_))) {
-            self.unsupported(scope.file, node.span, &format!("a compound assignment through an operator of a type, in {}", body.describes()));
+            self.refuse_with(scope.file, node.span, AnalogForm::CompoundAssignmentThroughOperatorOfTypeIn, [body.describes().to_string()]);
             return None;
         }
         let old = scope.values[&decl];
@@ -235,7 +236,7 @@ impl Elaboration<'_, '_> {
     fn run_if(&mut self, scope: &mut Scope, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow> {
         let span = self.design.expr_node(cond).span;
         if matches!(self.design.expr_node(cond).kind, ExprKind::Let { .. }) {
-            self.unsupported(scope.file, span, "an `if let` in a `fn` called inside a `ddx`");
+            self.refuse(scope.file, span, AnalogForm::IfLetInFnCalledInsideDdx);
             return None;
         }
         if let Some(holds) = self.folded_decision(scope, cond) {
@@ -248,7 +249,7 @@ impl Elaboration<'_, '_> {
         }
         scope.forks += 1;
         if scope.forks > FORKS {
-            self.unsupported(scope.file, span, "a `fn` called inside a `ddx` that forks into more than 4096 paths");
+            self.refuse(scope.file, span, AnalogForm::FnCalledInsideDdxThatForksInto);
             return None;
         }
         let test = self.lower_expr(scope, cond)?;
@@ -278,7 +279,7 @@ impl Elaboration<'_, '_> {
             ExprKind::Block(block) => self.push_block(steps, &block.stmts, value),
             ExprKind::If { .. } => steps.push(Step::Expression { expr: otherwise, value }),
             _ => {
-                self.unsupported(scope.file, self.design.expr_node(otherwise).span, &format!("an `else` that is no block or `if` in {}", body.describes()));
+                self.refuse_with(scope.file, self.design.expr_node(otherwise).span, AnalogForm::ElseThatIsNoBlockOrIf, [body.describes().to_string()]);
                 return None;
             }
         }
@@ -289,28 +290,28 @@ impl Elaboration<'_, '_> {
     pub(super) fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span, context: ExpandedBody) -> Option<()> {
         let iter = self.peel_parens(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(iter).kind else {
-            self.unsupported(scope.file, span, &format!("a `for` that is not over a range with both bounds, in {}", context.describes()));
+            self.refuse_with(scope.file, span, AnalogForm::ForThatIsNotOverRangeWith, [context.describes().to_string()]);
             return None;
         };
         let variable = match self.design.pat_node(pat).kind {
             PatKind::Ident { binding, sub: None, .. } => Some(binding),
             PatKind::Wild => None,
             _ => {
-                self.unsupported(scope.file, span, &format!("a `for` whose variable is no name, in {}", context.describes()));
+                self.refuse_with(scope.file, span, AnalogForm::ForWhoseVariableIsNoNameIn, [context.describes().to_string()]);
                 return None;
             }
         };
         let (Some(Constant::Int(first)), Some(Constant::Int(last))) = (self.fold_scalar(scope, lo), self.fold_scalar(scope, hi)) else {
-            self.unsupported(scope.file, span, &format!("a `for` whose bounds do not fold to constants, in {}", context.describes()));
+            self.refuse_with(scope.file, span, AnalogForm::ForWhoseBoundsDoNotFoldTo, [context.describes().to_string()]);
             return None;
         };
         let end = if inclusive { last + 1 } else { last };
         if end - first > ITERATIONS {
-            self.unsupported(scope.file, span, &format!("a `for` of more than 4096 iterations in {}", context.describes()));
+            self.refuse_with(scope.file, span, AnalogForm::ForOfMoreThanIterationsIn, [context.describes().to_string()]);
             return None;
         }
         if self.body_exprs(body).iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Break(_) | ExprKind::Continue | ExprKind::While { .. } | ExprKind::Loop { .. })) {
-            self.unsupported(scope.file, span, &format!("a `break`, a `continue` or a nested `while` in a loop of {}", context.describes()));
+            self.refuse_with(scope.file, span, AnalogForm::BreakContinueOrNestedWhileInLoop, [context.describes().to_string()]);
             return None;
         }
         if let Some(variable) = variable {

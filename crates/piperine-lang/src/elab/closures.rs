@@ -10,6 +10,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as Lo
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{ClosureParam, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
@@ -23,7 +24,7 @@ impl Elaboration<'_, '_> {
             match self.design.pat_node(param.pat).kind.clone() {
                 PatKind::Ident { binding, sub: None, .. } => locals.push(self.bind_local(scope, binding)?),
                 _ => {
-                    self.unsupported(scope.file, span, "a closure parameter that is not a name");
+                    self.refuse(scope.file, span, ValueForm::ClosureParameterThatIsNotName);
                     return None;
                 }
             }
@@ -75,7 +76,7 @@ impl Elaboration<'_, '_> {
         let parameters = self.design.decl_data(function).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::FnParam(_))).count();
         let ValueType::Fn(types, _) = &ty else { return None };
         if types.len() != parameters || self.calls_option_function_decl(function) {
-            self.unsupported(scope.file, span, "a function with an `Option` parameter or result used as a value");
+            self.refuse(scope.file, span, ValueForm::FunctionWithOptionParameterOrResultUsed);
             return None;
         }
         let (id, ret) = self.request(function, Half::Whole)?;
@@ -103,7 +104,7 @@ impl Elaboration<'_, '_> {
         let index = scope.local_index[&decl];
         let callee_ty = scope.locals[index as usize].ty.clone();
         let ValueType::Fn(_, ret) = &callee_ty else {
-            self.unsupported(scope.file, span, "a call of a value that is not a function");
+            self.refuse(scope.file, span, ValueForm::CallOfValueThatIsNotFunction);
             return None;
         };
         let ret = (**ret).clone();
@@ -127,7 +128,7 @@ impl Elaboration<'_, '_> {
         let function = self.lower_expr(scope, callee)?;
         let callee_ty = self.expr_types[function.index()].clone();
         let ValueType::Fn(_, ret) = &callee_ty else {
-            self.unsupported(scope.file, span, "a callee whose function value has no function type once lowered");
+            self.refuse(scope.file, span, ValueForm::CalleeWhoseFunctionValueHasNoFunction);
             return None;
         };
         let ret = (**ret).clone();

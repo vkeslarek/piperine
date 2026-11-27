@@ -10,6 +10,7 @@ use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::lower::Scope;
+use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {
@@ -46,7 +47,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             if target.element.is_some() && definition.after.is_some() {
-                self.unsupported(scope.file, self.design.expr_node(definition.place).span, "a delayed definition of an element of an array of carriers");
+                self.refuse(scope.file, self.design.expr_node(definition.place).span, DigitalForm::DelayedDefinitionOfElementOfArrayOf);
                 continue;
             }
             let origin = self.locator.decl(child);
@@ -81,7 +82,7 @@ impl Elaboration<'_, '_> {
         {
             return Some(*index);
         }
-        self.unsupported(scope.file, node.span, "a target that is not a carrier of this module");
+        self.refuse(scope.file, node.span, DigitalForm::TargetThatIsNotCarrierOfThis);
         None
     }
 
@@ -101,12 +102,12 @@ impl Elaboration<'_, '_> {
         };
         if !sub.locals.is_empty() {
             let span = self.design.expr_node(value).span;
-            self.unsupported(scope.file, span, "a `let` inside a definition");
+            self.refuse(scope.file, span, DigitalForm::LetInsideDefinition);
             return None;
         }
         if lowered.is_none() && self.diagnostics.is_empty() {
             let span = self.design.expr_node(value).span;
-            self.refuse_silent_failure(scope.file, span, "a drive value");
+            self.refuse_silent_failure(scope.file, span, DigitalForm::DriveValue);
         }
         let delay = match delay {
             Some(d) => Some(d?),

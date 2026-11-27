@@ -17,6 +17,7 @@
 
 use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRole, Origin, Reach, ReachedItem, Terminal, ValueType};
 
+use crate::refusal::forms::ValueForm;
 use crate::elab::body::NodePlan;
 use crate::elab::consts::Bindings;
 use crate::elab::carriers::Frame;
@@ -54,7 +55,7 @@ impl Elaboration<'_, '_> {
         if terminal.is_none() {
             let span = self.design.expr_node(expr).span;
             // a module that declares a node in generation was refused by its count (`declares_in_generation`)
-            self.unsupported_unless_refused(frame, scope.file, span, "a name of a child that is not one of its nodes, as a node");
+            self.refuse_unless_refused(frame, scope.file, span, ValueForm::NameOfChildThatIsNotOne);
         }
         terminal
     }
@@ -82,14 +83,14 @@ impl Elaboration<'_, '_> {
                     lowered
                 }
                 None => {
-                    self.unsupported(scope.file, span, "a param of a child that no placement value fixes");
+                    self.refuse(scope.file, span, ValueForm::ParamOfChildThatNoPlacementValue);
                     None
                 }
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match self.frame_carrier(frame, item) {
                 Some(index) => Some(self.carrier_read(index, origin)),
                 None => {
-                    self.unsupported(scope.file, span, "a node of a child read as a value");
+                    self.refuse(scope.file, span, ValueForm::NodeOfChildReadAsValue);
                     None
                 }
             },
@@ -136,14 +137,14 @@ impl Elaboration<'_, '_> {
         if let Some(place) = self.bundle_leaf(scope, expr) {
             // a field of an element of an array of bundles is one element of its leaf: the element forms read it (`elements.rs`)
             if !place.elements.is_empty() {
-                self.unsupported(scope.file, self.design.expr_node(expr).span, "a field of an element of an array of bundles in this position");
+                self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::FieldOfElementOfArrayOfBundles);
                 return None;
             }
             return Some((scope.frame, place.decl));
         }
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else {
-            self.unsupported(scope.file, node.span, "a field access that is not an item of a placed module");
+            self.refuse(scope.file, node.span, ValueForm::FieldAccessThatIsNotItemOf);
             return None;
         };
         let frame = self.child_frame(scope, *receiver)?;
@@ -191,13 +192,13 @@ impl Elaboration<'_, '_> {
     /// generation named by `indexes` (one for each `for` around it). `None` after a diagnostic.
     fn nested_child_frame(&mut self, scope: &Scope, parent: usize, binding: DeclId, indexes: &[ExprId], span: crate::msl::Span) -> Option<usize> {
         let Some(call) = self.body_let_value(binding).map(|value| self.peel_parens(value)) else {
-            self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
+            self.refuse(scope.file, span, ValueForm::FieldOfSomethingThatIsNotName);
             return None;
         };
         let owner = self.design.expr_node(call).owner;
         let loops = self.generation_loops(owner).len();
         if indexes.len() != loops {
-            self.unsupported(scope.file, span, "an item of a child placed in generation, read without naming its iteration: index every loop");
+            self.refuse(scope.file, span, ValueForm::ItemOfChildPlacedInGenerationRead);
             return None;
         }
         let ordinals = self.fold_ordinals(scope, indexes)?;
@@ -243,17 +244,17 @@ impl Elaboration<'_, '_> {
         } else if self.frames[scope.frame].is_reached() {
             (self.frame_bindings(scope.frame), None)
         } else {
-            self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
+            self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             return None;
         };
         let Some(module) = self.placed_module(call, &keys) else {
-            self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
+            self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             return None;
         };
         if scope.frame == 0 && child.is_none() {
             // a placement of the body with no child of its own is a hoisted one: refused when it was hoisted, if it holds a placement
             if !self.refused_modules.contains(&module) {
-                self.unsupported_unless_refused(scope.frame, scope.file, span, "a field of a child of a child");
+                self.refuse_unless_refused(scope.frame, scope.file, span, ValueForm::FieldOfChildOfChild);
             }
             return None;
         }
@@ -392,7 +393,7 @@ impl Elaboration<'_, '_> {
         let found = data.children.iter().find(|child| matches!(self.design.decl_data(**child).kind, DeclKind::Generation(_)) && self.declares_node(**child));
         if let Some(generation) = found {
             self.refused_modules.insert(module);
-            self.unsupported(data.file, self.design.decl_data(*generation).span, "a node declared in generation of a module a parent reads through");
+            self.refuse(data.file, self.design.decl_data(*generation).span, ValueForm::NodeDeclaredInGenerationOfModuleParent);
         }
         found.is_some()
     }
@@ -461,7 +462,7 @@ impl Elaboration<'_, '_> {
         }
         indexes.reverse();
         let Some((binding, call)) = self.placement_bound_to(at) else {
-            self.unsupported(scope.file, span, "a field of something that is not a name bound to a placement");
+            self.refuse(scope.file, span, ValueForm::FieldOfSomethingThatIsNotName);
             return None;
         };
         let mut key = self.placement_key(scope, call);
@@ -478,7 +479,7 @@ impl Elaboration<'_, '_> {
         let owner = self.design.expr_node(call).owner;
         let loops = self.generation_loops(owner).len();
         if key.iteration.len() != loops {
-            self.unsupported(scope.file, span, "a part of an array of generated instances as the receiver of a field: name an instance");
+            self.refuse(scope.file, span, ValueForm::PartOfArrayOfGeneratedInstancesAs);
             return None;
         }
         if loops > 0 && self.iteration_position(owner, &key.iteration).is_none() {
@@ -561,12 +562,12 @@ impl Elaboration<'_, '_> {
         }
         let data = self.design.decl_data(decl).clone();
         let Some(Ty::Carrier { nature, .. }) = self.consts.typed_carrier(decl) else {
-            self.unsupported(data.file, data.span, "a drive of a child's carrier that is not of a resolved nature");
+            self.refuse(data.file, data.span, ValueForm::DriveOfChildCarrierThatIsNot);
             return None;
         };
         let (chosen, _) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
-            self.unsupported(data.file, data.span, "a resolved carrier whose drive type has no value in the IR");
+            self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };
         self.structure.carriers[index as usize].role = CarrierRole::Resolved { driven, port: false };

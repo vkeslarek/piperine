@@ -118,6 +118,7 @@ another
 answer
 answers
 any
+anything
 apart
 appears
 append
@@ -1252,6 +1253,7 @@ held
 help
 helper
 helpers
+here
 hertz
 hex
 hiccup
@@ -1359,6 +1361,7 @@ inject
 injection
 inline
 inlined
+inlining
 inner
 innermost
 input
@@ -2142,6 +2145,7 @@ random
 range
 ranges
 rate
+rather
 ratio
 rational
 rationale

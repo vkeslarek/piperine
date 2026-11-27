@@ -25,6 +25,7 @@ use piperine_ir::{BranchKind, Condition, Expr, ExprId as LoweredExpr, QuantityRo
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclKind, ExprId, FileId, PatId};
 
@@ -224,17 +225,17 @@ impl Elaboration<'_, '_> {
                 }
                 ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
                 ArmCondition::IfLet => {
-                    self.unsupported(scope.file, span, &format!("{what} under an `if let`"));
+                    self.refuse_with(scope.file, span, ValueForm::UnderIfLet, [what.to_string()]);
                     return None;
                 }
                 ArmCondition::Guarded => {
-                    self.unsupported(scope.file, span, &format!("{what} under a `match` arm with a guard"));
+                    self.refuse_with(scope.file, span, ValueForm::UnderMatchArmWithGuard, [what.to_string()]);
                     return None;
                 }
             }
         }
         if !standalone.locals.is_empty() {
-            self.unsupported(scope.file, span, &format!("{what} under a condition that binds a local"));
+            self.refuse_with(scope.file, span, ValueForm::UnderConditionThatBindsLocal, [what.to_string()]);
             return None;
         }
         let mut tests = tests.into_iter();
