@@ -240,3 +240,34 @@ impl ContributionSums {
         text
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use piperine_ir::{BodySpec, Branch, BranchKind, InstanceSpec, IrBuilder, Origin, QuantityRole, Terminal};
+
+    use super::ContributionSums;
+
+    /// A branch that ends on an own terminal, which `check()` keeps out of a branch, is labelled by it
+    /// where the label used to panic.
+    #[test]
+    fn a_branch_on_an_own_terminal_is_labelled_not_a_panic() {
+        let origin = Origin { file: "own.msl".into(), line: 1, col: 1 };
+        let mut builder = IrBuilder::new();
+        let body = builder.body(BodySpec {
+            name: "Top".into(),
+            origin: origin.clone(),
+            params: vec![],
+            nodes: vec![],
+            branches: vec![Branch { plus: Terminal::Own(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: None,
+            children: vec![],
+        });
+        let top = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![], origin });
+        let ir = builder.finish(top);
+        let text = ContributionSums::branch_text(ir.body(body), 0, QuantityRole::Flow);
+        assert_eq!(text, "i(own terminal 0)");
+    }
+}

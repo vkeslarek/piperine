@@ -8,7 +8,6 @@ use crate::analyses::Context;
 use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::Stamp;
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
@@ -149,7 +148,7 @@ impl DcSystem<'_> {
 
 pub struct DcSolver<'a> {
     pub system: DcSystem<'a>,
-    pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
+    pub solver: NewtonRaphsonSolver<AnalogReference, f64>,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: Policy,

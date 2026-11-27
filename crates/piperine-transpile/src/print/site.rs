@@ -387,7 +387,7 @@ mod tests {
 
     /// The text of the function of `body` whose mode `pick` selects.
     fn printed(ir: &Ir, body: BodyId, pick: impl Fn(Mode) -> bool) -> String {
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let k = plan.functions().iter().position(|f| pick(f.mode)).expect("the function");
         let printer = AnalogPrinter::new(ir.body(body), &plan);
         match plan.functions()[k].mode {

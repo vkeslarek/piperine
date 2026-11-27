@@ -230,7 +230,7 @@ impl<'a> PoleZeroSolver<'a> {
         if a.iter().chain(b.iter()).any(|entry| !entry.is_finite()) {
             return Err(Error::simple(
                 SolverDomain::Pz,
-                "the pencil holds a non-finite entry, so its poles and zeros are undefined",
+                "the pencil holds an infinite or undefined entry, so its poles and zeros are undefined",
             ));
         }
         let a_mat = faer::Mat::from_fn(size, size, |i, j| a[[i, j]]);
@@ -673,7 +673,9 @@ mod tests {
         Context::init_global();
         let a = ndarray::arr2(&[[-2.0, 0.0], [0.0, f64::INFINITY]]);
         let b = ndarray::arr2(&[[1.0, 0.0], [0.0, 1.0]]);
-        let refused = PoleZeroSolver::finite_generalized_eigenvalues(&a, &b, 2);
-        assert!(refused.is_err(), "a NaN entry must be refused: {refused:?}");
+        match PoleZeroSolver::finite_generalized_eigenvalues(&a, &b, 2) {
+            Err(Error::Simple { domain: SolverDomain::Pz, detail }) => assert!(detail.contains("infinite"), "{detail}"),
+            other => panic!("an infinite entry is refused in the Pz domain: {other:?}"),
+        }
     }
 }

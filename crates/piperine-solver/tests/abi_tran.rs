@@ -373,7 +373,7 @@ fn a_rejected_stage_restores_the_term_history() {
         let mut solver = control.transient(options, Context::default()).expect("tran");
         assert!(solver.solve().is_err(), "no step may run");
     }
-    let at_start = control.bound().expect("bound").analog.snapshot();
+    let at_start = control.bound().analog.snapshot();
 
     // The first step's first stage converges and pushes a row of every history; its second stage
     // (t = dt, past the time the device faults at) fails, and at `dt_min = dt` the run ends there.
@@ -385,7 +385,7 @@ fn a_rejected_stage_restores_the_term_history() {
         let err = solver.solve().err().expect("the second stage faults").to_string();
         assert!(err.contains("late"), "{err}");
     }
-    assert_eq!(failing.bound().expect("bound").analog.snapshot(), at_start);
+    assert_eq!(failing.bound().analog.snapshot(), at_start);
 
     // Accepted steps do move the histories, so the comparison above has teeth.
     let (mut running, _) = discharge();
@@ -395,7 +395,7 @@ fn a_rejected_stage_restores_the_term_history() {
         let options = TransientAnalysisOptions::new(tau, dt).with_max_steps(0);
         let _ = still.transient(options, Context::default()).expect("tran").solve();
     }
-    assert_ne!(running.bound().expect("bound").analog.snapshot(), still.bound().expect("bound").analog.snapshot());
+    assert_ne!(running.bound().analog.snapshot(), still.bound().analog.snapshot());
 }
 
 /// SAI-15: every function of this target's own devices passes the partials

@@ -550,15 +550,6 @@ impl BodyPlan {
         if value.is_nan() { f64::NAN.to_le_bytes().to_vec() } else { value.to_le_bytes().to_vec() }
     }
 
-    /// Plans `body`, which comes from an `Ir` that passes `check()`: a body `check()` refuses
-    /// breaks that precondition and panics; a host that did not check the `Ir` calls [`build`](Self::build).
-    pub fn new(body: Body<'_>) -> BodyPlan {
-        match Self::build(body) {
-            Ok(plan) => plan,
-            Err(refused) => panic!("{refused}"),
-        }
-    }
-
     /// Plans `body`, or names what it holds that has no layout.
     pub fn build(body: Body<'_>) -> Result<BodyPlan, PlanError> {
         let ir = body.ir();

@@ -122,26 +122,3 @@ fn a_limit_or_stim_function_reading_a_carrier_lowers() {
     });
     assert!(stim.contains("ac_stim_block") && stim.contains("en"), "{stim}");
 }
-
-#[test]
-fn an_own_terminal_on_a_branch_is_a_rejection_not_a_panic() {
-    let origin = Origin { file: "unchecked.msl".into(), line: 1, col: 1 };
-    let mut builder = IrBuilder::new();
-    let body = builder.body(BodySpec {
-        name: "Top".into(),
-        origin: origin.clone(),
-        params: vec![],
-        nodes: vec![],
-        branches: vec![Branch { plus: Terminal::Own(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
-        limits: vec![],
-        stims: vec![],
-        locals: vec![],
-        analog: None,
-        children: vec![],
-    });
-    let top = builder.instance(piperine_ir::InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![], params: vec![], origin });
-    match Transpiler::new(Arc::new(builder.finish(top))) {
-        Err(Error::Rejected(entries)) => assert!(!entries.is_empty(), "the rejection names what check() refused"),
-        other => panic!("an own terminal on a branch is rejected: {other:?}"),
-    }
-}

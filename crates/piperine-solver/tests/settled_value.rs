@@ -116,7 +116,7 @@ fn x_changed_does_not_fire_when_the_settled_value_is_unchanged() {
     // §13: the initial value is a change). At 100 ns `x <- HIGH; x <- LOW;` settles to LOW, the
     // value it held: no change, so `x.changed()` fires no second time.
     assert_eq!(FIRED.with(|f| f.get()), 1, "x.changed() fired although the settled value is the one before the microstep");
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     assert_eq!(bound.digital.read(bound.names.nets["net:x"]), LOW, "the later statement wins");
 }
 

@@ -123,7 +123,7 @@ fn a_window_binds_a_pin_to_elements_of_an_array_net() {
         &[Port::Window { net: "lines".into(), first: 0, length: 4 }, Port::Net("low".into())],
     );
     let mut circuit = b.build().expect("the windows bind");
-    let bound = circuit.bound_mut().expect("a device circuit");
+    let bound = circuit.bound_mut();
     let lines = bound.names.nets["net:lines"];
     assert_eq!(bound.names.pins[0][0], Site::ArrayElement { net: lines, element: 5 }, "a scalar pin on one element");
     assert_eq!(bound.names.pins[1][0], Site::ArrayWindow { net: lines, first: 4, length: 4 }, "an array pin on a run");

@@ -139,10 +139,16 @@ fn digital_divider_reports_k_times_period() {
     assert!(msg.contains("2.000000e-3"), "suggests period = 2·T: {msg}");
 }
 
-/// A shot that recorded no step has no arrival state to compare: the shooting reads the error.
+/// The shooting reads the arrival of a shot through `TransientAnalysisResult::final_step`: a result with no
+/// step is the transient's error. A shot always records its first step, so the shooting itself cannot be driven
+/// to it; the claim is the reader's.
 #[test]
-fn a_shot_with_no_step_is_an_error_not_a_panic() {
+fn a_result_with_no_step_has_no_final_step_error() {
     let empty = piperine_solver::prelude::TransientAnalysisResult::new(Vec::new());
-    let err = empty.final_step().expect_err("no step, no final state");
-    assert!(err.to_string().contains("no step"), "{err}");
+    match empty.final_step() {
+        Err(piperine_solver::abi::Error::Simple { domain: piperine_solver::abi::SolverDomain::Transient, detail }) => {
+            assert!(detail.contains("no step"), "{detail}")
+        }
+        other => panic!("no step is the transient's error: {other:?}"),
+    }
 }

@@ -22,10 +22,6 @@ crates/piperine-analog-solver/src/math/iv.rs::::InitialValue	1
 crates/piperine-analog-solver/src/math/linear.rs::::AsIndex	1
 crates/piperine-analog-solver/src/math/linear.rs::::Stamp	1
 crates/piperine-analog-solver/src/math/linear.rs::AsIndex::as_index	1
-crates/piperine-analog-solver/src/math/linear.rs::LinearSystem::new	1
-crates/piperine-analog-solver/src/math/linear.rs::SymbolicLinearSystem::solve_with_backend	1
-crates/piperine-analog-solver/src/math/linear.rs::SymbolicMatrix::new	1
-crates/piperine-analog-solver/src/math/linear.rs::SymbolicMatrix::size	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::::NewtonRaphsonSolver	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::::NonLinearSystem	1
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::current_guess	1

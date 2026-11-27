@@ -137,7 +137,7 @@ fn time_and_static_are_ambient_reads() {
         Buck::reaction(b, body, vec![cross], vec![t, s], vec![], F, 4);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (p, n) = (Find::pin(shape, "p"), Find::pin(shape, "n"));
     let (time, stat) = (ambient(ambient::TIME), ambient(ambient::STATIC));
@@ -205,7 +205,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         Buck::reaction(b, body, vec![guarded], vec![commit], vec![], F, 6);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (t0, dt, fired) = (Find::pin(shape, "t0"), Find::pin(shape, "dt"), Find::pin(shape, "fired"));
     let (event0, event1) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
@@ -291,7 +291,7 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
         Buck::reaction(b, body, vec![changed], vec![first, commit, second], vec![], F, 3);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (trace, x, event) = (Find::pin(shape, "trace"), Find::pin(shape, "x"), Find::pin(shape, "event:0"));
     let p = shape.pins.get(trace as usize).expect("the record pin");
@@ -348,7 +348,7 @@ fn reads_its_flow(b: &mut IrBuilder, name: &str, param: &str, operator: Operator
 fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     // the inductor of the power stage: `v(p, n) +> ddt(l * i(p, n))`
     let (ir, body) = Alone::design(|b| reads_its_flow(b, "Inductor", "l", Operator::Ddt));
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (l, p, n, f) = (Find::pin(shape, "l"), Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "b0.flow"));
     // abi.md A1: a potential branch is its private flow pin `f`, the term `FLOW {p, n}` that
@@ -375,7 +375,7 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     // the same read in a direct addend (`v(p, n) +> r * i(p, n)`: a resistor written as a
     // potential): the row `v(p, n) - r·f` reads f, and stays affine in the pins
     let (ir, body) = Alone::design(|b| reads_its_flow(b, "FlowResistor", "r", Operator::Direct));
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (_, _, partials) = Find::function(shape, "terms");
     assert_eq!(partials, [(0, 2), (1, 0), (1, 1), (1, 2)], "the row against p, n and f");
@@ -420,7 +420,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (clk, d, q, event) = (Find::pin(shape, "clk"), Find::pin(shape, "d"), Find::pin(shape, "q"), Find::pin(shape, "event:0"));
 
@@ -477,7 +477,7 @@ fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
             ..Buck::spec("Probe", F, 1)
         })
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (p, n) = (Find::pin(shape, "p"), Find::pin(shape, "n"));
 
@@ -540,7 +540,7 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
         Buck::reaction(b, body, vec![cross], vec![commit], vec![], F, 5);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (p, n, tt, et) = (Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "tt"), Find::pin(shape, "et"));
     let (ttol, etol) = (Find::pin(shape, "ttol:0"), Find::pin(shape, "etol:0"));
@@ -589,7 +589,7 @@ fn a_fired_read_names_the_event_pin() {
         Buck::reaction(b, body, vec![cross, changed], vec![commit], vec![], F, 3);
         body
     });
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (event0, event1, q) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"), Find::pin(shape, "q"));
 

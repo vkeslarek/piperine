@@ -291,9 +291,9 @@ mod tests {
         // engine with; a netlist that was never given one keeps the engine's 1000
         let ir = empty_design();
         let given = Netlist::new(&ir).with_microsteps(7).circuit(&Nothing).expect("binds");
-        assert_eq!(given.bound().expect("bound").microsteps, 7);
+        assert_eq!(given.bound().microsteps, 7);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
-        assert_eq!(default.bound().expect("bound").microsteps, 1000);
+        assert_eq!(default.bound().microsteps, 1000);
     }
 
     #[test]
@@ -301,8 +301,8 @@ mod tests {
         // the rule a netlist carries is the rule the engine binds with; the default is Observable
         let ir = empty_design();
         let given = Netlist::new(&ir).with_time_point_rule(TimePointRule::Declared).circuit(&Nothing).expect("binds");
-        assert_eq!(given.bound().expect("bound").digital.time_point_rule(), TimePointRule::Declared);
+        assert_eq!(given.bound().digital.time_point_rule(), TimePointRule::Declared);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
-        assert_eq!(default.bound().expect("bound").digital.time_point_rule(), TimePointRule::Observable);
+        assert_eq!(default.bound().digital.time_point_rule(), TimePointRule::Observable);
     }
 }

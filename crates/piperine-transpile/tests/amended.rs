@@ -391,7 +391,7 @@ fn microsteps(built: &Built, stop: i64) -> Vec<(i64, u32)> {
     use piperine_digital_solver::engine::{Horizon, Mode};
     use piperine_digital_solver::tick::Tick;
     let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
-    let digital = &mut circuit.bound_mut().expect("a bound circuit").digital;
+    let digital = &mut circuit.bound_mut().digital;
     digital.start().unwrap_or_else(|e| panic!("{e:?}"));
     let mut ran = Vec::new();
     while let Some(at) = digital.next_due().filter(|t| t.0 <= stop) {

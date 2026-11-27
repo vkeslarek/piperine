@@ -6,7 +6,8 @@ use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::singular::SingularityReport;
 use crate::math::circular_array::CircularArrayBuffer2;
 use crate::math::iv::InitialValue;
-use crate::math::linear::{AsIndex, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use crate::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
+use crate::math::linear::{AsIndex, Stamp};
 use crate::math::num::Scalar;
 use crate::convergence::{DampContext, NewtonStrategy};
 use crate::tolerances::{Policy, Tolerances};
@@ -149,14 +150,13 @@ impl SolveTimer {
     }
 }
 
-pub struct NewtonRaphsonSolver<A, E, L>
+pub struct NewtonRaphsonSolver<A, E>
 where
     A: AsIndex,
     E: Scalar,
-    L: SymbolicLinearSystem<E>,
 {
-    linear_system: L,
-    symbolic: L::SymbolicType,
+    linear_system: FaerSparseLinearSystem<E>,
+    symbolic: FaerSymbolicMatrix,
     state: CircularArrayBuffer2<E>,
     /// Per-row nonlinear residual `(A·v − b)`, rebuilt each iteration in
     /// place. Hoisted so the Newton inner loop allocates nothing (CP-06).
@@ -179,11 +179,10 @@ where
     _marker: std::marker::PhantomData<A>,
 }
 
-impl<A, E, L> NewtonRaphsonSolver<A, E, L>
+impl<A, E> NewtonRaphsonSolver<A, E>
 where
     A: AsIndex,
     E: Scalar,
-    L: SymbolicLinearSystem<E>,
 {
     pub fn new(
         system: &mut dyn NonLinearSystem<A, E>,
@@ -199,7 +198,7 @@ where
                 Stamp::Rhs(..) => None,
             })
             .collect();
-        let symbolic = L::SymbolicType::new(size, dry_run_stamps).map_err(|cause| {
+        let symbolic = FaerSymbolicMatrix::new(size, dry_run_stamps).map_err(|cause| {
             SingularityReport::error(
                 SolverDomain::Newton,
                 size,
@@ -207,7 +206,7 @@ where
                 &format!("the Jacobian is singular ({})", Self::cause_text(&cause)),
             )
         })?;
-        let linear_system = L::new(size);
+        let linear_system = FaerSparseLinearSystem::new(size);
         let nodes = system
             .netlist()
             .all_references()
@@ -385,10 +384,9 @@ where
 
 // ── f64-only path: NewtonStrategy integration ──────────────────────────────
 
-impl<A, L> NewtonRaphsonSolver<A, f64, L>
+impl<A> NewtonRaphsonSolver<A, f64>
 where
     A: AsIndex,
-    L: SymbolicLinearSystem<f64>,
 {
     /// Iterations taken by the last `solve` / `solve_with_strategy` call.
     /// Drivers read this to populate `SolverStats`.
@@ -559,10 +557,9 @@ where
 mod tests {
     use super::*;
     use crate::convergence::NoDamping;
-    use crate::math::faer::FaerSparseLinearSystem;
     use crate::netlist::{AnalogReference, Netlist, NodeIdentifier};
 
-    type Solver = NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>;
+    type Solver = NewtonRaphsonSolver<AnalogReference, f64>;
 
     /// A diagonal system `g_i · x_i = rhs_i(x)` over anonymous nodes.
     struct Diagonal {

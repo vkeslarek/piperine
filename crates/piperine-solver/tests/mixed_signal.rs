@@ -80,7 +80,7 @@ fn a_comparator_and_toggle_divide_the_clock() {
     // Rising clock edges at 0.25, 1.25, 2.25 ms: the comparator sees each at the
     // step after it, and q toggles three times.
     assert_eq!(reactions("toggle"), 3);
-    let bound = circuit.bound().unwrap();
+    let bound = circuit.bound();
     assert_eq!(bound.digital.read(bound.names.nets["net:q"]), HIGH);
     assert_eq!(bound.digital.read(bound.names.nets["net:c"]), LOW, "the clock is low at 2.9 ms");
 }

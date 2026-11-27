@@ -15,7 +15,7 @@ use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::NoiseAnalysisResult;
 

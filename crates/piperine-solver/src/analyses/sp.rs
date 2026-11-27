@@ -33,7 +33,6 @@ use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::linear::Stamp;
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
@@ -121,7 +120,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
 /// frequency list, driving one port at a time and filling the `S` matrix.
 pub struct SpSolver<'a> {
     system: SpSystem<'a>,
-    solver: NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
+    solver: NewtonRaphsonSolver<AnalogReference, Complex<f64>>,
     ports: Vec<ResolvedPort>,
     sweep: AcSweepAnalysisOptions,
     policy: piperine_analog_solver::tolerances::Policy,

@@ -789,7 +789,7 @@ impl<'a> AnalogPrinter<'a> {
 
 #[cfg(test)]
 mod tests {
-    use piperine_ir::{BodyId, Ir, IrBuilder};
+    use piperine_ir::{BodyId, Ir, IrBuilder, Terminal};
     use piperine_plan::{BodyPlan, Mode};
 
     use super::AnalogPrinter;
@@ -809,9 +809,19 @@ mod tests {
 
     /// The text of the `terms` function of `body`.
     fn terms(ir: &Ir, body: BodyId) -> String {
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
         AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"))
+    }
+
+    /// A probe that ends on an own terminal, which `check()` keeps out of a branch, has no text: the
+    /// printer answers `None` (a refused probe) where it used to panic.
+    #[test]
+    fn a_probe_on_an_own_terminal_has_no_text_not_a_panic() {
+        let (ir, [resistor, ..]) = library();
+        let plan = BodyPlan::build(ir.body(resistor)).expect("the body plans");
+        let printer = AnalogPrinter::new(ir.body(resistor), &plan);
+        assert_eq!(printer.values().probe(Terminal::Own(0), Terminal::Ground), None);
     }
 
     #[test]

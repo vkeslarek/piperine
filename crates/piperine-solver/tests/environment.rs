@@ -133,7 +133,7 @@ fn solver() -> Solver {
 
 /// The `F64` net `name` holds.
 fn carrier(solver: &Solver, name: &str) -> f64 {
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     let net = bound.names.nets[&format!("net:{name}")];
     f64::from_le_bytes(bound.digital.read(net).try_into().expect("an F64"))
 }

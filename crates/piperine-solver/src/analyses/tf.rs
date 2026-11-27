@@ -11,7 +11,6 @@ use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
-use piperine_analog_solver::math::linear::{SymbolicLinearSystem, SymbolicMatrix};
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::{TransferFunctionAnalysisResult, TransferType};
 
@@ -273,7 +272,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// 4. Read output response
     fn calculate_gain(&mut self) -> crate::core::result::Result<(f64, Array1<f64>)> {
         use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
-        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::linear::Stamp;
 
         // Build linear system with ONLY matrix stamps (no RHS)
         // Filter out RHS stamps - we only want the Jacobian matrix
@@ -378,7 +377,7 @@ impl<'a> TransferFunctionSolver<'a> {
     /// For current output: Apply 1V test voltage, measure current change
     fn calculate_output_resistance(&mut self) -> crate::core::result::Result<f64> {
         use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
-        use piperine_analog_solver::math::linear::{LinearSystem, Stamp};
+        use piperine_analog_solver::math::linear::Stamp;
 
         // Build the linear system the way the gain does: the Jacobian only. The right-hand side
         // of the operating point (a source's own value) is not part of the small-signal problem,

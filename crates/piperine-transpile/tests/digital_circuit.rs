@@ -117,7 +117,7 @@ fn q_after(ir: Ir) -> Vec<u8> {
         .unwrap_or_else(|e| panic!("{e}"))
         .solve()
         .unwrap_or_else(|e| panic!("{e}"));
-    let bound = circuit.bound().expect("a bound circuit");
+    let bound = circuit.bound();
     let net = *bound
         .names
         .nets
@@ -238,7 +238,7 @@ fn a_parent_signal_reaches_its_childrens_ports() {
     // the signal is a PORT pin of the top's shape, and the shape is valid (abi.md §3.1: a PORT is
     // bound by the netlist)
     let ir = parent_clocked(true, Some(false));
-    let plan = piperine_plan::BodyPlan::new(ir.top().body());
+    let plan = piperine_plan::BodyPlan::build(ir.top().body()).expect("the body plans");
     let shape = plan.shape().shape();
     let clk = shape.pins.iter().find(|p| p.name.as_str() == "clk").expect("the signal's pin");
     assert_eq!(clk.role, piperine_abi::raw::role::PORT);
@@ -257,7 +257,7 @@ fn a_net_starts_at_its_own_init() {
         let compiled = Transpiler::new(ir.clone()).unwrap_or_else(|e| panic!("{e}")).compile(&settings(&cache)).unwrap_or_else(|e| panic!("{e}"));
         assert_eq!(compiled.report().warnings, "");
         let mut circuit = Netlist::new(&ir).circuit(&compiled).unwrap_or_else(|e| panic!("{e}"));
-        let bound = circuit.bound_mut().expect("a bound circuit");
+        let bound = circuit.bound_mut();
         let net = *bound.names.nets.get("net:Top.clk").unwrap_or_else(|| panic!("no net `Top.clk`"));
         bound.digital.start().unwrap_or_else(|e| panic!("{e:?}"));
         bound.digital.run_instant(Tick(0), &[], Horizon::uniform(Tick(0)), Mode::default()).unwrap_or_else(|e| panic!("{e:?}"));

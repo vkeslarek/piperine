@@ -29,7 +29,7 @@ use crate::core::net::Net;
 use crate::core::result::Result;
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicMatrix};
+use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 
 
@@ -163,7 +163,7 @@ impl<'a> AdjointSolver<'a> {
 
         // 6. ONE transpose solve: Jᵀλ = ∂f/∂x, where ∂f/∂x = e_out for a
         //    ground-referenced output or e_out − e_ref for a differential.
-        let mut system: FaerSparseLinearSystem<f64> = LinearSystem::new(size);
+        let mut system: FaerSparseLinearSystem<f64> = FaerSparseLinearSystem::new(size);
         system.apply_stamps(matrix_stamps);
         // The RHS is ∂f/∂x — overwrite anything apply_stamps wrote into
         // b_vec, since the device residual Rhs is not part of this system.

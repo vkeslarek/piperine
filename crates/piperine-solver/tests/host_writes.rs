@@ -27,7 +27,7 @@ fn inverter_circuit() -> CircuitInstance {
 
 /// The value bytes of the discrete net `name` of the plan.
 fn read(circuit: &CircuitInstance, name: &str) -> Vec<u8> {
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let at = bound.digital.plan().nets.iter().position(|n| n.name == name).expect("the net is in the plan");
     bound.digital.read(NetId(at as u32)).to_vec()
 }

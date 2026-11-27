@@ -14,7 +14,6 @@ use crate::analyses::dc::DcSolver;
 use crate::analyses::Context;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::integration::{TrBdf2, TrBdf2Phase};
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::{AsIndex, Stamp};
@@ -571,7 +570,7 @@ impl TimeLoop {
 
 pub struct TransientSolver<'a> {
     pub system: TransientSystem<'a>,
-    pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
+    pub solver: NewtonRaphsonSolver<AnalogReference, f64>,
     pub options: TransientAnalysisOptions,
     /// User-supplied initial node voltages (host `run_tran` `ic`
     /// `TranConfig.ic`), pushed after the DC operating point so the t=0

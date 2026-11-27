@@ -96,7 +96,7 @@ fn pins_bind_by_role() {
         &[Port::Node(n2.clone()), Port::Node(gnd), Port::Net("code".into()), Port::Net("o2".into())],
     );
     let circuit = b.build().expect("bind");
-    let bound = circuit.bound().expect("a device circuit");
+    let bound = circuit.bound();
     let (names, plan) = (&bound.names, bound.digital.plan());
 
     // PORT pins bind by position: the continuous ones to the nodes, the discrete ones to named nets.
@@ -169,7 +169,7 @@ fn ports_on_one_net_share_one_unknown() {
         b.device(probe(), path, &[], &[Port::Node(n1.clone()), Port::Node(n2.clone())]);
     }
     let circuit = b.build().expect("bind");
-    let names = &circuit.bound().expect("bound").names;
+    let names = &circuit.bound().names;
 
     let unknown = |inst: usize, pin: usize| -> AnalogReference {
         match &names.pins[inst][pin] {
@@ -198,7 +198,7 @@ fn a_pin_abstol_tightens_its_node() {
     let o = b.node("o");
     b.device(probe(), "x3", &[], &[Port::Node(o.clone()), Port::Node(o.clone())]);
     let circuit = b.build().expect("bind");
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let id = |r: &AnalogReference| match r.variable().as_ref() {
         piperine_solver::abi::AnalogVariable::Node(id) => id.clone(),
         other => panic!("{other:?}"),
@@ -233,7 +233,7 @@ fn a_discrete_net_an_analog_function_reads_is_flagged() {
         &[Port::Node(n.clone()), Port::Node(n), Port::Net("read".into()), Port::Net("unread".into())],
     );
     let circuit = b.build().expect("bind");
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let nets = &bound.digital.plan().nets;
     let net = |key: &str| &nets[bound.names.nets[key].0 as usize];
 
@@ -262,7 +262,7 @@ fn a_shared_param_net_feeds_every_instance_bound_to_it() {
     }
     b.device(probe(), "x3", &[("r", ParamValue::Real(9.0e3))], &[Port::Node(n.clone()), Port::Node(n)]);
     let circuit = b.build().expect("bind");
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let net = |path: &str| bound.names.params[&(path.to_string(), "r".to_string())];
 
     assert_eq!(net("x1"), net("x2"), "one net for the model card");
@@ -317,7 +317,7 @@ fn bind_creates_each_placement_once_for_both_sides() {
     let before = CREATES.load(std::sync::atomic::Ordering::SeqCst);
     let circuit = b.build().expect("bind");
     assert_eq!(CREATES.load(std::sync::atomic::Ordering::SeqCst) - before, 3, "creates = placements");
-    assert_eq!(circuit.bound().expect("bound").names.instances.len(), 3);
+    assert_eq!(circuit.bound().names.instances.len(), 3);
 }
 
 /// SAI-15: every function of this target's own devices passes the partials

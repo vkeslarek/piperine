@@ -718,7 +718,7 @@ impl Session {
                     .map_err(|error| Failure::from_fault("op", error, Some(0.0), &design))?;
                 let circuit = solver.circuit();
                 let net = |path: &str| Session::discrete(circuit, path).or_else(|| Session::held_bytes(&held, path));
-                let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
+                let term = |instance: &str, name: &str| circuit.bound().analog.term_value(instance, name);
                 Table::operating_point(&self.probes, &result, &net, &term)
             }
             Analysis::Transient { stop, max_step, print_step, from } => {
@@ -790,7 +790,7 @@ impl Session {
                         .map_err(|error| Failure::from_fault("dc", error, None, &design))?;
                     let held = self.held_params(&circuit, &[]);
                     let net = |path: &str| Session::discrete(&circuit, path).or_else(|| Session::held_bytes(&held, path));
-                    let term = |instance: &str, name: &str| circuit.bound().and_then(|b| b.analog.term_value(instance, name));
+                    let term = |instance: &str, name: &str| circuit.bound().analog.term_value(instance, name);
                     points.push((value, Table::point(&self.probes, &result, &net, &term)?));
                 }
                 Ok(Table::sweep(&swept.label(), &self.probes, points))
@@ -885,7 +885,7 @@ impl Session {
     /// The params `print` names that no net of the circuit holds, each with the value the table
     /// gives it and the changes of `timed`: a row reads them from here (HII-09 AC 1).
     fn held_params(&self, circuit: &CircuitInstance, timed: &[TimedChange]) -> Vec<Held> {
-        let nets = circuit.bound().map(|bound| bound.digital.plan().nets.iter().map(|n| n.name.as_str()).collect::<Vec<_>>()).unwrap_or_default();
+        let nets = circuit.bound().digital.plan().nets.iter().map(|n| n.name.as_str()).collect::<Vec<_>>();
         self.probes
             .iter()
             .filter_map(|probe| match probe {
@@ -935,7 +935,7 @@ impl Session {
     /// The bytes of the discrete net at `path` in the bound design: its index in the digital
     /// plan is its id.
     fn discrete(circuit: &CircuitInstance, path: &str) -> Option<Vec<u8>> {
-        let b = circuit.bound()?;
+        let b = circuit.bound();
         let at = b.digital.plan().nets.iter().position(|n| n.name == path)?;
         let spec = &b.digital.plan().nets[at];
         if spec.count == 0 {

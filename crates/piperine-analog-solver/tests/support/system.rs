@@ -16,7 +16,7 @@ use piperine_analog_solver::netlist::{AnalogReference, Netlist};
 use piperine_analog_solver::tolerances::{Policy, Tolerances};
 
 pub type Stamps = Vec<Stamp<AnalogReference, f64>>;
-pub type Solver = NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>;
+pub type Solver = NewtonRaphsonSolver<AnalogReference, f64>;
 
 /// An equilibrium solve over an assembly.
 pub struct Dc<'a> {
@@ -174,7 +174,6 @@ pub fn solve_complex(
     rhs: Vec<Stamp<AnalogReference, num_complex::Complex64>>,
 ) -> Array1<num_complex::Complex64> {
     use piperine_analog_solver::math::faer::FaerSymbolicMatrix;
-    use piperine_analog_solver::math::linear::{LinearSystem, SymbolicLinearSystem, SymbolicMatrix};
     let symbolic = FaerSymbolicMatrix::new(n, matrix.clone()).expect("symbolic");
     let mut sys = FaerSparseLinearSystem::<num_complex::Complex64>::new(n);
     sys.apply_stamps(matrix);

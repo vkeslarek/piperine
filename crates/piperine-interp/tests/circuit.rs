@@ -183,7 +183,7 @@ fn one_module_per_body_with_behaviour_or_a_held_node() {
 #[test]
 fn a_circuit_binds_instances_nodes_and_params() {
     let (ir, mut circuit) = bound::built(Circuits::divider());
-    let bound = circuit.bound().expect("devices are bound");
+    let bound = circuit.bound();
     let mut paths = bound.names.instances.clone();
     paths.sort();
     assert_eq!(paths, ["Divider.r1", "Divider.r2", "Divider.v1"]);
@@ -218,7 +218,7 @@ fn an_unset_param_keeps_its_default() {
     assert_eq!(v1, [("dc".to_string(), piperine_solver::prelude::ParamValue::Real(0.8))]);
     // the pins take their defaults and the bound values when the first analysis starts
     circuit.dc(piperine_solver::prelude::Context::default()).expect("dc").solve().expect("solve");
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let read = |param: &str| {
         let net = bound.names.params[&("DiodeCircuit.d1".to_string(), param.to_string())];
         let bytes = bound.digital.read(net);

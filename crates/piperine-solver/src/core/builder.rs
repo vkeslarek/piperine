@@ -77,7 +77,7 @@ impl CircuitBuilder {
     }
 
     /// Named analog node. Same name → same reference (idempotent lookup).
-    /// The ground name (`"gnd"`, see [`GroundName`]) routes to ground.
+    /// The ground names (see [`GroundName`]) route to ground.
     pub fn node(&mut self, name: &str) -> AnalogReference {
         if GroundName::names(name) {
             return self.ground();
@@ -236,7 +236,7 @@ mod tests {
         // Edge: zero instances → valid empty CircuitInstance (no panic)
         let b = CircuitBuilder::new("empty");
         let circuit = b.build().expect("empty build should succeed");
-        assert_eq!(circuit.bound().expect("bound").names.instances.len(), 0);
+        assert_eq!(circuit.bound().names.instances.len(), 0);
     }
 
     #[test]
@@ -246,7 +246,7 @@ mod tests {
         let g = b.ground();
         let n = b.node("gnd");
         assert_eq!(g, n);
-        let other_case = b.node("GND");
-        assert_ne!(g, other_case, "the spec knows `gnd` only: `GND` is a node of that name");
+        let n2 = b.node("GND");
+        assert_eq!(g, n2);
     }
 }

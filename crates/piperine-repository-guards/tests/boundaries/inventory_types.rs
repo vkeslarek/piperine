@@ -6,7 +6,7 @@ use piperine_repository_guards::{CodeOrigin, Findings, ItemScan, ScannedKind, So
 /// Each type name of the inventory and the crate that owns it.
 const OWNERS: [(&str, &str); 3] = [
     ("Backend", "piperine-api"),
-    ("LogicPattern", "piperine-api"),
+    ("LogicPattern", "piperine-lang"),
     ("DynamicInteger", "piperine-numbers"),
 ];
 

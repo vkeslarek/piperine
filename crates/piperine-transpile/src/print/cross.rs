@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn a_cross_function_prints_its_watch_and_partials() {
         let (ir, body) = Alone::design(Buck::comparator);
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let printer = DigitalPrinter::new(ir.body(body), &plan);
         let print = |name: &str| {
             let k = plan.shape().shape().functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no `{name}`"));
@@ -174,7 +174,7 @@ fn cross1(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         // partial (RS-12 AC 7). Both partials are the node pins', and the term stays affine in
         // them (a carrier is constant in the node potentials)
         let (ir, body) = Alone::design(Buck::switch);
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
         let text = AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"));
         let expected = "\

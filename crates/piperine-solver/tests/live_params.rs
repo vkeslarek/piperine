@@ -42,7 +42,7 @@ fn v_mid(result: &DcAnalysisResult, mid: &AnalogReference) -> f64 {
 
 /// The value a `PARAM` pin reads now.
 fn param(circuit: &CircuitInstance, path: &str, name: &str) -> f64 {
-    let bound = circuit.bound().expect("a circuit of devices");
+    let bound = circuit.bound();
     let net = bound.names.params[&(path.to_string(), name.to_string())];
     f64::from_le_bytes(bound.digital.read(net)[..8].try_into().expect("an F64 param"))
 }
@@ -224,7 +224,7 @@ fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
     circuit.dc(Context::default()).unwrap().solve().unwrap();
     assert_eq!(param(&circuit, "r1", "r"), 1000.0);
     assert_eq!(param(&circuit, "v1", "dc"), 10.0);
-    let bound = circuit.bound().unwrap();
+    let bound = circuit.bound();
     let r1_params: Vec<_> = bound.names.params.keys().filter(|(p, _)| p == "r1").collect();
     assert_eq!(r1_params.len(), 1);
     assert_eq!(r1_params[0].1, "r");
@@ -233,7 +233,7 @@ fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
 #[test]
 fn device_introspect_returns_none_for_an_unknown_label() {
     let (circuit, _) = divider(1000.0, 1000.0);
-    assert!(!circuit.bound().unwrap().names.params.keys().any(|(p, _)| p == "nope"));
+    assert!(!circuit.bound().names.params.keys().any(|(p, _)| p == "nope"));
 }
 
 /// SAI-15: every function of this target's own devices passes the partials

@@ -11,7 +11,6 @@ use crate::analyses::Context;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::linear::Stamp;
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
 use crate::prelude::DcAnalysisResult;
@@ -140,7 +139,7 @@ impl AcSystem<'_> {
 pub struct AcSolver<'a> {
     pub system: AcSystem<'a>,
     pub solver:
-        NewtonRaphsonSolver<AnalogReference, Complex<f64>, FaerSparseLinearSystem<Complex<f64>>>,
+        NewtonRaphsonSolver<AnalogReference, Complex<f64>>,
     /// Convergence tunables (MD-04); AC is linear, so only `max_iter` matters.
     pub policy: piperine_analog_solver::tolerances::Policy,
 }

@@ -27,7 +27,7 @@ struct Find;
 impl Find {
     /// The plan of the only body of `ir`.
     fn plan(ir: &Ir) -> BodyPlan {
-        BodyPlan::new(ir.bodies().next().expect("a body"))
+        BodyPlan::build(ir.bodies().next().expect("a body")).expect("the body plans")
     }
 
     /// The cell of a pin's value.
@@ -299,7 +299,7 @@ fn a_reached_carrier_is_a_port_pin() {
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "{ir}");
     let top_body = ir.top().body();
-    let plan = BodyPlan::new(top_body);
+    let plan = BodyPlan::build(top_body).expect("the body plans");
     let shape = plan.shape().shape();
     let pin = shape.pins.get(Find::pin(shape, "seen") as usize).expect("the pin");
     assert_eq!((pin.kind, pin.role), (kind::DISCRETE, role::PORT));

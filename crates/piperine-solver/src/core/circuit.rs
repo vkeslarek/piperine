@@ -52,17 +52,17 @@ impl CircuitInstance {
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
-    /// The bound device instances; always `Some`, because `build` binds them.
-    pub fn bound(&self) -> Option<&crate::core::bind::Bound> { Some(&self.abi) }
+    /// The bound device instances, which `build` binds.
+    pub fn bound(&self) -> &crate::core::bind::Bound { &self.abi }
     /// A run error with its unknowns named by the pins and branches of this
     /// circuit; any other error passes through.
     pub(crate) fn name_error(&self, error: piperine_analog_solver::error::Error) -> piperine_analog_solver::error::Error {
         self.abi.name(error)
     }
 
-    /// The bound device instances, mutably; always `Some`, because `build` binds them.
+    /// The bound device instances, mutably.
     /// Kept for a host that mutates the bound device instances between analyses.
-    pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { Some(&mut self.abi) }
+    pub fn bound_mut(&mut self) -> &mut crate::core::bind::Bound { &mut self.abi }
 
     /// The values the device instance at `path` is created with, by param
     /// name: what `CircuitBuilder::device` was given (or a later structural

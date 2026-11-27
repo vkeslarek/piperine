@@ -134,7 +134,7 @@ fn a_new_scalar_inside_a_composite_is_one_leaf_with_its_count() {
         body,
         &[("wide", ValueType::UInt(200)), ("minus", ValueType::Int(70)), ("single", ValueType::F32), ("half", ValueType::F16), ("quad", ValueType::F128), ("pair", pair.clone()), ("row", ValueType::F128), ("halves", triple)],
     );
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "a U64 field of count > 1 and an f32 pin validate (abi.md §3.1 P3)");
 

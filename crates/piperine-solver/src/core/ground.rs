@@ -1,14 +1,14 @@
-//! The name of the ground reference.
+//! The names of the ground reference.
 
-/// The one name that routes a node to the ground reference: the spec knows `gnd` only.
+/// The names that route a node to the ground reference (the netlist convention), whatever the case.
 pub struct GroundName;
 
 impl GroundName {
-    /// The spelling of the ground node.
+    /// The canonical spelling of the ground node.
     pub const TEXT: &'static str = "gnd";
 
-    /// Whether `name` names the ground reference.
+    /// Whether `name` names the ground reference: `gnd`, `GND` (the label ground prints under), `vss` or `VSS`.
     pub fn names(name: &str) -> bool {
-        name == Self::TEXT
+        matches!(name, "gnd" | "GND" | "vss" | "VSS")
     }
 }

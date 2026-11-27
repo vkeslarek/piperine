@@ -131,7 +131,7 @@ fn loaded_shapes_equal_the_plans_entry_by_entry() {
     let mut checked = 0;
     for body in ir.bodies() {
         let module = Modules::module(&compiled, body.id()).unwrap_or_else(|| panic!("{} has a module", body.name()));
-        let plan = BodyPlan::new(body);
+        let plan = BodyPlan::build(body).expect("the body plans");
         let (want, got) = (Entries::of(plan.shape().shape()), Entries::of(module.prototype()));
         assert!(want.len() > 3, "{}: a shape with entries", body.name());
         assert_eq!(got, want, "{}", body.name());
