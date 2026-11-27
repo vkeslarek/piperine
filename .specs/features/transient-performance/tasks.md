@@ -14,7 +14,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build -p piperine -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine advance::`
 **Run protocol**: `cargo test -p piperine-solver --lib protocol::statistics::`
-**Run solver**: `cargo test -p piperine-solver --test step_statistics --test jump_step --test landing_rule`
+**Run solver**: `cargo test -p piperine-solver --test transient`
 **Run integration**: `cargo test -p piperine-analog-solver --lib math::integration::`
 **Run newton**: `cargo test -p piperine-analog-solver --lib math::newton_raphson::`
 **Run alloc**: `cargo test -p piperine-analog-solver --test numerics allocation::`
@@ -28,7 +28,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run grid**: `cargo test -p piperine-solver --test parity_baseline`
 **Run epoch**: `cargo test -p piperine-solver --test protocol protocol_epoch::`
 **Run options**: `cargo test -p piperine-api --test options an_hour`
-**Run hostset**: `cargo test -p piperine-solver --test host_set`
+**Run hostset**: `cargo test -p piperine-solver --test host host_set::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule); a different model verifies. The worktree is

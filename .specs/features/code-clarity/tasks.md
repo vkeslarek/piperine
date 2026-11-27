@@ -1195,8 +1195,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 6 targets in the crate; both merged targets pass with `--test-threads=1` and with the default
-- [ ] Plan lowered to 6; Gate check passes: Ledger
+- [x] 7 targets in the crate (`context_init` stays its own: its header requires a fresh process); both merged targets pass with `--test-threads=1` and with the default
+- [x] Plan lowered to 7 (6 plus `context_init`); Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

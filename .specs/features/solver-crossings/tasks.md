@@ -14,11 +14,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run analog**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
-**Run solver**: `cargo test -p piperine-solver --test settled_value --test protocol --test crossing_rules`
+**Run solver**: `cargo test -p piperine-solver --test transient --test protocol`
 **Run parity**: `cargo test -p piperine-solver --test parity_baseline`
 **Run abi**: `cargo test -p piperine-abi --test contract validate::`
 **Run env**: `cargo test -p piperine-digital-solver --test engine functions::`
-**Run solverenv**: `cargo test -p piperine-solver --test environment`
+**Run solverenv**: `cargo test -p piperine-solver --test transient environment::`
 
 Implementer: Opus, inline (11 tasks; Phase 4 was added mid-build at the coordinator's request); verifier: a different Opus, dispatched by the orchestrator. Worktree `/home/keslarek/Git/piperine-solver-crossings`, branch `feature/solver-crossings`; no push, no merge. Cargo runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target`, plain `cargo test` at the root (default members), never `--workspace`.
 

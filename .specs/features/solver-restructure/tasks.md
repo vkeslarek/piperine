@@ -710,7 +710,7 @@ Proof: run boundaries | test workspace_shape::solver_manifest_has_no_in_tree_dev
 Proof: `cargo test -p piperine-solver`
 
 **C3** - The 15 test functions of the five ported targets exist under their names and pass (SR-01, AC 3)
-Proof: `cargo test -p piperine-solver --test analyses --test transient_reentry 2>&1 | grep -cE '^test (divider_sensitivities_match_analytic_values|diode_sensitivity_is_step_independent_and_signed|sens_error_paths_are_loud|sens_rebuild_class_param_fails_loud|one_transpose_solve_serves_every_requested_parameter|df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution|adjoint_runs_on_a_nonlinear_circuit|adjoint_matches_sens_on_the_linear_divider|adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter|adjoint_matches_sens_on_a_nonlinear_diode_circuit|a_20_parameter_gradient_costs_exactly_one_extra_solve|reentry_from_captured_state_matches_continuous_run|sine_rc_converges_to_the_analytic_phasor|non_periodic_circuit_fails_loud|digital_divider_reports_k_times_period) \.\.\. ok$' | grep -qx 15`
+Proof: `cargo test -p piperine-solver --test analyses --test transient 2>&1 | grep -cE '^test (divider_sensitivities_match_analytic_values|diode_sensitivity_is_step_independent_and_signed|sens_error_paths_are_loud|sens_rebuild_class_param_fails_loud|one_transpose_solve_serves_every_requested_parameter|df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution|adjoint_runs_on_a_nonlinear_circuit|adjoint_matches_sens_on_the_linear_divider|adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter|adjoint_matches_sens_on_a_nonlinear_diode_circuit|a_20_parameter_gradient_costs_exactly_one_extra_solve|reentry_from_captured_state_matches_continuous_run|sine_rc_converges_to_the_analytic_phasor|non_periodic_circuit_fails_loud|digital_divider_reports_k_times_period) \.\.\. ok$' | grep -qx 15`
 
 **C4** - A hand-written two-resistor divider reads `vin * r2 / (r1 + r2)` within 1e-9 V (SR-01, AC 4)
 Proof: run solver | test divider_reads_the_analytic_ratio ... ok
@@ -791,7 +791,7 @@ Proof: run digital | test external_model_emits_through_the_sink ... ok
 Proof: run solver | test same_time_events_order_by_seq ... ok
 
 **C30** - The two surface targets are byte-identical to e129b869 and pass: every surviving name still comes through `prelude` and `abi` (SR-04, AC 8)
-Proof: `git diff --quiet e129b869 -- crates/piperine-solver/tests/abi_surface.rs crates/piperine-solver/tests/prelude_surface.rs && cargo test -p piperine-solver --test abi_devices --test prelude_surface`
+Proof: `git diff --quiet e129b869 -- crates/piperine-solver/tests/abi_surface.rs crates/piperine-solver/tests/prelude_surface.rs && cargo test -p piperine-solver --test abi_devices --test host`
 
 **C31** - `parity_baseline.rs` is byte-identical to e129b869 and its tests pass (SR-05, AC 3)
 Proof: `git diff --quiet e129b869 -- crates/piperine-solver/tests/parity_baseline.rs && cargo test -p piperine-solver --test parity_baseline`

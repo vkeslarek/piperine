@@ -15,7 +15,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run numerics**: `cargo test -p piperine-analog-solver --test numerics noise_numerics::`
 **Run report**: `cargo test -p piperine-solver --test analyses noise_report::`
 **Run abinoise**: `cargo test -p piperine-solver --test abi_devices abi_noise::`
-**Run retake**: `cargo test -p piperine-solver --test jump_retake`
+**Run retake**: `cargo test -p piperine-solver --test transient jump_retake::`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run irops**: `cargo test -p piperine-ir --test operators`
 **Run planops**: `cargo test -p piperine-plan --test operators_shape`

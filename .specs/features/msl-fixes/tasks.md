@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run frozen**: `cargo test -p piperine-interp --test frozen`
 **Run tlib**: `cargo test -p piperine-transpile --lib`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
-**Run env**: `cargo test -p piperine-solver --test environment`
+**Run env**: `cargo test -p piperine-solver --test transient environment::`
 **Run sfix**: `cargo test -p piperine-parity --test source_fixes`
 **Run scat**: `cargo test -p piperine-parity --test source_catalogue`
 **Run senv**: `cargo test -p piperine-parity --test source_environment`
