@@ -46,7 +46,8 @@ Rules every task follows (repeated so a worker needs no other file):
 - **Each device is rewritten once**, in the task that owns its file. A task that rewrites a file also re-points that file's `abi.md` citations to `ABI §`.
 - **`AbiSource::FILES`.** A task that adds, moves or removes a file of `crates/piperine-abi/src` edits the transpiler's table in the same commit.
 - **The code follows the specification.** Where `docs/abi/` and the code differ, the code is wrong. If the specification itself is wrong (a sum of offsets, a rule that contradicts another), the task stops and reports: the text is the user's approved proposal.
-- **Code rules.** No free function, tests included (the language's exceptions: `#[test]`, `extern "C"`, the four `#[proc_macro_attribute]` entries); one purpose per type; full words; a `///` on every new item; no `#[allow]`; qualified enum variants; no `unwrap()`/`expect()` on a path a device author's input reaches; about 40 lines and 5 parameters is what a reviewer looks for. The only macros of the tree are those `piperine-abi-macros` defines. New code adds no allowance row to the guards crate.
+- **Code rules.** No free function, tests included (the language's exceptions: `#[test]`, `extern "C"`, the four `#[proc_macro_attribute]` entries); one purpose per type; full words; a `///` on every new item; no `#[allow]`, ever, and no file-scope lint attribute; qualified enum variants; no `unwrap()`/`expect()` on a path a device author's input reaches; about 40 lines and 5 parameters is what a reviewer looks for. The only macros of the tree are those `piperine-abi-macros` defines. New code adds no allowance row to the guards crate, beyond the four proc-macro entries and one row per reasoned `#[expect]` below.
+- **`#[expect]`, the last resort (rule 5 as amended; user: "#[allow] é permitido em casos específicos onde não tem jeito MESMO").** Only where there is truly no other way, an item-scoped `#[expect(lint, reason = "…")]` is allowed; the reason says why no design avoids it, and the guard lists it. In this feature the one foreseen case is `clippy::too_many_arguments` on a device function that takes one parameter per read. The design fixes come first, in this order: one gradient array per write; a multi-field pin read as one `PlainData` struct; the function written against the lens. Only **T30** (the hand-written diode fixture), **T40** (its attribute twin) and **T63** (the Book's diode listing) may use it, at most once each, on the authored method. No other task may, an expansion never emits one, and it never hides a design problem: a task that wants one elsewhere stops and reports.
 - **The Book.** Every listing runs; a Rust listing is a region of a compiled file; the Book is self-contained and never says "as in Rust"; no condescending phrase.
 - One atomic commit per task, message as given, ending with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No push and no publication without the user's go-ahead.
 
@@ -650,7 +651,7 @@ T84 → T85 → T86 → T87
 
 **Done when**:
 
-- [ ] `#![deny(missing_docs)]`; no `#[allow]`
+- [ ] `#![deny(missing_docs)]`; no `#[allow]` and no `#[expect]` in the crate's sources
 - [ ] both guards pass; `only_the_abi_authoring_crate_defines_a_macro` still passes
 - [ ] Gate check passes: Quick (`cargo test -p piperine-abi-macros`, `cargo test -p piperine-repository-guards`)
 
@@ -704,7 +705,7 @@ T84 → T85 → T86 → T87
 
 #### T25: The golden expansion files
 
-**What**: Add the test support type `ExpansionGolden`: formats an expansion with `prettyplease` and compares it with `tests/expansion/<name>.expanded.rs`, printing the difference; and `ExpansionAudit`, which fails on `unsafe`, `static`, a trait implementation, a new type, a macro definition or a path outside `::piperine_abi` and `::core`.
+**What**: Add the test support type `ExpansionGolden`: formats an expansion with `prettyplease` and compares it with `tests/expansion/<name>.expanded.rs`, printing the difference; and `ExpansionAudit`, which fails on `unsafe`, `static`, a trait implementation, a new type, a macro definition, a lint attribute (`#[allow]`, `#[expect]`) that the author did not write, or a path outside `::piperine_abi` and `::core`.
 **Where**: `crates/piperine-abi-macros/src/expansion_golden.rs`
 **Depends on**: T24
 **Reuses**: design.md "Three rules"
@@ -824,6 +825,8 @@ T84 → T85 → T86 → T87
 
 **Tests**: integration
 **Gate**: quick
+
+**Last resort**: the diode's hand-written method may carry one reasoned `#[expect(clippy::too_many_arguments, …)]` if the gradient array, struct reads and the lens do not apply; the guard lists it and the Handoff names it.
 
 **Commit**: `refactor(fixtures): the analog devices on the new authoring surface`
 
@@ -946,6 +949,7 @@ T84 → T85 → T86 → T87
 **Done when**:
 
 - [ ] the golden file of the resistor's `current` equals the hand-written form of design.md
+- [ ] an attribute the author wrote on the method (a doc comment, a reasoned `#[expect]`) stays on it unchanged; the generated methods carry none
 - [ ] Gate check passes: Quick (`cargo test -p piperine-abi-macros`)
 
 **Tests**: unit
@@ -1029,6 +1033,7 @@ T84 → T85 → T86 → T87
 
 - [ ] `every_twin_has_the_shape_of_its_hand_written_form` and `every_twin_answers_as_its_hand_written_form` cover these twins
 - [ ] each twin passes the partials verifier
+- [ ] the diode's function is first written with a gradient array and struct reads; a reasoned `#[expect(clippy::too_many_arguments, …)]` on it is the last resort, listed by the guard and named on the Handoff
 - [ ] Gate check passes: Quick (`cargo test -p piperine-abi-macros --test twins`)
 
 **Tests**: integration
@@ -1508,6 +1513,7 @@ T84 → T85 → T86 → T87
 **Done when**:
 
 - [ ] the stated current and noise density are asserted by the test
+- [ ] the listing shows the gradient array and the struct read; if the compiled region carries a reasoned `#[expect]`, the chapter prints it and says in one sentence why
 - [ ] Gate check passes: Book
 
 **Tests**: integration
@@ -1973,7 +1979,7 @@ T84 → T85 → T86 → T87
 **Done when**:
 
 - [ ] `every_capability_of_the_ledger_names_a_test_that_exists` passes with 98 capability rows
-- [ ] the allowance diff against the base tag adds four rows
+- [ ] the diff of the guards' lists against the base tag adds the four proc-macro entries and one row per reasoned `#[expect]` (at most three), each named on the Handoff
 - [ ] Gate check passes: Quick (`cargo test -p piperine-repository-guards`)
 
 **Tests**: integration
@@ -2209,11 +2215,11 @@ Proof: run expansion | test an_entry_declared_by_attribute_has_the_origin_of_its
 **C59** - An index of another table in an attribute is a type error at that expression. (ABI-27, AC 11)
 Proof: run macrodoc | compile fail ... ok
 
-**C60** - The guards pass and the feature added four allowance rows, the proc-macro entries. (ABI-28, AC 1)
+**C60** - The guards pass and the feature added at most seven rows to the guards' lists: the four proc-macro entries and at most three reasoned `#[expect]` (T30, T40, T63). (ABI-28, AC 1)
 Proof: `cargo test -p piperine-repository-guards`
-Proof: `test "$(git diff device-abi-simplification-base HEAD -- crates/piperine-repository-guards/allowances | grep -c '^+[^+]')" -le 4`
+Proof: `test "$(git diff device-abi-simplification-base HEAD -- crates/piperine-repository-guards/allowances | grep -c '^+[^+]')" -le 7`
 
-**C61** - Both ABI crates build under `#![deny(missing_docs)]` with no `#[allow]`. (ABI-28, AC 2)
+**C61** - Both ABI crates build under `#![deny(missing_docs)]` with no `#[allow]`; every `#[expect]` of the tree is item-scoped, carries a reason and is listed by the guard. (ABI-28, AC 2)
 Proof: run suite | test no_allow_hides_a_design_problem ... ok
 
 **C62** - The decision is recorded with the user's words; the project's documents list the new crate. (ABI-29, AC 3)
