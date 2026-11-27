@@ -1,0 +1,2 @@
+# T13 fix round 1 (P2-1): an uncited duplicate of the lang package check leaves; it names its survivor.
+retire piperine-lang/buck_example::the_package_builds_with_no_diagnostics duplicate of types_buck::the_buck_type_checks_with_no_diagnostic (same examples/buck graph loaded the same way, same empty design.diagnostics())

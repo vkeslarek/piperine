@@ -12,8 +12,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: In Progress
 **Approved**: 2026-11-21 - user: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run bookvalues**: `cargo test -p piperine --test book_values`
 **Run booklang**: `cargo test -p piperine --test book_language`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
@@ -38,6 +36,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
 
@@ -1357,38 +1356,38 @@ Proof: run logic | test a_logic_converts_to_an_option_of_bits ... ok
 **C40** - `to_volts(1.8)` gives 1.8, 0.0 and 0.9 for 1, 0 and X or Z, and drives a node from `analog` (EU-10, AC 3; T46)
 Proof: run logic | test to_volts_gives_the_level_of_each_state ... ok
 
-**C41** - §3.1 and §3.7 say a nature takes trait `impl`s, that a trait is a capability, and that `E0134` is for a bundle only (EU-11, AC 1; T1)
-Proof: run spectext | test a_nature_takes_trait_impls ... ok
+**C41** - §3.1 and §3.7 say a nature takes trait `impl`s, that a trait is a capability, and that `E0134` is for a bundle only (EU-11, AC 1; T1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C42** - §4 declares `Resolve<X: Repr, V: Repr = X>` with its one function, `V` the nature's value (`E0203`), and no `resolve` field or keyword is left (EU-11, AC 2; T3)
-Proof: run spectext | test resolve_is_a_trait_of_two_parameters ... ok
+**C42** - §4 declares `Resolve<X: Repr, V: Repr = X>` with its one function, `V` the nature's value (`E0203`), and no `resolve` field or keyword is left (EU-11, AC 2; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C43** - §5.2 says many drives need `Resolve`, and that `E0220` names the nature and the trait (EU-11, AC 3; T3)
-Proof: run spectext | test many_drives_need_the_resolve_capability ... ok
+**C43** - §5.2 says many drives need `Resolve`, and that `E0220` names the nature and the trait (EU-11, AC 3; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C44** - §5.2.15 says a drive picks its `impl` by its type, with `E0225` and `E0180` (EU-11, AC 4; T3)
-Proof: run spectext | test a_drive_picks_its_impl_by_its_type ... ok
+**C44** - §5.2.15 says a drive picks its `impl` by its type, with `E0225` and `E0180` (EU-11, AC 4; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C45** - §4 rule 15 and §5.2.10 say `resolve` receives the present drives as plain values, for every count from zero (EU-11, AC 5; T3)
-Proof: run spectext | test resolve_receives_plain_values_for_every_count ... ok
+**C45** - §4 rule 15 and §5.2.10 say `resolve` receives the present drives as plain values, for every count from zero (EU-11, AC 5; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C46** - §5.2.12 says a drive with no initial value starts at its type's default or is `E0187`, and that a resolved carrier needs none (EU-11, AC 6; T3)
-Proof: run spectext | test a_drive_without_a_value_starts_at_its_default ... ok
+**C46** - §5.2.12 says a drive with no initial value starts at its type's default or is `E0187`, and that a resolved carrier needs none (EU-11, AC 6; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C47** - §8.2.3 says a relaxing drive starts each relaxation absent (the passes of one relaxation build on the previous pass), and that absence is not a value (EU-11, AC 7; T4)
-Proof: run spectext | test a_relaxing_drive_starts_absent ... ok
+**C47** - §8.2.3 says a relaxing drive starts each relaxation absent (the passes of one relaxation build on the previous pass), and that absence is not a value (EU-11, AC 7; T4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C48** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 8; T4)
-Proof: run spectext | test a_loop_that_does_not_settle_is_e0511 ... ok
+**C48** - §8.2.3 step 4 and its error row say a loop that still moves is `E0511` naming its drives (EU-11, AC 8; T4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C49** - §22.3 defines `Strength`, `Driven` and `Driven::strongest` with its four-row table (EU-12, AC 1; T7)
-Proof: run spectext | test strongest_resolves_by_strength ... ok
+**C49** - §22.3 defines `Strength`, `Driven` and `Driven::strongest` with its four-row table (EU-12, AC 1; T7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C50** - §22.3 declares no `Wire`, `Tri` or `SumNet`, and its modules are generic over `W: Nature + Resolve<Driven>` (EU-12, AC 2; T7)
-Proof: run spectext | test the_library_declares_no_net_nature ... ok
+**C50** - §22.3 declares no `Wire`, `Tri` or `SumNet`, and its modules are generic over `W: Nature + Resolve<Driven>` (EU-12, AC 2; T7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C51** - Appendix F.4 holds the four worked nets, each with nature, `impl` and module code (EU-12, AC 3; T9)
-Proof: run spectext | test the_gallery_works_four_nets ... ok
+**C51** - Appendix F.4 holds the four worked nets, each with nature, `impl` and module code (EU-12, AC 3; T9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C52** - A commit of another value is a change; a commit of the held value is not (EU-13, AC 1; T23)
 Proof: run src | test a_change_is_a_different_value ... ok
@@ -1451,23 +1450,23 @@ Proof: run logic | test the_plan_lays_a_logic_pin_as_two_planes ... ok
 **C70** - A drive pin is the driven type's layout then `driving: BOOL`; 0 leaves the drive out of the resolver (EU-16, AC 6; T37)
 Proof: run relax | test a_drive_pin_ends_with_a_plain_driving_byte ... ok
 
-**C71** - Part I §3.3 holds the six rules of the explicit model and says no primitive numeric type implements `Default`, unlike Rust (EU-17, AC 1; T1)
-Proof: run spectext | test section_3_3_states_the_explicit_model ... ok
+**C71** - Part I §3.3 holds the six rules of the explicit model and says no primitive numeric type implements `Default`, unlike Rust (EU-17, AC 1; T1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C72** - Part VII §22.1 holds the tables of `&`, `|`, `^`, `!`, `==` beside the `Logic` source (EU-17, AC 2; T7)
-Proof: run spectext | test section_22_1_holds_the_four_state_tables ... ok
+**C72** - Part VII §22.1 holds the tables of `&`, `|`, `^`, `!`, `==` beside the `Logic` source (EU-17, AC 2; T7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C73** - No file of `docs/spec` outside G.72 holds a removed word (EU-17, AC 3; T9)
-Proof: run spectext | test the_removed_words_are_absent_from_the_specification ... ok
+**C73** - No file of `docs/spec` outside G.72 holds a removed word (EU-17, AC 3; T9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C74** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9)
-Proof: run spectext | test appendix_g_records_the_explicit_model ... ok
+**C74** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10)
-Proof: run docs | test abi_md_describes_the_unreleased_contract ... ok
+**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10) (retired by code-clarity T10: a pin on sentences of .specs/features/device-abi/abi.md; the document is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C76** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2)
-Proof: run spectext | test appendix_h_holds_default_from_and_the_operator_traits ... ok
+**C76** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C77** - The Book's "Values in hardware" teaches the explicit model in its three rewritten sections (EU-18, AC 1; T12)
 Proof: run bookvalues | test the_values_chapter_teaches_the_explicit_model ... ok
@@ -1487,14 +1486,14 @@ Proof: run bookinv | test every_listing_that_does_not_run_names_its_gap ... ok
 **C82** - The Book's "Device ABI" chapter describes the contract without known bytes and says it is unreleased (EU-18, AC 6; T17)
 Proof: run bookabi | test the_abi_chapter_describes_the_unreleased_contract ... ok
 
-**C83** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11)
-Proof: run docs | test state_holds_the_explicit_unknowns_decision ... ok
+**C83** - `STATE.md` holds MD-78 and marks MD-70 superseded by it (EU-19, AC 1; T11) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40)
-Proof: run docs | test gaps_closes_s6_and_tracks_the_flag ... ok
+**C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11)
-Proof: run docs | test the_per_level_feature_is_recorded_as_dropped ... ok
+**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11) (retired by code-clarity T10: a pin on the first line of the unknown-semantics-per-level spec and a sentence of ROADMAP.md; neither is behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C86** - No `.msl` under `std`, `examples`, `tests` or `crates/*/tests` uses a removed name outside a refusal test (EU-20, AC 1; T27)
 Proof: run hygiene | test no_source_uses_a_removed_unknown_form ... ok

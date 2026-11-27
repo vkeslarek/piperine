@@ -27,7 +27,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
 **Run msformat**: `cargo test -p piperine-lang --test msl_format`
 **Run stdgalleries**: `cargo test -p piperine-lang --test std_galleries`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run irchecks**: `cargo test -p piperine-ir --test check`
 **Run interp**: `cargo test -p piperine-interp --test frozen`
 **Run apisources**: `cargo test -p piperine-api --test host_sources`
@@ -39,12 +38,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run bookdigital**: `cargo test -p piperine --test book_digital`
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`
 **Run bookpackages**: `cargo test -p piperine --test book_packages`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -1303,8 +1302,8 @@ Proof: run elabentry | test a_top_value_input_is_e0811 ... ok
 **C35** - Q1 is (a): a value input of the top is refused, never bound by the host (AC 7 applies only under (c)). (PI-07, AC 7; T17)
 Proof: run elabentry | test a_top_value_input_is_e0811 ... ok
 
-**C36** - §8.1.14 and §23.1 state the host's sources and carry `E0810` and `E0811`. (PI-07, AC 8; T16)
-Proof: run spectext | test the_host_drives_a_tops_node_ports_e0810_e0811 ... ok
+**C36** - §8.1.14 and §23.1 state the host's sources and carry `E0810` and `E0811`. (PI-07, AC 8; T16) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C37** - `include_str!` in a `const` gives the file's text, resolved beside the source. (PI-08, AC 1; T24)
 Proof: run elabfiles | test include_str_reads_the_file_beside_the_source ... ok
@@ -1357,8 +1356,8 @@ Proof: run elabfiles | test non_increasing_abscissae_are_e0704 ... ok
 **C53** - The table diode passes the partials verifier. (PI-10, AC 8; T42)
 Proof: run sourcetables | test the_table_diode_passes_the_partials_verifier ... ok
 
-**C54** - Appendix C.2 states the spline end conditions. (PI-10, AC 9; T27)
-Proof: run spectext | test appendix_c2_states_the_spline_end_conditions ... ok
+**C54** - Appendix C.2 states the spline end conditions. (PI-10, AC 9; T27) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C55** - `piperine fmt --check` exits 0 over each stdlib file. (PI-11, AC 1; T26)
 Proof: run clicommands | test fmt_check_passes_on_every_stdlib_file ... ok
@@ -1420,8 +1419,8 @@ Proof: run speccodes | test no_owned_code_is_raised ... ok
 **C74** - At merge the allow-list holds none of this feature's 22 codes, nor `E0810` or `E0811`. (PI-13, AC 4; T44)
 Proof: run speccodes | test this_features_codes_are_all_raised ... ok
 
-**C75** - `GAPS.md` no longer lists L20, L28, L39, L57, X5 and H12, and §10 lists only the allow-list. (PI-14, AC 1; T44)
-Proof: run docs | test gaps_no_longer_lists_this_features_ids ... ok
+**C75** - `GAPS.md` no longer lists L20, L28, L39, L57, X5 and H12, and §10 lists only the allow-list. (PI-14, AC 1; T44) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C76** - `n: u8 = K as u8` evaluates the `as` under Part I §1 rule 1. (edge case; T31)
 Proof: run elabparams | test an_integer_default_converts_with_as ... ok
@@ -1486,8 +1485,8 @@ Proof: run typesvalues | test include_str_in_a_const_is_a_str ... ok
 **C96** - Every stdlib file is a fixed point of the formatter. (PI-11, AC 1; T25)
 Proof: run msformat | test every_stdlib_file_is_in_the_formatters_form ... ok
 
-**C97** - `GAPS.md` no longer lists X5, L20, L39 and H12 after B4. (PI-14, AC 1; T28)
-Proof: run docs | test gaps_no_longer_lists_x5_l20_l39_h12 ... ok
+**C97** - `GAPS.md` no longer lists X5, L20, L39 and H12 after B4. (PI-14, AC 1; T28) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C98** - Integer, enum and `Option` params type check with defaults and `where`. (PI-01, AC 1; T30)
 Proof: run typesmodules | test integer_enum_and_option_params_type_check ... ok
@@ -1532,7 +1531,7 @@ Proof: run bookpackages | test e0610_is_raised_for_include_str_in_a_module ... o
 Proof: run bookcheatsheet | test the_files_card_runs ... ok
 
 **C112** - `GAPS.md` §10 lists exactly the allow-list's codes. (PI-14, AC 1; T44)
-Proof: run docs | test gaps_section_10_lists_exactly_the_owned_codes ... ok
+Proof: run hygiene | test repository_records::gaps_section_10_lists_exactly_the_owned_codes ... ok
 
 ---
 

@@ -17,6 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run guards**: `cargo test -p piperine-repository-guards --test boundaries crate_boundaries::`
 **Run drivers**: `cargo test -p piperine-solver --test abi_dc --test abi_tran --test abi_ac --test abi_noise --test limiting_report`
 **Run crossings**: `cargo test -p piperine-solver --test protocol_crossings`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator decides per batch whether Opus implements instead (a different Opus then verifies): the feature is large (25 tasks); Phases 1 to 3 are numerically and protocol delicate, Phase 4 is numerically delicate by volume (the port), Phase 5 is mechanical. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`, after `solver-abi-digital` and `solver-abi-analog` are both merged into it. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push (the tag of T10 is local).
 
@@ -765,14 +766,14 @@ Proof: run crossings | test a_fired_crossing_is_a_commit_at_the_landing ... ok
 **C23** - The numeric assertions of `parity_baseline` are byte-identical to the base commit and the suite passes (SAI-12, Port AC 1)
 Proof: `a=$(mktemp); b=$(mktemp); git show 98b30ad6:crates/piperine-solver/tests/parity_baseline.rs | grep -E 'abs\(\) <|res\.len\(\)' > "$a"; grep -E 'abs\(\) <|res\.len\(\)' crates/piperine-solver/tests/parity_baseline.rs > "$b"; test -s "$a" && diff "$a" "$b" && cargo test -p piperine-solver`
 
-**C24** - Every removed test is listed in `removed.txt` with the item it was about, and none of them exists (SAI-12, Port AC 2)
-Proof: run solver | test removed_tests_are_listed_with_their_item ... ok
+**C24** - Every removed test is listed in `removed.txt` with the item it was about, and none of them exists (SAI-12, Port AC 2) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C25** - No source of the solver crates names an item of the `Element` contract (SAI-14, Port AC 5)
-Proof: run solver | test the_element_contract_is_gone ... ok
+**C25** - No source of the solver crates names an item of the `Element` contract (SAI-14, Port AC 5) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C26** - No source names the strength table, `LogicValue`, the two-phase contract, `DigitalState` or `EventQueue` (SAI-14, Port AC 5)
-Proof: run solver | test the_old_digital_engine_is_gone ... ok
+**C26** - No source names the strength table, `LogicValue`, the two-phase contract, `DigitalState` or `EventQueue` (SAI-14, Port AC 5) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C27** - Every function of every test device passes the partials verifier (SAI-15, Port AC 4): the helper libraries at a table of operating points and at generic points, each target's own devices (`parity_baseline`'s among them) in that target, and a guard names every hand-written device of the suite in a check (a failure fixture is held to its declared failure)
 Proof: run solver | test every_device_function_passes_the_partials_verifier ... ok

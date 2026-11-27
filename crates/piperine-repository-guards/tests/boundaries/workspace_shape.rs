@@ -1,26 +1,14 @@
 //! Structural guards over the workspace manifests (feature `solver-restructure`).
 //! Covers SR-01: the solver's own manifest lists no in-tree crate as a
 //! dev-dependency and none of the dependencies the restructure removed.
-//! Covers SR-02: retired crates have no directory and no manifest names them,
-//! the root `tests/` holds no Verilog-AMS end-to-end target, and `examples/`
-//! holds no Verilog-AMS or Python source, `default-members` lists the green
-//! crates and the CI workflows name no retired crate. Covers SAC-12 AC 3
-//! (`solver-abi-core`): the instruction files name `piperine-abi` and
-//! `.specs/STATE.md` records MD-61. Covers SAI-16 (`solver-abi-integration`):
-//! `.specs/STATE.md` records MD-62 and the instruction files name no removed item.
+//! Covers SR-02: the root `tests/` holds no Verilog-AMS end-to-end target, `examples/` holds no
+//! Verilog-AMS or Python source, and `default-members` lists the green crates. The instruction
+//! files list the kept crates. The guards against a retired architecture (retired crates, removed
+//! names) left with code-clarity T9: no source of it has a way back.
 
 use std::path::PathBuf;
 
 use piperine_repository_guards::SourceTree;
-
-/// Every crate this feature has removed so far; each task that removes
-/// crates extends this list.
-const RETIRED_CRATES: &[&str] = &[
-    "piperine-codegen",
-    "piperine-python",
-    "piperine-plugin",
-    "piperine-plugin-macros",
-];
 
 /// The workspace's `default-members`: the crates that build and test green.
 /// Later tasks extend this list as the sub-solver crates appear.
@@ -58,29 +46,6 @@ fn solver_manifest_has_no_in_tree_dev_dependency() {
     for name in ["rayon", "rand_distr"] {
         assert!(!manifest.contains(name), "{name} remains in the solver manifest");
     }
-}
-
-#[test]
-fn retired_crates_are_gone() {
-    for name in RETIRED_CRATES {
-        let dir = SourceTree::workspace_root().join("crates").join(name);
-        assert!(!dir.exists(), "{} still exists", dir.display());
-    }
-}
-
-#[test]
-fn no_manifest_names_a_retired_crate() {
-    for path in SourceTree::manifest_paths() {
-        let text = std::fs::read_to_string(&path).expect("read a manifest");
-        for name in RETIRED_CRATES {
-            assert!(!text.contains(name), "{} names retired crate {name}", path.display());
-        }
-    }
-    let root = std::fs::read_to_string(SourceTree::workspace_root().join("Cargo.toml")).expect("read the root manifest");
-    assert!(
-        !root.contains("[profile.dev.package.cranelift"),
-        "the root manifest keeps a Cranelift profile entry"
-    );
 }
 
 /// The Rust files under the root `tests/` read against the targets the root manifest declares.
@@ -179,7 +144,7 @@ fn root_tests_hold_no_end_to_end_target() {
 }
 
 #[test]
-fn examples_hold_no_vams_or_python() {
+fn examples_hold_only_package_sources() {
     let files = SourceTree::files_under(&SourceTree::workspace_root().join("examples"));
     for path in files {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
@@ -210,21 +175,6 @@ fn default_members_are_the_green_crates() {
         .map(|(_, s)| s)
         .collect();
     assert_eq!(listed, DEFAULT_MEMBERS, "default-members drifted");
-}
-
-#[test]
-fn workflows_name_no_retired_crate() {
-    let dir = SourceTree::workspace_root().join(".github/workflows");
-    for entry in std::fs::read_dir(&dir).expect("read .github/workflows") {
-        let path = entry.expect("dir entry").path();
-        let text = std::fs::read_to_string(&path).expect("read a workflow");
-        for name in RETIRED_CRATES {
-            assert!(!text.contains(name), "{} names retired crate {name}", path.display());
-        }
-    }
-    let ci = std::fs::read_to_string(dir.join("ci.yml")).expect("read ci.yml");
-    assert!(!ci.contains("--workspace"), "ci.yml passes --workspace");
-    assert!(!ci.contains("requirements.txt"), "ci.yml installs Python requirements");
 }
 
 /// The crates the workspace keeps.
@@ -262,16 +212,6 @@ impl InstructionReading {
             .filter_map(|l| l.split('`').nth(1).map(str::to_string))
             .collect()
     }
-
-    /// Whether `text` holds `word` as a whole identifier (no identifier character on either side).
-    pub fn names_identifier(text: &str, word: &str) -> bool {
-        let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
-        text.match_indices(word).any(|(at, _)| {
-            let before = text[..at].chars().next_back().is_none_or(|c| !ident(c));
-            let after = text[at + word.len()..].chars().next().is_none_or(|c| !ident(c));
-            before && after
-        })
-    }
 }
 
 #[test]
@@ -281,14 +221,6 @@ fn instructions_list_the_kept_crates() {
     let mut kept: Vec<String> = KEPT_CRATES.iter().map(|s| s.to_string()).collect();
     kept.sort();
     assert_eq!(table, kept, "CLAUDE.md crate table");
-}
-
-#[test]
-fn instructions_have_no_entry_for_a_retired_crate() {
-    let table = InstructionReading::claude_table_crates();
-    for retired in RETIRED_CRATES.iter().chain(["piperine-signal", "piperine-vams"].iter()) {
-        assert!(!table.iter().any(|c| c == retired), "CLAUDE.md still lists retired crate {retired}");
-    }
 }
 
 #[test]
@@ -303,32 +235,6 @@ fn state_records_the_solver_structure_decision() {
 }
 
 #[test]
-fn hygiene_guard_lives_in_piperine_lang() {
-    // since `code-clarity` T5 the hygiene guard lives in the guards crate (the test keeps its name)
-    let root = SourceTree::workspace_root();
-    assert!(root.join("crates/piperine-repository-guards/tests/suite/suite_hygiene.rs").is_file());
-    assert!(root.join("crates/piperine-repository-guards/tests/suite/suite_hygiene/sources.rs").is_file());
-    assert!(!root.join("crates/piperine-lang/tests/suite_hygiene.rs").exists());
-    assert!(!root.join("tests/suite_hygiene.rs").exists());
-    assert!(!root.join("tests/support").exists());
-}
-
-#[test]
-fn instruction_files_and_state_name_the_abi_crate() {
-    let claude = std::fs::read_to_string(SourceTree::workspace_root().join("CLAUDE.md")).expect("read CLAUDE.md");
-    assert!(claude.contains("piperine-abi"), "CLAUDE.md does not name piperine-abi");
-    let state = std::fs::read_to_string(SourceTree::workspace_root().join(".specs/STATE.md")).expect("read .specs/STATE.md");
-    assert!(state.contains("### MD-61"), ".specs/STATE.md carries no MD-61");
-    assert!(state.contains("### MD-62"), ".specs/STATE.md carries no MD-62");
-    for file in ["CLAUDE.md", "AGENTS.md"] {
-        let text = std::fs::read_to_string(SourceTree::workspace_root().join(file)).expect("read an instruction file");
-        for gone in ["Element", "ElementCapabilities", "AnalogDevice", "DigitalDevice", "LogicValue", "EventQueue"] {
-            assert!(!text.contains(gone), "{file} still names the removed {gone}");
-        }
-    }
-}
-
-#[test]
 fn the_root_package_is_a_re_export_and_nothing_else() {
     // CLI-01 AC 3 (msl-cli T4): the root `src/lib.rs` holds `pub use piperine_api::*;` and no
     // other item; comments and blank lines are not items
@@ -338,34 +244,4 @@ fn the_root_package_is_a_re_export_and_nothing_else() {
     let text = std::fs::read_to_string(root.join("lib.rs")).expect("read src/lib.rs");
     let items: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("//")).collect();
     assert_eq!(items, ["pub use piperine_api::*;"], "src/lib.rs");
-}
-
-#[test]
-fn host_crates_name_no_deleted_surface() {
-    // CLI-01 AC 4 (msl-cli T5): no source of `piperine-api` or `piperine-cli` names the deleted
-    // Verilog-AMS front end or the deleted `Element` solver interface
-    let mut files = Vec::new();
-    for krate in ["piperine-api", "piperine-cli"] {
-        let dir = SourceTree::workspace_root().join("crates").join(krate);
-        files.push(dir.join("Cargo.toml"));
-        for sub in ["src", "tests"] {
-            if dir.join(sub).is_dir() {
-                files.extend(SourceTree::files_under(&dir.join(sub)));
-            }
-        }
-    }
-    let mut offences = Vec::new();
-    for path in files.iter().filter(|p| p.extension().is_some_and(|e| e == "rs" || e == "toml")) {
-        let text = std::fs::read_to_string(path).expect("read a host source");
-        for word in ["parse_and_elaborate", "Element", "piperine_codegen", "piperine_python", "piperine_plugin"] {
-            if InstructionReading::names_identifier(&text, word) {
-                offences.push(format!("{}: `{word}`", path.display()));
-            }
-        }
-        if text.contains(".vams") {
-            offences.push(format!("{}: `.vams`", path.display()));
-        }
-    }
-    assert!(files.len() > 2, "the walk found the two crates' sources: {files:?}");
-    assert!(offences.is_empty(), "the host crates name the deleted surface:\n{}", offences.join("\n"));
 }

@@ -22,13 +22,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
 **Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run goldens**: `cargo test -p piperine-transpile --test golden`
 **Run booklang**: `cargo test -p piperine --test book_language`
 **Run booktypes**: `cargo test -p piperine --test book_types`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -530,8 +529,8 @@ Proof: run stdlib | test std_holds_no_removed_form ... ok
 **C26** - `std` builds with no diagnostic and every Part VII fence is an excerpt of it. (VS-08, AC 2; T6)
 Proof: run excerpts | test every_part_vii_fence_is_in_its_file ... ok
 
-**C27** - §22 no longer says `std` is in the earlier spelling. (VS-08, AC 3; T6)
-Proof: run spectext | test section_22_no_longer_says_std_is_in_the_earlier_spelling ... ok
+**C27** - §22 no longer says `std` is in the earlier spelling. (VS-08, AC 3; T6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C28** - The library items that took borrows give the results they gave. (VS-08, AC 4; T6)
 Proof: run srcvs | test the_library_items_that_took_borrows_give_the_same_results ... ok
@@ -548,8 +547,8 @@ Proof: run print | test the_printer_and_the_object_model_hold_no_removed_form ..
 **C32** - No test lists a specification row or code as ahead of the implementation. (VS-10, AC 1; T9, T10, T13)
 Proof: run resolve | test builtin_table_matches_appendix_h ... ok
 
-**C33** - `GAPS.md` has no S7 and G.71 names no implementation gap. (VS-10, AC 2; T15)
-Proof: run docs | test gaps_drops_the_value_semantics_gap ... ok
+**C33** - `GAPS.md` has no S7 and G.71 names no implementation gap. (VS-10, AC 2; T15) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C34** - The Book names `E0903` for `let mut`, held by the front end. (VS-10, AC 3; T14)
 Proof: run booklang | test e0903_mut_is_not_a_word_of_the_language ... ok

@@ -29,7 +29,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run commands**: `cargo test -p piperine-cli --test commands`
 **Run buck**: `cargo test -p piperine-cli --test buck`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 The approval reached the planner through the orchestrator on 2026-11-17, as a standing permission to dispatch the batches; it is recorded in `context.md`.
 
@@ -829,17 +830,17 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 **C55** - The Book's buck block is what the binary prints. (LR-18, AC 1; T15)
 Proof: run clibook | test the_buck_block_is_what_the_binary_prints ... ok
 
-**C56** - `GAPS.md` no longer says a host run keeps every accepted step, and still lists `on above(..) { emit!(..) }`. (LR-18, AC 2; T21)
-Proof: run docs | test gaps_says_a_host_run_is_bounded ... ok
+**C56** - `GAPS.md` no longer says a host run keeps every accepted step, and still lists `on above(..) { emit!(..) }`. (LR-18, AC 2; T21) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C57** - `ROADMAP.md` names multi-rate stepping, surrogate models and periodic steady state as what follows. (LR-18, AC 2; T22)
-Proof: run docs | test the_roadmap_lists_what_the_long_run_leaves ... ok
+**C57** - `ROADMAP.md` names multi-rate stepping, surrogate models and periodic steady state as what follows. (LR-18, AC 2; T22) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C58** - The buck's README describes the whole-start run. (LR-18, AC 3; T16)
-Proof: run docs | test the_buck_readme_says_how_to_run_it ... ok
+**C58** - The buck's README describes the whole-start run. (LR-18, AC 3; T16) (narrowed by code-clarity T10: the proof holds the README's command lines; its sentences and absences are no longer pinned)
+Proof: run suite | test repository_records::the_buck_readme_says_how_to_run_it ... ok
 
-**C59** - `.specs/STATE.md` holds MD-66: observation is the run's. (LR-07, AC 3; T23)
-Proof: run docs | test state_records_the_observation_decision ... ok
+**C59** - `.specs/STATE.md` holds MD-66: observation is the run's. (LR-07, AC 3; T23) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C60** - A `print_step` greater than `stop` gives the single row at time 0. (edge case; T8)
 Proof: run apilib | test recorder::tests::a_print_step_past_stop_gives_the_row_at_zero ... ok

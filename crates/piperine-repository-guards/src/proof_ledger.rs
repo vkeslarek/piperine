@@ -83,17 +83,18 @@ impl ProofLedger {
         parsed.targets().into_iter().find(|target| !tests.targets.iter().any(|t| CargoTestCommand::names_target(target, &t.name))).map(|target| format!("no test target {package}/{target}"))
     }
 
-    /// Whether a `#[test]` function of that name exists where a command runs: its target, or the
-    /// whole package when the command names no target.
+    /// Whether the test a proof writes (`name` or `module::name`) exists where a command runs: its
+    /// target, or the whole package when the command names no target. A written module path must
+    /// be the test's own, as cargo prints it; leading modules may be left out.
     pub fn test_exists(&self, command: &str, test: &str) -> bool {
         let Some(parsed) = CargoTestCommand::parse(command) else { return true };
         let Some(package) = parsed.package() else { return true };
         let Some(tests) = self.targets.package(package) else { return false };
         let targets = parsed.targets();
         if targets.is_empty() {
-            return tests.all_tests().contains(test);
+            return tests.holds_path(test);
         }
-        tests.targets.iter().any(|t| targets.iter().any(|target| CargoTestCommand::names_target(target, &t.name)) && t.tests.contains(test))
+        tests.targets.iter().any(|t| targets.iter().any(|target| CargoTestCommand::names_target(target, &t.name)) && t.holds_path(test))
     }
 
     /// Whether a function of that name is a test of the package.
@@ -140,7 +141,7 @@ impl ProofLedger {
     fn dangling_proof(&self, file: &FeatureFile, runs: &[RunLine], proof: &ProofLine) -> Option<DanglingReference> {
         let owner = file.feature().to_string();
         let command = runs.iter().find(|run| run.name == proof.run_name).map(|run| run.command.as_str())?;
-        let test = proof.test_name.as_deref()?;
+        let test = proof.test_path.as_deref()?;
         if self.test_exists(command, test) {
             return None;
         }
@@ -153,11 +154,10 @@ impl ProofLedger {
         for (id, covered_by) in &self.inventory_rows {
             let Some((target_path, test)) = covered_by.split_once("::") else { continue };
             let Some((package, target)) = target_path.split_once('/') else { continue };
-            let test_name = test.rsplit("::").next().unwrap_or(test);
             let reason = if !self.package_has_target(package, target) {
                 format!("no test target {package}/{target}")
-            } else if !self.targets.package(package).is_some_and(|p| p.targets.iter().any(|t| t.name == target && t.tests.contains(test_name))) {
-                format!("{package}/{target} has no test {test_name}")
+            } else if !self.targets.package(package).is_some_and(|p| p.targets.iter().any(|t| t.name == target && t.holds_path(test))) {
+                format!("{package}/{target} has no test {test}")
             } else {
                 continue;
             };

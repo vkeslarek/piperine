@@ -21,7 +21,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run reentry**: `cargo test -p piperine-solver --test transient_reentry`
 **Run failure**: `cargo test -p piperine-solver --test failure_rules`
 **Run runerrors**: `cargo test -p piperine-parity --test run_errors`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run truncation**: `cargo test -p piperine-solver --test truncation`
 **Run abitran**: `cargo test -p piperine-solver --test abi_tran`
 **Run abidc**: `cargo test -p piperine-solver --test abi_dc`
@@ -29,10 +28,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run protocolreal**: `cargo test -p piperine-solver --test protocol_real`
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run boundary**: `cargo test -p piperine-parity --test boundary`
-**Run removed**: `cargo test -p piperine-solver --test removed_surface`
 **Run abidevices**: `cargo test -p piperine-solver --test abi_devices`
 **Run digital**: `cargo test -p piperine-digital-solver --test checkpoint`
 **Run instant**: `cargo test -p piperine-digital-solver --test instant`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 The deviation table every numerics commit carries: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`, run before and after the change, both outputs pasted in the commit body.
 
@@ -1100,11 +1099,11 @@ Proof: run runerrors | test a_floating_node_from_source_is_e0503 ... ok
 **C30** - A NaN contribution from source fails `E0507` naming the instance. (HYG-02, AC 3; T17)
 Proof: run runerrors | test a_nan_contribution_from_source_is_e0507 ... ok
 
-**C31** - Part V states the restart step, the later start, the truncation basis and the `E0508` condition. (HYG-17, AC 2; T18)
-Proof: run spectext | test part_v_states_the_solver_hygiene_rules ... ok
+**C31** - Part V states the restart step, the later start, the truncation basis and the `E0508` condition. (HYG-17, AC 2; T18) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C32** - Appendix C states the damping, truncation, floor and restart numerics. (HYG-17, AC 2; T19)
-Proof: run spectext | test appendix_c_states_the_solver_hygiene_numerics ... ok
+**C32** - Appendix C states the damping, truncation, floor and restart numerics. (HYG-17, AC 2; T19) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - The state estimate reads `chgtol`. (HYG-07, AC 1; T20)
 Proof: run analoglib | test integration::tests::the_state_estimate_reads_chgtol ... ok
@@ -1181,11 +1180,11 @@ Proof: run reentry | test a_late_start_runs_no_instant_before_it ... ok
 **C57** - A start that is not finite or negative fails before the operating point. (HYG-12, AC 3; T31)
 Proof: run reentry | test a_start_that_is_not_finite_fails_before_the_operating_point ... ok
 
-**C58** - The dead Newton hooks are gone and cannot return. (HYG-15, AC 1; T32)
-Proof: run removed | test the_dead_newton_hooks_are_gone ... ok
+**C58** - The dead Newton hooks are gone and cannot return. (HYG-15, AC 1; T32) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C59** - No solver source mentions `PHDL` or `@rfport`. (HYG-15, AC 2; T33)
-Proof: run removed | test the_phdl_port_text_is_gone ... ok
+**C59** - No solver source mentions `PHDL` or `@rfport`. (HYG-15, AC 2; T33) (retired by code-clarity T9: a guard against names a past refactor removed; no way back to them)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C60** - Every hand-written device is in a partials check of its own module. (HYG-16, AC 3; T34)
 Proof: run abidevices | test every_hand_written_device_is_in_a_partials_check ... ok

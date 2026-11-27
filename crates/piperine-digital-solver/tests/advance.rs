@@ -330,28 +330,6 @@ fn times_that_round_to_one_tick_are_one_instant() {
 }
 
 #[test]
-fn advance_returns_final_at_a_finish() {
-    let mut d = started(engine_with(vec![("o", odd(), vec![])], &[]));
-    d.fire(net(&d, "o.e1"), Tick(6)).unwrap();
-    let before = d.checkpoint();
-    assert_eq!(d.advance(Tick(50)).unwrap(), Advance::Final(Tick(6)));
-    assert_eq!(d.checkpoint(), before, "the instant is untouched: the owner runs it at the accepted time");
-}
-
-#[test]
-fn a_changed_analog_read_net_lands_by_analog_read_changed() {
-    let mut d = started(engine_with(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])], &["y"]));
-    d.host_commit(net(&d, "a"), 0, &HIGH, Tick(4)).unwrap();
-    assert_eq!(d.advance(Tick(10)).unwrap(), Advance::Landing { tick: Tick(4), cause: LandingCause::AnalogReadChanged });
-}
-
-#[test]
-fn a_reaction_that_reads_a_continuous_pin_lands_by_continuous_read() {
-    let cause = Landings::landing_cause(vec![("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")])], &[], "g");
-    assert_eq!(cause, LandingCause::ContinuousRead);
-}
-
-#[test]
 fn a_reaction_reaching_the_analog_side_lands_by_declared_reach() {
     let cause = Landings::landing_cause(
         vec![
@@ -362,12 +340,6 @@ fn a_reaction_reaching_the_analog_side_lands_by_declared_reach() {
         "cross",
     );
     assert_eq!(cause, LandingCause::DeclaredReach, "the reach flag alone: the reaction reads no continuous pin");
-}
-
-#[test]
-fn an_irreversible_reaction_lands_by_irreversible() {
-    let cause = Landings::landing_cause(vec![("st", stub(), vec![("go", "g"), ("out", "out")])], &[], "g");
-    assert_eq!(cause, LandingCause::Irreversible);
 }
 
 #[test]
@@ -596,7 +568,9 @@ fn a_finish_at_an_instant_run_ahead_is_final_in_both_rules() {
     for rule in BOTH_RULES {
         let mut d = started(Landings::engine_under(vec![("o", odd(), vec![])], &[], rule));
         d.fire(net(&d, "o.e1"), Tick(6)).unwrap();
+        let before = d.checkpoint();
         assert_eq!(d.advance(Tick(50)).unwrap(), Advance::Final(Tick(6)), "{rule:?}");
+        assert_eq!(d.checkpoint(), before, "the instant is untouched: the owner runs it at the accepted time ({rule:?})");
     }
 }
 

@@ -22,7 +22,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run paritylib**: `cargo test -p piperine-parity --lib`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule). A different model verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch src/lib.rs` (and `crates/<crate>/src/lib.rs` of a crate the task edits) before a gate so cargo rebuilds this tree's sources.
 
@@ -1204,11 +1204,11 @@ Proof: run hygiene | test the_root_manifest_names_its_test_targets ... ok
 **C29** - Every root target follows the root naming rule, the two guards registered with their reason. (RE-01, AC 3; T12, T14)
 Proof: run hygiene | test root_targets_match_the_naming_rule ... ok
 
-**C30** - `GAPS.md` drops H11, U5 and U10 and keeps §11. (RE-04, AC 1; T42)
-Proof: run docs | test gaps_drops_what_root_e2e_closed ... ok
+**C30** - `GAPS.md` drops H11, U5 and U10 and keeps §11. (RE-04, AC 1; T42) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C31** - `ROADMAP.md` and `STATE.md` record the root's integrated tests. (RE-05, AC 1; T43)
-Proof: run docs | test the_roadmap_and_state_record_root_e2e ... ok
+**C31** - `ROADMAP.md` and `STATE.md` record the root's integrated tests. (RE-05, AC 1; T43) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C33** - Every divergence is classified: a `refused` or `unraised` row's §11 line names an owner feature with a spec. (RE-02, AC 2; T34)
 Proof: run inventory | test every_gaps_row_names_its_owner ... ok

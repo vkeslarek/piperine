@@ -24,16 +24,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesgen**: `cargo test -p piperine-lang --test types_generics`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_params`
 **Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -590,7 +589,7 @@ Proof: run typestempl | test a_fn_bounded_parameter_is_inferred_from_its_templat
 **C95** - A module whose ports differ from `P` is `E0360` naming the first port that differs. (GN-23, AC 2; T88)
 Proof: run typestempl | test a_module_whose_ports_differ_is_e0360_naming_the_first ... ok
 
-**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one: a method's receiver, the operand of `as`, a `let` with no type that nothing reads, fix round 3 findings 14 and 15), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78)
+**C96** - `inst.name` through a template-typed param resolves against the concrete module, in the module that places the template and from its parent, `E0343` for a missing or private item; an item of any kind (a `pub` param, a `pub let`, a carrier) is read as a value with the type its context wants, checked against the concrete item at elaboration (`E0180` naming both; `E0181` where no context gives one: a method's receiver, the operand of `as`, a `let` with no type that nothing reads, fix round 3 findings 14 and 15), also from the parent (`bank.c0.cs`) and at a generated iteration (`bank.cells[1].cs`); an out-of-range generated cell is `E0342` naming its element and the length of its own loop. (GN-23, AC 3; T91; fix rounds 1 and 2, L78) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run elabtempl | test inst_name_through_a_template_param_reads_the_concrete_module ... ok
 Proof: run elabtempl | test a_missing_item_through_a_template_param_is_e0343 ... ok
 Proof: run elabtempl | test inst_name_in_the_module_that_places_the_template_reads_the_concrete_module ... ok
@@ -603,13 +602,13 @@ Proof: run elabtempl | test a_cast_of_a_template_item_is_e0181_not_a_node_conver
 Proof: run typestempl | test an_unread_let_of_a_template_item_is_e0181 ... ok
 Proof: run elabtempl | test an_unread_let_of_a_template_item_is_e0181_not_an_elaboration_refusal ... ok
 Proof: run srctempl | test the_items_of_a_template_placed_child_read_as_values ... ok
-Proof: run spectext | test a_template_item_takes_the_type_its_context_wants_in_the_spec ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run elabtempl | test an_out_of_range_generated_cell_names_its_element_and_the_length_of_its_own_loop ... ok
 
-**C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92)
-Proof: run spectext | test a_module_type_takes_trait_and_inherent_impls_in_the_spec ... ok
-Proof: run spectext | test a_bound_combines_a_trait_and_fn_p_in_the_spec ... ok
+**C97** - A module type takes trait and inherent impls of pure functions over its template, run at elaboration; a trait plus `Fn(P)` bound admits only a module that implements the trait; a function that reads the solve is `E0122`. (GN-23; the decision of 2026-11-22; T83, T89, T90, T92) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run typestraits | test an_impl_on_a_module_type_is_accepted ... ok
 Proof: run typestraits | test a_module_impl_function_that_reads_the_solve_is_e0122 ... ok
 Proof: run elabtempl | test a_module_impl_function_runs_on_a_template_at_elaboration ... ok
@@ -629,16 +628,16 @@ Proof: run elabimplicit | test a_function_that_reaches_the_session_parameter_at_
 Proof: run srcimplicit | test an_instance_param_combined_with_the_run_multiplicity_is_four_in_parallel ... ok
 Proof: run srcimplicit | test multiplicity_in_a_param_default_is_e0321 ... ok
 
-**C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100)
+**C101** - `temperature()` is `Some` of the run's temperature in kelvin or `None`, and the model chooses constant, initial or ignored; the docs recommend the ambient fallback. (GN-25, AC 1, AC 2; T94, T97, T98, T100) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typesimplicit | test temperature_is_an_option_of_the_run ... ok
 Proof: run srcimplicit | test a_model_chooses_how_to_use_its_temperature ... ok
-Proof: run spectext | test the_recommended_fallback_is_the_ambient_temperature_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run bookanalog | test the_temperature_listings_run_with_the_ambient_fallback ... ok
 
-**C102** - `m` and `dtemp` are ordinary names: no implicit param exists. (GN-25, AC 3; T94, T97)
+**C102** - `m` and `dtemp` are ordinary names: no implicit param exists. (GN-25, AC 3; T94, T97) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typesimplicit | test m_and_dtemp_are_ordinary_names ... ok
-Proof: run spectext | test instances_have_no_implicit_params_in_the_spec ... ok
-Proof: run spectext | test temperature_and_multiplicity_are_run_settings_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C103** - The run sets its temperature and its `multiplicity` session parameter before it starts, they hold for the whole run, and neither has a placement or `set` spelling. (GN-26, AC 1, AC 2; T100)
 Proof: run srcimplicit | test the_run_settings_hold_for_the_whole_run ... ok
@@ -651,8 +650,8 @@ Proof: run interp | test each_generics_form_is_refused_by_name ... ok
 Proof: run irgen | test run_setting_reads_are_built_checked_and_printed ... ok
 Proof: run tgen | test a_device_reads_whether_the_run_set_its_temperature ... ok
 
-**C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102)
-Proof: run docs | test gaps_drops_what_generics_phase_d_closed ... ok
+**C106** - `GAPS.md` drops L29 and L32 and §9 and §10 follow. (GN-31, AC 1; T102) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C107** - The template Book rows flip or narrow to the bundle they still need, and the swappable MOSFET listing runs. (GN-31, AC 2; T93)
 Proof: run bookmodules | test the_swappable_mosfet_listing_runs ... ok
@@ -663,21 +662,21 @@ Proof: run bookinventory | test refused_rows_and_gaps_section_11_agree ... ok
 **C108** - The 7 ngspice twins print the bytes they printed before. (GN-30, AC 1; T97, every batch)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
-**C110** - A param default reads the params declared before it, folded per instance over the values they take there, a template param's trait method included (`level: f64 = fet.gain()`); the params a later default reads are structural; a default that reads the param itself or a later one is `E0321`. (§8.1.2, §8.1.16; fix round 2, L80)
+**C110** - A param default reads the params declared before it, folded per instance over the values they take there, a template param's trait method included (`level: f64 = fet.gain()`); the params a later default reads are structural; a default that reads the param itself or a later one is `E0321`. (§8.1.2, §8.1.16; fix round 2, L80) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test a_param_default_reads_earlier_params_and_a_template_params_trait ... ok
 Proof: run elabparams | test a_default_that_reads_earlier_params_is_folded_per_instance ... ok
 Proof: run elabparams | test a_default_that_reads_itself_or_a_later_param_is_e0321 ... ok
 Proof: run elabtempl | test a_param_default_dispatches_the_trait_of_a_template_param ... ok
 Proof: run srctempl | test a_param_default_reads_the_params_before_it ... ok
-Proof: run spectext | test a_param_default_reads_earlier_params_in_the_spec ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C111** - The type of a template of a generic module carries its arguments, `G<2>`: a template of other arguments where it is wanted is `E0180` naming both, an argument the template leaves out is the wanted type's, and a placement through a template (in place, a `const`, a param of type `S<E>`, a param bounded by `Fn(..)`) of a module whose ports are typed by its generic parameters reads them under those arguments (`E0251` for a node of another nature). (§8.4.3, §8.4.5; fix round 2, L79)
+**C111** - The type of a template of a generic module carries its arguments, `G<2>`: a template of other arguments where it is wanted is `E0180` naming both, an argument the template leaves out is the wanted type's, and a placement through a template (in place, a `const`, a param of type `S<E>`, a param bounded by `Fn(..)`) of a module whose ports are typed by its generic parameters reads them under those arguments (`E0251` for a node of another nature). (§8.4.3, §8.4.5; fix round 2, L79) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run typestempl | test the_type_of_a_generic_template_carries_its_arguments ... ok
 Proof: run typestempl | test a_placement_through_a_template_of_a_nature_generic_module_checks_its_ports ... ok
 Proof: run elabtempl | test a_placement_through_a_template_of_a_nature_generic_module_places_its_instance ... ok
 Proof: run srctempl | test a_template_of_a_nature_generic_module_runs_through_its_type ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_d_fix_round_2_closed ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C112** - A placement through a template param bounded by `Fn(P)` takes at each node input what a placement of the module takes at that port: `gnd` or a node of a compatible nature, `E0251` for another nature. (§8.1.10, §8.4.5; fix round 2, coordinator follow-up)
 Proof: run typestempl | test gnd_connects_through_a_callable_bound_as_at_a_placement ... ok
@@ -702,7 +701,7 @@ Proof: run elabhandles | test an_access_a_let_bound_nodes_nature_lacks_is_e0206 
 Proof: run typeshandles | test parentheses_around_a_node_argument_name_the_node ... ok
 Proof: run elabhandles | test parentheses_around_a_node_argument_lower_to_the_node ... ok
 
-**C117** - A node chosen at elaboration (an `if`, a `match` or a block whose choice reads only params, constants, generation indexes and `let`s of those, whatever statements its arms hold; fix round 8, finding 22) names the node it folds to at a probe, a contribution target, a placement's connection and an `Fn` bound's, and its params are structural; a choice that reads a probe, a signal, a core primitive of the run or a variable whose value depends on the run is `E0133` alone, also written straight at a node argument, and so is one through a function that reads the run (elaboration). (§1.4.7, §8.1.2; user ruling 2026-11-24, finding 21; findings 20 and the round-5 note)
+**C117** - A node chosen at elaboration (an `if`, a `match` or a block whose choice reads only params, constants, generation indexes and `let`s of those, whatever statements its arms hold; fix round 8, finding 22) names the node it folds to at a probe, a contribution target, a placement's connection and an `Fn` bound's, and its params are structural; a choice that reads a probe, a signal, a core primitive of the run or a variable whose value depends on the run is `E0133` alone, also written straight at a node argument, and so is one through a function that reads the run (elaboration). (§1.4.7, §8.1.2; user ruling 2026-11-24, finding 21; findings 20 and the round-5 note) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run typeshandles | test a_node_chosen_by_the_run_is_e0133 ... ok
 Proof: run typeshandles | test a_node_chosen_at_elaboration_is_typed_as_the_node ... ok
 Proof: run typeshandles | test a_node_chosen_at_a_node_argument_is_e0133_alone ... ok
@@ -713,7 +712,7 @@ Proof: run elabhandles | test a_node_chosen_at_elaboration_connects_through_a_te
 Proof: run elabhandles | test a_node_chosen_through_a_function_that_reads_the_run_is_e0133 ... ok
 Proof: run elabhandles | test a_node_chosen_through_lets_and_arm_statements_folds_to_the_node ... ok
 Proof: run srctempl | test a_param_picks_the_node_a_module_probes_and_drives ... ok
-Proof: run spectext | test a_node_chosen_by_an_expression_is_e0133_in_the_spec ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C118** - A node of a child is a connection like any node: `Th(c0.sn)` with `c0` placed by name or through a template, and `Th(if sel { c0.sn } else { t })`, bind `Th`'s port to the child's node. (§8.1.10, §8.2.8; fix round 8, finding 23)
 Proof: run typeshandles | test a_node_of_a_child_is_a_connection ... ok
@@ -738,11 +737,11 @@ Proof: run typeshandles | test a_let_assigned_only_values_of_elaboration_chooses
 Proof: run elabhandles | test a_let_assigned_only_values_of_elaboration_folds_to_the_node_it_holds_there ... ok
 Proof: run srctempl | test a_let_assigned_from_params_picks_the_node ... ok
 
-**C158** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27)
+**C158** - A node connection reached through any depth of children is hardware too: a cross pair and a self-connection through a template two levels deep (`p.c0.sn`) and through a generation (`p.cells[1].sn`) type, bind each port to the node it names and settle where Kirchhoff's law puts them; three levels deep (`p.mid.c0.sn`) the checker types the cycle and elaboration refuses it as it refuses the forward read, by name (L82); a value read through an open `let`'s child (`p.c0.cs` at a value input) is `E0332`. (§8.2.14, §8.2.16, §8.3.5; fix round 10, finding 27) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
 Proof: run typeshandles | test a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware ... ok
 Proof: run elabhandles | test a_cycle_of_node_connections_through_any_depth_of_reach_binds_each_port ... ok
 Proof: run srctempl | test a_cycle_of_node_connections_two_levels_deep_runs_as_hardware ... ok
-Proof: run docs | test gaps_records_a_reach_three_levels_deep ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C159** - A choice whose condition assigns its `let` first (`if { s = !s; s }`, a `match` over such a block, a `while` over a `let` in the condition) folds at elaboration to the node the condition picks and ends, within a time bound at elaboration and from source; one whose condition assigns a value of the run is `E0133` alone, naming the read. (§1.4.7; fix round 10, finding 28)
 Proof: run elabhandles | test a_choice_whose_condition_assigns_folds_and_ends ... ok

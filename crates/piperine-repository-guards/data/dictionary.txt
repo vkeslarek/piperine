@@ -2168,6 +2168,7 @@ reader
 readers
 reading
 readings
+readme
 reads
 ready
 real
@@ -2355,6 +2356,7 @@ risen
 riser
 rises
 rising
+roadmap
 rogue
 role
 roles

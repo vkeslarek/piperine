@@ -28,8 +28,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apiarr**: `cargo test -p piperine-api --test carrier_arrays`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run book**: `cargo test -p piperine --test book_natures --test book_modules --test book_inventory`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -809,8 +809,8 @@ Proof: run tarr | test element_reads_and_commits_compile_and_run ... ok
 **C140** - An array length that reads a param is folded at elaboration and makes that param structural. (CV-36, AC 1; QC2; T78)
 Proof: run elabarr | test an_array_length_read_from_a_param_makes_it_structural ... ok
 
-**C141** - `GAPS.md` no longer lists L24 and its §9 coverage, counts and H9 follow. (CV-37, AC 1; T90)
-Proof: run docs | test gaps_drops_what_composite_values_phase_c_closed ... ok
+**C141** - `GAPS.md` no longer lists L24 and its §9 coverage, counts and H9 follow. (CV-37, AC 1; T90) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C142** - The fences the arrays of carriers lift (E.5, §8.2's `UartShift`, §22.1.3) are held to the checker. (CV-37, AC 2; T89)
 Proof: run galleries | test the_fences_composite_values_lifted_are_checked ... ok

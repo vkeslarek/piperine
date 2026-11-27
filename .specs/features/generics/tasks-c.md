@@ -27,7 +27,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run srcmods**: `cargo test -p piperine-parity --test source_generic_modules`
 **Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
 **Run apisession**: `cargo test -p piperine-api --test session`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
@@ -47,6 +46,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcompiler**: `cargo test -p piperine --test book_compiler`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 
 Executors: **every task is Sonnet**. Opus verifies the feature.
@@ -946,11 +946,11 @@ Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move .
 **C80** - The build gives no warning on the crates this phase touches, and the hygiene guard passes. (GN-30, AC 2; every batch)
 Proof: `cargo build -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | (! grep -qE '^(warning|error)') && cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 
-**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T71, T82)
-Proof: run docs | test gaps_drops_l70 ... ok
-Proof: run docs | test gaps_drops_l69 ... ok
-Proof: run docs | test gaps_drops_s3 ... ok
-Proof: run docs | test gaps_drops_what_generics_phase_c_closed ... ok
+**C81** - `GAPS.md` drops L70, L69, S3, L30 and L31 in the commits that close them. (GN-31, AC 1; T54, T58, T71, T82) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C82** - Every Book row and gallery fence phase C lets run is held to it. (GN-31, AC 2; T71, T77, T80, T81)
 Proof: run bookdigital | test the_flip_flop_runs_for_a_type_with_a_default ... ok
@@ -973,11 +973,11 @@ Proof: run srcmods | test a_const_generic_of_zero_makes_an_empty_module ... ok
 **C85** - An empty generation range makes an empty array. (Edge case; T73)
 Proof: run elabgenr | test an_empty_generation_range_makes_an_empty_array ... ok
 
-**C86** - `cast` and `same` compile from `std/values.msl`, agree with the lowering they replace, and a `cast` to a tuple holding an enum runs. (GN-27, AC 1; GN-01, AC 1; T55)
+**C86** - `cast` and `same` compile from `std/values.msl`, agree with the lowering they replace, and a `cast` to a tuple holding an enum runs. (GN-27, AC 1; GN-01, AC 1; T55) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run srcgen | test cast_and_same_from_source_agree_with_the_removed_lowering ... ok
 Proof: run srcgen | test a_cast_to_a_tuple_holding_an_enum_runs ... ok
 Proof: run typesgen | test no_intrinsic_stands_for_cast_or_same ... ok
-Proof: run docs | test gaps_drops_the_cast_and_same_intrinsics ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 
 **C120** - The Book listings that contradicted the spec are corrected, and each old form is refused as the spec says: a carrier port left out is `E0312` (§8.1.8), a `[Bit; N]` with no initial value is `E0187` (§3.3.4) and the rule holds per element of an array (one element defined, one handed to an `out` port: `E0187` names the rest; every element named: clean; an initial value beside some element definitions is the others' value, `E0338` once all are defined), a refused whole-array definition is the driver and raises no `E0187`, `Slice` is bounded by `Default` as gallery E.6 is. (GN-31, AC 2; Book amendments BA1 to BA3; T116)
@@ -1063,8 +1063,8 @@ Proof: run elabcarrarr | test a_run_time_element_read_in_a_definition_is_one_rea
 Proof: run paritycarrarr | test a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_element ... ok
 Proof: run paritycarrarr | test whole_array_run_time_element_and_reaction_readers_follow_the_elements ... ok
 
-**C138** - L77 (generation in a hoisted module's body) is owned by `generics` phase E, task T118 in `tasks-e.md`, not by a spec lane. (round 5 finding 18)
-Proof: run docs | test gaps_l77_is_owned_by_generics_phase_e ... ok
+**C138** - L77 (generation in a hoisted module's body) is owned by `generics` phase E, task T118 in `tasks-e.md`, not by a spec lane. (round 5 finding 18) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C139** - The Book's `P0001` claim (compiler~79f44db1, `holds`) is shown on a form still unfinished, a module template as a value (`R { r: 2.0 }`, phase D, L32): its refusal names `module template`; its example was a generic module until phase C ran those. (GN-31, AC 2; final suite after the main merge)
 Proof: run bookcompiler | test a_compiler_code_says_what_the_chapter_says ... ok

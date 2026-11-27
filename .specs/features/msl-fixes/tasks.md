@@ -35,8 +35,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run clicmd**: `cargo test -p piperine-cli --test commands`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run twins**: `cargo test -p piperine-cli --test twins`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
@@ -1284,11 +1284,11 @@ Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_print
 **C78** - The clipper's refusal no longer names `sin` or `bound_step`. (CAT-05, AC 3; T37)
 Proof: run clibook | test the_clipper_refusal_no_longer_names_sin ... ok
 
-**C79** - `GAPS.md` drops what closed and keeps what is left. (DOC-01, AC 1; T38)
-Proof: run docs | test gaps_drops_what_msl_fixes_closed ... ok
+**C79** - `GAPS.md` drops what closed and keeps what is left. (DOC-01, AC 1; T38) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C80** - `ROADMAP.md` and `.specs/STATE.md` record the feature and MD-67. (DOC-01, AC 2; T39)
-Proof: run docs | test the_roadmap_and_state_record_msl_fixes ... ok
+**C80** - `ROADMAP.md` and `.specs/STATE.md` record the feature and MD-67. (DOC-01, AC 2; T39) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C81** - Each twin prints the bytes of its golden on each backend. (PAR-01, AC 1)
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok

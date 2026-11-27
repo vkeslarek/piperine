@@ -17,7 +17,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run abinoise**: `cargo test -p piperine-solver --test abi_noise`
 **Run retake**: `cargo test -p piperine-solver --test jump_retake`
 **Run digital**: `cargo test -p piperine-digital-solver --test instant`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run irops**: `cargo test -p piperine-ir --test operators`
 **Run planops**: `cargo test -p piperine-plan --test operators_shape`
 **Run tops**: `cargo test -p piperine-transpile --test operators`
@@ -47,9 +46,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clianalyses**: `cargo test -p piperine-cli --test analyses`
 **Run clioptions**: `cargo test -p piperine-cli --test options`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run inventory**: `cargo test -p piperine --test book_inventory`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree is `/home/keslarek/Git/piperine-analog-operators`, branch `feature/analog-operators`. Every cargo command runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target-b CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 TMPDIR=/var/tmp/piperine-tmp-b`, in the foreground; never `pkill` by pattern; where parallel worktrees share the target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources. If `df /` passes 90 %, stop and report.
 
@@ -1368,15 +1367,15 @@ Proof: run planops | test a_body_without_a_new_form_keeps_its_shape ... ok
 Proof: run contract | test contract::tests::the_five_contracts_carry_bounds_and_rationale ... ok
 Proof: run corpus | test every_twin_has_a_cir_and_a_test ... ok
 
-**C63** - `GAPS.md` no longer lists L43, L44, L45 (but `noise_table`), L49, `simparam` of L47, the noise row of H2 and U7; the Book shows one noise run held to the binary. (AO-12, AC 3; T44)
-Proof: run docs | test gaps_and_roadmap_follow_analog_operators ... ok
+**C63** - `GAPS.md` no longer lists L43, L44, L45 (but `noise_table`), L49, `simparam` of L47, the noise row of H2 and U7; the Book shows one noise run held to the binary. (AO-12, AC 3; T44) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run clibook | test every_cli_listing_of_the_book_is_what_the_binary_prints ... ok
 Proof: run inventory | test every_block_of_the_book_has_one_row ... ok
 
-**C64** - The stdlib `slew(v(in), 1M, 1M)` after a 0 to 1 V ideal step at 1 µs gives 0 V before 1 µs, 1 V/µs and 1 V from 2 µs, within `TRAN_VOLTAGE`. (AO-13, AC 1; T7, T8, T9)
+**C64** - The stdlib `slew(v(in), 1M, 1M)` after a 0 to 1 V ideal step at 1 µs gives 0 V before 1 µs, 1 V/µs and 1 V from 2 µs, within `TRAN_VOLTAGE`. (AO-13, AC 1; T7, T8, T9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run sslew | test slew_limits_an_ideal_step_to_its_rate ... ok
 Proof: run retake | test a_crossing_made_by_a_jump_retakes_the_step ... ok
-Proof: run spectext | test part_v_retakes_the_step_a_jump_crossing_changes ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C65** - A noise run whose `output` is a flow (`i(<instance>)`) prints `onoise` in A/√Hz. (Edge case; T6, T13)
 Proof: run report | test a_flow_output_reads_amperes_per_root_hertz ... ok

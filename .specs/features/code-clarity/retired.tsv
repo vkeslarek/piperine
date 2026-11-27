@@ -1,2 +1,232 @@
 # Checks whose test was removed with no replacement (code-clarity CC-12 AC 5).
 # feature<TAB>check<TAB>removed test<TAB>reason. Written by `repoint`; never edited by hand.
+msl-cli	C4	piperine-repository-guards/boundaries::workspace_shape::host_crates_name_no_deleted_surface	a guard against a retired architecture; no way back to it
+solver-abi-core	C24	piperine-repository-guards/boundaries::workspace_shape::instruction_files_and_state_name_the_abi_crate	a guard against a retired architecture; no way back to it
+solver-abi-integration	C25	piperine-solver/removed_surface::the_element_contract_is_gone	a guard against names a past refactor removed; no way back to them
+solver-abi-integration	C26	piperine-solver/removed_surface::the_old_digital_engine_is_gone	a guard against names a past refactor removed; no way back to them
+solver-abi-integration	C24	piperine-solver/removed_surface::removed_tests_are_listed_with_their_item	a guard against names a past refactor removed; no way back to them
+solver-hygiene	C58	piperine-solver/removed_surface::the_dead_newton_hooks_are_gone	a guard against names a past refactor removed; no way back to them
+solver-hygiene	C59	piperine-solver/removed_surface::the_phdl_port_text_is_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C14	piperine-solver/removed_surface::disto_is_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C15	piperine-solver/removed_surface::text_io_is_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C16	piperine-solver/removed_surface::verification_channels_are_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C17	piperine-solver/removed_surface::specify_timing_is_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C18	piperine-solver/removed_surface::regions_are_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C19	piperine-solver/removed_surface::simprobe_is_gone	a guard against names a past refactor removed; no way back to them
+solver-restructure	C20	piperine-solver/removed_surface::the_scan_catches_a_planted_name	a guard against names a past refactor removed; no way back to them
+solver-restructure	C7	piperine-repository-guards/boundaries::workspace_shape::retired_crates_are_gone	a guard against a retired architecture; no way back to it
+solver-restructure	C8	piperine-repository-guards/boundaries::workspace_shape::no_manifest_names_a_retired_crate	a guard against a retired architecture; no way back to it
+solver-restructure	C13	piperine-repository-guards/boundaries::workspace_shape::workflows_name_no_retired_crate	a guard against a retired architecture; no way back to it
+solver-restructure	C35	piperine-repository-guards/boundaries::workspace_shape::instructions_have_no_entry_for_a_retired_crate	a guard against a retired architecture; no way back to it
+solver-restructure	C43	piperine-repository-guards/boundaries::workspace_shape::hygiene_guard_lives_in_piperine_lang	a guard against a retired architecture; no way back to it
+analog-operators	C63	piperine-cli/docs::gaps_and_roadmap_follow_analog_operators	a pin on a sentence of a tracking file; the tracking file is not behaviour
+analog-structure	C79	piperine-cli/docs::gaps_drops_what_analog_structure_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+analog-structure	C26	piperine-cli/docs::gaps_keeps_l40_for_the_spec_models_that_wait	a pin on a sentence of a tracking file; the test was already gone
+buck-scenarios	C76	piperine-cli/docs::gaps_narrows_what_buck_scenarios_ran	a pin on a sentence of a tracking file; the tracking file is not behaviour
+buck-scenarios	C74	piperine-cli/docs::the_buck_spec_holds_the_bench_bounds	a pin on sentences of examples/buck/SPEC.md; the document is not behaviour
+composite-values	C141	piperine-cli/docs::gaps_drops_what_composite_values_phase_c_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+composite-values	C189	piperine-cli/docs::gaps_drops_what_composite_values_phase_d_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+composite-values	C98	piperine-cli/docs::gaps_drops_what_composite_values_phase_a_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+composite-values	C99	piperine-cli/docs::gaps_drops_what_composite_values_phase_b_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+explicit-unknowns	C83	piperine-cli/docs::state_holds_the_explicit_unknowns_decision	a pin on a sentence of a tracking file; the tracking file is not behaviour
+explicit-unknowns	C85	piperine-cli/docs::the_per_level_feature_is_recorded_as_dropped	a pin on the first line of the unknown-semantics-per-level spec and a sentence of ROADMAP.md; neither is behaviour
+explicit-unknowns	C75	piperine-cli/docs::abi_md_describes_the_unreleased_contract	a pin on sentences of .specs/features/device-abi/abi.md; the document is not behaviour
+explicit-unknowns	C84	piperine-cli/docs::gaps_closes_s6_and_tracks_the_flag	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C42	piperine-cli/docs::gaps_drops_what_generics_phase_a_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C42	piperine-cli/docs::gaps_drops_what_generics_phase_b_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_s3	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_what_generics_phase_c_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_l70	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C86	piperine-cli/docs::gaps_drops_the_cast_and_same_intrinsics	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_l69	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C138	piperine-cli/docs::gaps_l77_is_owned_by_generics_phase_e	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C106	piperine-cli/docs::gaps_drops_what_generics_phase_d_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C96	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C110	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C111	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C148	piperine-cli/docs::gaps_drops_the_generics_group_of_l58	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C155	piperine-cli/docs::gaps_drops_the_generics_group_of_l58	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C158	piperine-cli/docs::gaps_records_a_reach_three_levels_deep	a pin on a sentence of a tracking file; the test was already gone
+generics	C81	piperine-cli/docs::gaps_drops_s3	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_what_generics_phase_c_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_l70	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C86	piperine-cli/docs::gaps_drops_the_cast_and_same_intrinsics	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C81	piperine-cli/docs::gaps_drops_l69	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C138	piperine-cli/docs::gaps_l77_is_owned_by_generics_phase_e	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C106	piperine-cli/docs::gaps_drops_what_generics_phase_d_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C96	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C110	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C111	piperine-cli/docs::gaps_drops_what_generics_phase_d_fix_round_2_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C158	piperine-cli/docs::gaps_records_a_reach_three_levels_deep	a pin on a sentence of a tracking file; the test was already gone
+generics	C148	piperine-cli/docs::gaps_drops_the_generics_group_of_l58	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C155	piperine-cli/docs::gaps_drops_the_generics_group_of_l58	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C42	piperine-cli/docs::gaps_drops_what_generics_phase_a_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+generics	C42	piperine-cli/docs::gaps_drops_what_generics_phase_b_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+host-ii	C89	piperine-cli/docs::gaps_drops_what_host_ii_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+host-ii	C90	piperine-cli/docs::the_roadmap_lists_the_host_follow_ups	a pin on a sentence of a tracking file; the test was already gone
+long-run	C56	piperine-cli/docs::gaps_says_a_host_run_is_bounded	a pin on a sentence of a tracking file; the tracking file is not behaviour
+long-run	C59	piperine-cli/docs::state_records_the_observation_decision	a pin on a sentence of a tracking file; the tracking file is not behaviour
+long-run	C57	piperine-cli/docs::the_roadmap_lists_what_the_long_run_leaves	a pin on a sentence of a tracking file; the test was already gone
+msl-cli	C154	piperine-cli/docs::gaps_drops_what_closed_and_lists_what_is_left	a pin on a sentence of a tracking file; the tracking file is not behaviour
+msl-cli	C156	piperine-cli/docs::state_records_the_cli_decision	a pin on a sentence of a tracking file; the tracking file is not behaviour
+msl-cli	C155	piperine-cli/docs::the_roadmap_marks_the_cli_item_done	a pin on a sentence of a tracking file; the test was already gone
+msl-fixes	C79	piperine-cli/docs::gaps_drops_what_msl_fixes_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+msl-fixes	C80	piperine-cli/docs::the_roadmap_and_state_record_msl_fixes	a pin on a sentence of a tracking file; the test was already gone
+nested-reach	C16	piperine-cli/docs::gaps_drops_the_reach_rows_nested_reach_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+params-and-io	C97	piperine-cli/docs::gaps_no_longer_lists_x5_l20_l39_h12	a pin on a sentence of a tracking file; the tracking file is not behaviour
+params-and-io	C75	piperine-cli/docs::gaps_no_longer_lists_this_features_ids	a pin on a sentence of a tracking file; the tracking file is not behaviour
+resolved-nets	C55	piperine-cli/docs::gaps_lists_no_resolved_net_gap	a pin on a sentence of a tracking file; the tracking file is not behaviour
+resolved-nets	C78	piperine-cli/docs::gaps_section_11_holds_no_net_row	a pin on a sentence of a tracking file; the tracking file is not behaviour
+resolved-nets-bundles	C31	piperine-cli/docs::gaps_no_longer_lists_bundles	a pin on a sentence of a tracking file; the tracking file is not behaviour
+root-e2e	C30	piperine-cli/docs::gaps_drops_what_root_e2e_closed	a pin on a sentence of a tracking file; the tracking file is not behaviour
+root-e2e	C31	piperine-cli/docs::the_roadmap_and_state_record_root_e2e	a pin on a sentence of a tracking file; the test was already gone
+transient-performance	C42	piperine-cli/docs::the_scenario_package_states_its_measured_step_count	a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour
+transient-performance	C45	piperine-cli/docs::the_scenario_package_states_its_measured_step_count	a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour
+transient-performance	C43	piperine-cli/docs::transient_performance_closes_v12	a pin on a sentence of a tracking file; the tracking file is not behaviour
+transient-performance	C45	piperine-cli/docs::transient_performance_closes_v12	a pin on a sentence of a tracking file; the tracking file is not behaviour
+unknown-semantics	C31	piperine-cli/docs::gaps_carries_the_unknown_index_merge_to_composite_values	a pin on a sentence of a tracking file; the test was already gone
+unknown-semantics	C42	piperine-cli/docs::gaps_drops_l18_and_l19	a pin on a sentence of a tracking file; the test was already gone
+unknown-semantics-events	C37	piperine-cli/docs::the_book_no_longer_says_settle_is_not_compiled	a pin on a sentence of the Book (docs/book); the Book's claims are tied to runs by tests/book, not by a wording pin
+unknown-semantics-events	C36	piperine-cli/docs::gaps_no_longer_lists_settle_or_limexp	a pin on a sentence of a tracking file; the tracking file is not behaviour
+unknown-semantics-events	C36	piperine-cli/docs::gaps_no_longer_lists_l51_or_l53	a pin on a sentence of a tracking file; the tracking file is not behaviour
+value-semantics	C33	piperine-cli/docs::gaps_drops_the_value_semantics_gap	a pin on a sentence of a tracking file; the tracking file is not behaviour
+analog-operators	C64	piperine-lang/spec_text::part_v_retakes_the_step_a_jump_crossing_changes	a pin on a sentence of the specification; the specification is the authority
+composite-values	C33	piperine-lang/spec_text::section_1_rule_11_states_the_loop_and_depth_bounds	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C71	piperine-lang/spec_text::section_3_3_states_the_explicit_model	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C41	piperine-lang/spec_text::a_nature_takes_trait_impls	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C76	piperine-lang/spec_text::appendix_h_holds_default_from_and_the_operator_traits	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C42	piperine-lang/spec_text::resolve_is_a_trait_of_two_parameters	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C43	piperine-lang/spec_text::many_drives_need_the_resolve_capability	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C44	piperine-lang/spec_text::a_drive_picks_its_impl_by_its_type	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C45	piperine-lang/spec_text::resolve_receives_plain_values_for_every_count	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C46	piperine-lang/spec_text::a_drive_without_a_value_starts_at_its_default	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C47	piperine-lang/spec_text::a_relaxing_drive_starts_absent	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C48	piperine-lang/spec_text::a_loop_that_does_not_settle_is_e0511	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C72	piperine-lang/spec_text::section_22_1_holds_the_four_state_tables	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C49	piperine-lang/spec_text::strongest_resolves_by_strength	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C50	piperine-lang/spec_text::the_library_declares_no_net_nature	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C73	piperine-lang/spec_text::the_removed_words_are_absent_from_the_specification	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C74	piperine-lang/spec_text::appendix_g_records_the_explicit_model	a pin on a sentence of the specification; the specification is the authority
+explicit-unknowns	C51	piperine-lang/spec_text::the_gallery_works_four_nets	a pin on a sentence of the specification; the specification is the authority
+generics	C22	piperine-lang/spec_text::rule_9_splits_definition_and_instantiation_errors	a pin on a sentence of the specification; the specification is the authority
+generics	C36	piperine-lang/spec_text::a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes	a pin on a sentence of the specification; the specification is the authority
+generics	C32	piperine-lang/spec_text::a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules	a pin on a sentence of the specification; the specification is the authority
+generics	C97	piperine-lang/spec_text::a_module_type_takes_trait_and_inherent_impls_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C97	piperine-lang/spec_text::a_bound_combines_a_trait_and_fn_p_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C102	piperine-lang/spec_text::instances_have_no_implicit_params_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C102	piperine-lang/spec_text::temperature_and_multiplicity_are_run_settings_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C101	piperine-lang/spec_text::the_recommended_fallback_is_the_ambient_temperature_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C110	piperine-lang/spec_text::a_param_default_reads_earlier_params_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C96	piperine-lang/spec_text::a_template_item_takes_the_type_its_context_wants_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C117	piperine-lang/spec_text::a_node_chosen_by_an_expression_is_e0133_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C97	piperine-lang/spec_text::a_module_type_takes_trait_and_inherent_impls_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C97	piperine-lang/spec_text::a_bound_combines_a_trait_and_fn_p_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C102	piperine-lang/spec_text::instances_have_no_implicit_params_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C102	piperine-lang/spec_text::temperature_and_multiplicity_are_run_settings_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C101	piperine-lang/spec_text::the_recommended_fallback_is_the_ambient_temperature_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C110	piperine-lang/spec_text::a_param_default_reads_earlier_params_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C96	piperine-lang/spec_text::a_template_item_takes_the_type_its_context_wants_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C117	piperine-lang/spec_text::a_node_chosen_by_an_expression_is_e0133_in_the_spec	a pin on a sentence of the specification; the specification is the authority
+generics	C22	piperine-lang/spec_text::rule_9_splits_definition_and_instantiation_errors	a pin on a sentence of the specification; the specification is the authority
+generics	C36	piperine-lang/spec_text::a_solve_reading_call_in_a_definition_is_e0336_in_the_function_classes	a pin on a sentence of the specification; the specification is the authority
+generics	C32	piperine-lang/spec_text::a_discrete_handle_used_as_a_value_is_no_e0133_in_the_handle_rules	a pin on a sentence of the specification; the specification is the authority
+msl-cli	C13	piperine-lang/spec_text::the_manifest_rule_admits_the_run_table	a pin on a sentence of the specification; the specification is the authority
+msl-cli	C158	piperine-lang/spec_text::part_viii_defines_a_bench	a pin on a sentence of the specification; the specification is the authority
+msl-cli	C159	piperine-lang/spec_text::the_index_says_benches_are_msl_and_sweeps_are_host	a pin on a sentence of the specification; the specification is the authority
+msl-cli	C160	piperine-lang/spec_text::the_testbench_table_splits_stimulus_and_host_work	a pin on a sentence of the specification; the specification is the authority
+msl-cli	C161	piperine-lang/spec_text::no_spec_text_says_stimulus_is_host_only	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C1	piperine-lang/spec_text::s35_defines_crate_root_and_dependency_name	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C2	piperine-lang/spec_text::s35_orders_the_first_segment_lookup	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C3	piperine-lang/spec_text::s35_local_names_win_in_paths_and_clash_in_use	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C4	piperine-lang/spec_text::s35_crate_and_super_are_per_crate	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C5	piperine-lang/spec_text::s35_only_pub_crosses_a_crate	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C6	piperine-lang/spec_text::std_is_implicit_and_the_prelude_is_std_prelude	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C7	piperine-lang/spec_text::e0161_row_covers_an_unknown_crate	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C10	piperine-lang/spec_text::e0163_is_defined_in_3_5	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C11	piperine-lang/spec_text::phase_package_is_listed	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C12	piperine-lang/spec_text::s36_fixes_the_package_layout	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C13	piperine-lang/spec_text::s36_lists_every_manifest_key	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C14	piperine-lang/spec_text::s36_names_are_identifiers	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C15	piperine-lang/spec_text::s36_states_the_dependency_sources	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C16	piperine-lang/spec_text::s36_gives_the_version_requirement_table	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C17	piperine-lang/spec_text::s36_has_no_search_path_and_no_cycle	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C18	piperine-lang/spec_text::s36_states_the_lockfile_rule	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C19	piperine-lang/spec_text::s36_defines_the_package_codes	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C8	piperine-lang/spec_text::b36_lists_extern_crate	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C20	piperine-lang/spec_text::appendix_g_records_the_package_decisions	a pin on a sentence of the specification; the specification is the authority
+msl-packages	C21	piperine-lang/spec_text::glossary_and_file_map_name_crates_and_packages	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C1	piperine-lang/spec_text::b36_lists_every_removed_form	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C2	piperine-lang/spec_text::b36_names_the_forms_taken_in	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C4	piperine-lang/spec_text::appendix_h_has_every_group	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C6	piperine-lang/spec_text::catalogue_is_closed_by_e0161	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C19	piperine-lang/spec_text::e0162_is_defined_in_3_4	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C20	piperine-lang/spec_text::glob_shadowing_and_e0143_are_stated	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C32	piperine-lang/spec_text::identifier_pattern_rule_is_stated	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C27	piperine-lang/spec_text::behavior_generics_are_repeated_not_positional	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C28	piperine-lang/spec_text::items_sit_at_namespace_scope	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C36	piperine-lang/spec_text::e0404_and_e0121_state_their_precedence	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C37	piperine-lang/spec_text::value_blocks_may_hold_contributions_and_commits	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C38	piperine-lang/spec_text::place_has_no_parentheses	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C39	piperine-lang/spec_text::attrs_are_allowed_before_statements_and_hardware_items	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C40	piperine-lang/spec_text::quantity_and_reaction_docs_are_metadata	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C41	piperine-lang/spec_text::post_parse_constraints_name_their_phase	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C42	piperine-lang/spec_text::e0125_covers_bodies	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C43	piperine-lang/spec_text::raw_identifiers_are_specified_and_g15_is_closed	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C44	piperine-lang/spec_text::field_shorthand_is_specified_and_g14_is_closed	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C68	piperine-lang/spec_text::e0909_is_defined_for_out_of_range_literals	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C85	piperine-lang/spec_text::e0910_counts_nesting_and_bounds_chains	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C47	piperine-lang/spec_text::appendix_g_records_the_decisions	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C133	piperine-lang/spec_text::appendix_h_renders_every_code_span	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C136	piperine-lang/spec_text::block_items_follow_the_namespace_rules	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C11	piperine-lang/spec_text::s3_lists_the_intrinsic_abi	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C12	piperine-lang/spec_text::s3_states_the_intrinsic_contract	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C13	piperine-lang/spec_text::e0125_covers_intrinsic_outside_std	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C1	piperine-lang/spec_text::s22_says_std_is_the_normative_source	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C2	piperine-lang/spec_text::s22_maps_sections_to_namespaces	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C3	piperine-lang/spec_text::s22_drops_the_implied_pub_resolution	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C14	piperine-lang/spec_text::s22_lists_the_engine_items	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C15	piperine-lang/spec_text::s22_rule_4_names_extern_intrinsic	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C7	piperine-lang/spec_text::analysis_kinds_list_transient	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C8	piperine-lang/spec_text::no_analysis_tran_remains	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C9	piperine-lang/spec_text::tran_in_fences_is_the_module	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C10	piperine-lang/spec_text::appendix_g_records_the_stdlib_decisions	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C6	piperine-lang/spec_text::s1_constants_are_std_items	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C19	piperine-lang/spec_text::g64_names_the_normal_generator	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C17	piperine-lang/spec_text::e0707_is_replaced_by_e0317	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C18	piperine-lang/spec_text::laplace_states_the_proper_rule	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C4	piperine-lang/spec_text::g38_is_closed	a pin on a sentence of the specification; the specification is the authority
+msl-stdlib	C5	piperine-lang/spec_text::appendix_c_says_parsed_and_resolved	a pin on a sentence of the specification; the specification is the authority
+nested-reach	C17	piperine-lang/spec_text::section_8_2_8_reads_through_children_of_children_at_any_depth	a pin on a sentence of the specification; the specification is the authority
+params-and-io	C36	piperine-lang/spec_text::the_host_drives_a_tops_node_ports_e0810_e0811	a pin on a sentence of the specification; the specification is the authority
+params-and-io	C54	piperine-lang/spec_text::appendix_c2_states_the_spline_end_conditions	a pin on a sentence of the specification; the specification is the authority
+resolved-nets	C56	piperine-lang/spec_text::c_2_3_and_g_38_say_tran_on_a_resolved_nature_runs	a pin on a sentence of the specification; the specification is the authority
+resolved-nets	C95	piperine-lang/spec_text::rule_2_orders_the_drives_of_one_instance_by_carrier_declaration	a pin on a sentence of the specification; the specification is the authority
+solver-hygiene	C31	piperine-lang/spec_text::part_v_states_the_solver_hygiene_rules	a pin on a sentence of the specification; the specification is the authority
+solver-hygiene	C32	piperine-lang/spec_text::appendix_c_states_the_solver_hygiene_numerics	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C1	piperine-lang/spec_text::later_commit_is_not_a_time_point	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C2	piperine-lang/spec_text::time_point_runs_the_procedure	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C3	piperine-lang/spec_text::extern_c_interface_is_the_device_abi	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C4	piperine-lang/spec_text::structure_changing_set_is_refused	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C6	piperine-lang/spec_text::continuation_variables_are_core_functions	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C7	piperine-lang/spec_text::records_travel_as_quiet_commits	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C8	piperine-lang/spec_text::jump_has_no_solve_of_its_own	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C9	piperine-lang/spec_text::reference_rows_describe_the_kept_jump	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C10	piperine-lang/spec_text::residual_test_uses_the_present_mapping	a pin on a sentence of the specification; the specification is the authority
+spec-abi-amendments	C11	piperine-lang/spec_text::jump_solve_is_a_transient_step	a pin on a sentence of the specification; the specification is the authority
+transient-performance	C24	piperine-lang/spec_text::part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate	a pin on a sentence of the specification; the specification is the authority
+transient-performance	C18	piperine-lang/spec_text::appendix_c_2_tests_the_landing_step_and_the_jump_step	a pin on a sentence of the specification; the specification is the authority
+transient-performance	C18	piperine-lang/spec_text::appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary	a pin on a sentence of the specification; the specification is the authority
+transient-performance	C44	piperine-lang/spec_text::appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode	a pin on a sentence of the specification; the specification is the authority
+unknown-semantics	C30	piperine-lang/spec_text::appendix_c_states_the_loop_bound_under_unknown_control	a pin on a sentence of the specification; the test was already gone
+unknown-semantics	C43	piperine-lang/spec_text::appendix_c_lists_the_loop_bound_among_the_defaults	a pin on a sentence of the specification; the test was already gone
+unknown-semantics-events	C11	piperine-lang/spec_text::the_commit_of_an_event_read_as_a_bool_is_stated	a pin on a sentence of the specification; the specification is the authority
+value-semantics	C27	piperine-lang/spec_text::section_22_no_longer_says_std_is_in_the_earlier_spelling	a pin on a sentence of the specification; the specification is the authority
+msl-polish	C10	piperine-lang/spec_text::gnd_and_the_implicit_params_are_core_names	a pin on a sentence of the specification; the test was already gone
+msl-polish	C31	piperine-lang/spec_text::shared_borrow_of_any_argument_is_allowed	a pin on a sentence of the specification; the test was already gone
+msl-polish	C46	piperine-lang/spec_text::b1_still_counts_65_constructs	a pin on a sentence of the specification; the test was already gone
+msl-stdlib	C16	piperine-lang/spec_text::b1_still_counts_65_constructs	a pin on a sentence of the specification; the test was already gone
+spec-abi-amendments	C5	piperine-lang/spec_text::zero_bytes_are_the_unknown_value	a pin on a sentence of the specification; the test was already gone
+buck-scenarios	C75	piperine-repository-guards/suite::repository_records::the_buck_readme_points_at_the_scenarios	a pin on sentences of examples/buck/README.md, three of them absences; the README is not behaviour
+integrated-tests	C64	piperine-repository-guards/suite::repository_records::the_instructions_name_the_integrated_gate_and_the_buck_on_demand	a pin on sentences of CLAUDE.md; the document is not behaviour
+integrated-tests	C63	piperine-repository-guards/suite::repository_records::the_buck_readme_points_at_the_scenarios	a pin on sentences of examples/buck/README.md, three of them absences; the README is not behaviour
+msl-cli	C153	piperine-repository-guards/suite::repository_records::the_instruction_files_say_the_host_crates_build	a pin on a table row of CLAUDE.md and a line of AGENTS.md; the documents are not behaviour

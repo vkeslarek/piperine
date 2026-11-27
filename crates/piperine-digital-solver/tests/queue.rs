@@ -189,18 +189,6 @@ fn a_plain_commit_removes_the_pending_it_transports() {
 }
 
 #[test]
-fn a_replace_commit_removes_every_pending_commit_of_its_statement() {
-    // C3's REPLACE: every pending commit of the statement goes, earlier due included, and the
-    // commit of another range of the statement goes with them
-    let mut q = Queue::new();
-    q.push(commit(0, 0, 1, 0, 5), false);
-    q.push(commit(0, 3, 2, 0, 20), false);
-    q.push(commit(0, 0, 9, 1, 12), true);
-    assert_eq!(q.len(), 1);
-    assert_eq!(due_at(&mut q, 12), [9]);
-}
-
-#[test]
 fn a_rewind_restores_a_removal() {
     // HYG-14: a rejected step leaves no trace, a transport removal included
     let mut q = Queue::new();

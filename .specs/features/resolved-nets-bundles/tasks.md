@@ -22,11 +22,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run msl_parser**: `cargo test -p piperine-lang --test msl_parser`
 **Run digitalinstant**: `cargo test -p piperine-digital-solver --test instant`
 **Run sourcewraps**: `cargo test -p piperine-parity --test source_wraps`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.
@@ -712,8 +712,8 @@ Proof: run apimetadata | test a_bundle_field_is_named_by_its_dotted_path ... ok
 **C30** - The POM shows a bundle port with its type and view, not one port per field (BN-07, AC 2)
 Proof: run pomreflect | test a_bundle_port_reflects_its_type_and_view ... ok
 
-**C31** - `GAPS.md` lists no L25 and §9 gives Part II §7 its share (BN-08, AC 1)
-Proof: run docs | test gaps_no_longer_lists_bundles ... ok
+**C31** - `GAPS.md` lists no L25 and §9 gives Part II §7 its share (BN-08, AC 1) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C32** - No row of `code_owners.tsv` names a raised code, `E0260` to `E0262` and `E0264` included (BN-08, AC 2)
 Proof: run speccodes | test no_owned_code_is_raised ... ok

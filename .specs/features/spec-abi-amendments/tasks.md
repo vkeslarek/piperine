@@ -13,8 +13,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: none - the feature edits prose; the decisions are in `spec.md` (Assumptions) and abi.md §15.
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run spec**: `cargo test -p piperine-lang --test spec_text`
 **Run lang**: `cargo test -p piperine-lang`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push.
 
@@ -322,38 +322,38 @@ T8 → T9 → T10 → T11
 
 ## Checks
 
-**C1** - The second bullet of §17.2 rule 2 carries `at that instant` and `by at least one tick` (SAA-01, AC 1)
-Proof: run spec | test later_commit_is_not_a_time_point ... ok
+**C1** - The second bullet of §17.2 rule 2 carries `at that instant` and `by at least one tick` (SAA-01, AC 1) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C2** - §15 defines a time point as an accepted solution that runs the time-point procedure, and allows accepted solutions elsewhere (SAA-02, AC 2)
-Proof: run spec | test time_point_runs_the_procedure ... ok
+**C2** - §15 defines a time point as an accepted solution that runs the time-point procedure, and allows accepted solutions elsewhere (SAA-02, AC 2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C3** - §8.5.8 names the device ABI by `piperine_abi_1` and the G.65 row is not `Open` (SAA-03, AC 3 and 4)
-Proof: run spec | test extern_c_interface_is_the_device_abi ... ok
+**C3** - §8.5.8 names the device ABI by `piperine_abi_1` and the G.65 row is not `Open` (SAA-03, AC 3 and 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C4** - §23.1 rule 7 refuses a structure-changing `set` on an extern module with `E0803` and re-elaborates in a `Dc` sweep (SAA-04, AC 5)
-Proof: run spec | test structure_changing_set_is_refused ... ok
+**C4** - §23.1 rule 7 refuses a structure-changing `set` on an extern module with `E0803` and re-elaborates in a `Dc` sweep (SAA-04, AC 5) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C5** - Part I says all-zero bytes are the all-unknown value and Part II says an unknown level's value bytes are zero (SAA-05, AC 6 and 7)
-Proof: run spec | test zero_bytes_are_the_unknown_value ... ok
+**C5** - Part I says all-zero bytes are the all-unknown value and Part II says an unknown level's value bytes are zero (SAA-05, AC 6 and 7) (retired by code-clarity T11: a pin on a sentence of the specification; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C6** - §14.4 lists `gmin()` and `source_scale()` (SAA-06, AC 8)
-Proof: run spec | test continuation_variables_are_core_functions ... ok
+**C6** - §14.4 lists `gmin()` and `source_scale()` (SAA-06, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C7** - Appendix C.1 notes that records are commits to quiet pins and add no microstep (SAA-07, AC 9)
-Proof: run spec | test records_travel_as_quiet_commits ... ok
+**C7** - Appendix C.1 notes that records are commits to quiet pins and add no microstep (SAA-07, AC 9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C8** - §15.2 says a jump has no solve of its own and no longer states `h → 0` or a repeated solve (SAA-08, AC 1 to 4)
-Proof: run spec | test jump_has_no_solve_of_its_own ... ok
+**C8** - §15.2 says a jump has no solve of its own and no longer states `h → 0` or a repeated solve (SAA-08, AC 1 to 4) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C9** - No jump row of Appendix C carries a gap mark and the restart row names the host `set` (SAA-09, AC 5 to 7)
-Proof: run spec | test reference_rows_describe_the_kept_jump ... ok
+**C9** - No jump row of Appendix C carries a gap mark and the restart row names the host `set` (SAA-09, AC 5 to 7) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C10** - §17.1 rule 2 tests a node's row against the potential `abstol` and a branch row against the flow `abstol` (SAA-10, AC 8)
-Proof: run spec | test residual_test_uses_the_present_mapping ... ok
+**C10** - §17.1 rule 2 tests a node's row against the potential `abstol` and a branch row against the flow `abstol` (SAA-10, AC 8) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C11** - The "Solves" table defines the jump solve as a transient step (SAA-11, AC 9 and 10)
-Proof: run spec | test jump_solve_is_a_transient_step ... ok
+**C11** - The "Solves" table defines the jump solve as a transient step (SAA-11, AC 9 and 10) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C12** - Every guard of `piperine-lang` passes on the amended pages (SAA-12, AC 10)
 Proof: `cargo test -p piperine-lang`

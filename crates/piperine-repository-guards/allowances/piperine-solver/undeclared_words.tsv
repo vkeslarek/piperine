@@ -237,11 +237,6 @@ crates/piperine-solver/tests/pss.rs::sine_rc_converges_to_the_analytic_phasor	1
 crates/piperine-solver/tests/pz_device_fault.rs::abi_vsrc	1
 crates/piperine-solver/tests/pz_device_fault.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/pz_device_fault.rs::piperine_abi_test_vsrc	1
-crates/piperine-solver/tests/removed_surface.rs::disto_is_gone	1
-crates/piperine-solver/tests/removed_surface.rs::repo_root	1
-crates/piperine-solver/tests/removed_surface.rs::simprobe_is_gone	1
-crates/piperine-solver/tests/removed_surface.rs::text_io_is_gone	1
-crates/piperine-solver/tests/removed_surface.rs::the_phdl_port_text_is_gone	1
 crates/piperine-solver/tests/sens.rs::sens_error_paths_are_loud	1
 crates/piperine-solver/tests/sens.rs::sens_rebuild_class_param_fails_loud	1
 crates/piperine-solver/tests/sensitivity_fallback.rs::Gan	1

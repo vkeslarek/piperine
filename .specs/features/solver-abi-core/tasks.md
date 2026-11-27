@@ -16,6 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run abi**: `cargo test -p piperine-abi`
 **Run guards**: `cargo test -p piperine-repository-guards --test boundaries`
 **Run owner**: `cargo test -p piperine-solver`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Sonnet sub-agents by default, one commit per task; verifier: Opus. The orchestrator may have Opus implement instead (a different Opus then verifies): Phase 3 is protocol-delicate, nothing here is numerically delicate. Work in `/home/keslarek/Git/piperine-solver-completeness`, branch `feature/solver-completeness`. Never pass `--workspace`, never run `cargo clean`, do not set `CARGO_TARGET_DIR`, do not push. Five kept crates do not compile (`piperine-project`, `piperine-cli`, `piperine-lang-server`, `piperine-api`, the root shell) and stay that way.
 
@@ -522,8 +523,8 @@ Proof: run guards | test sub_solvers_depend_on_the_abi_crate_only ... ok
 **C23** - The workspace lists the crate and it is a leaf (SAC-12, AC 1)
 Proof: run guards | test abi_crate_is_a_leaf ... ok
 
-**C24** - MD-61 and the instruction files name the crate (SAC-12, AC 3)
-Proof: run guards | test instruction_files_and_state_name_the_abi_crate ... ok
+**C24** - MD-61 and the instruction files name the crate (SAC-12, AC 3) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C25** - The protocol module names no sub-solver item (SAC-13, Protocol AC 1)
 Proof: run owner | test the_protocol_module_names_no_sub_solver_item ... ok

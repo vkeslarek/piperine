@@ -348,6 +348,330 @@ None. I probed the following, and every check held:
 
 Phase 1 (T1 to T8) is verified. Every round 1 to round 5 finding is closed by the commits named in the rounds above.
 
+## Phase 2 (B1 Lean tests I, T9 to T14)
+
+**Verdict**: FAIL (one Medium finding, five Low)
+**Head**: 8203b71af on `feature/code-clarity-p2`, base 4742ea9c5
+**Verifier**: independent sub-agent (Opus; author != verifier). No `proofs.md` exists yet, because `check_proofs.py` runs after T155. This round reran the phase gates itself.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets) | lib 45, boundaries 19, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 30, worklists 4: all pass |
+| `cargo test -p piperine-solver` | 370 passed, 0 failed |
+| `cargo test -p piperine-cli` | 144 passed, 0 failed |
+| `cargo test -p piperine-lang` | 1 433 passed, 0 failed |
+| CC-09: `git diff 4742ea9c5..HEAD` over `crates/piperine-parity`, `crates/piperine-transpile`, `tests/`, `docs/`, `examples/`, the IR goldens and `contract.rs` | empty |
+
+### Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| T9: no test is named for a retired crate, PHDL or the Verilog-AMS front end | a name scan of every `#[test]` for `phdl`, `vams`, `verilog`, `lang_server` | no, on the letter: `workspace_shape.rs:147` `examples_hold_no_vams_or_python` remains (finding P2-3). `removed_surface.rs` is gone, and so are the 7 `workspace_shape` rows and the 3 hygiene tests with their helpers |
+| T9, T10, T11: `every_retired_check_is_recorded` and the ledger | `proof_ledger::*` (4 pass) | yes. Each of the 236 `#[test]` names that left `removed_surface.rs`, `workspace_shape.rs`, `suite_hygiene.rs`, `docs.rs` and `spec_text.rs` has a `retire` or `replace` row in `repoints/T9.tsv`, `T10.tsv` or `T11.tsv`; a set difference found none missing |
+| Orphan `Run` lines | each `**Run x**:` line deleted from a feature file | yes. 46 deleted lines were all used at the base and have zero uses at the head: every proof that named them was repointed in the same commit. No proof at the head names a missing `Run` line outside the code-clarity prose files |
+| T10: moved tests keep their names and assertions | the 9 tests of `suite/repository_records.rs` against their base bodies in `docs.rs` | yes: 8 are byte-equal in their assertions, and 1 differs only by `read` becoming `RepositoryRecords::read`. Four of the nine are sentence pins the task did not ask to keep (finding P2-2) |
+| T10: the 56 retired `docs.rs` tests are wording pins | read of `the_buck_spec_holds_the_bench_bounds`, `abi_md_describes_the_unreleased_contract`, `the_book_no_longer_says_settle_is_not_compiled`, `the_scenario_package_states_its_measured_step_count`, `gaps_section_11_holds_no_net_row`, `gaps_rows_carry_no_unknown_control_clause`, `the_per_level_feature_is_recorded_as_dropped`, and the name list | yes. Each asserts `contains` or `!contains` on a document. Five of them read a document that is not a tracking file (the Book, `examples/buck/SPEC.md`, `abi.md`, a `Piperine.toml` comment, a feature spec), but the retire reason calls it one (finding P2-6) |
+| T11: `spec_structure` keeps the structural guards with their names | the 5 tests against their base bodies in `spec_text.rs` | yes: the assertions are identical. The 5 tests cover the 4 kinds the task names, plus `b36_rows_carry_a_code_and_a_replacement` (a table-shape check). The `//!` header is present |
+| T11: the 144 retired tests are wording pins | a scan of every base body for tests with few `contains` calls and a loop | yes, within the task's wording. Two of the retired tests are scans rather than sentences: `appendix_h_renders_every_code_span`, a backtick lint, and `tran_in_fences_is_the_module`, a token check over every `rust` fence. Neither is among the four kinds the task keeps, so retiring them is in scope; recorded as a note |
+| T12, T13: every uncited test has a verdict, and no removed test was the only assertion of its rule | `.specs/features/code-clarity/uncited_tests.tsv` (371 rows) and reads of 30 uncited tests across solver, digital-solver, analog-solver, lang, api, parity, interp and ir | **no**. Every row is `kept: it alone proves that <test name with spaces>; no other test asserts it on the same input`, and both commit bodies say no test asserts the same rule on the same input. That is false for at least 5 rows (finding P2-1) |
+| T14: `every_duplicate_of_the_inventory_has_a_verdict` with no open row; `the_parity_oracles_are_not_reduced` | `worklists::*`, `proof_ledger::*` | yes. 58 rows, all `kept: <what differs>`, each with a specific reason. 10 pairs were read side by side (below). Keeping the T2 layer pairs agrees with design.md:282 and T90, which removes the `commits` four later. Two reasons are wrong (finding P2-4) |
+| Allowances: rows only deleted, or moved net-zero | `git diff` of `allowances/` | yes: 191 deletions and 3 insertions. The 3 insertions are the `spec_text.rs::{b1_counts_60_constructs, b36_rows_carry_a_code_and_a_replacement, appendix_h_is_in_the_file_map_and_nav}` rows re-keyed to `spec_structure.rs`, each with count 1, net zero. The `docs.rs` word rows of the moved README and ROADMAP tests were deleted rather than moved; in their place `readme` and `roadmap` joined `data/dictionary.txt`. That widens the word check tree-wide by two words, which T124's dictionary review should confirm |
+
+**The 10 Appendix E pairs read.** Each is a different input or a different layer, and the verdict holds for all ten:
+
+- `e0901_there_is_no_println` and `e0404_a_commit_belongs_in_a_reaction`: different Book claims and different sources (a module body against an analog block).
+- `an_unknown_top_is_one_diagnostic`: `Types::check`, which asserts P0003 and the std-module case, against `Elaborator::run`.
+- `m_and_dtemp_are_ordinary_names`: E0161 resolution against E0320 binding.
+- `abs_has_the_derivative_of_sign`: two `Dual` implementations.
+- `the_adc_commits_the_rounded_code_after_tconv`: hand-built IR against source, and the source side is `test = false`.
+- `a_simparam_entry_naming_an_option_is_p0010`: the cli flag against the api manifest.
+- `a_limited_diode_reaches_the_unlimited_operating_point`: the circuit builder against the plan.
+- `the_crate_depends_on_the_abi_crate_only`: each crate's own manifest.
+- `divider`: the Q9 twin.
+
+### P2-1 (Medium): T12 and T13 kept duplicates; the "kept" reasons are generated from the test name
+
+T12's verdict is `kept: <the rule it alone proves>`, given after a test is compared with the others. Each of the 371 rows instead restates its own test name with spaces and appends the same clause. Reading the uncited clusters turned up these tests, which are asserted again by another test on the same input. The survivor holds at least the same assertion:
+
+| Uncited test | Survivor | Why it is a duplicate |
+| --- | --- | --- |
+| `digital-solver/tests/advance.rs:342` `a_changed_analog_read_net_lands_by_analog_read_changed` | `advance.rs:471` `a_commit_that_changes_a_carrier_the_analog_side_reads_lands_in_both_rules` (cited: transient-performance C7) | The same inverter design, `analog = ["y"]`, `host_commit(a, HIGH, Tick(4))`, `advance(Tick(10))`, and the same `Landing { Tick(4), AnalogReadChanged }`. The survivor loops over both rules, so the Declared rule (`engine_with`'s rule) is included |
+| `advance.rs:349` `a_reaction_that_reads_a_continuous_pin_lands_by_continuous_read` | `advance.rs:481` `a_reaction_that_reads_a_continuous_pin_lands_in_both_rules` (cited: C8) | The same sampler design, `fire g @ 4` and `advance(10)`. The uncited test checks the cause only; the survivor checks the tick and the cause under both rules |
+| `advance.rs:368` `an_irreversible_reaction_lands_by_irreversible` | `advance.rs:604` `an_irreversible_reaction_lands_in_both_rules` | The same stub design, `fire g @ 4` and `advance(10)`, and the same cause `Irreversible`. The survivor also checks the tick and both rules |
+| `digital-solver/tests/queue.rs:192` `a_replace_commit_removes_every_pending_commit_of_its_statement` | `queue.rs:74` `replace_removes_every_pending_commit_of_the_statement` | The same three pushes of statement 0, `(0,0,1,0,5)`, `(0,3,2,0,20)` and the REPLACE `(0,0,9,1,12)`. The survivor adds one commit of another statement and asserts the drained values `[3, 9]`, which implies the uncited test's `len == 1` and `due_at(12) == [9]` |
+| `lang/tests/buck_example.rs:80` `the_package_builds_with_no_diagnostics` | `lang/tests/types_buck.rs:94`, inside `the_buck_type_checks_with_no_diagnostic` | The same `examples/buck` graph, loaded the same way (manifest name, then `src/lib.msl`), and the same `design.diagnostics().is_empty()` |
+
+There is also a near-duplicate that should be merged: `advance.rs` `a_finish_at_an_instant_run_ahead_is_final_in_both_rules` repeats `advance_returns_final_at_a_finish` on the same input, both rules included, but without the checkpoint assertion.
+
+Repro: read the line pairs above, or run `cargo test -p piperine-digital-solver --test advance -- lands_by_ lands_in_both_rules`. Both forms pass on the same design.
+
+Fix:
+
+- Remove the five tests with their survivors recorded, as T12 says.
+- Re-run the comparison over pairs in the same file that share a fixture call. That is where these five were found; the cross-repository similarity pass missed them.
+- Replace the generated reason on the rows that remain with the rule that differs, at least for every uncited test that shares a file with a test of a similar name.
+
+One thing the run-time goal should take into account: these crates run in seconds, so the fix trims lines, not test time. The suite's run time is in the compiled-backend crates and the compile cache (findings §3.2), and B2 and B11 handle those.
+
+### P2-2 (Low): T10 kept four sentence pins outside its keep-list
+
+T10 says to keep `gaps_section_10_lists_exactly_the_owned_codes`, `the_roadmap_is_forward_looking` and the buck README's command lines. It also kept these, which P1 names as the kind to remove:
+
+- `the_instructions_name_the_integrated_gate_and_the_buck_on_demand` (`repository_records.rs:58`, CLAUDE.md `contains`);
+- `the_instruction_files_say_the_host_crates_build` (`:84`, a CLAUDE.md table-row sentence);
+- `the_buck_readme_points_at_the_scenarios` (`:69`), which has three `!contains` absence pins on stale README sentences.
+
+The two `generics/checks.md` guards are structural (phase completeness, unique ids), and keeping them is right. In addition, `:98` still says delivery history is "held by the `state_records_*` tests above", and those tests are retired.
+
+Fix: retire the three pins with their proofs, or record why each is structural, and correct the comment.
+
+### P2-3 (Low): T9's Done-when, "no test is named for the Verilog-AMS front end", fails on one test
+
+`crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs:147` `examples_hold_no_vams_or_python` guards against `.vams` and `.py` files returning under `examples/`.
+
+Fix: retire it, or rename it to the present rule, for example `examples_hold_only_msl_packages`. Renaming needs repointing.
+
+### P2-4 (Low): two kinds of T14 reason are wrong
+
+- The 8 T2 layer pairs, `an_unchanged_commit_fires_nothing` (`duplicate_tests.tsv:14`) among them, are labelled "parity oracle (Q9)". Q9 is the `parity_*` against `tests/scenarios.rs` question. These pairs are kept because design.md:282 and T90 defer the layer deduplication.
+- `the_adc_commits_the_rounded_code_after_tconv` and `the_comparator_trips_at_its_thresholds` (`:41`) say the parity definition is "over the MSL source". In fact `boundary.rs` is the hand-built IR side, and the source side `buck_boundary.rs` is `test = false`.
+
+Fix: cite T90 or §3.3 T2 in the reason, and state which side is which.
+
+### P2-5 (Low): T12's verdicts landed in T11's commit, outside the guarded worklist
+
+`uncited_tests.tsv` arrived in 980f640e0 (T11), and c2a1b0ef2 (T12) changes only `tasks.md`; the commit body admits the staging mistake. T12 and T13 name `worklists/duplicate_tests.tsv` as **Where**, but the verdicts sit in `.specs/features/code-clarity/uncited_tests.tsv`, which no guard reads. "Every uncited test has a verdict" is therefore not mechanically held. The coordinator chose the file. The cost is that a later task can remove or rename a test without the table noticing.
+
+Fix: none required if the coordinator accepts it. Otherwise, make the `worklists` guard read the file.
+
+### P2-6 (Low): the T10 retire reason misnames five documents as tracking files
+
+`repoints/T10.tsv:31` (`the_buck_spec_holds_the_bench_bounds`, `examples/buck/SPEC.md`), `:33` (`the_book_no_longer_says_settle_is_not_compiled`, the Book), `abi_md_describes_the_unreleased_contract` (`abi.md`), `the_scenario_package_states_its_measured_step_count` and `the_per_level_feature_is_recorded_as_dropped` all read "a pin on a sentence of a tracking file". They are wording pins, so retiring them is right, but the documents they read are not tracking files, and these reasons are copied into the closed features' checks.
+
+Fix: say "a pin on a sentence of <the file>".
+
+### Phase 2 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| P2-1 uncited duplicates kept; generated reasons | Medium | `advance.rs:342,349,368`, `queue.rs:192`, `buck_example.rs:80` | remove the five with their survivors; re-scan same-file pairs; give the rule that differs | |
+| P2-2 sentence pins kept by T10 | Low | `repository_records.rs:58,69,84,98` | retire them or justify each; fix the comment | |
+| P2-3 a test named for the VAMS front end | Low | `workspace_shape.rs:147` | retire or rename | |
+| P2-4 Q9 mislabel, ADC pair inverted | Low | `duplicate_tests.tsv:14,41` | cite T90 or §3.3 T2; name the sides | |
+| P2-5 T12 file in T11's commit, unguarded | Low | 980f640e0, c2a1b0ef2 | accept, or guard the file | |
+| P2-6 "tracking file" reason on non-tracking documents | Low | `repoints/T10.tsv:31,33` | name the file | |
+
+## Phase 2 round 2
+
+**Verdict**: FAIL (one Medium finding, four Low)
+**Head**: 39295ddfc (the fix of round 1, on top of 6375cebe5)
+**Verifier**: independent sub-agent (Opus; author != verifier). This round reran the gates itself.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | lib 45, boundaries 19, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 27, worklists 5: all pass |
+| `cargo test -p piperine-digital-solver` | 161 passed, 0 failed |
+| `cargo test -p piperine-lang` | 1 432 passed, 0 failed (round 1 had 1 433; `the_package_builds_with_no_diagnostics` left) |
+
+### Round 1 findings
+
+| Finding | Status at 39295ddfc |
+| --- | --- |
+| P2-1 | **Closed.** The 5 duplicates are gone, each with a `retire` row naming its survivor (`repoints/T12.tsv`, `T13.tsv`). The finish pair is merged: `a_finish_at_an_instant_run_ahead_is_final_in_both_rules` now takes `before = d.checkpoint()` per rule and asserts `d.checkpoint() == before` after `Final(Tick(6))`, so it holds both assertions of `advance_returns_final_at_a_finish` under both rules, and a `replace` row moves that test's proofs. The `RemovedUnknownForms` successor row (`suite_hygiene.rs:1069`) now names `replace_removes_every_pending_commit_of_the_statement`. Ten more uncited tests found no further duplicate (detail below). The rewritten reasons are acceptable with two wrong rows (R2-3) |
+| P2-2 | Three pins retired with reasons that name the file. `the_buck_readme_says_how_to_run_it` is half wording pin (R2-4) |
+| P2-3 | Renamed to `examples_hold_only_package_sources` with a `replace` row, but the repointed proof is broken (R2-1) |
+| P2-4 | **Closed.** The 8 layer pairs cite design.md:282 and T90. The ADC and comparator pairs name the hand-built-IR side (`boundary.rs`) and the on-demand source side (`buck_boundary.rs`, `test = false`). `traces_are_recorded_only_for_a_named_stream` states the two inputs |
+| P2-5 | Guard added. It fails on an unlisted test, a stale row and a repeated row, but passes any verdict text (R2-2) |
+| P2-6 | **Closed.** `T10.tsv:21,22,31,33,39` name the document each test read (abi.md, `examples/buck/SPEC.md`, the Book, the `Piperine.toml` comment, the per-level spec) |
+
+**Ten more uncited tests checked** (none is a duplicate):
+
+- `probe_selection` `…_requested_state_observable` and `…_var_observable`: they request different observables.
+- `param_text.rs` `an_integer_above_2_pow_53_is_read_exactly` against `session.rs` `…_is_set_exactly`: the parser alone, against the session plus `describe`.
+- `types_structure` `a_parent_may_drive_a_childs_pub_resolved_signal` against `source_nets` `a_parent_drives_…`: a type check against a run, giving 121.
+- `integration.rs` `the_jump_estimate_is_zero…` against `the_state_estimate_is_zero…`: `jump_lte` against `state_lte`.
+- `failure_rules` `section_12_unresolvable_noise_reference_node…` against `…output_node…`: different fields.
+- `ir/operators` delay against noise read: different operators.
+- `usage.rs` `help_lists_exactly_the_eight_commands`: this one is the strongest of its group. The cited Book test `help_lists_the_commands_and_version_prints_the_version` asserts only `len() == 8` plus the version, which `version_prints_the_workspace_version` already asserts. So the weaker test is the cited one. It is out of T13's scope (it is cited and needs repointing) and is noted here for B11.
+
+**Throwaway edits for the P2-5 guard.** Each edit was reverted with `git checkout`, and the tree is clean.
+
+- A planted `#[test] fn zzqx_planted_uncited_check` in `piperine-plan/tests/nan_param.rs` fails the guard: "unnamed tests with no row".
+- A row for a test that does not exist fails it: "rows whose test is gone".
+- A duplicated first row fails it: "rows that stand more than once".
+- The first `piperine-abi` row's verdict replaced by `TODO`, or by an empty cell, passes the guard (R2-2).
+
+**Code rules (`src/unnamed_tests.rs`).** There is no free function: one unit type, `UnnamedTests`, with methods. The names are full words. Every item has a `///`, including both `const`s, and so does the module's `//!`.
+
+### R2-1 (Medium): the repointed proof of solver-restructure C11 can no longer match
+
+`.specs/features/solver-restructure/tasks.md:737` now reads:
+
+`Proof: run boundaries | test workspace_shape::workspace_shape::examples_hold_only_package_sources ... ok`
+
+The module segment is doubled. Cargo prints `test workspace_shape::examples_hold_only_package_sources ... ok`; this was checked by running `cargo test -p piperine-repository-guards --test boundaries`. `check_proofs.py` will therefore find no such line, and C11 loses its proof at T155.
+
+`proof_ledger` cannot see the mistake. `proof_ledger.rs:156` (`test.rsplit("::").next()`) and `repoint.rs:37` compare only the last segment of a test path.
+
+Repro: `grep -n examples_hold_only .specs/features/solver-restructure/tasks.md`.
+
+Fix:
+
+1. Correct the line.
+2. Find out whether the `repoint` binary or a hand edit doubled the prefix. If it was the binary, fix `repoint` for a rename inside a module, and add a unit test for it.
+3. Consider having the ledger compare the full module path a proof names with the module the test lives in.
+
+### R2-2 (Low): the unnamed-tests guard accepts any verdict and leaves out two crates on a rule that does not exist
+
+`UnnamedTests::verdict_rows` (`unnamed_tests.rs:90`) keys on the first three cells and never reads the fourth. A row whose verdict is empty or `TODO` passes. The guard proves only that the rows and the inventory match one to one; it does not prove that every test has a verdict. Fix: refuse a row whose fourth cell does not start with `kept: `.
+
+`JUDGED_CRATES` (`:10-27`) leaves out `piperine-numbers` and `piperine-project`, "the two that CC-12 AC 2 leaves out". CC-12 AC 2 (spec.md:153) leaves out no crate. Both crates have no uncited test today (22 and 53 tests, all cited), so including them costs no row. Excluding them means a future uncited test there escapes the guard. Fix: include both, or invert the list to exclude only the guards crate. Either way, correct the comment.
+
+The header of `uncited_tests.tsv` (line 2) also names the guard `every_uncited_test_has_exactly_one_verdict`; the test is `every_unnamed_test_has_exactly_one_verdict`.
+
+### R2-3 (Low): the generated reasons are mostly specific, but two rows are wrong
+
+The 366 rows have the form "asserts <comment or first assertion>; its nearest test in the file, <name>, asserts <…>". In a sample of 15 rows, 13 state what the test proves in a way that differs visibly from its neighbour. That meets T12's `kept: <the rule it alone proves>`; it is generated rather than judged per row, but the text comes from the test itself. 98 rows fall back to the raw text of an assertion, and 147 are cut off with `…`.
+
+These rows are wrong:
+
+- `section_12_unresolvable_noise_reference_node_is_an_analysis_error` reads "asserts its run to completion without an error". The test (`failure_rules.rs:186-200`) asserts that the analysis fails with a `Noise` error naming "reference node". Its nearest test gets the same text, so the row states no difference.
+- `a_std_file_sees_another_namespace_through_the_prelude` gives the identical text for itself and its neighbour `bit_rise_resolves_into_std_values`.
+- Weaker, from the sample: `a_commit_reaches_the_owner`'s neighbour text, "asserts 'functions, 3'", says nothing.
+
+Fix: write these rows by hand, and scan for rows whose two halves are equal.
+
+### R2-4 (Low): `the_buck_readme_says_how_to_run_it` is half a wording pin
+
+T10 keeps "the buck README's command lines". The command-line assertions of `repository_records.rs:19` are in scope: `piperine run startup`, `piperine test`, `--print-step 1e-8 --csv`, `--plot`. Its other assertions are the same kind of pin as `the_buck_readme_points_at_the_scenarios`, which this round retired with the reason "three of them absences":
+
+- two sentence pins: "prints the whole start" and "No such host exists yet";
+- six `!contains` pins on stale sentences: "from = 599e-6", "last microsecond", "two-row table", and three on "no host API…" / "no testbench".
+
+Fix: keep the command-line assertions and retire the sentence and absence pins, recording the narrowing in `retired.tsv`. Or retire the whole test, as was done for its sibling.
+
+### Round 2 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| R2-1 doubled module in a repointed proof | Medium | `solver-restructure/tasks.md:737`; `proof_ledger.rs:156` | correct the line; fix `repoint` if it is the cause; make the ledger compare the module | |
+| R2-2 the guard accepts any verdict; two crates left out | Low | `unnamed_tests.rs:10-27,90`; `uncited_tests.tsv:2` | require `kept: `; include numbers and project; fix the guard name | |
+| R2-3 two wrong generated reasons | Low | `uncited_tests.tsv` rows `section_12_unresolvable_noise_reference_node…`, `a_std_file_sees_another_namespace…` | rewrite them by hand; scan for equal halves | |
+| R2-4 README sentence and absence pins kept | Low | `repository_records.rs:19-36` | narrow to the command lines, or retire | |
+
+## Phase 2 round 3
+
+**Verdict**: PASS
+**Head**: acf28ab8e. Four fix commits sit on 21bad1466: 3e504144c (R2-1), dbda0d62b (R2-2), 1f98685e5 (R2-3), acf28ab8e (R2-4).
+**Verifier**: independent sub-agent (Opus; author != verifier; the fixer was another Opus agent). The gates were rerun at the head.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | lib 49, boundaries 19, documentation 2, naming 2, ownership 5, proof_ledger 4, structure 2, suite 27, worklists 5: all pass |
+| `cargo test -p piperine-digital-solver` | 161 passed, 0 failed |
+| `cargo test -p piperine-lang` | 1 432 passed, 0 failed |
+
+### Round 2 findings
+
+| Finding | Status | Evidence |
+| --- | --- | --- |
+| R2-1 | **Closed** (3e504144c) | See "R2-1" below |
+| R2-2 | **Closed** (dbda0d62b) | See "R2-2" below |
+| R2-3 | **Closed** (1f98685e5) | See "R2-3" below |
+| R2-4 | **Closed** (acf28ab8e) | See "R2-4" below |
+
+**R2-1.**
+
+- C11 now reads `test workspace_shape::examples_hold_only_package_sources ... ok`.
+- `repoint` replaces the whole written path. The unit test `a_replace_inside_a_module_writes_the_module_once` shows that the module is written once.
+- The ledger builds each test's cargo path. `SourceTree::modules_reached_from` gives the module path from the target root. `TestTargets::test_paths` adds each test's inline `mod` scope.
+- `TestTarget::path_names` accepts the full path or a `::`-suffix of it, and nothing else.
+
+Throwaway edits, reverted with `git checkout`; the tree is clean:
+
+| Edit | Result |
+| --- | --- |
+| C11 with `crate_boundaries::` as its module | fails, "names no test crate_boundaries::…" |
+| C11 with `workspace_shape::workspace_shape::` (the round-2 bug) | fails |
+| C11 with the bare name | passes |
+| host-ii C1, a unit test, rewritten from `request::tests::…` to `recorder::tests::…` | fails |
+
+Unit-test roots come from `lib.rs`, `main.rs` and `src/bin/*`. The 215 module-path proofs at the head pass, `clilib`'s `cli::tests::…` and `apilib`'s `request::tests::…` among them. `a_test_path_follows_the_module_declarations_from_the_root` covers a file module, an inline `mod tests` and a `mod inline { mod deep; }`.
+
+There are 209 `proof_ledger.tsv` rows before and after. With the leading module path removed, the old and new sets are identical. Only the 12 rows whose proof writes a path (`rt::…`, `recorder::tests::…`, `verdict::tests::…`, `plot::tests::…`) changed spelling. No dangling proof was added and none was hidden.
+
+**R2-2.**
+
+- `UnnamedTests::is_judged` requires `kept: ` followed by a non-empty rule that is not `-` and not `TODO`. Its unit test covers 8 cases that are not judged.
+- A throwaway `TODO` verdict fails `every_unnamed_test_has_exactly_one_verdict` with "rows whose verdict is not `kept: <rule>`". It was reverted.
+- `JUDGED_CRATES` now holds `piperine-numbers` and `piperine-project`. Neither has an uncited test today, so the inventory gains no row.
+- The file header names the guard correctly.
+
+**R2-3.**
+
+- 366 rows; none has equal halves, and 1 contains a `…`.
+- `section_12_unresolvable_noise_reference_node_is_an_analysis_error` and `a_std_file_sees_another_namespace_through_the_prelude` were rewritten by hand.
+
+I sampled 15 rows (seed 7). 12 state the rule and a visible difference from the neighbour; examples are the two `emit!` positions of `msl_errors`, `edge_gnd_name_routes_to_ground` against `ac3_node_is_idempotent`, the `Logic<4>` pattern against the enum names, and `a_type_that_contains_itself_is_refused`. Two are thin but true:
+
+- `test_setup_error_propagates`, "asserts 'result.is_err()'";
+- `analytic_and_fallback_paths_coexist…`, "asserts Engine attribution (DVG-07)".
+
+One is wrong. `reset_clears_stamps_without_reallocating` reads "asserts Stamp a matrix entry and an RHS entry", which is the setup comment at `faer.rs:236`, not what the test checks.
+
+A scan for setup-style openings found two more of the same kind: `a_derivative_chains_through_a_discrete_function` ("asserts Run the instant at t = 0 by hand…") and the DVG-07 row above.
+
+The 123 halves that quote an assertion verbatim do meet T12's `kept: <the rule it alone proves>`. The quote is the exact value the test fixes, such as `TrBdf2::jump_lte(..) < 1e-9` against the neighbour's `state_lte`, or the SP-05 messages "a port on ground" against "a port on a node not in the circuit". That is more precise than a paraphrase.
+
+Verdict on R2-3: closed. The three setup-comment rows are a bookkeeping imprecision in a `.specs` record that no proof reads. They do not change which test is kept, or whether a duplicate exists. They are noted, not opened as a finding:
+
+- `reset_clears_stamps_without_reallocating`;
+- `a_derivative_chains_through_a_discrete_function`;
+- `analytic_and_fallback_paths_coexist_and_the_fallback_is_named`.
+
+The coordinator may rewrite them by hand in any later commit.
+
+**R2-4.**
+
+- `the_buck_readme_says_how_to_run_it` now asserts only the four command lines: `piperine run startup`, `piperine test`, `--print-step 1e-8 --csv` and `--plot`. This is T10's keep-list, "the buck README's command lines".
+
+On the claims:
+
+- **msl-cli C157** reads "names `piperine run startup` and no longer says nothing executes". The first half is still proved exactly. The second half's absence pin is gone, and the annotation says so.
+- **long-run C58** reads "describes the whole-start run". `--print-step 1e-8 --csv` with `--plot` is the whole-start run's invocation, so the proof still falsifies the claim's checkable core: drop those flags from the README and the test fails.
+
+The annotation "(narrowed by code-clarity T10: …)" is the honest record. It matches Q13's decision that a prose pin's criterion loses its prose proof with a note naming code-clarity. Retiring C58 would discard a proof that still holds part of the claim. I judge the annotation right. The only gap is that no guard reads "narrowed", as `every_retired_check_is_recorded` reads "retired". That is acceptable for two rows.
+
+**Code rules** (`test_targets.rs`, `source_tree.rs`, `unnamed_tests.rs`, `repoint.rs`):
+
+- no free function;
+- full words;
+- a `///` on every new field and method (`paths`, `unit_paths`, `path_names`, `holds_path`, `test_paths`, `modules_reached_from`, `is_judged`, `rows_without_a_verdict`);
+- no `#[allow]`;
+- the new unit tests are in `mod tests` blocks.
+
+### Round 3 findings
+
+None. I probed:
+
+- wrong, doubled and bare module paths in a run proof;
+- a wrong module in a unit-test proof;
+- a `TODO` verdict;
+- the re-spelled allowance rows (the same set modulo the path);
+- 15 sampled reasons and a setup-comment scan (three imprecise rows, noted above);
+- the narrowed README test against C157 and C58.
+
+Phase 2 (T9 to T14) is verified. The round 1 and round 2 findings are closed by 39295ddfc, 3e504144c, dbda0d62b, 1f98685e5 and acf28ab8e.
+
 ## Phase 3 (B4 Refusals have an owner, T15 to T22)
 
 **Verdict**: FAIL (one Medium finding, two Low)

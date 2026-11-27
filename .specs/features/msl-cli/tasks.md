@@ -15,7 +15,6 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build -p piperine-project -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-api/src/failure.rs || cargo build -p piperine-api -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-cli/src/cli.rs || cargo build -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run manifest**: `cargo test -p piperine-project --test manifest`
 **Run rcpkg**: `cargo test -p piperine-project --test project`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
 **Run shape**: `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run apilib**: `cargo test -p piperine-api --lib`
 **Run project**: `cargo test -p piperine-api --test project`
@@ -32,9 +31,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run commands**: `cargo test -p piperine-cli --test commands`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run book**: `cargo test -p piperine-lang --test book`
-**Run docs**: `cargo test -p piperine-cli --test docs`
 **Run format**: `cargo test -p piperine-lang --test msl_format`
 **Run print**: `cargo test -p piperine-lang --test msl_print`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
+**Run suite**: `cargo test -p piperine-repository-guards --test suite`
+**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error, or deletes a user's comment: T1, T6, T14, T21, T25, T36, T41, T42, T44, T45, T46, T47. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 
@@ -1346,8 +1347,8 @@ Proof: run usage | test the_binary_is_named_piperine ... ok
 **C3** - The root `src/lib.rs` holds `pub use piperine_api::*;` and no other item. (CLI-01, AC 3; T4)
 Proof: run shape | test the_root_package_is_a_re_export_and_nothing_else ... ok
 
-**C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5)
-Proof: run shape | test host_crates_name_no_deleted_surface ... ok
+**C4** - No source of `piperine-api` or `piperine-cli` names `parse_and_elaborate`, `Element`, `piperine_codegen`, `piperine_python`, `piperine_plugin` or `.vams`. (CLI-01, AC 4; T5) (retired by code-clarity T9: a guard against a retired architecture; no way back to it)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C5** - `piperine --help` lists `check`, `build`, `run`, `test`, `new`, `clean`, `fmt` and no other command, exit 0. (CLI-01, AC 5; T5)
 Proof: run usage | test help_lists_exactly_the_seven_commands ... ok
@@ -1373,8 +1374,8 @@ Proof: run run | test no_manifest_is_e0170_and_exit_1 ... ok
 **C12** - A manifest with `[run.a]` parses; `Manifest::run` is the span of the key `run`; a `run` that is not a table is `E0171`. (CLI-02, AC 4; T2)
 Proof: run manifest | test a_run_table_is_accepted_and_located ... ok
 
-**C13** - The manifest section of `docs/spec/` says the `run` table is allowed and that the language does not define its content, and its key table has the row. (CLI-02, AC 4; T3)
-Proof: run spectext | test the_manifest_rule_admits_the_run_table ... ok
+**C13** - The manifest section of `docs/spec/` says the `run` table is allowed and that the language does not define its content, and its key table has the row. (CLI-02, AC 4; T3) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C14** - A dependency whose manifest holds a malformed `[run]` table loads, and its runs are not the project's. (CLI-02, AC 5; T9)
 Proof: run project | test a_dependencys_run_table_is_ignored ... ok
@@ -1793,35 +1794,35 @@ Proof: run book | test the_compiler_chapter_says_the_command_line_exists ... ok
 **C152** - The cheat sheet names `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt`. (CLI-19, AC 10; T37)
 Proof: run book | test the_cheat_sheet_lists_the_seven_commands ... ok
 
-**C153** - `CLAUDE.md` and `AGENTS.md` do not say `piperine-api`, `piperine-cli`, `piperine-project` or the root package does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli` and `msl::format` for `piperine-lang`; `piperine-lang-server` is said to be outside the default build and deferred. (CLI-20, AC 1; T39)
-Proof: run docs | test the_instruction_files_say_the_host_crates_build ... ok
+**C153** - `CLAUDE.md` and `AGENTS.md` do not say `piperine-api`, `piperine-cli`, `piperine-project` or the root package does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli` and `msl::format` for `piperine-lang`; `piperine-lang-server` is said to be outside the default build and deferred. (CLI-20, AC 1; T39) (retired by code-clarity T10: a pin on a table row of CLAUDE.md and a line of AGENTS.md; the documents are not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C154** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, the language server (deferred by the user), no trace records. (CLI-20, AC 2; T40)
-Proof: run docs | test gaps_drops_what_closed_and_lists_what_is_left ... ok
+**C154** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, the language server (deferred by the user), no trace records. (CLI-20, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C155** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40)
-Proof: run docs | test the_roadmap_marks_the_cli_item_done ... ok
+**C155** - Item 3 of "Queue after ir-rust" in `ROADMAP.md` is marked done. (CLI-20, AC 3; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the test was already gone)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C156** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate and `msl::format`. (CLI-20, AC 4; T40)
-Proof: run docs | test state_records_the_cli_decision ... ok
+**C156** - `.specs/STATE.md` holds a decision naming `piperine-api`, the `[run.<name>]` table, the bench crate and `msl::format`. (CLI-20, AC 4; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C157** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38)
-Proof: run docs | test the_buck_readme_says_how_to_run_it ... ok
+**C157** - `examples/buck/README.md` names `piperine run startup` and no longer says nothing executes. (CLI-20, AC 5; T38) (narrowed by code-clarity T10: the proof holds the README's command lines; its sentences and absences are no longer pinned)
+Proof: run suite | test repository_records::the_buck_readme_says_how_to_run_it ... ok
 
-**C158** - Part VIII defines **bench**: a module without ports, written in MSL, that places the design with its sources, stimulus and monitors, chosen as the top by the host; the term is in the part's list of terms and in the index's term table. (CLI-21, AC 1; T41)
-Proof: run spectext | test part_viii_defines_a_bench ... ok
+**C158** - Part VIII defines **bench**: a module without ports, written in MSL, that places the design with its sources, stimulus and monitors, chosen as the top by the host; the term is in the part's list of terms and in the index's term table. (CLI-21, AC 1; T41) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C159** - Principle 3 of the index names benches as MSL and sweeps, Monte Carlo, optimization and regression as the host's. (CLI-21, AC 2; T41)
-Proof: run spectext | test the_index_says_benches_are_msl_and_sweeps_are_host ... ok
+**C159** - Principle 3 of the index names benches as MSL and sweeps, Monte Carlo, optimization and regression as the host's. (CLI-21, AC 2; T41) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C160** - The model column of the testbench table holds stimulus written as reactions and timers; the host column keeps `force` and `release`, constrained random stimulus, sweeps and Monte Carlo. (CLI-21, AC 3; T41)
-Proof: run spectext | test the_testbench_table_splits_stimulus_and_host_work ... ok
+**C160** - The model column of the testbench table holds stimulus written as reactions and timers; the host column keeps `force` and `release`, constrained random stimulus, sweeps and Monte Carlo. (CLI-21, AC 3; T41) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C161** - No file of `docs/spec/` holds "the testbench lives in the host", "stimulus sequences, sweeps and optimization live in the host" or "belongs to the testbench, in the host". (CLI-21, AC 4; T41)
-Proof: run spectext | test no_spec_text_says_stimulus_is_host_only ... ok
+**C161** - No file of `docs/spec/` holds "the testbench lives in the host", "stimulus sequences, sweeps and optimization live in the host" or "belongs to the testbench, in the host". (CLI-21, AC 4; T41) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C162** - Every error code of `docs/spec/` is still defined exactly once. (CLI-21, AC 5; T41)
-Proof: run spectext | test every_error_code_is_defined_exactly_once ... ok
+Proof: run spec_structure | test every_error_code_is_defined_exactly_once ... ok
 
 **C163** - `piperine run step --plot step.svg` in `examples/rc` writes a file that starts with `<svg` and standard output ends with `wrote step.svg` after the table. (CLI-22, AC 1; T43)
 Proof: run options | test plot_writes_an_svg_and_prints_wrote ... ok

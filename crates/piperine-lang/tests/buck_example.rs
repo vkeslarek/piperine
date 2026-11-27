@@ -51,22 +51,6 @@ fn buck() -> Design {
     Design::load_crates(graph)
 }
 
-/// One line per diagnostic: file, line, code, message and the offending text.
-fn diagnostic_lines(design: &Design) -> Vec<String> {
-    let files = design.files();
-    design
-        .diagnostics()
-        .iter()
-        .map(|d| {
-            let file = &files[d.file.0 as usize];
-            let span = d.diagnostic.primary.0;
-            let line = file.text()[..span.start.min(file.text().len())].lines().count().max(1);
-            let source = file.text().get(span.start..span.end).unwrap_or("?");
-            format!("{}:{line}: {} {} `{source}`", file.name(), d.diagnostic.code, d.diagnostic.message)
-        })
-        .collect()
-}
-
 #[test]
 fn the_package_is_a_package() {
     let dir = package_dir();
@@ -74,13 +58,6 @@ fn the_package_is_a_package() {
     assert_eq!(package_name(&manifest).as_deref(), Some("buck"));
     assert!(dir.join("src/lib.msl").is_file(), "the crate root is src/lib.msl (E0175)");
     assert!(dir.join("SPEC.md").is_file(), "the specification the model cites");
-}
-
-#[test]
-fn the_package_builds_with_no_diagnostics() {
-    let design = buck();
-    let lines = diagnostic_lines(&design);
-    assert!(lines.is_empty(), "{} diagnostics:\n{}", lines.len(), lines.join("\n"));
 }
 
 #[test]

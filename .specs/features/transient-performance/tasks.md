@@ -29,8 +29,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run epoch**: `cargo test -p piperine-solver --test protocol_epoch`
 **Run options**: `cargo test -p piperine-api --test options an_hour`
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
-**Run spectext**: `cargo test -p piperine-lang --test spec_text`
-**Run docs**: `cargo test -p piperine-cli --test docs`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule); a different model verifies. The worktree is
 `/home/keslarek/Git/piperine-transient-performance` on `feature/transient-performance`. Cargo runs with
@@ -747,9 +746,9 @@ Proof: run solver | test a_landing_step_over_the_tolerance_is_rejected_and_retak
 **C17** - A failing landing step is rejected, restored and retaken smaller, with the instants replayed (TP-04, AC 2; T9)
 Proof: run solver | test the_instants_run_ahead_of_a_rejected_step_leave_no_record ... ok
 
-**C18** - Appendix C.2, D.4 and F say the landing step is tested (TP-04, AC 3; T6)
-Proof: run spectext | test appendix_c_2_tests_the_landing_step_and_the_jump_step ... ok
-Proof: run spectext | test appendix_d_and_f_restart_rows_say_the_step_to_the_landing_is_ordinary ... ok
+**C18** - Appendix C.2, D.4 and F say the landing step is tested (TP-04, AC 3; T6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C19** - A jump step is sized by §15.2 rule 6 and tested with the first-order estimate (TP-05, AC 1; T7, T10)
 Proof: run integration | test the_jump_estimate_of_a_quadratic_state_is_backward_eulers_error ... ok
@@ -766,8 +765,8 @@ Proof: run solver | test an_ideal_step_is_read_by_an_rc_to_one_minus_e_to_the_mi
 **C23** - The buck's first 100 µs are within 0.104 mV of the `max_step = 1e-10` run (TP-05, AC 5; T11)
 Proof: run buckacc | test the_first_100_us_match_the_fine_reference_within_0_104_mv ... ok
 
-**C24** - §15.2 rule 6 and Appendix C.2 state the estimate and the retake (TP-05, AC 6; T6)
-Proof: run spectext | test part_v_rule_6_tests_the_step_that_reads_a_jump_with_the_first_order_estimate ... ok
+**C24** - §15.2 rule 6 and Appendix C.2 state the estimate and the retake (TP-05, AC 6; T6) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C25** - The buck's 600 µs start takes at most 300 000 accepted steps (TP-06, AC 1; T17)
 Proof: run bucklong | test the_whole_start_takes_at_most_300000_steps ... ok
@@ -820,18 +819,18 @@ Proof: run parity | test tran_rc ... ok
 **C41** - Without ngspice the parity targets print the skip line and the twins still run (TP-09, AC 5; T23)
 Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
 
-**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23)
-Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
+**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24)
-Proof: run docs | test transient_performance_closes_v12 ... ok
+**C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C44** - Appendix C.2's time-points row describes the as-if rule, its exceptions and the reference mode (TP-10, AC 2; T12)
-Proof: run spectext | test appendix_c_2_time_points_row_names_the_dynamic_test_its_exceptions_and_the_reference_mode ... ok
+**C44** - Appendix C.2's time-points row describes the as-if rule, its exceptions and the reference mode (TP-10, AC 2; T12) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24)
-Proof: run docs | test transient_performance_closes_v12 ... ok
-Proof: run docs | test the_scenario_package_states_its_measured_step_count ... ok
+**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C46** - The two backends print the same bytes for the twins (TP-09, AC 4; T23)
 Proof: run twins | test the_two_backends_print_the_same_bytes ... ok
