@@ -67,7 +67,7 @@ impl Elaboration<'_, '_> {
             Ty::UInt(width) | Ty::Int(width) if *width > 64 => {
                 let signed = matches!(ty, Ty::Int(_));
                 let limbs = piperine_numbers::decimal::DecimalText::integer(text, *width, signed).ok_or_else(|| format!("it is not an integer literal of {} in its range", ty.name(self.design)))?;
-                Ok(self.consts.wide_constant(&super::consts::DynamicInteger::from_pattern(*width, signed, &limbs)))
+                Ok(self.consts.wide_constant(&piperine_numbers::dynamic::DynamicInteger::from_pattern(*width, signed, &limbs)))
             }
             Ty::UInt(_) | Ty::Int(_) => {
                 let (low, high) = Self::integer_range(ty);

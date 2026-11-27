@@ -5,6 +5,9 @@
 //! as `rt/numbers/*.rs` and compiled with the generated code, so a file refers to a sibling only
 //! as `super::<file>::`, and an operation the language makes a panic returns `Option` here and
 //! the runtime raises it. `tests/purity.rs` enforces these rules mechanically.
+//!
+//! `dynamic` holds the integer of any width that the constant evaluator folds; it is compiled
+//! with the crate but not embedded in generated code.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -13,6 +16,7 @@ pub mod arithmetic;
 pub mod constants;
 pub mod convert;
 pub mod decimal;
+pub mod dynamic;
 pub mod elementary;
 pub mod format;
 pub mod half;

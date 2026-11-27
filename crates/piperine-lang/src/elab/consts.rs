@@ -32,12 +32,10 @@ mod dispatch;
 mod floats;
 mod generated;
 mod imported;
-mod integers;
 mod numbers;
 mod parsed;
 mod templates;
 
-pub(in crate::elab) use integers::DynamicInteger;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

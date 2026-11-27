@@ -1480,10 +1480,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The A6 row leaves the `boundaries` allowance; `crates/piperine-numbers/tests/purity.rs` passes
-- [ ] `BinaryFormat::round_integer` (`numbers/src/format.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] the `numbers::Limbs` row of `worklists/single_implementor_traits.tsv` has a verdict: the trait is removed, or kept with its reason written on it (T32)
-- [ ] Gate check passes: Golden
+- [x] The A6 row leaves the `boundaries` allowance; `crates/piperine-numbers/tests/purity.rs` passes
+- [x] `BinaryFormat::round_integer` (`numbers/src/format.rs`), never referenced (T30, findings 4.1), is removed
+- [x] the `numbers::Limbs` row of `worklists/single_implementor_traits.tsv` has a verdict: the trait is removed, or kept with its reason written on it (T32)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

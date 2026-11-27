@@ -20,7 +20,7 @@ use piperine_numbers::half::Float16;
 use piperine_numbers::quad::Float128;
 
 use super::floats::Ieee754;
-use super::integers::DynamicInteger;
+use piperine_numbers::dynamic::DynamicInteger;
 use super::{ConstEval, ConstFault};
 use crate::refusal::forms::ConstantForm;
 use crate::msl::lexer::NumberLiteral;

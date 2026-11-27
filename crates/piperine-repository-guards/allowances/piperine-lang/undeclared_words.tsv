@@ -18,8 +18,6 @@ crates/piperine-lang/src/elab/consts.rs::consts	1
 crates/piperine-lang/src/elab/consts.rs::expr	1
 crates/piperine-lang/src/elab/consts.rs::impls	1
 crates/piperine-lang/src/elab/consts/imported.rs::tree_expr	1
-crates/piperine-lang/src/elab/consts/integers.rs::from_i128	1
-crates/piperine-lang/src/elab/consts/integers.rs::to_i128	1
 crates/piperine-lang/src/elab/contribute.rs::expr	1
 crates/piperine-lang/src/elab/control.rs::lower_assignment_expr	1
 crates/piperine-lang/src/elab/derivatives.rs::leaf_exprs	1
