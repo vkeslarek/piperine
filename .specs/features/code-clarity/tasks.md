@@ -974,6 +974,8 @@ T152 → T153 → T154 → T155
 
 **Deferred**: S21 (the `GND`, `vss` and `VSS` aliases) is deferred to the user: the ground net's public label is `GND` (`core/net.rs`), so removing the alias changes host behaviour. `GroundName` accepts the four names again and `edge_gnd_name_routes_to_ground` keeps its original assertion. (Coordinator decision, user AFK, pending review.)
 
+**S21 decided by the user, 2026-11-27**: "Sim... um gnd só!". The ground reference stays (the solver needs the circuit's zero) and is spelled `gnd` only: the ground net's printed label becomes `gnd`, and `GND`, `vss`, `VSS` stop naming ground and are refused with an error that names the one spelling (never silently a new node). Owned by T83.
+
 ---
 
 ### T30: Dead items leave; test-only items say whom they serve
@@ -2200,6 +2202,7 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
+- [ ] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
 - [ ] No free function in the file; `bind`'s row is `split`
 - [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
 
