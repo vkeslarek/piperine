@@ -154,7 +154,13 @@ impl CargoTestCommand {
             if alone && !seen {
                 let filter_at = at + 2;
                 let has_filter = filter_at < self.arguments_end && !tokens[filter_at].starts_with('-');
-                kept.push(if has_filter { format!("{module}::{}", tokens[filter_at]) } else { format!("{module}::") });
+                let closing_value = kept.last_mut().filter(|last| !has_filter && ShellToken::closes(last));
+                if let Some(last) = closing_value {
+                    // `--test old)`: the filter goes inside the substitution, before its `)`
+                    *last = ShellToken::with_word(last, &format!("{} {module}::", ShellToken::word(last)));
+                } else {
+                    kept.push(if has_filter { format!("{module}::{}", tokens[filter_at]) } else { format!("{module}::") });
+                }
                 at += usize::from(has_filter);
                 seen = true;
             }
@@ -263,6 +269,9 @@ mod tests {
         assert_eq!(command.moved("old", "b", "merged", "old"), proof.replace("-p a --test old", "-p b --test merged old::"));
         let closed = CargoTestCommand::parse("x=$( cargo test -p a --test old)").expect("a cargo test");
         assert_eq!((closed.package(), closed.targets()), (Some("a"), vec!["old"]));
+        assert_eq!(closed.moved("old", "b", "merged", "old"), "x=$( cargo test -p b --test merged old::)");
+        let filtered = CargoTestCommand::parse("x=$(cargo test -p a --test old inner);").expect("a cargo test");
+        assert_eq!(filtered.moved("old", "a", "merged", "old"), "x=$(cargo test -p a --test merged old::inner);");
         assert_eq!(CargoCommandLine::parse("o=$(cargo build -p a); cargo run -p b)").packages(), vec!["a", "b"]);
         assert_eq!(CargoCommandLine::parse("o=$(cargo test -p old)").with_package_renamed("old", "new").as_deref(), Some("o=$(cargo test -p new)"));
     }
