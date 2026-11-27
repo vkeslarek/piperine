@@ -1376,3 +1376,112 @@ The same 371 tests run in both. The gain is real: link time drops by about a qua
 - `source_tree.rs:120` treats every crate whose name ends in `-fixtures` as test code. That matches the planned `piperine-ir-fixtures` (T63) and is fine, but no unit test pins it.
 - It also removes the crate from the product-only `repeated_type_names`, `long_functions` and `single_implementor_traits` guards.
 - Fix: add a unit test in `item_scan.rs`'s scenarios. A test-origin `repeated_type_names` would also have caught P5-2.
+
+## Phase 5 round 2
+
+**Verdict**: FAIL (one Medium finding, one Low note)
+**Head**: eacc83455 on `feature/code-clarity-p5` (fix commits e49f059ea, e10dcb63e, 475feb12b, eacc83455 on 472c8c2cb)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment as round 1 (`/var/tmp/piperine-target-t`), with the guard sources touched first.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 121 passed, 0 failed |
+| `cargo test -p piperine-abi` | 59 passed |
+| `cargo test -p piperine-analog-solver` | 111 passed |
+| `cargo test -p piperine-digital-solver` | 161 passed |
+| `cargo test -p piperine-device-fixtures` | 2 passed |
+| `cargo test -p piperine-solver`, and `--tests -- --test-threads=1` | 337 passed both ways |
+| `cargo test -p piperine-parity` | **645 passed** over 64 result lines. Every binary's count is identical to round 1. The fixer's "449" is a counting artefact, not lost tests |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| CC-09: `git diff 97d327d58..HEAD` over `docs/`, `examples/`, `tests/`, `crates/piperine-{parity,transpile,cli,api}`, `*.msl` and goldens | empty |
+
+### Timing of `piperine-solver`
+
+- The run, with everything built, took 1.71 s, against 1.67 s in round 1 and 6.25 s at the base.
+- `touch src/lib.rs` followed by `--no-run` took 29.7 s, against 50.8 s in round 1 and 68.2 s at the base.
+
+### Closure of round 1
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P5-1 | 475feb12b | See below; the reconciliation holds. One replaced proof, C61, is not held by its survivor (P5R2-1) |
+| P5-2 | e49f059ea, e10dcb63e | No repeated type name in the fixtures crate (`uniq -d` is empty). `repeated_type_names` now covers fixtures, with a unit test. `test_devices.rs` places the fixtures' devices (`AnalysisDevices`), and `analyses.rs` is no longer a second copy |
+| P5-3 | e49f059ea | The 36 `test_helper_functions` rows are gone: the allowance falls from 1004 to 968 and none of the four crates has the file. The helpers are associated functions of `Cases` structs. No `src/` unit test changed its assertion signature. T40's first box is ticked, with the coordinator's decision recorded |
+| P5-4 | e49f059ea | No `react` in the fixtures crate is the bare `Ok(Flow::Continue)` body |
+| P5-5 | 475feb12b | `every_device_of_the_crate_is_in_the_list` fails on a device with no row and on a row with no device (probes below). `digital::PulseGenerator` is listed |
+| P5-6 | coordinator amendment | T39 carries "Coordinator amendment (user AFK, pending review)" |
+| P5-7 | eacc83455 | 0 "helper `…`" docs remain, and the docs name what the item is. The stray `// 2.0f64` comment at `thunks.rs:321` is gone |
+| P5-8 | e10dcb63e | `item_scan.rs` `a_fixtures_crate_is_test_code_and_a_product_crate_is_not` pins `is_fixtures_crate`, including the negative `piperine-fixtures-core` |
+
+### Tests removed, reconciled
+
+- `piperine-solver` lost 35 tests and gained 1 (`every_hand_written_device_lives_in_the_fixtures_crate`): 371 − 35 + 1 = 337.
+- The 35 removed tests are:
+  - the 27 `its_devices_pass_the_partials_verifier` copies;
+  - 4 variants: `its_device_…` ×2, `its_corner_source_…` and `its_once_faulting_device_…`;
+  - `the_fixture_devices_pass_the_partials_check` (array_windows);
+  - `every_helper_device_passes_at_generic_points`;
+  - `every_hand_written_device_is_in_a_partials_check`;
+  - `a_check_of_another_module_does_not_count`.
+- `repoints/T38.tsv` and `T39.tsv` hold 15 + 20 = **35** `replace` rows, one per removed test. The brief said 36 rows; there are 35, and they match exactly.
+- `piperine-device-fixtures` gained `every_device_of_the_crate_is_in_the_list`.
+
+### The partials checks reproduce on the same points
+
+Each held point of the old copies is carried over unchanged as a `Check::Holding` or `Check::Fixtures` row:
+
+| Device | Check | Point or fixture kind |
+| --- | --- | --- |
+| FlakyC | `Holding` | `(0,3,0.0)` |
+| AcFault | `Holding` | `(0,1,0.0)` |
+| Collapsible | `Holding` | `(0,0,1e3)` |
+| LateOscillator | `Holding` | `(0,2,0)` |
+| JumpOscillator | `Holding` | `(0,3,0)` |
+| LateSource | `Holding` | `(0,3,0)` |
+| OpenAboveDc | `Holding` | `(0,2,0)` |
+| StepSource | `Holding` | `(0,5,0)` |
+| FaultOnce | `Holding` | `(0,2,0)` |
+| NanSource | `Fixtures` | `NonFinite` |
+| Oscillator | `Fixtures` | `Impure` |
+| AlwaysLimited | `Fixtures` | `AlwaysLimited` |
+
+- Every other old copy called `verify_every_function` at the generic points, and its devices are `Check::Generic` rows.
+- The 30 devices of `every_helper_device_passes_at_generic_points` are all `Generic` rows, under their merged names: the mixed copies became `digital::*`, `BitDigitalToAnalog` and `ConductanceTracer`.
+- The exemptions are the round-1 set minus `bad_limit`, which now builds a raw module and has no `impl Device`. Each exemption carries a reason.
+- `every_device_function_passes_the_partials_verifier` (the `Verdict::Exact` table) is kept.
+- The list has 128 rows.
+
+### Merges and the two data changes
+
+- Across every test that kept its name, I compared assertion counts, numbers and strings between ef7a2da28 and HEAD.
+  - 29 tests differ, each only by losing a string literal.
+  - Every lost literal is a module name in a construction that moved to the fixtures crate, such as `module::<Diode>("Diode")`.
+  - No assertion, number or message changed.
+- `circuit` ORIGIN changed from `"abi_devices.rs"` to `"abi.md:11"`. No test or product file names the old string. `boundary/plan.rs` asserted `abi.md:11` on the former `examples::Resistor`, and that assertion is unchanged.
+- The merged `mixed::Comparator` watches changed from `rise`/`fall` to `up`/`down`. No solver, api or parity test reads a watch name of a fixtures device. The `"rise"` in `api/tests/options.rs:350` belongs to that crate's own device, and `assembly_watch.rs:346` builds its own.
+- The digital merges also change the module name, for example `"Timer"` to `"timer"`. They bump the same thread-local counter keyed by the same device name, so `ReactionCounts::of` call sites are unchanged.
+- Conclusion: fixture data only, with no user-visible output.
+
+### Probes (throwaway edits to `device-fixtures/tests/partials.rs`, each reverted; `git status` clean)
+
+| Edit | Result |
+| --- | --- |
+| Delete the `circuit::Resistor` row | `every_device_of_the_crate_is_in_the_list` FAILED: "devices no row of EveryDevice names: [\"circuit::Resistor\"]" |
+| Add a row labelled `circuit::Ghost` | FAILED: "rows whose device is gone: [\"circuit::Ghost\"]" |
+| Keep the label `circuit::Resistor` but give the row `circuit::Capacitor::module()` | **both tests pass**, so the Resistor is never checked (P5R2-1) |
+
+### P5R2-1 (Medium): C61 "a check of another module does not count" is re-pointed to a test that does not hold it
+
+- `a_check_of_another_module_does_not_count` planted a label naming `Foo` over `Bar`'s module and asserted that `Foo` stays unchecked (HYG-16 AC 3; `solver-hygiene/verification.md:112` judged it on exactly that).
+- The `replace` row moves it to `every_device_of_the_crate_is_in_the_list`, and `solver-hygiene/tasks.md:1193-1194` now proves C61 with that test.
+- That test compares labels with the scanned `impl Device for` names only. A row's `module` is never tied to its label. The third probe shows a row labelled `circuit::Resistor` that checks the Capacitor's module, which leaves the Resistor unchecked with every test green.
+- C60 ("in a partials check of its **own** module") has the same gap.
+- Fix: derive each row's label and module from the one type, for example a `ListedDevice::of::<T: Device>(check)` built on `std::any::type_name::<T>()` and `T`'s own `module()`. Alternatively, assert that each row's `module` is the module its label's type builds, and plant the probe-3 case as a test.
+
+### Note (Low, not blocking)
+
+- `BadLimit` (`analog.rs:170`) and `Rogue` (`digital.rs:877`) assemble raw modules by hand, without `impl Device`, so `DeviceScan` cannot see them.
+- Both are deliberate rule-breakers, so leaving them unlisted is right. The scan's doc should say that it only reaches `impl Device` devices.
