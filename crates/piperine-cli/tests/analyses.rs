@@ -5,15 +5,14 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::OnceLock;
+use piperine_parity::compile_cache::CompileCache;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
 }
 
 fn shared_cache() -> &'static Path {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+    CompileCache::shared().path()
 }
 
 fn piperine_in(dir: &Path, args: &[&str]) -> Output {

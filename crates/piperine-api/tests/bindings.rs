@@ -6,10 +6,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 struct Kept;
 
@@ -18,8 +18,7 @@ impl RecordSink for Kept {
 }
 
 fn settings() -> Settings {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    Settings { rustc: None, cache: CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path().to_path_buf() }
+    Settings { rustc: None, cache: CompileCache::shared().path().to_path_buf() }
 }
 
 /// `Sw` is a potential source of 0.25 V while `short` selects it and an open branch otherwise (the

@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-use std::sync::OnceLock;
+use piperine_parity::compile_cache::CompileCache;
 
 /// The binary cargo built for this target.
 fn binary() -> PathBuf {
@@ -23,8 +23,7 @@ fn rc() -> PathBuf {
 
 /// One cache directory for every child of this target that does not ask for its own.
 fn shared_cache() -> &'static Path {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+    CompileCache::shared().path()
 }
 
 /// `piperine <args>` in `dir`, on the cache `cache`.

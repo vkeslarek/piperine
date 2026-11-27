@@ -7,10 +7,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{CellShape, Cell, Failure, Field, Overrides, ParamValue, Project, Record, RecordSink, Session};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// Keeps every record, in the order it is handed over.
 #[derive(Default)]
@@ -35,8 +35,7 @@ struct Host {
 impl Host {
     /// The session of `DESIGN`, its `clk` driven low and then high at 100 ns.
     fn open() -> Host {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let cache = CompileCache::shared();
         let dir = tempfile::tempdir().expect("tmp");
         let file = dir.path().join("bench.msl");
         std::fs::write(&file, DESIGN).expect("write");
@@ -134,8 +133,7 @@ struct Carried {
 impl Carried {
     /// The session of `CARRIED`, its `clk` driven low and then high at 100 ns, printing `print`.
     fn open(print: &[&str]) -> Carried {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let cache = CompileCache::shared();
         let dir = tempfile::tempdir().expect("tmp");
         let file = dir.path().join("bench.msl");
         std::fs::write(&file, CARRIED).expect("write");

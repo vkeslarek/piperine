@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
+use piperine_parity::compile_cache::CompileCache;
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -142,8 +143,7 @@ fn binary() -> PathBuf {
 
 /// One cache directory for every child of this target that does not ask for an empty one.
 fn shared_cache() -> &'static Path {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+    CompileCache::shared().path()
 }
 
 /// Copies the directory `from` into `to`, leaving out a `target` directory.

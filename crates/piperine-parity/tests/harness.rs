@@ -1,12 +1,19 @@
 //! Scope: running the real ngspice binary (PAR-03): batch mode in an empty scratch directory of its
 //! own per run, removal on drop, parallel runs, and a failed run or a missing export naming the
 //! fixture with ngspice's output. Needs ngspice on `PATH`; it fails, as every parity test does,
-//! when it is absent.
+//! when it is absent. The compile cache every test target of a run shares is held here too: two processes
+//! building one design into one cache directory leave one complete entry and no staging directory.
 
 use std::path::PathBuf;
+use std::process::Command;
+use std::sync::Arc;
 
+use piperine_ir_fixtures::alone::Alone;
+use piperine_ir_fixtures::devices::Devices;
+use piperine_parity::compile_cache::CompileCache;
 use piperine_parity::golden::Golden;
 use piperine_parity::ngspice::{Ngspice, Reference};
+use piperine_transpile::{Settings, Transpiler};
 
 fn run(fixture: &str) -> Golden {
     match Ngspice::from_environment().run(fixture) {
@@ -90,4 +97,54 @@ fn the_exports_of_the_corpus_parse_to_their_row_counts() {
     let tran = run("tran_rc");
     let rows = tran.real("tran_rc_tran");
     tran.expect_rows("tran_rc_tran", &rows, 100);
+}
+
+/// The processes that write one design into one cache directory at the same time: the test binary run again
+/// with `a_process_that_writes_the_cache` selected and the directory named in its environment.
+struct CacheWriters;
+
+impl CacheWriters {
+    /// The environment variable that names the directory a writer builds into.
+    const DIRECTORY: &'static str = "PIPERINE_CACHE_WRITER_DIRECTORY";
+
+    /// The writer: compiles the resistor design into the directory the environment names.
+    fn write(directory: &str) {
+        let (ir, _) = Alone::design(Devices::resistor);
+        let settings = Settings { rustc: None, cache: PathBuf::from(directory) };
+        Transpiler::new(Arc::new(ir)).unwrap_or_else(|error| panic!("{error}")).compile(&settings).unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    /// A new writer process, running.
+    fn start(directory: &std::path::Path) -> std::process::Child {
+        Command::new(std::env::current_exe().expect("the test binary"))
+            .args(["--exact", "a_process_that_writes_the_cache", "--nocapture", "--test-threads=1"])
+            .env(Self::DIRECTORY, directory)
+            .spawn()
+            .expect("start a writer")
+    }
+}
+
+#[test]
+fn a_process_that_writes_the_cache() {
+    // Run on its own this is a no-op; `two_processes_share_one_cache` starts it with the directory named.
+    if let Ok(directory) = std::env::var(CacheWriters::DIRECTORY) {
+        CacheWriters::write(&directory);
+    }
+}
+
+#[test]
+fn two_processes_share_one_cache() {
+    let directory = CompileCache::shared().path().join(format!("two-writers-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a directory for the two writers");
+    let mut writers = [CacheWriters::start(&directory), CacheWriters::start(&directory)];
+    for writer in &mut writers {
+        let status = writer.wait().expect("wait for a writer");
+        assert!(status.success(), "a writer failed: {status}");
+    }
+    let names: Vec<String> = std::fs::read_dir(directory.join("rust")).expect("the cache's rust directory").map(|entry| entry.expect("an entry").file_name().to_string_lossy().into_owned()).collect();
+    assert!(names.iter().all(|name| !name.starts_with(".staging-")), "a staging directory was left: {names:?}");
+    let entries = names.iter().filter(|name| name.len() == 32).count();
+    let libraries = names.iter().filter(|name| name.starts_with("abi-")).count();
+    assert_eq!((entries, libraries), (1, 1), "one design, one entry and one ABI library: {names:?}");
+    std::fs::remove_dir_all(&directory).expect("remove the writers' directory");
 }

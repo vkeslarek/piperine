@@ -5,11 +5,11 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Field, Overrides, Project, Record, RecordSink, Session};
 use piperine_solver::protocol::AnalysisKind;
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// Keeps every record, in the order it is handed over.
 #[derive(Default)]
@@ -30,14 +30,13 @@ struct Bench;
 impl Bench {
     /// The records of an operating point of `BENCH` that names `streams`.
     fn records(streams: &[&str]) -> Vec<Record> {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
         let dir = tempfile::tempdir().expect("tmp");
         let file = dir.path().join("bench.msl");
         std::fs::write(&file, BENCH).expect("write");
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { top: Some("Top".into()), analysis: Some("op".into()), print: vec!["a".into()], streams: streams.iter().map(|s| s.to_string()).collect(), ..Overrides::default() };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let cache = CompileCache::shared();
         let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
         let kept = Rc::new(RefCell::new(Kept::default()));
         session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));

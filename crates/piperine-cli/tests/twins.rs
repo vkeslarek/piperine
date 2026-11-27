@@ -14,6 +14,7 @@ use std::process::Command;
 use std::sync::OnceLock;
 
 use piperine_parity::corpus::Corpus;
+use piperine_parity::compile_cache::CompileCache;
 
 /// One twin through the binary: the arguments of its `<name>.command`, the scenario directory it
 /// runs from and the backends that run it.
@@ -61,8 +62,7 @@ struct Ran {
 
 /// `piperine <the twin's command arguments> --backend <backend>`, run from the twin's scenario directory.
 fn run(twin: &Twin, backend: &str) -> Ran {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+    let cache = CompileCache::shared();
     let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
         .args(&twin.arguments)
         .args(["--backend", backend])

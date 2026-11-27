@@ -6,10 +6,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 struct Kept;
 
@@ -17,9 +17,8 @@ impl RecordSink for Kept {
     fn record(&mut self, _: &Record) {}
 }
 
-fn cache() -> &'static tempfile::TempDir {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"))
+fn cache() -> &'static CompileCache {
+    CompileCache::shared()
 }
 
 fn settings() -> Settings {

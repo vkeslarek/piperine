@@ -110,9 +110,9 @@ mod run {
     use std::cell::RefCell;
     use std::path::{Path, PathBuf};
     use std::rc::Rc;
-    use std::sync::OnceLock;
 
     use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+    use piperine_parity::compile_cache::CompileCache;
     use piperine_transpile::Settings;
 
     /// A sink that keeps nothing: these tests read the table and the report.
@@ -127,8 +127,7 @@ mod run {
 
     impl Cache {
         fn settings() -> Settings {
-            static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-            let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+            let dir = CompileCache::shared();
             Settings { rustc: None, cache: dir.path().to_path_buf() }
         }
     }

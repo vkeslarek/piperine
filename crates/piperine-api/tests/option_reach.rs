@@ -10,11 +10,11 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_solver::prelude::Context;
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// Keeps nothing: these tests read tables.
 struct Ignore;
@@ -78,8 +78,7 @@ impl Bistable {
     }
 
     fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let dir = CompileCache::shared();
         Settings { rustc: None, cache: dir.path().to_path_buf() }
     }
 

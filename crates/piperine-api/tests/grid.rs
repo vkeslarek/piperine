@@ -9,11 +9,11 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// A sink that keeps nothing: these tests read tables.
 struct Ignore;
@@ -27,8 +27,7 @@ fn twin(name: &str) -> PathBuf {
 }
 
 fn settings() -> Settings {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+    let dir = CompileCache::shared();
     Settings { rustc: None, cache: dir.path().to_path_buf() }
 }
 

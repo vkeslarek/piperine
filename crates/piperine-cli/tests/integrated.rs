@@ -8,6 +8,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
+use piperine_parity::compile_cache::CompileCache;
 
 /// The package `tests/e2e/integrated/` as the binary runs it.
 struct IntegratedPackage;
@@ -20,8 +21,7 @@ impl IntegratedPackage {
 
     /// One cache directory for every run of this target.
     fn cache() -> &'static Path {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+        CompileCache::shared().path()
     }
 
     /// `piperine <args>` in the package, with the shared cache.

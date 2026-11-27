@@ -6,7 +6,6 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine::{Cell, Failure, Metadata, Overrides, Project, Record, Session, Table};
 use piperine_transpile::Settings;
@@ -14,6 +13,7 @@ use piperine_transpile::Settings;
 use super::book::Book;
 use super::inventory::Inventory;
 use super::records::KeptRecords;
+use piperine_parity::compile_cache::CompileCache;
 
 /// What opens a model: a lone file, or the package in the model's directory.
 enum Opening {
@@ -165,8 +165,7 @@ impl Model {
     /// The settings of every run of this target: the compiled backend builds into one cache directory
     /// shared by the target, as the host library's own tests do.
     fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("a build cache directory"));
+        let cache = CompileCache::shared();
         Settings { rustc: None, cache: cache.path().to_path_buf() }
     }
 

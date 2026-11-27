@@ -7,10 +7,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Failure, NodeSource, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// A sink that keeps nothing: these runs read the table.
 struct Ignore;
@@ -28,8 +28,7 @@ impl Bench {
 
     /// The settings of the Rust backend, one cache directory shared by every test of the target.
     fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let dir = CompileCache::shared();
         Settings { rustc: None, cache: dir.path().to_path_buf() }
     }
 

@@ -6,10 +6,10 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, CompositeCell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// Drops every record: the table is what a test reads.
 struct Ignore;
@@ -47,8 +47,7 @@ impl Run {
 
     /// [`session`](Self::session) with `top` as the top module.
     fn session_of(top: &str, print: &[&str]) -> Result<Session, Failure> {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let cache = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+        let cache = CompileCache::shared();
         let directory = tempfile::tempdir().expect("tmp");
         let file = directory.path().join("arrays.msl");
         std::fs::write(&file, DESIGN).expect("write the model");

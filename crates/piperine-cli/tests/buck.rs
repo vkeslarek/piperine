@@ -9,6 +9,7 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 
 use piperine_api::Project;
+use piperine_parity::compile_cache::CompileCache;
 
 /// `examples/buck`.
 fn buck() -> PathBuf {
@@ -17,8 +18,7 @@ fn buck() -> PathBuf {
 
 /// One cache directory for both runs of this target.
 fn cache() -> &'static Path {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
+    CompileCache::shared().path()
 }
 
 /// `piperine run <name>` in `examples/buck`, its standard output; the run must have completed.

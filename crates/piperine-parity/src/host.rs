@@ -5,13 +5,13 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_transpile::Settings;
 
 use crate::backend::Backend;
 use crate::bench::Bench;
+use crate::compile_cache::CompileCache;
 
 /// A sink that keeps nothing: a parity run reads the table.
 struct Ignore;
@@ -52,8 +52,7 @@ impl HostRun {
     /// The compiler settings of every run of this process: one temporary cache, so a test run
     /// never writes the user's own cache.
     pub fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("a temporary cache"));
+        let dir = CompileCache::shared();
         Settings { rustc: None, cache: dir.path().to_path_buf() }
     }
 

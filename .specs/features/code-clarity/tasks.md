@@ -1818,9 +1818,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `grep -r 'static CACHE' crates tests` finds nothing; a run leaves no directory in `TMPDIR`
-- [ ] `two_processes_share_one_cache` passes in `piperine-parity`'s `harness` tests
-- [ ] Gate check passes: Quick for parity, api, cli and the root's `integrated`
+- [x] `grep -r 'static CACHE' crates tests` finds nothing; a run leaves no directory in `TMPDIR`
+- [x] `two_processes_share_one_cache` passes in `piperine-parity`'s `harness` tests
+- [x] Gate check passes: Quick for parity, api, cli and the root's `integrated`
 
 **Tests**: integration
 **Gate**: quick

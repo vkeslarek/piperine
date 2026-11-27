@@ -9,11 +9,12 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::sync::{Arc, OnceLock};
+use std::sync::Arc;
 
 use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams, Verdict};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind};
 use piperine_transpile::Settings;
+use piperine_parity::compile_cache::CompileCache;
 
 /// Keeps every record, in the order it is handed over.
 #[derive(Default)]
@@ -29,8 +30,7 @@ impl RecordSink for Kept {
 const ANALOG: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
 
 fn settings() -> Settings {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("tmp"));
+    let dir = CompileCache::shared();
     Settings { rustc: None, cache: dir.path().to_path_buf() }
 }
 
