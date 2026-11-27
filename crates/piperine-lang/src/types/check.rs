@@ -17,7 +17,6 @@ use super::assign::Places;
 use super::flow::{ExitFrame, Flow};
 use super::nature_rules::NatureRules;
 use super::record::Records;
-use super::unsupported::Unsupported;
 use super::{Builtin, Callee, ConstTerm, Method, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
@@ -515,7 +514,7 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) && self.design.decl_data(d).generics_span.is_some() => self.generic_module_type(*path, d, file, node.span),
                 Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Module(_)) => self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span).then(|| Ty::module(d)),
                 Resolution::Decl(d) => {
-                    let what = Unsupported::item(&self.design.decl_data(d).kind);
+                    let what = RefusedForm::declaration_name(&self.design.decl_data(d).kind);
                     self.refuse_with(file, node.span, ValueForm::UsedAsType, [what.to_string()]);
                     None
                 }

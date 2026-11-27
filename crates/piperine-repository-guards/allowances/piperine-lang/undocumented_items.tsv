@@ -522,4 +522,3 @@ crates/piperine-lang/src/types/inference.rs::Checker::argument_types	1
 crates/piperine-lang/src/types/module.rs::Checker::callee_is	1
 crates/piperine-lang/src/types/record.rs::::is_reserved	1
 crates/piperine-lang/src/types/record.rs::Checker::analog_writes_reserved	1
-crates/piperine-lang/src/types/unsupported.rs::::Unsupported	1

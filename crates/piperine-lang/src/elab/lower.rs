@@ -19,8 +19,8 @@ use super::consts::Bindings;
 use super::unroll::Expansion;
 use super::elaborator::Elaboration;
 use super::selectors::{ArmCondition, ContributionRecord};
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
+use crate::refusal::RefusedForm;
 use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
@@ -462,7 +462,7 @@ impl Elaboration<'_, '_> {
                     if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, *recv, &method_name.text, origin.clone()) {
                         return levels;
                     }
-                    self.refuse(file, node.span, ValueForm::MethodOutsideCatalogue);
+                    self.refuse(file, node.span, RefusedForm::method_outside_catalogue());
                     return None;
                 };
                 let f = match method {
@@ -709,13 +709,13 @@ impl Elaboration<'_, '_> {
                 StmtKind::Contribution { lhs, rhs } => ok &= self.lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
                 StmtKind::Commit { place, value, after } => ok &= self.lower_commit(scope, &mut out, *place, *value, *after),
                 _ => {
-                    self.refuse(file, node.span, ValueForm::Statement);
+                    self.refuse(file, node.span, RefusedForm::statement_that_failed_to_lower());
                     ok = false;
                 }
             }
             // a statement that failed to lower while nothing was reported is refused by name: nothing vanishes silently (a failure that rests on an earlier diagnostic, such as an unreadable file, keeps that one)
             if !ok && self.diagnostics.is_empty() {
-                self.refuse_silent_failure(file, node.span, ValueForm::Statement);
+                self.refuse_silent_failure(file, node.span, RefusedForm::statement_that_failed_to_lower());
             }
             ok &= carried;
             // a statement that is the value of its block leaves the flag to the code that takes the value
@@ -877,7 +877,7 @@ impl Elaboration<'_, '_> {
             DeclKind::Variant(_) => match (EnumLayout::variant_tag(self.design, decl), &ty) {
                 (Some(position), ValueType::Enum(id)) => Some(self.emit(Expr::VariantOf { ty: *id, variant: position as u32, fields: Vec::new() }, ty, origin)),
                 _ => {
-                    self.refuse(scope.file, node.span, ValueForm::VariantOutsideItsEnum);
+                    self.refuse(scope.file, node.span, RefusedForm::variant_outside_its_enum());
                     None
                 }
             },

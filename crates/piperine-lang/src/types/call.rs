@@ -2,6 +2,7 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
@@ -9,7 +10,6 @@ use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind
 use super::catalogue::{Catalogue, Lookup};
 use super::check::{Checker, Context};
 use super::flow::ExitFrame;
-use super::unsupported::Unsupported;
 use super::{Builtin, Callee, Method, Ty};
 
 /// The carrier methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
@@ -256,7 +256,7 @@ impl Checker<'_> {
         if let Some(function) = self.hidden_function(hider) {
             let declaration = self.design.decl_data(function);
             if declaration.file == file {
-                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", Unsupported::item(&self.design.decl_data(hider).kind)));
+                diagnostic = diagnostic.with_label(declaration.name.as_ref().map_or(declaration.span, |name| name.span), format!("the function `{name}` is hidden by the {} of the same name", RefusedForm::declaration_name(&self.design.decl_data(hider).kind)));
             }
         }
         self.report(file, diagnostic);
@@ -301,7 +301,7 @@ impl Checker<'_> {
         let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
         let name = method.text.as_str();
         if generics.is_some() {
-            self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
+            self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
             return None;
         }
         if name == "others" && self.others_on_one_driver(expr, *recv, args) {
@@ -322,7 +322,7 @@ impl Checker<'_> {
                     if replaced {
                         self.refuse_with(file, node.span, ValueForm::MethodDefinedByProjectCheckerKnowsOnly, [name.to_string(), name.to_string()]);
                     } else {
-                        self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
+                        self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
                     }
                     return None;
                 }
@@ -333,13 +333,13 @@ impl Checker<'_> {
                 "inflow" => return self.inflow_read(expr, *recv, args),
                 "others" => return self.others_read(expr, *recv, args),
                 _ => {
-                    self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
+                    self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
                     return None;
                 }
             },
             Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
             Resolution::Deferred(_) => {
-                self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
+                self.refuse_with(file, node.span, RefusedForm::method(), [name.to_string()]);
                 return None;
             }
         };

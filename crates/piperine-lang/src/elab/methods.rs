@@ -10,6 +10,7 @@ use super::elaborator::Elaboration;
 use super::instances::ConcreteValue;
 use super::lower::Scope;
 use super::variants::Half;
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::GenericsForm;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use crate::types::Ty;
@@ -47,7 +48,7 @@ impl Elaboration<'_, '_> {
         let receiver_type = self.typed(receiver)?;
         let span = self.design.expr_node(expr).span;
         let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
-            self.refuse(scope.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
+            self.refuse(scope.file, span, RefusedForm::method_of_generic_impl_whose_parameters_receiver());
             return None;
         };
         values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect()

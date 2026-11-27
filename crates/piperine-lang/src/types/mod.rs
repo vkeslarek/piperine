@@ -53,7 +53,6 @@ mod substitution;
 mod table;
 mod traits;
 mod ty;
-pub(crate) mod unsupported;
 
 pub(crate) use self::{coverage::ElementCoverage, logic_pattern::LogicPattern};
 pub use self::{nature::ResolveImpl, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, aggregate::FieldType, enums::EnumTag, intrinsic::Intrinsic, widths::FloatText, obligations::Obligation, substitution::Substitution, param_requirement::ParamRequirement};

@@ -5,13 +5,13 @@
 //! An identifier pattern that resolves to a unit variant or a constant is a path and binds
 //! nothing (§1 rule 14); one that resolves to nothing binds, at any depth (§1.6.2).
 
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclKind, ExprId, ExprKind, FileId, LitKind, Name, PatId, PatKind, Resolution, UnOp};
 
 use super::check::Checker;
 use super::cover::{Coverage, Covers};
-use super::unsupported::Unsupported;
 use super::Ty;
 
 /// One name a pattern binds, with its type.
@@ -87,7 +87,7 @@ impl Checker<'_> {
             PatKind::Struct { path, fields, rest } => self.struct_pattern(file, node.span, *path, fields, *rest, scrut),
             PatKind::Array(pats) => self.array_pattern(file, node.span, pats, scrut),
             other => {
-                self.refuse_with(file, node.span, PatternForm::AsPattern, [Unsupported::pat(other).to_string()]);
+                self.refuse_with(file, node.span, RefusedForm::as_pattern(), [RefusedForm::pattern_name(other).to_string()]);
                 None
             }
         }
@@ -304,7 +304,7 @@ impl Checker<'_> {
                     Some(Matched::covering(Covers::Opaque))
                 }
                 other => {
-                    self.refuse_with(file, span, PatternForm::AsPattern, [Unsupported::item(&other).to_string()]);
+                    self.refuse_with(file, span, RefusedForm::as_pattern(), [RefusedForm::declaration_name(&other).to_string()]);
                     None
                 }
             },

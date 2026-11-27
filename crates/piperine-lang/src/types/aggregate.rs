@@ -6,6 +6,7 @@
 //! into [`FieldType`]s kept in `Checker::layouts`. A type that contains itself, directly or
 //! through structs, enums, tuples, arrays and `Option`, is `E0186` (§1.3.8).
 
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
@@ -245,7 +246,7 @@ impl Checker<'_> {
                 self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
             }
             other => {
-                self.refuse_with(file, span, ValueForm::AsStructExpression, [super::unsupported::Unsupported::item(other).to_string()]);
+                self.refuse_with(file, span, ValueForm::AsStructExpression, [RefusedForm::declaration_name(other).to_string()]);
                 None
             }
         }

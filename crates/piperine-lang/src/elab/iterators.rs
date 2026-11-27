@@ -16,6 +16,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Place, S
 use super::compound::Pair;
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, ExprId, ExprKind, PatId, PatKind, Resolution};
@@ -371,7 +372,7 @@ impl Elaboration<'_, '_> {
     fn apply(&mut self, scope: &mut Scope, closure: ExprId, values: &[LoweredExpr], body: &mut LoopBody) -> Option<LoweredExpr> {
         let node = self.design.expr_node(closure).clone();
         let ExprKind::Closure { params, body: closure_body, .. } = node.kind else {
-            self.refuse(scope.file, node.span, ValueForm::ClosureArgumentThatIsNotClosureLiteral);
+            self.refuse(scope.file, node.span, RefusedForm::closure_argument_that_is_not_closure_literal());
             return None;
         };
         if params.len() != values.len() {
@@ -615,7 +616,7 @@ impl Elaboration<'_, '_> {
     /// `r.is_empty()` of a range (H.6 rule 2): `!(lo < hi)`, `!(lo <= hi)` for `..=`.
     fn lower_range_is_empty(&mut self, scope: &mut Scope, recv: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(lo), Some(hi), inclusive) = self.range_parts(scope, recv)? else {
-            self.refuse(scope.file, self.design.expr_node(recv).span, ValueForm::IsEmptyOfRangeWithMissingBound);
+            self.refuse(scope.file, self.design.expr_node(recv).span, RefusedForm::is_empty_of_range_with_missing_bound());
             return None;
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
@@ -634,12 +635,12 @@ impl Elaboration<'_, '_> {
             ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) if let Some(init) = scope.let_sources.get(&decl).copied() => self.range_parts(scope, init),
                 _ => {
-                    self.refuse(scope.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
+                    self.refuse(scope.file, node.span, RefusedForm::range_that_is_not_written_where_it());
                     None
                 }
             },
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
+                self.refuse(scope.file, node.span, RefusedForm::range_that_is_not_written_where_it());
                 None
             }
         }

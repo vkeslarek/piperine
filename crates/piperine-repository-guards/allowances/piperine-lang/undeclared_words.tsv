@@ -533,7 +533,6 @@ crates/piperine-lang/src/types/ty.rs::Int	1
 crates/piperine-lang/src/types/ty.rs::Ty	1
 crates/piperine-lang/src/types/ty.rs::UInt	1
 crates/piperine-lang/src/types/ty.rs::decl	1
-crates/piperine-lang/src/types/unsupported.rs::pat	1
 crates/piperine-lang/tests/book.rs::book_dir	1
 crates/piperine-lang/tests/book.rs::build_py_writes_an_ignored_index	1
 crates/piperine-lang/tests/book.rs::packages_and_cheatsheet_name_std	1

@@ -12,6 +12,7 @@ use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, 
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{BinOp, BlockNode, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
@@ -90,7 +91,7 @@ impl Elaboration<'_, '_> {
                     None if self.names_unreadable_file(field.value) => ok = false,
                     None => {
                         let span = self.design.expr_node(field.value).span;
-                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                        self.refuse(scope.file, span, RefusedForm::str_that_is_not_text_after_inlining());
                         ok = false;
                     }
                 }
@@ -167,7 +168,7 @@ impl Elaboration<'_, '_> {
             }
             None => {
                 let span = self.design.expr_node(init).span;
-                self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                self.refuse(scope.file, span, RefusedForm::str_that_is_not_text_after_inlining());
                 false
             }
         }
@@ -178,7 +179,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(left), Some(right)) = (self.text_of(scope, lhs), self.text_of(scope, rhs)) else {
             let span = self.design.expr_node(lhs).span;
-            self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+            self.refuse(scope.file, span, RefusedForm::str_that_is_not_text_after_inlining());
             return None;
         };
         Some(self.emit(Expr::Bool((left == right) == (op == BinOp::Eq)), ValueType::Bool, origin))
@@ -249,7 +250,7 @@ impl Elaboration<'_, '_> {
                     }
                     None => {
                         let span = self.design.expr_node(*arg).span;
-                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                        self.refuse(scope.file, span, RefusedForm::str_that_is_not_text_after_inlining());
                         ok = false;
                     }
                 }

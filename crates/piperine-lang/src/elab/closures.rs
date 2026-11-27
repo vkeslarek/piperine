@@ -10,6 +10,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as Lo
 use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{ClosureParam, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
@@ -24,7 +25,7 @@ impl Elaboration<'_, '_> {
             match self.design.pat_node(param.pat).kind.clone() {
                 PatKind::Ident { binding, sub: None, .. } => locals.push(self.bind_local(scope, binding)?),
                 _ => {
-                    self.refuse(scope.file, span, ValueForm::ClosureParameterThatIsNotName);
+                    self.refuse(scope.file, span, RefusedForm::closure_parameter_that_is_not_name());
                     return None;
                 }
             }

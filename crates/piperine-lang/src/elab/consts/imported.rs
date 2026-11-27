@@ -10,7 +10,8 @@ use piperine_ir::{AggregateData, Constant, Expr, ExprId as LoweredExpr, Origin, 
 use super::super::elaborator::Elaboration;
 use super::super::lower::Scope;
 use super::{Bindings, CompositeKind, ConstFault, ConstTree};
-use crate::refusal::forms::{ConstantForm, StructureForm};
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::ConstantForm;
 use crate::pom::ExprId;
 
 impl Elaboration<'_, '_> {
@@ -19,7 +20,7 @@ impl Elaboration<'_, '_> {
     pub(in crate::elab) fn composite_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let tree = self.consts.tree(expr, bindings)?;
         let Some(ty) = self.typed(expr).and_then(|t| self.stored_type(&t)) else {
-            return Err(ConstFault::refused(expr, StructureForm::CompositeValueOfTypeThatHasNo));
+            return Err(ConstFault::refused(expr, RefusedForm::composite_value_of_type_that_has_no()));
         };
         self.import_tree(expr, &tree, &ty)
     }

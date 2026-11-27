@@ -8,7 +8,8 @@ use piperine_ir::Constant;
 
 use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault};
-use crate::refusal::forms::{ConstantForm, StructureForm};
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::ConstantForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 
 /// One generation around a `let`, outermost first, as the evaluation needs it.
@@ -48,7 +49,7 @@ impl ConstEval<'_, '_> {
             }
             GenerationLevel::If { cond, then } => match self.fold(cond, bindings)? {
                 Constant::Bool(taken) if taken == then => self.fold_level(expr, binding, value, inner, bindings, inside_for),
-                _ if inside_for => Err(ConstFault::refused(expr, StructureForm::LetDeclaredInGenerationIfThatNot)),
+                _ if inside_for => Err(ConstFault::refused(expr, RefusedForm::let_declared_in_generation_if_that_not())),
                 _ => {
                     let name = self.design.decl_data(binding).name.as_ref().map_or_else(String::new, |n| n.text.clone());
                     Err(ConstFault::Ungenerated { expr, message: format!("`{name}` is declared in an arm of a generation that was not elaborated (§8.2.24)") })

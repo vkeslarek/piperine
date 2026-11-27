@@ -8,6 +8,7 @@ use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as Lo
 
 use super::elaborator::Elaboration;
 use super::lower::Scope;
+use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
 use crate::types::Callee;
@@ -79,7 +80,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
-            self.refuse(scope.file, node.span, ValueForm::AssignmentToNameThatIsNotLocal);
+            self.refuse(scope.file, node.span, RefusedForm::assignment_to_name_that_is_not_local());
             return None;
         };
         match scope.local_index.get(&decl) {

@@ -778,9 +778,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No two sites build the same `RefusedForm` outside one method (a test of `refusals` counts constructions per variant)
-- [ ] `types/unsupported.rs` and `elab/unlowered.rs` are gone
-- [ ] Gate check passes: Quick
+- [x] No two sites build the same `RefusedForm` outside one method (a test of `refusals` counts constructions per variant)
+- [x] `types/unsupported.rs` and `elab/unlowered.rs` are gone
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

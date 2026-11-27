@@ -18,7 +18,8 @@ use super::elaborator::Elaboration;
 use super::lower::Scope;
 use super::variants::Half;
 use super::instances::ConcreteValue;
-use crate::refusal::forms::{GenericsForm, ValueForm};
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, StmtKind};
 use crate::types::{Callee, Ty};
@@ -65,7 +66,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if matches!(declared, Some(Ty::Option(_))) && (payload.is_none() || half == Half::Whole) {
-            self.refuse(file, body.span, ValueForm::FunctionReturningOptionWhosePayloadHasNo);
+            self.refuse(file, body.span, RefusedForm::function_returning_option_whose_payload_has_no());
             return None;
         }
         let base = match (&payload, half) {
@@ -172,7 +173,7 @@ impl Elaboration<'_, '_> {
             _ => match self.zero(&payload, origin.clone()) {
                 Some(zero) => zero,
                 None => {
-                    self.refuse(scope.file, span, ValueForm::WherePayloadHasNoZeroInIr);
+                    self.refuse(scope.file, span, RefusedForm::where_payload_has_no_zero_in_ir());
                     return None;
                 }
             },
@@ -293,7 +294,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         let Some(payload) = payload else {
-            self.refuse(scope.file, span, ValueForm::FunctionReturningOptionWhosePayloadHasNo);
+            self.refuse(scope.file, span, RefusedForm::function_returning_option_whose_payload_has_no());
             return None;
         };
         let is = self.declare_typed(scope, "option.is", ValueType::Bool, origin)?;
@@ -327,7 +328,7 @@ impl Elaboration<'_, '_> {
         let payload = scope.locals[frame.val as usize].ty.clone();
         let none = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
         let Some(zero) = self.zero(&payload, origin.clone()) else {
-            self.refuse(scope.file, span, ValueForm::WherePayloadHasNoZeroInIr);
+            self.refuse(scope.file, span, RefusedForm::where_payload_has_no_zero_in_ir());
             return None;
         };
         let exit = self.leave_inlined(scope, none, zero, origin.clone())?;
@@ -404,7 +405,7 @@ impl Elaboration<'_, '_> {
         let receiver_type = self.typed(receiver)?;
         let instance = if self.is_generic_impl_item(function) {
             let Some(values) = self.types.impl_arguments(function, &receiver_type) else {
-                self.refuse(scope.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
+                self.refuse(scope.file, span, RefusedForm::method_of_generic_impl_whose_parameters_receiver());
                 return None;
             };
             values.iter().map(|value| self.concrete_argument(value, scope.file, span)).collect::<Option<Vec<_>>>()?

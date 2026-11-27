@@ -5,6 +5,7 @@
 //! [`forms`], one table row each.
 
 pub mod forms;
+mod repeated;
 mod syntax;
 
 use crate::msl::{Diagnostic, Span};

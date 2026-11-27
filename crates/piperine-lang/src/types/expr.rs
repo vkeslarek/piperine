@@ -2,8 +2,8 @@
 //! otherwise. A mismatch is one `E0180` at the expression and the expression then takes the
 //! expected type, so one mistake is one diagnostic.
 
-use crate::refusal::RefusedForm;
 use crate::refusal::forms::ValueForm;
+use crate::refusal::RefusedForm;
 use crate::msl::lexer;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
@@ -14,7 +14,6 @@ use super::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::operators::OperatorTrait;
 use super::widths::FloatText;
-use super::unsupported::Unsupported;
 use super::{Nominal, Ty};
 
 impl Checker<'_> {
@@ -696,7 +695,7 @@ impl Checker<'_> {
                     // §8.4.1 amendment: a module's name is the template `Name {}`, every param at its default
                     DeclKind::Module(_) => self.template_value(expr, decl, &[], None),
                     other => {
-                        self.refuse_with(file, node.span, ValueForm::UsedAsValue, [Unsupported::item(&other).to_string()]);
+                        self.refuse_with(file, node.span, ValueForm::UsedAsValue, [RefusedForm::declaration_name(&other).to_string()]);
                         None
                     }
                 }
@@ -718,12 +717,12 @@ impl Checker<'_> {
             Resolution::Deferred(_) => match self.width_read(expr) {
                 Some(width) => Some(width),
                 None => {
-                    self.refuse(file, node.span, ValueForm::UnresolvedName);
+                    self.refuse(file, node.span, RefusedForm::unresolved_name());
                     None
                 }
             },
             Resolution::Unresolved => {
-                self.refuse(file, node.span, ValueForm::UnresolvedName);
+                self.refuse(file, node.span, RefusedForm::unresolved_name());
                 None
             }
         }
