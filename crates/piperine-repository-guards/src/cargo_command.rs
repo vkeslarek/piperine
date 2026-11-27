@@ -1,5 +1,59 @@
 //! The `cargo` commands the proof and build lines of `.specs/features/` write: any command line's
-//! package flags, and a `cargo test` command's package and targets.
+//! package flags, and a `cargo test` command's package and targets. A command may sit inside a
+//! command substitution (`o=$(cargo test -p a --test t 2>&1); ...`).
+
+/// How one whitespace-separated token of a shell command line is read.
+struct ShellToken;
+
+impl ShellToken {
+    /// The shell operators that end a command.
+    const OPERATORS: [&'static str; 5] = ["--", "|", "&&", ";", "||"];
+
+    /// The token without an opening command substitution or subshell before it (`o=$(cargo` is
+    /// `cargo`), without the closing `)` and `;` after it, and without its quotes (`'parity_*'`).
+    fn word(token: &str) -> &str {
+        let opened = if token.starts_with('(') || token.contains("$(") { token.rsplit('(').next().unwrap_or(token) } else { token };
+        opened.trim_end_matches([')', ';']).trim_matches(['"', '\''])
+    }
+
+    /// Whether the token is `cargo`, opened by a substitution or not.
+    fn is_cargo(token: &str) -> bool {
+        Self::word(token) == "cargo"
+    }
+
+    /// Whether the token is a redirection (`2>&1`, `>out`), which is no argument.
+    fn is_redirection(token: &str) -> bool {
+        token.contains('>') || token.contains('<')
+    }
+
+    /// Whether the token ends the command's arguments before itself: an operator or a redirection.
+    fn ends_before(token: &str) -> bool {
+        Self::OPERATORS.contains(&token) || Self::is_redirection(token)
+    }
+
+    /// Whether the token is the command's last: it closes a substitution or ends with `;`.
+    fn closes(token: &str) -> bool {
+        token.ends_with(')') || token.ends_with(';')
+    }
+
+    /// The index one past the last argument of the command whose arguments start at `start`.
+    fn arguments_end(tokens: &[String], start: usize) -> usize {
+        for (at, token) in tokens.iter().enumerate().skip(start) {
+            if Self::ends_before(token) {
+                return at;
+            }
+            if Self::closes(token) {
+                return at + 1;
+            }
+        }
+        tokens.len()
+    }
+
+    /// The token with its word replaced by `new`, its surrounding punctuation kept.
+    fn with_word(token: &str, new: &str) -> String {
+        token.replacen(Self::word(token), new, 1)
+    }
+}
 
 /// The pieces of one `cargo test ...` command that name what it runs.
 pub struct CargoTestCommand {
@@ -12,12 +66,13 @@ impl CargoTestCommand {
     /// Parses a command line; `None` when it holds no `cargo test`.
     pub fn parse(command: &str) -> Option<CargoTestCommand> {
         let tokens: Vec<String> = command.split_whitespace().map(str::to_string).collect();
-        let cargo_at = tokens.windows(2).position(|pair| pair[0] == "cargo" && pair[1] == "test")?;
-        let arguments_end = tokens[cargo_at + 2..].iter().position(|t| matches!(t.as_str(), "--" | "|" | "&&" | ";" | "||")).map_or(tokens.len(), |at| at + cargo_at + 2);
+        let cargo_at = tokens.windows(2).position(|pair| ShellToken::is_cargo(&pair[0]) && pair[1] == "test")?;
+        let arguments_end = ShellToken::arguments_end(&tokens, cargo_at + 2);
         Some(CargoTestCommand { tokens, cargo_at, arguments_end })
     }
 
-    /// The tokens after `cargo test`, up to the first `--` or shell operator.
+    /// The tokens after `cargo test`, up to the first `--`, shell operator or redirection, or to the
+    /// end of the substitution the command sits in.
     fn arguments(&self) -> &[String] {
         &self.tokens[self.cargo_at + 2..self.arguments_end]
     }
@@ -26,7 +81,7 @@ impl CargoTestCommand {
     fn value_after(&self, flags: &[&str]) -> Option<(usize, &str)> {
         let arguments = self.arguments();
         let at = arguments.iter().position(|a| flags.contains(&a.as_str()))?;
-        arguments.get(at + 1).map(|value| (self.cargo_at + 2 + at + 1, value.as_str()))
+        arguments.get(at + 1).map(|value| (self.cargo_at + 2 + at + 1, ShellToken::word(value)))
     }
 
     /// The package the command runs: `-p`, or the root package `piperine` when it names none.
@@ -46,7 +101,29 @@ impl CargoTestCommand {
     /// Every integration-test target named by a `--test`, in order.
     pub fn targets(&self) -> Vec<&str> {
         let arguments = self.arguments();
-        arguments.iter().enumerate().filter(|(_, a)| a.as_str() == "--test").filter_map(|(at, _)| arguments.get(at + 1)).map(String::as_str).collect()
+        arguments.iter().enumerate().filter(|(_, a)| a.as_str() == "--test").filter_map(|(at, _)| arguments.get(at + 1)).map(|value| ShellToken::word(value)).collect()
+    }
+
+    /// Whether a `--test` value names the target `name`: equal to it, or a pattern cargo expands
+    /// (`*` any run of characters, `?` one character) that matches it.
+    pub fn names_target(pattern: &str, name: &str) -> bool {
+        let pattern: Vec<char> = pattern.chars().collect();
+        let name: Vec<char> = name.chars().collect();
+        // matched[j]: the pattern read so far matches the first j characters of the name
+        let mut matched = vec![false; name.len() + 1];
+        matched[0] = true;
+        for &symbol in &pattern {
+            let mut next = vec![false; name.len() + 1];
+            for at in 0..=name.len() {
+                next[at] = match symbol {
+                    '*' => matched[at] || (at > 0 && next[at - 1]),
+                    '?' => at > 0 && matched[at - 1],
+                    literal => at > 0 && matched[at - 1] && name[at - 1] == literal,
+                };
+            }
+            matched = next;
+        }
+        matched[name.len()]
     }
 
     /// The command after the target `from_target` became the module `module` of `to_target` in
@@ -57,7 +134,7 @@ impl CargoTestCommand {
         let alone = self.targets().len() == 1;
         let mut tokens = self.tokens.clone();
         if let Some((at, _)) = self.value_after(&["-p", "--package"]) {
-            tokens[at] = to_package.to_string();
+            tokens[at] = ShellToken::with_word(&tokens[at], to_package);
         }
         let mut seen = false;
         let mut at = self.cargo_at + 2;
@@ -69,8 +146,8 @@ impl CargoTestCommand {
                 at += 1;
                 continue;
             }
-            let value = if tokens[at + 1] == from_target { to_target.to_string() } else { tokens[at + 1].clone() };
-            if !kept.windows(2).any(|pair| pair[0] == "--test" && pair[1] == value) {
+            let value = if ShellToken::word(&tokens[at + 1]) == from_target { ShellToken::with_word(&tokens[at + 1], to_target) } else { tokens[at + 1].clone() };
+            if !kept.windows(2).any(|pair| pair[0] == "--test" && ShellToken::word(&pair[1]) == ShellToken::word(&value)) {
                 kept.push("--test".to_string());
                 kept.push(value.clone());
             }
@@ -97,9 +174,6 @@ pub struct CargoCommandLine {
 }
 
 impl CargoCommandLine {
-    /// The tokens that end one command's flags.
-    const FLAGS_END: [&'static str; 5] = ["--", "|", "&&", ";", "||"];
-
     /// Splits a command line into its tokens.
     pub fn parse(command: &str) -> CargoCommandLine {
         CargoCommandLine { tokens: command.split_whitespace().map(str::to_string).collect() }
@@ -111,14 +185,21 @@ impl CargoCommandLine {
         let mut positions = Vec::new();
         let mut in_cargo_flags = false;
         for (at, token) in self.tokens.iter().enumerate() {
-            if token == "cargo" {
+            if ShellToken::is_cargo(token) {
                 in_cargo_flags = true;
-            } else if Self::FLAGS_END.contains(&token.as_str()) {
+                continue;
+            }
+            if ShellToken::ends_before(token) {
                 in_cargo_flags = false;
-            } else if in_cargo_flags && at > 0 && matches!(self.tokens[at - 1].as_str(), "-p" | "--package") {
-                positions.push((at, token.as_str()));
+                continue;
+            }
+            if in_cargo_flags && at > 0 && matches!(self.tokens[at - 1].as_str(), "-p" | "--package") {
+                positions.push((at, ShellToken::word(token)));
             } else if in_cargo_flags && let Some(package) = token.strip_prefix("--package=") {
-                positions.push((at, package));
+                positions.push((at, ShellToken::word(package)));
+            }
+            if ShellToken::closes(token) {
+                in_cargo_flags = false;
             }
         }
         positions
@@ -138,7 +219,10 @@ impl CargoCommandLine {
         }
         let mut tokens = self.tokens.clone();
         for at in renamed {
-            tokens[at] = if tokens[at].starts_with("--package=") { format!("--package={new}") } else { new.to_string() };
+            tokens[at] = match tokens[at].strip_prefix("--package=") {
+                Some(value) => format!("--package={}", ShellToken::with_word(value, new)),
+                None => ShellToken::with_word(&tokens[at], new),
+            };
         }
         Some(tokens.join(" "))
     }
@@ -169,6 +253,34 @@ mod tests {
         assert_eq!(once, "cargo test -p g --test boundaries --test workspace_shape");
         let twice = CargoTestCommand::parse(&once).expect("a cargo test").moved("workspace_shape", "g", "boundaries", "workspace_shape");
         assert_eq!(twice, "cargo test -p g --test boundaries");
+    }
+
+    #[test]
+    fn a_cargo_test_inside_a_substitution_is_read_and_moved() {
+        let proof = "o=$(cargo test -p a --test old 2>&1); for t in x; do printf '%s' \"$o\" | grep -q \"test $t ... ok\"; done";
+        let command = CargoTestCommand::parse(proof).expect("a cargo test");
+        assert_eq!((command.package(), command.targets()), (Some("a"), vec!["old"]));
+        assert_eq!(command.moved("old", "b", "merged", "old"), proof.replace("-p a --test old", "-p b --test merged old::"));
+        let closed = CargoTestCommand::parse("x=$( cargo test -p a --test old)").expect("a cargo test");
+        assert_eq!((closed.package(), closed.targets()), (Some("a"), vec!["old"]));
+        assert_eq!(CargoCommandLine::parse("o=$(cargo build -p a); cargo run -p b)").packages(), vec!["a", "b"]);
+        assert_eq!(CargoCommandLine::parse("o=$(cargo test -p old)").with_package_renamed("old", "new").as_deref(), Some("o=$(cargo test -p new)"));
+    }
+
+    #[test]
+    fn a_quoted_pattern_names_every_target_it_matches() {
+        let command = CargoTestCommand::parse("env -u X cargo test -p a --test 'parity_*'").expect("a cargo test");
+        assert_eq!(command.targets(), vec!["parity_*"]);
+        assert!(CargoTestCommand::names_target("parity_*", "parity_dc"));
+        assert!(CargoTestCommand::names_target("parity_?c", "parity_dc"));
+        assert!(!CargoTestCommand::names_target("parity_*", "twins"));
+        assert!(CargoTestCommand::names_target("twins", "twins"));
+    }
+
+    #[test]
+    fn a_redirection_is_no_test_filter() {
+        let command = CargoTestCommand::parse("cargo test -p a --test old 2>&1 | tail -3").expect("a cargo test");
+        assert_eq!(command.moved("old", "a", "merged", "old"), "cargo test -p a --test merged old:: 2>&1 | tail -3");
     }
 
     #[test]

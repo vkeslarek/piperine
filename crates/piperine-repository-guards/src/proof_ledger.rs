@@ -80,7 +80,7 @@ impl ProofLedger {
         let parsed = CargoTestCommand::parse(command)?;
         let package = parsed.package()?;
         let Some(tests) = self.targets.package(package) else { return Some(format!("no package {package}")) };
-        parsed.targets().into_iter().find(|target| !tests.targets.iter().any(|t| t.name == *target)).map(|target| format!("no test target {package}/{target}"))
+        parsed.targets().into_iter().find(|target| !tests.targets.iter().any(|t| CargoTestCommand::names_target(target, &t.name))).map(|target| format!("no test target {package}/{target}"))
     }
 
     /// Whether a `#[test]` function of that name exists where a command runs: its target, or the
@@ -93,7 +93,7 @@ impl ProofLedger {
         if targets.is_empty() {
             return tests.all_tests().contains(test);
         }
-        tests.targets.iter().any(|t| targets.contains(&t.name.as_str()) && t.tests.contains(test))
+        tests.targets.iter().any(|t| targets.iter().any(|target| CargoTestCommand::names_target(target, &t.name)) && t.tests.contains(test))
     }
 
     /// Whether a function of that name is a test of the package.
@@ -106,8 +106,8 @@ impl ProofLedger {
         self.targets.package(package).is_some_and(|tests| tests.targets.iter().any(|t| t.name == target))
     }
 
-    /// Every dangling reference of the feature files: a `Run` or `Build` command naming no package or target,
-    /// and a proof naming a test that is not there.
+    /// Every dangling reference of the feature files: a `Run`, `Build` or lone `Proof:` command naming
+    /// no package or target, and a run proof naming a test that is not there.
     pub fn dangling_proofs(&self) -> Vec<DanglingReference> {
         let mut found = BTreeSet::new();
         for file in &self.features {
@@ -125,6 +125,11 @@ impl ProofLedger {
             for proof in file.proofs() {
                 if let Some(reference) = self.dangling_proof(file, &runs, &proof) {
                     found.insert(reference);
+                }
+            }
+            for proof in file.lone_proofs() {
+                if let Some(reason) = self.command_problem(&proof.command) {
+                    found.insert(DanglingReference { owner: file.feature().to_string(), subject: proof.check_id.clone(), reason });
                 }
             }
         }

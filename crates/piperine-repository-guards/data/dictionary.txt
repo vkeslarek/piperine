@@ -2193,6 +2193,7 @@ recursions
 recursive
 recursively
 redefined
+redirection
 reduced
 reduction
 reenter
@@ -2475,6 +2476,7 @@ shared
 shares
 sharing
 sheet
+shell
 shift
 shifted
 shifts
