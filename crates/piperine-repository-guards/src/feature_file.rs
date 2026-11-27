@@ -1,5 +1,7 @@
-//! A `tasks*.md` or `checks*.md` file of a feature folder, read the way `check_proofs.py` reads it.
+//! A `tasks*.md` or `checks*.md` file of a feature folder, or the `## Checks` section of a `spec.md`
+//! in a folder with neither, read the way `check_proofs.py` reads it.
 
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 /// A `**Run <name>**: <command>` line.
@@ -55,15 +57,44 @@ pub struct FeatureFile {
     path: PathBuf,
     feature: String,
     text: String,
+    /// The indexes (from 0) of the lines that may hold runs, checks and proofs: the whole file, or
+    /// the `## Checks` section of a `spec.md`.
+    checked_lines: Range<usize>,
 }
 
 impl FeatureFile {
     /// A file over its text, for the folder `feature`.
     pub fn new(path: PathBuf, feature: &str, text: String) -> FeatureFile {
-        FeatureFile { path, feature: feature.to_string(), text }
+        let checked_lines = 0..text.lines().count();
+        FeatureFile { path, feature: feature.to_string(), text, checked_lines }
     }
 
-    /// Every `tasks*.md` and `checks*.md` of `.specs/features/*/` under `root`, in path order.
+    /// The `## Checks` section of a `spec.md`, for the folder `feature`; `None` when the text has
+    /// no such section outside a fenced block. The section runs to the next `## ` heading.
+    pub fn spec_checks(path: PathBuf, feature: &str, text: String) -> Option<FeatureFile> {
+        let mut inside = false;
+        let mut start = None;
+        let mut end = text.lines().count();
+        for (index, raw) in text.lines().enumerate() {
+            let line = raw.trim();
+            if line.starts_with("```") {
+                inside = !inside;
+            } else if !inside && line.starts_with("## ") {
+                if start.is_some() {
+                    end = index;
+                    break;
+                }
+                if line == "## Checks" {
+                    start = Some(index);
+                }
+            }
+        }
+        let checked_lines = start? + 1..end;
+        Some(FeatureFile { path, feature: feature.to_string(), text, checked_lines })
+    }
+
+    /// Every `tasks*.md` and `checks*.md` of `.specs/features/*/` under `root`, in path order; in a
+    /// folder with neither, the `## Checks` section of its `spec.md`.
     pub fn read_all(root: &Path) -> Vec<FeatureFile> {
         let mut files = Vec::new();
         let Ok(features) = std::fs::read_dir(root.join(".specs/features")) else { return files };
@@ -71,16 +102,22 @@ impl FeatureFile {
         folders.sort();
         for folder in folders {
             let Ok(entries) = std::fs::read_dir(&folder) else { continue };
+            let Some(feature) = folder.file_name().and_then(|n| n.to_str()) else { continue };
             let mut paths: Vec<PathBuf> = entries.flatten().map(|entry| entry.path()).collect();
             paths.sort();
+            let read_before = files.len();
             for path in paths {
                 let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if !(name.ends_with(".md") && (name.starts_with("tasks") || name.starts_with("checks"))) {
                     continue;
                 }
-                if let (Ok(text), Some(feature)) = (std::fs::read_to_string(&path), folder.file_name().and_then(|n| n.to_str())) {
+                if let Ok(text) = std::fs::read_to_string(&path) {
                     files.push(FeatureFile::new(path.clone(), feature, text));
                 }
+            }
+            let spec = folder.join("spec.md");
+            if files.len() == read_before && let Ok(text) = std::fs::read_to_string(&spec) {
+                files.extend(FeatureFile::spec_checks(spec, feature, text));
             }
         }
         files
@@ -101,7 +138,12 @@ impl FeatureFile {
         &self.text
     }
 
-    /// The lines outside fenced blocks, with their numbers from 1, left and right trimmed.
+    /// Whether the line at `index` (from 0) may hold a run, a check or a proof.
+    pub fn is_checked_line(&self, index: usize) -> bool {
+        self.checked_lines.contains(&index)
+    }
+
+    /// The checked lines outside fenced blocks, with their numbers from 1, left and right trimmed.
     pub fn unfenced_lines(&self) -> Vec<(usize, &str)> {
         let mut inside = false;
         let mut lines = Vec::new();
@@ -109,7 +151,7 @@ impl FeatureFile {
             let line = raw.trim();
             if line.starts_with("```") {
                 inside = !inside;
-            } else if !inside {
+            } else if !inside && self.is_checked_line(index) {
                 lines.push((index + 1, line));
             }
         }
@@ -281,6 +323,15 @@ mod tests {
         let proofs = file.proofs();
         assert_eq!((proofs[0].check_id.as_str(), proofs[0].run_name.as_str(), proofs[0].test_name.as_deref()), ("C3", "docs", Some("it_holds")));
         assert_eq!(file.lone_proofs().iter().map(|p| p.command.as_str()).collect::<Vec<_>>(), vec!["cargo test -p a --lib"]);
+    }
+
+    #[test]
+    fn a_spec_is_read_only_inside_its_checks_section() {
+        let text = "# Spec\n\n**Run early**: `cargo test -p z`\n\n## Checks\n\n**Build**: `cargo build -p a`\n**Run docs**: `cargo test -p a --test docs`\n\n## After\n\n**Run late**: `cargo test -p y`\n";
+        let file = FeatureFile::spec_checks(PathBuf::from("spec.md"), "demo", text.to_string()).expect("a checks section");
+        assert_eq!(file.runs().iter().map(|run| run.name.as_str()).collect::<Vec<_>>(), vec!["docs"]);
+        assert_eq!(file.build_commands(), vec![(7, "cargo build -p a".to_string())]);
+        assert!(FeatureFile::spec_checks(PathBuf::from("spec.md"), "demo", "# Spec\n\n**Run docs**: `x`\n".to_string()).is_none());
     }
 
     #[test]

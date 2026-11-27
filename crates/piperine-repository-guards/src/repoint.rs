@@ -214,6 +214,8 @@ impl Repointer {
 /// Rewrites one feature file.
 struct FeatureRewriter {
     lines: Vec<String>,
+    /// Whether each line may hold a run, a check or a proof (a `spec.md` outside `## Checks` may not).
+    checked: Vec<bool>,
     retired: Vec<RetiredRow>,
     feature: String,
     task: String,
@@ -222,7 +224,9 @@ struct FeatureRewriter {
 impl FeatureRewriter {
     /// The file's text after every row of the map, and the checks the map retired.
     fn rewrite(file: &FeatureFile, map: &RepointMap) -> Result<(String, Vec<RetiredRow>), String> {
-        let mut rewriter = FeatureRewriter { lines: file.text().lines().map(str::to_string).collect(), retired: Vec::new(), feature: file.feature().to_string(), task: map.task().to_string() };
+        let lines: Vec<String> = file.text().lines().map(str::to_string).collect();
+        let checked = (0..lines.len()).map(|index| file.is_checked_line(index)).collect();
+        let mut rewriter = FeatureRewriter { lines, checked, retired: Vec::new(), feature: file.feature().to_string(), task: map.task().to_string() };
         for row in map.rows() {
             match row {
                 RepointRow::Move { from_package, from_target, to_package, to_target, module } => rewriter.move_commands(from_package, from_target, to_package, to_target, module),
@@ -238,14 +242,14 @@ impl FeatureRewriter {
         Ok((text, rewriter.retired))
     }
 
-    /// The indexes of the lines outside fenced blocks.
+    /// The indexes of the checked lines outside fenced blocks.
     fn unfenced(&self) -> Vec<usize> {
         let mut inside = false;
         let mut indexes = Vec::new();
         for (index, line) in self.lines.iter().enumerate() {
             if line.trim().starts_with("```") {
                 inside = !inside;
-            } else if !inside {
+            } else if !inside && self.checked[index] {
                 indexes.push(index);
             }
         }
@@ -306,6 +310,7 @@ impl FeatureRewriter {
         }
         if let Some(at) = self.last_run_index() {
             self.lines.insert(at + 1, line.to_string());
+            self.checked.insert(at + 1, true);
         }
     }
 
