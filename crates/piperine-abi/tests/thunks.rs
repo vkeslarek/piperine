@@ -394,3 +394,43 @@ fn an_unreadable_value_list_is_a_fault() {
     assert!(created.instance.is_null());
     assert!(note_text(&note).contains("value list"), "{}", note_text(&note));
 }
+
+/// A device that only evaluates: it writes no `react`, so the trait's default answers for it.
+struct EvalOnly;
+
+impl EvalOnly {
+    /// The shape of a device with one reaction, on one event pin, that its code never writes.
+    fn shape() -> ShapeRef {
+        let mut buffer = ShapeBuf::new();
+        let event = buffer.pin(PinSpec::event("e", role::PRIVATE));
+        buffer.reaction(ReactionSpec { name: "react", on: vec![event], ..ReactionSpec::default() });
+        buffer.freeze()
+    }
+}
+
+impl Device for EvalOnly {
+    fn prototype() -> &'static Shape<'static> {
+        static PROTOTYPE: OnceLock<ShapeRef> = OnceLock::new();
+        PROTOTYPE.get_or_init(EvalOnly::shape).shape()
+    }
+
+    fn create(_values: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
+        Ok((EvalOnly, EvalOnly::shape()))
+    }
+
+    fn eval(&self, _k: u32, _cx: &mut Eval<'_>) -> Result<(), Fault> {
+        Ok(())
+    }
+}
+
+#[test]
+fn a_device_that_only_evaluates_reacts_and_continues() {
+    let m = module::<EvalOnly>("eval_only");
+    let mut note = empty_note();
+    let inst = create_with(&m, &[], &mut note);
+    assert_eq!(inst.status, status::OK, "{}", note_text(&note));
+    let (s, seen) = react_with(&m, &inst, 0, &[], status::OK, &mut note);
+    assert_eq!(s, status::OK, "the default reaction is Continue");
+    assert!(seen.is_empty(), "and commits nothing");
+    destroy(&m, &inst);
+}

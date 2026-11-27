@@ -20,8 +20,10 @@ pub trait Device: Sized + Send + 'static {
     fn create(values: &Values<'_>) -> Result<(Self, ShapeRef), Fault>;
     /// Runs function `k`.
     fn eval(&self, k: u32, cx: &mut Eval<'_>) -> Result<(), Fault>;
-    /// Runs reaction `k`.
-    fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;
+    /// Runs reaction `k`. A device with no reaction needs not write this: the default continues.
+    fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
+        Ok(Flow::Continue)
+    }
 }
 
 /// A device whose module carries data: `create` reads a value (the factory)

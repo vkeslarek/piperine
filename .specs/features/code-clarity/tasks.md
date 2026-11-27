@@ -1061,8 +1061,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
-- [ ] Gate check passes: Quick
+- [x] A test implements `Device` with `eval` only and its `react` thunk returns `Continue`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
