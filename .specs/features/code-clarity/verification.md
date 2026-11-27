@@ -1007,3 +1007,85 @@ None. I probed:
 - the 25 owners through the guard.
 
 Phase 3 (T15 to T22) is verified. The round 1 to round 3 findings are closed by 84e215ff4, a53a47e22 and 20d79a232.
+
+## Phase 6 (B6a Owners in `msl/`: lexer, printer, parser, T41 to T46)
+
+**Verdict**: PASS (no Medium or High finding; four Low findings and three notes)
+**Head**: 9eb8c0a42 on `feature/code-clarity-p6`, base 7bfe85f7d.
+**Verifier**: independent sub-agent (Opus; author != verifier). Sonnet wrote T41–T43 and T45–T46, and Opus wrote T44. I reran the gates myself, one at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 116 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-project` | 7 result lines, 53 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory` | 18 passed, 0 failed |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| CC-09 behaviour: expression grammar (T44) | A side-by-side read of the base `build`/`block_like`/`stmt` against the head's `ExpressionGrammar` methods | yes. The Pratt table has the same levels, operators and binding powers (15 postfix … 4 `\|\|`). The postfix `first_of` order is method/field, call, index, `?`. The atom `first_of` order is unchanged (14 alternatives, `.labelled("expression")`), as are the range `first_of`, the assignment operator `choice`, the statement `first_of` order (item, then meta + empty/let/signal/on/block-like/simple), the `Recovery::recover` wrapper, and the `else` select that is not listed among expected tokens. `.boxed()` sits where it did on `assignment`, `operators`, `block`, `path_expression` and every `first_of` arm. `emit_expression` folds the four "first argument" arms into one, with the same span per variant and the same message |
+| CC-09 behaviour: printer (T42) | A multiset diff of every non-comment line of the base `print.rs` against the head's `print.rs` + `print/*.rs` | yes. Every differing line is a rename (`enc`→`escape`, `dec`→`restore`, `doc`→`documentation_comment`, `binop`→`binary_operator`, `vis`→`visibility`, `dir`→`direction`), a `Self::` prefix, a `pub(super)`, or a `use`. No format string changed |
+| CC-09 behaviour: check (T46), lexer (T41) | Diff read of `check.rs`; `float_dot`→`closes_float`/`float_closed_by_dot`, `unescape` | yes. `check.rs` is indentation plus `ParseCheck::` prefixes and three renames. The lexer's float rule is the same predicate |
+| CC-09 behaviour, whole crate | The unedited assertions of `msl_errors` (recovery, spans, E0910 depth/chain), `msl_format`/`msl_print` (round trip, idempotence, 20 000-link chains), `msl_corpus`, `std_library`, the CLI twins, the Book inventory | yes, all pass |
+| Test edits are call paths only | `git diff --word-diff` of `crates/piperine-lang/tests` and of the CLI and project changes, as token counts | yes. The only removed or added tokens are `parse`→`SourceParser::parse`, `parse_expr`→`ExpressionGrammar::parse`, `parse_{type,pat,generics,module_item,block}`→`<Grammar>::parse`, `lex`/`lex_bytes`→`Lexer::…`, `print`→`Printer::print`, `render(d, …)`→`d.render(…)`, and their `use` lines. No assertion, literal or expected value changed |
+| T43 deferrals closed | `grep 'fn parse_(expr\|type\|pat\|generics\|module_item\|block)'` over `crates/` | yes. None remain: T44 took `parse_expr`; T45 took `TypeGrammar`/`PatternGrammar`/`GenericsGrammar::parse`; T46 took `ModuleGrammar`/`BlockGrammar::parse` |
+| T46 "0 `free_functions` rows for `msl/`" | `grep -c msl/ allowances/piperine-lang/free_functions.tsv` | yes, 0 rows. `diag::render` is `Diagnostic::render` |
+| T44 split rows | `fnlen` probe: brace-matched length of every `fn` in `msl/` | yes. Every `ExpressionGrammar` method is ≤ 60 lines; `block_like` and `stmt` are gone; `classify_number` and `lex_with_comments` are also under 60. The ten functions over 60 (`expr_inner` 103, `ParseCheck::statement` 80, `expression_inner` 87, `lex_limited` 95, `ItemGrammar::fn_decl` 99, `ItemGrammar::definition` 188, `recover_item` 122, `module_decl` 79, `PatternGrammar::definition` 193, `TypeGrammar::definition` 113) are exactly the ten rows `long_functions.tsv` carries at the head |
+| Cross-lane edits (T46) | Diff of `piperine-cli/src/commands/fmt.rs`, `render/diagnostic.rs`, `piperine-project/src/error.rs` | yes. Each is `diag::render(d, …)`→`d.render(…)` and a dropped `use` |
+| Allowances only delete or move | `git diff` of `allowances/` and `worklists/` | yes. `free_functions` −161, `owners` −11, `repeated_type_names` −2. `undeclared_words` +16/−61: the 16 are printer rows moved from `print.rs` to `print/*.rs`. `undocumented_items` +43/−87: each `+` is the same item moved to its owner, some renamed (`expr`→`expression`, `stmt`→`statement`, `dir`→`direction`, `path_with`→`path_with_sugar`, `build`→`definition`). `long_functions` +10/−15 |
+| Dictionary and glossary | `data/dictionary.txt`, `data/glossary.tsv` | yes. `postfix`, `punctuation`, `recovery` and `unclosed` are English words, used in `apply_postfix`, `TokenInput::punctuation`, `mod recovery` and `unclosed_delimiters`. `si` is a glossary row with a meaning, used in `classify_si`, `is_si_letter`, `malformed_si` and `si_exponent` |
+| No free fn, no macro, no `#[allow]`/`#[expect]` in new code | `grep` over `msl/` | yes. `macro_rules` appears only as the parser's refusal of the token |
+| No `unwrap`/`expect` on user-input paths | `grep 'unwrap(\|expect(\|panic!\|unreachable!'` over `msl/` | yes. The lexer's two `expect`s and the entry's bookkeeping `expect`s are gone. The one `panic!` left is `ParseDiagnostics::removed` (`diagnostics.rs:23`), and every caller passes a `&'static str` literal from the grammar (including the `row: &'static str` of `item.rs:457`), never input. A wrong row is a programming error that a test parse of each form hits |
+| Commit subjects, one per task, `tasks.md` in each | `git show --stat` | yes |
+
+### P6-1 (Low): `ItemGrammar` is a public type with no public method
+
+`crates/piperine-lang/src/msl/parser/mod.rs:34` re-exports `pub use item::ItemGrammar`, and `item.rs:7` declares it `pub`. All of its methods are `pub(crate)` or private, so the type is an inert name in `piperine_lang`'s public surface, and nothing outside the crate names it. Repro: `grep -rn ItemGrammar crates tests | grep -v src/msl/parser/` prints nothing. The fix is `pub(crate)` on both lines (as with `ParseCheck`). `MAX_CHAIN` also became reachable through the new re-export (`mod.rs:38`). That one matches msl-polish's design, which lists it as public surface, so it is not a finding.
+
+### P6-2 (Low): `BlockGrammar` is a shell around one test-only entry point, and the `parse` name hides all six from the test-only worklist
+
+`BlockGrammar` (`expr.rs:97-107`) holds only `parse`; the block production stays `ExpressionGrammar::block`. `GenericsGrammar` is honest by comparison, because it owns the `parameters` production that `ItemGrammar` uses. None of the six fragment `parse` methods (`ExpressionGrammar`, `TypeGrammar`, `PatternGrammar`, `GenericsGrammar`, `ModuleGrammar`, `BlockGrammar`) has a caller outside `tests/`. Repro: `grep -rn 'Grammar::parse' crates --include=*.rs | grep -v /tests/` finds only the definitions. T43's and T44's notes say why the guard misses them: `parse` is a word product code spells, so `test_only_items` cannot see that these particular `parse`s are test-only.
+
+This is not a regression: the base free functions were just as test-only and were not in the worklist either. The design choice is defensible, since a fragment entry point is the grammar's own `parse`. But the method makes the coverage gap invisible rather than recording it. A `kept: <test surface of the grammar>` row for each of the six would be the honest record. `SourceParser` in place of the plan's `Parser` is justified by the `chumsky::Parser` clash through `use super::*` and is fine.
+
+### P6-3 (Low): ten `long_functions` rows were renamed and left open, against design's "each task gives the rows of its files a verdict"
+
+T44 split its rows and deleted them, as its box says. T42, T43, T45 and T46 instead moved their rows to the new paths with verdict `-`:
+
+- `Printer::expr_inner`
+- `SourceParser::lex_limited`
+- `ItemGrammar::{definition,fn_decl}`
+- `PatternGrammar::definition`
+- `TypeGrammar::definition`
+- `ParseCheck::{statement,expression_inner}`
+- `ModuleGrammar::{module_decl,recover_item}`
+
+Source: `worklists/long_functions.tsv:66-75`.
+
+T45's text and Done-when do not ask for a split or a verdict, so T45 is not failed. `design.md:412` does ask for one, though ("each task above gives the rows of its files a verdict, `split` or `kept: <reason>`"), and T41's box is the only one in this phase that says so explicitly. The open rows pass today only because open rows are allowance rows until the closing task (`tasks.md:3739`). They are debt carried forward, not judged.
+
+### P6-4 (Low): five Done-when boxes say "no existing test edited" while their commits edit tests
+
+T41 (`msl_lexer.rs`, `msl_print.rs`, `spec_structure.rs`), T42, T43 (16 test files), T45 and T46 each tick "`cargo test -p piperine-lang` passes with no existing test edited", yet each commit edits test files. Every edit is a call path, so the substance holds. Only T44's box names the exception ("the calls of `parse_expr`"). The other five boxes are literally untrue and should carry the same parenthesis.
+
+### Notes (not findings)
+
+- `Lexer::float_closed_by_dot` (`lexer.rs:365`) replaced `expect` with `let … else { return }`. If the invariant ever broke, the popped token and the dot would be dropped silently instead of panicking. `closes_float` (`lexer.rs:353`) is checked just before and guarantees the `Int`, so the branch is unreachable. Behaviour is unchanged.
+- The renamed undocumented items (`ParseCheck::expression`, `ItemGrammar::direction`, `TypeGrammar::path_with_sugar`, the three `definition`s) kept their `undocumented_items` rows. That is allowed as a move, but these are the identifiers the authors touched most, and a `///` would have closed the rows.
+- a09b3c257 inserted an empty line 3 into `data/dictionary.txt`. It is cosmetic, and the guard ignores it.
+
+### Phase 6 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P6-1 `ItemGrammar` public and inert | Low | open |
+| P6-2 `BlockGrammar` shell; six test-only `parse`s invisible to the worklist | Low | open |
+| P6-3 ten `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
+| P6-4 "no existing test edited" boxes untrue as worded | Low | open |
