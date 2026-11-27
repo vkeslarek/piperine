@@ -22,13 +22,10 @@ crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
 crates/piperine-interp/src/walk.rs::Walk::form_name	-
-crates/piperine-ir/src/deps.rs::Walk::body	-
-crates/piperine-ir/src/deps.rs::Walk::expr	-
-crates/piperine-ir/src/deps.rs::Walk::finish	-
-crates/piperine-ir/src/deps.rs::Walk::run	-
+crates/piperine-ir/src/deps/walk/expressions.rs::Walk::leaf_value	kept: one arm per variant
 crates/piperine-ir/src/differentiate.rs::Differentiation::method	-
-crates/piperine-ir/src/print/expression.rs::Printer::expr	kept: one arm per variant
 crates/piperine-ir/src/print/arenas.rs::Printer::form	kept: one arm per variant
+crates/piperine-ir/src/print/expression.rs::Printer::expr	kept: one arm per variant
 crates/piperine-ir/src/print/expression.rs::Printer::stmt	kept: one arm per variant
 crates/piperine-ir/src/statements.rs::Statements::of	-
 crates/piperine-lang/src/elab/body.rs::Elaboration::lower_body_under_substitution	-

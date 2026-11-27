@@ -47,25 +47,6 @@ impl LoopFrame {
     }
 }
 
-impl Value {
-    /// The least value above `self` and `other`: the sources of both, the larger class.
-    fn join(&mut self, other: &Value) {
-        self.sources.join(&other.sources);
-        self.class = self.class.max(other.class);
-    }
-
-    /// `self`, read under `conditions`: it also reads what they read, and is no longer affine
-    /// when one is not `Constant`, as a contribution under an `if` is not (a switch).
-    fn under(&mut self, conditions: &[Value]) {
-        for condition in conditions {
-            self.sources.join(&condition.sources);
-            if condition.class != Class::Constant {
-                self.class = Class::Nonlinear;
-            }
-        }
-    }
-}
-
 impl<'a> Walk<'a> {
     /// Whether a form's walk assigns a local, directly or in a part: its value is not memoized,
     /// since a memoized value would hide the assignment on the next visit.

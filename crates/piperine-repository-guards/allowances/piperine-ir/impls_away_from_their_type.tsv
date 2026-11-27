@@ -1,5 +1,5 @@
 crates/piperine-ir/src/check.rs::Ir	1
-crates/piperine-ir/src/deps.rs::Body	1
+crates/piperine-ir/src/deps/queries.rs::Body	1
 crates/piperine-ir/src/handle.rs::Ir	1
 crates/piperine-ir/src/print.rs::Ir	2
 crates/piperine-ir/src/written.rs::Ir	1

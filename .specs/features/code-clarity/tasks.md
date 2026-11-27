@@ -1592,8 +1592,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate's dependency tests pass unedited; the file's rows of `long_functions.tsv` have a verdict
-- [ ] Gate check passes: Golden
+- [x] The crate's dependency tests pass unedited; the file's rows of `long_functions.tsv` have a verdict
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

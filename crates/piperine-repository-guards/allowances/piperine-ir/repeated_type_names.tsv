@@ -3,11 +3,11 @@ crates/piperine-ir/src/build.rs::NetSpec	1
 crates/piperine-ir/src/check/traits.rs::Trait	1
 crates/piperine-ir/src/contributions.rs::Contribution	1
 crates/piperine-ir/src/contributions.rs::Step	1
-crates/piperine-ir/src/deps.rs::Scope	1
-crates/piperine-ir/src/deps.rs::Target	1
-crates/piperine-ir/src/deps.rs::Value	1
-crates/piperine-ir/src/deps.rs::Walk	1
-crates/piperine-ir/src/deps/control.rs::LoopFrame	1
+crates/piperine-ir/src/deps/sources.rs::Value	1
+crates/piperine-ir/src/deps/target.rs::Target	1
+crates/piperine-ir/src/deps/walk.rs::Scope	1
+crates/piperine-ir/src/deps/walk.rs::Walk	1
+crates/piperine-ir/src/deps/walk/control.rs::LoopFrame	1
 crates/piperine-ir/src/differentiate.rs::Frame	1
 crates/piperine-ir/src/handle.rs::Function	1
 crates/piperine-ir/src/handle.rs::Instance	1
