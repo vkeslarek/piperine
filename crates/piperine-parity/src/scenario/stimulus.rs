@@ -33,20 +33,20 @@ impl Action {
 
 /// An action the session refused: which one, and why.
 #[derive(Debug)]
-pub struct Refusal {
+pub struct ActionRefusal {
     /// The refused action, as text.
     pub action: String,
     /// The session's failure (an `E0801` to `E0806` of the host surface).
     pub failure: Failure,
 }
 
-impl std::fmt::Display for Refusal {
+impl std::fmt::Display for ActionRefusal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} was refused: {}", self.action, self.failure)
     }
 }
 
-impl std::error::Error for Refusal {}
+impl std::error::Error for ActionRefusal {}
 
 /// A staircase of a param from `from` to `to`: one set per `step` of value, equally spaced in
 /// time over `duration` from `start`. SPEC `examples/buck/SPEC.md` §10.1 defines the supply as an
@@ -117,8 +117,8 @@ impl Stimulus {
 
     /// Hands every action to `session`, in the order given; the first one the session refuses is
     /// returned with the action named, and the rest are not applied.
-    pub fn apply(&self, session: &mut Session) -> Result<(), Refusal> {
-        self.actions.iter().try_for_each(|action| action.apply(session).map_err(|failure| Refusal { action: action.describe(), failure }))
+    pub fn apply(&self, session: &mut Session) -> Result<(), ActionRefusal> {
+        self.actions.iter().try_for_each(|action| action.apply(session).map_err(|failure| ActionRefusal { action: action.describe(), failure }))
     }
 }
 
