@@ -16,32 +16,32 @@ pub(crate) fn meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Meta> {
         .map_with(|(text, block), e| One::Doc(Doc { text, block, span: Loc(e.span()) }));
 
     let arg = choice((
-        lit().map(AttrArg::Lit),
-        ident().then_ignore(punct(Punct::Eq)).then(lit()).map(|(n, l)| AttrArg::NameValue(n, l)),
+        TokenInput::literal().map(AttrArg::Lit),
+        TokenInput::identifier().then_ignore(TokenInput::punctuation(Punct::Eq)).then(TokenInput::literal()).map(|(n, l)| AttrArg::NameValue(n, l)),
         ty::path(h, false).map(AttrArg::Path),
     ));
     let input = choice((
-        punct(Punct::Eq).ignore_then(h.expr.clone()).map(AttrInput::Eq),
-        arg.separated_by(punct(Punct::Comma))
+        TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).map(AttrInput::Eq),
+        arg.separated_by(TokenInput::punctuation(Punct::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+            .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
             .map(AttrInput::List),
         empty().to(AttrInput::None),
     ));
-    let attr = punct(Punct::Pound)
+    let attr = TokenInput::punctuation(Punct::Pound)
         .ignore_then(
             ty::path(h, false)
                 .then(input)
-                .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket)),
+                .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket)),
         )
         .map_with(|(path, input), e| One::Attr(Attr { path, input, span: Loc(e.span()) }));
 
-    let inner = punct(Punct::Pound)
-        .ignore_then(punct(Punct::Not))
-        .ignore_then(skip_group())
+    let inner = TokenInput::punctuation(Punct::Pound)
+        .ignore_then(TokenInput::punctuation(Punct::Not))
+        .ignore_then(Recovery::skip_group())
         .validate(|_, e, emitter| {
-            emitter.emit(removed("inner attributes", e.span()));
+            emitter.emit(ParseDiagnostics::removed("inner attributes", e.span()));
             One::Inner
         });
     choice((doc, inner, attr))
@@ -68,7 +68,7 @@ pub(crate) fn rejected_meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ()> {
     meta(h)
         .validate(|m, e, emitter| {
             if !m.docs.is_empty() || !m.attrs.is_empty() {
-                emitter.emit(removed("attributes and doc comments on a parameter", e.span()));
+                emitter.emit(ParseDiagnostics::removed("attributes and doc comments on a parameter", e.span()));
             }
         })
         .boxed()
@@ -77,17 +77,17 @@ pub(crate) fn rejected_meta<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ()> {
 /// `where ..` on a struct, enum, trait or impl: every `where` there is the
 /// removed trait-bound form (B.3.6); reported at `where`, the clause skipped.
 fn removed_where<'a, I: In<'a>>() -> P<'a, I, ()> {
-    kw(Kw::Where)
+    TokenInput::keyword(Kw::Where)
         .map_with(|_, e| e.span())
-        .then_ignore(skip_head_rest())
-        .validate(|at, _, emitter| emitter.emit(removed("trait-bound `where` clauses", at)))
+        .then_ignore(Recovery::skip_head_rest())
+        .validate(|at, _, emitter| emitter.emit(ParseDiagnostics::removed("trait-bound `where` clauses", at)))
         .or_not()
         .ignored()
         .boxed()
 }
 
 pub(crate) fn dir<'a, I: In<'a>>() -> impl Parser<'a, I, Dir, Extra<'a>> + Clone {
-    choice((kw(Kw::In).to(Dir::In), kw(Kw::Out).to(Dir::Out)))
+    choice((TokenInput::keyword(Kw::In).to(Dir::In), TokenInput::keyword(Kw::Out).to(Dir::Out)))
 }
 
 /// `fn name<G>(params) -> T where cond { body }` or `... ;`, with the
@@ -104,9 +104,9 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             },
         )
     };
-    let default_value = punct(Punct::Eq).ignore_then(h.expr.clone()).map_with(|_, e| e.span());
+    let default_value = TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).map_with(|_, e| e.span());
     // `&self` and `&mut self` receivers are removed (B.3.6): reported, read as `self`.
-    let ref_receiver = reference_head().then_ignore(kw(Kw::SelfLower)).validate(|_, e, emitter| {
+    let ref_receiver = TokenInput::reference_head().then_ignore(TokenInput::keyword(Kw::SelfLower)).validate(|_, e, emitter| {
         emitter.emit(Rich::custom(
             e.span(),
             Custom {
@@ -118,10 +118,10 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
         FnParam::SelfValue(Loc(e.span()))
     });
     // `mut x: T`: the marker is a reserved word (`E0903`), the parameter is read as a plain one.
-    let marked_param = choice((kw(Kw::Mut).to(Kw::Mut), kw(Kw::Ref).to(Kw::Ref)))
+    let marked_param = choice((TokenInput::keyword(Kw::Mut).to(Kw::Mut), TokenInput::keyword(Kw::Ref).to(Kw::Ref)))
         .map_with(|word, e| (word, e.span()))
-        .then(ident())
-        .then_ignore(punct(Punct::Colon))
+        .then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
         .validate(|(((word, at), name), ty), e, emitter| {
             emitter.emit(ReservedMarker::report(word, at));
@@ -134,17 +134,17 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
         })
         .rewind()
         .ignore_then(h.pat1.clone())
-        .then_ignore(punct(Punct::Colon))
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then_ignore(h.ty.clone())
         .validate(|_, e, emitter| {
-            emitter.emit(removed("pattern parameters", e.span()));
+            emitter.emit(ParseDiagnostics::removed("pattern parameters", e.span()));
             FnParam::Error(Loc(e.span()))
         });
-    let param = rejected_meta(h).ignore_then(first_of(vec![
-        kw(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))).boxed(),
+    let param = rejected_meta(h).ignore_then(TokenInput::first_of(vec![
+        TokenInput::keyword(Kw::SelfLower).map_with(|_, e| FnParam::SelfValue(Loc(e.span()))).boxed(),
         ref_receiver.boxed(),
-        ident()
-            .then_ignore(punct(Punct::Colon))
+        TokenInput::identifier()
+            .then_ignore(TokenInput::punctuation(Punct::Colon))
             .then(h.ty.clone())
             .then(default_value.or_not())
             .validate(move |((name, ty), default), e, emitter| {
@@ -155,7 +155,7 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             })
             .boxed(),
         marked_param.boxed(),
-        punct(Punct::DotDotDot)
+        TokenInput::punctuation(Punct::DotDotDot)
             .validate(move |_, e, emitter| {
                 emitter.emit(signature_error(e.span(), "a variadic parameter"));
                 FnParam::Error(Loc(e.span()))
@@ -163,22 +163,22 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
             .boxed(),
         pattern_param.boxed(),
     ]));
-    kw(Kw::Const)
+    TokenInput::keyword(Kw::Const)
         .or_not()
-        .then(kw(Kw::Extern).ignore_then(string_lit()).or_not())
-        .then_ignore(kw(Kw::Fn))
-        .then(ident())
+        .then(TokenInput::keyword(Kw::Extern).ignore_then(TokenInput::string_literal()).or_not())
+        .then_ignore(TokenInput::keyword(Kw::Fn))
+        .then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then(
             param
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+                .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen)),
         )
-        .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
         .then(where_clause(h))
-        .then(choice((h.block.clone().map(Some), punct(Punct::Semi).to(None))))
+        .then(choice((h.block.clone().map(Some), TokenInput::punctuation(Punct::Semi).to(None))))
         .map(|(((((((is_const, abi), name), generics), params), ret), where_), body)| FnDecl {
             is_const: is_const.is_some(),
             abi,
@@ -195,21 +195,21 @@ pub(crate) fn fn_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, FnDecl> {
 /// `where cond` after a head; a trait-bound clause (`where T: Tr`) is removed
 /// (B.3.6): reported at `where`, the bounds skipped, `T` kept as the condition.
 pub(crate) fn where_clause<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Option<Expr>> {
-    kw(Kw::Where)
+    TokenInput::keyword(Kw::Where)
         .map_with(|_, e| e.span())
         .then(h.expr_ns.clone())
-        .then(punct(Punct::Colon).ignore_then(skip_to_end()).or_not())
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(Recovery::skip_to_end()).or_not())
         // `where a, b`: one condition only. The comma is the fault; the rest
         // of the head is skipped up to its `{` or `;`, so the item survives.
         .then(
-            punct(Punct::Comma)
+            TokenInput::punctuation(Punct::Comma)
                 .map_with(|_, e| e.span())
-                .then_ignore(skip_head_rest())
+                .then_ignore(Recovery::skip_head_rest())
                 .or_not(),
         )
         .validate(|(((at, cond), bounds), comma), _, emitter| {
             if bounds.is_some() {
-                emitter.emit(removed("trait-bound `where` clauses", at));
+                emitter.emit(ParseDiagnostics::removed("trait-bound `where` clauses", at));
             }
             if let Some(span) = comma {
                 emitter.emit(Rich::custom(
@@ -229,19 +229,19 @@ pub(crate) fn where_clause<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Option
 
 /// `const NAME: ty = value;` (the value is optional in a trait).
 fn const_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ConstItem> {
-    kw(Kw::Const)
-        .ignore_then(ident())
-        .then_ignore(punct(Punct::Colon))
+    TokenInput::keyword(Kw::Const)
+        .ignore_then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::Semi))
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map(|((name, ty), value)| ConstItem { name, ty, value })
         .boxed()
 }
 
 fn impl_items<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Vec<ImplItem>> {
     let item = meta(h)
-        .then(visibility().or_not())
+        .then(TokenInput::visibility().or_not())
         .then(choice((
             fn_decl(h).map(ImplItemKind::Fn),
             const_item(h).map(ImplItemKind::Const),
@@ -251,31 +251,31 @@ fn impl_items<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Vec<ImplItem>> {
         });
     // `type X;` and `type X = T;` are removed (B.3.6): reported, dropped.
     let associated_type = meta(h)
-        .then(visibility().or_not())
-        .ignore_then(kw(Kw::Type).map_with(|_, e| e.span()))
-        .then_ignore(skip_to_end())
-        .then_ignore(punct(Punct::Semi).or_not())
+        .then(TokenInput::visibility().or_not())
+        .ignore_then(TokenInput::keyword(Kw::Type).map_with(|_, e| e.span()))
+        .then_ignore(Recovery::skip_to_end())
+        .then_ignore(TokenInput::punctuation(Punct::Semi).or_not())
         .validate(|at, _, emitter| {
-            emitter.emit(removed("associated types", at));
+            emitter.emit(ParseDiagnostics::removed("associated types", at));
             None
         });
-    first_of(vec![item.boxed(), associated_type.boxed()])
+    TokenInput::first_of(vec![item.boxed(), associated_type.boxed()])
         .repeated()
         .collect::<Vec<_>>()
         .map(|items| items.into_iter().flatten().collect())
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
         .boxed()
 }
 
 /// `{ fields }`, `( fields );` or `;`.
 fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields> {
     let named_field = meta(h)
-        .then(visibility().or_not())
+        .then(TokenInput::visibility().or_not())
         .then(dir().or_not())
-        .then(ident())
-        .then_ignore(punct(Punct::Colon))
+        .then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .map_with(|(((((meta, public), dir), name), ty), init), e| Field {
             meta,
             public: public.is_some(),
@@ -286,13 +286,13 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
             span: Loc(e.span()),
         });
     let named = named_field
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
         .map(Fields::Named);
     let tuple_field = meta(h)
-        .then(visibility().or_not())
+        .then(TokenInput::visibility().or_not())
         .then(h.ty.clone())
         .map_with(|((meta, public), ty), e| Field {
             meta,
@@ -304,13 +304,13 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
             span: Loc(e.span()),
         });
     let tuple = tuple_field
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
         .map(Fields::Tuple);
     if unit_semi {
-        choice((named, tuple.then_ignore(punct(Punct::Semi)), punct(Punct::Semi).to(Fields::Unit))).boxed()
+        choice((named, tuple.then_ignore(TokenInput::punctuation(Punct::Semi)), TokenInput::punctuation(Punct::Semi).to(Fields::Unit))).boxed()
     } else {
         choice((named, tuple, empty().to(Fields::Unit))).boxed()
     }
@@ -319,17 +319,17 @@ fn fields<'a, I: In<'a>>(h: &Handles<'a, I>, unit_semi: bool) -> P<'a, I, Fields
 /// `a::b::{c, d as e, *}`.
 fn use_tree<'a, I: In<'a>>() -> P<'a, I, UseTree> {
     recursive(|tree| {
-        let prefix = path_ident().then_ignore(punct(Punct::ColonColon)).repeated().collect::<Vec<_>>();
+        let prefix = TokenInput::path_identifier().then_ignore(TokenInput::punctuation(Punct::ColonColon)).repeated().collect::<Vec<_>>();
         let group = tree
-            .separated_by(punct(Punct::Comma))
+            .separated_by(TokenInput::punctuation(Punct::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
-        let alias = kw(Kw::As).ignore_then(ident()).or_not();
+            .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace));
+        let alias = TokenInput::keyword(Kw::As).ignore_then(TokenInput::identifier()).or_not();
         let end = choice((
-            punct(Punct::Star).to(None),
+            TokenInput::punctuation(Punct::Star).to(None),
             group.map(|g| Some(Err(g))),
-            path_ident().then(alias).map(|(last, alias)| Some(Ok((last, alias)))),
+            TokenInput::path_identifier().then(alias).map(|(last, alias)| Some(Ok((last, alias)))),
         ));
         prefix.then(end).map_with(|(mut path, end), e| {
             let kind = match end {
@@ -349,17 +349,17 @@ fn use_tree<'a, I: In<'a>>() -> P<'a, I, UseTree> {
 /// The item parser: Rust items (natures, modules and behavior blocks join
 /// it with their own tasks).
 pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
-    let struct_decl = kw(Kw::Struct)
-        .ignore_then(ident())
+    let struct_decl = TokenInput::keyword(Kw::Struct)
+        .ignore_then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then_ignore(removed_where())
         .then(fields(h, true))
         .map(|((name, generics), fields)| ItemKind::Struct(StructDecl { name, generics, fields }));
 
     let variant = meta(h)
-        .then(ident())
+        .then(TokenInput::identifier())
         .then(fields(h, false))
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .map_with(|(((meta, name), fields), discriminant), e| Variant {
             meta,
             name,
@@ -367,23 +367,23 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             discriminant,
             span: Loc(e.span()),
         });
-    let enum_decl = kw(Kw::Enum)
-        .ignore_then(ident())
+    let enum_decl = TokenInput::keyword(Kw::Enum)
+        .ignore_then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then_ignore(removed_where())
         .then(
             variant
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+                .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)),
         )
         .map(|((name, generics), variants)| ItemKind::Enum(EnumDecl { name, generics, variants }));
 
-    let impl_block = kw(Kw::Impl)
+    let impl_block = TokenInput::keyword(Kw::Impl)
         .ignore_then(ty::generics(h).or_not())
         .then(h.ty.clone())
-        .then(kw(Kw::For).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::keyword(Kw::For).ignore_then(h.ty.clone()).or_not())
         .then_ignore(removed_where())
         .then(impl_items(h))
         .try_map(|(((generics, first), second), items), span| match second {
@@ -399,12 +399,12 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             },
         });
 
-    let trait_decl = kw(Kw::Trait)
-        .ignore_then(ident())
+    let trait_decl = TokenInput::keyword(Kw::Trait)
+        .ignore_then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then(
-            punct(Punct::Colon)
-                .ignore_then(ty::path(h, false).separated_by(punct(Punct::Plus)).at_least(1).collect::<Vec<_>>())
+            TokenInput::punctuation(Punct::Colon)
+                .ignore_then(ty::path(h, false).separated_by(TokenInput::punctuation(Punct::Plus)).at_least(1).collect::<Vec<_>>())
                 .or_not(),
         )
         .then_ignore(removed_where())
@@ -414,36 +414,36 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         });
 
     // A leading `::` is removed (B.3.6): reported at the `::`, the tree kept.
-    let use_decl = kw(Kw::Use)
-        .ignore_then(punct(Punct::ColonColon).map_with(|_, e| e.span()).or_not())
+    let use_decl = TokenInput::keyword(Kw::Use)
+        .ignore_then(TokenInput::punctuation(Punct::ColonColon).map_with(|_, e| e.span()).or_not())
         .then(use_tree())
-        .then_ignore(punct(Punct::Semi))
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .validate(|(leading, tree), _, emitter| {
             if let Some(at) = leading {
-                emitter.emit(removed("a leading `::`", at));
+                emitter.emit(ParseDiagnostics::removed("a leading `::`", at));
             }
             ItemKind::Use(tree)
         });
 
-    let mod_decl = kw(Kw::Mod)
-        .ignore_then(ident())
+    let mod_decl = TokenInput::keyword(Kw::Mod)
+        .ignore_then(TokenInput::identifier())
         .then(choice((
-            punct(Punct::Semi).to(None),
+            TokenInput::punctuation(Punct::Semi).to(None),
             h.item
                 .clone()
                 .repeated()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+                .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
                 .map(Some),
         )))
         .map(|(name, items)| ItemKind::Mod(ModItem { name, items }));
 
     let macro_rules = select! { Token::Ident(s) if s == "macro_rules" => () }
-        .ignore_then(punct(Punct::Not))
-        .ignore_then(ident().or_not())
-        .ignore_then(skip_group())
+        .ignore_then(TokenInput::punctuation(Punct::Not))
+        .ignore_then(TokenInput::identifier().or_not())
+        .ignore_then(Recovery::skip_group())
         .validate(|_, e, emitter| {
-            emitter.emit(macro_error(e.span()));
+            emitter.emit(ParseDiagnostics::macro_error(e.span()));
             ItemKind::Error
         });
 
@@ -451,43 +451,43 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
     // reported once at its keyword, its rest skipped, and the item kept as an error.
     let skipped = |first: P<'a, I, Span>, row: &'static str| {
         first
-            .then_ignore(skip_to_end())
-            .then_ignore(punct(Punct::Semi).or_not())
+            .then_ignore(Recovery::skip_to_end())
+            .then_ignore(TokenInput::punctuation(Punct::Semi).or_not())
             .validate(move |at, _, emitter| {
-                emitter.emit(removed(row, at));
+                emitter.emit(ParseDiagnostics::removed(row, at));
                 ItemKind::Error
             })
             .boxed()
     };
-    let type_alias = skipped(kw(Kw::Type).map_with(|_, e| e.span()).boxed(), "type aliases");
-    let static_item = skipped(kw(Kw::Static).map_with(|_, e| e.span()).boxed(), "`static` items");
+    let type_alias = skipped(TokenInput::keyword(Kw::Type).map_with(|_, e| e.span()).boxed(), "type aliases");
+    let static_item = skipped(TokenInput::keyword(Kw::Static).map_with(|_, e| e.span()).boxed(), "`static` items");
     let union_item = select! { Token::Ident(s) if s == "union" => () }
         .map_with(|_, e| e.span())
-        .then_ignore(ident())
+        .then_ignore(TokenInput::identifier())
         .then_ignore(ty::generics(h).or_not())
-        .then_ignore(skip_group())
+        .then_ignore(Recovery::skip_group())
         .validate(|at, _, emitter| {
-            emitter.emit(removed("`union` items", at));
+            emitter.emit(ParseDiagnostics::removed("`union` items", at));
             ItemKind::Error
         })
         .boxed();
     let extern_crate = skipped(
-        kw(Kw::Extern).map_with(|_, e| e.span()).then_ignore(kw(Kw::Crate)).boxed(),
+        TokenInput::keyword(Kw::Extern).map_with(|_, e| e.span()).then_ignore(TokenInput::keyword(Kw::Crate)).boxed(),
         "`extern crate` items",
     );
-    let extern_block = kw(Kw::Extern)
+    let extern_block = TokenInput::keyword(Kw::Extern)
         .map_with(|_, e| e.span())
-        .then_ignore(string_lit().or_not())
-        .then_ignore(skip_group())
+        .then_ignore(TokenInput::string_literal().or_not())
+        .then_ignore(Recovery::skip_group())
         .validate(|at, _, emitter| {
-            emitter.emit(removed("`extern` blocks", at));
+            emitter.emit(ParseDiagnostics::removed("`extern` blocks", at));
             ItemKind::Error
         })
         .boxed();
 
     // An `emit!` statement at the file's top: `E0601`, as in a module body.
     let stray_emit = select! { Token::Ident(s) if s == "emit" => () }
-        .then(punct(Punct::Not))
+        .then(TokenInput::punctuation(Punct::Not))
         .rewind()
         .ignore_then(expr::stmt(h))
         .validate(|statement, _, emitter| {
@@ -495,7 +495,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
             ItemKind::Error
         })
         .boxed();
-    let kind = first_of(vec![
+    let kind = TokenInput::first_of(vec![
         stray_emit,
         fn_decl(h).map(ItemKind::Fn).boxed(),
         const_item(h).map(|c| ItemKind::Const(c)).boxed(),
@@ -516,7 +516,7 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         extern_block,
     ]);
     let item = meta(h)
-        .then(visibility().or_not())
+        .then(TokenInput::visibility().or_not())
         .then(kind)
         .validate(|((meta, public), kind), e, emitter| {
             // A behavior block has no visibility: the block is kept, `pub` reported.
@@ -534,5 +534,5 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item> {
         })
         .labelled("item")
         .boxed();
-    recover(item, true, |span| Item { meta: Meta::default(), public: false, kind: ItemKind::Error, span: Loc(span) })
+    Recovery::recover(item, true, |span| Item { meta: Meta::default(), public: false, kind: ItemKind::Error, span: Loc(span) })
 }

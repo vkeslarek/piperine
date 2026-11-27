@@ -17,12 +17,9 @@ ModuleGrammar	1
 ModuleTyping	1
 NameResolution	1
 ParseCheck	1
-ParseDiagnostics	1
 PatternGrammar	1
 PatternTyping	1
-Recovery	1
 ShapeCheck	1
 StructureLowering	1
-TokenInput	1
 TypeGrammar	1
 ValueLowering	1

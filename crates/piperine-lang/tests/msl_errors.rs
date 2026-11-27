@@ -7,7 +7,7 @@
 //! fixtures complete; T15 checks the miette graphical rendering.
 
 use piperine_lang::msl::{Span, render};
-use piperine_lang::msl::parser::{MAX_DEPTH, parse, parse_expr};
+use piperine_lang::msl::parser::{MAX_DEPTH, SourceParser, parse_expr};
 
 #[test]
 fn depth_over_256_is_diagnostic_not_overflow() {
@@ -69,14 +69,14 @@ fn nesting_without_delimiters_is_also_bounded() {
         .stack_size(8 << 20)
         .spawn(|| {
             for kind in CHAINS {
-                let deep = parse(&chain_source(kind, 20000));
+                let deep = SourceParser::parse(&chain_source(kind, 20000));
                 assert!(
                     deep.diagnostics.iter().any(|d| d.code == "E0910"),
                     "{kind}: no E0910 at 20000: {:?}",
                     deep.diagnostics.iter().map(|d| &*d.code).collect::<Vec<_>>()
                 );
                 let _ = piperine_lang::msl::Printer::print(&deep.file);
-                let ok = parse(&chain_source(kind, 100));
+                let ok = SourceParser::parse(&chain_source(kind, 100));
                 assert!(ok.diagnostics.is_empty(), "{kind} at 100: {:?}", ok.diagnostics);
             }
         })
@@ -99,7 +99,7 @@ fn plus_gt_and_commit_inside_an_expression_report_e0907() {
 
 /// The codes of a source's diagnostics with their spans.
 fn codes(src: &str) -> Vec<(&'static str, Span)> {
-    parse(src)
+    SourceParser::parse(src)
         .diagnostics
         .iter()
         .map(|d| (&*Box::leak(d.code.to_string().into_boxed_str()), d.span()))
@@ -127,7 +127,7 @@ fn forbidden_forms_in_a_function_body_report_e0121() {
         );
     }
     // The same statements are fine outside a function body.
-    let r = parse("fn f() {} struct S;");
+    let r = SourceParser::parse("fn f() {} struct S;");
     assert!(r.diagnostics.is_empty());
     // A method body is a function body.
     let found = codes("impl X { fn f(self) { q <- 1; } }");
@@ -147,7 +147,7 @@ fn macros_other_than_emit_and_include_str_report_e0901() {
         let found = codes(src);
         assert!(found.contains(&("E0901", Span::new(at, at + len))), "{src:?}: {found:?}");
     }
-    let r = parse("fn f() { emit!(\"sim\", finish = true); } const A: str = include_str!(\"a.txt\");");
+    let r = SourceParser::parse("fn f() { emit!(\"sim\", finish = true); } const A: str = include_str!(\"a.txt\");");
     assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
 
@@ -166,7 +166,7 @@ fn keyword_as_identifier_reports_e0903() {
         assert_eq!(found.first(), Some(&("E0903", Span::new(at, at + len))), "{src:?}: {found:?}");
     }
     // Contextual keywords stay identifiers.
-    let r = parse("fn analog() {} fn flow(potential: u8, value: u8, resolve: u8) {}");
+    let r = SourceParser::parse("fn analog() {} fn flow(potential: u8, value: u8, resolve: u8) {}");
     assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
 
@@ -192,7 +192,7 @@ fn depth_limit_fits_8mib_stack_in_debug() {
             }
             // The whole-file entry holds too, on the same stack.
             let body = format!("{}1{}", "{ ".repeat(250), " }".repeat(250));
-            let r = parse(&format!("fn f() {{ {body} }}"));
+            let r = SourceParser::parse(&format!("fn f() {{ {body} }}"));
             assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
         })
         .expect("spawn the 8 MiB test thread");
@@ -335,7 +335,7 @@ fn the_markers_are_reserved_words_with_a_help_each() {
         ("fn f() { let g = move |a| a; }", "move", 17, "|x| e"),
         ("fn f(mut x: u8) { }", "mut", 5, "let x"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
         let d = &r.diagnostics[0];
         assert_eq!((d.code.as_ref(), d.span()), ("E0903", Span::new(at, at + word.len())), "{src}");
@@ -364,7 +364,7 @@ fn multiple_errors_in_source_order_with_partial_ast() {
     // MSLP-04 AC 3: three independent errors give three diagnostics, in
     // source order, and a partial AST that keeps every valid item.
     let src = "fn a() {}\nstruct { x: u8 }\nfn b() { let = 1; let y = 2; }\nconst C: u8 = ;\nfn d() {}";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     let spans: Vec<Span> = r.diagnostics.iter().map(|d| d.span()).collect();
     let at = |needle: &str| {
         let i = src.find(needle).unwrap();
@@ -396,7 +396,7 @@ fn multiple_errors_in_source_order_with_partial_ast() {
     assert!(matches!(body.stmts[1].kind, StmtKind::Let { .. }));
 
     // Errors inside one block are each reported, and the function stays.
-    let r = parse("fn f() { let = 1; x +; let ok = 3; }");
+    let r = SourceParser::parse("fn f() { let = 1; x +; let ok = 3; }");
     assert_eq!(r.diagnostics.len(), 2, "{:?}", r.diagnostics);
     assert_eq!(r.file.items.len(), 1);
 
@@ -407,7 +407,7 @@ fn multiple_errors_in_source_order_with_partial_ast() {
         "digital for M { on e { q <- ; r <- 1; } }\nfn later() {}",
         "nature N { potential: }\nfn later() {}",
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
         assert!(
             matches!(&r.file.items.last().unwrap().kind, ItemKind::Fn(f) if f.name.name == "later"),
@@ -416,12 +416,12 @@ fn multiple_errors_in_source_order_with_partial_ast() {
     }
 
     // A closing delimiter with no opener is skipped, once.
-    let r = parse("}\nfn f() {}");
+    let r = SourceParser::parse("}\nfn f() {}");
     assert_eq!(r.diagnostics.len(), 1);
     assert_eq!(r.diagnostics[0].message, "unmatched `}`");
     assert!(r.file.items.iter().any(|i| matches!(&i.kind, ItemKind::Fn(f) if f.name.name == "f")));
     // The module result is not mistaken for a broken item.
-    assert!(parse("module M(a: Bit) -> Bit { r: f64; a }").diagnostics.is_empty());
+    assert!(SourceParser::parse("module M(a: Bit) -> Bit { r: f64; a }").diagnostics.is_empty());
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn unexpected_token_names_found_and_expected() {
         ("nature N { potential: }", "`}`", "identifier"),
         ("fn f() {", "end of input", "`}`"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let d = &r.diagnostics[0];
         assert_eq!(d.code, "E0900", "{src:?}");
         assert!(
@@ -447,10 +447,10 @@ fn unexpected_token_names_found_and_expected() {
     // The expected set is summarized: the dozens of operators that could
     // continue an expression collapse into one phrase, and no message lists
     // more than six alternatives.
-    let r = parse("fn f() { let x = 1 }");
+    let r = SourceParser::parse("fn f() { let x = 1 }");
     assert_eq!(r.diagnostics[0].message, "unexpected `}`, expected `;` or an operator");
     for src in ["fn f() { let x = 1 }", "digital for M { on { } }", "struct S { a: u8, , }", "fn f( { }"] {
-        for d in parse(src).diagnostics {
+        for d in SourceParser::parse(src).diagnostics {
             let listed = d.message.split_once("expected ").map_or(0, |(_, rest)| rest.split(", ").count());
             assert!(listed <= 6, "{src:?}: {}", d.message);
         }
@@ -480,7 +480,7 @@ fn diagnostic_has_code_message_label_help() {
         ("E0900", "fn f( { }"),
     ];
     for (code, src) in fixtures {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let d = r
             .diagnostics
             .iter()
@@ -496,7 +496,7 @@ fn diagnostic_has_code_message_label_help() {
     }
     // Lexical errors come with the same shape.
     for (code, src) in [("E0900", "/* never closed"), ("E0900", "const A: &str = \"open")] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let d = r.diagnostics.iter().find(|d| d.code == code).expect(src);
         assert!(!d.message.is_empty() && !d.primary.1.is_empty() && d.help.is_some(), "{src:?}");
     }
@@ -507,17 +507,17 @@ fn empty_source_empty_file() {
     // MSLP-06: an empty source is an empty file and no diagnostics; so is a
     // source of whitespace and comments.
     for src in ["", "   \n\t\n", "// just a comment\n/* and another */\n"] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert!(r.file.items.is_empty() && r.file.inner_docs.is_empty(), "{src:?}");
         assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
     }
-    let r = piperine_lang::msl::parser::parse_bytes(b"");
+    let r = piperine_lang::msl::parser::SourceParser::parse_bytes(b"");
     assert!(r.file.items.is_empty() && r.diagnostics.is_empty());
     // Inner doc comments alone make a file with docs and no items.
-    let r = parse("//! The crate docs.\n");
+    let r = SourceParser::parse("//! The crate docs.\n");
     assert_eq!((r.file.inner_docs.len(), r.file.items.len(), r.diagnostics.len()), (1, 0, 0));
     // Invalid UTF-8: one diagnostic and no items.
-    let r = piperine_lang::msl::parser::parse_bytes(&[b'f', b'n', 0xff, 0xfe]);
+    let r = piperine_lang::msl::parser::SourceParser::parse_bytes(&[b'f', b'n', 0xff, 0xfe]);
     assert_eq!(r.diagnostics.len(), 1);
     assert!(r.file.items.is_empty());
 }
@@ -657,7 +657,7 @@ fn rendered_output_is_miette_graphical() {
         ("E0900", "}\nfn f() {}"),
         ("E0902", "const A: f64 = 1e3m;"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let d = r.diagnostics.iter().find(|d| d.code == code).unwrap_or_else(|| panic!("{code}: {:?}", r.diagnostics));
         let out = render(d, "model.msl", src);
         let lines: Vec<&str> = out.lines().collect();
@@ -717,7 +717,7 @@ fn keyword_diagnostics_cover_both_halves_of_e0903() {
         assert_eq!(found, vec![("E0903", Span::new(at, at + len))], "{src:?}");
     }
     // As a path segment or a constructor the same words stay valid.
-    let r = parse("impl S { fn f(self) -> Self { Self { a: self.a } } fn g() -> u8 { crate::x + super::y } }");
+    let r = SourceParser::parse("impl S { fn f(self) -> Self { Self { a: self.a } } fn g() -> u8 { crate::x + super::y } }");
     assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics);
 }
 
@@ -726,7 +726,7 @@ fn unclosed_delimiter_is_reported_at_the_opener() {
     // The fault is the opening delimiter, not the end of the file: the
     // primary label sits on it, a second label on what met it first.
     let src = "fn f() { g(1, 2; h(3); }";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     let d = &r.diagnostics[0];
     assert_eq!((&*d.code, d.span()), ("E0900", Span::new(10, 11)));
@@ -734,7 +734,7 @@ fn unclosed_delimiter_is_reported_at_the_opener() {
     assert!(d.message.contains("expected `)`"), "{}", d.message);
 
     // At the end of input the second label is the end.
-    let r = parse("fn f() { let x = 1;");
+    let r = SourceParser::parse("fn f() { let x = 1;");
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     assert_eq!(r.diagnostics[0].span(), Span::new(7, 8));
     assert!(r.diagnostics[0].message.starts_with("unexpected end of input, expected `}`"));
@@ -789,7 +789,7 @@ fn raw_identifier_of_another_word_is_e0900() {
     // E0900 that lists the seven; `r#out` itself is accepted.
     for word in ["type", "in", "foo"] {
         let src = format!("const X: u8 = r#{word};");
-        let r = parse(&src);
+        let r = SourceParser::parse(&src);
         assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
         let d = &r.diagnostics[0];
         assert_eq!(d.code, "E0900", "{src}");
@@ -799,7 +799,7 @@ fn raw_identifier_of_another_word_is_e0900() {
         let at = src.find("r#").unwrap();
         assert_eq!(d.span().start, at, "{src}");
     }
-    let ok = parse("const r#out: u8 = 1;");
+    let ok = SourceParser::parse("const r#out: u8 = 1;");
     assert!(ok.diagnostics.is_empty(), "{:?}", ok.diagnostics);
 }
 
@@ -813,7 +813,7 @@ fn dangling_doc_comment_has_its_own_message() {
         ("const X: u8 = 1;\n/// nothing", "/// nothing"),
         ("module M() { signal a: u8; /// last\n}", "/// last"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
         let d = &r.diagnostics[0];
         assert_eq!(d.code, "E0900", "{src:?}");
@@ -826,7 +826,7 @@ fn dangling_doc_comment_has_its_own_message() {
 
 /// The diagnostics of `src` as (code, text the span covers, message).
 fn faults(src: &str) -> Vec<(String, String, String)> {
-    parse(src)
+    SourceParser::parse(src)
         .diagnostics
         .iter()
         .map(|d| (d.code.to_string(), src[d.span().start..d.span().end].to_string(), d.message.clone()))
@@ -846,7 +846,7 @@ fn commit_target_must_be_a_place() {
             assert!(found[0].2.contains(named), "{named} in {}", found[0].2);
         }
         // The commit stays in the tree, its left side as written.
-        let file = parse(&src).file;
+        let file = SourceParser::parse(&src).file;
         let piperine_lang::msl::ast::ItemKind::Behavior(b) = &file.items[0].kind else { panic!("{file:?}") };
         let piperine_lang::msl::ast::BehaviorBody::Digital(items) = &b.body else { panic!() };
         let piperine_lang::msl::ast::DigitalItemKind::Reaction(r) = &items[0].kind else { panic!("{items:?}") };
@@ -878,7 +878,7 @@ fn parenthesized_place_is_rejected_in_both_forms() {
 
 /// Exactly one diagnostic: its code, the text its span covers, whether it has a help.
 fn only(src: &str) -> (String, String, bool) {
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert_eq!(r.diagnostics.len(), 1, "{src:?}: {:?}", r.diagnostics);
     let d = &r.diagnostics[0];
     (d.code.to_string(), src[d.span().start..d.span().end].to_string(), d.help.is_some())
@@ -923,7 +923,7 @@ fn function_body_reports_e0121_only() {
 fn pub_on_a_behavior_block_is_e0900() {
     // POL-14 AC 6: one E0900 at `pub` with a help; the block is still a Behavior item.
     for src in ["pub analog for M { }", "pub digital for M { }"] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
         let d = &r.diagnostics[0];
         assert_eq!(d.code, "E0900");
@@ -1028,7 +1028,7 @@ fn removed_rust_forms_report_targeted_messages() {
     // POL-09 AC 5: one diagnostic per use, the code of its row, a message that
     // names the form and a help that names what to write instead.
     for r in REMOVED {
-        let parsed = parse(r.src);
+        let parsed = SourceParser::parse(r.src);
         assert_eq!(parsed.diagnostics.len(), 1, "{}: {:?}", r.src, parsed.diagnostics);
         let d = &parsed.diagnostics[0];
         assert_eq!(d.code, r.code, "{}", r.src);
@@ -1094,7 +1094,7 @@ fn every_reference_form_is_e0101_once() {
         ("impl S { fn h(&self) { } }", 14, "&self"),
         ("impl S { fn h(&mut self) { } }", 14, "&mut self"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let hits: Vec<_> = r.diagnostics.iter().filter(|d| d.code == "E0101").collect();
         assert_eq!(hits.len(), 1, "{src}: {:?}", r.diagnostics);
         assert_eq!(r.diagnostics.len(), 1, "{src}: nothing else is reported: {:?}", r.diagnostics);
@@ -1114,7 +1114,7 @@ fn a_lifetime_is_e0905_static_included() {
         ("fn f(x: &'a u8) { }", 9, "'a"),
         ("fn f<'a>() { }", 5, "'a"),
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         let d = r.diagnostics.iter().find(|d| d.code == "E0905").unwrap_or_else(|| panic!("{src}: {:?}", r.diagnostics));
         assert_eq!((d.span().start, d.span().end), (at, at + lifetime.len()), "{src}");
         assert_eq!(r.diagnostics.iter().filter(|d| d.code == "E0905").count(), 1, "{src}");
@@ -1125,7 +1125,7 @@ fn a_lifetime_is_e0905_static_included() {
 fn a_slice_type_does_not_parse() {
     // VS-01 AC 3 (B.3.7): `[T]` is no type; an array type has its length.
     for src in ["fn f(x: [u8]) { }", "const A: [f64] = x;", "fn f() -> [Bit] { }"] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert!(r.diagnostics.iter().any(|d| d.code == "E0900"), "{src}: {:?}", r.diagnostics);
     }
     assert!(faults("fn f(x: [u8; 2]) { }").is_empty());
@@ -1181,7 +1181,7 @@ fn flat_chains_up_to_4096_links_are_not_nesting() {
         .spawn(|| {
             for kind in FLAT {
                 let src = flat_source(kind, 4096);
-                let r = parse(&src);
+                let r = SourceParser::parse(&src);
                 assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
                 let printed = piperine_lang::msl::Printer::print(&r.file);
                 assert!(printed.len() > 4096, "{kind}");
@@ -1204,7 +1204,7 @@ fn flat_chain_past_4096_links_is_e0910() {
         .spawn(|| {
             for n in [4097, 20000] {
                 // `n` links: `n` plus signs, so the sum has `n + 1` terms.
-                let r = parse(&flat_source("sum", n + 1));
+                let r = SourceParser::parse(&flat_source("sum", n + 1));
                 let e: Vec<_> = r.diagnostics.iter().filter(|d| d.code == "E0910").collect();
                 assert_eq!(e.len(), 1, "{n} terms: {:?}", r.diagnostics);
                 assert!(e[0].message.contains("4096"), "{}", e[0].message);
@@ -1212,7 +1212,7 @@ fn flat_chain_past_4096_links_is_e0910() {
                 let _ = piperine_lang::msl::Printer::print(&r.file);
             }
             let nested = format!("fn f() -> f64 {{ {}1{}{} }}", "(".repeat(10), "+1".repeat(4097), ")".repeat(10));
-            let r = parse(&nested);
+            let r = SourceParser::parse(&nested);
             assert_eq!(r.diagnostics.iter().filter(|d| d.code == "E0910").count(), 1, "{:?}", r.diagnostics);
         })
         .expect("spawn");
@@ -1224,7 +1224,7 @@ fn bad_where_list_is_one_diagnostic() {
     // POL-16 AC 1: a comma in a `where` is one diagnostic, labelled at the
     // comma; the module keeps its name and its generic.
     let src = "module M<const N: u32>() where N > 0, N < 5 { }";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     let comma = src.find(',').unwrap();
     let found: Vec<_> = r.diagnostics.iter().map(|d| (&*d.code, d.span())).collect();
     assert_eq!(found, vec![("E0900", Span::new(comma, comma + 1))], "{:?}", r.diagnostics);
@@ -1240,7 +1240,7 @@ fn bad_where_list_is_one_diagnostic() {
     // An item keyword inside a generic list is not a place to resume: a bad
     // default is one diagnostic and the next item parses.
     let src = "module M<const N: u32 = , const K: u32>() { }\nfn g() {}";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     assert!(r.file.items.iter().any(|i| matches!(&i.kind, piperine_lang::msl::ast::ItemKind::Fn(f) if f.name.name == "g")));
 }
@@ -1251,7 +1251,7 @@ fn statement_errors_recover_inside_the_block() {
     // item and the statements after it survive.
     use piperine_lang::msl::ast::{ExprKind, ItemKind, StmtKind};
     let src = "fn f() { let a = ; foo(; let c = 3; }";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     let first_semi = src.find(';').unwrap();
     assert!(
         r.diagnostics.iter().any(|d| d.span().start == first_semi),
@@ -1285,7 +1285,7 @@ fn a_bad_port_keeps_the_module() {
     // keeps its other ports and its body, and the bad port is not invented.
     use piperine_lang::msl::ast::{ItemKind, ModuleItemKind};
     let src = "module M(in a: , b: Bit) { signal s: Bit; }";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     let comma = src.find(',').unwrap();
     let found: Vec<_> = r.diagnostics.iter().map(|d| (&*d.code, d.span())).collect();
     assert_eq!(found, vec![("E0900", Span::new(comma, comma + 1))], "{:?}", r.diagnostics);
@@ -1295,11 +1295,11 @@ fn a_bad_port_keeps_the_module() {
     assert!(m.body.iter().any(|i| matches!(&i.kind, ModuleItemKind::Signal { name, .. } if name.name == "s")), "{:?}", m.body);
 
     // The last port bad, and a bad port in the middle of three.
-    let r = parse("module M(a: Bit, b: ) { }");
+    let r = SourceParser::parse("module M(a: Bit, b: ) { }");
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     let ItemKind::Module(m) = &r.file.items[0].kind else { panic!() };
     assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["a"]);
-    let r = parse("module M(a: Bit, in : Bit, c: Bit) { }");
+    let r = SourceParser::parse("module M(a: Bit, in : Bit, c: Bit) { }");
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     let ItemKind::Module(m) = &r.file.items[0].kind else { panic!() };
     assert_eq!(m.ports.iter().map(|p| p.name.name.as_str()).collect::<Vec<_>>(), ["a", "c"]);
@@ -1321,12 +1321,12 @@ fn comparison_lists_are_not_nesting() {
         format!("fn f() {{ let v = [{}]; }}", vec!["a < b, c > d"; n].join(", ")),
     ];
     for src in &sources {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert!(r.diagnostics.is_empty(), "{:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
     }
     // Real generic nesting is still bounded.
     let deep = format!("fn f() -> {}u8{} {{ 1 }}", "Option<".repeat(300), ">".repeat(300));
-    assert!(parse(&deep).diagnostics.iter().any(|d| d.code == "E0910"));
+    assert!(SourceParser::parse(&deep).diagnostics.iter().any(|d| d.code == "E0910"));
 }
 
 #[test]
@@ -1338,7 +1338,7 @@ fn flat_chains_survive_a_default_2_mib_thread() {
         .spawn(|| {
             for kind in FLAT {
                 let src = flat_source(kind, 4096);
-                let r = parse(&src);
+                let r = SourceParser::parse(&src);
                 assert!(r.diagnostics.is_empty(), "{kind}: {:?}", r.diagnostics.iter().take(2).collect::<Vec<_>>());
                 let printed = piperine_lang::msl::Printer::print(&r.file);
                 assert!(printed.len() > 4096, "{kind}");
@@ -1357,7 +1357,7 @@ fn reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing() {
     // D15: an added keyword used as a name is told to write `r#word`; another
     // reserved word is not told raw identifiers are unsupported (A.1 rule 6).
     let help = |src: &str| {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert_eq!(r.diagnostics.len(), 1, "{src}: {:?}", r.diagnostics);
         assert_eq!(r.diagnostics[0].code, "E0903", "{src}");
         r.diagnostics[0].help.clone().unwrap_or_default()
@@ -1369,7 +1369,7 @@ fn reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing() {
     assert!(yielded.contains("choose another name"), "{yielded}");
     // A doc comment before `else` documents nothing: one E0900, no keyword fault.
     let src = "fn f() { if a { } /// x\nelse { } }";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert_eq!(r.diagnostics.len(), 1, "{:?}", r.diagnostics);
     assert_eq!(r.diagnostics[0].code, "E0900");
     assert!(r.diagnostics[0].message.contains("documents nothing"), "{}", r.diagnostics[0].message);
@@ -1379,7 +1379,7 @@ fn reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing() {
 #[test]
 fn extern_crate_is_a_removed_form() {
     // PKG-01 AC 9: exactly one E0900 at `extern`, the item kept as an error, the rest of the file parsed.
-    let parsed = parse("extern crate util;");
+    let parsed = SourceParser::parse("extern crate util;");
     assert_eq!(parsed.diagnostics.len(), 1, "{:?}", parsed.diagnostics);
     let d = &parsed.diagnostics[0];
     assert_eq!(d.code, "E0900");

@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use piperine_lang::msl::parser::{parse, parse_block, parse_expr};
+use piperine_lang::msl::parser::{SourceParser, parse_block, parse_expr};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Class {
@@ -95,14 +95,14 @@ pub fn extract(name: &str, text: &str) -> Vec<Block> {
 /// definitions), and as a list of expressions, one per line.
 #[allow(dead_code)] // shared by the targets that classify fences; not every includer does
 pub fn fragment_diagnostics(text: &str) -> Vec<String> {
-    let as_file = parse(text);
+    let as_file = SourceParser::parse(text);
     if as_file.diagnostics.is_empty() {
         return Vec::new();
     }
     if parse_block(&format!("{{\n{text}\n}}")).1.is_empty() {
         return Vec::new();
     }
-    if parse(&format!("module Fragment() {{\n{text}\n}}")).diagnostics.is_empty() {
+    if SourceParser::parse(&format!("module Fragment() {{\n{text}\n}}")).diagnostics.is_empty() {
         return Vec::new();
     }
     let lines: Vec<&str> = text

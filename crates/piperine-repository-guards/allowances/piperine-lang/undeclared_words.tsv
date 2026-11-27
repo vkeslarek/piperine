@@ -166,21 +166,10 @@ crates/piperine-lang/src/msl/lexer.rs::lex_with_comments	1
 crates/piperine-lang/src/msl/lexer.rs::unescape	1
 crates/piperine-lang/src/msl/mod.rs::ast	1
 crates/piperine-lang/src/msl/mod.rs::diag	1
-crates/piperine-lang/src/msl/parser/base.rs::delim_close	1
-crates/piperine-lang/src/msl/parser/base.rs::delim_open	1
 crates/piperine-lang/src/msl/parser/base.rs::expr	1
 crates/piperine-lang/src/msl/parser/base.rs::expr_ns	1
-crates/piperine-lang/src/msl/parser/base.rs::ident	1
-crates/piperine-lang/src/msl/parser/base.rs::is_lbrace	1
-crates/piperine-lang/src/msl/parser/base.rs::kw	1
-crates/piperine-lang/src/msl/parser/base.rs::lit	1
-crates/piperine-lang/src/msl/parser/base.rs::lit_expr	1
 crates/piperine-lang/src/msl/parser/base.rs::pat	1
 crates/piperine-lang/src/msl/parser/base.rs::pat1	1
-crates/piperine-lang/src/msl/parser/base.rs::path_ident	1
-crates/piperine-lang/src/msl/parser/base.rs::punct	1
-crates/piperine-lang/src/msl/parser/base.rs::skip_rest_of_stmt	1
-crates/piperine-lang/src/msl/parser/base.rs::string_lit	1
 crates/piperine-lang/src/msl/parser/base.rs::ty	1
 crates/piperine-lang/src/msl/parser/check.rs::Ctx	1
 crates/piperine-lang/src/msl/parser/check.rs::expr	1
@@ -190,7 +179,6 @@ crates/piperine-lang/src/msl/parser/check.rs::stmt	1
 crates/piperine-lang/src/msl/parser/entry.rs::lex_limited	1
 crates/piperine-lang/src/msl/parser/entry.rs::parse_expr	1
 crates/piperine-lang/src/msl/parser/entry.rs::parse_pat	1
-crates/piperine-lang/src/msl/parser/entry.rs::unclosed_delimiters	1
 crates/piperine-lang/src/msl/parser/expr.rs::EmitArg	1
 crates/piperine-lang/src/msl/parser/expr.rs::Ge	1
 crates/piperine-lang/src/msl/parser/expr.rs::Gt	1
@@ -579,7 +567,6 @@ crates/piperine-lang/tests/msl_errors.rs::pub_on_a_behavior_block_is_e0900	1
 crates/piperine-lang/tests/msl_errors.rs::rendered_output_is_miette_graphical	1
 crates/piperine-lang/tests/msl_errors.rs::reserved_keyword_help_is_true_and_a_doc_before_else_documents_nothing	1
 crates/piperine-lang/tests/msl_errors.rs::src	1
-crates/piperine-lang/tests/msl_errors.rs::unclosed_delimiter_is_reported_at_the_opener	1
 crates/piperine-lang/tests/msl_format.rs::every_stdlib_file_is_in_the_formatters_form	1
 crates/piperine-lang/tests/msl_format.rs::repo	1
 crates/piperine-lang/tests/msl_lexer.rs::doc_comments_are_tokens	1

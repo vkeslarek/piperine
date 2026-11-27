@@ -5,7 +5,7 @@
 #[path = "support/spec_corpus.rs"]
 mod spec_corpus;
 
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::Design;
 use serde_json::{Value, json};
 use spec_corpus::{Class, corpus};
@@ -32,7 +32,7 @@ fn every_spec_block_round_trips_to_its_ast() {
     let mut compared = 0;
     let mut skipped = 0;
     for block in corpus() {
-        let parsed = parse(&block.text);
+        let parsed = SourceParser::parse(&block.text);
         match block.class {
             Class::Valid => {}
             // A fragment is in the corpus only when the parser takes it as a file.
@@ -60,7 +60,7 @@ fn a_loaded_file_rebuilds_to_its_own_tree() {
     let files: Vec<_> = design.files().into_iter().filter(|f| !f.krate().is_std()).collect();
     assert_eq!(files.len(), 2);
     for file in files {
-        let parsed = parse(file.text()).file;
+        let parsed = SourceParser::parse(file.text()).file;
         let rebuilt = file.to_ast();
         if let Some(diff) = first_difference(&rebuilt, &parsed) {
             panic!("{}: differs at {diff}", file.name());
@@ -106,7 +106,7 @@ struct ;
 ";
     // The last two items are malformed (and the module result is reported by a
     // context check): the tree has Error items and the rebuild keeps them in place.
-    let parsed = parse(src);
+    let parsed = SourceParser::parse(src);
     assert!(!parsed.diagnostics.is_empty());
     let design = Design::builder().source("top.msl", src).build();
     assert_lossless(&design, &parsed.file, "the hand-written source");
@@ -242,7 +242,7 @@ digital for M {
         on x { } }
 }
 ";
-    let parsed = parse(src);
+    let parsed = SourceParser::parse(src);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let design = Design::builder().source("top.msl", src).build();
     assert_lossless(&design, &parsed.file, "docs at every position");

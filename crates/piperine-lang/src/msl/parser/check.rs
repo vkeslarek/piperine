@@ -299,8 +299,8 @@ fn stmt(s: &Stmt, ctx: Ctx, out: &mut Vec<Diagnostic>) {
             expr(rhs, ctx, out);
         }
         StmtKind::Commit { place, value, after } => {
-            if !is_place(place) {
-                let c = not_a_place();
+            if !SourceParser::is_place(place) {
+                let c = ParseDiagnostics::not_a_place();
                 out.push(Diagnostic::new(c.code, c.message, place.span.0, "not a place").with_help(c.help.unwrap_or_default()));
             }
             if ctx != Ctx::Reaction {

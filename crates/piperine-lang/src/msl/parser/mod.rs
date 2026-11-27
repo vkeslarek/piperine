@@ -14,13 +14,19 @@ use super::span::Span;
 
 mod base;
 mod check;
+mod diagnostics;
 mod entry;
 pub mod expr;
 pub mod item;
 pub mod msl;
 pub mod pat;
 pub mod ty;
+mod input;
+mod recovery;
 
 pub(crate) use base::*;
+pub(crate) use diagnostics::ParseDiagnostics;
+pub(crate) use input::TokenInput;
+pub(crate) use recovery::Recovery;
 pub use base::Custom;
-pub use entry::{MAX_DEPTH, ParseResult, parse, parse_block, parse_bytes, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};
+pub use entry::{MAX_CHAIN, MAX_DEPTH, ParseResult, SourceParser, parse_block, parse_expr, parse_generics, parse_module_item, parse_pat, parse_type};

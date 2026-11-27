@@ -7,7 +7,7 @@
 
 use piperine_lang::msl::Span;
 use piperine_lang::msl::ast::*;
-use piperine_lang::msl::parser::{parse, parse_block, parse_expr, parse_generics, parse_pat, parse_type};
+use piperine_lang::msl::parser::{SourceParser, parse_block, parse_expr, parse_generics, parse_pat, parse_type};
 
 fn ty(src: &str) -> Type {
     let (t, diags) = parse_type(src);
@@ -35,7 +35,7 @@ fn block(src: &str) -> Block {
 
 /// Parse a whole file, expecting no diagnostics.
 fn file(src: &str) -> File {
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
     r.file
 }
@@ -424,7 +424,7 @@ fn unknown_is_an_ordinary_name() {
         "fn f() { let g = |Unknown| 1; }",
         "fn f() { let x = Unknown; g(Unknown, 1); }",
     ] {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert!(r.diagnostics.is_empty(), "{src:?}: {:?}", r.diagnostics);
     }
 }
@@ -440,11 +440,11 @@ fn a_struct_field_takes_an_initial_value_after_its_type() {
     let ItemKind::Struct(s) = only_item("struct Hand { in ready: Bit = true }").kind else { panic!() };
     let Fields::Named(fields) = s.fields else { panic!("named fields") };
     assert!(matches!(&fields[0].init, Some(Expr { kind: ExprKind::Lit(_), .. })), "{:?}", fields[0].init);
-    assert!(piperine_lang::msl::print::Printer::print(&parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
+    assert!(piperine_lang::msl::print::Printer::print(&SourceParser::parse("struct Hand { in ready: Bit = true }").file).contains("in ready: Bit = true"));
     // the printer writes it back, and reading that gives the same tree
-    let printed = piperine_lang::msl::print::Printer::print(&parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
+    let printed = piperine_lang::msl::print::Printer::print(&SourceParser::parse("struct Latch { out q: Bit<u8> = 1 + 2, in d: Bit }").file);
     assert!(printed.contains("out q: Bit<u8> = 1 + 2"), "{printed}");
-    assert!(parse(&printed).diagnostics.is_empty(), "{printed}");
+    assert!(SourceParser::parse(&printed).diagnostics.is_empty(), "{printed}");
 }
 
 #[test]
@@ -1014,8 +1014,8 @@ fn contextual_keywords_are_identifiers_outside_nature() {
     let f = file("nature N { potential: P, flow: F } fn value() { let potential = 1; potential }");
     assert_eq!(f.items.len(), 2);
     // `analog` not followed by `for` or `<` is not a behavior block.
-    assert!(!parse("analog { }").diagnostics.is_empty());
-    assert!(!parse("analog Foo { }").diagnostics.is_empty());
+    assert!(!SourceParser::parse("analog { }").diagnostics.is_empty());
+    assert!(!SourceParser::parse("analog Foo { }").diagnostics.is_empty());
 }
 
 #[test]
@@ -1077,7 +1077,7 @@ fn negative_literal_is_a_const_generic_argument() {
 fn commit_token_in_generic_arguments_is_still_an_error() {
     // POL-09 AC 2: `Int<-1>` lexes `<-` (the commit operator): a diagnostic at it.
     let src = "module M(a: Bit<Int<-1>>) {}";
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert!(!r.diagnostics.is_empty(), "no diagnostic");
     let at = src.find("<-").unwrap();
     assert!(
@@ -1222,7 +1222,7 @@ fn docs_and_attrs_attach_to_hardware_items() {
         "module M() {\n    /// loop\n    for i in 0..2 { }\n}",
     ];
     for src in sources {
-        let r = parse(src);
+        let r = SourceParser::parse(src);
         assert!(r.diagnostics.is_empty(), "{src}: {:?}", r.diagnostics);
     }
 

@@ -46,7 +46,7 @@ pub struct SourceFileRepr {
 
 impl From<SourceFileRepr> for SourceFileData {
     fn from(r: SourceFileRepr) -> Self {
-        let ast = msl::parser::parse(&r.text).file;
+        let ast = msl::parser::SourceParser::parse(&r.text).file;
         SourceFileData { name: r.name, path: r.path, krate: r.krate, text: r.text, ast, root: r.root }
     }
 }
@@ -608,7 +608,7 @@ impl Design {
 
     fn add_file(&mut self, name: &str, path: PathBuf, bytes: &[u8], krate: CrateId, provider: &dyn SourceProvider) -> FileId {
         let id = FileId(self.files.len() as u32);
-        let parsed = msl::parser::parse_bytes(bytes);
+        let parsed = msl::parser::SourceParser::parse_bytes(bytes);
         for diagnostic in parsed.diagnostics {
             self.diagnostics.push(DesignDiagnostic { file: id, diagnostic });
         }

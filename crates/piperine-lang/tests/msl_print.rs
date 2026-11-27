@@ -9,7 +9,7 @@
 mod spec_corpus;
 
 use piperine_lang::msl::ast::File;
-use piperine_lang::msl::parser::parse;
+use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::msl::Printer;
 use spec_corpus::{Class, corpus};
 
@@ -25,7 +25,7 @@ fn fragment_source(text: &str) -> Option<String> {
         format!("fn fragment() {{\n{text}\n}}"),
     ]
     .into_iter()
-    .find(|src| parse(src).diagnostics.is_empty())
+    .find(|src| SourceParser::parse(src).diagnostics.is_empty())
 }
 
 /// Every source of the corpus that parses as a file: its label and text.
@@ -43,7 +43,7 @@ fn sources() -> Vec<(String, String)> {
 }
 
 fn parsed(label: &str, src: &str) -> File {
-    let r = parse(src);
+    let r = SourceParser::parse(src);
     assert!(r.diagnostics.is_empty(), "{label}: {:?}\n{src}", r.diagnostics);
     r.file
 }
@@ -237,7 +237,7 @@ fn long_chains_print_without_overflow() {
                 format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(5000)),
                 format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(5000)),
             ] {
-                let r = parse(&src);
+                let r = SourceParser::parse(&src);
                 assert!(r.diagnostics.iter().any(|d| d.code == "E0910"));
                 let _ = Printer::print(&r.file);
             }

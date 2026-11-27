@@ -414,7 +414,7 @@ fn pnjlim_follows_ngspice_devpnjlim_branch_by_branch() {
     // F4: every branch of the ngspice `DEVpnjlim` as ngspice devsup.c has it, evaluated on
     // the body of `std::analog::pnjlim` as shipped.
     use std::collections::BTreeMap;
-    let file = piperine_lang::msl::parser::parse(&std::fs::read_to_string(std_dir().join("analog.msl")).expect("analog.msl")).file;
+    let file = piperine_lang::msl::parser::SourceParser::parse(&std::fs::read_to_string(std_dir().join("analog.msl")).expect("analog.msl")).file;
     let body = file
         .items
         .iter()
@@ -617,7 +617,7 @@ fn pub_names(design: &Design, namespace: &str) -> BTreeSet<String> {
 fn std_root_declares_its_namespaces() {
     let design = embedded();
     let root = &design.std_crate().files()[0];
-    let parsed = piperine_lang::msl::parser::parse(root.text());
+    let parsed = piperine_lang::msl::parser::SourceParser::parse(root.text());
     let mut declared = Vec::new();
     for item in &parsed.file.items {
         let piperine_lang::msl::ast::ItemKind::Mod(m) = &item.kind else { panic!("the root declares only namespaces, found {:?}", item.kind) };

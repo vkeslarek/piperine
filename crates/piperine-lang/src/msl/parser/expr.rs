@@ -155,10 +155,10 @@ pub(crate) fn build<'a, I: In<'a>>(
     // ---- atoms ----
     let paren_or_tuple = expr
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .collect::<Vec<_>>()
-        .then(punct(Punct::Comma).or_not())
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .then(TokenInput::punctuation(Punct::Comma).or_not())
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
         .map_with(|(mut items, trailing), e| {
             if items.len() == 1 && trailing.is_none() {
                 mk(ExprKind::Paren(boxed(items.remove(0))), e.span())
@@ -174,11 +174,11 @@ pub(crate) fn build<'a, I: In<'a>>(
         List(Vec<Expr>),
     }
     let array_tail = choice((
-        punct(Punct::Semi).ignore_then(expr.clone()).map(ArrayTail::Repeat),
-        punct(Punct::Comma)
+        TokenInput::punctuation(Punct::Semi).ignore_then(expr.clone()).map(ArrayTail::Repeat),
+        TokenInput::punctuation(Punct::Comma)
             .ignore_then(
                 expr.clone()
-                    .separated_by(punct(Punct::Comma))
+                    .separated_by(TokenInput::punctuation(Punct::Comma))
                     .allow_trailing()
                     .collect::<Vec<_>>(),
             )
@@ -189,7 +189,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .clone()
         .then(array_tail)
         .or_not()
-        .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+        .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket))
         .map_with(|first, e| match first {
             None => mk(ExprKind::Array(Vec::new()), e.span()),
             Some((elem, ArrayTail::Repeat(len))) => {
@@ -203,8 +203,8 @@ pub(crate) fn build<'a, I: In<'a>>(
 
     // `name: value`, or the shorthand `name` for `name: name`.
     let field_init = super::item::rejected_meta(h)
-        .ignore_then(ident())
-        .then(punct(Punct::Colon).ignore_then(expr.clone()).or_not())
+        .ignore_then(TokenInput::identifier())
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(expr.clone()).or_not())
         .map_with(|(name, value), e| {
             let shorthand = value.is_none();
             let value = value.unwrap_or_else(|| Expr {
@@ -217,10 +217,10 @@ pub(crate) fn build<'a, I: In<'a>>(
             FieldInit { name, value, shorthand, span: Loc(e.span()) }
         });
     let field_inits = field_init
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace));
 
     // `emit!("stream", name = value, ..)`: the arguments are parsed loosely so
     // a wrong shape is the spec's E0602, not a generic syntax error.
@@ -231,28 +231,28 @@ pub(crate) fn build<'a, I: In<'a>>(
         Colon(Span),
         Positional(Expr),
     }
-    let emit_arg = first_of(vec![
-        ident()
-            .then_ignore(punct(Punct::Eq))
+    let emit_arg = TokenInput::first_of(vec![
+        TokenInput::identifier()
+            .then_ignore(TokenInput::punctuation(Punct::Eq))
             .then(expr.clone())
             .map_with(|(name, value), e| FieldInit { name, value, shorthand: false, span: Loc(e.span()) })
             .map(EmitArg::Named)
             .boxed(),
-        ident()
-            .then_ignore(punct(Punct::Colon))
+        TokenInput::identifier()
+            .then_ignore(TokenInput::punctuation(Punct::Colon))
             .then_ignore(expr.clone())
             .map_with(|_, e| EmitArg::Colon(e.span()))
             .boxed(),
         expr.clone().map(EmitArg::Positional).boxed(),
     ]);
     let emit = select! { Token::Ident(s) if s == "emit" => () }
-        .ignore_then(punct(Punct::Not))
+        .ignore_then(TokenInput::punctuation(Punct::Not))
         .ignore_then(
             emit_arg
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+                .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen)),
         )
         .validate(|args, e, emitter| {
             let bad = |span: Span, what: &str| {
@@ -303,13 +303,13 @@ pub(crate) fn build<'a, I: In<'a>>(
             if ok { mk(ExprKind::Emit { stream, fields }, e.span()) } else { mk(ExprKind::Error, e.span()) }
         });
     let include_str = select! { Token::Ident(s) if s == "include_str" => () }
-        .ignore_then(punct(Punct::Not))
+        .ignore_then(TokenInput::punctuation(Punct::Not))
         .ignore_then(
             expr.clone()
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+                .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen)),
         )
         .validate(|args, e, emitter| {
             let bad = |span: Span| {
@@ -356,49 +356,49 @@ pub(crate) fn build<'a, I: In<'a>>(
         .filter(|p: &Path| {
             !(p.segments.len() == 1 && matches!(p.segments[0].ident.name.as_str(), "emit" | "include_str"))
         })
-        .then_ignore(punct(Punct::Not))
-        .then_ignore(skip_group())
+        .then_ignore(TokenInput::punctuation(Punct::Not))
+        .then_ignore(Recovery::skip_group())
         .validate(|_, e, emitter| {
-            emitter.emit(macro_error(e.span()));
+            emitter.emit(ParseDiagnostics::macro_error(e.span()));
             mk(ExprKind::Error, e.span())
         });
 
     // `<T as Tr>::f`: a removed form (B.3.6), reported once.
     let qualified = ty::qualified_path(h).validate(|_, e, emitter| {
-        emitter.emit(removed("qualified paths", e.span()));
+        emitter.emit(ParseDiagnostics::removed("qualified paths", e.span()));
         mk(ExprKind::Error, e.span())
     });
 
     // A malformed token already reported by the lexer.
     let error_atom = just(Token::Error).map_with(|_, e| mk(ExprKind::Error, e.span()));
 
-    let break_ = kw(Kw::Break)
+    let break_ = TokenInput::keyword(Kw::Break)
         .ignore_then(me.clone().or_not())
         .map_with(|v, e| mk(ExprKind::Break(v.map(boxed)), e.span()));
-    let continue_ = kw(Kw::Continue).map_with(|_, e| mk(ExprKind::Continue, e.span()));
-    let return_ = kw(Kw::Return)
+    let continue_ = TokenInput::keyword(Kw::Continue).map_with(|_, e| mk(ExprKind::Continue, e.span()));
+    let return_ = TokenInput::keyword(Kw::Return)
         .ignore_then(me.clone().or_not())
         .map_with(|v, e| mk(ExprKind::Return(v.map(boxed)), e.span()));
 
     // `move |a, b: T| -> R { .. }` / `|x| x + 1` / `|| 0`.
     let closure_param = pat::binding(h)
-        .then(punct(Punct::Colon).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(h.ty.clone()).or_not())
         .map_with(|(pat, ty), e| ClosureParam { pat, ty, span: Loc(e.span()) });
     let closure_params = choice((
-        punct(Punct::OrOr).to(Vec::new()),
+        TokenInput::punctuation(Punct::OrOr).to(Vec::new()),
         closure_param
-            .separated_by(punct(Punct::Comma))
+            .separated_by(TokenInput::punctuation(Punct::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(punct(Punct::Or), punct(Punct::Or)),
+            .delimited_by(TokenInput::punctuation(Punct::Or), TokenInput::punctuation(Punct::Or)),
     ));
-    let closure = kw(Kw::Move)
+    let closure = TokenInput::keyword(Kw::Move)
         .map_with(|_, e| e.span())
         .validate(|at, _, emitter| emitter.emit(ReservedMarker::report(Kw::Move, at)))
         .or_not()
         .then(closure_params)
-        .then(first_of(vec![
-            punct(Punct::Arrow)
+        .then(TokenInput::first_of(vec![
+            TokenInput::punctuation(Punct::Arrow)
                 .ignore_then(h.ty.clone())
                 .then(h.block.clone().map_with(|b: Block, e| {
                     mk(ExprKind::Block(b), e.span())
@@ -411,8 +411,8 @@ pub(crate) fn build<'a, I: In<'a>>(
 
     // A slice of boxed alternatives, not a tuple: a tuple `choice` keeps every
     // alternative's temporaries in one stack frame (60 KiB in a debug build).
-    let atom = first_of(vec![
-        lit_expr().boxed(),
+    let atom = TokenInput::first_of(vec![
+        TokenInput::literal_expression().boxed(),
         emit.boxed(),
         include_str.boxed(),
         paren_or_tuple.boxed(),
@@ -431,16 +431,16 @@ pub(crate) fn build<'a, I: In<'a>>(
     .boxed();
 
     // ---- postfix ----
-    let arg = ident()
-        .then_ignore(punct(Punct::Colon))
+    let arg = TokenInput::identifier()
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .or_not()
         .then(expr.clone())
         .map_with(|(name, value), e| Arg { name, value, span: Loc(e.span()) });
     let args = arg
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen));
     let tuple_index = select! { Token::Int(s) => s }
         .map_with(|name, e| Ident { name, raw: false, span: Loc(e.span()) });
     // `0.1` after a dot: two tuple indexes lexed as one float.
@@ -463,13 +463,13 @@ pub(crate) fn build<'a, I: In<'a>>(
             )),
         }
     });
-    let method_or_field = punct(Punct::Dot).ignore_then(first_of(vec![
-        ident()
+    let method_or_field = TokenInput::punctuation(Punct::Dot).ignore_then(TokenInput::first_of(vec![
+        TokenInput::identifier()
             .then(ty::generic_args(h, true).or_not())
             .then(args.clone())
             .map(|((name, g), a)| Post::Method(name, g, a))
             .boxed(),
-        ident().or(tuple_index).map(Post::Field).boxed(),
+        TokenInput::identifier().or(tuple_index).map(Post::Field).boxed(),
         nested_tuple_index.map(|(a, b)| Post::Field2(a, b)).boxed(),
     ]));
     let call = args.clone().then(if allow_struct { field_inits.clone().or_not().boxed() } else {
@@ -477,26 +477,26 @@ pub(crate) fn build<'a, I: In<'a>>(
     }).map(|(a, p)| Post::Call(a, p));
     let index = expr
         .clone()
-        .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+        .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket))
         .map(Post::Index);
-    let postfix_op = first_of(vec![
+    let postfix_op = TokenInput::first_of(vec![
         method_or_field.boxed(),
         call.boxed(),
         index.boxed(),
-        punct(Punct::Question).to(Post::Try).boxed(),
+        TokenInput::punctuation(Punct::Question).to(Post::Try).boxed(),
     ]);
-    let op = |p: Punct, b: BinOp| punct(p).to(b);
+    let op = |p: Punct, b: BinOp| TokenInput::punctuation(p).to(b);
 
     // ---- operators: one Pratt parser over the atom ----
     //
     // One precedence-climbing loop replaces a parser per precedence level, so
     // a nesting level costs one frame chain rather than a dozen (T16).
     let unary_op = choice((
-        punct(Punct::Minus).to(Prefix::Operator(UnOp::Neg)),
-        punct(Punct::Not).to(Prefix::Operator(UnOp::Not)),
+        TokenInput::punctuation(Punct::Minus).to(Prefix::Operator(UnOp::Neg)),
+        TokenInput::punctuation(Punct::Not).to(Prefix::Operator(UnOp::Not)),
         // `&x`, `&&x`, `&mut x` and `*x` are removed (B.3.6): reported at the operator, read as the operand.
-        choice((reference_head(), punct(Punct::Star).map_with(|_, e| e.span()))).validate(|head, _, emitter| {
-            emitter.emit(removed("references and borrows", head));
+        choice((TokenInput::reference_head(), TokenInput::punctuation(Punct::Star).map_with(|_, e| e.span()))).validate(|head, _, emitter| {
+            emitter.emit(ParseDiagnostics::removed("references and borrows", head));
             Prefix::Reference
         }),
     ));
@@ -518,7 +518,7 @@ pub(crate) fn build<'a, I: In<'a>>(
                 Prefix::Operator(op) => mk(ExprKind::Unary { op, expr: boxed(rhs) }, e.span()),
                 Prefix::Reference => rhs,
             }),
-            postfix(13, kw(Kw::As).ignore_then(h.ty.clone()).then_ignore(next_not_angle()), |lhs: Expr, ty, e| {
+            postfix(13, TokenInput::keyword(Kw::As).ignore_then(h.ty.clone()).then_ignore(next_not_angle()), |lhs: Expr, ty, e| {
                 mk(ExprKind::Cast { expr: boxed(lhs), ty }, e.span())
             }),
             infix(left(12), mul_op, binary::<I>),
@@ -534,7 +534,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         .boxed();
 
     // ---- range, assignment ----
-    let range_op = choice((punct(Punct::DotDotEq).to(true), punct(Punct::DotDot).to(false)));
+    let range_op = choice((TokenInput::punctuation(Punct::DotDotEq).to(true), TokenInput::punctuation(Punct::DotDot).to(false)));
     let prefix_range = range_op
         .clone()
         .then(or.clone().or_not())
@@ -552,19 +552,19 @@ pub(crate) fn build<'a, I: In<'a>>(
             }
         })
         .boxed();
-    let range = first_of(vec![prefix_range, infix_range]);
+    let range = TokenInput::first_of(vec![prefix_range, infix_range]);
 
     let assign_op = choice((
-        punct(Punct::Eq).to(None),
-        punct(Punct::PlusEq).to(Some(BinOp::Add)),
-        punct(Punct::MinusEq).to(Some(BinOp::Sub)),
-        punct(Punct::StarEq).to(Some(BinOp::Mul)),
-        punct(Punct::SlashEq).to(Some(BinOp::Div)),
-        punct(Punct::PercentEq).to(Some(BinOp::Rem)),
-        punct(Punct::CaretEq).to(Some(BinOp::BitXor)),
-        punct(Punct::AndEq).to(Some(BinOp::BitAnd)),
-        punct(Punct::OrEq).to(Some(BinOp::BitOr)),
-        punct(Punct::ShlEq).to(Some(BinOp::Shl)),
+        TokenInput::punctuation(Punct::Eq).to(None),
+        TokenInput::punctuation(Punct::PlusEq).to(Some(BinOp::Add)),
+        TokenInput::punctuation(Punct::MinusEq).to(Some(BinOp::Sub)),
+        TokenInput::punctuation(Punct::StarEq).to(Some(BinOp::Mul)),
+        TokenInput::punctuation(Punct::SlashEq).to(Some(BinOp::Div)),
+        TokenInput::punctuation(Punct::PercentEq).to(Some(BinOp::Rem)),
+        TokenInput::punctuation(Punct::CaretEq).to(Some(BinOp::BitXor)),
+        TokenInput::punctuation(Punct::AndEq).to(Some(BinOp::BitAnd)),
+        TokenInput::punctuation(Punct::OrEq).to(Some(BinOp::BitOr)),
+        TokenInput::punctuation(Punct::ShlEq).to(Some(BinOp::Shl)),
         gt_op(GtOp::ShrEq).to(Some(BinOp::Shr)),
     ));
     range
@@ -583,10 +583,10 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
     let block_expr = block.clone().map_with(|b: Block, e| mk(ExprKind::Block(b), e.span()));
 
     // `let pat = expr` or an expression, with no struct literal at the top.
-    let cond = first_of(vec![
-        kw(Kw::Let)
+    let cond = TokenInput::first_of(vec![
+        TokenInput::keyword(Kw::Let)
             .ignore_then(h.pat.clone())
-            .then_ignore(punct(Punct::Eq))
+            .then_ignore(TokenInput::punctuation(Punct::Eq))
             .then(h.expr_ns.clone())
             .map_with(|(pat, e), sp| mk(ExprKind::Let { pat, expr: boxed(e) }, sp.span()))
             .boxed(),
@@ -594,10 +594,10 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
     ]);
 
     let if_expr = recursive(|if_expr| {
-        kw(Kw::If)
+        TokenInput::keyword(Kw::If)
             .ignore_then(cond.clone())
             .then(block.clone())
-            .then(kw(Kw::Else).ignore_then(first_of(vec![if_expr.boxed(), block_expr.clone().boxed()])).or_not())
+            .then(TokenInput::keyword(Kw::Else).ignore_then(TokenInput::first_of(vec![if_expr.boxed(), block_expr.clone().boxed()])).or_not())
             .map_with(|((cond, then), else_), e| {
                 mk(ExprKind::If { cond: boxed(cond), then, else_: else_.map(boxed) }, e.span())
             })
@@ -605,16 +605,16 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
 
     let arm = item::meta(h)
         .then(h.pat.clone())
-        .then(kw(Kw::If).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::FatArrow))
+        .then(TokenInput::keyword(Kw::If).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::FatArrow))
         .then(choice((
             // A block-like body needs no comma.
             block_expr
                 .clone()
-                .then_ignore(punct(Punct::Comma).or_not()),
+                .then_ignore(TokenInput::punctuation(Punct::Comma).or_not()),
             h.expr
                 .clone()
-                .then_ignore(choice((punct(Punct::Comma), punct(Punct::RBrace).rewind()))),
+                .then_ignore(choice((TokenInput::punctuation(Punct::Comma), TokenInput::punctuation(Punct::RBrace).rewind()))),
         )))
         .map_with(|(((meta, pat), guard), body), e| Arm {
             meta,
@@ -623,30 +623,30 @@ pub(crate) fn block_like<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
             body,
             span: Loc(e.span()),
         });
-    let match_expr = kw(Kw::Match)
+    let match_expr = TokenInput::keyword(Kw::Match)
         .ignore_then(h.expr_ns.clone())
-        .then(arm.repeated().collect::<Vec<_>>().delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)))
+        .then(arm.repeated().collect::<Vec<_>>().delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)))
         .map_with(|(scrutinee, arms), e| {
             mk(ExprKind::Match { scrutinee: boxed(scrutinee), arms }, e.span())
         });
 
-    let while_expr = kw(Kw::While)
+    let while_expr = TokenInput::keyword(Kw::While)
         .ignore_then(cond)
         .then(block.clone())
         .map_with(|(cond, body), e| mk(ExprKind::While { cond: boxed(cond), body }, e.span()));
-    let loop_expr = kw(Kw::Loop)
+    let loop_expr = TokenInput::keyword(Kw::Loop)
         .ignore_then(block.clone())
         .map_with(|body, e| mk(ExprKind::Loop { body }, e.span()));
-    let for_expr = kw(Kw::For)
+    let for_expr = TokenInput::keyword(Kw::For)
         .ignore_then(pat::binding(h))
-        .then_ignore(kw(Kw::In))
+        .then_ignore(TokenInput::keyword(Kw::In))
         .then(h.expr_ns.clone())
         .then(block)
         .map_with(|((pat, iter), body), e| {
             mk(ExprKind::For { pat, iter: boxed(iter), body }, e.span())
         });
 
-    first_of(vec![if_expr.boxed(), match_expr.boxed(), while_expr.boxed(), loop_expr.boxed(), for_expr.boxed(), block_expr.boxed()])
+    TokenInput::first_of(vec![if_expr.boxed(), match_expr.boxed(), while_expr.boxed(), loop_expr.boxed(), for_expr.boxed(), block_expr.boxed()])
 }
 
 /// A block: `{ stmt* }`.
@@ -654,7 +654,7 @@ pub(crate) fn block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Block> {
     stmt(h)
         .repeated()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
         .map_with(|stmts, e| Block { stmts, span: Loc(e.span()) })
         .boxed()
 }
@@ -664,15 +664,15 @@ pub(crate) fn block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Block> {
 /// [after e];`). The last statement of a block may omit its `;`.
 pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
     let mk = |kind: StmtKind, span: Span| Stmt { meta: Meta::default(), kind, span: Loc(span) };
-    let semi = punct(Punct::Semi);
+    let semi = TokenInput::punctuation(Punct::Semi);
 
     let empty = semi.clone().map_with(move |_, e| mk(StmtKind::Empty, e.span()));
 
-    let let_stmt = kw(Kw::Let)
+    let let_stmt = TokenInput::keyword(Kw::Let)
         .ignore_then(pat::binding(h))
-        .then(punct(Punct::Colon).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(h.ty.clone()).or_not())
         .then(
-            punct(Punct::Eq)
+            TokenInput::punctuation(Punct::Eq)
                 .ignore_then(h.expr.clone())
                 // `else` is matched without listing it among the expected tokens: it is
                 // rare enough that an error after `let x = 1` names `;` first.
@@ -712,20 +712,20 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
         Semi,
         Last,
     }
-    let tail = first_of(vec![
-        punct(Punct::PlusGt)
+    let tail = TokenInput::first_of(vec![
+        TokenInput::punctuation(Punct::PlusGt)
             .ignore_then(h.expr.clone())
             .then_ignore(semi.clone())
             .map(Tail::Contribution)
             .boxed(),
-        punct(Punct::LtMinus)
+        TokenInput::punctuation(Punct::LtMinus)
             .ignore_then(h.expr.clone())
-            .then(kw(Kw::After).ignore_then(h.expr.clone()).or_not())
+            .then(TokenInput::keyword(Kw::After).ignore_then(h.expr.clone()).or_not())
             .then_ignore(semi.clone())
             .map(|(v, after)| Tail::Commit(v, after))
             .boxed(),
         semi.to(Tail::Semi).boxed(),
-        punct(Punct::RBrace).rewind().to(Tail::Last).boxed(),
+        TokenInput::punctuation(Punct::RBrace).rewind().to(Tail::Last).boxed(),
     ]);
     let simple = any()
         .filter(move |t: &Token| !starts_block_like(t))
@@ -743,14 +743,14 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
 
     // `signal` and `on` are module and `digital` forms: parsed here so a
     // context check can name them where they are not allowed.
-    let signal_stmt = kw(Kw::Signal)
-        .ignore_then(ident())
-        .then_ignore(punct(Punct::Colon))
+    let signal_stmt = TokenInput::keyword(Kw::Signal)
+        .ignore_then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(ty::sigtype(h))
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::Semi))
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map_with(move |((name, ty), init), e| mk(StmtKind::Signal { name, ty, init }, e.span()));
-    let reaction_stmt = kw(Kw::On)
+    let reaction_stmt = TokenInput::keyword(Kw::On)
         .ignore_then(h.expr_ns.clone())
         .then(h.block.clone())
         .map_with(move |(event, body), e| mk(StmtKind::Reaction(Reaction { event, body }), e.span()));
@@ -771,7 +771,7 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
 
     // Every other form takes outer docs and attributes (Rust's `stmt`).
     let with_meta = item::meta(h)
-        .then(first_of(vec![
+        .then(TokenInput::first_of(vec![
             empty.boxed(),
             let_stmt.boxed(),
             signal_stmt.boxed(),
@@ -783,10 +783,10 @@ pub(crate) fn stmt<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Stmt> {
             s.meta = meta;
             s
         });
-    let stmt = first_of(vec![item_stmt.boxed(), with_meta.boxed()])
+    let stmt = TokenInput::first_of(vec![item_stmt.boxed(), with_meta.boxed()])
     .labelled("statement")
     .boxed();
-    recover(stmt, false, |span| Stmt {
+    Recovery::recover(stmt, false, |span| Stmt {
         meta: Meta::default(),
         kind: StmtKind::Expr { expr: Expr { kind: ExprKind::Error, span: Loc(span) }, semi: true },
         span: Loc(span),

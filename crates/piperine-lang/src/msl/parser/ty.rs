@@ -20,14 +20,14 @@ fn path_with<'a, I: In<'a>>(h: &Handles<'a, I>, in_expr: bool, sugar: bool) -> P
     } else {
         generic_args(h, in_expr).or_not().boxed()
     };
-    let seg = path_ident().then(args).map(|(ident, args)| PathSeg { ident, args });
+    let seg = TokenInput::path_identifier().then(args).map(|(ident, args)| PathSeg { ident, args });
     // A leading `::` is removed (B.3.6): reported at the `::`, the path kept.
     let leading = just(Token::Punct(Punct::ColonColon)).map_with(|_, e| e.span()).or_not();
     leading
-        .then(seg.separated_by(punct(Punct::ColonColon)).at_least(1).collect::<Vec<_>>())
+        .then(seg.separated_by(TokenInput::punctuation(Punct::ColonColon)).at_least(1).collect::<Vec<_>>())
         .validate(|(leading, segments), e, emitter| {
             if let Some(at) = leading {
-                emitter.emit(removed("a leading `::`", at));
+                emitter.emit(ParseDiagnostics::removed("a leading `::`", at));
             }
             Path { segments, span: Loc(e.span()) }
         })
@@ -44,21 +44,21 @@ pub(crate) fn generic_args<'a, I: In<'a>>(
         h.block.clone().map_with(|b: Block, e| {
             GenericArg::Const(Expr { span: Loc(e.span()), kind: ExprKind::Block(b) })
         }),
-        lit_expr().map(GenericArg::Const),
+        TokenInput::literal_expression().map(GenericArg::Const),
         neg_lit_expr().map(GenericArg::Const),
         h.ty.clone().map(GenericArg::Type),
     ));
-    let colons = punct(Punct::ColonColon);
+    let colons = TokenInput::punctuation(Punct::ColonColon);
     let open = if in_expr {
         colons.map(|_| true).boxed()
     } else {
         colons.or_not().map(|c| c.is_some()).boxed()
     };
     open.then(
-        arg.separated_by(punct(Punct::Comma))
+        arg.separated_by(TokenInput::punctuation(Punct::Comma))
             .allow_trailing()
             .collect::<Vec<_>>()
-            .delimited_by(punct(Punct::Lt), punct(Punct::Gt)),
+            .delimited_by(TokenInput::punctuation(Punct::Lt), TokenInput::punctuation(Punct::Gt)),
     )
     .map_with(|(turbofish, args), e| GenericArgs::Angle { args, turbofish, span: Loc(e.span()) })
     .boxed()
@@ -66,7 +66,7 @@ pub(crate) fn generic_args<'a, I: In<'a>>(
 
 /// `- literal`: a negative literal as a const argument (A.5 rule 4).
 fn neg_lit_expr<'a, I: In<'a>>() -> impl Parser<'a, I, Expr, Extra<'a>> + Clone {
-    punct(Punct::Minus).ignore_then(lit_expr()).map_with(|inner, e| Expr {
+    TokenInput::punctuation(Punct::Minus).ignore_then(TokenInput::literal_expression()).map_with(|inner, e| Expr {
         span: Loc(e.span()),
         kind: ExprKind::Unary { op: UnOp::Neg, expr: Box::new(inner) },
     })
@@ -77,12 +77,12 @@ fn fn_sugar<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, GenericArgs> {
     let inputs = h
         .ty
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen));
     inputs
-        .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
         .map_with(|(inputs, output), e| GenericArgs::Paren {
             inputs,
             output: output.map(Box::new),
@@ -93,20 +93,20 @@ fn fn_sugar<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, GenericArgs> {
 
 /// `<T: Bound + Bound = Default, const N: u32 = 4>` on a declaration.
 pub(crate) fn generics<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Generics> {
-    let bounds = bound(h).separated_by(punct(Punct::Plus)).at_least(1).collect::<Vec<_>>();
-    let type_param = ident()
-        .then(punct(Punct::Colon).ignore_then(bounds).or_not())
-        .then(punct(Punct::Eq).ignore_then(h.ty.clone()).or_not())
+    let bounds = bound(h).separated_by(TokenInput::punctuation(Punct::Plus)).at_least(1).collect::<Vec<_>>();
+    let type_param = TokenInput::identifier()
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(bounds).or_not())
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.ty.clone()).or_not())
         .map_with(|((name, bounds), default), e| GenericParam {
             name,
             kind: GenericParamKind::Type { bounds: bounds.unwrap_or_default(), default },
             span: Loc(e.span()),
         });
-    let const_param = kw(Kw::Const)
-        .ignore_then(ident())
-        .then_ignore(punct(Punct::Colon))
+    let const_param = TokenInput::keyword(Kw::Const)
+        .ignore_then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
-        .then(punct(Punct::Eq).ignore_then(lit_expr().or(h.block.clone().map_with(|b: Block, e| {
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(TokenInput::literal_expression().or(h.block.clone().map_with(|b: Block, e| {
             Expr { span: Loc(e.span()), kind: ExprKind::Block(b) }
         }))).or_not())
         .map_with(|((name, ty), default), e| GenericParam {
@@ -116,22 +116,22 @@ pub(crate) fn generics<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Generics> 
         });
     super::item::rejected_meta(h)
         .ignore_then(choice((const_param, type_param)))
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::Lt), punct(Punct::Gt))
+        .delimited_by(TokenInput::punctuation(Punct::Lt), TokenInput::punctuation(Punct::Gt))
         .map_with(|params, e| Generics { params, span: Loc(e.span()) })
         .boxed()
 }
 
 /// `<T as Tr>::X`: a qualified path, a removed form (B.3.6); the caller reports it.
 pub(crate) fn qualified_path<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ()> {
-    punct(Punct::Lt)
+    TokenInput::punctuation(Punct::Lt)
         .ignore_then(h.ty.clone())
-        .ignore_then(kw(Kw::As))
+        .ignore_then(TokenInput::keyword(Kw::As))
         .ignore_then(bound(h))
-        .ignore_then(punct(Punct::Gt))
-        .ignore_then(punct(Punct::ColonColon).ignore_then(path_ident()).repeated().at_least(1))
+        .ignore_then(TokenInput::punctuation(Punct::Gt))
+        .ignore_then(TokenInput::punctuation(Punct::ColonColon).ignore_then(TokenInput::path_identifier()).repeated().at_least(1))
         .ignored()
         .boxed()
 }
@@ -170,13 +170,13 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
     let ty = h.ty.clone();
     let mk = |kind: TypeKind, span: Span| Type { kind, span: Loc(span) };
 
-    let flip = kw(Kw::Flip)
+    let flip = TokenInput::keyword(Kw::Flip)
         .ignore_then(ty.clone())
         .map_with(move |t, e| mk(TypeKind::Flip(Box::new(t)), e.span()));
 
     // `&T`, `&&T`, `&mut T`: removed (B.3.6); reported at the head, read as the type it borrows.
-    let reference = reference_head().then(ty.clone()).validate(|(head, inner), _, emitter| {
-        emitter.emit(removed("references and borrows", head));
+    let reference = TokenInput::reference_head().then(ty.clone()).validate(|(head, inner), _, emitter| {
+        emitter.emit(ParseDiagnostics::removed("references and borrows", head));
         inner
     });
 
@@ -184,8 +184,8 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
     // form around it (`&[T]`) is still reported for itself.
     let array = ty
         .clone()
-        .then(punct(Punct::Semi).ignore_then(h.expr.clone()).or_not())
-        .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+        .then(TokenInput::punctuation(Punct::Semi).ignore_then(h.expr.clone()).or_not())
+        .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket))
         .validate(move |(elem, len), e, emitter| match len {
             Some(len) => mk(TypeKind::Array { elem: Box::new(elem), len: Box::new(len) }, e.span()),
             None => {
@@ -203,32 +203,32 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
 
     // `fn(A, B) -> R`, taken only where a type is expected.
     // A parameter name is removed (B.3.6): reported, the type kept.
-    let named_param = ident()
-        .then_ignore(punct(Punct::Colon))
+    let named_param = TokenInput::identifier()
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(ty.clone())
         .validate(|(_, t), e, emitter| {
-            emitter.emit(removed("named function-pointer parameters", e.span()));
+            emitter.emit(ParseDiagnostics::removed("named function-pointer parameters", e.span()));
             t
         });
-    let fn_ptr = kw(Kw::Fn)
+    let fn_ptr = TokenInput::keyword(Kw::Fn)
         .ignore_then(
             named_param
                 .or(ty.clone())
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LParen), punct(Punct::RParen)),
+                .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen)),
         )
-        .then(punct(Punct::Arrow).ignore_then(ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Arrow).ignore_then(ty.clone()).or_not())
         .map_with(move |(params, ret), e| mk(TypeKind::FnPtr { params, ret: ret.map(Box::new) }, e.span()));
 
     // `(T)` is T; `(T,)`, `(A, B)` and `()` are tuples.
     let tuple_or_paren = ty
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .collect::<Vec<_>>()
-        .then(punct(Punct::Comma).or_not())
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .then(TokenInput::punctuation(Punct::Comma).or_not())
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
         .map_with(move |(mut items, trailing), e| {
             if items.len() == 1 && trailing.is_none() {
                 items.remove(0)
@@ -237,33 +237,33 @@ pub(crate) fn build<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Type> {
             }
         });
 
-    let infer = punct(Punct::Underscore).map_with(move |_, e| mk(TypeKind::Infer, e.span()));
+    let infer = TokenInput::punctuation(Punct::Underscore).map_with(move |_, e| mk(TypeKind::Infer, e.span()));
 
     // Removed forms (B.3.6): each is reported once and stands as an inferred type.
-    let impl_trait = kw(Kw::Impl)
-        .ignore_then(bound(h).separated_by(punct(Punct::Plus)).at_least(1).collect::<Vec<_>>())
+    let impl_trait = TokenInput::keyword(Kw::Impl)
+        .ignore_then(bound(h).separated_by(TokenInput::punctuation(Punct::Plus)).at_least(1).collect::<Vec<_>>())
         .validate(move |_, e, emitter| {
-            emitter.emit(removed("`impl Trait` types", e.span()));
+            emitter.emit(ParseDiagnostics::removed("`impl Trait` types", e.span()));
             mk(TypeKind::Infer, e.span())
         });
-    let never = punct(Punct::Not).validate(move |_, e, emitter| {
-        emitter.emit(removed("the never type", e.span()));
+    let never = TokenInput::punctuation(Punct::Not).validate(move |_, e, emitter| {
+        emitter.emit(ParseDiagnostics::removed("the never type", e.span()));
         mk(TypeKind::Infer, e.span())
     });
-    let raw_pointer = punct(Punct::Star)
-        .ignore_then(kw(Kw::Const).or(kw(Kw::Mut)))
+    let raw_pointer = TokenInput::punctuation(Punct::Star)
+        .ignore_then(TokenInput::keyword(Kw::Const).or(TokenInput::keyword(Kw::Mut)))
         .ignore_then(ty.clone())
         .validate(move |_, e, emitter| {
-            emitter.emit(removed("raw-pointer types", e.span()));
+            emitter.emit(ParseDiagnostics::removed("raw-pointer types", e.span()));
             mk(TypeKind::Infer, e.span())
         });
     let qualified = qualified_path(h).validate(move |_, e, emitter| {
-        emitter.emit(removed("qualified paths", e.span()));
+        emitter.emit(ParseDiagnostics::removed("qualified paths", e.span()));
         mk(TypeKind::Infer, e.span())
     });
     let path_ty = path(h, false).map_with(move |p, e| mk(TypeKind::Path(p), e.span()));
 
-    first_of(vec![
+    TokenInput::first_of(vec![
         flip.boxed(),
         fn_ptr.boxed(),
         reference.boxed(),

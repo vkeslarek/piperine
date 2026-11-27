@@ -17,21 +17,21 @@ pub(crate) fn word<'a, I: In<'a>>(word: &'static str) -> impl Parser<'a, I, (), 
 
 /// `nature Name<G> { potential: V { access: v }, flow: I, value: T, resolve: f }`
 pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
-    let attr = ident()
-        .then_ignore(punct(Punct::Colon))
+    let attr = TokenInput::identifier()
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.expr.clone())
         .map_with(|(name, value), e| FieldInit { name, value, shorthand: false, span: Loc(e.span()) });
     let attr_block = attr
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace));
     let quantity = choice((
         word("potential").to(Quantity::Potential),
         word("flow").to(Quantity::Flow),
     ))
-    .then_ignore(punct(Punct::Colon))
-    .then(ident())
+    .then_ignore(TokenInput::punctuation(Punct::Colon))
+    .then(TokenInput::identifier())
     .then(attr_block.or_not())
     .map(|((which, name), attrs)| NatureFieldKind::Quantity {
         which,
@@ -39,23 +39,23 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         attrs: attrs.unwrap_or_default(),
     });
     let value = word("value")
-        .ignore_then(punct(Punct::Colon))
+        .ignore_then(TokenInput::punctuation(Punct::Colon))
         .ignore_then(h.ty.clone())
         .map(NatureFieldKind::Value);
     let field = item::meta(h)
-        .then(first_of(vec![quantity.boxed(), value.boxed()]))
+        .then(TokenInput::first_of(vec![quantity.boxed(), value.boxed()]))
         .map_with(|(meta, kind), e| NatureField { meta, kind, span: Loc(e.span()) })
         .labelled("nature field");
-    kw(Kw::Nature)
-        .ignore_then(ident())
+    TokenInput::keyword(Kw::Nature)
+        .ignore_then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then(
             field
-                .separated_by(punct(Punct::Comma))
+                .separated_by(TokenInput::punctuation(Punct::Comma))
                 .at_least(1)
                 .allow_trailing()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+                .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)),
         )
         .map(|((name, generics), fields)| ItemKind::Nature(NatureDecl { name, generics, fields }))
         .boxed()
@@ -65,12 +65,12 @@ pub(crate) fn nature_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
 
 /// `signal name: sigtype = init;`
 fn signal_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleItemKind> {
-    kw(Kw::Signal)
-        .ignore_then(ident())
-        .then_ignore(punct(Punct::Colon))
+    TokenInput::keyword(Kw::Signal)
+        .ignore_then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(ty::sigtype(h))
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::Semi))
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map(|((name, ty), init)| ModuleItemKind::Signal { name, ty, init })
         .boxed()
 }
@@ -83,25 +83,25 @@ fn place<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Expr> {
         Index(Expr),
         Field(Ident),
     }
-    let step = first_of(vec![
+    let step = TokenInput::first_of(vec![
         h.expr
             .clone()
-            .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+            .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket))
             .map(Step::Index)
             .boxed(),
-        punct(Punct::Dot).ignore_then(ident()).map(Step::Field).boxed(),
+        TokenInput::punctuation(Punct::Dot).ignore_then(TokenInput::identifier()).map(Step::Field).boxed(),
     ]);
     // A parenthesized place is parsed so that its one diagnostic names it.
     let paren = h
         .expr
         .clone()
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
         .validate(|inner, e, emitter| {
             let span = e.span();
-            emitter.emit(Rich::custom(span, not_a_place()));
+            emitter.emit(Rich::custom(span, ParseDiagnostics::not_a_place()));
             Expr { span: Loc(span), kind: ExprKind::Paren(Box::new(inner)) }
         });
-    let head = first_of(vec![
+    let head = TokenInput::first_of(vec![
         ty::path(h, true).map_with(|path, e| Expr { span: Loc(e.span()), kind: ExprKind::Path(path) }).boxed(),
         paren.boxed(),
     ]);
@@ -131,7 +131,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
     // names, inside a generation's list too (`else { y = 2; }`).
     let with_late = |mut alts: Vec<P<'a, I, X>>| {
         alts.extend(late.clone());
-        first_of(alts)
+        TokenInput::first_of(alts)
     };
     let generation = recursive(|generation: Recursive<chumsky::recursive::Direct<'a, 'a, I, Gen<X>, Extra<'a>>>| {
         let item = with_late(vec![
@@ -141,22 +141,22 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
         let list = item
             .repeated()
             .collect::<Vec<_>>()
-            .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace))
+            .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace))
             .boxed();
-        let for_ = kw(Kw::For)
+        let for_ = TokenInput::keyword(Kw::For)
             .ignore_then(pat::binding(h))
-            .then_ignore(kw(Kw::In))
+            .then_ignore(TokenInput::keyword(Kw::In))
             .then(h.expr_ns.clone())
             .then(list.clone())
             .map_with(|((pat, iter), body), e| Gen {
                 kind: GenKind::For { pat, iter, body },
                 span: Loc(e.span()),
             });
-        let else_ = kw(Kw::Else).ignore_then(first_of(vec![
+        let else_ = TokenInput::keyword(Kw::Else).ignore_then(TokenInput::first_of(vec![
             list.clone().map(GenElse::Block).boxed(),
             generation.clone().map(GenElse::If).boxed(),
         ]));
-        let if_ = kw(Kw::If)
+        let if_ = TokenInput::keyword(Kw::If)
             .ignore_then(h.expr_ns.clone())
             .then(list)
             .then(else_.or_not())
@@ -164,7 +164,7 @@ fn gen_of<'a, I: In<'a>, X: Clone + 'a>(
                 kind: GenKind::If { cond, then, else_: else_.map(Box::new) },
                 span: Loc(e.span()),
             });
-        first_of(vec![for_.boxed(), if_.boxed()])
+        TokenInput::first_of(vec![for_.boxed(), if_.boxed()])
     });
     with_late(vec![leaf, meta.then(generation).map(move |(m, g)| wrap(g, m)).boxed()])
 }
@@ -214,22 +214,22 @@ pub(crate) fn module_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ModuleI
 
 fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>) -> P<'a, I, ModuleItem> {
     // `name: type = default where cond;`
-    let param = ident()
-        .then_ignore(punct(Punct::Colon))
+    let param = TokenInput::identifier()
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
-        .then(kw(Kw::Where).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::Semi))
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(TokenInput::keyword(Kw::Where).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map(|(((name, ty), default), where_)| ModuleItemKind::Param { name, ty, default, where_ })
         .boxed();
     // `let pat = expr;`: a body `let` takes no type annotation.
-    let annotation = punct(Punct::Colon).ignore_then(h.ty.clone()).map_with(|_, e| e.span()).or_not();
-    let let_item = kw(Kw::Let)
+    let annotation = TokenInput::punctuation(Punct::Colon).ignore_then(h.ty.clone()).map_with(|_, e| e.span()).or_not();
+    let let_item = TokenInput::keyword(Kw::Let)
         .ignore_then(pat::binding(h))
         .then(annotation)
-        .then_ignore(punct(Punct::Eq))
+        .then_ignore(TokenInput::punctuation(Punct::Eq))
         .then(h.expr.clone())
-        .then_ignore(punct(Punct::Semi))
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .validate(|((pat, annotation), value), _, emitter| {
             if let Some(span) = annotation {
                 emitter.emit(Rich::custom(
@@ -246,10 +246,10 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
         .boxed();
     // `place = expr [after expr];`
     let def = place(h)
-        .then_ignore(punct(Punct::Eq))
+        .then_ignore(TokenInput::punctuation(Punct::Eq))
         .then(h.expr.clone())
-        .then(kw(Kw::After).ignore_then(h.expr.clone()).or_not())
-        .then_ignore(punct(Punct::Semi))
+        .then(TokenInput::keyword(Kw::After).ignore_then(h.expr.clone()).or_not())
+        .then_ignore(TokenInput::punctuation(Punct::Semi))
         .map(|((place, value), after)| ModuleItemKind::Def { place, value, after })
         .boxed();
     // E0303: a module declaration is not a module item.
@@ -269,9 +269,9 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
             ModuleItemKind::Error
         })
         .boxed();
-    let declared = first_of(vec![signal_decl(h), param, let_item, nested]);
+    let declared = TokenInput::first_of(vec![signal_decl(h), param, let_item, nested]);
     let leaf = item::meta(h)
-        .then(visibility().or_not())
+        .then(TokenInput::visibility().or_not())
         .then(declared)
         .map_with(|((meta, public), kind), e| ModuleItem {
             meta,
@@ -292,11 +292,11 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
     };
     // A commit, a contribution or a reaction written where only items go:
     // parsed as the statement it is, so one diagnostic names it (E0404).
-    let starts_behavior = first_of(vec![
+    let starts_behavior = TokenInput::first_of(vec![
         any().filter(|t: &Token| matches!(t, Token::Kw(Kw::On))).rewind().ignored().boxed(),
         statement_with_arrow().boxed(),
-        select! { Token::Ident(s) if s == "bound_step" => () }.then(punct(Punct::LParen)).rewind().ignored().boxed(),
-        select! { Token::Ident(s) if s == "emit" => () }.then(punct(Punct::Not)).rewind().ignored().boxed(),
+        select! { Token::Ident(s) if s == "bound_step" => () }.then(TokenInput::punctuation(Punct::LParen)).rewind().ignored().boxed(),
+        select! { Token::Ident(s) if s == "emit" => () }.then(TokenInput::punctuation(Punct::Not)).rewind().ignored().boxed(),
     ]);
     let stray = starts_behavior
         .ignore_then(expr::stmt(h))
@@ -326,8 +326,8 @@ fn recover_item<'a, I: In<'a>>(h: &Handles<'a, I>, unless: Option<P<'a, I, ()>>)
             ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(e.span()) }
         })
         .boxed();
-    let item = gen_of(h, first_of(vec![leaf, def]), Some(stray), wrap).labelled("module item").boxed();
-    recover_unless(
+    let item = gen_of(h, TokenInput::first_of(vec![leaf, def]), Some(stray), wrap).labelled("module item").boxed();
+    Recovery::recover_unless(
         item,
         true,
         |span| ModuleItem { meta: Meta::default(), public: false, kind: ModuleItemKind::Error, span: Loc(span) },
@@ -354,10 +354,10 @@ pub(crate) fn misplaced_emit<'a>(span: Span) -> Err<'a> {
 pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
     let port = item::meta(h)
         .then(item::dir().or_not())
-        .then(ident())
-        .then_ignore(punct(Punct::Colon))
+        .then(TokenInput::identifier())
+        .then_ignore(TokenInput::punctuation(Punct::Colon))
         .then(h.ty.clone())
-        .then(punct(Punct::Eq).ignore_then(h.expr.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Eq).ignore_then(h.expr.clone()).or_not())
         .map_with(|((((meta, dir), name), ty), default), e| Port {
             meta,
             dir,
@@ -372,7 +372,7 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .filter(|t: &Token| !matches!(t, Token::Punct(Punct::Comma | Punct::RParen | Punct::RBracket | Punct::RBrace)))
         .ignore_then(
             choice((
-                any().filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))).rewind().ignore_then(skip_group()),
+                any().filter(|t: &Token| matches!(t, Token::Punct(Punct::LParen | Punct::LBracket | Punct::LBrace))).rewind().ignore_then(Recovery::skip_group()),
                 any().filter(|t: &Token| !matches!(t, Token::Punct(Punct::Comma | Punct::RParen | Punct::RBracket | Punct::RBrace))).ignored(),
             ))
             .repeated(),
@@ -381,11 +381,11 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
     let ports = port
         .map(Some)
         .recover_with(via_parser(bad_port))
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
         .map(|ports| ports.into_iter().flatten().collect::<Vec<Port>>())
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen));
     // The body's last expression is the result, not an item to skip.
     let result_ahead = h
         .expr
@@ -398,15 +398,15 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
         .repeated()
         .collect::<Vec<_>>()
         .then(h.expr.clone().or_not())
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
-    kw(Kw::Extern)
-        .ignore_then(string_lit())
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace));
+    TokenInput::keyword(Kw::Extern)
+        .ignore_then(TokenInput::string_literal())
         .or_not()
-        .then_ignore(kw(Kw::Module))
-        .then(ident())
+        .then_ignore(TokenInput::keyword(Kw::Module))
+        .then(TokenInput::identifier())
         .then(ty::generics(h).or_not())
         .then(ports)
-        .then(punct(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
+        .then(TokenInput::punctuation(Punct::Arrow).ignore_then(h.ty.clone()).or_not())
         .then(item::where_clause(h))
         .then(body)
         .map(|((((((abi, name), generics), ports), ret), where_), (body, result))| {
@@ -436,7 +436,7 @@ pub(crate) fn module_decl<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKin
 /// `on event { stmts and commits }`; the event is an expression that does
 /// not take a struct literal, so the `{` opens the body.
 fn reaction<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Reaction> {
-    kw(Kw::On)
+    TokenInput::keyword(Kw::On)
         .ignore_then(h.expr_ns.clone())
         .then(h.block.clone())
         .map(|(event, body)| Reaction { event, body })
@@ -465,22 +465,22 @@ fn digital_item<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, DigitalItem> {
         })
         .boxed();
     let item = gen_of(h, reaction, Some(stray), wrap).labelled("reaction").boxed();
-    recover(item, true, |span| DigitalItem { meta: Meta::default(), kind: DigitalItemKind::Error, span: Loc(span) })
+    Recovery::recover(item, true, |span| DigitalItem { meta: Meta::default(), kind: DigitalItemKind::Error, span: Loc(span) })
 }
 
 /// `analog [<names>] for Path { stmts }` or `digital [<names>] for Path { reactions }`.
 pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, ItemKind> {
-    let names = ident()
-        .separated_by(punct(Punct::Comma))
+    let names = TokenInput::identifier()
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .at_least(1)
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::Lt), punct(Punct::Gt));
+        .delimited_by(TokenInput::punctuation(Punct::Lt), TokenInput::punctuation(Punct::Gt));
     // `analog` and `digital` are keywords only in front of `for` or `<`.
     let head = |name: &'static str| {
         word(name)
             .ignore_then(names.clone().or_not())
-            .then_ignore(kw(Kw::For))
+            .then_ignore(TokenInput::keyword(Kw::For))
             .then(ty::path(h, false))
     };
     let analog = head("analog")
@@ -488,7 +488,7 @@ pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item
             expr::stmt(h)
                 .repeated()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+                .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)),
         )
         .map(|((names, target), stmts)| {
             ItemKind::Behavior(BehaviorBlock {
@@ -504,7 +504,7 @@ pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item
             digital_item(h)
                 .repeated()
                 .collect::<Vec<_>>()
-                .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace)),
+                .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace)),
         )
         .map(|((names, target), items)| {
             ItemKind::Behavior(BehaviorBlock {
@@ -515,5 +515,5 @@ pub(crate) fn behavior_block<'a, I: In<'a>>(h: &Handles<'a, I>) -> P<'a, I, Item
             })
         })
         .boxed();
-    first_of(vec![analog, digital])
+    TokenInput::first_of(vec![analog, digital])
 }

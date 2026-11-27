@@ -11,21 +11,21 @@ pub(crate) fn build<'a, I: In<'a>>(
     let pat1 = h.pat1.clone();
     let mk = |kind: PatKind, span: Span| Pat { kind, span: Loc(span) };
 
-    let wild = punct(Punct::Underscore).map_with(move |_, e| mk(PatKind::Wild, e.span()));
-    let rest = punct(Punct::DotDot).map_with(move |_, e| mk(PatKind::Rest, e.span()));
+    let wild = TokenInput::punctuation(Punct::Underscore).map_with(move |_, e| mk(PatKind::Wild, e.span()));
+    let rest = TokenInput::punctuation(Punct::DotDot).map_with(move |_, e| mk(PatKind::Rest, e.span()));
     // `&p`: removed (B.3.6); reported at the head, read as the pattern it borrows.
-    let reference = reference_head().then(pat1.clone()).validate(|(head, inner), _, emitter| {
-        emitter.emit(removed("references and borrows", head));
+    let reference = TokenInput::reference_head().then(pat1.clone()).validate(|(head, inner), _, emitter| {
+        emitter.emit(ParseDiagnostics::removed("references and borrows", head));
         inner
     });
 
     // `(p)` is p; `(p,)`, `(a, b)` and `()` are tuples.
     let tuple = pat
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .collect::<Vec<_>>()
-        .then(punct(Punct::Comma).or_not())
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen))
+        .then(TokenInput::punctuation(Punct::Comma).or_not())
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen))
         .map_with(move |(mut items, trailing), e| {
             if items.len() == 1 && trailing.is_none() && !matches!(items[0].kind, PatKind::Rest) {
                 items.remove(0)
@@ -35,14 +35,14 @@ pub(crate) fn build<'a, I: In<'a>>(
         });
     let slice = pat
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LBracket), punct(Punct::RBracket))
+        .delimited_by(TokenInput::punctuation(Punct::LBracket), TokenInput::punctuation(Punct::RBracket))
         .map_with(move |items, e| mk(PatKind::Array(items), e.span()));
 
     // A range bound: an optionally negated literal, or a path.
-    let neg_lit = punct(Punct::Minus).or_not().then(lit_expr()).map_with(|(neg, l), e| match neg {
+    let neg_lit = TokenInput::punctuation(Punct::Minus).or_not().then(TokenInput::literal_expression()).map_with(|(neg, l), e| match neg {
         Some(()) => Expr {
             span: Loc(e.span()),
             kind: ExprKind::Unary { op: UnOp::Neg, expr: Box::new(l) },
@@ -54,10 +54,10 @@ pub(crate) fn build<'a, I: In<'a>>(
         kind: ExprKind::Path(p),
     });
     let bound = neg_lit.clone().or(path_bound);
-    let range_op = punct(Punct::DotDotEq).to(true).or(punct(Punct::DotDot).to(false));
+    let range_op = TokenInput::punctuation(Punct::DotDotEq).to(true).or(TokenInput::punctuation(Punct::DotDot).to(false));
 
     // `..=hi`
-    let range_to = punct(Punct::DotDotEq).ignore_then(bound.clone()).map_with(move |hi, e| {
+    let range_to = TokenInput::punctuation(Punct::DotDotEq).ignore_then(bound.clone()).map_with(move |hi, e| {
         mk(PatKind::Range { lo: None, hi: Some(Box::new(hi)), inclusive: true }, e.span())
     });
     // `lo`, `lo..`, `lo..hi`, `lo..=hi` starting from a literal.
@@ -73,10 +73,10 @@ pub(crate) fn build<'a, I: In<'a>>(
         });
 
     // `ref x`, `mut x`, `ref mut x`: each marker is a reserved word (`E0903`), the name is read as plain.
-    let binding_mods = kw(Kw::Ref)
+    let binding_mods = TokenInput::keyword(Kw::Ref)
         .map_with(|_, e| (Kw::Ref, e.span()))
         .or_not()
-        .then(kw(Kw::Mut).map_with(|_, e| (Kw::Mut, e.span())).or_not())
+        .then(TokenInput::keyword(Kw::Mut).map_with(|_, e| (Kw::Mut, e.span())).or_not())
         .try_map(|(r, m), span| {
             if r.is_none() && m.is_none() {
                 Err(Rich::custom(span, Custom {
@@ -88,8 +88,8 @@ pub(crate) fn build<'a, I: In<'a>>(
                 Ok([r, m])
             }
         })
-        .then(ident())
-        .then(punct(Punct::At).ignore_then(pat1.clone()).or_not())
+        .then(TokenInput::identifier())
+        .then(TokenInput::punctuation(Punct::At).ignore_then(pat1.clone()).or_not())
         .validate(move |((markers, name), sub), e, emitter| {
             for (word, span) in markers.into_iter().flatten() {
                 emitter.emit(ReservedMarker::report(word, span));
@@ -99,21 +99,21 @@ pub(crate) fn build<'a, I: In<'a>>(
 
     // A path: a binding (single segment), a unit/const path, a tuple struct,
     // a struct, or the start of a range.
-    let field_pat = ident()
-        .then(punct(Punct::Colon).ignore_then(pat.clone()).or_not())
+    let field_pat = TokenInput::identifier()
+        .then(TokenInput::punctuation(Punct::Colon).ignore_then(pat.clone()).or_not())
         .map_with(|(name, pat), e| FieldPat { name, pat, span: Loc(e.span()) });
     let struct_body = field_pat
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .then(punct(Punct::DotDot).ignore_then(punct(Punct::Comma).or_not()).or_not())
-        .delimited_by(punct(Punct::LBrace), punct(Punct::RBrace));
+        .then(TokenInput::punctuation(Punct::DotDot).ignore_then(TokenInput::punctuation(Punct::Comma).or_not()).or_not())
+        .delimited_by(TokenInput::punctuation(Punct::LBrace), TokenInput::punctuation(Punct::RBrace));
     let tuple_body = pat
         .clone()
-        .separated_by(punct(Punct::Comma))
+        .separated_by(TokenInput::punctuation(Punct::Comma))
         .allow_trailing()
         .collect::<Vec<_>>()
-        .delimited_by(punct(Punct::LParen), punct(Punct::RParen));
+        .delimited_by(TokenInput::punctuation(Punct::LParen), TokenInput::punctuation(Punct::RParen));
     enum Tail {
         Tuple(Vec<Pat>),
         Struct(Vec<FieldPat>, bool),
@@ -124,7 +124,7 @@ pub(crate) fn build<'a, I: In<'a>>(
         tuple_body.map(Tail::Tuple),
         struct_body.map(|(fields, rest)| Tail::Struct(fields, rest.is_some())),
         range_op.then(bound.or_not()).map(|(inc, hi)| Tail::Range(inc, hi)),
-        punct(Punct::At).ignore_then(pat1.clone()).map(Tail::At),
+        TokenInput::punctuation(Punct::At).ignore_then(pat1.clone()).map(Tail::At),
     ))
     .or_not();
     let path_pat = ty::path(h, true).then(tail).validate(move |(path, tail), e, emitter| {
@@ -164,14 +164,14 @@ pub(crate) fn build<'a, I: In<'a>>(
     });
 
     // `..x`: a half-open range pattern is removed (B.3.6); reported, stands as `_`.
-    let half_open = punct(Punct::DotDot).ignore_then(neg_lit.clone().map(|_| ()).or(ty::path(h, true).map(|_| ()))).validate(
+    let half_open = TokenInput::punctuation(Punct::DotDot).ignore_then(neg_lit.clone().map(|_| ()).or(ty::path(h, true).map(|_| ()))).validate(
         move |_, e, emitter| {
-            emitter.emit(removed("half-open range patterns", e.span()));
+            emitter.emit(ParseDiagnostics::removed("half-open range patterns", e.span()));
             mk(PatKind::Wild, e.span())
         },
     );
 
-    let no_alt = first_of(vec![
+    let no_alt = TokenInput::first_of(vec![
         wild.boxed(),
         half_open.boxed(),
         rest.boxed(),
@@ -186,9 +186,9 @@ pub(crate) fn build<'a, I: In<'a>>(
         .labelled("pattern")
         .boxed();
 
-    let alts = punct(Punct::Or)
+    let alts = TokenInput::punctuation(Punct::Or)
         .or_not()
-        .ignore_then(pat1.clone().separated_by(punct(Punct::Or)).at_least(1).collect::<Vec<_>>())
+        .ignore_then(pat1.clone().separated_by(TokenInput::punctuation(Punct::Or)).at_least(1).collect::<Vec<_>>())
         .map_with(move |mut v, e| {
             if v.len() == 1 { v.remove(0) } else { mk(PatKind::Or(v), e.span()) }
         })

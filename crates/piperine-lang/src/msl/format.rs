@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use super::comments::{Anchor, Attached, Comment, Comments};
 use super::diag::Diagnostic;
 use super::lexer::Lexer;
-use super::parser::parse;
+use super::parser::SourceParser;
 use super::print::{Close, Hooks, Printer, Shape};
 use super::span::Span;
 
@@ -33,7 +33,7 @@ impl Formatter {
     /// does not parse, or one internal-error diagnostic when the formatter
     /// cannot keep every comment and the tree.
     pub fn format(src: &str) -> Result<String, Vec<Diagnostic>> {
-        let parsed = parse(src);
+        let parsed = SourceParser::parse(src);
         if !parsed.diagnostics.is_empty() {
             return Err(parsed.diagnostics);
         }
@@ -72,8 +72,8 @@ impl Formatter {
                 .map_or(Span::new(0, 0), |(b, _)| b.span);
             return Err(vec![Formatter::internal(at, "the formatted text would lose, add or reorder a comment")]);
         }
-        let source = parse(src);
-        let result = parse(&formatted);
+        let source = SourceParser::parse(src);
+        let result = SourceParser::parse(&formatted);
         if !result.diagnostics.is_empty() || result.file != source.file {
             return Err(vec![Formatter::internal(Span::new(0, 0), "the formatted text would parse to another tree")]);
         }

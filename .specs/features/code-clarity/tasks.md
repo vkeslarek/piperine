@@ -1274,9 +1274,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Quick
+- [ ] The two files leave the free-function allowance; `piperine_lang`'s public parse entry points are unchanged (partly: `parse`, `parse_bytes` and the other 51 free functions are methods now; the six fragment entry points `parse_type`, `parse_pat`, `parse_generics`, `parse_expr`, `parse_module_item`, `parse_block` stay free functions, see Deferred)
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Quick
+
+**Deferred**: the six fragment entry points stay free functions in `entry.rs` (6 rows of `free_functions.tsv`, kept, none added) because as methods of `SourceParser` the worklist guard lists them in `test_only_items.tsv` (a re-export line counted as their one product use) and that would add six rows. They are owned by the grammar tasks that follow: T44 `parse_expr`, T45 `parse_type`/`parse_pat`/`parse_generics`, T46 `parse_module_item`/`parse_block`. The entry type is `SourceParser`, not `Parser`: `chumsky::Parser` is the trait every grammar file names through `use super::*`, and a local `Parser` shadows it.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
