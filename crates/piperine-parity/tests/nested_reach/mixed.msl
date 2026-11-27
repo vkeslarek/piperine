@@ -109,3 +109,18 @@ module MixLoopRigParams3() {
     let p = MixLoopTower(a) { m4: m };
 }
 analog for MixLoopRigParams3 { potential(a) +> 1.0; potential(k_read) +> p.rows.cells[1].k; potential(twice_read) +> p.rows.cells[1].twice; potential(first_k_read) +> p.rows.cells[0].k; }
+
+/// A module that reads the params of its own cells placed in generation one level below (`k: m + (j as f64)`), and the top that
+/// places it at `m = 0.25`: `c[1].k = 1.25`, `c[0].k = 0.25`, and `v(c[1].sn)` under the condition `c[1].k > 1.0`.
+module MixOwnRows(a: Electrical, k_read: Electrical, first_k_read: Electrical, gated_read: Electrical) {
+    m: f64 = 0.5;
+    for j in 0..2 { pub let c = Mix(a) { k: m + (j as f64) }; }
+}
+analog for MixOwnRows { potential(k_read) +> c[1].k; potential(first_k_read) +> c[0].k; potential(gated_read) +> if c[1].k > 1.0 { v(c[1].sn) } else { 0.0 }; }
+
+/// The top of `MixOwnRows` at `m = 0.25`.
+module MixOwnRig1() {
+    signal a: Electrical; signal k_read: Electrical; signal first_k_read: Electrical; signal gated_read: Electrical;
+    let p = MixOwnRows(a, k_read, first_k_read, gated_read) { m: 0.25 };
+}
+analog for MixOwnRig1 { potential(a) +> 1.0; }

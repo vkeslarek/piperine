@@ -232,6 +232,15 @@ Proof: run elabnested | test a_param_in_generation_over_a_param_and_the_loop_var
 **C36** - From source, the same reads give `cells[1].k = m * 0.5 + 1`, its `twice`, and `cells[0].k = m * 0.5`, the values Rust computes
 Proof: run sourcenested | test the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_three_levels_down ... ok
 
+**C37** - A body that reads the param of its own child placed in generation one level below (`c[1].k`, `k: m + (j as f64)`) reads the iteration's value (`c[1].k` = 0.25 + 1, `c[0].k` = 0.25 at `m = 0.25`), the loop variable bound where the key value folds as for a child of a child (verification finding 13: it was `E0321`)
+Proof: run elabnested | test a_body_reads_the_param_of_its_own_generated_child_over_a_param_and_the_loop_variable ... ok
+
+**C38** - The same read under an `if` folds the condition over the iteration's `k` (verification finding 13)
+Proof: run elabnested | test a_condition_over_the_param_of_an_own_generated_child_reads_the_iterations_value ... ok
+
+**C39** - From source, `c[1].k`, `c[0].k` and the read under the condition give the values Rust computes (verification finding 13)
+Proof: run sourcenested | test a_body_reads_the_params_of_its_own_cells_in_generation_one_level_down ... ok
+
 ---
 
 ## Handoff

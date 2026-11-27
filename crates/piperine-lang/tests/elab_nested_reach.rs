@@ -370,3 +370,32 @@ fn a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_
         assert!(line.ends_with(lowered), "`{read}` lowers `{lowered}`: {line}");
     }
 }
+
+/// A module that places two cells in generation, each `k` over a param of the module and the loop variable, and reads `read` of
+/// them one level below in its own `analog` block; the top places it at `m = 0.25`.
+const OWN_GENERATED: &str = "module Cell(a: Electrical) { pub k: f64 = 1.0; pub signal sn: Electrical; }\nanalog for Cell { i(a, sn) +> v(a, sn) * k; }\n\
+                             module Ac(a: Electrical, o: Electrical) { m: f64 = 0.5; for j in 0..2 { pub let c = Cell(a) { k: m + (j as f64) }; } }\n\
+                             analog for Ac { potential(o) +> READ; }\n\
+                             module Top() { signal a: Electrical; signal o: Electrical; let p = Ac(a, o) { m: 0.25 }; }\nanalog for Top { potential(a) +> 1.0; }\n";
+
+#[test]
+fn a_body_reads_the_param_of_its_own_generated_child_over_a_param_and_the_loop_variable() {
+    // §8.2.8, §8.2.23 (verification finding 13): `c[1].k` with `k: m + (j as f64)` is the iteration's value, the loop variable bound
+    // where the child's key value folds as it is for a child of a child (C35): `c[1].k` = 0.25 + 1, `c[0].k` = 0.25
+    for (read, lowered) in [("c[1].k", "direct 1.25"), ("c[0].k", "direct 0.25")] {
+        let printed = Elab::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
+        assert!(printed.lines().any(|line| line.trim() == format!("b0.potential +> {lowered}")), "`{read}` lowers `{lowered}`: {printed}");
+    }
+}
+
+#[test]
+fn a_condition_over_the_param_of_an_own_generated_child_reads_the_iterations_value() {
+    // §8.2.23 (verification finding 13): the same read under an `if` folds the condition over the iteration's `k`, never `E0321`
+    for (read, lowered) in [
+        ("if c[1].k > 1.0 { v(c[1].sn) } else { 0.0 }", "direct if (1.25 > 1.0) { probe(\"c[1].sn\", gnd) } else { 0.0 }"),
+        ("if c[0].k > 1.0 { v(c[0].sn) } else { 0.0 }", "direct if (0.25 > 1.0) { probe(\"c[0].sn\", gnd) } else { 0.0 }"),
+    ] {
+        let printed = Elab::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
+        assert!(printed.lines().any(|line| line.trim() == format!("b0.potential +> {lowered}")), "`{read}` lowers `{lowered}`: {printed}");
+    }
+}

@@ -214,6 +214,19 @@ fn the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_th
     }
 }
 
+#[test]
+fn a_body_reads_the_params_of_its_own_cells_in_generation_one_level_down() {
+    // §8.2.8, §8.2.23 (verification finding 13): `k: m + (j as f64)` at `m = 0.25`: `c[1].k = 1.25`, `c[0].k = 0.25`, and the
+    // condition `c[1].k > 1.0` holds, so the gated read is the node of `c[1]`, the divider at `k = 1.25`
+    let m = 0.25;
+    let (k1, k0) = (m + 1.0, m);
+    let gated = if k1 > 1.0 { CellOracle { k: k1, drive: 1.0 }.storage() } else { 0.0 };
+    let seen = RUN.operating_point("mixed.msl", "MixOwnRig1", &["k_read", "first_k_read", "gated_read"]);
+    for (value, wanted) in seen.iter().zip([k1, k0, gated]) {
+        assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
+    }
+}
+
 /// The `seen` records of a bench of `drive.msl`, the value of each as a flag.
 fn seen_flags(top: &str) -> Vec<bool> {
     let records: Vec<Record> = RUN.records_of("drive.msl", top).into_iter().filter(|record| record.stream == "seen").collect();

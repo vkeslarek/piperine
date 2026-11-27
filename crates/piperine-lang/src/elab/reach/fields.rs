@@ -169,7 +169,15 @@ impl Elaboration<'_, '_> {
         indexes.reverse();
         let ExprKind::Field { expr: inner, name, res } = self.design.expr_node(at).kind.clone() else {
             let (binding, key) = self.receiver_placement(scope, receiver)?;
-            return self.placement_frame(scope, binding, key, span);
+            if key.iteration.is_empty() {
+                return self.placement_frame(scope, binding, key, span);
+            }
+            // a child of the body placed in generation is made as a child of a child is (`frame_of_iteration`): its placement's
+            // values read the loop variables of the iteration it names
+            let owner = self.design.expr_node(key.call).owner;
+            let position = self.iteration_position(owner, &key.iteration)?;
+            let iteration = self.generated.of(owner)?.get(position)?.clone();
+            return self.frame_of_iteration(scope.frame, binding, Some(&iteration), span);
         };
         let parent = self.child_frame(scope, inner)?;
         let binding = match res {
