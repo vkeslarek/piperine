@@ -852,3 +852,96 @@ The coordinator asked about "five forms with short text" that lost their owner. 
 | Finding | Severity | Evidence | Fix | Closed |
 | --- | --- | --- | --- | --- |
 | P3R2-1 the guard admits `AssignmentToFieldOrElement`→L74 and refuses honest L74/L75 owners; L74 owns nothing | Low | `refusals.rs:113-125`; five throwaway edits above; `symbolic.rs:102,128,189,193,198,239,252` | match only the quoted column, as a prefix or with the context removed; restore the ddx-only L74 and quoted L75 owners | |
+
+## Phase 3 round 3
+
+**Verdict**: FAIL (one Medium finding, one Low)
+**Head**: a53a47e22 (on a16a6e5e2)
+**Verifier**: independent sub-agent (Opus; author != verifier). The fixer is another Opus agent. I reran the gates on target-a and read the full logs. I probed with the head's `piperine` binary, `/var/tmp/piperine-target-a/debug/piperine run <file> --analysis op`, on lone `.msl` files that place a `fn` inside a `ddx`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards --no-fail-fast` | 11 result lines, 116 passed, 0 failed |
+| `cargo test -p piperine-lang --no-fail-fast` | 84 result lines, 1 439 passed, 0 failed; `refusals` 7/7 |
+
+### Round 2 finding and the four proofs
+
+Throwaway owner edits on `forms.rs`, each reverted with `git checkout`:
+
+| Owner | Guard | Expected |
+| --- | --- | --- |
+| `AssignmentToFieldOrElement` → `Gap("L74")` | fails: L74's `P0001` column quotes none of it | fails ✓ |
+| `FormOfOptionValue` → `Gap("L83")` | fails | fails ✓ |
+| `WhileOrLoopInFnCalledInside` = `Gap("L74")` (the head) | passes. L74 quotes "a `while` or `loop` in a `fn` called inside a `ddx`", the text cut at `:` | passes ✓ |
+| `MatchArmWhosePatternBindsNameIn` = `Gap("L75")` (the head) | passes. L75 quotes "a `match` arm whose pattern binds a name", the text cut at `,` | passes ✓ |
+| `LetOfPatternThatIsNoName` → `Gap("L74")` | **passes** | should fail: the form is shared (P3-1) |
+| `LetOfPatternThatIsNoName` → `Gap("L75")` | **passes** | should fail: the form is shared (P3-1) |
+
+Reading only the `P0001` cell closes the prose leak of round 2: `AssignmentToFieldOrElement` is refused now. The over-match is P3R3-2.
+
+**Owners.**
+
+- 28 `Gap` and 498 `Unswept`, with `unswept_count.txt` at 498.
+- The new rows are seven ddx-only forms raised only in `symbolic.rs:102,128,189,193,198,239,252`, owned by L74, and three event-function forms, owned by L75. Those three join the two L75 rows from before.
+
+**GAPS edits, judged one by one.**
+
+| Edit | The code emits it? | The row covers it? | Verdict |
+| --- | --- | --- | --- |
+| L74 "an `if let` in a `fn` called inside a `ddx`" (tightened) | yes, probed (`if let Some(z) = o` in the `fn`) | yes (prose: "an `if let`") | honest |
+| L74 "a statement that is no `let` of a name, assignment, `if` or `for`" | yes, probed (a deferred `let y;`, a `let … else`) | yes: a deferred `let` and `let … else` have no finite symbolic reading, and a `match` statement is in the prose | honest |
+| L74 "a `fn` called inside a `ddx` that forks into more than 4096 paths" | yes, probed (thirteen unfolded `if`s in a `for 0..13`) | **no**. L74's prose says `ddx` runs `if`, and names no path cap. `symbolic.rs:15` lists while/loop/break/match statement/`let` pattern/call for effect, not the cap. It is a limit of the pass (`symbolic.rs:27`), not one of the forms the row describes | quote added to fit the guard |
+| L74 "a `break`, a `continue` or a `return` with no value" | **not shown**. `return;` inside the `fn` is `E0180` at type check; `continue` outside a loop is `E0185`; `break` inside a `for` raises the nested-loop form instead | prose: "a `break` or `continue`" | quote of a message no probe printed |
+| L74 "a `fn` with no value inside a `ddx`" | **not shown**. A `fn` whose `if`/`else` both `return` with a trailing `;` runs; the checker gives every such `fn` an `f64` value | prose: no | quote of a message no probe printed |
+| L86 "a function with an `Option` parameter or result used as a value" | yes, verbatim the text of `closures.rs:79`. The row's prose already named it as "the lowering's own refusal … behind the two the probe meets" | yes | honest. The prose records that the probe did not print it |
+
+Section 4's column is "Diagnostic (probe)", and GAPS's **Evidence** line says a diagnostic "is quoted as the binary prints it" from a lone-file probe.
+
+No other guard or pin reads these cells:
+
+- `repository_records::gaps_section_10…` reads §10.
+- `tests/book/inventory_guard.rs` reads row ids and §11.
+- `UnnamedTests` reads words for test names; the quotes add none.
+
+**T21.** The **What** line now says each repeated message "is one named variant whose words live in one row … each site builds that variant directly". It is marked as the coordinator's decision pending review, and it agrees with the Done-when. Closed.
+
+### P3R3-1 (Medium): GAPS L74 now quotes messages no probe printed, so the guard passes
+
+To give the seven ddx-only forms their L74 owner, three quotes were written into L74's "Diagnostic (probe)" column without a probe that prints them. Two of them may be unreachable:
+
+- "a `break`, a `continue` or a `return` with no value" (`BreakContinueOrReturnWithNoValue`, `symbolic.rs:193`).
+- "a `fn` with no value inside a `ddx`" (`FnWithNoValueInsideDdx`, `symbolic.rs:102`).
+- "… forks into more than 4096 paths" is printable, but L74's prose does not describe it. The prose says `if` runs.
+
+These cells were edited to fit the test. An unreachable refusal's owner is the sweep, which proves it unreachable (R4's `P0004` pattern), not a GAPS row. A form the row does not describe needs the row's prose to grow, under the owning feature, before its quote can be added.
+
+Fix:
+
+1. Take the first two quotes out of L74 and set those forms back to `Unswept`, or give each a probe that prints it.
+2. For the 4096-path cap, either add it to L74's prose as a known limit of the symbolic pass, or return the form to `Unswept`.
+3. Adjust `unswept_count.txt`.
+
+### P3R3-2 (Low): the clause cut lets a shared form take either owner
+
+`QuotedMessages::message_names` (`refusals.rs:141-145`) cuts at every `:`, `,`, ` in ` or ` before ` in the text, not only at its trailing context clause.
+
+The shared `LetOfPatternThatIsNoName`, "a `let` of a pattern that is no name in {}", is raised for ddx bodies and for event functions. Cut at " in ", it matches L74's quote. Filling `{}` with "a `fn` that returns an `Event`", it matches L75's. So `Gap("L74")` and `Gap("L75")` both pass (the throwaway edits above).
+
+An early cut can also let a short quote own an unrelated form whose words share the prefix before the first comma or " in ". No such pair exists among today's quotes, so the risk is latent.
+
+The hand decision that keeps the nine shared forms `Unswept` is right, but no test holds it.
+
+Fix (either):
+
+- Split each shared form by `ExpandedBody` into a ddx form and an event-function form. Each then has one honest owner, and the ambiguity disappears. This also answers the family question of round 2.
+- Restrict the cut to the last opener, and refuse a `Gap` on a form whose `{}` is the body clause.
+
+### Phase 3 round 3 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| P3R3-1 L74 quotes two unprobed messages and an undescribed cap to satisfy the guard | Medium | `GAPS.md` L74 last column; `symbolic.rs:102,193,252`; the probes above (`E0180`, `E0185`, a clean run) | drop the two quotes and set their forms back to `Unswept`, or probe them; add the cap to the prose or set it back to `Unswept` | |
+| P3R3-2 the clause cut admits either owner on a shared form | Low | `refusals.rs:141-145`; `LetOfPatternThatIsNoName` passes with both `L74` and `L75` | split the shared forms by body, or cut only the trailing clause | |
