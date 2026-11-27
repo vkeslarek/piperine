@@ -1219,6 +1219,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-device-fixtures"
+version = "0.2.0"
+dependencies = [
+ "piperine-abi",
+]
+
+[[package]]
 name = "piperine-digital-solver"
 version = "0.2.0"
 dependencies = [

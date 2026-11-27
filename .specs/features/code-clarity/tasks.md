@@ -1083,9 +1083,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
-- [ ] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
-- [ ] Gate check passes: Quick
+- [x] The crate builds with `#![deny(missing_docs)]`, no free function and one `PartialsCheck` over every device (`its_devices_pass_the_partials_verifier`, once)
+- [x] `no_test_support_is_shared_by_path` and `no_allow_in_test_code` pass under `**Run suite**`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

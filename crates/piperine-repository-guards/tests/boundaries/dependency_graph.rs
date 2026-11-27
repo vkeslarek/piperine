@@ -7,12 +7,13 @@ use piperine_repository_guards::SourceTree;
 /// Each crate and the in-tree crates its `[dependencies]` table names. The leaves (`piperine-abi`,
 /// `piperine-ir`, `piperine-numbers`) name none; the sub-solvers name only `piperine-abi`; the owner
 /// names both sub-solvers; the guards crate names nothing and nothing names it.
-const DOCUMENTED_ARROWS: [(&str, &[&str]); 16] = [
+const DOCUMENTED_ARROWS: [(&str, &[&str]); 17] = [
     ("piperine", &["piperine-api"]),
     ("piperine-abi", &[]),
     ("piperine-analog-solver", &["piperine-abi"]),
     ("piperine-api", &["piperine-abi", "piperine-digital-solver", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-numbers", "piperine-plan", "piperine-project", "piperine-solver", "piperine-transpile"]),
     ("piperine-cli", &["piperine-api", "piperine-lang", "piperine-transpile"]),
+    ("piperine-device-fixtures", &["piperine-abi"]),
     ("piperine-digital-solver", &["piperine-abi"]),
     ("piperine-interp", &["piperine-abi", "piperine-ir", "piperine-plan", "piperine-solver"]),
     ("piperine-ir", &[]),
@@ -68,6 +69,7 @@ fn every_crate_of_the_tree_has_a_documented_row() {
 fn the_leaves_and_the_sub_solvers_keep_their_dev_dependencies_out_of_the_tree() {
     for name in ["piperine-abi", "piperine-ir", "piperine-numbers", "piperine-analog-solver", "piperine-digital-solver", "piperine-repository-guards"] {
         let dev = SourceTree::manifest_section(&ManifestArrows::manifest_of(name), "dev-dependencies");
-        assert!(!dev.lines().any(|line| line.trim().starts_with("piperine-")), "{name} has an in-tree dev-dependency:\n{dev}");
+        let held = dev.lines().filter(|line| line.trim().starts_with("piperine-") && !line.trim().starts_with("piperine-device-fixtures"));
+        assert!(held.count() == 0, "{name} has an in-tree dev-dependency other than the fixtures crate:\n{dev}");
     }
 }

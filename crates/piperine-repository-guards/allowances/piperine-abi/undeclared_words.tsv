@@ -31,7 +31,6 @@ crates/piperine-abi/tests/caller.rs::amp_shape	1
 crates/piperine-abi/tests/caller.rs::handle_reports_fault_and_reshape_as_errors	1
 crates/piperine-abi/tests/examples.rs::as_f64	1
 crates/piperine-abi/tests/examples.rs::f	1
-crates/piperine-abi/tests/examples.rs::worked_examples_pass_the_partials_verifier	1
 crates/piperine-abi/tests/factory.rs::k	2
 crates/piperine-abi/tests/factory.rs::proto	1
 crates/piperine-abi/tests/shape.rs::shape_ref_is_send_and_sync	1

@@ -1,0 +1,9 @@
+[package]
+name = "piperine-device-fixtures"
+version.workspace = true
+edition.workspace = true
+description = "The hand-written ABI devices the back-end test suites share (dev-only)"
+publish = false
+
+[dependencies]
+piperine-abi = { path = "../piperine-abi" }

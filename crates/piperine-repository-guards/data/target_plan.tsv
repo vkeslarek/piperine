@@ -4,6 +4,7 @@ piperine-abi	11
 piperine-analog-solver	13
 piperine-api	26
 piperine-cli	10
+piperine-device-fixtures	1
 piperine-digital-solver	16
 piperine-interp	7
 piperine-ir	15

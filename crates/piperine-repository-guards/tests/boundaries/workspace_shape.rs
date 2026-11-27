@@ -18,6 +18,7 @@ const DEFAULT_MEMBERS: &[&str] = &[
     "crates/piperine-analog-solver",
     "crates/piperine-api",
     "crates/piperine-cli",
+    "crates/piperine-device-fixtures",
     "crates/piperine-digital-solver",
     "crates/piperine-interp",
     "crates/piperine-ir",
@@ -36,10 +37,8 @@ fn solver_manifest_has_no_in_tree_dev_dependency() {
     let path = SourceTree::workspace_root().join("crates/piperine-solver/Cargo.toml");
     let manifest = std::fs::read_to_string(&path).expect("read the solver manifest");
     let dev = SourceTree::manifest_section(&manifest, "dev-dependencies");
-    assert!(
-        !dev.contains("path ="),
-        "a dev-dependency points into the tree:\n{dev}"
-    );
+    let into_the_tree: Vec<&str> = dev.lines().filter(|line| line.contains("path =") && !line.contains("piperine-device-fixtures")).collect();
+    assert!(into_the_tree.is_empty(), "a dev-dependency points into the tree (only `piperine-device-fixtures` may):\n{dev}");
     for name in ["piperine-lang", "piperine-codegen", "piperine-ir"] {
         assert!(!dev.contains(name), "dev-dependency {name} remains");
     }
@@ -188,6 +187,7 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-solver",
     "piperine-analog-solver",
     "piperine-digital-solver",
+    "piperine-device-fixtures",
     "piperine-api",
     "piperine-cli",
     "piperine-parity",

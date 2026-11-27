@@ -26,7 +26,7 @@ impl RustSource {
         &self.crate_name
     }
 
-    /// Whether the file is test code: under a `tests/` directory, or reached by a `#[cfg(test)]`
+    /// Whether the file is test code: under a `tests/` directory, in a `-fixtures` crate, or reached by a `#[cfg(test)]`
     /// module declaration or by a declaration written in test code.
     pub fn is_test(&self) -> bool {
         self.is_test
@@ -105,7 +105,7 @@ impl SourceTree {
             .into_iter()
             .map(|(path, text)| RustSource {
                 crate_name: Self::crate_name_of(&path),
-                is_test: path.components().any(|c| c.as_os_str() == "tests"),
+                is_test: path.components().any(|c| c.as_os_str() == "tests") || Self::is_fixtures_crate(&Self::crate_name_of(&path)),
                 line_count: text.lines().count(),
                 syntax: syn::parse_file(&text).map_err(|error| error.to_string()),
                 text,
@@ -114,6 +114,11 @@ impl SourceTree {
             .collect();
         Self::mark_reached_test_files(&mut files);
         SourceTree { files }
+    }
+
+    /// Whether a crate exists only to give tests their fixtures (`piperine-device-fixtures`): its sources are test code.
+    fn is_fixtures_crate(crate_name: &str) -> bool {
+        crate_name.ends_with("-fixtures")
     }
 
     /// The crate directory name of a path under `crates/`, `piperine` otherwise.

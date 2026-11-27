@@ -2984,6 +2984,7 @@ verbose
 verdict
 verdicts
 verification
+verifier
 verify
 version
 versions

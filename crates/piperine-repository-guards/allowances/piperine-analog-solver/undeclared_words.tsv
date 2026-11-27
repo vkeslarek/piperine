@@ -90,7 +90,6 @@ crates/piperine-analog-solver/tests/assembly_watch.rs::tol_comparator	1
 crates/piperine-analog-solver/tests/assembly_watch.rs::tol_comparator_shape	1
 crates/piperine-analog-solver/tests/boundary.rs::crate_dir	1
 crates/piperine-analog-solver/tests/boundary.rs::rc_with_a_dac	1
-crates/piperine-analog-solver/tests/plan.rs::every_fixture_function_passes_the_partials_verifier	1
 crates/piperine-analog-solver/tests/plan.rs::f	1
 crates/piperine-analog-solver/tests/plan.rs::idx	1
 crates/piperine-analog-solver/tests/support/circuit.rs::f64_bytes	1

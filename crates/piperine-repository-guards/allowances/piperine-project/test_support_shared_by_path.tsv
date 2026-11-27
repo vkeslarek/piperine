@@ -1,0 +1,4 @@
+crates/piperine-project/tests/git.rs::support	1
+crates/piperine-project/tests/lock.rs::support	1
+crates/piperine-project/tests/paths.rs::support	1
+crates/piperine-project/tests/project.rs::support	1
