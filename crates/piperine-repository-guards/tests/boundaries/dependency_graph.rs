@@ -13,7 +13,7 @@ const DOCUMENTED_ARROWS: [(&str, &[&str]); 17] = [
     ("piperine-analog-solver", &["piperine-abi"]),
     ("piperine-api", &["piperine-abi", "piperine-digital-solver", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-numbers", "piperine-plan", "piperine-project", "piperine-solver", "piperine-transpile"]),
     ("piperine-cli", &["piperine-api", "piperine-lang", "piperine-transpile"]),
-    ("piperine-device-fixtures", &["piperine-abi", "piperine-analog-solver", "piperine-digital-solver"]),
+    ("piperine-device-fixtures", &["piperine-abi", "piperine-analog-solver", "piperine-digital-solver", "piperine-solver"]),
     ("piperine-digital-solver", &["piperine-abi"]),
     ("piperine-interp", &["piperine-abi", "piperine-ir", "piperine-plan", "piperine-solver"]),
     ("piperine-ir", &[]),

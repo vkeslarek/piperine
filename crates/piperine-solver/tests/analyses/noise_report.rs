@@ -3,18 +3,13 @@
 //! differential forms of the output. Every expected value is a closed form written beside its
 //! assertion, over the hand-built devices of `helpers/abi_devices.rs` and the two of this file.
 
-// The target uses the library selectively.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
+use piperine_device_fixtures::circuit::K_B;
+use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
 
-use abi_devices::{K_B, add_vsrc, node_id, resistor_noisy};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, input, op, part, pin_flag, role};
@@ -140,7 +135,7 @@ impl TwinFlicker {
 /// The partials verifier holds this target's own device to the same guard as the helpers.
 #[test]
 fn its_device_passes_the_partials_verifier() {
-    partials::verify_every_function("TwinFlicker", TwinFlicker::module());
+    PartialsCheck::verify_every_function("TwinFlicker", TwinFlicker::module());
 }
 
 impl TwinFlicker {
@@ -151,7 +146,7 @@ impl TwinFlicker {
         let top = builder.node("top");
         builder.device(TwinFlicker::module(), "x1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top.clone()), Port::Node(gnd)]);
         let mut circuit = builder.build().expect("build");
-        circuit.noise(Sweep::options(node_id(&top), 1.0e3, 1.0e6, steps), Context::default()).expect("noise").solve().expect("solve")
+        circuit.noise(Sweep::options(CircuitBuilding::node_id(&top), 1.0e3, 1.0e6, steps), Context::default()).expect("noise").solve().expect("solve")
     }
 }
 
@@ -163,13 +158,13 @@ fn the_band_total_integrates_the_density_as_ngspice_does() {
     let mut builder = CircuitBuilder::new("divider");
     let gnd = builder.ground();
     let (top, mid) = (builder.node("top"), builder.node("mid"));
-    add_vsrc(&mut builder, "v1", 1.0, &top, &gnd);
+    CircuitBuilding::add_voltage_source(&mut builder, "v1", 1.0, &top, &gnd);
     for (path, r, p, n) in [("r1", r1, &top, &mid), ("r2", r2, &mid, &gnd)] {
-        builder.device(resistor_noisy(), path, &[("r", ParamValue::Real(r))], &[Port::Node(p.clone()), Port::Node(n.clone())]);
+        builder.device(circuit::NoisyResistor::module(), path, &[("r", ParamValue::Real(r))], &[Port::Node(p.clone()), Port::Node(n.clone())]);
     }
     let mut circuit = builder.build().expect("build");
     let result = circuit
-        .noise(Sweep::options(node_id(&mid), 1.0e3, 1.0e5, 5), Context::default())
+        .noise(Sweep::options(CircuitBuilding::node_id(&mid), 1.0e3, 1.0e5, 5), Context::default())
         .expect("noise")
         .solve()
         .expect("solve");
@@ -216,11 +211,11 @@ impl RcWithCurrentInput {
         let mut builder = CircuitBuilder::new("rc");
         let gnd = builder.ground();
         let out = builder.node("out");
-        builder.device(abi_devices::current_ac(), "iin", &[("i", ParamValue::Real(1.0))], &[Port::Node(out.clone())]);
-        builder.device(resistor_noisy(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
-        abi_devices::add_capacitor(&mut builder, "c1", 1.5915494309189535e-9, &out, &gnd);
+        builder.device(circuit::AcCurrentSource::module(), "iin", &[("i", ParamValue::Real(1.0))], &[Port::Node(out.clone())]);
+        builder.device(circuit::NoisyResistor::module(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(out.clone()), Port::Node(gnd.clone())]);
+        CircuitBuilding::add_capacitor(&mut builder, "c1", 1.5915494309189535e-9, &out, &gnd);
         let mut circuit = builder.build().expect("build");
-        let mut noise_options = Sweep::options(node_id(&out), 1.0e3, 1.0e6, steps);
+        let mut noise_options = Sweep::options(CircuitBuilding::node_id(&out), 1.0e3, 1.0e6, steps);
         noise_options.input_source_name = input.map(str::to_string);
         let mut solver = circuit.noise(noise_options, Context::default()).map_err(|e| e.to_string())?;
         solver.solve().map_err(|e| e.to_string())
@@ -274,10 +269,10 @@ impl ShortedResistor {
         let mut builder = CircuitBuilder::new("short");
         let gnd = builder.ground();
         let top = builder.node("top");
-        add_vsrc(&mut builder, "v1", 0.0, &top, &gnd);
-        builder.device(resistor_noisy(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
+        CircuitBuilding::add_voltage_source(&mut builder, "v1", 0.0, &top, &gnd);
+        builder.device(circuit::NoisyResistor::module(), "r1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
         let mut circuit = builder.build().expect("build");
-        let mut noise_options = Sweep::options(node_id(&top), 1.0e3, 1.0e5, 5);
+        let mut noise_options = Sweep::options(CircuitBuilding::node_id(&top), 1.0e3, 1.0e5, 5);
         noise_options.output_flow = Some(flow);
         circuit.noise(noise_options, Context::default()).expect("noise").solve().expect("solve")
     }
@@ -309,10 +304,10 @@ impl ResistorLoop {
         let gnd = builder.ground();
         let (a, node_b) = (builder.node("a"), builder.node("b"));
         for (path, r, p, n) in [("r1", 1.0e3, &gnd, &a), ("r2", 2.0e3, &a, &node_b), ("r3", 3.0e3, &node_b, &gnd)] {
-            builder.device(resistor_noisy(), path, &[("r", ParamValue::Real(r))], &[Port::Node(p.clone()), Port::Node(n.clone())]);
+            builder.device(circuit::NoisyResistor::module(), path, &[("r", ParamValue::Real(r))], &[Port::Node(p.clone()), Port::Node(n.clone())]);
         }
         let mut circuit = builder.build().expect("build");
-        let nodes = [node_id(&a), node_id(&node_b)];
+        let nodes = [CircuitBuilding::node_id(&a), CircuitBuilding::node_id(&node_b)];
         let mut noise_options = Sweep::options(nodes[0].clone(), 1.0e3, 1.0e5, steps);
         configure(&mut noise_options, &nodes);
         circuit.noise(noise_options, Context::default()).expect("noise").solve().expect("solve")

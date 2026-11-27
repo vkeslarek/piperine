@@ -4,37 +4,15 @@
 //! analog crate's `error::` aside, the owner's `Result`); the scripted stubs
 //! the other protocol targets use replay their script and record every call.
 
-#[allow(dead_code)]
-#[path = "support/stub_sides.rs"]
-mod stub_sides;
-
+use piperine_device_fixtures::scripted::Call;
+use piperine_device_fixtures::scripted::ScriptedAnalog;
+use piperine_device_fixtures::scripted::ScriptedDiscrete;
+use piperine_device_fixtures::scripted::ScriptedLog;
 use std::path::PathBuf;
 
 use piperine_solver::protocol::{
     Accepted, Advance, LandingCause, AnalogSide, Attempt, Boundary, DiscreteSide, InstantMode, Outcome, Restart, Shadow,
 };
-use stub_sides::{Call, horizon, ScriptedAnalog, ScriptedDiscrete, new_log};
-
-/// Each line of `text` that names an item of a sub-solver other than the
-/// analog crate's `error` module.
-fn sub_solver_names(text: &str) -> Vec<String> {
-    let mut found = Vec::new();
-    for line in text.lines() {
-        if line.contains("piperine_digital_solver") {
-            found.push(line.trim().to_string());
-        }
-        let mut rest = line;
-        while let Some(i) = rest.find("piperine_analog_solver") {
-            let after = &rest[i + "piperine_analog_solver".len()..];
-            if !after.starts_with("::error::") {
-                found.push(line.trim().to_string());
-                break;
-            }
-            rest = after;
-        }
-    }
-    found
-}
 
 #[test]
 fn the_protocol_module_names_no_sub_solver_item() {
@@ -44,19 +22,19 @@ fn the_protocol_module_names_no_sub_solver_item() {
         let path = entry.expect("dir entry").path();
         let text = std::fs::read_to_string(&path).expect("read a protocol source");
         files += 1;
-        let found = sub_solver_names(&text);
+        let found = ProtocolSeamCases::sub_solver_names(&text);
         assert!(found.is_empty(), "{} names a sub-solver item: {found:?}", path.display());
     }
     assert!(files >= 2, "the scan saw {files} files in src/protocol");
     // The scan catches what it forbids.
-    assert_eq!(sub_solver_names("use piperine_digital_solver::events::LogicValue;").len(), 1);
-    assert_eq!(sub_solver_names("use piperine_analog_solver::netlist::Netlist;").len(), 1);
-    assert_eq!(sub_solver_names("x: piperine_analog_solver::error::Result<()>").len(), 0);
+    assert_eq!(ProtocolSeamCases::sub_solver_names("use piperine_digital_solver::events::LogicValue;").len(), 1);
+    assert_eq!(ProtocolSeamCases::sub_solver_names("use piperine_analog_solver::netlist::Netlist;").len(), 1);
+    assert_eq!(ProtocolSeamCases::sub_solver_names("x: piperine_analog_solver::error::Result<()>").len(), 0);
 }
 
 #[test]
 fn the_stubs_replay_their_script_and_record_calls() {
-    let log = new_log();
+    let log = ScriptedLog::new();
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     d.advances.push_back(Advance::Landing { tick: 7, cause: LandingCause::AnalogReadChanged });
@@ -70,7 +48,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
     assert_eq!(d.advance(10).unwrap(), Advance::Landing { tick: 7, cause: LandingCause::AnalogReadChanged });
     assert_eq!(d.advance(10).unwrap(), Advance::Reached, "an exhausted script answers Reached");
     a.deliver(&[Boundary { slot: 1, bytes: vec![1] }], Restart::Integrator);
-    assert!(d.run_instant(7, &[0.5], horizon(99, 7), mode).unwrap().finish);
+    assert!(d.run_instant(7, &[0.5], ScriptedLog::horizon(99, 7), mode).unwrap().finish);
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Refused { check: "r > 0".into() });
     assert_eq!(d.shadow(2, 0, &[9]).unwrap(), Shadow::Accept);
     let m = d.mark();
@@ -87,7 +65,7 @@ fn the_stubs_replay_their_script_and_record_calls() {
         Call::Advance(10),
         Call::Advance(10),
         Call::Deliver(vec![Boundary { slot: 1, bytes: vec![1] }], Restart::Integrator),
-        Call::RunInstant { at: 7, samples: vec![0.5], limit: horizon(99, 7), mode },
+        Call::RunInstant { at: 7, samples: vec![0.5], limit: ScriptedLog::horizon(99, 7), mode },
         Call::Shadow(2, vec![9]),
         Call::Shadow(2, vec![9]),
         Call::DiscreteMark(0),
@@ -100,4 +78,30 @@ fn the_stubs_replay_their_script_and_record_calls() {
         Call::AnalogMark(0),
         Call::AnalogRestore(0),
     ]);
+}
+
+/// The helpers of the protocol_seam tests.
+pub struct ProtocolSeamCases;
+
+impl ProtocolSeamCases {
+    /// Each line of `text` that names an item of a sub-solver other than the
+    /// analog crate's `error` module.
+    fn sub_solver_names(text: &str) -> Vec<String> {
+        let mut found = Vec::new();
+        for line in text.lines() {
+            if line.contains("piperine_digital_solver") {
+                found.push(line.trim().to_string());
+            }
+            let mut rest = line;
+            while let Some(i) = rest.find("piperine_analog_solver") {
+                let after = &rest[i + "piperine_analog_solver".len()..];
+                if !after.starts_with("::error::") {
+                    found.push(line.trim().to_string());
+                    break;
+                }
+                rest = after;
+            }
+        }
+        found
+    }
 }

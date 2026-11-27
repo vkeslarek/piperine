@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parity**: `cargo test -p piperine-parity`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run grid**: `cargo test -p piperine-solver --test parity_baseline`
-**Run epoch**: `cargo test -p piperine-solver --test protocol_epoch`
+**Run epoch**: `cargo test -p piperine-solver --test protocol protocol_epoch::`
 **Run options**: `cargo test -p piperine-api --test options an_hour`
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

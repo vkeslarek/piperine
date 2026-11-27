@@ -14,7 +14,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run analog**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
-**Run solver**: `cargo test -p piperine-solver --test settled_value --test protocol_crossings --test crossing_rules`
+**Run solver**: `cargo test -p piperine-solver --test settled_value --test protocol --test crossing_rules`
 **Run parity**: `cargo test -p piperine-solver --test parity_baseline`
 **Run abi**: `cargo test -p piperine-abi --test contract validate::`
 **Run env**: `cargo test -p piperine-digital-solver --test engine functions::`

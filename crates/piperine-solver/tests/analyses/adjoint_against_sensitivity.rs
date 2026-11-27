@@ -19,17 +19,9 @@
 //!
 //! Comparison is on VALUES, never on "both ran without error".
 
-// Each target includes the library by path: it uses a different subset of it.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-
-use abi_devices::{divider_fixture, net_for, NodeMap};
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::circuits::NodeMap;
 use piperine_solver::prelude::{AdjointOptions, CircuitInstance, Context, SensAnalysisOptions};
-
-fn build(top: &str) -> (CircuitInstance, NodeMap) {
-    divider_fixture(top)
-}
 
 /// Relative tolerance scaled to the value's magnitude — both engines agree
 /// to well within the FD's `O(dp²)` truncation plus its condition error.
@@ -48,8 +40,8 @@ const NONLINEAR_REL: f64 = 5.0e-2;
 // practice — `1e-3` relative agreement is a defensible tight bar.
 #[test]
 fn adjoint_matches_sens_on_the_linear_divider() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![("r2".to_string(), "r".to_string()), ("v1".to_string(), "dc".to_string())];
 
     let adj = circuit
@@ -87,8 +79,8 @@ fn adjoint_matches_sens_on_the_linear_divider() {
 // (within FD noise). This is the spec's edge case in action.
 #[test]
 fn adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter() {
-    let (mut circuit, info) = build("RcTop");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("RcTop");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![("c1".to_string(), "c".to_string())];
 
     let adj = circuit
@@ -124,8 +116,8 @@ fn adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter() {
 // lowers V(mid)).
 #[test]
 fn adjoint_matches_sens_on_a_nonlinear_diode_circuit() {
-    let (mut circuit, info) = build("DiodeTop");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("DiodeTop");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![
         ("r1".to_string(), "r".to_string()),
         ("d1".to_string(), "is_sat".to_string()),
@@ -176,8 +168,8 @@ fn adjoint_matches_sens_on_a_nonlinear_diode_circuit() {
 // suite.
 #[test]
 fn a_20_parameter_gradient_costs_exactly_one_extra_solve() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let mut params = Vec::with_capacity(20);
     for i in 0..20 {
@@ -199,4 +191,14 @@ fn a_20_parameter_gradient_costs_exactly_one_extra_solve() {
         result.transpose_solves, 1,
         "the solve-count proof from T8 holds end-to-end through this suite"
     );
+}
+
+/// The helpers of the adjoint_vs_sens tests.
+pub struct AdjointAgainstSensitivityCases;
+
+impl AdjointAgainstSensitivityCases {
+    /// The build helper `build`.
+    fn build(top: &str) -> (CircuitInstance, NodeMap) {
+        CircuitBuilding::divider_fixture(top)
+    }
 }

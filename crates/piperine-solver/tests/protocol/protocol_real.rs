@@ -6,22 +6,13 @@
 //! continuous pin runs its instants with no solve; a commit due after the stop
 //! time stays pending; `SETTLE` fires at the stop time.
 
-// The targets use the libraries selectively.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/abi_mixed.rs"]
-mod abi_mixed;
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
+use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::mixed;
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::cell::Cell as StdCell;
 use std::sync::{Arc, OnceLock};
 
-use abi_devices::{add_capacitor, add_resistor, add_vsrc, node_id, vsine};
-use abi_mixed::{count_of, counter, dac, reactions, settle_time, settle_times, timer};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::HIGH;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, ambient, cell, op, part, role};
@@ -31,49 +22,22 @@ use piperine_digital_solver::tick::Tick;
 use piperine_solver::abi::{AnalogReference, Bound, ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions, TransientAnalysisResult};
 
-fn net(name: &str) -> Port {
-    Port::Net(name.to_string())
-}
-
-fn bytes_of(bound: &Bound, name: &str) -> Vec<u8> {
-    bound.digital.read(bound.names.nets[&format!("net:{name}")]).to_vec()
-}
-
-fn run(circuit: &mut CircuitInstance, stop: f64, dt: f64) -> TransientAnalysisResult {
-    circuit
-        .transient(TransientAnalysisOptions::new(stop, dt), Context::default())
-        .expect("tran")
-        .solve()
-        .expect("solve")
-}
-
-/// A 1 V source charging 1 µF through 1 kΩ (τ = 1 ms).
-fn rc(b: &mut CircuitBuilder) -> AnalogReference {
-    let gnd = b.ground();
-    let top = b.node("top");
-    let out = b.node("out");
-    add_vsrc(b, "v1", 1.0, &top, &gnd);
-    add_resistor(b, "r1", 1.0e3, &top, &out);
-    add_capacitor(b, "c1", 1.0e-6, &out, &gnd);
-    out
-}
-
 #[test]
 fn a_clock_nothing_analog_reads_adds_no_step() {
     let plain = {
         let mut b = CircuitBuilder::new("rc");
-        rc(&mut b);
-        run(&mut b.build().expect("build"), 1.0e-3, 1.0e-5)
+        ProtocolRealCases::rc(&mut b);
+        ProtocolRealCases::run(&mut b.build().expect("build"), 1.0e-3, 1.0e-5)
     };
     let clocked = {
         let mut b = CircuitBuilder::new("rc + clock");
-        rc(&mut b);
-        b.device(timer(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[net("clk")]);
-        b.device(counter(), "cnt", &[], &[net("clk"), net("n")]);
+        ProtocolRealCases::rc(&mut b);
+        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
+        b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
         let mut circuit = b.build().expect("build");
-        let result = run(&mut circuit, 1.0e-3, 1.0e-5);
+        let result = ProtocolRealCases::run(&mut circuit, 1.0e-3, 1.0e-5);
         // The clock did run: 50 rising edges in 1 ms of 10 µs half periods.
-        assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 50);
+        assert_eq!(mixed::MixedParts::count_of(&ProtocolRealCases::bytes_of(circuit.bound(), "n")), 50);
         result
     };
     assert_eq!(clocked.stats.steps_accepted, plain.stats.steps_accepted);
@@ -94,25 +58,25 @@ fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     let gnd = b.ground();
     let o = b.node("o");
     let c = b.node("c");
-    b.device(timer(), "clk", &[("half", ParamValue::Real(edge))], &[net("code")]);
-    b.device(dac(), "dac", &[("vref", ParamValue::Real(1.0))], &[net("code"), Port::Node(o.clone())]);
-    add_resistor(&mut b, "r1", 1.0e3, &o, &c);
-    add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
+    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(edge))], &[ProtocolRealCases::net("code")]);
+    b.device(mixed::DigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[ProtocolRealCases::net("code"), Port::Node(o.clone())]);
+    CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
+    CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-9, &c, &gnd);
     let mut circuit = b.build().expect("build");
-    let result = run(&mut circuit, 1.5e-6, 1.0e-8);
+    let result = ProtocolRealCases::run(&mut circuit, 1.5e-6, 1.0e-8);
 
     // The last accepted time within a tick of the edge is the landing (the
     // controller's own grid may put a step a few ulps short of it before).
     let at = result.iter().rposition(|s| (s.time() - edge).abs() < 1.0e-15).expect("a step lands on the edge");
     let landing = result.get(at).unwrap();
     let next = result.get(at + 1).expect("a step after the edge");
-    assert_eq!(landing.get_node(&node_id(&o)).unwrap(), 0.0, "the landing is solved on the left value");
-    assert!((next.get_node(&node_id(&o)).unwrap() - 1.0).abs() < 1.0e-12, "the next step reads the new code");
+    assert_eq!(landing.get_node(&CircuitBuilding::node_id(&o)).unwrap(), 0.0, "the landing is solved on the left value");
+    assert!((next.get_node(&CircuitBuilding::node_id(&o)).unwrap() - 1.0).abs() < 1.0e-12, "the next step reads the new code");
     // The jump lies inside the step after the landing: that step is tested by
     // the first-order jump estimate, which it passes, so nothing is rejected and no step falls to the floor.
     assert_eq!(result.stats.steps_rejected, 0, "{:?}", result.stats);
     assert_eq!(result.stats.dt_min_floor_hits, 0);
-    assert_eq!(bytes_of(circuit.bound(), "code"), HIGH.to_vec());
+    assert_eq!(ProtocolRealCases::bytes_of(circuit.bound(), "code"), HIGH.to_vec());
 }
 
 // ---------------------------------------------------------------------------
@@ -130,29 +94,12 @@ struct FlakyG;
 static FLAKY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static FLAKY_MODULE: OnceLock<Module> = OnceLock::new();
 
-fn flaky_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    let p = s.pin(PinSpec::continuous("p", role::PORT));
-    let n = s.pin(PinSpec::continuous("n", role::PORT));
-    let t0 = s.term(TermSpec { name: "i", origin: "protocol_real.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-    let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
-    s.function(FunctionSpec {
-        name: "i",
-        origin: "protocol_real.rs",
-        reads: vec![pin(p), pin(n), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
-        writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
-        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
 impl Device for FlakyG {
     fn prototype() -> &'static Shape<'static> {
-        FLAKY_SHAPE.get_or_init(flaky_shape).shape()
+        FLAKY_SHAPE.get_or_init(ProtocolRealCases::flaky_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((FlakyG, Arc::clone(FLAKY_SHAPE.get_or_init(flaky_shape))))
+        Ok((FlakyG, Arc::clone(FLAKY_SHAPE.get_or_init(ProtocolRealCases::flaky_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let t = cx.f64(2);
@@ -169,42 +116,22 @@ impl Device for FlakyG {
     }
 }
 
-/// A 1 V, 1 kHz sine through 1 kΩ into 1 µF beside the flaky 1 mS conductance
-/// at `out`, with a 10 µs clock counted in `n`. `fault` arms the conductance.
-fn flaky_circuit(fault: bool) -> (CircuitInstance, AnalogReference) {
-    FAULTED.with(|f| f.set(!fault));
-    let mut b = CircuitBuilder::new("rejections");
-    let gnd = b.ground();
-    let top = b.node("top");
-    let out = b.node("out");
-    b.device(vsine(), "v1", &[("amp", ParamValue::Real(1.0)), ("freq", ParamValue::Real(1.0e3))], &[
-        Port::Node(top.clone()),
-        Port::Node(gnd.clone()),
-    ]);
-    add_resistor(&mut b, "r1", 1.0e3, &top, &out);
-    add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
-    b.device(FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
-    b.device(timer(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[net("clk")]);
-    b.device(counter(), "cnt", &[], &[net("clk"), net("n")]);
-    (b.build().expect("build"), out)
-}
-
 #[test]
 fn a_rejected_step_leaves_no_trace() {
     // A first step of a whole sine period is rejected by the truncation test; the
     // conductance faults once between 0.3 and 0.4 ms, a Newton failure (the first
     // attempt evaluates at 0.59 and 1 ms, outside it). A 10 µs clock runs ahead of
     // every attempt; what a rejection undoes is replayed.
-    let (mut circuit, out) = flaky_circuit(true);
-    let result = run(&mut circuit, 1.0e-3, 1.0e-3);
+    let (mut circuit, out) = ProtocolRealCases::flaky_circuit(true);
+    let result = ProtocolRealCases::run(&mut circuit, 1.0e-3, 1.0e-3);
     assert!(FAULTED.with(|f| f.get()), "the Newton failure happened");
     // The store holds every edge once, although the replays ran reactions again.
-    assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 50, "the discrete store left no trace");
-    assert!(reactions("counter") > 50, "the undone instants were replayed ({})", reactions("counter"));
+    assert_eq!(mixed::MixedParts::count_of(&ProtocolRealCases::bytes_of(circuit.bound(), "n")), 50, "the discrete store left no trace");
+    assert!(mixed::ReactionCounts::of("counter") > 50, "the undone instants were replayed ({})", mixed::ReactionCounts::of("counter"));
     // The term histories were restored: the run reads what a run with no fault reads.
-    let (mut clean, _) = flaky_circuit(false);
-    let reference = run(&mut clean, 1.0e-3, 1.0e-3);
-    let (v, v_ref) = (result.last().unwrap().get_node(&node_id(&out)).unwrap(), reference.last().unwrap().get_node(&node_id(&out)).unwrap());
+    let (mut clean, _) = ProtocolRealCases::flaky_circuit(false);
+    let reference = ProtocolRealCases::run(&mut clean, 1.0e-3, 1.0e-3);
+    let (v, v_ref) = (result.last().unwrap().get_node(&CircuitBuilding::node_id(&out)).unwrap(), reference.last().unwrap().get_node(&CircuitBuilding::node_id(&out)).unwrap());
     assert!((v - v_ref).abs() < 1.0e-4, "v(out) = {v} vs {v_ref} without the fault");
     assert!(reference.stats.steps_rejected >= 1, "the truncation test rejects: {:?}", reference.stats);
     assert!(result.stats.steps_rejected > reference.stats.steps_rejected, "the Newton failure rejects too: {:?}", result.stats);
@@ -217,8 +144,8 @@ fn the_default_run_copies_the_digital_state_once_per_accepted_step() {
     // rejection and a Newton failure) is retried from the state its rewind restored, which the
     // first attempt's copy already holds. The run is the one `a_rejected_step_leaves_no_trace`
     // reads: the results are the ones of a run that copied on every attempt.
-    let (mut circuit, _) = flaky_circuit(true);
-    let result = run(&mut circuit, 1.0e-3, 1.0e-3);
+    let (mut circuit, _) = ProtocolRealCases::flaky_circuit(true);
+    let result = ProtocolRealCases::run(&mut circuit, 1.0e-3, 1.0e-3);
     let rejected = result.stats.steps_rejected;
     assert!(rejected >= 2, "the run rejects attempts: {:?}", result.stats);
     // One copy per accepted step, and the two that bracket the run: the start's state and the last
@@ -230,12 +157,12 @@ fn the_default_run_copies_the_digital_state_once_per_accepted_step() {
 #[test]
 fn a_design_without_analog_runs_every_instant_with_no_solve() {
     let mut b = CircuitBuilder::new("clock only");
-    b.device(timer(), "clk", &[("half", ParamValue::Real(1.0e-6))], &[net("clk")]);
-    b.device(counter(), "cnt", &[], &[net("clk"), net("n")]);
+    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-6))], &[ProtocolRealCases::net("clk")]);
+    b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
     let mut circuit = b.build().expect("build");
-    let result = run(&mut circuit, 1.0e-5, 1.0e-7);
+    let result = ProtocolRealCases::run(&mut circuit, 1.0e-5, 1.0e-7);
     // Rising edges at 1, 3, 5, 7, 9 µs; the edge at 10 µs (falling) is the stop time.
-    assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 5);
+    assert_eq!(mixed::MixedParts::count_of(&ProtocolRealCases::bytes_of(circuit.bound(), "n")), 5);
     assert_eq!(result.stats.newton_iterations, 0, "no solve");
     assert_eq!(result.stats.steps_accepted, 0);
 }
@@ -243,12 +170,12 @@ fn a_design_without_analog_runs_every_instant_with_no_solve() {
 #[test]
 fn a_commit_due_after_the_stop_time_stays_pending() {
     let mut b = CircuitBuilder::new("rc + slow clock");
-    rc(&mut b);
-    b.device(timer(), "clk", &[("half", ParamValue::Real(3.0e-4))], &[net("clk")]);
+    ProtocolRealCases::rc(&mut b);
+    b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(3.0e-4))], &[ProtocolRealCases::net("clk")]);
     let mut circuit = b.build().expect("build");
-    run(&mut circuit, 5.0e-4, 1.0e-5);
+    ProtocolRealCases::run(&mut circuit, 5.0e-4, 1.0e-5);
     let bound = circuit.bound();
-    assert_eq!(bytes_of(bound, "clk"), HIGH.to_vec(), "the edge at 0.3 ms applied");
+    assert_eq!(ProtocolRealCases::bytes_of(bound, "clk"), HIGH.to_vec(), "the edge at 0.3 ms applied");
     let spt = bound.digital.plan().resolution.seconds_per_tick;
     assert_eq!(bound.digital.next_due(), Some(Tick((6.0e-4 / spt).round() as i64)), "the edge at 0.6 ms waits");
 }
@@ -256,12 +183,12 @@ fn a_commit_due_after_the_stop_time_stays_pending() {
 #[test]
 fn settle_fires_at_the_stop_time() {
     let mut b = CircuitBuilder::new("rc + settle");
-    rc(&mut b);
-    b.device(settle_time(), "st", &[], &[]);
+    ProtocolRealCases::rc(&mut b);
+    b.device(mixed::SettleTime::module(), "st", &[], &[]);
     let mut circuit = b.build().expect("build");
     let stop = 1.0e-3;
-    let result = run(&mut circuit, stop, 1.0e-5);
-    let last = *settle_times().last().expect("SETTLE fired");
+    let result = ProtocolRealCases::run(&mut circuit, stop, 1.0e-5);
+    let last = *mixed::SettleTime::times().last().expect("SETTLE fired");
     assert!((last - stop).abs() < 1.0e-15, "the last SETTLE is at the stop time: {last}");
     assert!((result.last().unwrap().time() - stop).abs() < 1.0e-15);
 }
@@ -270,5 +197,78 @@ fn settle_fires_at_the_stop_time() {
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("FlakyG", FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")));
+    PartialsCheck::verify_every_function("FlakyG", FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")));
+}
+
+/// The helpers of the protocol_real tests.
+pub struct ProtocolRealCases;
+
+impl ProtocolRealCases {
+    /// The net helper `net`.
+    fn net(name: &str) -> Port {
+        Port::Net(name.to_string())
+    }
+
+    /// The bytes of helper `bytes_of`.
+    fn bytes_of(bound: &Bound, name: &str) -> Vec<u8> {
+        bound.digital.read(bound.names.nets[&format!("net:{name}")]).to_vec()
+    }
+
+    /// The run helper `run`.
+    fn run(circuit: &mut CircuitInstance, stop: f64, dt: f64) -> TransientAnalysisResult {
+        circuit
+            .transient(TransientAnalysisOptions::new(stop, dt), Context::default())
+            .expect("tran")
+            .solve()
+            .expect("solve")
+    }
+
+    /// A 1 V source charging 1 µF through 1 kΩ (τ = 1 ms).
+    fn rc(b: &mut CircuitBuilder) -> AnalogReference {
+        let gnd = b.ground();
+        let top = b.node("top");
+        let out = b.node("out");
+        CircuitBuilding::add_voltage_source(b, "v1", 1.0, &top, &gnd);
+        CircuitBuilding::add_resistor(b, "r1", 1.0e3, &top, &out);
+        CircuitBuilding::add_capacitor(b, "c1", 1.0e-6, &out, &gnd);
+        out
+    }
+
+    /// The flaky shape helper `flaky_shape`.
+    fn flaky_shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let p = s.pin(PinSpec::continuous("p", role::PORT));
+        let n = s.pin(PinSpec::continuous("n", role::PORT));
+        let t0 = s.term(TermSpec { name: "i", origin: "protocol_real.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+        let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
+        s.function(FunctionSpec {
+            name: "i",
+            origin: "protocol_real.rs",
+            reads: vec![pin(p), pin(n), Cell { kind: cell::AMBIENT, index: ambient::TIME, part: part::VALUE }],
+            writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
+            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }, Partial { write: 0, to: 0, read: 1, at: 0 }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+
+    /// A 1 V, 1 kHz sine through 1 kΩ into 1 µF beside the flaky 1 mS conductance
+    /// at `out`, with a 10 µs clock counted in `n`. `fault` arms the conductance.
+    fn flaky_circuit(fault: bool) -> (CircuitInstance, AnalogReference) {
+        FAULTED.with(|f| f.set(!fault));
+        let mut b = CircuitBuilder::new("rejections");
+        let gnd = b.ground();
+        let top = b.node("top");
+        let out = b.node("out");
+        b.device(circuit::SineSource::module(), "v1", &[("amp", ParamValue::Real(1.0)), ("freq", ParamValue::Real(1.0e3))], &[
+            Port::Node(top.clone()),
+            Port::Node(gnd.clone()),
+        ]);
+        CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &out);
+        CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
+        b.device(FLAKY_MODULE.get_or_init(|| module::<FlakyG>("FlakyG")), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
+        b.device(mixed::Timer::module(), "clk", &[("half", ParamValue::Real(1.0e-5))], &[ProtocolRealCases::net("clk")]);
+        b.device(mixed::Counter::module(), "cnt", &[], &[ProtocolRealCases::net("clk"), ProtocolRealCases::net("n")]);
+        (b.build().expect("build"), out)
+    }
 }

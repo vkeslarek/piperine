@@ -1,0 +1,24 @@
+# T38: the protocol_*, abi_* and small-signal/periodic solver targets become `protocol`, `abi_devices` and `analyses`, one module per former target.
+# The one row that keeps its name comes first, so it does not rewrite the filters the others add.
+move piperine-solver/abi_devices piperine-solver/abi_devices::abi_devices
+move piperine-solver/abi_ac piperine-solver/abi_devices::abi_ac
+move piperine-solver/abi_dc piperine-solver/abi_devices::abi_dc
+move piperine-solver/abi_noise piperine-solver/abi_devices::abi_noise
+move piperine-solver/abi_sens piperine-solver/abi_devices::abi_sensitivity
+move piperine-solver/abi_surface piperine-solver/abi_devices::abi_surface
+move piperine-solver/abi_tran piperine-solver/abi_devices::abi_tran
+move piperine-solver/protocol_crossings piperine-solver/protocol::protocol_crossings
+move piperine-solver/protocol_epoch piperine-solver/protocol::protocol_epoch
+move piperine-solver/protocol_host piperine-solver/protocol::protocol_host
+move piperine-solver/protocol_operating_point piperine-solver/protocol::protocol_operating_point
+move piperine-solver/protocol_real piperine-solver/protocol::protocol_real
+move piperine-solver/protocol_seam piperine-solver/protocol::protocol_seam
+move piperine-solver/protocol_sink piperine-solver/protocol::protocol_sink
+move piperine-solver/protocol_transient piperine-solver/protocol::protocol_transient
+move piperine-solver/adjoint_dc piperine-solver/analyses::adjoint_dc
+move piperine-solver/adjoint_vs_sens piperine-solver/analyses::adjoint_against_sensitivity
+move piperine-solver/noise_report piperine-solver/analyses::noise_report
+move piperine-solver/pss piperine-solver/analyses::pss
+move piperine-solver/pz_device_fault piperine-solver/analyses::pz_device_fault
+move piperine-solver/sens piperine-solver/analyses::sensitivity
+move piperine-solver/sensitivity_fallback piperine-solver/analyses::sensitivity_fallback

@@ -11,3 +11,4 @@ piperine-analog-solver = { path = "../piperine-analog-solver" }
 ndarray.workspace = true
 num-complex.workspace = true
 piperine-digital-solver = { path = "../piperine-digital-solver" }
+piperine-solver = { path = "../piperine-solver" }

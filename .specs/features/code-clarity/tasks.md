@@ -1173,8 +1173,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three targets pass with `--test-threads=1` and with the default
-- [ ] Every other test keeps its name; Gate check passes: Ledger
+- [x] The three targets pass with `--test-threads=1` and with the default
+- [x] Every other test keeps its name; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

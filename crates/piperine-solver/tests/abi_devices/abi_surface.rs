@@ -3,10 +3,7 @@
 //! importing nothing but `abi` (MD-17's two-tier surface), and it builds into
 //! a circuit and solves.
 
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
 
@@ -24,37 +21,12 @@ struct Resistor;
 static SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static MODULE: OnceLock<Module> = OnceLock::new();
 
-fn cell_of(kind: u32, index: u32) -> Cell {
-    Cell { kind, index, part: part::VALUE }
-}
-
-fn shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &1000.0_f64.to_le_bytes(), ..PinSpec::discrete("r", role::PARAM, &F64) });
-    let p = s.pin(PinSpec::continuous("p", role::PORT));
-    let n = s.pin(PinSpec::continuous("n", role::PORT));
-    let t0 = s.term(TermSpec { name: "i", origin: "abi_surface.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-    s.function(FunctionSpec {
-        name: "i",
-        origin: "abi_surface.rs",
-        reads: vec![cell_of(cell::PIN, p), cell_of(cell::PIN, n), cell_of(cell::PIN, 0)],
-        writes: vec![cell_of(cell::TERM, t0)],
-        partials: vec![
-            Partial { write: 0, to: 0, read: 0, at: 0 },
-            Partial { write: 0, to: 0, read: 1, at: 0 },
-            Partial { write: 0, to: 0, read: 2, at: 0 },
-        ],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
 impl Device for Resistor {
     fn prototype() -> &'static Shape<'static> {
-        SHAPE.get_or_init(shape).shape()
+        SHAPE.get_or_init(AbiSurfaceCases::shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Resistor, Arc::clone(SHAPE.get_or_init(shape))))
+        Ok((Resistor, Arc::clone(SHAPE.get_or_init(AbiSurfaceCases::shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let (vp, vn, r) = (cx.f64(0), cx.f64(1), cx.f64(2));
@@ -89,5 +61,37 @@ fn abi_compiles_a_device() {
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("Resistor", MODULE.get_or_init(|| module::<Resistor>("Resistor")));
+    PartialsCheck::verify_every_function("Resistor", MODULE.get_or_init(|| module::<Resistor>("Resistor")));
+}
+
+/// The helpers of the abi_surface tests.
+pub struct AbiSurfaceCases;
+
+impl AbiSurfaceCases {
+    /// The cell of helper `cell_of`.
+    fn cell_of(kind: u32, index: u32) -> Cell {
+        Cell { kind, index, part: part::VALUE }
+    }
+
+    /// The shape helper `shape`.
+    fn shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &1000.0_f64.to_le_bytes(), ..PinSpec::discrete("r", role::PARAM, &F64) });
+        let p = s.pin(PinSpec::continuous("p", role::PORT));
+        let n = s.pin(PinSpec::continuous("n", role::PORT));
+        let t0 = s.term(TermSpec { name: "i", origin: "abi_surface.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+        s.function(FunctionSpec {
+            name: "i",
+            origin: "abi_surface.rs",
+            reads: vec![AbiSurfaceCases::cell_of(cell::PIN, p), AbiSurfaceCases::cell_of(cell::PIN, n), AbiSurfaceCases::cell_of(cell::PIN, 0)],
+            writes: vec![AbiSurfaceCases::cell_of(cell::TERM, t0)],
+            partials: vec![
+                Partial { write: 0, to: 0, read: 0, at: 0 },
+                Partial { write: 0, to: 0, read: 1, at: 0 },
+                Partial { write: 0, to: 0, read: 2, at: 0 },
+            ],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
 }

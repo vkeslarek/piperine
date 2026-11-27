@@ -1231,6 +1231,7 @@ dependencies = [
  "piperine-abi",
  "piperine-analog-solver",
  "piperine-digital-solver",
+ "piperine-solver",
 ]
 
 [[package]]
@@ -1342,6 +1343,7 @@ dependencies = [
  "num-traits",
  "piperine-abi",
  "piperine-analog-solver",
+ "piperine-device-fixtures",
  "piperine-digital-solver",
  "tempfile",
  "thiserror 2.0.18",

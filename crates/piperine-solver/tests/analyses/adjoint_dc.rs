@@ -5,17 +5,9 @@
 //! adjoint: `.sens`'s two re-solves per parameter collapse to one extra
 //! linear solve, regardless of count — asserted here, not claimed.
 
-// Each target includes the library by path: it uses a different subset of it.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-
-use abi_devices::{divider_fixture, net_for, NodeMap};
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::circuits::NodeMap;
 use piperine_solver::prelude::{AdjointOptions, CircuitInstance, Context};
-
-fn build(top: &str) -> (CircuitInstance, NodeMap) {
-    divider_fixture(top)
-}
 
 // ── DVG-10: one transpose solve serves every requested parameter ──────────
 //
@@ -24,8 +16,8 @@ fn build(top: &str) -> (CircuitInstance, NodeMap) {
 // the result, not inspected by eye or claimed in a comment.
 #[test]
 fn one_transpose_solve_serves_every_requested_parameter() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointDcCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     // 20 parameter requests over the divider's three differentiable params.
     // The driver processes each (label, param) pair independently through
@@ -62,8 +54,8 @@ fn one_transpose_solve_serves_every_requested_parameter() {
 // either half surfaces as a wrong value here.
 #[test]
 fn df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointDcCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let params = vec![("r2".into(), "r".into()), ("v1".into(), "dc".into())];
     let result = circuit
@@ -98,8 +90,8 @@ fn df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution() {
 // voltage.)
 #[test]
 fn adjoint_runs_on_a_nonlinear_circuit() {
-    let (mut circuit, info) = build("DiodeTop");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = AdjointDcCases::build("DiodeTop");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let result = circuit
         .adjoint(
@@ -114,4 +106,14 @@ fn adjoint_runs_on_a_nonlinear_circuit() {
     assert!(d_r1.is_finite(), "nonlinear gradient is finite: {d_r1}");
     assert!(d_r1 < 0.0, "raising r1 must lower the diode node: got {d_r1}");
     assert_eq!(result.transpose_solves, 1, "nonlinear does not change the solve count");
+}
+
+/// The helpers of the adjoint_dc tests.
+pub struct AdjointDcCases;
+
+impl AdjointDcCases {
+    /// The build helper `build`.
+    fn build(top: &str) -> (CircuitInstance, NodeMap) {
+        CircuitBuilding::divider_fixture(top)
+    }
 }

@@ -4,18 +4,12 @@
 //! the ambient inputs: the source scale through `SOURCE_SCALE`, the gmin step
 //! through `GMIN`.
 
-// The target uses the library selectively.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::circuits::Counting;
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
 
-use abi_devices::{Counting, add_diode, add_resistor, add_vsrc, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, ambient, cell, op, part, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
@@ -24,28 +18,12 @@ use piperine_analog_solver::convergence::{ConvergencePlan, HomotopyDriver};
 use piperine_solver::abi::Port;
 use piperine_solver::prelude::{AnalogReference, CircuitBuilder, CircuitInstance, Context};
 
-fn dc_node(circuit: &mut CircuitInstance, node: &AnalogReference) -> f64 {
-    let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
-    result.get_node(&node_id(node)).expect("node solved")
-}
-
-fn divider(vin: f64, r1: f64, r2: f64) -> (CircuitInstance, AnalogReference) {
-    let mut b = CircuitBuilder::new("divider");
-    let gnd = b.ground();
-    let top = b.node("top");
-    let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", vin, &top, &gnd);
-    add_resistor(&mut b, "r1", r1, &top, &mid);
-    add_resistor(&mut b, "r2", r2, &mid, &gnd);
-    (b.build().expect("build"), mid)
-}
-
 #[test]
 fn divider_reads_the_analytic_ratio_on_devices() {
     let (vin, r1, r2) = (7.0, 1.5e3, 4.5e3);
-    let (mut circuit, mid) = divider(vin, r1, r2);
+    let (mut circuit, mid) = AbiDcCases::divider(vin, r1, r2);
 
-    let v = dc_node(&mut circuit, &mid);
+    let v = AbiDcCases::dc_node(&mut circuit, &mid);
     let analytic = vin * r2 / (r1 + r2);
     assert!((v - analytic).abs() < 1.0e-9, "v(mid) = {v} vs analytic {analytic}");
 }
@@ -57,12 +35,12 @@ fn diode_satisfies_its_own_equation_on_devices() {
     let gnd = b.ground();
     let top = b.node("top");
     let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", vin, &top, &gnd);
-    add_resistor(&mut b, "r1", r, &top, &mid);
-    add_diode(&mut b, "d1", is_sat, &mid, &gnd);
+    CircuitBuilding::add_voltage_source(&mut b, "v1", vin, &top, &gnd);
+    CircuitBuilding::add_resistor(&mut b, "r1", r, &top, &mid);
+    CircuitBuilding::add_diode(&mut b, "d1", is_sat, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let vd = dc_node(&mut circuit, &mid);
+    let vd = AbiDcCases::dc_node(&mut circuit, &mid);
     let i_resistor = (vin - vd) / r;
     let i_diode = is_sat * ((vd / vt).exp() - 1.0);
     assert!(
@@ -74,7 +52,7 @@ fn diode_satisfies_its_own_equation_on_devices() {
 #[test]
 fn source_stepping_scales_sources_through_the_ambient_input() {
     let (vin, r1, r2) = (8.0, 1.0e3, 3.0e3);
-    let (mut circuit, mid) = divider(vin, r1, r2);
+    let (mut circuit, mid) = AbiDcCases::divider(vin, r1, r2);
     let at = mid.idx().expect("mid is solved");
     let full = vin * r2 / (r1 + r2);
 
@@ -100,26 +78,12 @@ struct GminProbe;
 static GMIN_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static GMIN_PROBE: OnceLock<Module> = OnceLock::new();
 
-fn gmin_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    let a = s.pin(PinSpec::continuous("a", role::PORT));
-    let t0 = s.term(TermSpec { name: "i", origin: "abi_dc.rs", op: op::FLOW, plus: a, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
-    s.function(FunctionSpec {
-        name: "i",
-        origin: "abi_dc.rs",
-        reads: vec![Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }],
-        writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
 impl Device for GminProbe {
     fn prototype() -> &'static Shape<'static> {
-        GMIN_SHAPE.get_or_init(gmin_shape).shape()
+        GMIN_SHAPE.get_or_init(AbiDcCases::gmin_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((GminProbe, Arc::clone(GMIN_SHAPE.get_or_init(gmin_shape))))
+        Ok((GminProbe, Arc::clone(GMIN_SHAPE.get_or_init(AbiDcCases::gmin_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
         let gmin = cx.f64(0);
@@ -139,7 +103,7 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
     let gnd = b.ground();
     let a = b.node("a");
     b.device(GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")), "probe", &[], &[Port::Node(a.clone())]);
-    add_resistor(&mut b, "r1", 1.0, &a, &gnd);
+    CircuitBuilding::add_resistor(&mut b, "r1", 1.0, &a, &gnd);
     let mut circuit = b.build().expect("build");
     let at = a.idx().expect("a is solved");
     let gmin = Context::default().tolerances.gmin;
@@ -160,7 +124,7 @@ fn gmin_stepping_reaches_a_device_through_the_ambient_input() {
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("GminProbe", GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")));
+    PartialsCheck::verify_every_function("GminProbe", GMIN_PROBE.get_or_init(|| module::<GminProbe>("GminProbe")));
 }
 
 #[test]
@@ -172,13 +136,51 @@ fn the_dc_driver_iterates_with_the_plans_strategy() {
     let gnd = b.ground();
     let top = b.node("top");
     let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
-    add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
-    add_diode(&mut b, "d1", 1.0e-14, &mid, &gnd);
+    CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &top, &gnd);
+    CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+    CircuitBuilding::add_diode(&mut b, "d1", 1.0e-14, &mid, &gnd);
     let mut circuit = b.build().expect("build");
     let plan = ConvergencePlan::default().with_newton(Box::new(Counting(Arc::clone(&calls))));
     let result = circuit.dc(Context::default()).expect("dc").with_plan(plan).solve().expect("solve");
     let seen = calls.load(std::sync::atomic::Ordering::SeqCst);
     assert!(result.stats.newton_iterations > 1, "a diode takes several iterations");
     assert_eq!(seen, result.stats.newton_iterations as usize, "one damp_update per iteration of the plan's strategy");
+}
+
+/// The helpers of the abi_dc tests.
+pub struct AbiDcCases;
+
+impl AbiDcCases {
+    /// The dc node helper `dc_node`.
+    fn dc_node(circuit: &mut CircuitInstance, node: &AnalogReference) -> f64 {
+        let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
+        result.get_node(&CircuitBuilding::node_id(node)).expect("node solved")
+    }
+
+    /// The divider helper `divider`.
+    fn divider(vin: f64, r1: f64, r2: f64) -> (CircuitInstance, AnalogReference) {
+        let mut b = CircuitBuilder::new("divider");
+        let gnd = b.ground();
+        let top = b.node("top");
+        let mid = b.node("mid");
+        CircuitBuilding::add_voltage_source(&mut b, "v1", vin, &top, &gnd);
+        CircuitBuilding::add_resistor(&mut b, "r1", r1, &top, &mid);
+        CircuitBuilding::add_resistor(&mut b, "r2", r2, &mid, &gnd);
+        (b.build().expect("build"), mid)
+    }
+
+    /// The gmin shape helper `gmin_shape`.
+    fn gmin_shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let a = s.pin(PinSpec::continuous("a", role::PORT));
+        let t0 = s.term(TermSpec { name: "i", origin: "abi_dc.rs", op: op::FLOW, plus: a, minus: GROUND, abstol: DEFAULT, max: DEFAULT });
+        s.function(FunctionSpec {
+            name: "i",
+            origin: "abi_dc.rs",
+            reads: vec![Cell { kind: cell::AMBIENT, index: ambient::GMIN, part: part::VALUE }],
+            writes: vec![Cell { kind: cell::TERM, index: t0, part: part::VALUE }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
 }

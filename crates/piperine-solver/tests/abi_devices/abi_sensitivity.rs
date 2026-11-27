@@ -4,17 +4,11 @@
 //! re-evaluation where no declared path exists, and fails loud on a
 //! `STRUCTURAL` param.
 
+use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::sync::{Arc, OnceLock};
 
-// The target uses the library selectively.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
-use abi_devices::{add_resistor, add_vsrc, resistor_opt};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, op, part, pin_flag, role};
@@ -24,14 +18,6 @@ use piperine_digital_solver::engine::{Horizon, Mode};
 use piperine_digital_solver::tick::Tick;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port};
 use piperine_solver::prelude::{AdjointOptions, CircuitBuilder, CircuitInstance, Context, Net};
-
-fn cell_of(kind: u32, index: u32) -> Cell {
-    Cell { kind, index, part: part::VALUE }
-}
-
-fn pin(index: u32) -> Cell {
-    cell_of(cell::PIN, index)
-}
 
 // ---------------------------------------------------------------------------
 // Gd: a conductance derived from a param by a discrete function
@@ -46,42 +32,12 @@ static GD_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static GD_MODULE: OnceLock<Module> = OnceLock::new();
 const R_DEFAULT: [u8; 8] = 1.0e3_f64.to_le_bytes();
 
-fn gd_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &R_DEFAULT, ..PinSpec::discrete("r", role::PARAM, &F64) });
-    let p = s.pin(PinSpec::continuous("p", role::PORT));
-    let n = s.pin(PinSpec::continuous("n", role::PORT));
-    let g = s.pin(PinSpec::discrete("g", role::PRIVATE, &F64));
-    let t0 = s.term(TermSpec { name: "i", origin: "abi_sens.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
-    s.function(FunctionSpec {
-        name: "g",
-        origin: "abi_sens.rs",
-        reads: vec![pin(0)],
-        writes: vec![pin(g)],
-        partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
-        ..FunctionSpec::default()
-    });
-    s.function(FunctionSpec {
-        name: "i",
-        origin: "abi_sens.rs",
-        reads: vec![pin(p), pin(n), pin(g)],
-        writes: vec![cell_of(cell::TERM, t0)],
-        partials: vec![
-            Partial { write: 0, to: 0, read: 0, at: 0 },
-            Partial { write: 0, to: 0, read: 1, at: 0 },
-            Partial { write: 0, to: 0, read: 2, at: 0 },
-        ],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
 impl Device for Gd {
     fn prototype() -> &'static Shape<'static> {
-        GD_SHAPE.get_or_init(gd_shape).shape()
+        GD_SHAPE.get_or_init(AbiSensitivityCases::gd_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Gd, Arc::clone(GD_SHAPE.get_or_init(gd_shape))))
+        Ok((Gd, Arc::clone(GD_SHAPE.get_or_init(AbiSensitivityCases::gd_shape))))
     }
     fn eval(&self, k: u32, cx: &mut Eval) -> Result<(), Fault> {
         if k == 0 {
@@ -100,49 +56,16 @@ impl Device for Gd {
     }
 }
 
-fn gd() -> &'static Module {
-    GD_MODULE.get_or_init(|| module::<Gd>("Gd"))
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-fn net_of(circuit: &CircuitInstance, node: &AnalogReference) -> Net {
-    let var = node.variable().clone();
-    circuit
-        .nets()
-        .into_iter()
-        .find(|n| n.analog_variable().map(|v| **v == *var).unwrap_or(false))
-        .expect("net is solved")
-}
-
-/// The divider `Top` of the sensitivity targets: 10 V over two 1 kΩ resistors.
-fn divider() -> (CircuitInstance, AnalogReference) {
-    let mut b = CircuitBuilder::new("Top");
-    let gnd = b.ground();
-    let top = b.node("top");
-    let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
-    add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
-    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
-    (b.build().expect("build"), mid)
-}
-
-fn params(list: &[(&str, &str)]) -> Vec<(String, String)> {
-    list.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[test]
 fn sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference() {
-    let wrt = params(&[("r1", "r"), ("r2", "r"), ("v1", "dc")]);
+    let wrt = AbiSensitivityCases::params(&[("r1", "r"), ("r2", "r"), ("v1", "dc")]);
     let run = |difference: bool| {
-        let (mut circuit, mid) = divider();
-        let output = net_of(&circuit, &mid);
+        let (mut circuit, mid) = AbiSensitivityCases::divider();
+        let output = AbiSensitivityCases::net_of(&circuit, &mid);
         let label = output.label().to_string();
         let mut options = AdjointOptions::new(output, wrt.clone());
         options.finite_difference_only = difference;
@@ -169,16 +92,16 @@ fn a_structural_param_sensitivity_fails_loud() {
     let gnd = b.ground();
     let top = b.node("top");
     let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
+    CircuitBuilding::add_voltage_source(&mut b, "v1", 10.0, &top, &gnd);
     b.device(
-        resistor_opt(),
+        circuit::OptionalResistor::module(),
         "r1",
         &[("w", ParamValue::Real(2.0e-3))],
         &[Port::Node(top), Port::Node(mid.clone())],
     );
-    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+    CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
     let mut circuit = b.build().expect("build");
-    let options = AdjointOptions::new(net_of(&circuit, &mid), params(&[("r1", "w")]));
+    let options = AdjointOptions::new(AbiSensitivityCases::net_of(&circuit, &mid), AbiSensitivityCases::params(&[("r1", "w")]));
     let err = circuit.adjoint(options, Context::default()).expect("adjoint").solve().err().expect("refused");
     assert!(err.to_string().contains("STRUCTURAL"), "{err}");
 }
@@ -189,9 +112,9 @@ fn a_derivative_chains_through_a_discrete_function() {
     let gnd = b.ground();
     let top = b.node("top");
     let mid = b.node("mid");
-    add_vsrc(&mut b, "v1", 10.0, &top, &gnd);
-    b.device(gd(), "x1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top), Port::Node(mid.clone())]);
-    add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+    CircuitBuilding::add_voltage_source(&mut b, "v1", 10.0, &top, &gnd);
+    b.device(AbiSensitivityCases::gd(), "x1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top), Port::Node(mid.clone())]);
+    CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
     // Run the instant at t = 0 by hand (the protocol drives it in a transient) and
@@ -208,9 +131,9 @@ fn a_derivative_chains_through_a_discrete_function() {
             bound.analog.set_discrete(slot, &bytes);
         }
     }
-    let output = net_of(&circuit, &mid);
+    let output = AbiSensitivityCases::net_of(&circuit, &mid);
     let out = output.label().to_string();
-    let options = AdjointOptions::new(output, params(&[("x1", "r")]));
+    let options = AdjointOptions::new(output, AbiSensitivityCases::params(&[("x1", "r")]));
     let result = circuit.adjoint(options, Context::default()).expect("adjoint").solve().expect("solve");
 
     // v(mid) = 10 r2 / (r + r2), so dv/dr = -10 r2 / (r + r2)^2 = -2.5e-3.
@@ -223,5 +146,87 @@ fn a_derivative_chains_through_a_discrete_function() {
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("Gd", GD_MODULE.get_or_init(|| module::<Gd>("Gd")));
+    PartialsCheck::verify_every_function("Gd", GD_MODULE.get_or_init(|| module::<Gd>("Gd")));
+}
+
+/// The helpers of the abi_sens tests.
+pub struct AbiSensitivityCases;
+
+impl AbiSensitivityCases {
+    /// The cell of helper `cell_of`.
+    fn cell_of(kind: u32, index: u32) -> Cell {
+        Cell { kind, index, part: part::VALUE }
+    }
+
+    /// The pin helper `pin`.
+    fn pin(index: u32) -> Cell {
+        AbiSensitivityCases::cell_of(cell::PIN, index)
+    }
+
+    /// The gd shape helper `gd_shape`.
+    fn gd_shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        s.pin(PinSpec { flags: pin_flag::HAS_INIT, init: &R_DEFAULT, ..PinSpec::discrete("r", role::PARAM, &F64) });
+        let p = s.pin(PinSpec::continuous("p", role::PORT));
+        let n = s.pin(PinSpec::continuous("n", role::PORT));
+        let g = s.pin(PinSpec::discrete("g", role::PRIVATE, &F64));
+        let t0 = s.term(TermSpec { name: "i", origin: "abi_sens.rs", op: op::FLOW, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
+        s.function(FunctionSpec {
+            name: "g",
+            origin: "abi_sens.rs",
+            reads: vec![AbiSensitivityCases::pin(0)],
+            writes: vec![AbiSensitivityCases::pin(g)],
+            partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
+            ..FunctionSpec::default()
+        });
+        s.function(FunctionSpec {
+            name: "i",
+            origin: "abi_sens.rs",
+            reads: vec![AbiSensitivityCases::pin(p), AbiSensitivityCases::pin(n), AbiSensitivityCases::pin(g)],
+            writes: vec![AbiSensitivityCases::cell_of(cell::TERM, t0)],
+            partials: vec![
+                Partial { write: 0, to: 0, read: 0, at: 0 },
+                Partial { write: 0, to: 0, read: 1, at: 0 },
+                Partial { write: 0, to: 0, read: 2, at: 0 },
+            ],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+
+    /// The gd helper `gd`.
+    fn gd() -> &'static Module {
+        GD_MODULE.get_or_init(|| module::<Gd>("Gd"))
+    }
+
+    // ---------------------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------------------
+
+    /// The net of helper `net_of`.
+    fn net_of(circuit: &CircuitInstance, node: &AnalogReference) -> Net {
+        let var = node.variable().clone();
+        circuit
+            .nets()
+            .into_iter()
+            .find(|n| n.analog_variable().map(|v| **v == *var).unwrap_or(false))
+            .expect("net is solved")
+    }
+
+    /// The divider `Top` of the sensitivity targets: 10 V over two 1 kΩ resistors.
+    fn divider() -> (CircuitInstance, AnalogReference) {
+        let mut b = CircuitBuilder::new("Top");
+        let gnd = b.ground();
+        let top = b.node("top");
+        let mid = b.node("mid");
+        CircuitBuilding::add_voltage_source(&mut b, "v1", 10.0, &top, &gnd);
+        CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
+        CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
+        (b.build().expect("build"), mid)
+    }
+
+    /// The params helper `params`.
+    fn params(list: &[(&str, &str)]) -> Vec<(String, String)> {
+        list.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
 }

@@ -2,18 +2,12 @@
 //! `parity_baseline.rs` built from `Device`s reads the same pinned peak, and
 //! nothing discrete runs or changes during a sweep.
 
-// The target uses the library selectively.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/partials.rs"]
-mod partials;
-
+use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::partials::PartialsCheck;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, OnceLock};
 
-use abi_devices::{add_capacitor, add_resistor, current_ac, inductor, node_id};
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::raw::{Module, Shape, Statement, global, role};
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
@@ -30,26 +24,12 @@ struct Spy;
 static SPY_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static SPY_MODULE: OnceLock<Module> = OnceLock::new();
 
-fn spy_shape() -> ShapeRef {
-    let mut s = ShapeBuf::new();
-    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
-    let log = s.pin(PinSpec::discrete("log", role::PRIVATE, &BYTE));
-    s.reaction(ReactionSpec {
-        name: "run",
-        origin: "abi_ac.rs",
-        on: vec![start],
-        writes: vec![Statement { pin: log, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
-        ..ReactionSpec::default()
-    });
-    s.freeze()
-}
-
 impl Device for Spy {
     fn prototype() -> &'static Shape<'static> {
-        SPY_SHAPE.get_or_init(spy_shape).shape()
+        SPY_SHAPE.get_or_init(AbiAcCases::spy_shape).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Spy, Arc::clone(SPY_SHAPE.get_or_init(spy_shape))))
+        Ok((Spy, Arc::clone(SPY_SHAPE.get_or_init(AbiAcCases::spy_shape))))
     }
     fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
         Ok(())
@@ -66,10 +46,10 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     let mut b = CircuitBuilder::new("rlc");
     let gnd = b.ground();
     let node = b.node("node");
-    b.device(current_ac(), "iac", &[("i", ParamValue::Real(1.0))], &[Port::Node(node.clone())]);
-    add_resistor(&mut b, "r1", 10_000.0, &node, &gnd);
-    add_capacitor(&mut b, "c1", 1e-9, &node, &gnd);
-    b.device(inductor(), "l1", &[("l", ParamValue::Real(1e-3))], &[Port::Node(node.clone()), Port::Node(gnd)]);
+    b.device(circuit::AcCurrentSource::module(), "iac", &[("i", ParamValue::Real(1.0))], &[Port::Node(node.clone())]);
+    CircuitBuilding::add_resistor(&mut b, "r1", 10_000.0, &node, &gnd);
+    CircuitBuilding::add_capacitor(&mut b, "c1", 1e-9, &node, &gnd);
+    b.device(circuit::Inductor::module(), "l1", &[("l", ParamValue::Real(1e-3))], &[Port::Node(node.clone()), Port::Node(gnd)]);
     let spy = SPY_MODULE.get_or_init(|| module::<Spy>("Spy"));
     b.device(spy, "spy", &[], &[]);
     let mut circuit = b.build().expect("build");
@@ -91,7 +71,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     let mut peak_freq = 0.0_f64;
     for i in 0..res.len() {
         let step = res.get(i).unwrap();
-        let v = step.get_node(&node_id(&node)).unwrap();
+        let v = step.get_node(&CircuitBuilding::node_id(&node)).unwrap();
         if v.norm() > peak_mag {
             peak_mag = v.norm();
             peak_freq = step.frequency;
@@ -113,5 +93,25 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
 /// verifier (the guard of `abi_devices.rs` holds each device to it).
 #[test]
 fn its_devices_pass_the_partials_verifier() {
-    partials::verify_every_function("Spy", SPY_MODULE.get_or_init(|| module::<Spy>("Spy")));
+    PartialsCheck::verify_every_function("Spy", SPY_MODULE.get_or_init(|| module::<Spy>("Spy")));
+}
+
+/// The helpers of the abi_ac tests.
+pub struct AbiAcCases;
+
+impl AbiAcCases {
+    /// The spy shape helper `spy_shape`.
+    fn spy_shape() -> ShapeRef {
+        let mut s = ShapeBuf::new();
+        let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+        let log = s.pin(PinSpec::discrete("log", role::PRIVATE, &BYTE));
+        s.reaction(ReactionSpec {
+            name: "run",
+            origin: "abi_ac.rs",
+            on: vec![start],
+            writes: vec![Statement { pin: log, offset: 0, len: 1, flags: 0, min_after: 0.0 }],
+            ..ReactionSpec::default()
+        });
+        s.freeze()
+    }
 }

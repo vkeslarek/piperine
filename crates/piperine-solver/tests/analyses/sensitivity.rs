@@ -2,24 +2,16 @@
 //! finite-difference independence on a nonlinear (diode) circuit, and the
 //! loud-error paths (unknown element/param, non-analog output).
 
-// Each target includes the library by path: it uses a different subset of it.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-
-use abi_devices::{divider_fixture, net_for, NodeMap};
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::circuits::NodeMap;
 use piperine_solver::prelude::{CircuitInstance, Context, Net, SensAnalysisOptions};
-
-fn build(top: &str) -> (CircuitInstance, NodeMap) {
-    divider_fixture(top)
-}
 
 /// Divider analytics: `v_mid = V·r2/(r1+r2)` →
 /// `∂v_mid/∂r2 = V·r1/(r1+r2)² = 2.5e-3 V/Ω` and `∂v_mid/∂v1.dc = 0.5`.
 #[test]
 fn divider_sensitivities_match_analytic_values() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = SensitivityCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let opts = SensAnalysisOptions::new(
         vec![mid.clone()],
         vec![("r2".into(), "r".into()), ("v1".into(), "dc".into())],
@@ -42,8 +34,8 @@ fn divider_sensitivities_match_analytic_values() {
 /// has the physical sign (raising `r1` drops the diode voltage).
 #[test]
 fn diode_sensitivity_is_step_independent_and_signed() {
-    let (mut circuit, info) = build("DiodeTop");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = SensitivityCases::build("DiodeTop");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let mut opts = SensAnalysisOptions::new(vec![mid.clone()], vec![("r1".into(), "r".into())]);
     let fine =
@@ -62,8 +54,8 @@ fn diode_sensitivity_is_step_independent_and_signed() {
 /// digital/pseudo output net.
 #[test]
 fn sens_error_paths_are_loud() {
-    let (mut circuit, info) = build("Top");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = SensitivityCases::build("Top");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let err = circuit
         .sens(
@@ -107,8 +99,8 @@ fn sens_error_paths_are_loud() {
 /// loud naming the param.
 #[test]
 fn sens_rebuild_class_param_fails_loud() {
-    let (mut circuit, info) = build("OptTop");
-    let mid = net_for(&circuit, &info, "mid");
+    let (mut circuit, info) = SensitivityCases::build("OptTop");
+    let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let err = circuit
         .sens(
@@ -124,8 +116,18 @@ fn sens_rebuild_class_param_fails_loud() {
 
     // The given-at-build scalar param stays Restamp-class and solves fine.
     let opts = SensAnalysisOptions::new(
-        vec![net_for(&circuit, &info, "mid")],
+        vec![CircuitBuilding::net_for(&circuit, &info, "mid")],
         vec![("r2".into(), "r".into())],
     );
     circuit.sens(opts, Context::default()).expect("sens").solve().expect("restampable param solves");
+}
+
+/// The helpers of the sens tests.
+pub struct SensitivityCases;
+
+impl SensitivityCases {
+    /// The build helper `build`.
+    fn build(top: &str) -> (CircuitInstance, NodeMap) {
+        CircuitBuilding::divider_fixture(top)
+    }
 }

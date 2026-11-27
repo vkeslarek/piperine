@@ -5,72 +5,19 @@
 //! (Options validation — bad period, negative pre-roll — is `failure_rules.rs`'s
 //! §18 rows.)
 
-// Each target includes the library by path: it uses a different subset of it.
-#[allow(dead_code)]
-#[path = "helpers/abi_devices.rs"]
-mod abi_devices;
-#[allow(dead_code)]
-#[path = "helpers/abi_mixed.rs"]
-mod abi_mixed;
-
-use abi_devices::{NodeMap, add_capacitor, add_resistor, add_vsrc, vramp, vsine};
-use abi_mixed::{clock_src, comparator, toggle_dff};
+use piperine_device_fixtures::circuit;
+use piperine_device_fixtures::circuits::CircuitBuilding;
+use piperine_device_fixtures::circuits::NodeMap;
+use piperine_device_fixtures::mixed;
 use piperine_solver::abi::{ParamValue, Port};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, PssAnalysisOptions};
-
-/// The circuits of the former Verilog-A fixture, from hand-written devices.
-///
-/// - `Top`: sine-driven RC, f = 1 kHz, tau = RC = 1 ms, so `wRC` is about 6.283;
-///   |H| = 1/sqrt(1+(wRC)^2) is about 0.157167 and the steady-state out
-///   amplitude is 5*|H|.
-/// - `RampTop`: the same RC driven by a ramp, which is not periodic at any T.
-/// - `DivTop`: a digital toggle clocked by an analog square wave at period T
-///   (rising edges at T/4, 5T/4, ...): its output period is 2*T, the classic
-///   divider-by-2 (same A2D pattern as example 21). The clock's edges sit at
-///   T/4 and 3T/4 so every comparison-relevant net is stable in a whole
-///   neighborhood of the k*T boundaries. The comparator's 0.5 V threshold is
-///   a reference source on its minus input.
-fn build(top: &str) -> (CircuitInstance, NodeMap) {
-    let mut b = CircuitBuilder::new(top);
-    let gnd = b.ground();
-    let mut map = NodeMap::new();
-    match top {
-        "Top" | "RampTop" => {
-            let top_node = b.node("top");
-            let out = b.node("out");
-            let ports = [Port::Node(top_node.clone()), Port::Node(gnd.clone())];
-            if top == "Top" {
-                let params = [("amp", ParamValue::Real(5.0)), ("freq", ParamValue::Real(1.0e3))];
-                b.device(vsine(), "v1", &params, &ports);
-            } else {
-                b.device(vramp(), "v1", &[], &ports);
-            }
-            add_resistor(&mut b, "r1", 1.0e3, &top_node, &out);
-            add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
-            map.insert("out", out);
-        }
-        "DivTop" => {
-            let clk_a = b.node("clk_a");
-            let vth = b.node("vth");
-            let ports = [Port::Node(clk_a.clone()), Port::Node(gnd.clone())];
-            b.device(clock_src(), "ck", &[("period", ParamValue::Real(1.0e-3))], &ports);
-            add_vsrc(&mut b, "vth", 0.5, &vth, &gnd);
-            let ports = [Port::Node(clk_a.clone()), Port::Node(vth), Port::Net("clk".into())];
-            b.device(comparator(), "cmp", &[], &ports);
-            b.device(toggle_dff(), "tg", &[], &[Port::Net("clk".into()), Port::Net("q".into())]);
-            map.insert("clk_a", clk_a);
-        }
-        other => panic!("no circuit `{other}`"),
-    }
-    (b.build().expect("build"), map)
-}
 
 /// Converged orbit: `|x(T)−x(0)| < shoot_tol` (residual reported in stats)
 /// and the recorded period's output amplitude matches the analytic phasor
 /// within 1 %.
 #[test]
 fn sine_rc_converges_to_the_analytic_phasor() {
-    let (mut circuit, info) = build("Top");
+    let (mut circuit, info) = PssCases::build("Top");
     let out = info.id("out");
 
     let opts = PssAnalysisOptions::new(1.0e-3);
@@ -105,7 +52,7 @@ fn sine_rc_converges_to_the_analytic_phasor() {
 /// (never return a fake orbit).
 #[test]
 fn non_periodic_circuit_fails_loud() {
-    let (mut circuit, _info) = build("RampTop");
+    let (mut circuit, _info) = PssCases::build("RampTop");
     let mut opts = PssAnalysisOptions::new(1.0e-3);
     opts.max_shoot_iter = 6;
     let err = circuit
@@ -128,7 +75,7 @@ fn non_periodic_circuit_fails_loud() {
 /// and the suggested re-run period.
 #[test]
 fn digital_divider_reports_k_times_period() {
-    let (mut circuit, _info) = build("DivTop");
+    let (mut circuit, _info) = PssCases::build("DivTop");
     let err = circuit
         .pss(PssAnalysisOptions::new(1.0e-3), Context::default())
         .expect("pss")
@@ -150,5 +97,57 @@ fn a_result_with_no_step_has_no_final_step_error() {
             assert!(detail.contains("no step"), "{detail}")
         }
         other => panic!("no step is the transient's error: {other:?}"),
+    }
+}
+
+/// The helpers of the pss tests.
+pub struct PssCases;
+
+impl PssCases {
+    /// The circuits of the former Verilog-A fixture, from hand-written devices.
+    ///
+    /// - `Top`: sine-driven RC, f = 1 kHz, tau = RC = 1 ms, so `wRC` is about 6.283;
+    ///   |H| = 1/sqrt(1+(wRC)^2) is about 0.157167 and the steady-state out
+    ///   amplitude is 5*|H|.
+    /// - `RampTop`: the same RC driven by a ramp, which is not periodic at any T.
+    /// - `DivTop`: a digital toggle clocked by an analog square wave at period T
+    ///   (rising edges at T/4, 5T/4, ...): its output period is 2*T, the classic
+    ///   divider-by-2 (same A2D pattern as example 21). The clock's edges sit at
+    ///   T/4 and 3T/4 so every comparison-relevant net is stable in a whole
+    ///   neighborhood of the k*T boundaries. The comparator's 0.5 V threshold is
+    ///   a reference source on its minus input.
+    fn build(top: &str) -> (CircuitInstance, NodeMap) {
+        let mut b = CircuitBuilder::new(top);
+        let gnd = b.ground();
+        let mut map = NodeMap::new();
+        match top {
+            "Top" | "RampTop" => {
+                let top_node = b.node("top");
+                let out = b.node("out");
+                let ports = [Port::Node(top_node.clone()), Port::Node(gnd.clone())];
+                if top == "Top" {
+                    let params = [("amp", ParamValue::Real(5.0)), ("freq", ParamValue::Real(1.0e3))];
+                    b.device(circuit::SineSource::module(), "v1", &params, &ports);
+                } else {
+                    b.device(circuit::RampSource::module(), "v1", &[], &ports);
+                }
+                CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top_node, &out);
+                CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
+                map.insert("out", out);
+            }
+            "DivTop" => {
+                let clk_a = b.node("clk_a");
+                let vth = b.node("vth");
+                let ports = [Port::Node(clk_a.clone()), Port::Node(gnd.clone())];
+                b.device(mixed::ClockSource::module(), "ck", &[("period", ParamValue::Real(1.0e-3))], &ports);
+                CircuitBuilding::add_voltage_source(&mut b, "vth", 0.5, &vth, &gnd);
+                let ports = [Port::Node(clk_a.clone()), Port::Node(vth), Port::Net("clk".into())];
+                b.device(mixed::Comparator::module(), "cmp", &[], &ports);
+                b.device(mixed::ToggleFlipFlop::module(), "tg", &[], &[Port::Net("clk".into()), Port::Net("q".into())]);
+                map.insert("clk_a", clk_a);
+            }
+            other => panic!("no circuit `{other}`"),
+        }
+        (b.build().expect("build"), map)
     }
 }
