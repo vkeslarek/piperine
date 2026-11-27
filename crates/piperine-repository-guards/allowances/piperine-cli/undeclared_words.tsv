@@ -2,7 +2,6 @@ crates/piperine-cli/src/cli.rs::ArgKind	1
 crates/piperine-cli/src/cli.rs::ArgRow	1
 crates/piperine-cli/src/cli.rs::arg	1
 crates/piperine-cli/src/cli.rs::args	1
-crates/piperine-cli/tests/analyses.rs::piperine_in	1
 crates/piperine-cli/tests/analyses.rs::stdout_of	1
 crates/piperine-cli/tests/book.rs::attr	1
 crates/piperine-cli/tests/book.rs::attrs	1
@@ -13,17 +12,12 @@ crates/piperine-cli/tests/book.rs::the_chapter_shows_the_rc_project_file_for_fil
 crates/piperine-cli/tests/book.rs::the_rc_output_blocks_are_what_the_binary_prints	1
 crates/piperine-cli/tests/book.rs::the_welcome_chapter_shows_the_rc_project_file_for_file	1
 crates/piperine-cli/tests/book.rs::workdir	1
-crates/piperine-cli/tests/buck.rs::piperine_test_passes_on_the_buck	1
 crates/piperine-cli/tests/buck.rs::startup_ends_within_3_mv_of_0_8_volts	1
 crates/piperine-cli/tests/commands.rs::Stderr	1
-crates/piperine-cli/tests/commands.rs::check_prints_ok_with_the_counts	1
 crates/piperine-cli/tests/commands.rs::check_reports_one_error_per_unreached_item_kind	1
 crates/piperine-cli/tests/commands.rs::fmt_check_passes_on_every_stdlib_file	1
 crates/piperine-cli/tests/commands.rs::fmt_check_passes_on_the_rc_example_and_on_a_new_project	1
 crates/piperine-cli/tests/commands.rs::new_writes_the_rc_example_under_the_new_name	1
-crates/piperine-cli/tests/commands.rs::piperine_in	1
-crates/piperine-cli/tests/commands.rs::piperine_on	1
-crates/piperine-cli/tests/commands.rs::piperine_with	1
 crates/piperine-cli/tests/commands.rs::rc	1
 crates/piperine-cli/tests/commands.rs::test_prints_fail_fatal_with_the_msg	1
 crates/piperine-cli/tests/commands.rs::unformatted_lib	1
@@ -59,14 +53,11 @@ crates/piperine-cli/tests/docs.rs::the_buck_readme_says_how_to_run_it	1
 crates/piperine-cli/tests/docs.rs::the_buck_readme_says_when_to_run_the_buck_on_demand	1
 crates/piperine-cli/tests/docs.rs::the_roadmap_is_forward_looking	1
 crates/piperine-cli/tests/docs.rs::transient_performance_closes_v12	1
-crates/piperine-cli/tests/info.rs::piperine_in	1
 crates/piperine-cli/tests/integrated.rs::dir	1
-crates/piperine-cli/tests/integrated.rs::piperine_test_passes_pi_loop_and_threshold	1
 crates/piperine-cli/tests/options.rs::a_simparam_entry_naming_an_option_is_p0010	1
 crates/piperine-cli/tests/options.rs::a_tnom_flag_is_refused	1
 crates/piperine-cli/tests/options.rs::an_unwritable_csv_names_the_path_and_exits_1	1
 crates/piperine-cli/tests/options.rs::an_unwritable_plot_names_the_path_and_exits_1	1
-crates/piperine-cli/tests/options.rs::piperine_in	1
 crates/piperine-cli/tests/options.rs::rc	1
 crates/piperine-cli/tests/options.rs::rc_copy	1
 crates/piperine-cli/tests/options.rs::records_go_to_the_file_as_json_lines_and_not_to_stdout	1
@@ -79,8 +70,6 @@ crates/piperine-cli/tests/run.rs::a_fatal_run_prints_its_msg_and_exits_1	1
 crates/piperine-cli/tests/run.rs::a_first_compile_is_announced_on_stderr	1
 crates/piperine-cli/tests/run.rs::dir	1
 crates/piperine-cli/tests/run.rs::no_manifest_is_e0170_and_exit_1	1
-crates/piperine-cli/tests/run.rs::piperine	1
-crates/piperine-cli/tests/run.rs::piperine_in	1
 crates/piperine-cli/tests/run.rs::rc	1
 crates/piperine-cli/tests/run.rs::run_of_a_top_with_a_node_port_is_e0810	1
 crates/piperine-cli/tests/run.rs::stdout	1
@@ -90,5 +79,3 @@ crates/piperine-cli/tests/twins.rs::Ran	1
 crates/piperine-cli/tests/twins.rs::stderr	1
 crates/piperine-cli/tests/twins.rs::stdout	1
 crates/piperine-cli/tests/twins.rs::tran_rc_prints_the_bytes_it_printed_before_the_long_run	1
-crates/piperine-cli/tests/usage.rs::piperine	1
-crates/piperine-cli/tests/usage.rs::the_binary_is_named_piperine	1

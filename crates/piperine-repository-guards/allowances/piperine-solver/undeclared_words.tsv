@@ -80,9 +80,6 @@ crates/piperine-solver/src/analyses/transient.rs::with_dt_max	1
 crates/piperine-solver/src/analyses/transient.rs::with_dt_min	1
 crates/piperine-solver/src/core/bind.rs::ArrayDecl	1
 crates/piperine-solver/src/core/bind.rs::Int	1
-crates/piperine-solver/src/core/bind.rs::add	1
-crates/piperine-solver/src/core/bind.rs::get_or_add	1
-crates/piperine-solver/src/core/bind.rs::get_or_add_array	1
 crates/piperine-solver/src/core/bind.rs::init	1
 crates/piperine-solver/src/core/bind.rs::specs	3
 crates/piperine-solver/src/core/circuit.rs::sens	1
@@ -150,11 +147,9 @@ crates/piperine-solver/tests/crossing_rules.rs::its_devices_pass_the_partials_ve
 crates/piperine-solver/tests/crossing_rules.rs::tol_comparator	1
 crates/piperine-solver/tests/crossing_rules.rs::tol_shape	1
 crates/piperine-solver/tests/digital_settle_subscriber.rs::its_devices_pass_the_partials_verifier	1
-crates/piperine-solver/tests/digital_settle_subscriber.rs::sub_shape	1
 crates/piperine-solver/tests/digital_settle_subscriber.rs::the_subscriber_sees_the_post_settle_value_even_when_it_differs_from_the_pre_accept_snapshot	1
 crates/piperine-solver/tests/environment.rs::EnvProbe	1
 crates/piperine-solver/tests/environment.rs::its_devices_pass_the_partials_verifier	1
-crates/piperine-solver/tests/failure_rules.rs::NanSource	1
 crates/piperine-solver/tests/failure_rules.rs::a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier	1
 crates/piperine-solver/tests/failure_rules.rs::a_non_finite_contribution_is_e0507_and_names_the_instance	1
 crates/piperine-solver/tests/failure_rules.rs::a_singular_ac_point_is_e0503_naming_the_node	1
@@ -176,9 +171,6 @@ crates/piperine-solver/tests/helpers/abi_devices.rs::Rn	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::Vramp	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::Vsine	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::Vsrc	1
-crates/piperine-solver/tests/helpers/abi_devices.rs::add_capacitor	1
-crates/piperine-solver/tests/helpers/abi_devices.rs::add_diode	1
-crates/piperine-solver/tests/helpers/abi_devices.rs::add_resistor	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::add_vsrc	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::amb	1
 crates/piperine-solver/tests/helpers/abi_devices.rs::c_shape	1
@@ -248,8 +240,6 @@ crates/piperine-solver/tests/protocol_operating_point.rs::rounds_beyond_the_boun
 crates/piperine-solver/tests/protocol_real.rs::FlakyG	1
 crates/piperine-solver/tests/protocol_real.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/protocol_real.rs::rc	1
-crates/piperine-solver/tests/protocol_seam.rs::sub_solver_names	1
-crates/piperine-solver/tests/protocol_seam.rs::the_protocol_module_names_no_sub_solver_item	1
 crates/piperine-solver/tests/protocol_sink.rs::obs	1
 crates/piperine-solver/tests/protocol_transient.rs::a_proposal_a_few_ulps_short_of_a_tick_is_that_tick	1
 crates/piperine-solver/tests/protocol_transient.rs::an_unsettled_loop_is_e0511_naming_its_drives	1
@@ -278,7 +268,6 @@ crates/piperine-solver/tests/settled_value.rs::x_changed_does_not_fire_when_the_
 crates/piperine-solver/tests/solver_entry.rs::its_devices_pass_the_partials_verifier	1
 crates/piperine-solver/tests/step_observer.rs::Rig	1
 crates/piperine-solver/tests/step_observer.rs::rig	1
-crates/piperine-solver/tests/step_statistics.rs::assert_rejections_add_up	1
 crates/piperine-solver/tests/step_statistics.rs::rc_behind_a_switch	1
 crates/piperine-solver/tests/step_statistics.rs::rc_over_the_tolerance	1
 crates/piperine-solver/tests/step_statistics.rs::rc_with	1

@@ -254,7 +254,6 @@ tests/scenarios.rs::Ran	1
 tests/scenarios.rs::ac_rc	1
 tests/scenarios.rs::delay_tline	1
 tests/scenarios.rs::diode_iv	1
-tests/scenarios.rs::diode_rev	1
 tests/scenarios.rs::diode_rs	1
 tests/scenarios.rs::isrc_r	1
 tests/scenarios.rs::noise_rc	1

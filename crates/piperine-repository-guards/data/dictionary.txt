@@ -33,6 +33,7 @@ adapt
 adapters
 adaptor
 adaptors
+add
 added
 addend
 addends
@@ -1835,6 +1836,7 @@ offered
 offers
 offset
 often
+ok
 old
 omega
 omitted

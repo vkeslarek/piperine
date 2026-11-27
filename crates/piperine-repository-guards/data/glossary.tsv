@@ -11,6 +11,7 @@ ids	identifiers
 param	a parameter, the MSL word
 params	parameters
 repr	the representation of a value
+piperine	the product's own name
 ngspice	the reference simulator
 rustc	the Rust compiler
 netlist	a list of connected devices
@@ -32,6 +33,7 @@ sp	scattering parameters
 tf	transfer function
 lte	local truncation error
 mna	modified nodal analysis
+tr	trapezoidal, the first stage of `TrBdf2`
 bdf	backward differentiation formula
 gmin	minimum conductance
 abstol	absolute tolerance
@@ -71,6 +73,10 @@ trunc	truncation
 hypot	hypotenuse
 rem	remainder
 euclid	Euclidean
+sub	subtraction, Appendix H's `checked_sub` and Rust's `Sub`
+mul	multiplication, Appendix H's `checked_mul` and Rust's `Mul`
+nan	not a number, Appendix H's `is_nan`
+rev	reversed order, Appendix H's `rev`
 fmt	the formatting trait
 eq	equality
 ne	inequality
@@ -83,13 +89,22 @@ shr	shift right
 bitand	bitwise and
 bitor	bitwise or
 bitxor	bitwise exclusive or
+div	division, Rust's `Div` operator trait
+neg	negation, Rust's `Neg` operator trait
+ord	total order, Appendix H.8's `Ord` and `PartialOrd`
 fn	function keyword
 impl	implementation keyword
 struct	structure keyword
 enum	enumeration keyword
 const	constant keyword
 mut	mutable keyword
+mod	module keyword
+extern	external item keyword
+dyn	dynamic dispatch keyword, reserved in MSL
+async	asynchronous keyword, reserved in MSL
 bool	boolean type
 str	string type
+usize	unsigned pointer-sized integer type, Appendix H's `usize`
+isize	signed pointer-sized integer type, Appendix H's `isize`
 eval	evaluate, the ABI contract's own word
 spec	specification, as the ABI's descriptions are named

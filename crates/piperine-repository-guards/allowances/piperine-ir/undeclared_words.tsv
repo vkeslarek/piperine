@@ -29,8 +29,6 @@ crates/piperine-ir/src/check.rs::stmt_id	1
 crates/piperine-ir/src/check.rs::stmt_origin	1
 crates/piperine-ir/src/check.rs::stmts_done	1
 crates/piperine-ir/src/check.rs::ty	1
-crates/piperine-ir/src/check/traits.rs::Ord	1
-crates/piperine-ir/src/check/traits.rs::PartialOrd	1
 crates/piperine-ir/src/contributions.rs::Expr	1
 crates/piperine-ir/src/contributions.rs::Stmt	1
 crates/piperine-ir/src/contributions.rs::expr	1
@@ -67,10 +65,7 @@ crates/piperine-ir/src/handle.rs::ty	1
 crates/piperine-ir/src/ids.rs::ExprId	1
 crates/piperine-ir/src/ids.rs::StmtId	1
 crates/piperine-ir/src/lib.rs::deps	1
-crates/piperine-ir/src/model.rs::Add	1
-crates/piperine-ir/src/model.rs::AddOverflows	1
 crates/piperine-ir/src/model.rs::BitXor	1
-crates/piperine-ir/src/model.rs::Div	1
 crates/piperine-ir/src/model.rs::Env	2
 crates/piperine-ir/src/model.rs::Expr	3
 crates/piperine-ir/src/model.rs::ExprData	1
@@ -84,20 +79,11 @@ crates/piperine-ir/src/model.rs::Ge	1
 crates/piperine-ir/src/model.rs::Gt	1
 crates/piperine-ir/src/model.rs::Int	3
 crates/piperine-ir/src/model.rs::IntAbs	1
-crates/piperine-ir/src/model.rs::IsNan	1
 crates/piperine-ir/src/model.rs::Le	1
 crates/piperine-ir/src/model.rs::Lt	1
-crates/piperine-ir/src/model.rs::Mul	1
-crates/piperine-ir/src/model.rs::MulOverflows	1
-crates/piperine-ir/src/model.rs::Neg	1
 crates/piperine-ir/src/model.rs::NodeRef	1
-crates/piperine-ir/src/model.rs::SaturatingAdd	1
-crates/piperine-ir/src/model.rs::SaturatingMul	1
-crates/piperine-ir/src/model.rs::SaturatingSub	1
 crates/piperine-ir/src/model.rs::Stim	1
 crates/piperine-ir/src/model.rs::Stmt	1
-crates/piperine-ir/src/model.rs::Sub	1
-crates/piperine-ir/src/model.rs::SubOverflows	1
 crates/piperine-ir/src/model.rs::Tuple	3
 crates/piperine-ir/src/model.rs::UInt	1
 crates/piperine-ir/src/model.rs::Unary	1
@@ -106,8 +92,6 @@ crates/piperine-ir/src/model.rs::col	1
 crates/piperine-ir/src/model.rs::deps	1
 crates/piperine-ir/src/model.rs::exprs	1
 crates/piperine-ir/src/model.rs::init	4
-crates/piperine-ir/src/model.rs::ord	1
-crates/piperine-ir/src/model.rs::partial_ord	1
 crates/piperine-ir/src/model.rs::ret	1
 crates/piperine-ir/src/model.rs::stims	1
 crates/piperine-ir/src/model.rs::stmts	2
@@ -187,7 +171,6 @@ crates/piperine-ir/tests/support/digital.rs::int	1
 crates/piperine-ir/tests/support/digital.rs::osc	1
 crates/piperine-ir/tests/support/digital.rs::pid	1
 crates/piperine-ir/tests/support/digital.rs::ref_ramp	1
-crates/piperine-ir/tests/support/digital.rs::rev3	1
 crates/piperine-ir/tests/support/digital.rs::setpoint_reg	1
 crates/piperine-ir/tests/support/digital.rs::stmt	1
 crates/piperine-ir/tests/support/digital.rs::u	1

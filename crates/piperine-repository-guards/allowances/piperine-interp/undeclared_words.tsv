@@ -1,13 +1,8 @@
 crates/piperine-interp/src/composite.rs::met	1
 crates/piperine-interp/src/device.rs::stim	1
-crates/piperine-interp/src/dual.rs::add_and_sub_follow_the_sum_rule	1
 crates/piperine-interp/src/dual.rs::d	1
-crates/piperine-interp/src/dual.rs::div_follows_the_quotient_rule	1
-crates/piperine-interp/src/dual.rs::mul_follows_the_product_rule	1
-crates/piperine-interp/src/dual.rs::neg_flips_value_and_tangent	1
 crates/piperine-interp/src/dual.rs::v	1
 crates/piperine-interp/src/walk.rs::Lab	1
-crates/piperine-interp/src/walk.rs::add	1
 crates/piperine-interp/src/walk.rs::an_unexecuted_form_faults_with_its_origin	1
 crates/piperine-interp/src/walk.rs::b	1
 crates/piperine-interp/src/walk.rs::ex	1

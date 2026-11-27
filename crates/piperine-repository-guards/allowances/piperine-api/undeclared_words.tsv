@@ -60,7 +60,6 @@ crates/piperine-api/tests/derived.rs::a_definition_is_recomputed_at_the_set	1
 crates/piperine-api/tests/derived.rs::a_sweep_recomputes_the_child_at_each_point	1
 crates/piperine-api/tests/derived.rs::a_timed_set_recomputes_at_the_same_instant	1
 crates/piperine-api/tests/derived.rs::the_s2_probe_prints_three_quarters	1
-crates/piperine-api/tests/digital_only.rs::a_digital_only_run_ended_by_finish_is_ok	1
 crates/piperine-api/tests/digital_only.rs::a_finish_ends_the_run_ok_when_the_sim_stream_is_not_kept	1
 crates/piperine-api/tests/grid.rs::the_gridded_tran_rc_is_bit_equal_to_on_grid_on_both_backends	1
 crates/piperine-api/tests/host_actions.rs::a_drive_of_the_wrong_type_is_e0802	1
@@ -91,7 +90,6 @@ crates/piperine-api/tests/options.rs::maxmicro_bounds_an_instant	1
 crates/piperine-api/tests/options.rs::maxrounds_bounds_the_operating_point	1
 crates/piperine-api/tests/options.rs::simparam_flag_is_repeatable_and_a_non_number_is_p0010	1
 crates/piperine-api/tests/options.rs::tran_rc_with_budget	1
-crates/piperine-api/tests/power_stage_bench.rs::piperine_run	1
 crates/piperine-api/tests/probes.rs::an_entry_that_names_nothing_is_e0801_before_any_analysis	1
 crates/piperine-api/tests/project.rs::a_file_under_src_is_refused_with_p0010	1
 crates/piperine-api/tests/project.rs::a_missing_bench_file_is_p0010_at_the_value	1

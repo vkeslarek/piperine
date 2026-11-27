@@ -1,5 +1,4 @@
 crates/piperine-parity/src/backend.rs::Interp	1
-crates/piperine-parity/src/corpus.rs::a_command_is_read_as_the_arguments_after_piperine	1
 crates/piperine-parity/src/corpus.rs::expected_stdout	1
 crates/piperine-parity/src/golden.rs::an_unparsable_row_names_file_and_row	1
 crates/piperine-parity/src/golden.rs::im	1
@@ -46,7 +45,6 @@ crates/piperine-parity/tests/parity_ac.rs::ac_rc_with_a_scaled_derivative	1
 crates/piperine-parity/tests/parity_ac.rs::delay_tline_ac	1
 crates/piperine-parity/tests/parity_corpus.rs::every_twin_has_a_cir_and_a_test	1
 crates/piperine-parity/tests/parity_dc.rs::diode_iv	1
-crates/piperine-parity/tests/parity_dc.rs::diode_rev	1
 crates/piperine-parity/tests/parity_grid.rs::the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports	1
 crates/piperine-parity/tests/parity_grid.rs::tran_rc_on_the_grid_agrees_with_ngspice	1
 crates/piperine-parity/tests/parity_noise.rs::noise_rc	1
@@ -74,12 +72,9 @@ crates/piperine-parity/tests/run_errors.rs::a_loop_of_two_vsources_from_source_i
 crates/piperine-parity/tests/run_errors.rs::a_nan_contribution_from_source_is_e0507	1
 crates/piperine-parity/tests/run_errors.rs::an_unwrap_of_none_under_known_control_fails_the_run_with_e0105	1
 crates/piperine-parity/tests/source/widths.rs::ty	1
-crates/piperine-parity/tests/source_aggregates.rs::Add	1
 crates/piperine-parity/tests/source_aggregates.rs::Msg	2
-crates/piperine-parity/tests/source_aggregates.rs::Mul	1
 crates/piperine-parity/tests/source_aggregates.rs::P	2
 crates/piperine-parity/tests/source_aggregates.rs::Rect	1
-crates/piperine-parity/tests/source_aggregates.rs::Sub	1
 crates/piperine-parity/tests/source_aggregates.rs::Tx	1
 crates/piperine-parity/tests/source_aggregates.rs::_x	1
 crates/piperine-parity/tests/source_aggregates.rs::b	2
@@ -97,7 +92,6 @@ crates/piperine-parity/tests/source_carrier_arrays.rs::ram	1
 crates/piperine-parity/tests/source_carrier_arrays.rs::s	1
 crates/piperine-parity/tests/source_carrier_arrays.rs::the_shift_register_and_the_ram_give_their_expected_sequences	1
 crates/piperine-parity/tests/source_carrier_arrays.rs::y1	1
-crates/piperine-parity/tests/source_catalogue.rs::a_crossed_or_nan_clamp_in_analog_faults_naming_it	1
 crates/piperine-parity/tests/source_catalogue.rs::db10_and_db20_run	1
 crates/piperine-parity/tests/source_catalogue.rs::db10_and_db20_type_check_from_the_stdlib	1
 crates/piperine-parity/tests/source_catalogue.rs::expr	1
@@ -119,10 +113,8 @@ crates/piperine-parity/tests/source_events.rs::a_guard_reading_events_fires_only
 crates/piperine-parity/tests/source_events.rs::handshake_fires_when_req_rises_with_ack_high	1
 crates/piperine-parity/tests/source_events.rs::pfd3_rising_apart_steps_up_then_down	1
 crates/piperine-parity/tests/source_events.rs::pfd3_rising_together_leaves_state_unchanged	1
-crates/piperine-parity/tests/source_fixes.rs::a_cross_over_a_nan_of_known_values_fails_the_solve	1
 crates/piperine-parity/tests/source_fixes.rs::a_cross_ttol_that_is_not_positive_is_e0510	1
 crates/piperine-parity/tests/source_fixes.rs::absdelta_fires_every_two_tenths_of_a_volt	1
-crates/piperine-parity/tests/source_fixes.rs::an_enum_deriving_partial_ord_orders_its_variants_in_a_reaction	1
 crates/piperine-parity/tests/source_fixes.rs::rc_crossing	1
 crates/piperine-parity/tests/source_generics.rs::B	1
 crates/piperine-parity/tests/source_generics.rs::C	1
@@ -181,7 +173,6 @@ crates/piperine-parity/tests/source_noise.rs::a_density_reading_freq_is_evaluate
 crates/piperine-parity/tests/source_noise.rs::a_density_that_is_not_finite_fails_with_e0454_naming_the_frequency	1
 crates/piperine-parity/tests/source_noise.rs::a_negative_density_fails_with_e0454_naming_the_frequency	1
 crates/piperine-parity/tests/source_noise.rs::flicker_noise_falls_as_one_over_f_to_the_exponent	1
-crates/piperine-parity/tests/source_noise.rs::two_sources_add_their_powers	1
 crates/piperine-parity/tests/source_number_widths.rs::a_carried_f128_is_a_u64_field_of_count_two	1
 crates/piperine-parity/tests/source_number_widths.rs::a_carried_f32_is_the_f32_leaf	1
 crates/piperine-parity/tests/source_number_widths.rs::a_wide_literal_past_its_type_is_e0909	1

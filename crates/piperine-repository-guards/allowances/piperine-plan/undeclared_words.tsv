@@ -7,15 +7,11 @@ crates/piperine-plan/src/plan.rs::Stim	1
 crates/piperine-plan/src/plan.rs::StimIm	1
 crates/piperine-plan/src/plan.rs::StimRe	1
 crates/piperine-plan/src/plan.rs::StimValue	1
-crates/piperine-plan/src/plan.rs::add	1
 crates/piperine-plan/src/plan.rs::affine	1
 crates/piperine-plan/src/plan.rs::derivative_abstols	1
 crates/piperine-plan/src/resolved.rs::init_bytes	1
 crates/piperine-plan/tests/amended_shape.rs::freq_reads_the_ambient_and_analysis_reads_its_global_pin	1
-crates/piperine-plan/tests/composite_shape.rs::add	1
 crates/piperine-plan/tests/composite_shape.rs::tx	1
 crates/piperine-plan/tests/digital_shape.rs::init	1
-crates/piperine-plan/tests/nan_param.rs::NanBody	1
-crates/piperine-plan/tests/nan_param.rs::a_nan_param_default_is_the_librarys_nan	1
 crates/piperine-plan/tests/operators_shape.rs::a_delay_without_a_maximum_bounds_the_history_by_td	1
 crates/piperine-plan/tests/structure_shape.rs::a_switch_equation_is_not_affine	1
