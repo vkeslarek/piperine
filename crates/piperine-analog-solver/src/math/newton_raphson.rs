@@ -241,6 +241,18 @@ where
         }
     }
 
+    /// Stores `guess` as the latest row of the iterate buffer; a buffer with no row is the
+    /// solver's error, not a panic.
+    fn commit(&mut self, guess: &ArrayView1<E>) -> Result<(), Error> {
+        match self.state.latest_mut() {
+            Some(mut latest) => {
+                latest.assign(guess);
+                Ok(())
+            }
+            None => Err(self.singular("the iterate buffer holds no row to commit to")),
+        }
+    }
+
     /// The `E0503`/`E0507` of the system just stamped, which `what` failed to
     /// solve: reads the entries still held by the linear system.
     fn singular(&self, what: &str) -> Error {
@@ -343,10 +355,7 @@ where
                 // Commit the converged solution — the buffer's latest row is
                 // what snapshots read and what the next timestep's companion
                 // models treat as the accepted point.
-                self.state
-                    .latest_mut()
-                    .unwrap()
-                    .assign(&current_guess.view());
+                self.commit(&current_guess.view())?;
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
                 self.last_iterations = iter + 1;
@@ -354,15 +363,14 @@ where
                 return Ok(current_guess);
             }
 
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&current_guess.view());
+            self.commit(&current_guess.view())?;
         }
 
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
-        system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
+        if let Some(latest) = self.state.latest() {
+            system.convergence_failed_callback(&self.state, max_iter, &latest);
+        }
         Err(Self::exhausted(max_iter, Vec::new(), &system.limiting_report()))
     }
 
@@ -515,10 +523,7 @@ where
                     system.netlist(),
                     tolerances,
                 ) {
-                self.state
-                    .latest_mut()
-                    .unwrap()
-                    .assign(&current_guess.view());
+                self.commit(&current_guess.view())?;
                 system.convergence_success_callback(&self.state, &current_guess.view());
                 debug!("Converged in {} iterations", iter + 1);
                 self.last_iterations = iter + 1;
@@ -538,15 +543,14 @@ where
                 );
             }
 
-            self.state
-                .latest_mut()
-                .unwrap()
-                .assign(&current_guess.view());
+            self.commit(&current_guess.view())?;
         }
 
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
-        system.convergence_failed_callback(&self.state, max_iter, &self.state.latest().unwrap());
+        if let Some(latest) = self.state.latest() {
+            system.convergence_failed_callback(&self.state, max_iter, &latest);
+        }
         Err(Self::exhausted(max_iter, failing, &system.limiting_report()))
     }
 }

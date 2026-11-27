@@ -245,14 +245,6 @@ impl Netlist {
     }
 
     pub fn max_index(&self) -> Option<usize> {
-        let mut mapped_vars: Vec<_> = self
-            .all_references()
-            .into_iter()
-            .filter(|id| id.idx().is_some())
-            .collect();
-
-        mapped_vars.sort_by_key(|id| id.idx().unwrap());
-
-        mapped_vars.last().map(|id| id.idx().unwrap())
+        self.all_references().into_iter().filter_map(|id| id.idx()).max()
     }
 }

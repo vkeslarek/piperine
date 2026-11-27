@@ -10,6 +10,7 @@ use piperine_abi::raw::{ambient, op, watch};
 
 use super::ddt::{History, Stage, companion_current, stamp_ddt};
 use super::delay::{Delayed, stamp_delay};
+use super::cell::RealCell;
 use super::device_error;
 use super::flow::{stamp_flow, stamp_rows};
 use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
@@ -68,7 +69,7 @@ pub(crate) struct FnState {
 impl FnState {
     /// The `F64` at byte 0 of write `w`.
     pub fn f64(&self, w: usize) -> f64 {
-        f64::from_le_bytes(self.out[w][..8].try_into().expect("an F64 cell"))
+        RealCell::read(&self.out[w])
     }
 }
 
@@ -515,7 +516,7 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate().filter(|(_, t)| t.op == op::DDT) {
                 let h = &st.ddt[ti];
-                let abstol = t.abstol.map(|s| f64::from_le_bytes(self.slots[s][..8].try_into().expect("an F64 at byte 0")));
+                let abstol = t.abstol.map(|s| RealCell::read(&self.slots[s]));
                 out.push(DdtState {
                     q: [h.back(3), h.back(2), h.back(1)],
                     i: [h.current_back(3), h.current_back(1)],
@@ -549,7 +550,9 @@ impl Assembly {
         let mut d = vec![0.0; inst.terms.len()];
         let mut scratch: Vec<u8> = Vec::new();
         for f in inst.functions.iter().filter(|f| f.rows && !f.limits) {
-            let sf = shape.functions.get(f.k as usize).expect("validated");
+            let sf = shape.functions.get(f.k as usize).ok_or_else(|| {
+                device_error(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
+            })?;
             let pin_d = |c: &piperine_abi::raw::Cell| {
                 let discrete = shape
                     .pins
@@ -635,7 +638,7 @@ impl Assembly {
 /// parameter cone has not written yet (the operating point's first solve comes before the cone's
 /// first run) is unbounded too: its zero bytes are no bound.
 fn max_of(t: &TermPlan, slots: &[Vec<u8>], written: &[bool]) -> f64 {
-    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0")))
+    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| RealCell::read(&slots[s]))
 }
 
 /// Which outputs one evaluation needs beyond the rows of a Newton solve.

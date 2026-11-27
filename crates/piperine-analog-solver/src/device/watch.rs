@@ -13,6 +13,7 @@ use piperine_abi::raw::watch;
 use crate::error::Error;
 
 use super::assembly::{FnState, InstanceState};
+use super::cell::RealCell;
 use super::device_error;
 use super::plan::{FnPlan, InstancePlan, WatchPlan};
 
@@ -62,7 +63,7 @@ pub(crate) fn tolerance(
     if !written[s] {
         return Ok(None);
     }
-    let v = f64::from_le_bytes(slots[s][..8].try_into().expect("an F64 at byte 0"));
+    let v = RealCell::read(&slots[s]);
     if !(v.is_finite() && v > 0.0) {
         return Err(device_error(format!(
             "E0510: instance `{}`: crossing watch `{}` ({}) has {which} = {v}, not finite and positive (§17.3)",

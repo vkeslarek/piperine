@@ -870,8 +870,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `grep -rE 'unwrap\(\)|expect\(' crates/piperine-analog-solver/src` finds nothing outside `#[cfg(test)]`
-- [ ] Gate check passes: Quick
+- [x] `grep -rE 'unwrap\(\)|expect\(' crates/piperine-analog-solver/src` finds nothing outside `#[cfg(test)]`
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
