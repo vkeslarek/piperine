@@ -769,3 +769,86 @@ Fix: tick it.
 | P3-1 wrong Gap owners: L74 blanket over L75 forms and a general form | Medium | `forms.rs:744,1369-1399,1416`; `event_functions.rs:176-246`; `elab_digital.rs:937`; `control.rs:79`; `refusals.rs:145` | split or own by context (L75); `AssignmentToFieldOrElement` to `Unswept`; make the guard check that the row quotes the text | |
 | P3-2 vague and misplaced form names | Low | `forms.rs:792,1441`; `types/analog.rs:215` | rename; reclassify with P3-1 | |
 | P3-3 T17 box unticked | Low | `tasks.md:689` | tick it | |
+
+## Phase 3 round 2
+
+**Verdict**: FAIL (one Low finding)
+**Head**: 84e215ff4. It is d2fb2cc4d (the merge of Phase 2) followed by the fix for P3-1, P3-2, P3-3 and the removal of `repeated.rs`.
+**Verifier**: independent sub-agent (Opus; author != verifier). I reran every gate with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a` and read the full logs.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards --no-fail-fast` | 11 result lines, 116 passed, 0 failed |
+| `cargo test -p piperine-lang --no-fail-fast` | 84 result lines, 1 439 passed, 0 failed; `refusals` 7/7 |
+| `cargo test -p piperine-parity --no-fail-fast` | **64 result lines, 645 passed, 0 failed**, the same as round 1 |
+
+**Parity count (point 5).** No test is lost. The full run gives 64 result lines and 645 passing tests, as in round 1. There are 74 `.rs` files under `parity/tests` at both 40a85da92 and the head, and the diff 40a85da92..84e215ff4 does not touch `crates/piperine-parity`. The fixer's "23 targets, 176 passed" is therefore a partial view of the run, not the suite.
+
+**Lang count.** It fell from 1 584 to 1 439, a drop of 145. Phase 2 explains the whole drop: it retired 144 `spec_text` tests and removed one duplicate in `buck_example`.
+
+### Merge (point 1)
+
+- **Allowances.** For each of the 129 files under the guards' `allowances/`, `data/` and `worklists/`, I compared the merge with the rows kept by both sides plus each side's additions. The formula is `(base ∩ phase-3 ∩ phase-2) ∪ (phase-3 − base) ∪ (phase-2 − base)`, and it holds for all 129 files. No row was resurrected and none was dropped.
+- **`verification.md`.** Lines 1–673 of the head are byte-identical to the Phase 2 side's file, Phase 2 rounds 1–3 included. The Phase 3 round 1 section is byte-identical to `d679ea223`'s.
+
+### Round 1 findings
+
+| Finding | Status |
+| --- | --- |
+| P3-1 | **Closed in substance.** The nine shared ddx/event-function forms and `AssignmentToFieldOrElement` are `Unswept`. Of the 35 round-1 owners, all 17 `Gap("L74")` rows left; the other 18 are unchanged. The 18 that remain were spot-checked against GAPS: L73 ×2, L75 ×2, L76, L83, L84 ×2, L85, L86 ×3, L87, L92 ×2, L94, L95, L96. Each row's last column quotes the form's words. The strengthened guard is unsound in both directions, though (finding P3R2-1) |
+| P3-2 | **Closed.** `ValueForm::TryExpression`. `ValueForm::PrimitiveWithNoSignatureRow` (a call of a core primitive or built-in with no signature row) is a value or expression form, so `ValueForm` is an honest home and a family of one would add nothing. `ItemForm` holds the 24 declaration kinds. `EventFunctionForm` holds the 11 event-function forms. The nine shared forms stay in `AnalogForm` even though event functions raise them in digital bodies; a family such as an "expanded body" form would say so, but that is a naming nicety and stays a note |
+| P3-3 | **Closed.** `tasks.md:689` is ticked |
+
+### `repeated.rs` removal (point 4)
+
+The file and `share.py` are gone, and the sites build the variant directly.
+
+- **No two rows share words.** `each_form_words_live_in_one_row` asserts it.
+- **No site builds a refusal from text.** `RefusedForm` has no text variant, `"P0001"` is only in `refusal.rs`, and every detail fills a `{}` of a row.
+- **T21's reworded Done-when.** It says "a form's words are defined in exactly one row and each repeated form is one named variant, not one message per site". That still states the finding it closes, R3's 25 messages written at 68 sites. T21's **What** still reads "is raised by one method of its owner", which now contradicts the Done-when. The Done-when is marked "coordinator decision … pending review", so this is noted for the user's review rather than raised as a finding.
+
+### P3R2-1 (Low): the 20-character guard admits a wrong owner and refuses honest ones
+
+`every_gap_owner_names_a_gaps_row` (`refusals.rs:113-125`) requires each fragment of 20 characters or more between `{}` to appear verbatim somewhere in the owning GAPS line, prose included. Five throwaway edits were made, each reverted with `git checkout`:
+
+| Edit | Guard | Should be |
+| --- | --- | --- |
+| `FormOfOptionValue` `L92`→`L83` | fails | fails ✓ |
+| `LetOfPatternThatIsNoName` → `Gap("L74")` | fails, but only because the fragment "… no name in" ends in "in" | fails ✓ (by accident) |
+| `AssignmentToFieldOrElement` → `Gap("L74")`, the round-1 wrong owner | **passes**: L74's prose contains the phrase | fails ✗ |
+| `WhileOrLoopInFnCalledInside` → `Gap("L74")`; raised only at `symbolic.rs:189` inside a ddx body; L74 quotes "a `while` or `loop` in a `fn` called inside a `ddx`" | **fails**: the row's text adds ": it has no finite symbolic reading" | passes ✗ |
+| `MatchArmWhosePatternBindsNameIn` → `Gap("L75")`; L75 quotes "a `match` arm whose pattern binds a name" | **fails**: the row's text adds ", in a function that returns an `Event`" | passes ✗ |
+
+GAPS quotes messages abbreviated, so "every long fragment verbatim" rejects honest owners. Meanwhile, matching anywhere in the line, prose included, admits a form whose phrase L74 merely mentions.
+
+As a result L74, the one GAPS row a source file actually cites (`symbolic.rs:15`), now owns no form. Seven forms raised only inside a ddx body are honestly L74's:
+
+- `WhileOrLoopInFnCalledInside`
+- `BreakContinueOrReturnWithNoValue`
+- `ExpressionStatementThatIsNoAssignmentIf`
+- `StatementThatIsNoLetOfName`
+- `IfLetInFnCalledInsideDdx`
+- `FnCalledInsideDdxThatForksInto`
+- `FnWithNoValueInsideDdx`
+
+At least `MatchArmWhosePatternBindsNameIn` and `WhileLoopBreakContinueOrReturnWith` are likewise L75's.
+
+None of this leaves a form unowned: L74, L75 and `Unswept` all close in `spec-closure`. That is why this is Low. The table still drops the one ownership the task's rule ("`Gap(id)` where a site already cites a `GAPS.md` row") names explicitly, and the guard would let the round-1 mistake back in.
+
+Fix:
+
+1. Match the form against the owning row's last column (the quoted `P0001` messages) only, not its prose.
+2. Accept a quote that is a prefix of the form's text, or that equals its text with the context suffix (`{}` or the body clause) removed.
+3. Restore `Gap("L74")` on the seven ddx-only forms and `Gap("L75")` on the event-function forms L75 quotes.
+4. Lower `unswept_count.txt` to match.
+
+The coordinator asked about "five forms with short text" that lost their owner. I could not find them: the 17 owners lost between 40a85da92 and the head are all `L74` rows, none of them short.
+
+### Phase 3 round 2 findings
+
+| Finding | Severity | Evidence | Fix | Closed |
+| --- | --- | --- | --- | --- |
+| P3R2-1 the guard admits `AssignmentToFieldOrElement`→L74 and refuses honest L74/L75 owners; L74 owns nothing | Low | `refusals.rs:113-125`; five throwaway edits above; `symbolic.rs:102,128,189,193,198,239,252` | match only the quoted column, as a prefix or with the context removed; restore the ddx-only L74 and quoted L75 owners | |
