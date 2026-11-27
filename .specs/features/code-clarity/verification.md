@@ -671,3 +671,167 @@ None. I probed:
 - the narrowed README test against C157 and C58.
 
 Phase 2 (T9 to T14) is verified. The round 1 and round 2 findings are closed by 39295ddfc, 3e504144c, dbda0d62b, 1f98685e5 and acf28ab8e.
+
+## Phase 4 (B3 Small defects of structure, back end, T23 to T32)
+
+**Verdict**: FAIL (five Medium findings, four Low)
+**Head**: dee56eda8 on `feature/code-clarity-p4`, base a0bba62cb
+**Verifier**: independent sub-agent (Opus; author != verifier). No `proofs.md` exists yet, because `check_proofs.py` runs after T155. This round reran the phase gates itself.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets) | all pass (boundaries 20, suite 27, lib 49, worklists 5, proof_ledger 4, the rest 2 each) |
+| `cargo test -p piperine-solver` | 371 passed, 0 failed |
+| `cargo test -p piperine-analog-solver` | 111 passed, 0 failed |
+| `cargo test -p piperine-digital-solver` | 161 passed, 0 failed |
+| `cargo test -p piperine-plan` | 68 passed, 0 failed |
+| `cargo test -p piperine-transpile` (goldens included; the implementer skipped it after T31/T32) | 171 passed, 0 failed |
+| `cargo test -p piperine-interp` | 72 passed, 0 failed |
+| `cargo test -p piperine-ir` | 162 passed, 0 failed |
+| `cargo test -p piperine-api` (the implementer skipped it after T31/T32) | 307 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins) | 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 645 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory` | 18 passed, 0 failed |
+| CC-09: `git diff a0bba62cb..HEAD` over goldens, twins, `docs/`, `.msl` corpora, `tests/book*` and `crates/piperine-parity/src/contract.rs` | empty, except one new test appended to `crates/piperine-transpile/tests/reject.rs`. The parity tests and `tests/scenarios.rs` changed by call path only (below) |
+
+### Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| T23: no `expect` on the binding in `analyses/` or `core/circuit.rs` | grep, plus the solver targets | yes. `abi` and `recipe` are held by value. Residue: see P4-9 |
+| T24: a test per site drives the input that panicked and reads the error | `pz.rs` `a_matrix_with_an_infinite_entry_is_refused`; `tests/pss.rs` `a_shot_with_no_step_is_an_error_not_a_panic` | partly. The pz test fails without the new non-finite guard, so it proves the refusal. The base code could not panic there, though: a non-finite root was already skipped before the sort (`pz.rs:248`). The pss test never runs a shooting analysis (P4-7) |
+| T25: no `unwrap`/`expect` outside `#[cfg(test)]` in analog-solver `src` | grep; each of the five remaining files has its hits below its `#[cfg(test)]` line | yes |
+| T26: a test per crate builds the offending `Ir` and reads the error | `structure_shape.rs` `an_own_terminal_on_a_branch_is_a_plan_error_not_a_panic`; `reject.rs` `an_own_terminal_on_a_branch_is_a_rejection_not_a_panic` | plan: yes, because it calls `BodyPlan::build` directly. transpile: **no**, the test is vacuous (P4-5). The 7 panics of `ir/src/build.rs` are deferred with no owner (P4-3) |
+| T27: no `eprintln!` in the two crates' `src`; the same bytes through the sink | grep; `convergence.rs` `a_trace_line_reaches_the_sink_with_the_bytes_the_flag_printed` | yes. `writeln!(stderr, "{line}")` writes what `eprintln!("{..}")` wrote. The three format strings are unchanged. The only cost of dropping `Copy` is one `.clone()` in `dc.rs` |
+| T28: both `lib.rs` hold no `struct`/`enum`/`impl`/`fn`; public paths unchanged; goldens byte-identical | grep of both `lib.rs`; the transpile `golden` target | yes. No golden file changed. `compile.rs` was folded into `transpiler.rs` as a rename plus the moved type |
+| T29: `no_type_of_the_inventory_is_defined_in_two_crates` passes; cli and parity green | `boundaries::no_type_of_the_inventory_is_defined_in_two_crates` | passes, but the guard names the wrong owner for `LogicPattern` (P4-2). The S21 stop condition was met and not honoured (P4-1) |
+| T29: parity and `tests/scenarios.rs` edits are call paths only | a normalised diff: `Backend::{selected,parse,VARIABLE}` and `BackendSelection::…` both mapped to one token | yes. All 70 changed lines pair one to one, and every assertion, message and filter is identical. The 16 import lines add `BackendSelection` |
+| T30: the 12 items gone; every back-end row has a verdict | `findings.md` §4.1 against the tree; `worklists/test_only_items.tsv` | **no**. 8 of 12 removed. The box is ticked, and tasks.md carries no Deferred note (P4-3). 41 back-end rows are `kept: <host>` with a doc comment. The 2 `piperine-abi` rows remain `-` (P4-8) |
+| T31: no `SPEC_DEVIATION` in the back-end crates; each closure named | grep; commit body; `solver-abi-integration/design.md`, `solver-abi-analog/design.md:92` | yes. One stale reference remains (P4-8) |
+| T32: `every_single_implementor_trait_is_removed_or_justified` passes with no open row | `worklists.rs` and the tsv | **no** on the letter: `lang::In` and `numbers::Limbs` are `-`. The box is ticked. The three linear-algebra traits are kept against the task text (P4-4) |
+
+### P4-1 (Medium): T29 removed the `GND` alias after its stop condition fired
+
+T29 reads: "S21: stop and report if a corpus, example **or test** uses `GND`, `vss` or `VSS` as ground". design.md's Error Handling table says the same ("T29 stops and reports before removing the aliases").
+
+- `crates/piperine-solver/src/core/builder.rs:243` `edge_gnd_name_routes_to_ground` asserted `b.node("GND") == ground`, which is a test using `GND` as ground.
+- The implementer inverted that assertion to `assert_ne!` and went on.
+
+S21 is in "What may move", so the end state is probably what the user wants. The stop-and-report step is not optional, though, and inverting an assertion is the "test edited to pass" pattern that the rules forbid.
+
+Corpus check at the head (`git grep -nwE 'GND|vss|VSS'`, outside `.specs`): no `.msl` corpus, example, Book listing, `docs/` page, parity rig or twin uses an alias as ground. The `pump_tolerance` hits are comments naming the 555's pin.
+
+One residue matters for the decision. The ground pseudo-net's public label is still `"GND"` (`core/net.rs:84`). A host that feeds a net label back into `CircuitBuilder::node` or into a noise reference now gets a fresh node, or `E0801`. No in-tree caller does this.
+
+**Fix**: put the decision to the user and record it. Either ratify the inverted test, with a decision line in STATE/design, or restore the test and keep the aliases until the user decides. Consider whether `Net`'s ground label should become `gnd`.
+
+### P4-2 (Medium): the new guard gives `LogicPattern` to the wrong crate
+
+The guard at `crates/piperine-repository-guards/tests/boundaries/inventory_types.rs:9` reads `("LogicPattern", "piperine-api")`, and the baseline row it seeds is `crates/piperine-lang/src/types/logic_pattern.rs::LogicPattern`.
+
+T52 says the opposite: "`LogicPattern` is declared once (`piperine-lang`) and `api/src/logic_pattern.rs` is gone". Its Done-when is "`no_type_of_the_inventory_is_defined_in_two_crates` passes with no allowance row". After T52 the guard flags the lang type that T52 keeps, so T52 cannot close without editing the guard.
+
+**Fix**: make the owner `piperine-lang`. The baseline row then names `crates/piperine-api/src/logic_pattern.rs::LogicPattern` (allowance `piperine-api/`).
+
+### P4-3 (Medium): three deferrals have no owner, and two Done-when boxes are ticked while false
+
+| Task | What is left | Recorded where | Owner |
+| --- | --- | --- | --- |
+| T26 | the 7 out-of-range panics of `crates/piperine-ir/src/build.rs:222,556,566,583,586,595,598` | tasks.md "Deferred … Reported to the coordinator" | none. No later task names `build.rs`. "Not a user-input path" contradicts T26's own title: a host misusing `IrBuilder` is the case it covers |
+| T30 | `BinaryFormat::round_integer`, `GenericParam::default_type`, `Ty::has_repr`, `DeferReason::InferredGenerics` | commit body only. tasks.md has no Deferred note, and "The 12 items are gone" is ticked | none |
+| T32 | rows `lang::In`, `numbers::Limbs` (`-`) | tasks.md Deferred | none. "with no open row" is ticked. T32's own gate names `numbers` ("Quick for abi, numbers, …"), so the task expected lane K to touch it |
+
+The lane argument is sound for wave 1: lane K owns `src/**` of solver, analog-solver, digital-solver, plan, transpile, interp, ir, api and cli only. But a deferral needs a named closer.
+
+**Fix**: untick the false boxes. Add each leftover to a task whose lane owns the path, and name that task in the Deferred note. For example:
+
+- T51 (lane F, owns `piperine-numbers/src` in wave 2) for `round_integer` and `Limbs`;
+- T47 to T50 for the three `pom`/`types` items and `In`;
+- a lane-K wave-2 IR task (T55 or T56) for `build.rs`, with lane F's five call sites coordinated at rebase.
+
+### P4-4 (Medium): T32 keeps the layer it was told to remove
+
+T32's text is explicit. It says to remove "the linear-algebra layer over `faer` (`LinearSystem`, `SymbolicMatrix`, `SymbolicLinearSystem`, `FaerToNdarray`)", and to keep only `DiscreteSide` and `In`. findings.md A3 says the same: "the linear-algebra layer over `faer` has one backend and three traits, remove".
+
+The worklist instead reads `kept: … removing it edits tests` (`worklists/single_implementor_traits.tsv:1-3`, the doc comments at `crates/piperine-analog-solver/src/math/linear.rs:23,40,51`).
+
+That is a refusal written as a verdict. The test-side cost is small:
+
+- the import at `crates/piperine-analog-solver/tests/support/system.rs:177`;
+- the `Solver` alias at `:19`, if `L` goes;
+- three `LinearSystem::new` ascriptions in `faer.rs`'s own `#[cfg(test)]` module (`:225,279,349`).
+
+That cost is exactly when a task should stop and report, not re-scope itself. `NetRead`'s keep is a genuine reason: `DiscreteSide` has an associated `Mark`, so it is not object-safe, and `StepView` must erase it. I accept that one.
+
+**Fix**: remove the three traits, with the support-file edit named in the commit as the call-path exception. Or take it to the user as a scope change and give it an owner task.
+
+### P4-5 (Medium): T26's transpile test passes at the base and never reaches the code it claims to prove
+
+`crates/piperine-transpile/tests/reject.rs:127` `an_own_terminal_on_a_branch_is_a_rejection_not_a_panic` cannot fail on the claim, for two reasons:
+
+- `Transpiler::new` runs `ir.check()` first and returns `Error::Rejected` (`transpiler.rs:35-38`). `check()` refuses the own terminal.
+- Even past that, the body has `analog: None` and no initial node, so `runs` is false and `BodyPlan::build` is never called.
+
+The base `Transpiler::new` (a0bba62cb `lib.rs`) is identical in both respects, so this test passes with the fix reverted. Neither of the two print sites it was meant to cover (`print/contribution.rs:78`, `print/value.rs:401`) is reached.
+
+From the public API those sites are unreachable behind `check()`. The honest proof is a crate-internal test that hands the printer an `Own` terminal. The alternative is to state that the sites are unreachable and say so in the Done-when.
+
+Related (Low): `BodyPlan::new` stays `pub` and still panics (`crates/piperine-plan/src/plan.rs:555-560`). All production callers moved to `build`, but a host calling `new` on an unchecked body still panics.
+
+### P4-6 (Low): T24's pss test does not drive the shooting
+
+`crates/piperine-solver/tests/pss.rs:144` calls `TransientAnalysisResult::final_step` on an empty result. Reverting any of the four `pss.rs` sites to `.last().unwrap()` keeps it green. Its doc comment says "the shooting reads the error", which it does not show.
+
+The pz test asserts only `is_err()`, not `SolverDomain::Pz`. Its message says "NaN" while the entry is `f64::INFINITY`. My own example, a `NaN` entry, is caught by the same `is_finite` guard.
+
+**Fix**: assert the domain. Either drive `PssSolver` with a stub that returns an empty shot, or narrow the claim to the helper.
+
+### P4-7 (Low): two test edits outside the call-path exception
+
+- **T23** rewrote the setup of `sp.rs` `zero_ports_fails_loud`: it now builds through `CircuitBuilder`, because the `pub(crate)` `from_netlist` gained two parameters. The assertion is unchanged, but this is not a "`pub` fn became a method" edit.
+- **T29** inverted `edge_gnd_name_routes_to_ground` (P4-1).
+
+### P4-8 (Low): small residues
+
+- The two `piperine-abi` rows of `test_only_items.tsv` are still `-`. abi is a back-end crate, though not one of lane K's wave-1 paths. They need an owner, like P4-3.
+- `.specs/features/solver-abi-analog/design.md:92` still says "(the code's `SPEC_DEVIATION` markers)", and T31 deleted those markers.
+
+### P4-9 (Low): `bound()` still says a circuit can be unbound
+
+`CircuitInstance::bound`/`bound_mut` (`crates/piperine-solver/src/core/circuit.rs:56,65`) return `Option`, which is always `Some`. About 30 test and host call sites still `.expect("bound")`. The field is right, but the public type still states the invariant T23 removed. Changing it edits tests, so it needs an owner (for example the B5b solver task).
+
+### Allowances and the dictionary
+
+- **Allowances.** Rows were deleted or moved net-zero (`long_functions` `BodyPlan::new` → `build`, `undocumented_items` `compile.rs` → `transpiler.rs`, `apply_iv`). The one new file is `allowances/piperine-lang/inventory_types_in_two_crates.tsv` (2 rows). T29's Done-when sanctions it ("the rows T51 and T52 close are allowance rows"), so it is not an added allowance in the forbidden sense. Its `LogicPattern` row points at the wrong crate (P4-2).
+- **Dictionary.** `transpiler` joining `data/dictionary.txt` is a domain word, the crate's own name. Accepted.
+
+### Code rules on new code
+
+- **Free functions.** The only new free functions are `#[test]` functions. `ShapeLookup`, `RealCell`, `GroundName`, `BackendSelection`, `TraceSink` and `PlanError` are types with methods.
+- **Docs and suppressions.** Every new item has a `///`. There is no macro and no `#[allow]`.
+- **Unwraps.** No new `unwrap`/`expect` is reachable from input. The two added are in `#[cfg(test)]`.
+
+Three notes, not findings:
+
+- `RealCell::read` zero-extends a short buffer instead of failing.
+- `NewtonRaphsonSolver::commit` labels an empty buffer with the singular-matrix error.
+- `TraceSink::write` drops a poisoned lock.
+
+All three are unreachable after `validate`, and none is silent on a real path.
+
+### Round 1 findings
+
+| Finding | Severity | Closed |
+| --- | --- | --- |
+| P4-1 S21 stop condition overridden | Medium | |
+| P4-2 `LogicPattern` owner reversed in the guard | Medium | |
+| P4-3 deferrals with no owner; ticked boxes that are false (T26, T30, T32) | Medium | |
+| P4-4 linear-algebra traits kept against T32 | Medium | |
+| P4-5 transpile T26 test vacuous | Medium | |
+| P4-6 pss test does not drive the shooting; pz assertion loose | Low | |
+| P4-7 test edits outside the exception | Low | |
+| P4-8 abi rows open; stale design reference | Low | |
+| P4-9 `bound()` still `Option` | Low | |
