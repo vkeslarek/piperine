@@ -21,7 +21,7 @@ crates/piperine-digital-solver/src/run.rs::::relax	-
 crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
-crates/piperine-interp/src/walk.rs::Walk::form_name	-
+crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	-
 crates/piperine-ir/src/deps/walk/expressions.rs::Walk::leaf_value	kept: one arm per variant
 crates/piperine-ir/src/differentiate.rs::Differentiation::method	-
 crates/piperine-ir/src/print/arenas.rs::Printer::form	kept: one arm per variant

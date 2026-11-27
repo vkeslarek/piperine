@@ -2,6 +2,11 @@
 //! by walking each body's `analog` block over dual numbers. It spawns no process and reads no
 //! file; the solver meets it through shapes and `eval` only (abi.md). Module `interpreter` holds the
 //! [`Interpreter`] and module `rejected` the [`Rejected`] error of an `Ir` that fails `check()`.
+//!
+//! The interpreter is the reference for the analog core (Q10): the oracle the generated code is
+//! compared with, not a second implementation to keep fast. A form the analog core does not yet give
+//! a meaning to is refused by name, with its origin, when the walk reaches it (`walk`), and a refusal
+//! has no test of its own: the form's first implementation is what tests it.
 
 mod composite;
 mod device;

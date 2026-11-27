@@ -3,5 +3,4 @@ crates/piperine-interp/src/lib.rs::module device	1
 crates/piperine-interp/src/lib.rs::module generics	1
 crates/piperine-interp/src/lib.rs::module operators	1
 crates/piperine-interp/src/lib.rs::module param_types	1
-crates/piperine-interp/src/lib.rs::module walk	1
 crates/piperine-interp/src/lib.rs::module widths	1

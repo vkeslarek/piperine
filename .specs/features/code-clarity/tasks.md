@@ -1617,6 +1617,8 @@ T152 → T153 → T154 → T155
 - [x] The crate's tests pass unedited; `BodyPlan::new`'s row is `split`
 - [x] Gate check passes: Golden
 
+**Left open**: `Digital::functions` (`plan/src/digital/reactions.rs`, 85 lines) keeps its `-` row in `long_functions.tsv`: no owner. (The T57 commit body names T59 by mistake; T59 is the interpreter walk.)
+
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
 
@@ -1659,8 +1661,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate's tests pass unedited
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-cli --test twins`
+- [x] The crate's tests pass unedited
+- [x] Gate check passes: Quick, and `cargo test -p piperine-cli --test twins`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

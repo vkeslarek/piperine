@@ -8,8 +8,8 @@ crates/piperine-interp/src/walk.rs::b	1
 crates/piperine-interp/src/walk.rs::ex	1
 crates/piperine-interp/src/walk.rs::f64_arithmetic_and_methods_match_rust	1
 crates/piperine-interp/src/walk.rs::pnjlim	1
-crates/piperine-interp/src/walk.rs::stim_site	1
 crates/piperine-interp/src/walk.rs::stims	1
+crates/piperine-interp/src/walk/sites.rs::stim_site	1
 crates/piperine-interp/tests/circuit.rs::an_rc_low_pass_is_at_minus_three_db_at_its_corner	1
 crates/piperine-interp/tests/frozen.rs::a_param_of_another_type_is_refused_naming_the_transpiled_backend	1
 crates/piperine-interp/tests/frozen.rs::env	1
