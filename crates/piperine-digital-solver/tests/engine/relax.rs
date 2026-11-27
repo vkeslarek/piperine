@@ -6,14 +6,10 @@
 //! naming its drives. The devices are stubs built on `ShapeBuf`: a driver writes the value and
 //! `driving`, a resolver reads `driving` per drive and folds the present ones.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)] // each test target uses the devices it needs
-mod devices;
-
+use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use std::cell::RefCell;
 use std::sync::{Arc, OnceLock};
 
-use devices::{Placed, bind_by_name, net_named};
 use piperine_abi::caller::Handle;
 use piperine_abi::device::{Device, Eval, Fault, Flow, React, Values};
 use piperine_abi::layout::{BIT, HIGH, LOW};
@@ -315,7 +311,7 @@ impl Loop {
 
     /// The loop of `devices`, bound by net name.
     fn of(devices: Vec<Placed<'_>>) -> Loop {
-        let plan = bind_by_name(devices, Resolution::default()).expect("the loop binds");
+        let plan = PlanBinding::bind_by_name(devices, Resolution::default()).expect("the loop binds");
         let store = Store::new(&plan.nets);
         let dirty = DirtySet::none(&plan);
         Loop { plan, store, dirty, obs: Obs::new(), step: 0 }
@@ -323,7 +319,7 @@ impl Loop {
 
     /// The id of the net called `name`.
     fn net(&self, name: &str) -> NetId {
-        net_named(&self.plan, name)
+        PlanBinding::net_named(&self.plan, name)
     }
 
     /// The host writes `bytes` to the net called `name` in the current microstep.

@@ -1,9 +1,0 @@
-crates/piperine-digital-solver/tests/advance.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/checkpoint.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/devices.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/functions.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/host.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/instant.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/reactions.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/relax.rs::allow(dead_code)	1
-crates/piperine-digital-solver/tests/round1.rs::allow(dead_code)	1

@@ -3,11 +3,8 @@
 //! in the levelized order, relaxation of cycles through `RELAX` nets, and a
 //! device fault carried with its code, tick and instance.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)] // each test target uses the devices it needs
-mod devices;
-
-use devices::*;
+use piperine_device_fixtures::digital::{And2, CallCounts, DataFlipFlop, Faulty, Inverter, Resolver, Successor};
+use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::observe::{Obs, Observation};
@@ -39,7 +36,7 @@ impl Env {
     }
 
     fn net(&self, name: &str) -> NetId {
-        net_named(&self.plan, name)
+        PlanBinding::net_named(&self.plan, name)
     }
 
     /// The host writes `bytes` to the net called `name` in the current microstep.
@@ -65,79 +62,75 @@ impl Env {
     }
 }
 
-fn plan(devices: Vec<Placed<'_>>) -> DigitalPlan {
-    bind_by_name(devices, Resolution::default()).expect("the fixture plan binds")
-}
-
 #[test]
 fn a_function_runs_when_a_read_net_changed() {
     // C11
-    reset_calls();
-    let mut e = Env::new(plan(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]));
+    CallCounts::reset();
+    let mut e = Env::new(FunctionCases::plan(vec![("inv", Inverter::handle(), vec![("a", "a"), ("y", "y")])]));
     e.write("a", &HIGH);
     e.run().unwrap();
-    assert_eq!(calls("inverter").0, 1);
+    assert_eq!(CallCounts::of("inverter").0, 1);
     assert_eq!(e.value("y"), LOW, "a known high in, a known low out");
     e.next_microstep();
     e.write("a", &LOW);
     e.run().unwrap();
-    assert_eq!(calls("inverter").0, 2);
+    assert_eq!(CallCounts::of("inverter").0, 2);
     assert_eq!(e.value("y"), HIGH);
 }
 
 #[test]
 fn functions_run_after_every_writer_of_their_reads() {
     // a chain a -> inv1 -> m -> inv2 -> z listed with the sink first runs in one pass
-    reset_calls();
-    let mut e = Env::new(plan(vec![
-        ("sink", inverter(), vec![("a", "m"), ("y", "z")]),
-        ("src", inverter(), vec![("a", "a"), ("y", "m")]),
+    CallCounts::reset();
+    let mut e = Env::new(FunctionCases::plan(vec![
+        ("sink", Inverter::handle(), vec![("a", "m"), ("y", "z")]),
+        ("src", Inverter::handle(), vec![("a", "a"), ("y", "m")]),
     ]))
     .all_dirty();
     e.write("a", &LOW);
     e.run().unwrap();
     assert_eq!(e.value("m"), HIGH);
     assert_eq!(e.value("z"), LOW, "the sink saw the new m in the same microstep");
-    assert_eq!(calls("inverter").0, 2, "each ran once");
+    assert_eq!(CallCounts::of("inverter").0, 2, "each ran once");
 }
 
 #[test]
 fn a_function_with_unchanged_inputs_is_not_called() {
     // C12
-    reset_calls();
-    let mut e = Env::new(plan(vec![("inv", inverter(), vec![("a", "a"), ("y", "y")])]));
+    CallCounts::reset();
+    let mut e = Env::new(FunctionCases::plan(vec![("inv", Inverter::handle(), vec![("a", "a"), ("y", "y")])]));
     e.write("a", &HIGH);
     e.run().unwrap();
     e.next_microstep();
     e.run().unwrap();
-    assert_eq!(calls("inverter").0, 1, "nothing changed in the second microstep");
+    assert_eq!(CallCounts::of("inverter").0, 1, "nothing changed in the second microstep");
     e.next_microstep();
     e.write("a", &HIGH); // the same bytes: not a change
     e.run().unwrap();
-    assert_eq!(calls("inverter").0, 1);
+    assert_eq!(CallCounts::of("inverter").0, 1);
 }
 
 #[test]
 fn every_function_runs_once_at_the_first_instant() {
-    reset_calls();
-    let mut e = Env::new(plan(vec![
-        ("inv", inverter(), vec![("a", "a"), ("y", "y")]),
-        ("and", and2(), vec![("a", "a"), ("b", "b"), ("y", "z")]),
+    CallCounts::reset();
+    let mut e = Env::new(FunctionCases::plan(vec![
+        ("inv", Inverter::handle(), vec![("a", "a"), ("y", "y")]),
+        ("and", And2::handle(), vec![("a", "a"), ("b", "b"), ("y", "z")]),
     ]))
     .all_dirty();
     e.run().unwrap();
-    assert_eq!(calls("inverter").0, 1);
-    assert_eq!(calls("and2").0, 1);
+    assert_eq!(CallCounts::of("inverter").0, 1);
+    assert_eq!(CallCounts::of("and2").0, 1);
     assert_eq!(e.value("y"), HIGH, "the inverter of a zero input is high");
     e.next_microstep();
     e.run().unwrap();
-    assert_eq!((calls("inverter").0, calls("and2").0), (1, 1), "and no more");
+    assert_eq!((CallCounts::of("inverter").0, CallCounts::of("and2").0), (1, 1), "and no more");
 }
 
 #[test]
 fn an_absent_optional_pin_reads_zero_bytes() {
     // d1 of the resolver is OPTIONAL and unbound: it reads as zero bytes
-    let mut e = Env::new(plan(vec![("r", resolver(), vec![("d0", "d0"), ("v", "v")])]));
+    let mut e = Env::new(FunctionCases::plan(vec![("r", Resolver::handle(), vec![("d0", "d0"), ("v", "v")])]));
     e.write("d0", &HIGH);
     e.run().unwrap();
     assert_eq!(e.value("v"), HIGH, "d0 alone decides");
@@ -147,25 +140,15 @@ fn an_absent_optional_pin_reads_zero_bytes() {
     assert_eq!(e.value("v"), LOW, "neither drive is high");
 }
 
-/// The feedback loop `v = d | e`, `d = v` through a resolver and an AND, with `d` a `RELAX` net.
-fn keeper(e_value: &[u8]) -> Env {
-    let mut env = Env::new(plan(vec![
-        ("res", resolver(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
-        ("keep", and2(), vec![("a", "v"), ("b", "v"), ("y", "d")]),
-    ]));
-    env.write("e", e_value);
-    env
-}
-
 #[test]
 fn a_relax_group_settles_within_its_bound() {
     // C16: one RELAX net in the cycle, so at most two passes
-    reset_calls();
-    let mut e = keeper(&HIGH);
+    CallCounts::reset();
+    let mut e = FunctionCases::keeper(&HIGH);
     e.run().unwrap();
     assert_eq!(e.value("v"), HIGH);
     assert_eq!(e.value("d"), HIGH);
-    assert_eq!(calls("resolver").0, 2, "one pass that moves, one that does not");
+    assert_eq!(CallCounts::of("resolver").0, 2, "one pass that moves, one that does not");
     // the net `d` changed once for the run, from nothing to high
     let changes: Vec<_> = e
         .obs
@@ -180,9 +163,9 @@ fn a_relax_group_settles_within_its_bound() {
 fn a_moving_loop_is_e0511_not_a_value_made_up() {
     // C17, abi.md §9 D1: v = d | LOW, d = not v never settles; a loop that still moves after the
     // bounded passes is `E0511`, never a value made up
-    let mut e = Env::new(plan(vec![
-        ("res", resolver(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
-        ("inv", inverter(), vec![("a", "v"), ("y", "d")]),
+    let mut e = Env::new(FunctionCases::plan(vec![
+        ("res", Resolver::handle(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
+        ("inv", Inverter::handle(), vec![("a", "v"), ("y", "d")]),
     ]))
     .all_dirty();
     e.write("e", &LOW);
@@ -193,7 +176,7 @@ fn a_moving_loop_is_e0511_not_a_value_made_up() {
 #[test]
 fn a_counter_that_always_moves_is_e0511() {
     // C17: a counter field that always moves has nothing to fall back to: the loop is `E0511`
-    let mut e = Env::new(plan(vec![("s", succ(), vec![("a", "x"), ("y", "x")])])).all_dirty();
+    let mut e = Env::new(FunctionCases::plan(vec![("s", Successor::handle(), vec![("a", "x"), ("y", "x")])])).all_dirty();
     match e.run() {
         Err(DigitalError::Unsettled { code: "E0511", drives, .. }) => assert_eq!(drives, ["x"], "the loop's drive is named"),
         other => panic!("expected E0511, got {other:?}"),
@@ -203,9 +186,9 @@ fn a_counter_that_always_moves_is_e0511() {
 #[test]
 fn a_function_fault_carries_code_tick_and_instance() {
     // C25: Faulty sits behind an inverter, outside the parameter cone
-    let mut e = Env::new(plan(vec![
-        ("front", inverter(), vec![("a", "x"), ("y", "m")]),
-        ("f", faulty(), vec![("a", "m"), ("y", "out")]),
+    let mut e = Env::new(FunctionCases::plan(vec![
+        ("front", Inverter::handle(), vec![("a", "x"), ("y", "m")]),
+        ("f", Faulty::handle(), vec![("a", "m"), ("y", "out")]),
     ]))
     .all_dirty();
     e.write("x", &LOW); // m = high: a FAULT
@@ -216,9 +199,9 @@ fn a_function_fault_carries_code_tick_and_instance() {
         other => panic!("expected a fault, got {other:?}"),
     }
     // RESHAPE outside the cone is the same error
-    let mut e = Env::new(plan(vec![
-        ("front", inverter(), vec![("a", "x"), ("y", "m")]),
-        ("f", faulty(), vec![("a", "m"), ("y", "out")]),
+    let mut e = Env::new(FunctionCases::plan(vec![
+        ("front", Inverter::handle(), vec![("a", "x"), ("y", "m")]),
+        ("f", Faulty::handle(), vec![("a", "m"), ("y", "out")]),
     ]))
     .all_dirty();
     e.write("x", &HIGH); // m = low: a RESHAPE
@@ -234,7 +217,7 @@ fn a_function_fault_carries_code_tick_and_instance() {
 #[test]
 fn changed_is_zero_one_microstep_later() {
     // the flip-flop's edge function reads CHANGED and fires `rise`
-    let mut e = Env::new(plan(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]));
+    let mut e = Env::new(FunctionCases::plan(vec![("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]));
     let rise = e.net("ff.rise");
     e.write("clk", &LOW); // zero to low is no change, so no edge
     e.run().unwrap();
@@ -261,42 +244,14 @@ struct Environment;
 static ENV_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
 static ENV_MODULE: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
 
-fn environment_shape() -> piperine_abi::shape::ShapeRef {
-    use piperine_abi::layout::F64;
-    use piperine_abi::raw::{Cell, Statement, ambient, cell, global, part, role};
-    use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf};
-    let mut s = ShapeBuf::new();
-    let [fg, fs, rg, rs] = ["fg", "fs", "rg", "rs"].map(|n| s.pin(PinSpec::discrete(n, role::PORT, &F64)));
-    let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
-    let amb = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
-    let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
-    s.function(FunctionSpec {
-        name: "env",
-        origin: "functions.rs",
-        reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
-        writes: vec![pin(fg), pin(fs)],
-        ..FunctionSpec::default()
-    });
-    let st = |pin| Statement { pin, offset: 0, len: 8, flags: 0, min_after: 0.0 };
-    s.reaction(ReactionSpec {
-        name: "env",
-        origin: "functions.rs",
-        on: vec![start],
-        reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
-        writes: vec![st(rg), st(rs)],
-        ..ReactionSpec::default()
-    });
-    s.freeze()
-}
-
 impl piperine_abi::device::Device for Environment {
     fn prototype() -> &'static piperine_abi::raw::Shape<'static> {
-        ENV_SHAPE.get_or_init(environment_shape).shape()
+        ENV_SHAPE.get_or_init(FunctionCases::environment_shape).shape()
     }
     fn create(
         _: &piperine_abi::device::Values<'_>,
     ) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
-        Ok((Environment, std::sync::Arc::clone(ENV_SHAPE.get_or_init(environment_shape))))
+        Ok((Environment, std::sync::Arc::clone(ENV_SHAPE.get_or_init(FunctionCases::environment_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut piperine_abi::device::Eval) -> Result<(), piperine_abi::device::Fault> {
         let (g, s) = (cx.f64(0), cx.f64(1));
@@ -329,16 +284,65 @@ fn reactions_and_functions_read_the_continuation_values() {
             &[],
         )
         .expect("creates");
-        let plan = bind_by_name(vec![("env", handle, vec![])], Resolution::default()).expect("binds");
+        let plan = PlanBinding::bind_by_name(vec![("env", handle, vec![])], Resolution::default()).expect("binds");
         let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
         if let Some((g, s)) = set {
             d.set_continuation(g, s);
         }
         d.start().unwrap();
         d.run_instant(Tick(0), &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs");
-        let f = |name: &str| f64::from_le_bytes(d.read(net_named(d.plan(), name)).try_into().expect("an F64"));
+        let f = |name: &str| f64::from_le_bytes(d.read(PlanBinding::net_named(d.plan(), name)).try_into().expect("an F64"));
         [f("env.fg"), f("env.fs"), f("env.rg"), f("env.rs")]
     };
     assert_eq!(read(Some((2e-12, 0.25))), [2e-12, 0.25, 2e-12, 0.25], "function then reaction, as set");
     assert_eq!(read(None), [0.0, 1.0, 0.0, 1.0], "0 and 1 until set");
+}
+
+/// The engines the function tests run.
+pub struct FunctionCases;
+
+impl FunctionCases {
+    /// The plan helper `plan`.
+    fn plan(devices: Vec<Placed<'_>>) -> DigitalPlan {
+        PlanBinding::bind_by_name(devices, Resolution::default()).expect("the fixture plan binds")
+    }
+
+    /// The feedback loop `v = d | e`, `d = v` through a resolver and an AND, with `d` a `RELAX` net.
+    fn keeper(e_value: &[u8]) -> Env {
+        let mut env = Env::new(FunctionCases::plan(vec![
+            ("res", Resolver::handle(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
+            ("keep", And2::handle(), vec![("a", "v"), ("b", "v"), ("y", "d")]),
+        ]));
+        env.write("e", e_value);
+        env
+    }
+
+    /// The environment shape helper `environment_shape`.
+    fn environment_shape() -> piperine_abi::shape::ShapeRef {
+        use piperine_abi::layout::F64;
+        use piperine_abi::raw::{Cell, Statement, ambient, cell, global, part, role};
+        use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf};
+        let mut s = ShapeBuf::new();
+        let [fg, fs, rg, rs] = ["fg", "fs", "rg", "rs"].map(|n| s.pin(PinSpec::discrete(n, role::PORT, &F64)));
+        let start = s.pin(PinSpec { global: global::START, ..PinSpec::event("start", role::GLOBAL) });
+        let amb = |index| Cell { kind: cell::AMBIENT, index, part: part::VALUE };
+        let pin = |index| Cell { kind: cell::PIN, index, part: part::VALUE };
+        s.function(FunctionSpec {
+            name: "env",
+            origin: "functions.rs",
+            reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+            writes: vec![pin(fg), pin(fs)],
+            ..FunctionSpec::default()
+        });
+        let st = |pin| Statement { pin, offset: 0, len: 8, flags: 0, min_after: 0.0 };
+        s.reaction(ReactionSpec {
+            name: "env",
+            origin: "functions.rs",
+            on: vec![start],
+            reads: vec![amb(ambient::GMIN), amb(ambient::SOURCE_SCALE)],
+            writes: vec![st(rg), st(rs)],
+            ..ReactionSpec::default()
+        });
+        s.freeze()
+    }
 }

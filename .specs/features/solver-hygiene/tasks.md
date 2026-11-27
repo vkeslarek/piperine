@@ -29,8 +29,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run hostset**: `cargo test -p piperine-solver --test host_set`
 **Run boundary**: `cargo test -p piperine-parity --test boundary`
 **Run abidevices**: `cargo test -p piperine-solver --test abi_devices`
-**Run digital**: `cargo test -p piperine-digital-solver --test checkpoint`
-**Run instant**: `cargo test -p piperine-digital-solver --test instant`
+**Run digital**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
+**Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 The deviation table every numerics commit carries: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`, run before and after the change, both outputs pasted in the commit body.

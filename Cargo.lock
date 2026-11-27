@@ -1230,6 +1230,7 @@ dependencies = [
  "num-complex",
  "piperine-abi",
  "piperine-analog-solver",
+ "piperine-digital-solver",
 ]
 
 [[package]]
@@ -1237,6 +1238,7 @@ name = "piperine-digital-solver"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
 ]
 
 [[package]]

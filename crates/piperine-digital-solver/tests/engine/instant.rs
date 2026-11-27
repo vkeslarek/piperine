@@ -3,11 +3,8 @@
 //! §15 and §15.1; abi.md §6, §9): apply, functions, reactions, repeat; the bound;
 //! `QUIET`; `START`; `SETTLE`; what an instant reports to the owner.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)] // each test target uses the devices it needs
-mod devices;
-
-use devices::*;
+use piperine_device_fixtures::digital::{And2, CallCounts, Counter, DataFlipFlop, Inverter, Odd, PulseGenerator, Sampler, Setter, SettleEvent, SettleRecorder, Settler, Timer};
+use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{BIT, HIGH, LOW};
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::{NetId, NetSpec};
@@ -17,42 +14,26 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
-const NS: i64 = 1_000_000; // ticks of 1 fs
-
-fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
-}
-
-fn net(d: &Digital, name: &str) -> NetId {
-    net_named(d.plan(), name)
-}
-
-fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::engine::Outcome {
-    d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
-}
-
-fn real(v: f64) -> [u8; 8] {
-    v.to_le_bytes()
-}
+const NS: i64 = 1_000_000;
 
 #[test]
 fn start_commits_inits_and_fires_start() {
     // C28
-    let mut d = engine(vec![
-        ("clock", timer(), vec![("out", "clk")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    let mut d = InstantCases::engine(vec![
+        ("clock", Timer::handle(), vec![("out", "clk")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
     ]);
     // garbage before the start is dropped by it
-    d.host_commit(net(&d, "d"), 0, &HIGH, Tick(3)).unwrap();
+    d.host_commit(InstantCases::net(&d, "d"), 0, &HIGH, Tick(3)).unwrap();
     d.start().unwrap();
-    assert_eq!(d.read(net(&d, "q")), [0], "the store is zeroed until the first instant applies the inits");
+    assert_eq!(d.read(InstantCases::net(&d, "q")), [0], "the store is zeroed until the first instant applies the inits");
     assert_eq!(d.next_due(), Some(Tick(0)), "inits and START are due at (0, 0); d's commit was dropped");
-    let out = instant(&mut d, Tick(0));
-    assert_eq!(d.read(net(&d, "q")), LOW, "q's init");
-    assert_eq!(d.read(net(&d, "clk")), LOW, "the timer's out init");
-    assert_eq!(d.read(net(&d, "clock.half")), 1e-8f64.to_le_bytes(), "the param's default");
-    assert!(out.fired.contains(&net(&d, "global:7")), "START fired");
-    assert_eq!(d.read(net(&d, "d")), [0], "the dropped commit never applied");
+    let out = InstantCases::instant(&mut d, Tick(0));
+    assert_eq!(d.read(InstantCases::net(&d, "q")), LOW, "q's init");
+    assert_eq!(d.read(InstantCases::net(&d, "clk")), LOW, "the timer's out init");
+    assert_eq!(d.read(InstantCases::net(&d, "clock.half")), 1e-8f64.to_le_bytes(), "the param's default");
+    assert!(out.fired.contains(&InstantCases::net(&d, "global:7")), "START fired");
+    assert_eq!(d.read(InstantCases::net(&d, "d")), [0], "the dropped commit never applied");
     // the timer reacted to START: its edge and its tick are due at 10 ns
     assert_eq!(d.next_due(), Some(Tick(10 * NS)));
 }
@@ -62,15 +43,15 @@ fn start_at_commits_init_at_its_tick() {
     // HYG-12 AC 2: the inits and START are due at the start tick, not at 0; the timer's reaction
     // (half = 10 ns) lands at the start plus its delay.
     let start = Tick(5 * NS);
-    let mut d = engine(vec![
-        ("clock", timer(), vec![("out", "clk")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    let mut d = InstantCases::engine(vec![
+        ("clock", Timer::handle(), vec![("out", "clk")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
     ]);
     d.start_at(start).unwrap();
     assert_eq!(d.next_due(), Some(start), "inits and START are due at the start tick");
-    let out = instant(&mut d, start);
-    assert_eq!(d.read(net(&d, "q")), LOW, "q's init");
-    assert!(out.fired.contains(&net(&d, "global:7")), "START fired");
+    let out = InstantCases::instant(&mut d, start);
+    assert_eq!(d.read(InstantCases::net(&d, "q")), LOW, "q's init");
+    assert!(out.fired.contains(&InstantCases::net(&d, "global:7")), "START fired");
     assert_eq!(d.next_due(), Some(Tick(15 * NS)), "the timer commits at start plus its half period");
 }
 
@@ -87,7 +68,7 @@ fn a_plan_with_no_code_applies_host_commits_only() {
     assert_eq!(d.next_due(), None, "nothing to run");
     d.host_commit(NetId(0), 0, &HIGH, Tick(7)).unwrap();
     assert_eq!(d.next_due(), Some(Tick(7)));
-    let out = instant(&mut d, Tick(7));
+    let out = InstantCases::instant(&mut d, Tick(7));
     assert_eq!(d.read(NetId(0)), HIGH);
     assert_eq!(out.microsteps, 1);
     assert_eq!(d.next_due(), None);
@@ -96,18 +77,18 @@ fn a_plan_with_no_code_applies_host_commits_only() {
 #[test]
 fn the_traced_instant_of_section_15_1() {
     // C23: `Front` with vin crossing the upper threshold at 10 ns, exactly when clk rises
-    let mut d = engine(vec![
-        ("clock", timer(), vec![("out", "clk")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
-        ("buf", and2(), vec![("a", "above"), ("b", "above"), ("y", "d")]),
-        ("cmp", setter(), vec![("up", "cross"), ("out", "above")]),
+    let mut d = InstantCases::engine(vec![
+        ("clock", Timer::handle(), vec![("out", "clk")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+        ("buf", And2::handle(), vec![("a", "above"), ("b", "above"), ("y", "d")]),
+        ("cmp", Setter::handle(), vec![("up", "cross"), ("out", "above")]),
     ]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
+    InstantCases::instant(&mut d, Tick(0));
     d.drain_observations();
-    d.fire(net(&d, "cross"), Tick(10 * NS)).unwrap(); // the located crossing
+    d.fire(InstantCases::net(&d, "cross"), Tick(10 * NS)).unwrap(); // the located crossing
     assert_eq!(d.next_due(), Some(Tick(10 * NS)));
-    let out = instant(&mut d, Tick(10 * NS));
+    let out = InstantCases::instant(&mut d, Tick(10 * NS));
 
     let t = Tick(10 * NS);
     let seen = d.drain_observations();
@@ -154,7 +135,7 @@ fn the_traced_instant_of_section_15_1() {
 #[test]
 fn an_instant_that_never_goes_quiet_is_e0501_naming_the_nets() {
     // C24: a timer with a half period of zero toggles its own trigger forever
-    let plan = bind_by_name_with(vec![("t", timer(), vec![("out", "clk")])], Resolution::default(), |nets| {
+    let plan = PlanBinding::bind_by_name_with(vec![("t", Timer::handle(), vec![("out", "clk")])], Resolution::default(), |nets| {
         let half = nets.iter_mut().find(|n| n.name == "t.half").unwrap();
         half.init = 0.0f64.to_le_bytes().to_vec();
     })
@@ -173,52 +154,42 @@ fn an_instant_that_never_goes_quiet_is_e0501_naming_the_nets() {
 #[test]
 fn a_quiet_commit_does_not_start_a_microstep() {
     // C27: the counter's state is QUIET; a flip-flop's q is not
-    let mut d = engine(vec![
-        ("c", counter(), vec![("clk", "clk"), ("n", "n")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    let mut d = InstantCases::engine(vec![
+        ("c", Counter::handle(), vec![("clk", "clk"), ("n", "n")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
     ]);
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
-    let first = instant(&mut d, Tick(1));
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    let first = InstantCases::instant(&mut d, Tick(1));
     assert_eq!(first.microsteps, 1, "a low clock: no edge, nothing pending");
-    let out = instant(&mut d, Tick(2));
-    assert_eq!(d.read(net(&d, "n")), 1u32.to_le_bytes(), "the count applied as the instant exited");
+    let out = InstantCases::instant(&mut d, Tick(2));
+    assert_eq!(d.read(InstantCases::net(&d, "n")), 1u32.to_le_bytes(), "the count applied as the instant exited");
     assert_eq!(out.microsteps, 2, "the flip-flop's q is a commit to a live net: microstep 1 ran, and the quiet n rode along");
     // the counter alone
-    let mut d = engine(vec![("c", counter(), vec![("clk", "clk"), ("n", "n")])]);
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
-    instant(&mut d, Tick(1));
-    let out = instant(&mut d, Tick(2));
-    assert_eq!(d.read(net(&d, "n")), 1u32.to_le_bytes());
+    let mut d = InstantCases::engine(vec![("c", Counter::handle(), vec![("clk", "clk"), ("n", "n")])]);
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    InstantCases::instant(&mut d, Tick(1));
+    let out = InstantCases::instant(&mut d, Tick(2));
+    assert_eq!(d.read(InstantCases::net(&d, "n")), 1u32.to_le_bytes());
     assert_eq!(out.microsteps, 1, "a quiet commit starts no microstep");
 }
 
 const SETTLING: Mode = Mode { is_static: false, settle: true };
 
-/// A `settler` design whose `out` the analog side reads, with its `delay` set to `delay` seconds.
-fn settler_engine(delay: f64) -> Digital {
-    let plan = bind_by_name_with(vec![("s", settler(), vec![("out", "out")])], Resolution::default(), |nets| {
-        nets.iter_mut().find(|n| n.name == "s.delay").unwrap().init = delay.to_le_bytes().to_vec();
-        nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
-    })
-    .expect("binds");
-    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
-}
-
 #[test]
 fn a_settle_commit_is_held_until_it_is_landed() {
     // §15 S1: a commit from the settle phase with no advancing delay is held, not queued and not
     // refused; the instant reports what the analog side will read (S2)
-    let mut d = settler_engine(0.0);
+    let mut d = InstantCases::settler_engine(0.0);
     d.start().unwrap();
     let out = d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("a settle commit is held");
     assert!(d.holds_settle_commits(), "held");
     assert_eq!(d.next_due(), None, "it is due at no instant until it lands");
-    assert_eq!(d.read(net(&d, "out")), [0], "the net keeps its unset value (S4)");
-    assert_eq!(out.settle_boundary, vec![(net(&d, "out"), HIGH.to_vec())], "the boundary the next solve reads (S2)");
+    assert_eq!(d.read(InstantCases::net(&d, "out")), [0], "the net keeps its unset value (S4)");
+    assert_eq!(out.settle_boundary, vec![(InstantCases::net(&d, "out"), HIGH.to_vec())], "the boundary the next solve reads (S2)");
     // without a settle phase no reaction runs and nothing is held
-    let mut d = settler_engine(0.0);
+    let mut d = InstantCases::settler_engine(0.0);
     d.start().unwrap();
     d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), Mode::default()).expect("SETTLE never fired");
     assert!(!d.holds_settle_commits());
@@ -227,7 +198,7 @@ fn a_settle_commit_is_held_until_it_is_landed() {
 #[test]
 fn a_landed_settle_commit_fires_changed_at_microstep_0() {
     // §15 S1: landed at the next time point the commit is due at (t_next, 0), where it changes the net
-    let mut d = settler_engine(0.0);
+    let mut d = InstantCases::settler_engine(0.0);
     d.start().unwrap();
     d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).unwrap();
     d.land_settle_commits(Tick(5));
@@ -235,7 +206,7 @@ fn a_landed_settle_commit_fires_changed_at_microstep_0() {
     assert_eq!(d.next_due(), Some(Tick(5)), "due at the time point");
     d.drain_observations();
     d.run_instant(Tick(5), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
-    assert_eq!(d.read(net(&d, "out")), HIGH, "the commit applied");
+    assert_eq!(d.read(InstantCases::net(&d, "out")), HIGH, "the commit applied");
     let seen = d.drain_observations();
     assert!(seen.contains(&Observation::Change { net: "out".into(), at: (Tick(5), 0), bytes: HIGH.to_vec() }), "changed at (t_next, 0): {seen:?}");
 }
@@ -243,36 +214,25 @@ fn a_landed_settle_commit_fires_changed_at_microstep_0() {
 #[test]
 fn a_dropped_settle_commit_never_applies() {
     // §15 S6: at the stop time the held commits are dropped
-    let mut d = settler_engine(0.0);
+    let mut d = InstantCases::settler_engine(0.0);
     d.start().unwrap();
     d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).unwrap();
     d.drop_settle_commits();
     assert!(!d.holds_settle_commits());
     d.land_settle_commits(Tick(5));
     assert_eq!(d.next_due(), None, "nothing to land");
-    assert_eq!(d.read(net(&d, "out")), [0], "it never applied");
+    assert_eq!(d.read(InstantCases::net(&d, "out")), [0], "it never applied");
 }
 
 #[test]
 fn a_settle_commit_with_an_advancing_delay_is_an_ordinary_commit() {
     // §15 S7: a delay that advances time is queued at its time, never held
-    let mut d = settler_engine(1e-9);
+    let mut d = InstantCases::settler_engine(1e-9);
     d.start().unwrap();
     let out = d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("a delayed settle commit");
     assert!(!d.holds_settle_commits());
     assert!(out.settle_boundary.is_empty());
     assert_eq!(d.next_due(), Some(Tick(NS)));
-}
-
-/// The nets of a settle-event design whose delay is `delay` seconds (the shape's default is 0).
-fn settle_event_engine(delay: f64, extra: Vec<Placed<'_>>) -> Digital {
-    let mut devices = vec![("s", settle_event(), vec![("en", "en"), ("out", "out")])];
-    devices.extend(extra);
-    let plan = bind_by_name_with(devices, Resolution::default(), |nets| {
-        nets.iter_mut().find(|n| n.name == "s.delay").expect("the delay net").init = delay.to_le_bytes().to_vec();
-    })
-    .expect("binds");
-    Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
 }
 
 #[test]
@@ -282,17 +242,17 @@ fn a_guarded_settle_event_fires_in_the_settle_phase() {
     // runs; the guard decides
     let settle = Mode { is_static: false, settle: true };
     let run = |en: &[u8], mode: Mode| {
-        let mut d = settle_event_engine(1e-9, vec![]);
+        let mut d = InstantCases::settle_event_engine(1e-9, vec![]);
         d.start().unwrap();
-        d.host_commit(net(&d, "en"), 0, en, Tick(0)).unwrap();
+        d.host_commit(InstantCases::net(&d, "en"), 0, en, Tick(0)).unwrap();
         d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10 * NS)), mode).expect("the instant runs");
-        (d.next_due(), calls("settle_event").1)
+        (d.next_due(), CallCounts::of("settle_event").1)
     };
-    reset_calls();
+    CallCounts::reset();
     assert_eq!(run(&HIGH, settle), (Some(Tick(NS)), 1), "the guard holds: the event fired and its commit is due 1 ns on");
-    reset_calls();
+    CallCounts::reset();
     assert_eq!(run(&LOW, settle), (None, 0), "the guard is false: the event did not fire");
-    reset_calls();
+    CallCounts::reset();
     assert_eq!(run(&HIGH, Mode::default()), (None, 0), "no settle phase: SETTLE never fired");
 }
 
@@ -300,9 +260,9 @@ fn a_guarded_settle_event_fires_in_the_settle_phase() {
 fn a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head() {
     // §13 rule 14, D4: the reaction listens to the private event pin `seen`, not to `SETTLE`, yet it
     // runs in the settle phase, so a commit with no advancing delay is a settle commit (S1): held
-    let mut d = settle_event_engine(0.0, vec![]);
+    let mut d = InstantCases::settle_event_engine(0.0, vec![]);
     d.start().unwrap();
-    d.host_commit(net(&d, "en"), 0, &HIGH, Tick(0)).unwrap();
+    d.host_commit(InstantCases::net(&d, "en"), 0, &HIGH, Tick(0)).unwrap();
     d.run_instant(Tick(0), &[], Horizon::uniform(Tick(10)), SETTLING).expect("the commit is held");
     assert!(d.holds_settle_commits(), "held, not applied and not refused");
     assert_eq!(d.next_due(), None);
@@ -312,13 +272,13 @@ fn a_reaction_in_the_settle_phase_is_on_settle_whatever_its_head() {
 fn settle_records_carry_the_last_microstep_index() {
     // §19 Resolution, V1, D3: the settle phase records under (t, n), n the last microstep the
     // instant ran. A rising clock makes the flip-flop commit `q` into microstep 1, so n = 1
-    let mut d = settle_event_engine(1e-9, vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    let mut d = InstantCases::settle_event_engine(1e-9, vec![("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0)); // the inits, `delay` included, apply at (0, 0)
-    d.host_commit(net(&d, "en"), 0, &HIGH, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
-    instant(&mut d, Tick(1));
+    InstantCases::instant(&mut d, Tick(0)); // the inits, `delay` included, apply at (0, 0)
+    d.host_commit(InstantCases::net(&d, "en"), 0, &HIGH, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    InstantCases::instant(&mut d, Tick(1));
     d.drain_observations();
     let out = d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("runs");
     assert_eq!(out.microsteps, 2, "the loop ran microsteps 0 and 1");
@@ -339,15 +299,15 @@ fn a_record_from_the_settle_phase_is_stamped_with_the_last_microstep() {
     // of its last microstep. It is observed where it is made and is no settle commit (§15 S1), so
     // `on settle { emit!(..) }` neither fails nor waits for the next time point. A rising clock makes
     // the instant run microsteps 0 and 1, so the record is at `(t, 1)`.
-    let mut d = engine(vec![
-        ("sr", settle_recorder(), vec![("log", "log")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    let mut d = InstantCases::engine(vec![
+        ("sr", SettleRecorder::handle(), vec![("log", "log")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
     ]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
-    instant(&mut d, Tick(1));
+    InstantCases::instant(&mut d, Tick(0));
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    InstantCases::instant(&mut d, Tick(1));
     d.drain_observations();
     d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: true }).expect("a record is no settle commit");
     let seen = d.drain_observations();
@@ -359,10 +319,10 @@ fn a_record_from_the_settle_phase_is_stamped_with_the_last_microstep() {
 #[test]
 fn an_instant_reports_boundary_fired_and_final() {
     // C33: the sampler reads its sample; `out` is read by the analog side; the stub finishes
-    let plan = bind_by_name_with(
+    let plan = PlanBinding::bind_by_name_with(
         vec![
-            ("sm", sampler(), vec![("v", "node"), ("go", "g"), ("s", "out")]),
-            ("o", odd(), vec![("e1", "fin")]),
+            ("sm", Sampler::handle(), vec![("v", "node"), ("go", "g"), ("s", "out")]),
+            ("o", Odd::handle(), vec![("e1", "fin")]),
         ],
         Resolution::default(),
         |nets| nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true,
@@ -370,29 +330,19 @@ fn an_instant_reports_boundary_fired_and_final() {
     .unwrap();
     let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
-    d.fire(net(&d, "g"), Tick(7)).unwrap();
-    d.fire(net(&d, "fin"), Tick(7)).unwrap();
+    d.fire(InstantCases::net(&d, "g"), Tick(7)).unwrap();
+    d.fire(InstantCases::net(&d, "fin"), Tick(7)).unwrap();
     let out = d.run_instant(Tick(7), &[2.5], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
-    assert_eq!(out.boundary, [(net(&d, "out"), real(2.5).to_vec())], "the sample went through the reaction");
-    let mut want = vec![net(&d, "g"), net(&d, "fin")];
+    assert_eq!(out.boundary, [(InstantCases::net(&d, "out"), InstantCases::real(2.5).to_vec())], "the sample went through the reaction");
+    let mut want = vec![InstantCases::net(&d, "g"), InstantCases::net(&d, "fin")];
     want.sort();
     assert_eq!(out.fired, want);
     assert!(out.finish, "the Odd reaction on e1 returned FINISH");
     assert!(!out.host_param_write);
     // a host write to a PARAM net is reported
-    let mut d = engine(vec![("s", settler(), vec![("out", "out")])]);
-    d.host_commit(net(&d, "s.delay"), 0, &2e-9f64.to_le_bytes(), Tick(3)).unwrap();
-    assert!(instant(&mut d, Tick(3)).host_param_write);
-}
-
-/// The `Change` observations of net `name` at instant `(t, n)`.
-fn changes(seen: &[Observation], name: &str, t: Tick, n: u32) -> Vec<Vec<u8>> {
-    seen.iter()
-        .filter_map(|o| match o {
-            Observation::Change { net, at, bytes } if net == name && *at == (t, n) => Some(bytes.clone()),
-            _ => None,
-        })
-        .collect()
+    let mut d = InstantCases::engine(vec![("s", Settler::handle(), vec![("out", "out")])]);
+    d.host_commit(InstantCases::net(&d, "s.delay"), 0, &2e-9f64.to_le_bytes(), Tick(3)).unwrap();
+    assert!(InstantCases::instant(&mut d, Tick(3)).host_param_write);
 }
 
 #[test]
@@ -400,18 +350,18 @@ fn two_commits_to_one_net_settle_to_one_write() {
     // DSV-01 AC 1 (§12.1.1, §12.1.2): the commits of a microstep apply together, the later one
     // winning each byte it writes. `d` holds [0]; LOW ([0]) then HIGH ([1]) settle to HIGH: one
     // write, one change
-    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    let mut d = InstantCases::engine(vec![("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    assert_eq!(d.read(net(&d, "d")), [0]);
+    InstantCases::instant(&mut d, Tick(0));
+    assert_eq!(d.read(InstantCases::net(&d, "d")), [0]);
     d.drain_observations();
     let t = Tick(5 * NS);
-    d.host_commit(net(&d, "d"), 0, &LOW, t).unwrap();
-    d.host_commit(net(&d, "d"), 0, &HIGH, t).unwrap();
-    instant(&mut d, t);
-    assert_eq!(d.read(net(&d, "d")), HIGH, "the later commit wins its byte");
+    d.host_commit(InstantCases::net(&d, "d"), 0, &LOW, t).unwrap();
+    d.host_commit(InstantCases::net(&d, "d"), 0, &HIGH, t).unwrap();
+    InstantCases::instant(&mut d, t);
+    assert_eq!(d.read(InstantCases::net(&d, "d")), HIGH, "the later commit wins its byte");
     let seen = d.drain_observations();
-    assert_eq!(changes(&seen, "d", t, 0), vec![HIGH.to_vec()], "one change, to the settled value: {seen:?}");
+    assert_eq!(InstantCases::changes(&seen, "d", t, 0), vec![HIGH.to_vec()], "one change, to the settled value: {seen:?}");
 }
 
 #[test]
@@ -419,35 +369,35 @@ fn a_commit_undone_in_its_microstep_is_no_change() {
     // DSV-01 AC 2 (§8.2.3, §12.1.18): clk holds HIGH; LOW then HIGH in one microstep settle to
     // HIGH, the value it had: no change, CHANGED reads false, so the flip-flop's rising edge (it
     // reads VALUE, PREVIOUS and CHANGED) does not fire and q keeps the d sampled before
-    reset_calls();
-    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    CallCounts::reset();
+    let mut d = InstantCases::engine(vec![("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.host_commit(net(&d, "d"), 0, &LOW, Tick(NS)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
-    instant(&mut d, Tick(NS));
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2 * NS)).unwrap();
-    instant(&mut d, Tick(2 * NS));
-    assert_eq!(d.read(net(&d, "q")), LOW, "the edge at 2 ns sampled d = LOW");
-    let sampled = calls("dff").1;
+    InstantCases::instant(&mut d, Tick(0));
+    d.host_commit(InstantCases::net(&d, "d"), 0, &LOW, Tick(NS)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
+    InstantCases::instant(&mut d, Tick(NS));
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2 * NS)).unwrap();
+    InstantCases::instant(&mut d, Tick(2 * NS));
+    assert_eq!(d.read(InstantCases::net(&d, "q")), LOW, "the edge at 2 ns sampled d = LOW");
+    let sampled = CallCounts::of("dff").1;
     assert_eq!(sampled, 1, "one rising edge so far");
-    d.host_commit(net(&d, "d"), 0, &HIGH, Tick(3 * NS)).unwrap();
-    instant(&mut d, Tick(3 * NS));
+    d.host_commit(InstantCases::net(&d, "d"), 0, &HIGH, Tick(3 * NS)).unwrap();
+    InstantCases::instant(&mut d, Tick(3 * NS));
     d.drain_observations();
 
     let t = Tick(4 * NS);
-    d.host_commit(net(&d, "clk"), 0, &LOW, t).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, t).unwrap();
-    instant(&mut d, t);
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, t).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, t).unwrap();
+    InstantCases::instant(&mut d, t);
     let seen = d.drain_observations();
-    assert_eq!(d.read(net(&d, "clk")), HIGH);
-    assert!(changes(&seen, "clk", t, 0).is_empty(), "the settled clk is the one before: no change: {seen:?}");
+    assert_eq!(d.read(InstantCases::net(&d, "clk")), HIGH);
+    assert!(InstantCases::changes(&seen, "clk", t, 0).is_empty(), "the settled clk is the one before: no change: {seen:?}");
     assert!(
         !seen.iter().any(|o| matches!(o, Observation::Fire { net, .. } if net == "ff.rise")),
         "no edge fired: {seen:?}"
     );
-    assert_eq!(calls("dff").1, sampled, "the flip-flop did not sample again");
-    assert_eq!(d.read(net(&d, "q")), LOW, "q did not take d = HIGH");
+    assert_eq!(CallCounts::of("dff").1, sampled, "the flip-flop did not sample again");
+    assert_eq!(d.read(InstantCases::net(&d, "q")), LOW, "q did not take d = HIGH");
 }
 
 #[test]
@@ -455,26 +405,26 @@ fn a_settled_change_is_one_observation() {
     // DSV-01 AC 3: clk holds LOW; HIGH, LOW, HIGH in one microstep settle to HIGH: one change,
     // to HIGH, with PREVIOUS = LOW (the value before the microstep), so the rising edge fires
     // once and q samples d
-    reset_calls();
-    let mut d = engine(vec![("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
+    CallCounts::reset();
+    let mut d = InstantCases::engine(vec![("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.host_commit(net(&d, "d"), 0, &HIGH, Tick(NS)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
-    instant(&mut d, Tick(NS));
+    InstantCases::instant(&mut d, Tick(0));
+    d.host_commit(InstantCases::net(&d, "d"), 0, &HIGH, Tick(NS)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(NS)).unwrap();
+    InstantCases::instant(&mut d, Tick(NS));
     d.drain_observations();
 
     let t = Tick(2 * NS);
     for bytes in [HIGH, LOW, HIGH] {
-        d.host_commit(net(&d, "clk"), 0, &bytes, t).unwrap();
+        d.host_commit(InstantCases::net(&d, "clk"), 0, &bytes, t).unwrap();
     }
-    instant(&mut d, t);
+    InstantCases::instant(&mut d, t);
     let seen = d.drain_observations();
-    assert_eq!(changes(&seen, "clk", t, 0), vec![HIGH.to_vec()], "one change, to HIGH: {seen:?}");
+    assert_eq!(InstantCases::changes(&seen, "clk", t, 0), vec![HIGH.to_vec()], "one change, to HIGH: {seen:?}");
     let rises = seen.iter().filter(|o| matches!(o, Observation::Fire { net, .. } if net == "ff.rise")).count();
     assert_eq!(rises, 1, "PREVIOUS is LOW, VALUE HIGH: one rising edge");
-    assert_eq!(calls("dff").1, 1);
-    assert_eq!(d.read(net(&d, "q")), HIGH, "q sampled d");
+    assert_eq!(CallCounts::of("dff").1, 1);
+    assert_eq!(d.read(InstantCases::net(&d, "q")), HIGH, "q sampled d");
 }
 
 /// Copies the `PREVIOUS` of its input `x` to `p`.
@@ -483,31 +433,14 @@ struct Previous;
 static PREVIOUS_SHAPE: std::sync::OnceLock<piperine_abi::shape::ShapeRef> = std::sync::OnceLock::new();
 static PREVIOUS_MODULE: std::sync::OnceLock<piperine_abi::raw::Module> = std::sync::OnceLock::new();
 
-fn previous_shape() -> piperine_abi::shape::ShapeRef {
-    use piperine_abi::layout::F64;
-    use piperine_abi::raw::{Cell, cell, part, role};
-    use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf};
-    let mut s = ShapeBuf::new();
-    let x = s.pin(PinSpec::discrete("x", role::PORT, &F64));
-    let p = s.pin(PinSpec::discrete("p", role::PORT, &F64));
-    s.function(FunctionSpec {
-        name: "prev",
-        origin: "instant.rs",
-        reads: vec![Cell { kind: cell::PIN, index: x, part: part::VALUE }, Cell { kind: cell::PIN, index: x, part: part::PREVIOUS }],
-        writes: vec![Cell { kind: cell::PIN, index: p, part: part::VALUE }],
-        ..FunctionSpec::default()
-    });
-    s.freeze()
-}
-
 impl piperine_abi::device::Device for Previous {
     fn prototype() -> &'static piperine_abi::raw::Shape<'static> {
-        PREVIOUS_SHAPE.get_or_init(previous_shape).shape()
+        PREVIOUS_SHAPE.get_or_init(InstantCases::previous_shape).shape()
     }
     fn create(
         _: &piperine_abi::device::Values<'_>,
     ) -> Result<(Self, piperine_abi::shape::ShapeRef), piperine_abi::device::Fault> {
-        Ok((Previous, std::sync::Arc::clone(PREVIOUS_SHAPE.get_or_init(previous_shape))))
+        Ok((Previous, std::sync::Arc::clone(PREVIOUS_SHAPE.get_or_init(InstantCases::previous_shape))))
     }
     fn eval(&self, _k: u32, cx: &mut piperine_abi::device::Eval) -> Result<(), piperine_abi::device::Fault> {
         let previous = cx.f64(1);
@@ -532,23 +465,23 @@ fn previous_is_the_value_before_the_microstep() {
         &[],
     )
     .expect("creates");
-    let mut d = engine(vec![("pv", handle, vec![("x", "x"), ("p", "p")])]);
+    let mut d = InstantCases::engine(vec![("pv", handle, vec![("x", "x"), ("p", "p")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    let f = |d: &Digital, name: &str| f64::from_le_bytes(d.read(net(d, name)).try_into().expect("an F64"));
-    d.host_commit(net(&d, "x"), 0, &1.0f64.to_le_bytes(), Tick(NS)).unwrap();
-    instant(&mut d, Tick(NS));
+    InstantCases::instant(&mut d, Tick(0));
+    let f = |d: &Digital, name: &str| f64::from_le_bytes(d.read(InstantCases::net(d, name)).try_into().expect("an F64"));
+    d.host_commit(InstantCases::net(&d, "x"), 0, &1.0f64.to_le_bytes(), Tick(NS)).unwrap();
+    InstantCases::instant(&mut d, Tick(NS));
     assert_eq!(f(&d, "p"), 0.0, "x went from 0.0 to 1.0");
     d.drain_observations();
     let t = Tick(2 * NS);
     for v in [2.0f64, 3.0] {
-        d.host_commit(net(&d, "x"), 0, &v.to_le_bytes(), t).unwrap();
+        d.host_commit(InstantCases::net(&d, "x"), 0, &v.to_le_bytes(), t).unwrap();
     }
-    instant(&mut d, t);
+    InstantCases::instant(&mut d, t);
     assert_eq!(f(&d, "x"), 3.0, "the later commit wins");
     assert_eq!(f(&d, "p"), 1.0, "PREVIOUS is the value before the microstep");
     let seen = d.drain_observations();
-    assert_eq!(changes(&seen, "x", t, 0), vec![3.0f64.to_le_bytes().to_vec()], "one change, to 3.0: {seen:?}");
+    assert_eq!(InstantCases::changes(&seen, "x", t, 0), vec![3.0f64.to_le_bytes().to_vec()], "one change, to 3.0: {seen:?}");
 }
 
 /// Commits when `go` fires: statement `i` does `out <- value` one microstep later with a plain
@@ -604,39 +537,24 @@ impl piperine_abi::device::Factory for Driver {
     }
 }
 
-/// The value of net `q` after one reaction made `commits` to it, in statement order, in one
-/// microstep, when `q` held `held` before; and what the run observed.
-fn driven(held: [u8; 1], commits: &[[u8; 1]]) -> (Vec<u8>, Vec<Observation>) {
-    let mut d = engine(vec![("d", Driver::handle(commits), vec![("go", "go"), ("out", "q")])]);
-    d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.host_commit(net(&d, "q"), 0, &held, Tick(NS)).unwrap();
-    instant(&mut d, Tick(NS));
-    d.drain_observations();
-    let t = Tick(2 * NS);
-    d.host_commit(net(&d, "go"), 0, &[], t).unwrap();
-    instant(&mut d, t);
-    (d.read(net(&d, "q")).to_vec(), d.drain_observations())
-}
-
 #[test]
 fn the_last_plain_commit_of_a_microstep_is_the_value() {
     // abi.md §6 C2: the commits of one microstep apply in statement order and the later one wins
-    assert_eq!(driven(HIGH, &[LOW]).0, LOW);
-    assert_eq!(driven(LOW, &[LOW, HIGH]).0, HIGH, "the later commit wins");
-    assert_eq!(driven(LOW, &[HIGH, LOW]).0, LOW, "the later commit wins");
+    assert_eq!(InstantCases::driven(HIGH, &[LOW]).0, LOW);
+    assert_eq!(InstantCases::driven(LOW, &[LOW, HIGH]).0, HIGH, "the later commit wins");
+    assert_eq!(InstantCases::driven(LOW, &[HIGH, LOW]).0, LOW, "the later commit wins");
 }
 
 #[test]
 fn a_commit_equal_to_the_value_fires_no_change() {
     // §8.2.3: a commit equal to the net's value is no change, so `changed()` stays false and no
     // change is observed; one that differs is one change
-    let (value, seen) = driven(HIGH, &[HIGH]);
+    let (value, seen) = InstantCases::driven(HIGH, &[HIGH]);
     assert_eq!(value, HIGH);
-    assert!(changes(&seen, "q", Tick(2 * NS), 1).is_empty(), "no change observed: {seen:?}");
-    let (value, seen) = driven(HIGH, &[LOW]);
+    assert!(InstantCases::changes(&seen, "q", Tick(2 * NS), 1).is_empty(), "no change observed: {seen:?}");
+    let (value, seen) = InstantCases::driven(HIGH, &[LOW]);
     assert_eq!(value, LOW);
-    assert_eq!(changes(&seen, "q", Tick(2 * NS), 1), vec![LOW.to_vec()], "{seen:?}");
+    assert_eq!(InstantCases::changes(&seen, "q", Tick(2 * NS), 1), vec![LOW.to_vec()], "{seen:?}");
 }
 
 #[test]
@@ -645,13 +563,13 @@ fn a_plain_commit_to_a_layout_without_a_known_byte_writes_its_bytes() {
     // commit does
     let value = 1.0f64.to_le_bytes().to_vec();
     let handle = Driver::on(&piperine_abi::layout::F64, vec![value.clone()]);
-    let mut d = engine(vec![("d", handle, vec![("go", "go"), ("out", "q")])]);
+    let mut d = InstantCases::engine(vec![("d", handle, vec![("go", "go"), ("out", "q")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
+    InstantCases::instant(&mut d, Tick(0));
     let t = Tick(NS);
-    d.host_commit(net(&d, "go"), 0, &[], t).unwrap();
-    instant(&mut d, t);
-    assert_eq!(d.read(net(&d, "q")).to_vec(), value);
+    d.host_commit(InstantCases::net(&d, "go"), 0, &[], t).unwrap();
+    InstantCases::instant(&mut d, t);
+    assert_eq!(d.read(InstantCases::net(&d, "q")).to_vec(), value);
 }
 
 #[test]
@@ -659,15 +577,15 @@ fn a_reopened_instant_settles_at_its_last_microstep() {
     // §19 Resolution, §15.2 rule 4: the owner may run an instant without its settle phase and run the
     // phase afterwards. `reopen(at, false)` resumes at the last microstep the instant ran, so the
     // record of the settle phase is stamped `(t, 1)` as in one run, not `(t, 0)` of a fresh loop.
-    let mut d = engine(vec![
-        ("sr", settle_recorder(), vec![("log", "log")]),
-        ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+    let mut d = InstantCases::engine(vec![
+        ("sr", SettleRecorder::handle(), vec![("log", "log")]),
+        ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
     ]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.host_commit(net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
-    d.host_commit(net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
-    instant(&mut d, Tick(1));
+    InstantCases::instant(&mut d, Tick(0));
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &LOW, Tick(1)).unwrap();
+    d.host_commit(InstantCases::net(&d, "clk"), 0, &HIGH, Tick(2)).unwrap();
+    InstantCases::instant(&mut d, Tick(1));
     d.drain_observations();
     let quiet = d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: false }).expect("runs");
     assert_eq!(quiet.microsteps, 2, "microsteps 0 and 1");
@@ -682,15 +600,15 @@ fn a_reopened_instant_settles_at_its_last_microstep() {
 fn a_firing_after_a_reopened_instant_is_due_at_the_next_microstep() {
     // §15.2 rule 4: a crossing only a retaken solution makes fires at the next microstep of `t`. The
     // first crossing fires at (t, 0) and its commit applies at (t, 1), so the next one fires at (t, 2).
-    let mut d = engine(vec![("cmp", setter(), vec![("up", "cross"), ("out", "above")])]);
+    let mut d = InstantCases::engine(vec![("cmp", Setter::handle(), vec![("up", "cross"), ("out", "above")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.fire(net(&d, "cross"), Tick(2)).unwrap();
-    let first = instant(&mut d, Tick(2));
+    InstantCases::instant(&mut d, Tick(0));
+    d.fire(InstantCases::net(&d, "cross"), Tick(2)).unwrap();
+    let first = InstantCases::instant(&mut d, Tick(2));
     assert_eq!(first.microsteps, 2, "microsteps 0 and 1");
     d.drain_observations();
     d.reopen(Tick(2), true);
-    d.fire(net(&d, "cross"), Tick(2)).unwrap();
+    d.fire(InstantCases::net(&d, "cross"), Tick(2)).unwrap();
     d.run_instant(Tick(2), &[], Horizon::uniform(Tick(10 * NS)), Mode { is_static: false, settle: false }).expect("the next round");
     let seen = d.drain_observations();
     assert!(seen.contains(&Observation::Fire { net: "cross".into(), at: (Tick(2), 2) }), "{seen:?}");
@@ -704,16 +622,16 @@ struct PulseBench;
 impl PulseBench {
     /// The engine, started and past its first instant; `go` fires the pulse at tick 7.
     fn engine() -> Digital {
-        let plan = bind_by_name_with(
-            vec![("p", Pulser::handle(), vec![("up", "go"), ("out", "seat")]), ("s", settler(), vec![("out", "late")])],
+        let plan = PlanBinding::bind_by_name_with(
+            vec![("p", PulseGenerator::handle(), vec![("up", "go"), ("out", "seat")]), ("s", Settler::handle(), vec![("out", "late")])],
             Resolution::default(),
             |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
         )
         .expect("binds");
         let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
         d.start().unwrap();
-        instant(&mut d, Tick(0));
-        d.fire(net(&d, "go"), Tick(7)).unwrap();
+        InstantCases::instant(&mut d, Tick(0));
+        d.fire(InstantCases::net(&d, "go"), Tick(7)).unwrap();
         d
     }
 }
@@ -725,7 +643,7 @@ fn a_pulse_of_a_net_the_analog_side_reads_is_reported_as_passing() {
     // owner to retake the step on, and the settle phase is left to follow that retake
     let mut d = PulseBench::engine();
     let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).expect("the pulse runs");
-    let seat = net(&d, "seat");
+    let seat = InstantCases::net(&d, "seat");
     assert_eq!(d.read(seat), LOW, "the pulse ends where it began");
     assert_eq!(out.microsteps, 3, "fire, high, low");
     assert_eq!(out.boundary, [(seat, LOW.to_vec())], "what the instant leaves behind");
@@ -749,13 +667,13 @@ fn a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows() {
         let (lines, go, rise) = (NetId(0), NetId(1), NetId(2));
         let pulser = piperine_digital_solver::plan::InstancePlan {
             path: "p".into(),
-            handle: Pulser::handle(),
+            handle: PulseGenerator::handle(),
             pins: vec![piperine_digital_solver::plan::Binding::Net(go), piperine_digital_solver::plan::Binding::ArrayElement { net: lines, element: 1 }, piperine_digital_solver::plan::Binding::Net(rise)],
         };
         let plan = piperine_digital_solver::plan::DigitalPlan::bind(nets, vec![pulser], Resolution::default()).expect("binds");
         let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
         d.start().unwrap();
-        instant(&mut d, Tick(0));
+        InstantCases::instant(&mut d, Tick(0));
         d.fire(go, Tick(7)).unwrap();
         let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).expect("the pulse runs");
         assert_eq!(d.read_element(lines, 1), LOW, "the pulse ends where it began");
@@ -778,18 +696,18 @@ fn a_pulse_of_an_element_of_an_array_net_is_passing_as_its_windows() {
 fn a_net_that_changes_once_passes_through_nothing() {
     // docs/spec §15.2 rule 4: a change the instant keeps is read by the first step after it, and
     // only that step; the settle phase runs in the instant
-    let plan = bind_by_name_with(
-        vec![("u", setter(), vec![("up", "go"), ("out", "seat")]), ("s", settler(), vec![("out", "late")])],
+    let plan = PlanBinding::bind_by_name_with(
+        vec![("u", Setter::handle(), vec![("up", "go"), ("out", "seat")]), ("s", Settler::handle(), vec![("out", "late")])],
         Resolution::default(),
         |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
     )
     .expect("binds");
     let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    d.fire(net(&d, "go"), Tick(7)).unwrap();
+    InstantCases::instant(&mut d, Tick(0));
+    d.fire(InstantCases::net(&d, "go"), Tick(7)).unwrap();
     let out = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), SETTLING).unwrap();
-    assert_eq!(out.boundary, [(net(&d, "seat"), HIGH.to_vec())]);
+    assert_eq!(out.boundary, [(InstantCases::net(&d, "seat"), HIGH.to_vec())]);
     assert!(out.passing.is_empty(), "{:?}", out.passing);
     assert!(d.holds_settle_commits(), "the settle phase ran");
 }
@@ -801,11 +719,11 @@ impl SuspendedPulse {
     /// `p` pulses `seat` (read by the analog side) from `go`, `q` pulses `seat2` from `go2`, and a
     /// settler holds a commit when the settle phase runs. `q_up` is the net `q` rises from.
     fn engine(q_up: &str) -> Digital {
-        let plan = bind_by_name_with(
+        let plan = PlanBinding::bind_by_name_with(
             vec![
-                ("p", Pulser::handle(), vec![("up", "go"), ("out", "seat")]),
-                ("q", Pulser::handle(), vec![("up", q_up), ("out", "seat2")]),
-                ("s", settler(), vec![("out", "late")]),
+                ("p", PulseGenerator::handle(), vec![("up", "go"), ("out", "seat")]),
+                ("q", PulseGenerator::handle(), vec![("up", q_up), ("out", "seat2")]),
+                ("s", Settler::handle(), vec![("out", "late")]),
             ],
             Resolution::default(),
             |nets| nets.iter_mut().find(|n| n.name == "seat").unwrap().analog_reads = true,
@@ -813,7 +731,7 @@ impl SuspendedPulse {
         .expect("binds");
         let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
         d.start().unwrap();
-        instant(&mut d, Tick(0));
+        InstantCases::instant(&mut d, Tick(0));
         d
     }
 
@@ -830,7 +748,7 @@ fn a_pulse_split_by_a_host_suspension_is_still_passing() {
     // high; `seat` falls in the third part. The record spans the parts, so the last one reports the
     // high it passed through, and the settle phase is left to the owner
     let mut d = SuspendedPulse::engine("go2");
-    let (go, go2, seat) = (net(&d, "go"), net(&d, "go2"), net(&d, "seat"));
+    let (go, go2, seat) = (InstantCases::net(&d, "go"), InstantCases::net(&d, "go2"), InstantCases::net(&d, "seat"));
     d.wait(go);
     d.wait(go2);
     d.fire(go, Tick(7)).unwrap();
@@ -854,11 +772,11 @@ fn a_part_after_the_pulse_leaves_the_settle_phase_to_the_owner() {
     // nothing of its own. It still reports the pulse of the instant and does not run the settle
     // phase, which the owner runs once after reading it
     let mut d = SuspendedPulse::engine("p.rise");
-    let (go, seat) = (net(&d, "go"), net(&d, "seat"));
-    d.wait(net(&d, "q.rise"));
+    let (go, seat) = (InstantCases::net(&d, "go"), InstantCases::net(&d, "seat"));
+    d.wait(InstantCases::net(&d, "q.rise"));
     d.fire(go, Tick(7)).unwrap();
     let first = SuspendedPulse::part(&mut d);
-    assert_eq!(first.host_events, [net(&d, "q.rise")], "suspended after microstep 2");
+    assert_eq!(first.host_events, [InstantCases::net(&d, "q.rise")], "suspended after microstep 2");
     assert_eq!(first.passing, [(seat, HIGH.to_vec())], "seat rose and fell in the first part");
     let second = SuspendedPulse::part(&mut d);
     assert!(second.host_events.is_empty());
@@ -873,11 +791,11 @@ fn a_reopened_instant_reports_only_what_passes_after_the_reading() {
     // The owner reads that and reopens the instant; in round 2 `go` fires again, `clk` pulses again
     // and `q` toggles back to 0, once. Round 2 reports `clk`'s high and `q` at 0: never `q` at 1,
     // which round 1's reading already read
-    let plan = bind_by_name_with(
+    let plan = PlanBinding::bind_by_name_with(
         vec![
-            ("p", Pulser::handle(), vec![("up", "go"), ("out", "clk")]),
-            ("ff", dff(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
-            ("i", inverter(), vec![("a", "q"), ("y", "d")]),
+            ("p", PulseGenerator::handle(), vec![("up", "go"), ("out", "clk")]),
+            ("ff", DataFlipFlop::handle(), vec![("clk", "clk"), ("d", "d"), ("q", "q")]),
+            ("i", Inverter::handle(), vec![("a", "q"), ("y", "d")]),
         ],
         Resolution::default(),
         |nets| {
@@ -889,8 +807,8 @@ fn a_reopened_instant_reports_only_what_passes_after_the_reading() {
     .expect("binds");
     let mut d = Digital::new(plan, DigitalLimits::default(), TimePointRule::default());
     d.start().unwrap();
-    instant(&mut d, Tick(0));
-    let (go, clk, q) = (net(&d, "go"), net(&d, "clk"), net(&d, "q"));
+    InstantCases::instant(&mut d, Tick(0));
+    let (go, clk, q) = (InstantCases::net(&d, "go"), InstantCases::net(&d, "clk"), InstantCases::net(&d, "q"));
     d.fire(go, Tick(7)).unwrap();
     let first = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
     assert_eq!(d.read(q), HIGH, "q toggled to 1");
@@ -905,4 +823,95 @@ fn a_reopened_instant_reports_only_what_passes_after_the_reading() {
     d.host_commit(q, 0, &HIGH, Tick(7)).unwrap();
     let third = d.run_instant(Tick(7), &[], Horizon::uniform(Tick(100)), Mode::default()).unwrap();
     assert!(third.passing.is_empty(), "a single change after a reading: {:?}", third.passing);
+}
+
+/// The engines the microstep tests run.
+pub struct InstantCases;
+
+impl InstantCases {
+     // ticks of 1 fs
+
+    /// The engine helper `engine`.
+    fn engine(devices: Vec<Placed<'_>>) -> Digital {
+        Digital::new(PlanBinding::bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
+    }
+
+    /// The net helper `net`.
+    fn net(d: &Digital, name: &str) -> NetId {
+        PlanBinding::net_named(d.plan(), name)
+    }
+
+    /// The instant helper `instant`.
+    fn instant(d: &mut Digital, at: Tick) -> piperine_digital_solver::engine::Outcome {
+        d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs")
+    }
+
+    /// The real helper `real`.
+    fn real(v: f64) -> [u8; 8] {
+        v.to_le_bytes()
+    }
+
+    /// A `settler` design whose `out` the analog side reads, with its `delay` set to `delay` seconds.
+    fn settler_engine(delay: f64) -> Digital {
+        let plan = PlanBinding::bind_by_name_with(vec![("s", Settler::handle(), vec![("out", "out")])], Resolution::default(), |nets| {
+            nets.iter_mut().find(|n| n.name == "s.delay").unwrap().init = delay.to_le_bytes().to_vec();
+            nets.iter_mut().find(|n| n.name == "out").unwrap().analog_reads = true;
+        })
+        .expect("binds");
+        Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
+    }
+
+    /// The nets of a settle-event design whose delay is `delay` seconds (the shape's default is 0).
+    fn settle_event_engine(delay: f64, extra: Vec<Placed<'_>>) -> Digital {
+        let mut devices = vec![("s", SettleEvent::handle(), vec![("en", "en"), ("out", "out")])];
+        devices.extend(extra);
+        let plan = PlanBinding::bind_by_name_with(devices, Resolution::default(), |nets| {
+            nets.iter_mut().find(|n| n.name == "s.delay").expect("the delay net").init = delay.to_le_bytes().to_vec();
+        })
+        .expect("binds");
+        Digital::new(plan, DigitalLimits::default(), TimePointRule::default())
+    }
+
+    /// The `Change` observations of net `name` at instant `(t, n)`.
+    fn changes(seen: &[Observation], name: &str, t: Tick, n: u32) -> Vec<Vec<u8>> {
+        seen.iter()
+            .filter_map(|o| match o {
+                Observation::Change { net, at, bytes } if net == name && *at == (t, n) => Some(bytes.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The previous shape helper `previous_shape`.
+    fn previous_shape() -> piperine_abi::shape::ShapeRef {
+        use piperine_abi::layout::F64;
+        use piperine_abi::raw::{Cell, cell, part, role};
+        use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf};
+        let mut s = ShapeBuf::new();
+        let x = s.pin(PinSpec::discrete("x", role::PORT, &F64));
+        let p = s.pin(PinSpec::discrete("p", role::PORT, &F64));
+        s.function(FunctionSpec {
+            name: "prev",
+            origin: "instant.rs",
+            reads: vec![Cell { kind: cell::PIN, index: x, part: part::VALUE }, Cell { kind: cell::PIN, index: x, part: part::PREVIOUS }],
+            writes: vec![Cell { kind: cell::PIN, index: p, part: part::VALUE }],
+            ..FunctionSpec::default()
+        });
+        s.freeze()
+    }
+
+    /// The value of net `q` after one reaction made `commits` to it, in statement order, in one
+    /// microstep, when `q` held `held` before; and what the run observed.
+    fn driven(held: [u8; 1], commits: &[[u8; 1]]) -> (Vec<u8>, Vec<Observation>) {
+        let mut d = InstantCases::engine(vec![("d", Driver::handle(commits), vec![("go", "go"), ("out", "q")])]);
+        d.start().unwrap();
+        InstantCases::instant(&mut d, Tick(0));
+        d.host_commit(InstantCases::net(&d, "q"), 0, &held, Tick(NS)).unwrap();
+        InstantCases::instant(&mut d, Tick(NS));
+        d.drain_observations();
+        let t = Tick(2 * NS);
+        d.host_commit(InstantCases::net(&d, "go"), 0, &[], t).unwrap();
+        InstantCases::instant(&mut d, t);
+        (d.read(InstantCases::net(&d, "q")).to_vec(), d.drain_observations())
+    }
 }

@@ -1,9 +1,0 @@
-crates/piperine-digital-solver/tests/advance.rs::devices	1
-crates/piperine-digital-solver/tests/checkpoint.rs::devices	1
-crates/piperine-digital-solver/tests/devices.rs::devices	1
-crates/piperine-digital-solver/tests/functions.rs::devices	1
-crates/piperine-digital-solver/tests/host.rs::devices	1
-crates/piperine-digital-solver/tests/instant.rs::devices	1
-crates/piperine-digital-solver/tests/reactions.rs::devices	1
-crates/piperine-digital-solver/tests/relax.rs::devices	1
-crates/piperine-digital-solver/tests/round1.rs::devices	1

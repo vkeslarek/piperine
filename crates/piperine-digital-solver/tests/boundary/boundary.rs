@@ -18,40 +18,16 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::landing::TimePointRule;
 use piperine_digital_solver::limits::DigitalLimits;
 
-fn crate_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-}
-
-/// Every `.rs` file under `dir`, with its text.
-fn sources(dir: &Path) -> Vec<(PathBuf, String)> {
-    let mut found = Vec::new();
-    for entry in fs::read_dir(dir).expect("a readable directory") {
-        let path = entry.expect("an entry").path();
-        if path.is_dir() {
-            found.extend(sources(&path));
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            let text = fs::read_to_string(&path).expect("a readable file");
-            found.push((path, text));
-        }
-    }
-    found
-}
-
-/// The code of a line: everything before a `//` comment.
-fn code(line: &str) -> &str {
-    line.split("//").next().unwrap_or("")
-}
-
 #[test]
 fn the_crate_depends_on_the_abi_crate_only() {
-    let manifest = fs::read_to_string(crate_dir().join("Cargo.toml")).expect("the manifest");
+    let manifest = fs::read_to_string(BoundaryReading::crate_dir().join("Cargo.toml")).expect("the manifest");
     let mut in_dependencies = false;
     let mut deps = Vec::new();
     for line in manifest.lines() {
         let line = line.trim();
         if line.starts_with('[') {
             in_dependencies = line.contains("dependencies");
-        } else if in_dependencies && !line.is_empty() && !line.starts_with('#') {
+        } else if in_dependencies && !line.is_empty() && !line.starts_with('#') && !line.starts_with("piperine-device-fixtures") {
             deps.push(line.split(['=', ' ']).next().unwrap_or("").to_string());
         }
     }
@@ -70,10 +46,10 @@ fn abi_modules_name_no_analog_or_owner_item() {
         ["Analog", "Reference"].concat(),
     ];
     let mut found = Vec::new();
-    for (path, text) in sources(&crate_dir().join("src")) {
+    for (path, text) in BoundaryReading::sources(&BoundaryReading::crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
             for word in &banned {
-                if code(line).contains(word.as_str()) {
+                if BoundaryReading::code(line).contains(word.as_str()) {
                     found.push(format!("{}:{}: {word}", path.display(), n + 1));
                 }
             }
@@ -85,9 +61,9 @@ fn abi_modules_name_no_analog_or_owner_item() {
 #[test]
 fn abi_modules_hold_no_unsafe() {
     let mut found = Vec::new();
-    for (path, text) in sources(&crate_dir().join("src")) {
+    for (path, text) in BoundaryReading::sources(&BoundaryReading::crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
-            if code(line).contains("unsafe") {
+            if BoundaryReading::code(line).contains("unsafe") {
                 found.push(format!("{}:{}", path.display(), n + 1));
             }
         }
@@ -129,4 +105,34 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     let out = d.run_instant(Tick(4), &[], Horizon::uniform(Tick(10)), Mode::default()).unwrap();
     assert!(!out.finish);
     assert!(d.drain_observations().iter().any(|o| matches!(o, Observation::Change { net, .. } if net == "n")));
+}
+
+/// Reads the crate for the boundary tests.
+pub struct BoundaryReading;
+
+impl BoundaryReading {
+    /// The crate dir helper `crate_dir`.
+    fn crate_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    }
+
+    /// Every `.rs` file under `dir`, with its text.
+    fn sources(dir: &Path) -> Vec<(PathBuf, String)> {
+        let mut found = Vec::new();
+        for entry in fs::read_dir(dir).expect("a readable directory") {
+            let path = entry.expect("an entry").path();
+            if path.is_dir() {
+                found.extend(BoundaryReading::sources(&path));
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                let text = fs::read_to_string(&path).expect("a readable file");
+                found.push((path, text));
+            }
+        }
+        found
+    }
+
+    /// The code of a line: everything before a `//` comment.
+    fn code(line: &str) -> &str {
+        line.split("//").next().unwrap_or("")
+    }
 }

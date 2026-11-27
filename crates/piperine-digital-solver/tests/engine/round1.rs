@@ -4,11 +4,8 @@
 //! a settled RELAX group leaves nothing due, the RELAX rule per cycle,
 //! a never-due REPLACE, host writes range-checked, P3 on every write.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)] // each test target uses the devices it needs
-mod devices;
-
-use devices::*;
+use piperine_device_fixtures::digital::{And2, CallCounts, ClockWatch, Rearm, Resolver, Timer};
+use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::HIGH;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::NetId;
@@ -18,47 +15,35 @@ use piperine_digital_solver::limits::DigitalLimits;
 
 const NS: i64 = 1_000_000;
 
-fn engine(devices: Vec<Placed<'_>>) -> Digital {
-    Digital::new(bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
-}
-
-fn net(d: &Digital, name: &str) -> NetId {
-    net_named(d.plan(), name)
-}
-
-fn instant(d: &mut Digital, at: Tick) {
-    d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).unwrap();
-}
-
 #[test]
 fn a_settled_relax_group_leaves_nothing_due_after_its_instant() {
     // finding 2, F3: the group's own closing write must not re-dirty it
-    reset_calls();
-    let mut d = engine(vec![
-        ("res", resolver(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
-        ("keep", and2(), vec![("a", "v"), ("b", "v"), ("y", "d")]),
+    CallCounts::reset();
+    let mut d = RoundOneCases::engine(vec![
+        ("res", Resolver::handle(), vec![("d0", "d"), ("d1", "e"), ("v", "v")]),
+        ("keep", And2::handle(), vec![("a", "v"), ("b", "v"), ("y", "d")]),
     ]);
     d.start().unwrap();
-    d.host_commit(net(&d, "e"), 0, &HIGH, Tick(0)).unwrap();
-    instant(&mut d, Tick(0));
-    assert_eq!(d.read(net(&d, "v")), HIGH);
+    d.host_commit(RoundOneCases::net(&d, "e"), 0, &HIGH, Tick(0)).unwrap();
+    RoundOneCases::instant(&mut d, Tick(0));
+    assert_eq!(d.read(RoundOneCases::net(&d, "v")), HIGH);
     assert_eq!(d.next_due(), None, "nothing queued, nothing changed: no second instant at tick 0");
-    let before = calls("resolver").0;
+    let before = CallCounts::of("resolver").0;
     d.advance(Tick(100)).unwrap();
-    assert_eq!(calls("resolver").0, before, "and the group's functions are not called again");
+    assert_eq!(CallCounts::of("resolver").0, before, "and the group's functions are not called again");
 }
 
 #[test]
 fn replace_with_an_infinite_delay_removes_the_pending_commits() {
     // finding 4, abi.md §6 C3: a REPLACE statement removes every pending commit of itself even when
     // its own commit never comes due (a statement that is not REPLACE keeps the earlier ones)
-    let mut d = engine(vec![("clock", timer(), vec![("out", "clk"), ("tick", "t")])]);
+    let mut d = RoundOneCases::engine(vec![("clock", Timer::handle(), vec![("out", "clk"), ("tick", "t")])]);
     d.start().unwrap();
-    instant(&mut d, Tick(0));
+    RoundOneCases::instant(&mut d, Tick(0));
     assert_eq!(d.next_due(), Some(Tick(10 * NS)), "the start armed the edge and the tick");
-    d.host_commit(net(&d, "clock.half"), 0, &f64::INFINITY.to_le_bytes(), Tick(5)).unwrap();
-    d.fire(net(&d, "global:7"), Tick(5)).unwrap();
-    instant(&mut d, Tick(5));
+    d.host_commit(RoundOneCases::net(&d, "clock.half"), 0, &f64::INFINITY.to_le_bytes(), Tick(5)).unwrap();
+    d.fire(RoundOneCases::net(&d, "global:7"), Tick(5)).unwrap();
+    RoundOneCases::instant(&mut d, Tick(5));
     d.drain_observations();
     d.advance(Tick(11 * NS)).unwrap();
     let seen = d.drain_observations();
@@ -101,22 +86,7 @@ fn a_host_write_outside_its_net_fails_loud_and_changes_nothing() {
     assert_eq!(d.checkpoint(), before, "nothing was queued");
     d.host_commit(NetId(0), 0, &[1], Tick(1)).expect("the last byte of the net is in range");
     d.host_commit(NetId(0), 0, &[1], Tick(1)).expect("the whole net is in range");
-    instant(&mut d, Tick(1));
-}
-
-/// What the clockwatch of the instant at 10 ns read as `HORIZON`, with a timer re-arming the event it
-/// listens to in the same microstep. `watch_first` puts the clockwatch first among the instances.
-fn horizon_with_a_rearming_timer(watch_first: bool) -> i64 {
-    let clock: Placed<'_> = ("clock", timer(), vec![("out", "clk"), ("tick", "t")]);
-    let watch: Placed<'_> = ("cw", clockwatch(), vec![("go", "t")]);
-    let mut d = engine(if watch_first { vec![watch, clock] } else { vec![clock, watch] });
-    d.start().unwrap();
-    instant(&mut d, Tick(0));
-    assert_eq!(d.next_due(), Some(Tick(10 * NS)));
-    instant(&mut d, Tick(10 * NS));
-    let seen = d.read(net(&d, "cw.seen")).to_vec();
-    assert_eq!(i64::from_le_bytes(seen[..8].try_into().unwrap()), 10 * NS, "TICK");
-    i64::from_le_bytes(seen[8..].try_into().unwrap())
+    RoundOneCases::instant(&mut d, Tick(1));
 }
 
 #[test]
@@ -124,29 +94,64 @@ fn horizon_counts_the_commits_other_reactions_make_in_the_same_microstep() {
     // finding 1, abi.md R5: the timer fires `t` again at 20 ns in the microstep in which the clockwatch,
     // listening to `t`, runs; the clockwatch may not run its clock through 20 ns, whatever the order
     // the two reactions are called in
-    assert_eq!(horizon_with_a_rearming_timer(false), 20 * NS - 1);
-    assert_eq!(horizon_with_a_rearming_timer(true), 20 * NS - 1);
+    assert_eq!(RoundOneCases::horizon_with_a_rearming_timer(false), 20 * NS - 1);
+    assert_eq!(RoundOneCases::horizon_with_a_rearming_timer(true), 20 * NS - 1);
 
     // round-2 finding 7: an IRREVERSIBLE reaction runs last and once, so its commits cannot be seen by
     // the others; when one fires with others in a microstep every reaction of it gets the current tick.
     // Here it re-fires `a` 5 ticks on, while the clockwatch also listens to `a`.
     for emulator_first in [true, false] {
-        let emu: Placed<'_> = ("emu", rearm(), vec![("a", "a")]);
-        let cw: Placed<'_> = ("cw", clockwatch(), vec![("go", "a")]);
-        let mut d = engine(if emulator_first { vec![emu, cw] } else { vec![cw, emu] });
+        let emu: Placed<'_> = ("emu", Rearm::handle(), vec![("a", "a")]);
+        let cw: Placed<'_> = ("cw", ClockWatch::handle(), vec![("go", "a")]);
+        let mut d = RoundOneCases::engine(if emulator_first { vec![emu, cw] } else { vec![cw, emu] });
         d.start().unwrap();
-        instant(&mut d, Tick(0));
-        d.fire(net(&d, "a"), Tick(100)).unwrap();
-        instant(&mut d, Tick(100));
-        let seen = d.read(net(&d, "cw.seen")).to_vec();
+        RoundOneCases::instant(&mut d, Tick(0));
+        d.fire(RoundOneCases::net(&d, "a"), Tick(100)).unwrap();
+        RoundOneCases::instant(&mut d, Tick(100));
+        let seen = d.read(RoundOneCases::net(&d, "cw.seen")).to_vec();
         assert_eq!(i64::from_le_bytes(seen[8..].try_into().unwrap()), 100, "emulator_first = {emulator_first}");
         assert_eq!(d.next_due(), Some(Tick(105)), "the re-fire is pending");
     }
     // alone, an irreversible reaction keeps the horizon the queue and the limit give it
-    reset_calls();
-    let mut d = engine(vec![("emu", rearm(), vec![("a", "a")])]);
+    CallCounts::reset();
+    let mut d = RoundOneCases::engine(vec![("emu", Rearm::handle(), vec![("a", "a")])]);
     d.start().unwrap();
-    d.fire(net(&d, "a"), Tick(100)).unwrap();
-    instant(&mut d, Tick(100));
-    assert_eq!(calls("rearm").1, 1);
+    d.fire(RoundOneCases::net(&d, "a"), Tick(100)).unwrap();
+    RoundOneCases::instant(&mut d, Tick(100));
+    assert_eq!(CallCounts::of("rearm").1, 1);
+}
+
+/// The engines the round-one regression tests run.
+pub struct RoundOneCases;
+
+impl RoundOneCases {
+    /// The engine helper `engine`.
+    fn engine(devices: Vec<Placed<'_>>) -> Digital {
+        Digital::new(PlanBinding::bind_by_name(devices, Resolution::default()).expect("binds"), DigitalLimits::default(), TimePointRule::default())
+    }
+
+    /// The net helper `net`.
+    fn net(d: &Digital, name: &str) -> NetId {
+        PlanBinding::net_named(d.plan(), name)
+    }
+
+    /// The instant helper `instant`.
+    fn instant(d: &mut Digital, at: Tick) {
+        d.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).unwrap();
+    }
+
+    /// What the clockwatch of the instant at 10 ns read as `HORIZON`, with a timer re-arming the event it
+    /// listens to in the same microstep. `watch_first` puts the clockwatch first among the instances.
+    fn horizon_with_a_rearming_timer(watch_first: bool) -> i64 {
+        let clock: Placed<'_> = ("clock", Timer::handle(), vec![("out", "clk"), ("tick", "t")]);
+        let watch: Placed<'_> = ("cw", ClockWatch::handle(), vec![("go", "t")]);
+        let mut d = RoundOneCases::engine(if watch_first { vec![watch, clock] } else { vec![clock, watch] });
+        d.start().unwrap();
+        RoundOneCases::instant(&mut d, Tick(0));
+        assert_eq!(d.next_due(), Some(Tick(10 * NS)));
+        RoundOneCases::instant(&mut d, Tick(10 * NS));
+        let seen = d.read(RoundOneCases::net(&d, "cw.seen")).to_vec();
+        assert_eq!(i64::from_le_bytes(seen[..8].try_into().unwrap()), 10 * NS, "TICK");
+        i64::from_le_bytes(seen[8..].try_into().unwrap())
+    }
 }

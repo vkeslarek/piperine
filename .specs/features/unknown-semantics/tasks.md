@@ -19,8 +19,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run reaction**: `cargo test -p piperine-transpile --test reaction`
 **Run abilayouts**: `cargo test -p piperine-abi --test contract layouts::`
 **Run abicaller**: `cargo test -p piperine-abi --test thunks caller::`
-**Run queue**: `cargo test -p piperine-digital-solver --test queue`
-**Run instant**: `cargo test -p piperine-digital-solver --test instant`
+**Run queue**: `cargo test -p piperine-digital-solver --test engine queue::`
+**Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run irdigital**: `cargo test -p piperine-ir --test digital`
 **Run interp**: `cargo test -p piperine-interp --test frozen`
 **Run planshape**: `cargo test -p piperine-plan --test digital_shape`

@@ -15,7 +15,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesnatures**: `cargo test -p piperine-lang --test types_natures`
 **Run elabnatures**: `cargo test -p piperine-lang --test elab_natures`
 **Run sourcenatures**: `cargo test -p piperine-parity --test source_natures`
-**Run relax**: `cargo test -p piperine-digital-solver --test relax`
+**Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol_transient`
 **Run irresolved**: `cargo test -p piperine-ir --test resolved`
 **Run interp**: `cargo test -p piperine-interp --test frozen`
