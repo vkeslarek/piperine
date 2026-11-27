@@ -116,8 +116,9 @@ impl SourceTree {
         SourceTree { files }
     }
 
-    /// Whether a crate exists only to give tests their fixtures (`piperine-device-fixtures`): its sources are test code.
-    fn is_fixtures_crate(crate_name: &str) -> bool {
+    /// Whether a crate exists only to give tests their fixtures (`piperine-device-fixtures`): its sources are test
+    /// code, yet its type names stay unique like product code's, so one device is never declared twice.
+    pub fn is_fixtures_crate(crate_name: &str) -> bool {
         crate_name.ends_with("-fixtures")
     }
 
