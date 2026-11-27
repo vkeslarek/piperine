@@ -9,6 +9,7 @@ members = [
     "crates/piperine-ir",
     "crates/piperine-lang",
     "crates/piperine-project",
+    "crates/piperine-repository-guards",
     "crates/piperine-numbers",
     "crates/piperine-parity",
     "crates/piperine-plan",
@@ -16,7 +17,7 @@ members = [
     "crates/piperine-transpile",
 ]
 
-default-members = [".", "crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-api", "crates/piperine-cli", "crates/piperine-digital-solver", "crates/piperine-interp", "crates/piperine-ir", "crates/piperine-lang", "crates/piperine-numbers", "crates/piperine-parity", "crates/piperine-plan", "crates/piperine-project", "crates/piperine-solver", "crates/piperine-transpile"]
+default-members = [".", "crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-api", "crates/piperine-cli", "crates/piperine-digital-solver", "crates/piperine-interp", "crates/piperine-ir", "crates/piperine-lang", "crates/piperine-numbers", "crates/piperine-parity", "crates/piperine-plan", "crates/piperine-project", "crates/piperine-repository-guards", "crates/piperine-solver", "crates/piperine-transpile"]
 
 [workspace.package]
 version = "0.2.0"
@@ -181,6 +182,14 @@ opt-level = 2
 # The numeric crate's tests check every f16 input and millions of operand pairs against exact
 # big-integer arithmetic: unoptimized they take minutes. Optimization changes no result (integer
 # and correctly rounded float arithmetic), and overflow checks stay on in a dev build.
+# The guards crate parses every source of the repository with `syn` in each test run; unoptimized
+# that is 10 s, optimized it is a second. Results are the same.
+[profile.dev.package.syn]
+opt-level = 3
+
+[profile.dev.package.proc-macro2]
+opt-level = 3
+
 [profile.dev.package.piperine-numbers]
 opt-level = 3
 

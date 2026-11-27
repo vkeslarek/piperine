@@ -1,0 +1,10 @@
+[package]
+name = "piperine-repository-guards"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+# Test-only crate: no in-tree dependency, so a guard can never be satisfied by the code it judges.
+[dependencies]
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }

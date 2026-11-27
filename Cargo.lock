@@ -1305,6 +1305,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-repository-guards"
+version = "0.2.0"
+dependencies = [
+ "proc-macro2",
+ "syn 2.0.118",
+]
+
+[[package]]
 name = "piperine-solver"
 version = "0.2.0"
 dependencies = [
