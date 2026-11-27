@@ -15,7 +15,7 @@ use crate::analyses::ac::AcSweepAnalysisOptions;
 use crate::analyses::dc::DcSolver;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::faer::{FaerSparseLinearSystem, FaerSymbolicMatrix};
-use piperine_analog_solver::math::linear::{LinearSystem, Stamp, SymbolicLinearSystem, SymbolicMatrix};
+use piperine_analog_solver::math::linear::Stamp;
 use crate::prelude::DcAnalysisResult;
 use crate::prelude::NoiseAnalysisResult;
 
@@ -324,7 +324,7 @@ impl<'a> NoiseSolver<'a> {
             gmin: self.context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let mut out = Vec::new();
         for column in bound.analog.noise_sources(&op, amb)? {
             let through_circuit = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, b)| {
@@ -366,7 +366,7 @@ impl<'a> NoiseSolver<'a> {
         context: &Context,
     ) -> crate::core::result::Result<()> {
         let (operating_point, ambient) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         if bound.analog.stimulus_columns(&operating_point, ambient, path)?.is_empty() {
             return Err(piperine_analog_solver::error::Error::simple(
                 piperine_analog_solver::error::SolverDomain::Noise,
@@ -384,7 +384,7 @@ impl<'a> NoiseSolver<'a> {
     fn input_gain_squared(&mut self, frequency: f64, adjoint: &Array1<Complex<f64>>) -> crate::core::result::Result<f64> {
         let path = self.options.input_source_name.clone().expect("an input instance");
         let (operating_point, ambient) = Self::small_signal_point(self.circuit, &self.dc_point, frequency, &self.context);
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let mut transfer = Complex::new(0.0, 0.0);
         for column in bound.analog.stimulus_columns(&operating_point, ambient, &path)? {
             let from_column = column.rows.iter().fold(Complex::new(0.0, 0.0), |sum, (r, g)| {
@@ -466,7 +466,7 @@ impl<'a> NoiseSolver<'a> {
             gmin: context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         Ok(bound.analog.assemble_ac(&op, amb)?.0)
     }
 
@@ -494,7 +494,7 @@ impl<'a> NoiseSolver<'a> {
                 .ok_or_else(|| refuse(format!("output branch `{branch:?}` not found"))),
             Some(FlowOutput::Term { instance, term }) => {
                 let (operating_point, ambient) = Self::small_signal_point(circuit, dc_point, options.sweep_options.start_frequency, context);
-                let bound = circuit.abi.as_mut().expect("a circuit of devices");
+                let bound = &mut circuit.abi;
                 bound.analog.term_linearization(&operating_point, ambient, instance, term)?;
                 Ok(OutputTarget::Term { instance: instance.clone(), term: term.clone() })
             }
@@ -514,7 +514,7 @@ impl<'a> NoiseSolver<'a> {
             OutputTarget::Term { instance, term } => {
                 let (instance, term) = (instance.clone(), term.clone());
                 let (operating_point, ambient) = Self::small_signal_point(self.circuit, &self.dc_point, frequency, &self.context);
-                let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+                let bound = &mut self.circuit.abi;
                 let linearization = bound.analog.term_linearization(&operating_point, ambient, &instance, &term)?;
                 Ok(OutputFunctional { unknowns: linearization.unknowns, direct: Some((instance, linearization.noise)) })
             }

@@ -8,7 +8,6 @@ use crate::analyses::Context;
 use piperine_analog_solver::tolerances::Policy;
 use crate::core::circuit::CircuitInstance;
 use piperine_analog_solver::math::circular_array::CircularArrayBuffer2;
-use piperine_analog_solver::math::faer::FaerSparseLinearSystem;
 use piperine_analog_solver::math::iv::InitialValue;
 use piperine_analog_solver::math::linear::Stamp;
 use piperine_analog_solver::math::newton_raphson::{NewtonRaphsonSolver, NonLinearSystem};
@@ -63,16 +62,14 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
     }
 
     fn any_limiting_report(&self) -> bool {
-        self.circuit.abi.as_ref().is_some_and(|bound| !bound.analog.limiting_active().is_empty())
+        !self.circuit.abi.analog.limiting_active().is_empty()
     }
 
     /// Every Newton iteration but the first ends here: each limit's `LAST`
     /// becomes the `x̂` of the iteration just assembled (abi.md A2).
     fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration_number: usize) {
-        if iteration_number > 0
-            && let Some(bound) = self.circuit.abi.as_mut()
-        {
-            bound.analog.end_iteration();
+        if iteration_number > 0 {
+            self.circuit.abi.analog.end_iteration();
         }
     }
 
@@ -83,9 +80,8 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for DcSystem<'a> {
         _: &ArrayView1<f64>,
     ) {
         // The converged iteration ends like the others.
-        if let Some(bound) = self.circuit.abi.as_mut() {
-            bound.analog.end_iteration();
-        }
+        let bound = &mut self.circuit.abi;
+        bound.analog.end_iteration();
     }
 }
 
@@ -104,7 +100,7 @@ impl DcSystem<'_> {
             None => vec![0.0; state.size()],
         };
         let amb = self.ambient();
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let mut all_stamps = bound.analog.assemble_dc(&x, amb)?;
         if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
             return Err(err);
@@ -152,7 +148,7 @@ impl DcSystem<'_> {
 
 pub struct DcSolver<'a> {
     pub system: DcSystem<'a>,
-    pub solver: NewtonRaphsonSolver<AnalogReference, f64, FaerSparseLinearSystem<f64>>,
+    pub solver: NewtonRaphsonSolver<AnalogReference, f64>,
     /// Convergence tunables for this analysis (MD-04). Defaults on
     /// construction; hosts override before [`solve`](Self::solve).
     pub policy: Policy,
@@ -182,9 +178,8 @@ pub struct DcSolver<'a> {
 impl<'a> DcSolver<'a> {
     pub fn new(circuit: &'a mut CircuitInstance, mut context: Context) -> crate::core::result::Result<Self> {
         Context::init_global();
-        if let Some(bound) = &circuit.abi {
-            bound.tighten(&mut context.tolerances);
-        }
+        let bound = &circuit.abi;
+        bound.tighten(&mut context.tolerances);
         circuit.setup_all(&context)?;
         let netlist = circuit.netlist();
         let size = netlist.max_index().map(|i| i + 1).unwrap_or(0);
@@ -227,7 +222,7 @@ impl<'a> DcSolver<'a> {
     /// a node with neither starts from zero.
     fn start_values(circuit: &CircuitInstance, context: &Context) -> Vec<InitialValue<AnalogReference, f64>> {
         let mut start = context.nodeset.clone();
-        let Some(bound) = &circuit.abi else { return start };
+        let bound = &circuit.abi;
         for hold in &bound.holds {
             if !start.iter().any(|given| given.reference == hold.reference) {
                 start.push(InitialValue { reference: hold.reference.clone(), value: hold.value });
@@ -279,7 +274,7 @@ impl<'a> DcSolver<'a> {
     pub(crate) fn equilibrium(&mut self, first: bool) -> crate::core::result::Result<ndarray::Array1<f64>> {
         if first {
             let plan = std::sync::Arc::clone(&self.plan);
-            let trace = self.policy.trace;
+            let trace = self.policy.trace.clone();
             let outcome = plan.solve_traced(self, trace)?;
             self.homotopy_strategy = outcome.strategy;
             return Ok(outcome.solution);
@@ -298,7 +293,7 @@ impl<'a> DcSolver<'a> {
         self.solver.reset_iteration_counter();
         self.newton_calls = 0;
         let more_points = self.more_points;
-        let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.system.circuit.abi;
         let spt = bound.digital.plan().resolution.seconds_per_tick;
         let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
         // Reactions and discrete functions read the continuation values at rest: every
@@ -316,9 +311,8 @@ impl<'a> DcSolver<'a> {
         }
         let (side, analog) = protocol.into_sides();
         let solution = analog.solution;
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            bound.digital = side.into_digital();
-        }
+        let bound = &mut self.system.circuit.abi;
+        bound.digital = side.into_digital();
         ran.map_err(|error| self.system.circuit.name_error(error))?;
         // A design with no continuous pin runs its instants with no solve.
         let mut values = HashMap::new();
@@ -367,16 +361,13 @@ impl HomotopyDriver for DcSolver<'_> {
     }
 
     fn checkpoint_devices(&mut self) {
-        if let Some(bound) = &self.system.circuit.abi {
-            self.assembly_checkpoint = Some(bound.analog.snapshot());
-        }
+        let bound = &self.system.circuit.abi;
+        self.assembly_checkpoint = Some(bound.analog.snapshot());
     }
 
     fn restore_devices(&mut self) {
-        if let Some(bound) = self.system.circuit.abi.as_mut()
-            && let Some(snapshot) = &self.assembly_checkpoint
-        {
-            bound.analog.restore(snapshot);
+        if let Some(snapshot) = &self.assembly_checkpoint {
+            self.system.circuit.abi.analog.restore(snapshot);
         }
     }
 }

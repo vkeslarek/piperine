@@ -34,6 +34,7 @@ impl Solver {
         self
     }
 
+    /// Kept for a host that fixes the policy of a solver (`tests/checkpoint_restore.rs`).
     pub fn with_policy(mut self, policy: Policy) -> Self {
         self.policy = policy;
         self

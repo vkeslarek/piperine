@@ -6,6 +6,9 @@
 //! carries the diagnostic toggles that used to be read from `PIPERINE_TRACE_*`
 //! env vars inline. Every default equals the literal it replaced (SS-09 parity).
 
+use std::io::Write;
+use std::sync::{Arc, Mutex};
+
 /// Gmin-stepping homotopy schedule (SPICE gmin stepping). The defaults are the
 /// literals that used to live inline in `GminStepping::converge`.
 #[derive(Debug, Clone, Copy)]
@@ -135,7 +138,7 @@ impl Default for StepperGains {
 /// `PIPERINE_TRACE_{GMIN,SRC,TRAN}` env reads: the env vars seed the flags via
 /// [`TraceFlags::from_env`], and the code paths read the typed fields.
 /// Default-off, matching the previous unset-env behavior.
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub struct TraceFlags {
     /// Trace gmin-stepping solves (`PIPERINE_TRACE_GMIN`).
     pub gmin: bool,
@@ -146,6 +149,48 @@ pub struct TraceFlags {
     /// Read the clock around assembly and the linear solve and report both totals
     /// (`PIPERINE_TRACE_TIMING`). Off, no clock is read and both totals stay 0.
     pub timing: bool,
+    /// Where an enabled trace writes its lines; standard error unless a host chose otherwise.
+    pub sink: TraceSink,
+}
+
+/// Where the lines of a trace go.
+#[derive(Debug, Clone, Default)]
+pub enum TraceSink {
+    /// Standard error, one line each.
+    #[default]
+    StandardError,
+    /// Memory: a host (or a test) reads the lines back with [`lines`](TraceSink::lines).
+    Memory(Arc<Mutex<Vec<String>>>),
+}
+
+impl TraceSink {
+    /// An empty memory sink.
+    pub fn memory() -> Self {
+        TraceSink::Memory(Arc::new(Mutex::new(Vec::new())))
+    }
+
+    /// Writes one trace line.
+    pub fn write(&self, line: String) {
+        match self {
+            TraceSink::StandardError => {
+                // a closed standard error has nowhere to report to
+                let _ = writeln!(std::io::stderr(), "{line}");
+            }
+            TraceSink::Memory(lines) => {
+                if let Ok(mut held) = lines.lock() {
+                    held.push(line);
+                }
+            }
+        }
+    }
+
+    /// The lines a memory sink holds, oldest first; none for standard error.
+    pub fn lines(&self) -> Vec<String> {
+        match self {
+            TraceSink::StandardError => Vec::new(),
+            TraceSink::Memory(lines) => lines.lock().map(|held| held.clone()).unwrap_or_default(),
+        }
+    }
 }
 
 impl TraceFlags {
@@ -157,6 +202,7 @@ impl TraceFlags {
             source: std::env::var("PIPERINE_TRACE_SRC").is_ok(),
             transient: std::env::var("PIPERINE_TRACE_TRAN").is_ok(),
             timing: std::env::var("PIPERINE_TRACE_TIMING").is_ok(),
+            sink: TraceSink::StandardError,
         }
     }
 }

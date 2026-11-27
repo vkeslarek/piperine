@@ -3,7 +3,7 @@
 //! under `DC_CURRENT`, sign unchanged. `diode_iv` covers -1 V to 0.8 V; `diode_rev` covers
 //! -1 V to -20 V, where the `gmin` shunt (1e-12 S times the bias) clears the current floor.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Ngspice, Reference};
@@ -20,7 +20,7 @@ impl Sweep {
     fn compare(&self) {
         let fixture = self.fixture;
         let reference = Ngspice::from_environment().run(fixture);
-        for backend in Backend::selected() {
+        for backend in BackendSelection::selected() {
             self.compare_on(&reference, backend);
         }
     }

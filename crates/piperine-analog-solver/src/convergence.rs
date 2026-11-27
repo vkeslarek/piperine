@@ -408,6 +408,7 @@ impl ConvergencePlan {
     }
 
     /// Override the Newton strategy.
+    /// Kept for a host that swaps the Newton strategy of a plan.
     pub fn with_newton(mut self, newton: Box<dyn NewtonStrategy>) -> Self {
         self.newton = newton;
         self
@@ -416,27 +417,9 @@ impl ConvergencePlan {
     /// Override the transient timestep strategy (ABI-42). The transient driver
     /// delegates `propose_dt`/`reject_dt` to this strategy through the plan,
     /// instead of owning one inline.
+    /// Kept for a host that swaps the transient stepper of a plan.
     pub fn with_stepper(mut self, stepper: Box<dyn StepperStrategy>) -> Self {
         self.stepper = stepper;
-        self
-    }
-
-    /// Override the numerical limits honored across drivers.
-    pub fn with_limits(mut self, limits: PlanLimits) -> Self {
-        self.limits = limits;
-        self
-    }
-
-    /// Override the homotopy schedules the strategies ramp by.
-    pub fn with_schedules(mut self, schedules: Schedules) -> Self {
-        self.schedules = schedules;
-        self
-    }
-
-    /// Override the diagnostic trace toggles handed to the strategies
-    /// (drivers seed them from [`Policy::trace`](crate::tolerances::Policy)).
-    pub fn with_trace(mut self, trace: TraceFlags) -> Self {
-        self.trace = trace;
         self
     }
 
@@ -473,7 +456,7 @@ impl ConvergencePlan {
     /// (ABI-07): a failed attempt restores device-internal state (limiter)
     /// before the next strategy retries from the last accepted point.
     pub fn solve(&self, driver: &mut dyn HomotopyDriver) -> Result<PlanOutcome> {
-        self.solve_traced(driver, self.trace)
+        self.solve_traced(driver, self.trace.clone())
     }
 
     /// [`solve`](Self::solve) with the diagnostic trace toggles of the moment (a driver seeds them
@@ -487,7 +470,7 @@ impl ConvergencePlan {
         driver.restore_devices();
         for strategy in &self.strategies {
             driver.checkpoint_devices();
-            match strategy.converge(driver, &self.schedules, trace) {
+            match strategy.converge(driver, &self.schedules, trace.clone()) {
                 Ok(solution) => {
                     return Ok(PlanOutcome { solution, strategy: Some(strategy.name()) });
                 }
@@ -540,7 +523,7 @@ impl HomotopyStrategy for GminStepping {
             driver.set_gmin_extra(g);
             let result = driver.newton();
             if trace.gmin {
-                eprintln!("GMIN step g={g:.3e} -> {}", if result.is_ok() { "ok" } else { "fail" });
+                trace.sink.write(format!("GMIN step g={g:.3e} -> {}", if result.is_ok() { "ok" } else { "fail" }));
             }
             match result {
                 Ok(_) => {
@@ -566,7 +549,7 @@ impl HomotopyStrategy for GminStepping {
         // point, warm-started from the last stepped solution.
         driver.set_gmin_extra(0.0);
         if trace.gmin {
-            eprintln!("GMIN final solve at gmin_extra=0");
+            trace.sink.write("GMIN final solve at gmin_extra=0".to_string());
         }
         driver.newton()
     }
@@ -622,7 +605,7 @@ impl HomotopyStrategy for SourceStepping {
             }
             driver.set_src_scale(scale);
             if trace.source {
-                eprintln!("SRC step scale={scale:.4} step={step:.4}");
+                trace.sink.write(format!("SRC step scale={scale:.4} step={step:.4}"));
             }
             sol = driver.newton();
         }
@@ -752,6 +735,19 @@ mod tests {
         fn gmin_floor(&self) -> f64 {
             1e-12
         }
+    }
+
+    /// A flag that is on writes the line it always printed, byte for byte, to the sink the policy
+    /// owns; the first gmin step starts at `start_g`.
+    #[test]
+    fn a_trace_line_reaches_the_sink_with_the_bytes_the_flag_printed() {
+        let sink = crate::config::TraceSink::memory();
+        let trace = TraceFlags { gmin: true, sink: sink.clone(), ..TraceFlags::default() };
+        let mut driver = ScriptedDriver::new(|_, _| false);
+        GminStepping.converge(&mut driver, &Schedules::default(), trace).expect("an all-converging driver succeeds");
+        let lines = sink.lines();
+        assert_eq!(lines.first().map(String::as_str), Some("GMIN step g=1.000e-1 -> ok"));
+        assert_eq!(lines.last().map(String::as_str), Some("GMIN final solve at gmin_extra=0"));
     }
 
     /// cktop.c ramp semantics: the schedule starts fully off (scale 0),

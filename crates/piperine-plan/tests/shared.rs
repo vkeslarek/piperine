@@ -37,7 +37,7 @@ fn the_interpreter_and_the_plan_crate_share_one_body_plan() {
     let mut compared = Vec::new();
     for body in m.interp.ir().bodies() {
         let Some(module) = m.interp.module(body.id()) else { continue };
-        let plan = BodyPlan::new(body);
+        let plan = BodyPlan::build(body).expect("the body plans");
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create `{}`: {e}", body.name()));
         let (served, planned) = (View { shape: handle.shape() }, View { shape: plan.shape().shape() });
         let name = body.name();
@@ -72,7 +72,7 @@ impl Modules for Supplier {
 
 fn instances(ir: &Ir, supplier: &Supplier) -> (Vec<String>, piperine_solver::prelude::CircuitInstance) {
     let circuit = Netlist::new(ir).circuit(supplier).unwrap_or_else(|e| panic!("circuit: {e}"));
-    let mut paths = circuit.bound().map(|b| b.names.instances.clone()).unwrap_or_default();
+    let mut paths = circuit.bound().names.instances.clone();
     paths.sort();
     (paths, circuit)
 }

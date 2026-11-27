@@ -57,7 +57,7 @@ fn a_mixed_loop_settles_at_its_operating_point() {
 
     assert!(op.get_node(&node_id(&a)).unwrap().abs() < 1e-12, "v(a) = {:?}", op.get_node(&node_id(&a)));
     assert!((op.get_node(&node_id(&r)).unwrap() - 0.5).abs() < 1e-12);
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     assert_eq!(bytes_of(bound, "q"), HIGH.to_vec(), "q");
     assert_eq!(bytes_of(bound, "code"), LOW.to_vec(), "code = not q");
     assert_eq!(bytes_of(bound, "cmp"), LOW.to_vec(), "v(a) < v(r)");
@@ -93,7 +93,7 @@ fn globals_hold_the_session_values() {
     let mut circuit = b.build().expect("build");
     circuit.dc(Context::default()).expect("dc").solve().expect("dc");
 
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     let read = |name: &str| -> f64 {
         let bytes = bound.analog.var("probe", name).unwrap_or_else(|| panic!("VAR {name}"));
         f64::from_le_bytes(bytes[..8].try_into().unwrap())

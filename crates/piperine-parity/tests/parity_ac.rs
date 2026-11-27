@@ -2,7 +2,7 @@
 //! low-pass twin over the frequencies of ngspice's export agree with ngspice under `AC_MAGNITUDE`
 //! and `AC_PHASE`, on a frequency grid that matches the export's.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::ngspice::{Ngspice, Reference};
@@ -11,7 +11,7 @@ use piperine_solver::prelude::{AcSweepAnalysisOptions, Context};
 #[test]
 fn ac_rc() {
     let reference = Ngspice::from_environment().run("ac_rc");
-    for backend in Backend::selected() {
+    for backend in BackendSelection::selected() {
         compare_on(&reference, backend);
     }
 }
@@ -125,7 +125,7 @@ impl LineSweep {
 #[test]
 fn delay_tline_ac() {
     let reference = Ngspice::from_environment().run("delay_tline");
-    for backend in Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
+    for backend in BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
         LineSweep::compare_on(&reference, backend);
     }
 }

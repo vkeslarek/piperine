@@ -20,7 +20,7 @@ struct Find;
 impl Find {
     /// The plan of the only body of `ir`.
     fn plan(ir: &Ir) -> BodyPlan {
-        BodyPlan::new(ir.bodies().next().expect("a body"))
+        BodyPlan::build(ir.bodies().next().expect("a body")).expect("the body plans")
     }
 
     /// The index of the pin named `name`.

@@ -5,7 +5,7 @@
 //! stand on one grid. Without ngspice (`PIPERINE_NGSPICE=skip`) each twin still solves its sweep
 //! and compares nothing.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::golden::Golden;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
@@ -37,7 +37,7 @@ struct NoiseTwin {
 impl NoiseTwin {
     /// The compiled backends that run a noise twin among the selected ones.
     fn backends() -> Vec<Backend> {
-        Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+        BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
     }
 
     /// The run of the twin on `backend`: its sweep solved, held to `reference` when ngspice ran.

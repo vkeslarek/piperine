@@ -163,7 +163,7 @@ fn an_irreversible_reaction_runs_once_at_an_accepted_time() {
     assert!(result.stats.steps_rejected >= 1);
     assert_eq!(reactions("stub"), 1, "the irreversible reaction ran once");
     assert!(result.iter().any(|s| (s.time() - at).abs() < 1.0e-15), "its instant is an accepted time");
-    assert_eq!(bytes_of(solver.circuit().bound().unwrap(), "out"), HIGH.to_vec());
+    assert_eq!(bytes_of(solver.circuit().bound(), "out"), HIGH.to_vec());
 }
 
 #[test]
@@ -188,7 +188,7 @@ fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
     b.device(delay(), "kick", &[("at", ParamValue::Real(at))], &[net("go")]);
     b.device(inverter(), "inv", &[], &[net("h"), net("hy")]);
     let circuit = b.build().expect("build");
-    let h = circuit.bound().unwrap().names.nets["net:h"].0;
+    let h = circuit.bound().names.nets["net:h"].0;
     let (mut solver, seen) = with_sink(circuit, 1.0e-3, 1.0e-5);
     let calls = Rc::new(Cell::new(0u32));
     let times = Rc::new(RefCell::new(Vec::new()));
@@ -206,7 +206,7 @@ fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
     assert_eq!(calls.get(), 1, "called once");
     assert!((times.borrow()[0] - at).abs() < 1.0e-15, "at its instant");
     assert!(result.iter().any(|s| (s.time() - at).abs() < 1.0e-15), "an accepted time");
-    let bound = solver.circuit().bound().unwrap();
+    let bound = solver.circuit().bound();
     assert_eq!(bytes_of(bound, "h"), HIGH.to_vec());
     assert_eq!(bytes_of(bound, "hy"), LOW.to_vec(), "the write ran its readers");
     let h_changes: Vec<f64> = seen

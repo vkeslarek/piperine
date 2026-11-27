@@ -283,7 +283,7 @@ fn a_structural_set_during_a_run_is_refused() {
     add_vsrc(&mut b, "v1", 1.0, &top, &gnd);
     b.device(resistor_opt(), "x", &[], &[Port::Node(top), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
-    let w_net = circuit.bound().unwrap().names.params[&("x".to_string(), "w".to_string())];
+    let w_net = circuit.bound().names.params[&("x".to_string(), "w".to_string())];
     {
         let mut solver =
             circuit.transient(TransientAnalysisOptions::new(1.0e-3, 1.0e-5), Context::default()).expect("tran");
@@ -291,7 +291,7 @@ fn a_structural_set_during_a_run_is_refused() {
         let err = solver.solve().expect_err("a STRUCTURAL pin cannot change during a run").to_string();
         assert!(err.contains("STRUCTURAL"), "{err}");
     }
-    let bound = circuit.bound().unwrap();
+    let bound = circuit.bound();
     assert_eq!(bound.digital.read(w_net), 1.0e-3f64.to_le_bytes(), "nothing changed: `w` still holds its default");
     assert!(bound.host_writes.is_empty());
 }

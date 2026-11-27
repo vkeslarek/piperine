@@ -49,9 +49,7 @@ crates/piperine-solver/src/analyses/test_devices.rs::c_shape	1
 crates/piperine-solver/src/analyses/test_devices.rs::freq_nonlinear	1
 crates/piperine-solver/src/analyses/test_devices.rs::r_shape	1
 crates/piperine-solver/src/analyses/test_devices.rs::vsrc	1
-crates/piperine-solver/src/analyses/tf.rs::a13_no_debug_eprintln	1
 crates/piperine-solver/src/analyses/tf.rs::input_branch_ref	1
-crates/piperine-solver/src/analyses/tf.rs::no_eprintln_in_tf_solver_a13	1
 crates/piperine-solver/src/analyses/tf.rs::output_ref	2
 crates/piperine-solver/src/analyses/tf.rs::output_ref_node	1
 crates/piperine-solver/src/analyses/transient.rs::device_unaccept	1

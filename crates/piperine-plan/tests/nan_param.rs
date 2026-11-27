@@ -24,7 +24,7 @@ fn a_nan_param_default_is_the_librarys_nan() {
     // the elaborator's `0.0 / 0.0` is `0xfff8..`; the pin holds `f64::NAN`'s bits (`0x7ff8..`)
     let negative_nan = f64::from_bits(0xfff8_0000_0000_0000);
     let ir = NanBody::ir(negative_nan);
-    let plan = BodyPlan::new(ir.bodies().next().expect("a body"));
+    let plan = BodyPlan::build(ir.bodies().next().expect("a body")).expect("the body plans");
     let shape = plan.shape().shape();
     let pin = shape.pins.iter().find(|pin| pin.name.as_str() == "lo").expect("the param pin");
     assert_eq!(pin.init.as_slice(), f64::NAN.to_le_bytes().as_slice());

@@ -72,10 +72,6 @@ impl DirtySet {
         }
     }
 
-    pub fn is_dirty(&self, f: usize) -> bool {
-        self.0[f]
-    }
-
     pub fn any(&self) -> bool {
         self.0.iter().any(|d| *d)
     }

@@ -4,11 +4,6 @@
 //! `piperine_digital_solver::engine::Digital`, `EquilibriumSide` the
 //! analog side of an operating point over the DC driver and the device
 //! assembly. Neither holds a rule of its own.
-//!
-//! SPEC_DEVIATION: design.md places this file at `src/protocol/adapters.rs`.
-//! Reason: `tests/protocol_seam.rs` (a surviving guard, SAC-13) proves that
-//! no file of `src/protocol/` names a sub-solver item; the adapters name both,
-//! so they live with the drivers that call them.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -436,7 +431,7 @@ pub(crate) struct EquilibriumSide<'s, 'c> {
 
 impl EquilibriumSide<'_, '_> {
     fn bound(&mut self) -> &mut Bound {
-        self.dc.system.circuit.abi.as_mut().expect("a circuit of devices")
+        &mut self.dc.system.circuit.abi
     }
 }
 
@@ -479,7 +474,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
     }
 
     fn mark(&self) -> AssemblySnapshot {
-        self.dc.system.circuit.abi.as_ref().expect("a circuit of devices").analog.snapshot()
+        self.dc.system.circuit.abi.analog.snapshot()
     }
 
     fn restore(&mut self, mark: &AssemblySnapshot) {

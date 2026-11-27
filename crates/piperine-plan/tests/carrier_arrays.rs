@@ -121,7 +121,7 @@ fn an_array_of_carriers_is_one_array_pin() {
     // CV-23, CV-27 AC 1, abi.md §3: one DISCRETE pin per array, `count` elements of one element's layout, never one
     // pin per element
     let (ir, body) = Fixture::memory();
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     assert_eq!(shape.pins.iter().filter(|p| p.kind == kind::DISCRETE && p.name.as_str() != "en").count(), 2, "two arrays, two pins");
     let mem = Fixture::pin(shape, "mem");
@@ -160,7 +160,7 @@ fn a_field_commit_is_a_statement_over_its_levels() {
     // `u16` at byte 1 of a 3-byte element, `pair.2 <- 3` the byte at 3 of a scalar pin, and `words[1] <- ..` the whole
     // element
     let (ir, body) = Fixture::fields();
-    let plan = BodyPlan::new(ir.body(body));
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let words = shape.pins.iter().position(|p| p.name.as_str() == "words").unwrap() as u32;
     let pair = shape.pins.iter().position(|p| p.name.as_str() == "pair").unwrap() as u32;

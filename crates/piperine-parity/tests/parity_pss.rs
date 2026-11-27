@@ -4,7 +4,7 @@
 //! the end of its high half agrees with the closed form `1 / (1 + exp(-T / (2 RC)))`. ngspice's own
 //! `.pss` is not a reference for a driven circuit, so a long `.tran` is the oracle.
 
-use piperine_parity::backend::Backend;
+use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::host::HostRun;
@@ -84,7 +84,7 @@ fn pss_rc() {
     let reference = Ngspice::from_environment().run("pss_rc");
     // the source reads `now()`, which the interpreter (the M1 analog subset) does not run: the
     // Rust backend is the one that runs the twin
-    for backend in Backend::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
+    for backend in BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
         compare(&reference, backend);
     }
 }
@@ -96,7 +96,7 @@ fn pss_rc_through_a_session() {
     // same phase, and the end of the high half against the closed form
     let reference = Ngspice::from_environment().run("pss_rc");
     let backend = Backend::Rust;
-    if !Backend::selected().contains(&backend) {
+    if !BackendSelection::selected().contains(&backend) {
         return;
     }
     let table = HostRun::new("pss_rc", "pss", backend)

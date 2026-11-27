@@ -323,7 +323,7 @@ mod tests {
     /// Every discrete function of the body `make` builds, by its name in the shape.
     fn printed(make: fn(&mut IrBuilder) -> BodyId, name: &str) -> String {
         let (ir, body) = Alone::design(make);
-        let plan = BodyPlan::new(ir.body(body));
+        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let printer = DigitalPrinter::new(ir.body(body), &plan);
         let k = plan
             .shape()

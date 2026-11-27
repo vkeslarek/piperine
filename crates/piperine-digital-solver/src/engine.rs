@@ -324,6 +324,7 @@ impl Digital {
 
     /// A commit by the host to `element` of array net `net`, due at microstep 0 of `at` (as `host_commit`). The element
     /// is checked against the net's `count`.
+    /// Kept for a host that commits one element of an array net (`tests/array_nets.rs`).
     pub fn host_commit_element(&mut self, net: NetId, element: u64, offset: u32, bytes: &[u8], at: Tick) -> Result<(), DigitalError> {
         let Some(spec) = self.plan.nets.get(net.0 as usize).filter(|spec| spec.count > 0) else {
             return Err(DigitalError::HostWrite { net: format!("#{}", net.0), reason: "no such array net" });
@@ -417,6 +418,7 @@ impl Digital {
     }
 
     /// Whether a settle commit is held, waiting for the next time point.
+    /// Kept for the engine's checkpoint and instant tests, and the solver that asks whether a settle holds commits.
     pub fn holds_settle_commits(&self) -> bool {
         !self.settle_commits.is_empty()
     }
@@ -510,6 +512,7 @@ impl Digital {
 
     /// The number of nets a `rewind` would put back: those written since the oldest open mark
     /// (a diagnostic).
+    /// Kept for the checkpoint tests; a host that restores the journal reads it.
     pub fn journaled_nets(&self) -> usize {
         self.store.journal_len()
     }
@@ -589,6 +592,7 @@ impl Digital {
     }
 
     /// The observations of finished microsteps not yet drained.
+    /// Kept for a host that drains the observations of an advance (`tests/host.rs`).
     pub fn observations(&self) -> &[Observation] {
         self.obs.list()
     }

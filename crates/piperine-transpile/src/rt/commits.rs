@@ -61,6 +61,7 @@ impl Commits {
 
     /// `st.n <- value`, `word[i] <- value`: the value's bytes at `offset` inside the range statement `statement`
     /// declares, the levels of a field or of one element of a value array.
+    /// Kept for the generated runtime of an array net, which commits a range.
     pub fn commit_range<T: Carried>(&mut self, statement: u32, offset: u32, value: T, after: f64) {
         self.entries.push(Entry { statement, element: None, offset, bytes: value.pin(), after });
     }

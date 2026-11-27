@@ -80,7 +80,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
     let mut ac = circuit.ac(Context::default()).expect("ac");
     let reactions_before = REACTIONS.load(Ordering::SeqCst);
     let nets_before: Vec<Vec<u8>> = {
-        let bound = ac.system.circuit.bound().expect("bound");
+        let bound = ac.system.circuit.bound();
         (0..bound.digital.plan().nets.len())
             .map(|i| bound.digital.read(piperine_digital_solver::net::NetId(i as u32)).to_vec())
             .collect()
@@ -102,7 +102,7 @@ fn an_rlc_peak_matches_the_baseline_on_devices() {
 
     // No reaction ran and no pin changed during the sweep.
     assert_eq!(REACTIONS.load(Ordering::SeqCst), reactions_before, "a reaction ran");
-    let bound = circuit.bound().expect("bound");
+    let bound = circuit.bound();
     for (i, before) in nets_before.iter().enumerate() {
         let now = bound.digital.read(piperine_digital_solver::net::NetId(i as u32));
         assert_eq!(now, before.as_slice(), "net {i} changed");

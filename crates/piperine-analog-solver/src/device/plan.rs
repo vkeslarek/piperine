@@ -171,6 +171,17 @@ pub struct AnalogPlan {
     pattern: Vec<(AnalogReference, AnalogReference)>,
 }
 
+/// A lookup into a shape that passed `validate`: an index the validator vouched for that still
+/// misses is the shape's error, not a panic.
+struct ShapeLookup;
+
+impl ShapeLookup {
+    /// `found`, or the error naming the instance, the kind of entry and its index.
+    fn get<T>(found: Option<T>, path: &str, what: &str, index: usize) -> Result<T, Error> {
+        found.ok_or_else(|| device_error(format!("instance `{path}`: {what} {index} is outside its shape")))
+    }
+}
+
 /// The error of one entry of one instance.
 fn entry_error(path: &str, what: &str, name: &str, origin: &str, detail: String) -> Error {
     device_error(format!("instance `{path}`: {what} `{name}` ({origin}): {detail}"))
@@ -227,6 +238,7 @@ impl AnalogPlan {
     }
 
     /// The shape indices of the analog functions taken from instance `i`.
+    /// Kept for a host that lists the analog functions of an instance, as the plan tests do.
     pub fn analog_functions(&self, i: usize) -> Vec<u32> {
         self.instances[i].functions.iter().map(|f| f.k).collect()
     }
@@ -253,11 +265,11 @@ fn column(pins: &[AnalogBinding], shape: &Shape, c: &Cell) -> Option<AnalogRefer
 fn source(path: &str, shape: &Shape, pins: &[AnalogBinding], f: &Function, c: &Cell) -> Result<Source, Error> {
     Ok(match c.kind {
         cell::PIN => {
-            let pin = shape.pins.get(c.index as usize).expect("validated");
+            let pin = ShapeLookup::get(shape.pins.get(c.index as usize), path, "pin", c.index as usize)?;
             let slot = match &pins[c.index as usize] {
                 AnalogBinding::Discrete(s) => *s as usize,
-                AnalogBinding::Unknown(r) if r.idx().is_some() => return Ok(Source::Unknown(r.idx().expect("checked"))),
-                AnalogBinding::Unknown(_) | AnalogBinding::Ground => return Ok(Source::Zero),
+                AnalogBinding::Unknown(r) => return Ok(r.idx().map_or(Source::Zero, Source::Unknown)),
+                AnalogBinding::Ground => return Ok(Source::Zero),
                 AnalogBinding::Absent if pin.kind == kind::CONTINUOUS => {
                     return Err(entry_error(
                         path,
@@ -303,7 +315,7 @@ fn bind_instance(
             if target == GROUND {
                 return Ok(None);
             }
-            let pin = shape.pins.get(target as usize).expect("validated");
+            let pin = ShapeLookup::get(shape.pins.get(target as usize), &path, "pin", target as usize)?;
             match &pins[target as usize] {
                 AnalogBinding::Unknown(r) if r.idx().is_some() => Ok(Some(r.clone())),
                 AnalogBinding::Unknown(_) | AnalogBinding::Ground => Ok(None),
@@ -341,7 +353,7 @@ fn bind_instance(
         });
     }
     for (i, b) in pins.iter().enumerate() {
-        let pin = shape.pins.get(i).expect("checked length");
+        let pin = ShapeLookup::get(shape.pins.get(i), &path, "pin", i)?;
         let fits = match b {
             AnalogBinding::Unknown(r) => {
                 if r.idx().is_some() && netlist.variable_for(r).is_none() {
@@ -459,7 +471,7 @@ fn bind_instance(
             if c.kind == cell::TERM && c.part == part::VALUE {
                 let t = &mut terms[c.index as usize];
                 if t.value.is_some() {
-                    let term = shape.terms.get(c.index as usize).expect("validated");
+                    let term = ShapeLookup::get(shape.terms.get(c.index as usize), &path, "term", c.index as usize)?;
                     return Err(entry_error(
                         &path,
                         "term",
@@ -496,7 +508,7 @@ fn bind_instance(
         for c in &reads {
             sources.push(source(&path, shape, &pins, f, c)?);
         }
-        let read_lens = cell_lens(shape, &f.reads, Access::FunctionRead).expect("validated");
+        let read_lens = ShapeLookup::get(cell_lens(shape, &f.reads, Access::FunctionRead), &path, "read of function", k)?;
         let seed = f
             .partials
             .iter()
@@ -514,7 +526,7 @@ fn bind_instance(
             name: f.name.as_str().into(),
             origin: f.origin.as_str().into(),
             reads: sources.into_iter().zip(read_lens).collect(),
-            write_lens: cell_lens(shape, &f.writes, Access::FunctionWrite).expect("validated"),
+            write_lens: ShapeLookup::get(cell_lens(shape, &f.writes, Access::FunctionWrite), &path, "write of function", k)?,
             seed,
             rows,
             limits,

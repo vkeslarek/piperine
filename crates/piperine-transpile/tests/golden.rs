@@ -248,7 +248,7 @@ fn a_design_with_nothing_to_run_has_no_module() {
     assert!(compiled.loaded().file().is_file(), "a library is built");
     assert_eq!(compiled.loaded().names(), Vec::<&str>::new(), "0 modules");
     let circuit = compiled.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let bound = circuit.bound().expect("the circuit is bound");
+    let bound = circuit.bound();
     assert_eq!(bound.names.instances, Vec::<String>::new(), "a circuit with zero devices");
 }
 

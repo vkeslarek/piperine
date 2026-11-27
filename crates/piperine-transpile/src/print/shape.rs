@@ -505,7 +505,7 @@ mod tests {
         let top = Devices::alone(&mut b, diode, "D", 1, vec![1e-14, 1.0, 0.0]);
         let ir = b.finish(top);
         for body in [diode, vsource] {
-            let plan = BodyPlan::new(ir.body(body));
+            let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
             let shape = plan.shape().shape();
             // the diode: 3 params, 2 nodes, the temperature `vt()` reads and whether the run set it, 3 check pins; flow and
             // charge terms; one limit; the limit, terms and 3 check functions. The source: 2

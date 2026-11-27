@@ -2,12 +2,13 @@
 //! shape and what each function of that shape computes) and the circuit of a design, built over
 //! whatever supplies the module of each body. The interpreter (`piperine-interp`) and the
 //! transpiler (`piperine-transpile`) read one plan, so pins, read order, partial order and affine
-//! flags cannot drift between them.
+//! flags cannot drift between them. `error` holds the error of planning a body `Ir::check` refuses.
 
 mod array;
 mod composite;
 mod derive;
 mod digital;
+mod error;
 mod netlist;
 mod pin;
 mod plan;
@@ -17,6 +18,7 @@ mod widths;
 pub use array::ArrayPin;
 pub use composite::{CompositeLayout, CompositeLeaf};
 pub use derive::{Binding, DerivePlan, ParamReads};
+pub use error::PlanError;
 pub use digital::{CarrierLayout, ReactionMode, ReactionPlan, RecordLayout, StatementPlan};
 pub use netlist::{Modules, Netlist};
 pub use pin::PinLayout;

@@ -19,7 +19,7 @@ pub(crate) trait Pins {
 
 impl Pins for CircuitInstance {
     fn holds(&self, instance: &str, param: &str) -> bool {
-        self.bound().is_some_and(|bound| bound.names.params.contains_key(&(instance.to_string(), param.to_string())))
+        self.bound().names.params.contains_key(&(instance.to_string(), param.to_string()))
     }
 
     fn check(&self, instance: &str, param: &str, value: &ParamValue) -> Result<(), String> {

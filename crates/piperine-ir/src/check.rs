@@ -1343,7 +1343,7 @@ impl<'a> Checker<'a> {
             for param in &body.params {
                 let Some(check) = param.check else { continue };
                 let mut w = Walk::new(owner(false, format!("body {} param {}", body.name, param.name)), 0);
-                self.expect(&w, check, &ValueType::Bool);
+                self.require_type(&w, check, &ValueType::Bool);
                 self.walk(&mut w, Task::Expr(check, Ctx::top()));
             }
             for (ci, list) in body.child_params.iter().enumerate() {
@@ -1354,7 +1354,7 @@ impl<'a> Checker<'a> {
                     let Some(param) = callee.and_then(|b| b.params.get(*p as usize)) else { continue };
                     let item = format!("body {} child {} param {}", body.name, child.name, param.name);
                     let mut w = Walk::new(owner(false, item.clone()), 0);
-                    self.expect(&w, *e, &param.ty);
+                    self.require_type(&w, *e, &param.ty);
                     self.walk(&mut w, Task::Expr(*e, Ctx::top()));
                     self.parent_reads(&item, *e);
                 }
@@ -1414,28 +1414,28 @@ impl<'a> Checker<'a> {
             for (k, site) in body.limits.iter().enumerate() {
                 let Some(enabled) = site.enabled else { continue };
                 let mut w = Walk::new(owner(false, format!("body {} limit {k}", body.name)), 0);
-                self.expect(&w, enabled, &ValueType::Bool);
+                self.require_type(&w, enabled, &ValueType::Bool);
                 self.walk(&mut w, Task::Expr(enabled, Ctx::top()));
             }
             for (k, site) in body.derivatives.iter().enumerate() {
                 let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} derivative {k}", body.name)) }, 0);
-                self.expect(&w, site.state, &ValueType::F64);
+                self.require_type(&w, site.state, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(site.state, Ctx::top()));
                 if let Some(abstol) = site.abstol {
-                    self.expect(&w, abstol, &ValueType::F64);
+                    self.require_type(&w, abstol, &ValueType::F64);
                     self.walk(&mut w, Task::Expr(abstol, Ctx::top()));
                 }
             }
             for (k, site) in body.delays.iter().enumerate() {
                 let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} delay {k}", body.name)) }, 0);
                 for id in [site.input, site.time].into_iter().chain(site.maximum) {
-                    self.expect(&w, id, &ValueType::F64);
+                    self.require_type(&w, id, &ValueType::F64);
                     self.walk(&mut w, Task::Expr(id, Ctx::top()));
                 }
             }
             for (k, source) in body.noise_sources.iter().enumerate() {
                 let mut w = Walk::new(Owner { value_input: true, ..owner(false, format!("body {} noise source {k}", body.name)) }, 0);
-                self.expect(&w, source.density, &ValueType::F64);
+                self.require_type(&w, source.density, &ValueType::F64);
                 self.walk(&mut w, Task::Expr(source.density, Ctx::top()));
             }
             for (k, reaction) in body.reactions.iter().enumerate() {
@@ -1482,7 +1482,7 @@ impl<'a> Checker<'a> {
                 value_input: false,
             };
             let mut w = Walk::new(owner, function.params.len());
-            self.expect(&w, function.body, &function.ret);
+            self.require_type(&w, function.body, &function.ret);
             self.walk(&mut w, Task::Expr(function.body, Ctx::top()));
             graph.push(w.calls);
         }
@@ -1563,7 +1563,7 @@ impl<'a> Checker<'a> {
         match stmt {
             Stmt::Let { local, init } => {
                 match w.owner.locals.get(*local as usize).cloned() {
-                    Some(expected) => self.expect(w, *init, &expected),
+                    Some(expected) => self.require_type(w, *init, &expected),
                     None => self.report(w.owner.item.clone(), origin, format!("let binds local {local}, out of range ({} locals)", w.owner.locals.len())),
                 }
                 next.push(Task::Expr(*init, ctx));
@@ -1616,7 +1616,7 @@ impl<'a> Checker<'a> {
                     None => {}
                 }
                 for a in addends {
-                    self.expect(w, a.value, &ValueType::F64);
+                    self.require_type(w, a.value, &ValueType::F64);
                     next.push(Task::Expr(a.value, ctx));
                 }
             }
@@ -1695,7 +1695,7 @@ impl<'a> Checker<'a> {
 
     /// `id`, placed where `want` is required (a `let`, an addend, a `where`, a function body),
     /// must have that type.
-    fn expect(&mut self, w: &Walk, id: ExprId, want: &ValueType) {
+    fn require_type(&mut self, w: &Walk, id: ExprId, want: &ValueType) {
         if let Some(got) = self.ty(id) {
             if got != want {
                 let origin = self.expr_origin(id);

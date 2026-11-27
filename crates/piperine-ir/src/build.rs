@@ -157,11 +157,6 @@ impl IrBuilder {
         AggregateId((self.aggregates.len() - 1) as u32)
     }
 
-    /// The wide constant `id` names, as added.
-    pub fn wide_at(&self, id: WideId) -> &WideData {
-        &self.wides[id.index()]
-    }
-
     /// Adds a constant of an integer type wider than 64 bits; `Constant::Wide` and `Expr::Wide` name it by the id.
     pub fn wide(&mut self, data: WideData) -> WideId {
         self.wides.push(data);
@@ -174,6 +169,7 @@ impl IrBuilder {
     }
 
     /// The nature already added under `name`, if any.
+    /// Kept for the IR builders of the test support, which look a nature up by name.
     pub fn find_nature(&self, name: &str) -> Option<NatureId> {
         let at = self.natures.iter().position(|n| n.name == name)?;
         Some(NatureId(at as u32))
@@ -427,6 +423,7 @@ impl IrBuilder {
     }
 
     /// The function already added under `name`, if any.
+    /// Kept for the IR builders of the test support, which look a function up by name.
     pub fn find_function(&self, name: &str) -> Option<FunctionId> {
         let at = self.functions.iter().position(|f| f.name == name)?;
         Some(FunctionId(at as u32))

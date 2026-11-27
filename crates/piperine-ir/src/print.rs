@@ -50,6 +50,7 @@ impl Ir {
     /// The structural form of this IR (IR-11): the tree of the printed text with every
     /// expression's type where its form does not imply it, and no origin or arena id. Two IRs
     /// that differ only in origins or in the order of their arenas print it byte-identically.
+    /// Kept for a host that prints the structure of an `Ir` without its expressions (`tests/structure.rs`).
     pub fn print_structural(&self) -> String {
         Printer::new(self, true).text()
     }

@@ -1,27 +1,15 @@
 //! The backend a twin runs on: the interpreter, or the design transpiled to Rust, built by
 //! `rustc` and loaded (feature `ir-rust`, RS-07). The host names it; nothing picks one by a
-//! heuristic. [`Backend::parse`] is pure over the variable's value, so no test sets one.
+//! heuristic. [`BackendSelection::parse`] is pure over the variable's value, so no test sets one.
 
-/// Which backend builds a twin's circuit.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Backend {
-    /// `piperine-interp`: the reference.
-    Interp,
-    /// `piperine-transpile`: the IR printed as Rust, compiled and loaded.
-    Rust,
-}
+pub use piperine_api::Backend;
 
-impl Backend {
+/// The backends a process runs its twins on, chosen by the variable `PIPERINE_BACKEND`.
+pub struct BackendSelection;
+
+impl BackendSelection {
     /// The variable that picks one backend for a run.
     pub const VARIABLE: &'static str = "PIPERINE_BACKEND";
-
-    /// The name a rejection and the variable use.
-    pub fn name(&self) -> &'static str {
-        match self {
-            Backend::Interp => "interp",
-            Backend::Rust => "rust",
-        }
-    }
 
     /// The backends the variable's value selects: unset or empty gives both, in the order
     /// interpreter then Rust; `interp` or `rust` gives that one only; anything else is an error
@@ -35,7 +23,7 @@ impl Backend {
         }
     }
 
-    /// The backends of this process: `PIPERINE_BACKEND` read once through [`Backend::parse`].
+    /// The backends of this process: `PIPERINE_BACKEND` read once through [`BackendSelection::parse`].
     /// An invalid value fails the test that asks, naming the two valid values.
     pub fn selected() -> Vec<Backend> {
         let value = std::env::var(Self::VARIABLE).ok();

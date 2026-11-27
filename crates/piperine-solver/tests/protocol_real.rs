@@ -73,7 +73,7 @@ fn a_clock_nothing_analog_reads_adds_no_step() {
         let mut circuit = b.build().expect("build");
         let result = run(&mut circuit, 1.0e-3, 1.0e-5);
         // The clock did run: 50 rising edges in 1 ms of 10 µs half periods.
-        assert_eq!(count_of(&bytes_of(circuit.bound().unwrap(), "n")), 50);
+        assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 50);
         result
     };
     assert_eq!(clocked.stats.steps_accepted, plain.stats.steps_accepted);
@@ -112,7 +112,7 @@ fn a_boundary_change_is_delivered_after_the_landing_and_restarts_the_next() {
     // the first-order jump estimate, which it passes, so nothing is rejected and no step falls to the floor.
     assert_eq!(result.stats.steps_rejected, 0, "{:?}", result.stats);
     assert_eq!(result.stats.dt_min_floor_hits, 0);
-    assert_eq!(bytes_of(circuit.bound().unwrap(), "code"), HIGH.to_vec());
+    assert_eq!(bytes_of(circuit.bound(), "code"), HIGH.to_vec());
 }
 
 // ---------------------------------------------------------------------------
@@ -199,7 +199,7 @@ fn a_rejected_step_leaves_no_trace() {
     let result = run(&mut circuit, 1.0e-3, 1.0e-3);
     assert!(FAULTED.with(|f| f.get()), "the Newton failure happened");
     // The store holds every edge once, although the replays ran reactions again.
-    assert_eq!(count_of(&bytes_of(circuit.bound().unwrap(), "n")), 50, "the discrete store left no trace");
+    assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 50, "the discrete store left no trace");
     assert!(reactions("counter") > 50, "the undone instants were replayed ({})", reactions("counter"));
     // The term histories were restored: the run reads what a run with no fault reads.
     let (mut clean, _) = flaky_circuit(false);
@@ -223,7 +223,7 @@ fn the_default_run_copies_the_digital_state_once_per_accepted_step() {
     assert!(rejected >= 2, "the run rejects attempts: {:?}", result.stats);
     // One copy per accepted step, and the two that bracket the run: the start's state and the last
     // step's, which a later run re-enters from. Before the change each rejected attempt took one more.
-    let copies = circuit.bound().unwrap().digital.checkpoints_taken() as usize;
+    let copies = circuit.bound().digital.checkpoints_taken() as usize;
     assert_eq!(copies, result.stats.steps_accepted + 2, "{copies} copies for {} accepted steps and {rejected} rejected attempts", result.stats.steps_accepted);
 }
 
@@ -235,7 +235,7 @@ fn a_design_without_analog_runs_every_instant_with_no_solve() {
     let mut circuit = b.build().expect("build");
     let result = run(&mut circuit, 1.0e-5, 1.0e-7);
     // Rising edges at 1, 3, 5, 7, 9 µs; the edge at 10 µs (falling) is the stop time.
-    assert_eq!(count_of(&bytes_of(circuit.bound().unwrap(), "n")), 5);
+    assert_eq!(count_of(&bytes_of(circuit.bound(), "n")), 5);
     assert_eq!(result.stats.newton_iterations, 0, "no solve");
     assert_eq!(result.stats.steps_accepted, 0);
 }
@@ -247,7 +247,7 @@ fn a_commit_due_after_the_stop_time_stays_pending() {
     b.device(timer(), "clk", &[("half", ParamValue::Real(3.0e-4))], &[net("clk")]);
     let mut circuit = b.build().expect("build");
     run(&mut circuit, 5.0e-4, 1.0e-5);
-    let bound = circuit.bound().unwrap();
+    let bound = circuit.bound();
     assert_eq!(bytes_of(bound, "clk"), HIGH.to_vec(), "the edge at 0.3 ms applied");
     let spt = bound.digital.plan().resolution.seconds_per_tick;
     assert_eq!(bound.digital.next_due(), Some(Tick((6.0e-4 / spt).round() as i64)), "the edge at 0.6 ms waits");

@@ -386,7 +386,7 @@ fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
     let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     spec.options.time_point_rule = rule;
     let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-    session.circuit().expect("a circuit").bound().expect("a bound circuit").digital.time_point_rule()
+    session.circuit().expect("a circuit").bound().digital.time_point_rule()
 }
 
 #[test]

@@ -4,6 +4,7 @@
 //! called through `piperine_abi::caller::Handle`; nothing here is `unsafe`.
 
 pub mod assembly;
+mod cell;
 mod ddt;
 mod delay;
 mod flow;

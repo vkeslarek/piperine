@@ -3,7 +3,6 @@ crates/piperine-transpile/src/cache.rs::library_sha256	1
 crates/piperine-transpile/src/cache.rs::runtime	1
 crates/piperine-transpile/src/cache.rs::rust_dir	1
 crates/piperine-transpile/src/compiled.rs::transpile	1
-crates/piperine-transpile/src/lib.rs::Transpiler	1
 crates/piperine-transpile/src/lib.rs::rt	1
 crates/piperine-transpile/src/print/aggregate.rs::literal_prec	1
 crates/piperine-transpile/src/print/analog.rs::an_affine_term_is_printed_as_constant_plus_fold	1
@@ -56,7 +55,6 @@ crates/piperine-transpile/tests/cache.rs::an_unwritable_directory_is_named	1
 crates/piperine-transpile/tests/carrier_arrays.rs::ram	1
 crates/piperine-transpile/tests/compile.rs::a_compile_error_keeps_the_source_and_shows_stderr	1
 crates/piperine-transpile/tests/compile.rs::the_m1_design_compiles_with_no_error_and_no_warning	1
-crates/piperine-transpile/tests/compile.rs::transpiler	1
 crates/piperine-transpile/tests/differential.rs::every_m1_function_gives_the_interpreters_bytes	1
 crates/piperine-transpile/tests/differential.rs::pnjlim_arm	1
 crates/piperine-transpile/tests/differential.rs::rt	1

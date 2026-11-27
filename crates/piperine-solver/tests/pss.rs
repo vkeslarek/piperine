@@ -138,3 +138,17 @@ fn digital_divider_reports_k_times_period() {
     assert!(msg.contains("appears to be 2·T"), "k·T diagnostic: {msg}");
     assert!(msg.contains("2.000000e-3"), "suggests period = 2·T: {msg}");
 }
+
+/// The shooting reads the arrival of a shot through `TransientAnalysisResult::final_step`: a result with no
+/// step is the transient's error. A shot always records its first step, so the shooting itself cannot be driven
+/// to it; the claim is the reader's.
+#[test]
+fn a_result_with_no_step_has_no_final_step_error() {
+    let empty = piperine_solver::prelude::TransientAnalysisResult::new(Vec::new());
+    match empty.final_step() {
+        Err(piperine_solver::abi::Error::Simple { domain: piperine_solver::abi::SolverDomain::Transient, detail }) => {
+            assert!(detail.contains("no step"), "{detail}")
+        }
+        other => panic!("no step is the transient's error: {other:?}"),
+    }
+}
