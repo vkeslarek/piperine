@@ -144,7 +144,7 @@ fn root_tests_hold_no_end_to_end_target() {
 }
 
 #[test]
-fn examples_hold_no_vams_or_python() {
+fn examples_hold_only_package_sources() {
     let files = SourceTree::files_under(&SourceTree::workspace_root().join("examples"));
     for path in files {
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");

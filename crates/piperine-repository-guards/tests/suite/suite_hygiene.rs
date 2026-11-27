@@ -1066,7 +1066,7 @@ impl RemovedUnknownForms {
         ("an_unknown_delay_commits_unknown_at_the_next_microstep", "a_commit_is_made_after_the_delay_it_names", None),
         ("level_merge_same_and_recast_compute_their_tables", "same_cast_and_math_compute_their_tables", None),
         ("a_maybe_commit_converts_the_pending_it_would_remove", "a_plain_commit_removes_the_pending_it_transports", None),
-        ("a_maybe_replace_converts_every_pending_commit_of_the_statement", "a_replace_commit_removes_every_pending_commit_of_its_statement", None),
+        ("a_maybe_replace_converts_every_pending_commit_of_the_statement", "replace_removes_every_pending_commit_of_the_statement", None),
         ("a_rewind_undoes_a_conversion", "a_rewind_restores_a_removal", None),
         ("a_merge_commit_equal_to_the_value_fires_no_change", "a_commit_equal_to_the_value_fires_no_change", None),
         ("a_merge_commit_merges_with_the_value_then", "the_last_plain_commit_of_a_microstep_is_the_value", None),

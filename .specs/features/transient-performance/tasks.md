@@ -819,7 +819,7 @@ Proof: run parity | test tran_rc ... ok
 **C41** - Without ngspice the parity targets print the skip line and the twins still run (TP-09, AC 5; T23)
 Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
 
-**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C43** - `GAPS.md` has no V12 and `ROADMAP.md` marks `multi-rate` delivered here (TP-10, AC 1; T24) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
@@ -828,7 +828,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 **C44** - Appendix C.2's time-points row describes the as-if rule, its exceptions and the reference mode (TP-10, AC 2; T12) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C45** - The scenario package's comment states the measured step count and `diagnosis.md` has its After table (TP-10, AC 3; T23, T24) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 

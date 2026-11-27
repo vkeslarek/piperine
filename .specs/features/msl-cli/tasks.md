@@ -1794,8 +1794,8 @@ Proof: run book | test the_compiler_chapter_says_the_command_line_exists ... ok
 **C152** - The cheat sheet names `piperine check`, `build`, `run`, `test`, `new`, `clean` and `fmt`. (CLI-19, AC 10; T37)
 Proof: run book | test the_cheat_sheet_lists_the_seven_commands ... ok
 
-**C153** - `CLAUDE.md` and `AGENTS.md` do not say `piperine-api`, `piperine-cli`, `piperine-project` or the root package does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli` and `msl::format` for `piperine-lang`; `piperine-lang-server` is said to be outside the default build and deferred. (CLI-20, AC 1; T39)
-Proof: run suite | test repository_records::the_instruction_files_say_the_host_crates_build ... ok
+**C153** - `CLAUDE.md` and `AGENTS.md` do not say `piperine-api`, `piperine-cli`, `piperine-project` or the root package does not build; the rows state `Project`/`Session` for `piperine-api`, the seven commands for `piperine-cli` and `msl::format` for `piperine-lang`; `piperine-lang-server` is said to be outside the default build and deferred. (CLI-20, AC 1; T39) (retired by code-clarity T10: a pin on a table row of CLAUDE.md and a line of AGENTS.md; the documents are not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C154** - `GAPS.md` no longer says the CLI and the API do not build, and names: no host sequences from the command line, no Python host, the language server (deferred by the user), no trace records. (CLI-20, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok

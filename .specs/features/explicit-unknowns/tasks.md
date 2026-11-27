@@ -1462,7 +1462,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 **C74** - Appendix G holds G.72 and marks G.29, G.46, G.57 closed by it (EU-17, AC 4; T9) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C75** - `abi.md` describes the contract without known bytes, with C7 and weak point 6 removed, and says the ABI is unreleased and changes in place (EU-17, AC 5; T10) (retired by code-clarity T10: a pin on sentences of .specs/features/device-abi/abi.md; the document is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C76** - Appendix H holds the `Default` table, `From`, `PartialEq<Rhs, Out>` and H.10 (EU-17, AC 6; T2) (retired by code-clarity T11: a pin on a sentence of the specification; the specification is the authority)
@@ -1492,7 +1492,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 **C84** - `GAPS.md` closes S6 and G6 by redesign; S8 exists after the amendment and is gone after phase A (EU-19, AC 2; T40) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C85** - The per-level feature's spec opens with its dropped line (EU-19, AC 3; T11) (retired by code-clarity T10: a pin on the first line of the unknown-semantics-per-level spec and a sentence of ROADMAP.md; neither is behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C86** - No `.msl` under `std`, `examples`, `tests` or `crates/*/tests` uses a removed name outside a refusal test (EU-20, AC 1; T27)

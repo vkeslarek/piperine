@@ -21,3 +21,5 @@ retire piperine-repository-guards/boundaries::workspace_shape::hygiene_guard_liv
 retire piperine-repository-guards/suite::suite_hygiene::phdl_corpus_does_not_grow a guard against a retired architecture; no way back to it
 retire piperine-repository-guards/suite::suite_hygiene::lrm_covers_declarations_are_well_formed a guard against a retired architecture; no way back to it
 retire piperine-repository-guards/suite::suite_hygiene::no_dead_architecture_identifiers a guard against a retired architecture; no way back to it
+# fix round 1 (P2-3): the test is not named for the retired front end; it checks what examples/ holds today
+replace piperine-repository-guards/boundaries::workspace_shape::examples_hold_no_vams_or_python piperine-repository-guards/boundaries::workspace_shape::examples_hold_only_package_sources

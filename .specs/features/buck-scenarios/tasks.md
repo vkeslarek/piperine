@@ -688,11 +688,11 @@ Proof: run scenarios | test steady_state_passes_every_check ... ok
 **C73** - Each hiccup of the supervisor lasts exactly 1000 samples, counted against SPEC §8.5. (BS-09, AC 1; T7)
 Proof: run supervisor | test each_hiccup_lasts_1000_samples ... ok
 
-**C74** - SPEC §4.3 has the 3.3 V column with the ± 14.7 mV total, S2b reads "±0.05 ms", §10.1 exists with its bounds, and the fault codes read `Clear`. (BS-09, AC 2 to AC 5; T8) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C74** - SPEC §4.3 has the 3.3 V column with the ± 14.7 mV total, S2b reads "±0.05 ms", §10.1 exists with its bounds, and the fault codes read `Clear`. (BS-09, AC 2 to AC 5; T8) (retired by code-clarity T10: a pin on sentences of examples/buck/SPEC.md; the document is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C75** - The README points at `tests/buck_scenarios.rs` and `tests/e2e/buck/` and no longer says `piperine-api` has no drives or mid-run `set`. (BS-10, AC 1; T14)
-Proof: run suite | test repository_records::the_buck_readme_points_at_the_scenarios ... ok
+**C75** - The README points at `tests/buck_scenarios.rs` and `tests/e2e/buck/` and no longer says `piperine-api` has no drives or mid-run `set`. (BS-10, AC 1; T14) (retired by code-clarity T10: a pin on sentences of examples/buck/README.md, three of them absences; the README is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C76** - `GAPS.md` U3 keeps only S1 at 3.3 V and S1b, and H1 no longer says the buck's scenarios have no host. (BS-10, AC 2; T15) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok

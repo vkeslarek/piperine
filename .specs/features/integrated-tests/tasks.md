@@ -25,6 +25,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookguards**: `cargo test -p piperine --test book_inventory --test book_claims`
 **Run sources**: `cargo test -p piperine-parity --test source_commits --test source_records --test source_time`
 **Run sourcehost**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test source_host`
+**Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is a Sonnet worker (user rule: Sonnet implements, a different model verifies). The
 worktree is `/home/keslarek/Git/piperine-integrated-tests` on `feature/integrated-tests`. Cargo runs with
@@ -766,11 +767,11 @@ Proof: `test -f crates/piperine-parity/tests/digital/time.msl && ! grep -rq "buc
 **C62** - The README's "On demand" block gives the four lines and when to run them. (IT-13, AC 1; T18)
 Proof: run hygiene | test repository_records::the_buck_readme_says_when_to_run_the_buck_on_demand ... ok
 
-**C63** - The README keeps what `docs.rs` already holds it to. (IT-13, AC 1; T18)
-Proof: run hygiene | test repository_records::the_buck_readme_points_at_the_scenarios ... ok
+**C63** - The README keeps what `docs.rs` already holds it to. (IT-13, AC 1; T18) (retired by code-clarity T10: a pin on sentences of examples/buck/README.md, three of them absences; the README is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C64** - `CLAUDE.md` names the integrated gate and the buck on demand. (IT-13, AC 2; T19)
-Proof: run hygiene | test repository_records::the_instructions_name_the_integrated_gate_and_the_buck_on_demand ... ok
+**C64** - `CLAUDE.md` names the integrated gate and the buck on demand. (IT-13, AC 2; T19) (retired by code-clarity T10: a pin on sentences of CLAUDE.md; the document is not behaviour)
+Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C66** - The root `tests/` guard accepts the modules of the declared `tests/integrated/main.rs` target and still refuses an undeclared `.rs`. (IT-03, AC 1; T10)
 Proof: run shape | test root_tests_hold_no_end_to_end_target ... ok

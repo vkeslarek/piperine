@@ -1,6 +1,5 @@
 //! The structural guards over the tracking files the repository keeps next to its sources (CC-12 AC 2):
-//! the buck's README names the commands that run it, `CLAUDE.md` names the integrated gate and the host
-//! crates, `ROADMAP.md` is forward-looking, `GAPS.md` lists exactly the error codes no source raises, and
+//! the buck's README names the commands that run it, `ROADMAP.md` is forward-looking, `GAPS.md` lists exactly the error codes no source raises, and
 //! the `generics` feature's `checks.md` gathers every check of its task files once. The tests that
 //! pinned a sentence a closed feature left in a repository record left with code-clarity T10.
 
@@ -55,47 +54,10 @@ fn the_buck_readme_says_when_to_run_the_buck_on_demand() {
 }
 
 #[test]
-fn the_instructions_name_the_integrated_gate_and_the_buck_on_demand() {
-    // integrated-tests IT-13 AC 2, narrowed by the CLAUDE.md rewrite of 2026-11-24 (AGENTS.md now
-    // points at CLAUDE.md): `CLAUDE.md` names the integrated gate, the buck's README and the root's
-    // integrated tests
-    let claude = RepositoryRecords::read("CLAUDE.md");
-    for held in ["cargo test -p piperine --test integrated", "examples/buck/README.md", "tests/integrated/"] {
-        assert!(claude.contains(held), "CLAUDE.md names `{held}`");
-    }
-}
-
-#[test]
-fn the_buck_readme_points_at_the_scenarios() {
-    // buck-scenarios BS-10 AC 1: S2 to S10 run from `tests/buck_scenarios.rs` over `tests/e2e/buck/`
-    // through `Session::drive` and `Session::set_at`; the README no longer says `piperine-api` has no
-    // drives or mid-run `set`, and only the Python sketch keeps "No such host exists yet"
-    let readme = RepositoryRecords::read("examples/buck/README.md");
-    for held in ["tests/buck_scenarios.rs", "tests/e2e/buck/", "Session::drive", "Session::set_at", "S2 to S10"] {
-        assert!(readme.contains(held), "the README names `{held}`");
-    }
-    for stale in ["has no drives, waits or mid-run `set`", "which no host offers yet", "no host offers"] {
-        assert!(!readme.contains(stale), "the README still says `{stale}`");
-    }
-    assert!(readme.contains("No such host exists yet for Python"), "the Python sketch keeps saying that no Python host exists");
-}
-
-#[test]
-fn the_instruction_files_say_the_host_crates_build() {
-    // CLI-20 AC 1, narrowed by the CLAUDE.md rewrite of 2026-11-24: the crate table's rows say the
-    // host library holds `Project` and `Session`
-    let claude = RepositoryRecords::read("CLAUDE.md");
-    let row = |name: &str| claude.lines().find(|l| l.starts_with(&format!("| `{name}` |"))).unwrap_or_else(|| panic!("CLAUDE.md has a row for {name}")).to_string();
-    let api = row("piperine-api");
-    assert!(api.contains("`Project`") && api.contains("`Session`"), "the piperine-api row names Project and Session: {api}");
-    assert!(RepositoryRecords::read("AGENTS.md").contains("CLAUDE.md"), "AGENTS.md points at CLAUDE.md");
-}
-
-#[test]
 fn the_roadmap_is_forward_looking() {
     // ROADMAP.md rewrite (user, 2026-11-21: "limpar ... coloca certinho, tabelado, o que tem no pool de
     // desenvolvimento"): the roadmap lists only what is in flight or waits, in tables, and no longer
-    // carries delivery history (that lives in STATE.md, held by the `state_records_*` tests above);
+    // carries delivery history (that lives in STATE.md; the tests that pinned its sentences left with code-clarity T10);
     // what long-run, host-ii and msl-fixes left is still named as a future row
     let roadmap = RepositoryRecords::read("ROADMAP.md");
     for section in ["## Development pool", "### In flight", "### Waiting, in order", "### After the review", "## Decisions waiting for the user"] {

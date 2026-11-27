@@ -13,8 +13,8 @@
 //! - `allowance`, `ownership_rules`, `structure_rules`: the ratchet guards, their allowance files
 //!   and the rules they judge;
 //! - `naming_rules`, `documentation_rules`: the glossary, the dictionary and the doc-comment rules;
-//! - `suite_census`, `worklist`, `worklist_rules`: the census of the suite and the inventories that
-//!   tasks give verdicts to;
+//! - `suite_census`, `worklist`, `worklist_rules`, `unnamed_tests`: the census of the suite and the
+//!   inventories that tasks give verdicts to;
 //! - `repoint`: the rewrite that keeps those proofs true while tests move, merge and are removed.
 #![deny(missing_docs)]
 
@@ -33,6 +33,7 @@ mod source_tree;
 mod suite_census;
 mod structure_rules;
 mod test_targets;
+mod unnamed_tests;
 mod worklist;
 mod worklist_rules;
 
@@ -52,3 +53,4 @@ pub use naming_rules::{Dictionary, Glossary, NameWords, NamingRules};
 pub use suite_census::{CrateCensus, SuiteCensus};
 pub use worklist::Worklist;
 pub use worklist_rules::WorklistRules;
+pub use unnamed_tests::UnnamedTests;

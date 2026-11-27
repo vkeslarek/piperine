@@ -1,0 +1,7 @@
+# T12 fix round 1 (P2-1): uncited duplicates of the digital solver leave; each names its survivor.
+retire piperine-digital-solver/advance::a_changed_analog_read_net_lands_by_analog_read_changed duplicate of advance::a_commit_that_changes_a_carrier_the_analog_side_reads_lands_in_both_rules (same inverter design, host_commit at Tick(4), same Landing, under both rules)
+retire piperine-digital-solver/advance::a_reaction_that_reads_a_continuous_pin_lands_by_continuous_read duplicate of advance::a_reaction_that_reads_a_continuous_pin_lands_in_both_rules (same sampler design and fire, same cause, plus the tick, under both rules)
+retire piperine-digital-solver/advance::an_irreversible_reaction_lands_by_irreversible duplicate of advance::an_irreversible_reaction_lands_in_both_rules (same stub design and fire, same cause, plus the tick, under both rules)
+retire piperine-digital-solver/queue::a_replace_commit_removes_every_pending_commit_of_its_statement duplicate of queue::replace_removes_every_pending_commit_of_the_statement (same three pushes and the REPLACE; the survivor asserts the drained values)
+# the finish pair merges: the both-rules test gained the checkpoint assertion of the cited test, which it replaces
+replace piperine-digital-solver/advance::advance_returns_final_at_a_finish piperine-digital-solver/advance::a_finish_at_an_instant_run_ahead_is_final_in_both_rules

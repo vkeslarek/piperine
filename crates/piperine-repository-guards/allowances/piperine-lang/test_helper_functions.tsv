@@ -15,7 +15,6 @@ crates/piperine-lang/tests/book.rs::repo	1
 crates/piperine-lang/tests/book.rs::span_names	1
 crates/piperine-lang/tests/book.rs::std_namespaces	1
 crates/piperine-lang/tests/buck_example.rs::buck	1
-crates/piperine-lang/tests/buck_example.rs::diagnostic_lines	1
 crates/piperine-lang/tests/buck_example.rs::msl_files	1
 crates/piperine-lang/tests/buck_example.rs::package_dir	1
 crates/piperine-lang/tests/buck_example.rs::package_name	1

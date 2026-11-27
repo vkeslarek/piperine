@@ -1743,7 +1743,7 @@ Proof: run paritytran | test tran_clipper ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
-**C37** - The Book no longer says `settle` is not compiled. (UE-07, AC 2; T22) (retired by code-clarity T10: a pin on a sentence of a tracking file; the tracking file is not behaviour)
+**C37** - The Book no longer says `settle` is not compiled. (UE-07, AC 2; T22) (retired by code-clarity T10: a pin on a sentence of the Book (docs/book); the Book's claims are tied to runs by tests/book, not by a wording pin)
 Proof: run ledger | test every_retired_check_is_recorded ... ok
 
 **C38** - A time point with no settle reaction adds no microstep and no record. (Edge case; T11)

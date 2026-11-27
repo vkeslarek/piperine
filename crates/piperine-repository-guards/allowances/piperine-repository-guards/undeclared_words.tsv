@@ -6,7 +6,6 @@ crates/piperine-repository-guards/src/module_declaration.rs::is_cfg_test	1
 crates/piperine-repository-guards/src/ownership_rules.rs::impls_away_from_their_type	1
 crates/piperine-repository-guards/src/structure_rules.rs::doc_text	1
 crates/piperine-repository-guards/tests/boundaries/dependency_graph.rs::the_leaves_and_the_sub_solvers_keep_their_dev_dependencies_out_of_the_tree	1
-crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs::examples_hold_no_vams_or_python	1
 crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs::solver_manifest_has_no_in_tree_dev_dependency	1
 crates/piperine-repository-guards/tests/boundaries/workspace_shape.rs::the_root_package_is_a_re_export_and_nothing_else	1
 crates/piperine-repository-guards/tests/suite/suite_hygiene.rs::IgnoredDocExamples	1
