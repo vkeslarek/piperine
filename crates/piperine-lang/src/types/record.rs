@@ -145,8 +145,8 @@ impl Checker<'_> {
         self.records.open.push(function);
         let mut found = BTreeSet::new();
         let mut all = Vec::new();
-        for e in crate::pom::block_exprs(self.design, &body) {
-            crate::pom::preorder(self.design, e, &mut all);
+        for e in crate::pom::BodyWalk::new(self.design).block_expressions(&body) {
+            crate::pom::BodyWalk::new(self.design).descendants_depth_first(e, &mut all);
         }
         for e in all {
             match &self.design.expr_node(e).kind {

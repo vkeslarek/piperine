@@ -4,17 +4,16 @@
 use std::path::PathBuf;
 
 use super::Lowerer;
-use super::meta::doc;
 use crate::msl::{Diagnostic, Span, parser};
 use crate::pom::decl::{DeclKind, NamespaceData, NamespaceOrigin};
 use crate::pom::design::SourceFileData;
 use crate::pom::ids::DeclId;
-use crate::pom::source::mod_candidates;
+use crate::pom::source::ModLayout;
 
 impl Lowerer<'_> {
     /// Resolve `mod name;` (the namespace `id`, whose item spans `span`).
     pub(crate) fn load_mod(&mut self, id: DeclId, span: Span, name: &str) {
-        let candidates = mod_candidates(&self.path, self.is_root, &self.inline, name);
+        let candidates = ModLayout::new(&self.path, self.is_root, &self.inline).candidates(name);
         let found: Vec<(PathBuf, Vec<u8>)> =
             candidates.iter().filter_map(|c| self.provider.read(c).map(|bytes| (c.clone(), bytes))).collect();
         let [first, second] = &candidates;
@@ -52,7 +51,7 @@ impl Lowerer<'_> {
         }
         let decl = self.design.decl_mut(id);
         decl.kind = DeclKind::Namespace(NamespaceData { origin: NamespaceOrigin::External { file: Some(file) } });
-        decl.meta.docs.extend(parsed.file.inner_docs.iter().map(|d| doc(d, true, file)));
+        decl.meta.docs.extend(parsed.file.inner_docs.iter().map(|d| Lowerer::doc(d, true, file)));
 
         let canonical = self.provider.canonical(&path);
         let saved_file = std::mem::replace(&mut self.file, file);

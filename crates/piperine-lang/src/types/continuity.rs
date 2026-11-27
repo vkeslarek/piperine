@@ -129,7 +129,7 @@ impl Checker<'_> {
             }
             _ => {}
         }
-        crate::pom::expr_children(&node.kind, self.design).into_iter().any(|c| self.continuous(c))
+        crate::pom::BodyWalk::new(self.design).expression_children(&node.kind).into_iter().any(|c| self.continuous(c))
     }
 
     /// Whether the argument of an `analysis` call is the kind `Static`.
@@ -152,7 +152,7 @@ impl Checker<'_> {
         self.continuity.functions.insert(function, false);
         let DeclKind::Fn(f) = &self.design.decl_data(function).kind else { return false };
         let Some(body) = f.body.clone() else { return false };
-        let result = crate::pom::block_exprs(self.design, &body).into_iter().any(|e| self.continuous(e));
+        let result = crate::pom::BodyWalk::new(self.design).block_expressions(&body).into_iter().any(|e| self.continuous(e));
         self.continuity.functions.insert(function, result);
         result
     }

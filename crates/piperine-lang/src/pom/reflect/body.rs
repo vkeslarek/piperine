@@ -122,7 +122,7 @@ impl<'d> Expr<'d> {
     /// lists the expressions of the block's statements; types, patterns and
     /// generic arguments are not expressions.
     pub fn children(self) -> Vec<Expr<'d>> {
-        crate::pom::body::expr_children(self.kind(), self.design).into_iter().map(|c| Expr::new(self.design, c)).collect()
+        crate::pom::BodyWalk::new(self.design).expression_children(self.kind()).into_iter().map(|c| Expr::new(self.design, c)).collect()
     }
 
     /// The expression that lists this one among its [`Expr::children`]; none
@@ -353,7 +353,7 @@ impl<'d> Stmt<'d> {
     /// signal, a reaction and a lone `;` hold none; a nested block's
     /// statements are reached through the expression that owns the block.
     pub fn children(self) -> Vec<Expr<'d>> {
-        crate::pom::body::stmt_children(self.design, self.id).into_iter().map(|e| Expr::new(self.design, e)).collect()
+        crate::pom::BodyWalk::new(self.design).statement_children(self.id).into_iter().map(|e| Expr::new(self.design, e)).collect()
     }
 }
 
@@ -612,69 +612,6 @@ impl Design {
 
     pub fn path(&self, id: PathId) -> Path<'_> {
         Path::new(self, id)
-    }
-}
-
-/// The statements under `stmts`, each followed by those nested in it
-/// (blocks, `if`, `match`, loops), in source order. Items inside a block are
-/// declarations of their own and are not entered.
-pub(crate) fn nested_stmts(design: &Design, stmts: &[StmtId]) -> Vec<StmtId> {
-    let mut out = Vec::new();
-    for s in stmts {
-        walk_stmt(design, *s, &mut out);
-    }
-    out
-}
-
-fn walk_stmt(design: &Design, id: StmtId, out: &mut Vec<StmtId>) {
-    out.push(id);
-    match &design.stmt_node(id).kind {
-        StmtKind::Expr { expr, .. } => walk_expr(design, *expr, out),
-        StmtKind::Let { init, else_, .. } => {
-            if let Some(e) = init {
-                walk_expr(design, *e, out);
-            }
-            if let Some(b) = else_ {
-                walk_block(design, b, out);
-            }
-        }
-        StmtKind::Item(_)
-        | StmtKind::Contribution { .. }
-        | StmtKind::Commit { .. }
-        | StmtKind::Empty
-        | StmtKind::Signal(_)
-        | StmtKind::Reaction(_) => {}
-    }
-}
-
-fn walk_block(design: &Design, block: &crate::pom::body::BlockNode, out: &mut Vec<StmtId>) {
-    for s in &block.stmts {
-        walk_stmt(design, *s, out);
-    }
-}
-
-fn walk_expr(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
-    crate::stack::Stack::deep(|| walk_expr_inner(design, id, out))
-}
-
-fn walk_expr_inner(design: &Design, id: ExprId, out: &mut Vec<StmtId>) {
-    match &design.expr_node(id).kind {
-        ExprKind::Block(b) | ExprKind::Loop { body: b } | ExprKind::While { body: b, .. } | ExprKind::For { body: b, .. } => {
-            walk_block(design, b, out)
-        }
-        ExprKind::If { then, else_, .. } => {
-            walk_block(design, then, out);
-            if let Some(e) = else_ {
-                walk_expr(design, *e, out);
-            }
-        }
-        ExprKind::Match { arms, .. } => {
-            for a in arms {
-                walk_expr(design, a.body, out);
-            }
-        }
-        ExprKind::Paren(inner) => walk_expr(design, *inner, out),
-        _ => {}
     }
 }
 

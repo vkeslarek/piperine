@@ -2,7 +2,8 @@
 //! with their ports and body items, generation, behavior blocks and
 //! reactions.
 
-use super::body::{Block, FieldBinding, Commit, Contribution, Expr, Pat, Path, Type, nested_stmts};
+use super::body::{Block, FieldBinding, Commit, Contribution, Expr, Pat, Path, Type};
+use crate::pom::BodyWalk;
 use super::{Decl, Reflect};
 use crate::pom::body::{BehaviorKind, ExprKind, FieldInit, QuantityRole, StmtKind, TypeKind};
 use crate::pom::decl::{
@@ -657,7 +658,7 @@ impl<'d> Behavior<'d> {
     /// Every contribution of an `analog` block at any depth, in source order.
     pub fn contributions(self) -> Vec<Contribution<'d>> {
         let design = self.decl.design();
-        nested_stmts(design, &self.data().body)
+        BodyWalk::new(design).nested_statements(&self.data().body)
             .into_iter()
             .filter(|s| matches!(design.stmt_node(*s).kind, StmtKind::Contribution { .. }))
             .map(|s| Contribution::new(design, s))
@@ -704,7 +705,7 @@ impl<'d> Reaction<'d> {
     /// Every commit of the body at any depth, in source order.
     pub fn commits(self) -> Vec<Commit<'d>> {
         let design = self.decl.design();
-        nested_stmts(design, &self.data().body.stmts)
+        BodyWalk::new(design).nested_statements(&self.data().body.stmts)
             .into_iter()
             .filter(|s| matches!(design.stmt_node(*s).kind, StmtKind::Commit { .. }))
             .map(|s| Commit::new(design, s))

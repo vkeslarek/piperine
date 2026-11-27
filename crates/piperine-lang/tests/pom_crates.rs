@@ -2,7 +2,7 @@
 //! and, as later tasks land, the embedded `std` and its prelude (PKG-06), crates in the design
 //! (PKG-04), name resolution across crates (PKG-05) and reflection over crates (PKG-07).
 
-use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, FileId, GraphError, PathId, Reflect, Resolution, is_crate_name};
+use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, FileId, GraphError, PathId, Reflect, Resolution};
 
 fn three() -> (CrateGraph, CrateId, CrateId, CrateId) {
     let mut g = CrateGraph::new();
@@ -33,13 +33,13 @@ fn graph_rejects_invalid_and_reserved_names() {
     let (mut g, a, b, _) = three();
     let before = g.clone();
     for name in ["9a", "a-b", "fn", "module", "std", ""] {
-        assert!(!is_crate_name(name), "{name:?}");
+        assert!(!CrateGraph::is_crate_name(name), "{name:?}");
         assert_eq!(g.add_crate(name, "x.msl"), Err(GraphError::InvalidName { name: name.to_string() }));
         assert_eq!(g.add_dependency(a, name, b), Err(GraphError::InvalidName { name: name.to_string() }));
         assert_eq!(g, before, "{name:?} changed the graph");
     }
-    assert!(is_crate_name("util"));
-    assert!(is_crate_name("_x9"));
+    assert!(CrateGraph::is_crate_name("util"));
+    assert!(CrateGraph::is_crate_name("_x9"));
 }
 
 #[test]
@@ -256,7 +256,7 @@ fn a_reserved_root_file_stem_is_reported_and_never_names_std() {
         assert_eq!(found.file, design.root_crate().root().file().id());
         // `krate("std")` is the standard library.
         assert!(design.krate("std").unwrap().is_std(), "{file}");
-        assert!(is_crate_name(name));
+        assert!(CrateGraph::is_crate_name(name));
     }
     // An ordinary stem reports nothing.
     assert!(Design::builder().source("top.msl", "").build().diagnostics().is_empty());

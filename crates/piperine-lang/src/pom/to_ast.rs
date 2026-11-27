@@ -36,14 +36,6 @@ struct Rebuild<'d> {
     embedded: BTreeSet<DeclId>,
 }
 
-fn loc(span: Span) -> ast::Loc {
-    ast::Loc(span)
-}
-
-fn ident(name: &Name) -> ast::Ident {
-    ast::Ident { name: name.text.clone(), raw: name.raw, span: loc(name.span) }
-}
-
 impl<'d> Rebuild<'d> {
     fn new(design: &'d Design) -> Self {
         let embedded = (0..design.stmt_count())
@@ -76,11 +68,11 @@ impl<'d> Rebuild<'d> {
             .map(|d| self.doc(d))
             .collect();
         let items = root.children.iter().map(|c| self.item(*c)).collect();
-        ast::File { inner_docs, items, span: loc(span) }
+        ast::File { inner_docs, items, span: Self::loc(span) }
     }
 
     fn doc(&self, d: &super::meta::Doc) -> ast::Doc {
-        ast::Doc { text: d.text.clone(), block: d.block, span: loc(d.span) }
+        ast::Doc { text: d.text.clone(), block: d.block, span: Self::loc(d.span) }
     }
 
     fn meta(&self, meta: &Meta) -> ast::Meta {
@@ -99,12 +91,12 @@ impl<'d> Rebuild<'d> {
                                 .map(|arg| match arg {
                                     AttrArgNode::Path(p) => ast::AttrArg::Path(self.path(*p)),
                                     AttrArgNode::Lit(l) => ast::AttrArg::Lit(l.clone()),
-                                    AttrArgNode::NameValue(n, l) => ast::AttrArg::NameValue(ident(n), l.clone()),
+                                    AttrArgNode::NameValue(n, l) => ast::AttrArg::NameValue(Self::ident(n), l.clone()),
                                 })
                                 .collect(),
                         ),
                     },
-                    span: loc(a.span),
+                    span: Self::loc(a.span),
                 })
                 .collect(),
         }
@@ -117,9 +109,9 @@ impl<'d> Rebuild<'d> {
         ast::Path {
             segments: segments
                 .iter()
-                .map(|s| ast::PathSeg { ident: ident(&s.name), args: s.args.as_ref().map(|a| self.generic_args(a)) })
+                .map(|s| ast::PathSeg { ident: Self::ident(&s.name), args: s.args.as_ref().map(|a| self.generic_args(a)) })
                 .collect(),
-            span: loc(*span),
+            span: Self::loc(*span),
         }
     }
 
@@ -134,12 +126,12 @@ impl<'d> Rebuild<'d> {
                     })
                     .collect(),
                 turbofish: *turbofish,
-                span: loc(*span),
+                span: Self::loc(*span),
             },
             GenericArgsNode::Paren { inputs, output, span } => ast::GenericArgs::Paren {
                 inputs: inputs.iter().map(|t| self.ty(*t)).collect(),
                 output: output.map(|t| Box::new(self.ty(t))),
-                span: loc(*span),
+                span: Self::loc(*span),
             },
         }
     }
@@ -159,7 +151,7 @@ impl<'d> Rebuild<'d> {
             TypeKind::Flip(inner) => ast::TypeKind::Flip(Box::new(self.ty(*inner))),
             TypeKind::Infer => ast::TypeKind::Infer,
         };
-        ast::Type { kind, span: loc(node.span) }
+        ast::Type { kind, span: Self::loc(node.span) }
     }
 
     // ---- patterns -------------------------------------------------------------------------
@@ -170,7 +162,7 @@ impl<'d> Rebuild<'d> {
         let kind = match &node.kind {
             PatKind::Wild => ast::PatKind::Wild,
             PatKind::Rest => ast::PatKind::Rest,
-            PatKind::Ident { name, sub, .. } => ast::PatKind::Ident { name: ident(name), sub: sub.map(|s| Box::new(self.pat(s))) },
+            PatKind::Ident { name, sub, .. } => ast::PatKind::Ident { name: Self::ident(name), sub: sub.map(|s| Box::new(self.pat(s))) },
             PatKind::Lit(e) => ast::PatKind::Lit(Box::new(self.expr(*e))),
             PatKind::Path(p) => ast::PatKind::Path(self.path(*p)),
             PatKind::Tuple(items) => ast::PatKind::Tuple(pats(items)),
@@ -190,21 +182,21 @@ impl<'d> Rebuild<'d> {
             },
             PatKind::Array(items) => ast::PatKind::Array(pats(items)),
         };
-        ast::Pat { kind, span: loc(node.span) }
+        ast::Pat { kind, span: Self::loc(node.span) }
     }
 
     fn field_pat(&self, f: &FieldPatNode) -> ast::FieldPat {
-        ast::FieldPat { name: ident(&f.name), pat: f.pat.map(|p| self.pat(p)), span: loc(f.span) }
+        ast::FieldPat { name: Self::ident(&f.name), pat: f.pat.map(|p| self.pat(p)), span: Self::loc(f.span) }
     }
 
     // ---- expressions ----------------------------------------------------------------------
 
     fn arg(&self, a: &Arg) -> ast::Arg {
-        ast::Arg { name: a.name.as_ref().map(ident), value: self.expr(a.value), span: loc(a.span) }
+        ast::Arg { name: a.name.as_ref().map(Self::ident), value: self.expr(a.value), span: Self::loc(a.span) }
     }
 
     fn field_init(&self, f: &FieldInit) -> ast::FieldInit {
-        ast::FieldInit { name: ident(&f.name), value: self.expr(f.value), shorthand: f.shorthand, span: loc(f.span) }
+        ast::FieldInit { name: Self::ident(&f.name), value: self.expr(f.value), shorthand: f.shorthand, span: Self::loc(f.span) }
     }
 
     fn boxed(&self, id: ExprId) -> Box<ast::Expr> {
@@ -240,11 +232,11 @@ impl<'d> Rebuild<'d> {
             },
             ExprKind::MethodCall { recv, method, generics, args, .. } => ast::ExprKind::MethodCall {
                 recv: self.boxed(*recv),
-                method: ident(method),
+                method: Self::ident(method),
                 generics: generics.as_ref().map(|g| self.generic_args(g)),
                 args: args.iter().map(|a| self.arg(a)).collect(),
             },
-            ExprKind::Field { expr, name, .. } => ast::ExprKind::Field { expr: self.boxed(*expr), name: ident(name) },
+            ExprKind::Field { expr, name, .. } => ast::ExprKind::Field { expr: self.boxed(*expr), name: Self::ident(name) },
             ExprKind::Index { expr, index } => {
                 ast::ExprKind::Index { expr: self.boxed(*expr), index: self.boxed(*index) }
             }
@@ -293,7 +285,7 @@ impl<'d> Rebuild<'d> {
             ExprKind::IncludeStr(l) => ast::ExprKind::IncludeStr(l.clone()),
             ExprKind::Error => ast::ExprKind::Error,
         };
-        ast::Expr { kind, span: loc(node.span) }
+        ast::Expr { kind, span: Self::loc(node.span) }
     }
 
     fn arm(&self, a: &Arm) -> ast::Arm {
@@ -302,18 +294,18 @@ impl<'d> Rebuild<'d> {
             pat: self.pat(a.pat),
             guard: a.guard.map(|g| self.expr(g)),
             body: self.expr(a.body),
-            span: loc(a.span),
+            span: Self::loc(a.span),
         }
     }
 
     fn closure_param(&self, p: &ClosureParam) -> ast::ClosureParam {
-        ast::ClosureParam { pat: self.pat(p.pat), ty: p.ty.map(|t| self.ty(t)), span: loc(p.span) }
+        ast::ClosureParam { pat: self.pat(p.pat), ty: p.ty.map(|t| self.ty(t)), span: Self::loc(p.span) }
     }
 
     // ---- statements -----------------------------------------------------------------------
 
     fn block(&self, b: &BlockNode) -> ast::Block {
-        ast::Block { stmts: b.stmts.iter().map(|s| self.stmt(*s)).collect(), span: loc(b.span) }
+        ast::Block { stmts: b.stmts.iter().map(|s| self.stmt(*s)).collect(), span: Self::loc(b.span) }
     }
 
     fn stmt(&self, id: StmtId) -> ast::Stmt {
@@ -338,11 +330,11 @@ impl<'d> Rebuild<'d> {
             StmtKind::Empty => ast::StmtKind::Empty,
             StmtKind::Signal(d) => {
                 let DeclKind::Signal(s) = &self.data(*d).kind else { unreachable!("a Signal statement holds a Signal") };
-                ast::StmtKind::Signal { name: ident(self.name(*d)), ty: self.ty(s.ty), init: s.init.map(|e| self.expr(e)) }
+                ast::StmtKind::Signal { name: Self::ident(self.name(*d)), ty: self.ty(s.ty), init: s.init.map(|e| self.expr(e)) }
             }
             StmtKind::Reaction(d) => ast::StmtKind::Reaction(self.reaction(*d)),
         };
-        ast::Stmt { meta: self.meta(&node.meta), kind, span: loc(node.span) }
+        ast::Stmt { meta: self.meta(&node.meta), kind, span: Self::loc(node.span) }
     }
 
     fn reaction(&self, d: DeclId) -> ast::Reaction {
@@ -366,7 +358,7 @@ impl<'d> Rebuild<'d> {
         let span = self.data(d).generics_span?;
         let params = self.children_of(d, |c, data| match &data.kind {
             DeclKind::GenericParam(p) => Some(ast::GenericParam {
-                name: ident(self.name(c)),
+                name: Self::ident(self.name(c)),
                 kind: match p {
                     GenericParamData::Type { bounds, default } => ast::GenericParamKind::Type {
                         bounds: bounds.iter().map(|b| self.path(*b)).collect(),
@@ -376,32 +368,32 @@ impl<'d> Rebuild<'d> {
                         ast::GenericParamKind::Const { ty: self.ty(*ty), default: default.map(|e| self.expr(e)) }
                     }
                 },
-                span: loc(data.span),
+                span: Self::loc(data.span),
             }),
             _ => None,
         });
-        Some(ast::Generics { params, span: loc(span) })
+        Some(ast::Generics { params, span: Self::loc(span) })
     }
 
     fn const_item(&self, d: DeclId) -> ast::ConstItem {
         let DeclKind::Const(c) = &self.data(d).kind else { unreachable!("caller matched Const") };
-        ast::ConstItem { name: ident(self.name(d)), ty: self.ty(c.ty), value: c.value.map(|e| self.expr(e)) }
+        ast::ConstItem { name: Self::ident(self.name(d)), ty: self.ty(c.ty), value: c.value.map(|e| self.expr(e)) }
     }
 
     fn fn_decl(&self, d: DeclId) -> ast::FnDecl {
         let DeclKind::Fn(f) = &self.data(d).kind else { unreachable!("caller matched Fn") };
         let params = self.children_of(d, |c, data| match &data.kind {
-            DeclKind::FnParam(FnParamData::SelfValue) => Some(ast::FnParam::SelfValue(loc(data.span))),
+            DeclKind::FnParam(FnParamData::SelfValue) => Some(ast::FnParam::SelfValue(Self::loc(data.span))),
             DeclKind::FnParam(FnParamData::Named { ty }) => {
-                Some(ast::FnParam::Named { name: ident(self.name(c)), ty: self.ty(*ty), span: loc(data.span) })
+                Some(ast::FnParam::Named { name: Self::ident(self.name(c)), ty: self.ty(*ty), span: Self::loc(data.span) })
             }
-            DeclKind::FnParam(FnParamData::Error) => Some(ast::FnParam::Error(loc(data.span))),
+            DeclKind::FnParam(FnParamData::Error) => Some(ast::FnParam::Error(Self::loc(data.span))),
             _ => None,
         });
         ast::FnDecl {
             is_const: f.is_const,
             abi: f.abi.clone(),
-            name: ident(self.name(d)),
+            name: Self::ident(self.name(d)),
             generics: self.generics(d),
             params,
             ret: f.ret.map(|t| self.ty(t)),
@@ -427,26 +419,26 @@ impl<'d> Rebuild<'d> {
             DeclKind::Const(_) => ast::ItemKind::Const(self.const_item(d)),
             DeclKind::Fn(_) => ast::ItemKind::Fn(self.fn_decl(d)),
             DeclKind::Struct(s) => ast::ItemKind::Struct(ast::StructDecl {
-                name: ident(self.name(d)),
+                name: Self::ident(self.name(d)),
                 generics: self.generics(d),
                 fields: self.fields(d, s.form),
             }),
             DeclKind::Enum(_) => ast::ItemKind::Enum(ast::EnumDecl {
-                name: ident(self.name(d)),
+                name: Self::ident(self.name(d)),
                 generics: self.generics(d),
                 variants: self.children_of(d, |c, v| match &v.kind {
                     DeclKind::Variant(vd) => Some(ast::Variant {
                         meta: self.meta(&v.meta),
-                        name: ident(self.name(c)),
+                        name: Self::ident(self.name(c)),
                         fields: self.fields(c, vd.form),
                         discriminant: vd.discriminant.map(|e| self.expr(e)),
-                        span: loc(v.span),
+                        span: Self::loc(v.span),
                     }),
                     _ => None,
                 }),
             }),
             DeclKind::Trait(t) => ast::ItemKind::Trait(ast::TraitDecl {
-                name: ident(self.name(d)),
+                name: Self::ident(self.name(d)),
                 generics: self.generics(d),
                 supertraits: t.supertraits.iter().map(|p| self.path(*p)).collect(),
                 items: self.impl_items(d),
@@ -457,16 +449,16 @@ impl<'d> Rebuild<'d> {
                 self_ty: self.ty(i.self_ty),
                 items: self.impl_items(d),
             }),
-            DeclKind::Use(u) => ast::ItemKind::Use(use_tree(&u.tree)),
+            DeclKind::Use(u) => ast::ItemKind::Use(Self::use_tree(&u.tree)),
             DeclKind::Namespace(n) => ast::ItemKind::Mod(ast::ModItem {
-                name: ident(self.name(d)),
+                name: Self::ident(self.name(d)),
                 items: match n.origin {
                     NamespaceOrigin::Inline => Some(self.children_of(d, |c, _| Some(self.item(c)))),
                     NamespaceOrigin::External { .. } | NamespaceOrigin::Root => None,
                 },
             }),
             DeclKind::Nature(n) => ast::ItemKind::Nature(ast::NatureDecl {
-                name: ident(self.name(d)),
+                name: Self::ident(self.name(d)),
                 generics: self.generics(d),
                 fields: n.fields.iter().map(|f| self.nature_field(f)).collect(),
             }),
@@ -475,7 +467,7 @@ impl<'d> Rebuild<'d> {
             DeclKind::Error => ast::ItemKind::Error,
             other => unreachable!("a {} is not an item", other.label()),
         };
-        ast::Item { meta: self.item_meta(data), public: data.public, kind, span: loc(data.span) }
+        ast::Item { meta: self.item_meta(data), public: data.public, kind, span: Self::loc(data.span) }
     }
 
     /// The fields of a struct or variant: its `Field` children, in the form
@@ -486,10 +478,10 @@ impl<'d> Rebuild<'d> {
                 meta: self.meta(&f.meta),
                 public: f.public,
                 dir: fd.dir,
-                name: f.name.as_ref().map(ident),
+                name: f.name.as_ref().map(Self::ident),
                 ty: self.ty(fd.ty),
                 init: fd.init.map(|init| self.expr(init)),
-                span: loc(f.span),
+                span: Self::loc(f.span),
             }),
             _ => None,
         });
@@ -508,7 +500,7 @@ impl<'d> Rebuild<'d> {
                 DeclKind::Const(_) => ast::ImplItemKind::Const(self.const_item(c)),
                 _ => return None,
             };
-            Some(ast::ImplItem { meta: self.meta(&data.meta), public: data.public, kind, span: loc(data.span) })
+            Some(ast::ImplItem { meta: self.meta(&data.meta), public: data.public, kind, span: Self::loc(data.span) })
         })
     }
 
@@ -521,16 +513,16 @@ impl<'d> Rebuild<'d> {
                     meta: self.meta(&data.meta),
                     kind: ast::NatureFieldKind::Quantity {
                         which: qd.role,
-                        name: ident(self.name(*q)),
+                        name: Self::ident(self.name(*q)),
                         attrs: qd.attrs.iter().map(|a| self.field_init(a)).collect(),
                     },
-                    span: loc(data.span),
+                    span: Self::loc(data.span),
                 }
             }
             NatureFieldNode::Value { meta, ty, span } => ast::NatureField {
                 meta: self.meta(meta),
                 kind: ast::NatureFieldKind::Value(self.ty(*ty)),
-                span: loc(*span),
+                span: Self::loc(*span),
             },
         }
     }
@@ -542,16 +534,16 @@ impl<'d> Rebuild<'d> {
             DeclKind::Port(pd) => Some(ast::Port {
                 meta: self.meta(&p.meta),
                 dir: pd.dir,
-                name: ident(self.name(c)),
+                name: Self::ident(self.name(c)),
                 ty: self.ty(pd.ty),
                 default: pd.default.map(|e| self.expr(e)),
-                span: loc(p.span),
+                span: Self::loc(p.span),
             }),
             _ => None,
         });
         ast::ModuleDecl {
             abi: m.abi.clone(),
-            name: ident(self.name(d)),
+            name: Self::ident(self.name(d)),
             generics: self.generics(d),
             ports,
             ret: m.ret.map(|t| self.ty(t)),
@@ -566,13 +558,13 @@ impl<'d> Rebuild<'d> {
     fn module_item(&self, c: DeclId, data: &DeclData) -> Option<ast::ModuleItem> {
         let kind = match &data.kind {
             DeclKind::Param(p) => ast::ModuleItemKind::Param {
-                name: ident(self.name(c)),
+                name: Self::ident(self.name(c)),
                 ty: self.ty(p.ty),
                 default: p.default.map(|e| self.expr(e)),
                 where_: p.where_.map(|e| self.expr(e)),
             },
             DeclKind::Signal(s) => ast::ModuleItemKind::Signal {
-                name: ident(self.name(c)),
+                name: Self::ident(self.name(c)),
                 ty: self.ty(s.ty),
                 init: s.init.map(|e| self.expr(e)),
             },
@@ -586,7 +578,7 @@ impl<'d> Rebuild<'d> {
             DeclKind::Error => ast::ModuleItemKind::Error,
             _ => return None,
         };
-        Some(ast::ModuleItem { meta: self.meta(&data.meta), public: data.public, kind, span: loc(data.span) })
+        Some(ast::ModuleItem { meta: self.meta(&data.meta), public: data.public, kind, span: Self::loc(data.span) })
     }
 
     fn module_item_of(&self, c: DeclId) -> ast::ModuleItem {
@@ -613,7 +605,7 @@ impl<'d> Rebuild<'d> {
                 }),
             },
         };
-        ast::Gen { kind, span: loc(data.span) }
+        ast::Gen { kind, span: Self::loc(data.span) }
     }
 
     fn behavior(&self, d: DeclId, b: &super::decl::BehaviorData) -> ast::BehaviorBlock {
@@ -625,7 +617,7 @@ impl<'d> Rebuild<'d> {
         };
         ast::BehaviorBlock {
             kind: b.kind,
-            names: b.names.iter().map(ident).collect(),
+            names: b.names.iter().map(Self::ident).collect(),
             target: self.path(b.target),
             body,
         }
@@ -638,19 +630,30 @@ impl<'d> Rebuild<'d> {
             DeclKind::Error => ast::DigitalItemKind::Error,
             _ => return None,
         };
-        Some(ast::DigitalItem { meta: self.meta(&data.meta), kind, span: loc(data.span) })
+        Some(ast::DigitalItem { meta: self.meta(&data.meta), kind, span: Self::loc(data.span) })
     }
 
     fn digital_item_of(&self, c: DeclId) -> ast::DigitalItem {
         self.digital_item(c, self.data(c)).expect("a generation holds digital items")
     }
-}
 
-fn use_tree(t: &UseTreeNode) -> ast::UseTree {
-    let kind = match &t.kind {
-        UseTreeKind::Simple { alias } => ast::UseKind::Simple { alias: alias.as_ref().map(ident) },
-        UseTreeKind::Glob => ast::UseKind::Glob,
-        UseTreeKind::Group(children) => ast::UseKind::Group(children.iter().map(use_tree).collect()),
-    };
-    ast::UseTree { path: t.path.iter().map(ident).collect(), kind, span: loc(t.span) }
+    /// A span as the location the syntax tree carries.
+    fn loc(span: Span) -> ast::Loc {
+        ast::Loc(span)
+    }
+
+    /// A name as an identifier of the syntax tree.
+    fn ident(name: &Name) -> ast::Ident {
+        ast::Ident { name: name.text.clone(), raw: name.raw, span: Self::loc(name.span) }
+    }
+
+    /// A `use` tree of the design as a syntax-tree one.
+    fn use_tree(t: &UseTreeNode) -> ast::UseTree {
+        let kind = match &t.kind {
+            UseTreeKind::Simple { alias } => ast::UseKind::Simple { alias: alias.as_ref().map(Self::ident) },
+            UseTreeKind::Glob => ast::UseKind::Glob,
+            UseTreeKind::Group(children) => ast::UseKind::Group(children.iter().map(Self::use_tree).collect()),
+        };
+        ast::UseTree { path: t.path.iter().map(Self::ident).collect(), kind, span: Self::loc(t.span) }
+    }
 }

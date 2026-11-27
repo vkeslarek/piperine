@@ -65,7 +65,7 @@ A is chosen. B loses `Send + Sync` and serde for a small gain in spelling. C is 
 | Component | Location | How to Use |
 | --------- | -------- | ---------- |
 | Parser entry | `crates/piperine-lang/src/msl/parser/entry.rs` (`parse`, `ParseResult`) | the builder calls it once per source and keeps both fields |
-| Syntax tree | `crates/piperine-lang/src/msl/ast.rs` | input of lowering, output of `to_ast`; its leaf enums (`UnOp`, `BinOp`, `LitKind`, `Dir`, `Quantity`, `BehaviorKind`) are re-exported by `pom`, not copied |
+| Syntax tree | `crates/piperine-lang/src/msl/ast.rs` | input of lowering, output of `to_ast`; its leaf enums (`UnOp`, `BinOp`, `LitKind`, `Dir`, `Quantity`, `BehaviorKind`) are re-exported by `pom`, not copied (as built: `Quantity` is exported as `QuantityRole`, because the reflection handle `Quantity` takes that name in `pom` and one public name cannot be both) |
 | Structural equality of the AST | `ast::Loc` (compares equal to any `Loc`) | the lossless test is `file.to_ast() == parsed.file` |
 | Diagnostics | `crates/piperine-lang/src/msl/diag.rs` (`Diagnostic`, `render`) | POM diagnostics are the same type, wrapped with a `FileId` |
 | Spans | `crates/piperine-lang/src/msl/span.rs` | every node stores a `Span` |
@@ -114,7 +114,7 @@ All paths are under `crates/piperine-lang/src/pom/`.
 - **Interfaces**:
   - `pub trait SourceProvider { fn read(&self, path: &Path) -> Option<Vec<u8>>; fn canonical(&self, path: &Path) -> PathBuf; }`
   - `pub struct DiskSources;` (reads the filesystem; `canonical` is `std::fs::canonicalize`, falling back to the path) and `pub struct MemorySources` (a `BTreeMap<PathBuf, String>`; `canonical` is the normalized path).
-  - `pub(crate) fn mod_candidates(declaring_file: &Path, inline_mods: &[String], name: &str) -> [PathBuf; 2]`
+  - `pub(crate) ModLayout::new(declaring_file: &Path, is_root: bool, inline_mods: &[String]).candidates(name) -> [PathBuf; 2]` (as built: `is_root` is a third parameter, because a root file such as `top.msl` keeps its children beside it like `mod.msl` does and the path alone cannot say which file is the root)
 - **The rule** (rustc's, with `.msl` for `.rs` and `mod.msl` for `mod.rs`). Let `dir` be the directory that holds the children of the declaring file: the file's own directory when the file is the root or is named `mod.msl`; otherwise `<file's directory>/<file stem>`. Inside inline modules `a`, `b` add `a/b`. Then `mod c;` has the candidates `dir/c.msl` and `dir/c/mod.msl`.
 - **Outcomes**: exactly one candidate readable → that file is parsed with `parse_bytes` (invalid UTF-8 is the parser's own diagnostic) and lowered under an `External` namespace. None, both, or a canonical path already on the chain of files being loaded → no file, an empty namespace, `E0161` at the `mod` item naming the candidates (and "cycle" in the third case). An unreadable root → an empty root file and one `E0161`.
 - `#[path]` has no meaning (spec B.1).

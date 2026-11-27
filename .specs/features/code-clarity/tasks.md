@@ -1432,10 +1432,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
-- [ ] Gate check passes: Quick
+- [x] `pom/` outside `builtin.rs` and `reflect/` has no row in the free-function allowance; no `SPEC_DEVIATION` in the crate
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] `Ty::has_repr` (`lang/src/types/ty.rs`), never referenced (T30, findings 4.1), is removed
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

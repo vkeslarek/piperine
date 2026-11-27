@@ -79,7 +79,7 @@ impl DdtSource {
 
 #[test]
 fn m_dtemp_or_extern_at_a_placement_is_p0001() {
-    // SPEC_DEVIATION (ELAB-06 AC 3): the front end resolves a placement's field against the
+    // ELAB-06 AC 3 is met earlier than written (msl-elab spec, amendment (d)): the front end resolves a placement's field against the
     // module's params only, so `m` and `dtemp` are `E0320` there, before elaboration runs; the
     // model is still rejected at the field with no `Ir`, but the code is not `P0001`. The `P0001`
     // arm in `children.rs` stays for the day the POM resolves implicit params (M2).

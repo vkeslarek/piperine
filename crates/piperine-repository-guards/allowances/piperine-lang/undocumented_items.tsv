@@ -156,7 +156,6 @@ crates/piperine-lang/src/pom/check.rs::Refs::path	1
 crates/piperine-lang/src/pom/check.rs::Refs::res	1
 crates/piperine-lang/src/pom/check.rs::Refs::stmt	1
 crates/piperine-lang/src/pom/check.rs::Refs::ty	1
-crates/piperine-lang/src/pom/crates.rs::::check_name	1
 crates/piperine-lang/src/pom/crates.rs::CrateGraph::crates	1
 crates/piperine-lang/src/pom/crates.rs::CrateGraph::new	1
 crates/piperine-lang/src/pom/decl.rs::::NamespaceData	1
@@ -195,11 +194,9 @@ crates/piperine-lang/src/pom/ids.rs::PatId::index	1
 crates/piperine-lang/src/pom/ids.rs::PathId::index	1
 crates/piperine-lang/src/pom/ids.rs::StmtId::index	1
 crates/piperine-lang/src/pom/ids.rs::TypeId::index	1
-crates/piperine-lang/src/pom/index.rs::::ordered	1
 crates/piperine-lang/src/pom/index.rs::Index::instantiated_by	1
 crates/piperine-lang/src/pom/index.rs::Index::references	1
 crates/piperine-lang/src/pom/index.rs::Index::writers	1
-crates/piperine-lang/src/pom/lower/body.rs::::name	1
 crates/piperine-lang/src/pom/lower/body.rs::Lowerer::arg	1
 crates/piperine-lang/src/pom/lower/body.rs::Lowerer::block	1
 crates/piperine-lang/src/pom/lower/body.rs::Lowerer::expr	1
@@ -214,17 +211,9 @@ crates/piperine-lang/src/pom/lower/body.rs::Lowerer::stmt	1
 crates/piperine-lang/src/pom/lower/body.rs::Lowerer::ty	1
 crates/piperine-lang/src/pom/lower/hardware.rs::Lowerer::digital_item	1
 crates/piperine-lang/src/pom/lower/hardware.rs::Lowerer::module_item_kind	1
-crates/piperine-lang/src/pom/lower/items.rs::::use_tree	1
 crates/piperine-lang/src/pom/lower/items.rs::Lowerer::fn_param	1
-crates/piperine-lang/src/pom/lower/meta.rs::::doc	1
-crates/piperine-lang/src/pom/lower/mod.rs::::item_name	1
-crates/piperine-lang/src/pom/lower/mod.rs::Lowerer::item_kind	1
 crates/piperine-lang/src/pom/meta.rs::::AttrArgNode	1
 crates/piperine-lang/src/pom/meta.rs::::AttrInputNode	1
-crates/piperine-lang/src/pom/reflect/body.rs::::walk_block	1
-crates/piperine-lang/src/pom/reflect/body.rs::::walk_expr	1
-crates/piperine-lang/src/pom/reflect/body.rs::::walk_expr_inner	1
-crates/piperine-lang/src/pom/reflect/body.rs::::walk_stmt	1
 crates/piperine-lang/src/pom/reflect/body.rs::Argument::span	1
 crates/piperine-lang/src/pom/reflect/body.rs::Argument::value	1
 crates/piperine-lang/src/pom/reflect/body.rs::Block::new	1
@@ -409,9 +398,6 @@ crates/piperine-lang/src/pom/resolve/scopes.rs::Named::iter	1
 crates/piperine-lang/src/pom/resolve/scopes.rs::Named::push	1
 crates/piperine-lang/src/pom/resolve/scopes.rs::Scopes::build	1
 crates/piperine-lang/src/pom/source.rs::MemorySources::new	1
-crates/piperine-lang/src/pom/to_ast.rs::::ident	1
-crates/piperine-lang/src/pom/to_ast.rs::::loc	1
-crates/piperine-lang/src/pom/to_ast.rs::::use_tree	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::arg	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::arm	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::behavior	1

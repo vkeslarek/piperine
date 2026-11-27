@@ -29,7 +29,7 @@
 //! [`guide`].
 
 pub mod guide;
-mod body; mod bundles;
+mod body; mod body_walk; mod bundles;
 mod builtin;
 mod check; mod connections;
 mod crates;
@@ -51,10 +51,10 @@ pub use builtin::{BUILTINS, BuiltinId, BuiltinInfo, BuiltinKind, builtin, builti
 pub use decl::*; pub(crate) use connections::PortArguments; pub(crate) use bundles::{BundleLeaf, BundlePlace, ElementNaming}; pub use bundles::BundleView;
 pub use design::{Design, DesignBuilder, DesignDiagnostic, SourceFileData, SourceFileRepr};
 pub use index::{Index, ReferenceId, WriterId};
-pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError, is_crate_name};
+pub use crates::{CrateData, CrateGraph, CrateNode, DependencyData, GraphError};
 pub use ids::{CrateId, DeclId, ExprId, FileId, PathId, PatId, StmtId, TypeId};
 pub use meta::{AttrArgNode, AttrInputNode, AttrNode, Doc, Meta};
 pub use reflect::{Crate, Argument, Attr, Block, FieldBinding, Behavior, Binding, Commit, Const, Contribution, Definition, GenArm, Generation, Instance, Let, Reference, Writer, Module, Nature, Param, Port, Quantity, Reaction, Signal, Decl, Enum, Expr, Field, FnParam, Function, GenericParam, Impl, ImportRef, Namespace, Path, Pat, Reflect, SourceFile, Stmt, Struct, Trait, Type, Use, Variant};
-pub(crate) use reflect::nested_stmts;
+pub(crate) use body_walk::BodyWalk;
 pub use resolution::*;
 pub use source::{DiskSources, MemorySources, SourceProvider};

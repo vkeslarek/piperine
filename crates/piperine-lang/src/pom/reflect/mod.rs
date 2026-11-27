@@ -17,7 +17,6 @@ use super::meta::{AttrArgNode, AttrInputNode, AttrNode, Doc};
 use crate::msl::Span;
 
 pub use crates::Crate;
-pub(crate) use body::nested_stmts;
 pub use body::{Argument, Block, FieldBinding, Commit, Contribution, Expr, Path, Pat, SourceFile, Stmt, Type};
 pub use hardware::{Behavior, Binding, Definition, GenArm, Generation, Instance, Let, Module, Nature, Param, Port, Quantity, Reaction, Signal};
 pub use index::{Reference, Writer};
@@ -182,7 +181,7 @@ pub trait Reflect<'d>: Copy {
         let design = d.design();
         let mut ids = Vec::new();
         for root in decl_roots(design, d.id()) {
-            crate::pom::body::preorder(design, root, &mut ids);
+            crate::pom::BodyWalk::new(design).descendants_depth_first(root, &mut ids);
         }
         ids.into_iter().map(|e| design.expr(e)).collect()
     }
@@ -221,7 +220,7 @@ pub trait Reflect<'d>: Copy {
 /// The root expressions of one declaration's own body, in source order (see
 /// [`Reflect::exprs`]): each is walked pre-order by the caller.
 fn decl_roots(design: &Design, id: DeclId) -> Vec<ExprId> {
-    use crate::pom::body::{block_exprs, stmt_children};
+    use crate::pom::BodyWalk;
     use crate::pom::decl::GenerationData;
     let data = design.decl_data(id);
     let body_items = |roots: &mut Vec<ExprId>| {
@@ -233,13 +232,13 @@ fn decl_roots(design: &Design, id: DeclId) -> Vec<ExprId> {
     };
     let mut roots = Vec::new();
     match &data.kind {
-        DeclKind::Fn(f) => roots.extend(f.body.iter().flat_map(|b| block_exprs(design, b))),
+        DeclKind::Fn(f) => roots.extend(f.body.iter().flat_map(|b| BodyWalk::new(design).block_expressions(b))),
         DeclKind::Reaction(r) => {
             roots.push(r.event);
-            roots.extend(block_exprs(design, &r.body));
+            roots.extend(BodyWalk::new(design).block_expressions(&r.body));
         }
         DeclKind::Behavior(b) => {
-            roots.extend(b.body.iter().flat_map(|s| stmt_children(design, *s)));
+            roots.extend(b.body.iter().flat_map(|s| BodyWalk::new(design).statement_children(*s)));
             body_items(&mut roots);
         }
         DeclKind::Module(m) => {

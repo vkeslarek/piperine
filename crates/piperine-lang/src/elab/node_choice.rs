@@ -127,9 +127,9 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let assigned_before = |this: &Self, stmt: crate::pom::StmtId| {
-            crate::pom::stmt_children(this.design, stmt).into_iter().any(|child| {
+            crate::pom::BodyWalk::new(this.design).statement_children(stmt).into_iter().any(|child| {
                 let mut inside = Vec::new();
-                crate::pom::preorder(this.design, child, &mut inside);
+                crate::pom::BodyWalk::new(this.design).descendants_depth_first(child, &mut inside);
                 inside.into_iter().any(|expr| matches!(&this.design.expr_node(expr).kind, ExprKind::Assign { lhs, .. } if this.read_bindings(*lhs).contains(&local) && this.design.expr_node(expr).span.end <= read.start))
             })
         };
@@ -137,7 +137,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         for stmt in &stmts[from..to] {
-            for child in crate::pom::stmt_children(self.design, *stmt) {
+            for child in crate::pom::BodyWalk::new(self.design).statement_children(*stmt) {
                 self.bind_read_lets(within, child);
             }
         }
@@ -151,8 +151,8 @@ impl Elaboration<'_, '_> {
         let Some((stmts, from)) = self.block_declaring(local) else { return Vec::new() };
         let mut inside = Vec::new();
         for stmt in &stmts[from..] {
-            for child in crate::pom::stmt_children(self.design, *stmt) {
-                crate::pom::preorder(self.design, child, &mut inside);
+            for child in crate::pom::BodyWalk::new(self.design).statement_children(*stmt) {
+                crate::pom::BodyWalk::new(self.design).descendants_depth_first(child, &mut inside);
             }
         }
         let within = |outer: crate::msl::Span, inner: crate::msl::Span| outer.start <= inner.start && inner.end <= outer.end;
@@ -221,7 +221,7 @@ impl Elaboration<'_, '_> {
                 Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, crate::pom::DeclKind::Binding(_)) => vec![decl],
                 _ => Vec::new(),
             },
-            kind => crate::pom::expr_children(kind, self.design).into_iter().flat_map(|child| self.read_bindings(child)).collect(),
+            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().flat_map(|child| self.read_bindings(child)).collect(),
         }
     }
 

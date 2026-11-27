@@ -385,18 +385,18 @@ impl Design {
         }
         for (i, node) in self.exprs.iter().enumerate() {
             let id = ExprId(i as u32);
-            for c in super::body::expr_children(&node.kind, self) {
+            for c in crate::pom::BodyWalk::new(self).expression_children(&node.kind) {
                 if self.expr_parent[c.index()] != Some(id) {
                     problems.push(format!("expression {} is a child of expression {i} but names {:?} as its parent", c.0, self.expr_parent[c.index()]));
                 }
             }
             if let Some(p) = self.expr_parent[i] {
-                if !super::body::expr_children(&self.exprs[p.index()].kind, self).contains(&id) {
+                if !crate::pom::BodyWalk::new(self).expression_children(&self.exprs[p.index()].kind).contains(&id) {
                     problems.push(format!("expression {i} names expression {} as its parent, which does not list it", p.0));
                 }
             }
             if let Some(s) = self.expr_stmt[i] {
-                if !super::body::stmt_own_exprs(self, s).contains(&id) {
+                if !crate::pom::BodyWalk::new(self).statement_own_expressions(s).contains(&id) {
                     problems.push(format!("expression {i} names statement {} as its statement, which does not hold it", s.0));
                 }
             }
@@ -450,7 +450,7 @@ impl Design {
                 }
             }
             for dep in &c.dependencies {
-                if !super::crates::is_crate_name(&dep.name) {
+                if !super::crates::CrateGraph::is_crate_name(&dep.name) {
                     problems.push(format!("crate {i} ({}): the dependency name `{}` is no identifier, or a keyword, or `std`", c.name, dep.name));
                 }
                 if dep.krate.index() >= n {

@@ -76,7 +76,6 @@ crates/piperine-lang/src/msl/print/expressions.rs::Printer::expr_inner	kept: an 
 crates/piperine-lang/src/pom/check.rs::Design::check_nodes	-
 crates/piperine-lang/src/pom/check.rs::Refs::decl	-
 crates/piperine-lang/src/pom/check.rs::Refs::expr	-
-crates/piperine-lang/src/pom/index.rs::::build	-
 crates/piperine-lang/src/pom/lower/body.rs::Lowerer::expr_inner	-
 crates/piperine-lang/src/pom/resolve/names.rs::Names::decl	-
 crates/piperine-lang/src/pom/resolve/names.rs::Names::expr_inner	-
@@ -131,3 +130,4 @@ crates/piperine-transpile/src/print/value.rs::ValuePrinter::piece	-
 crates/piperine-transpile/src/print/value.rs::ValuePrinter::stmt	-
 crates/piperine-transpile/src/shape_check.rs::ShapeCheck::entries	-
 crates/piperine-lang/src/pom/resolve/name_resolution.rs::NameResolution::run	-
+crates/piperine-lang/src/pom/index.rs::IndexBuilder::build	-

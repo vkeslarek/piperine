@@ -106,7 +106,7 @@ impl Checker<'_> {
         let node = self.design.expr_node(expr).clone();
         let ExprKind::Closure { body, .. } = &node.kind else { return };
         let mut inside = Vec::new();
-        crate::pom::preorder(self.design, *body, &mut inside);
+        crate::pom::BodyWalk::new(self.design).descendants_depth_first(*body, &mut inside);
         let mut captures = BTreeSet::new();
         for e in &inside {
             let ExprKind::Path(path) = &self.design.expr_node(*e).kind else { continue };
@@ -164,8 +164,8 @@ impl Checker<'_> {
         let DeclKind::Fn(f) = &self.design.decl_data(decl).kind else { return FunctionClass::default() };
         let Some(body) = f.body.clone() else { return FunctionClass::default() };
         let mut inside = Vec::new();
-        for e in crate::pom::block_exprs(self.design, &body) {
-            crate::pom::preorder(self.design, e, &mut inside);
+        for e in crate::pom::BodyWalk::new(self.design).block_expressions(&body) {
+            crate::pom::BodyWalk::new(self.design).descendants_depth_first(e, &mut inside);
         }
         let class = self.class_of_expressions(&inside, visited);
         // memoized only for the function asked about first: inside a cycle the others are partial

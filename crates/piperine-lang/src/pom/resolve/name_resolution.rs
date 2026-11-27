@@ -91,6 +91,6 @@ impl<'design> NameResolution<'design> {
             design.push_diagnostic(file, diagnostic);
         }
         design.sort_diagnostics();
-        design.index = super::super::index::build(design);
+        design.index = super::super::index::IndexBuilder::new(design).build();
     }
 }

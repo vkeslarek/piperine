@@ -571,7 +571,7 @@ impl Elaboration<'_, '_> {
         {
             found.push(decl);
         }
-        for child in crate::pom::expr_children(&node.kind, self.design) {
+        for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
             self.collect_params(child, found);
         }
     }

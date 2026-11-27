@@ -1,7 +1,7 @@
 //! The crate graph: the packages of a build as plain data, which the front end is built from
 //! (`Design::load_crates`, `DesignBuilder::crates`). Nothing here reads a manifest or a file.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -55,15 +55,6 @@ pub struct CrateGraph {
     crates: Vec<CrateNode>,
 }
 
-/// Is `name` a crate or dependency name: one identifier, no keyword, not `std`.
-pub fn is_crate_name(name: &str) -> bool {
-    if name == "std" {
-        return false;
-    }
-    let (tokens, diagnostics) = Lexer::lex(name);
-    diagnostics.is_empty() && matches!(tokens.as_slice(), [(Token::Ident(text), _)] if text == name)
-}
-
 impl CrateGraph {
     pub fn new() -> CrateGraph {
         CrateGraph::default()
@@ -71,7 +62,7 @@ impl CrateGraph {
 
     /// Add a crate; the first one added is the root crate.
     pub fn add_crate(&mut self, name: &str, root: impl Into<PathBuf>) -> Result<CrateId, GraphError> {
-        check_name(name)?;
+        Self::check_name(name)?;
         self.crates.push(CrateNode { name: name.to_string(), root: root.into(), dependencies: Vec::new() });
         Ok(CrateId(self.crates.len() as u32 - 1))
     }
@@ -83,7 +74,7 @@ impl CrateGraph {
                 return Err(GraphError::UnknownCrate { id });
             }
         }
-        check_name(name)?;
+        Self::check_name(name)?;
         if self.crates[from.index()].dependencies.iter().any(|d| d.name == name) {
             return Err(GraphError::DuplicateDependency { krate: self.crates[from.index()].name.clone(), name: name.to_string() });
         }
@@ -126,8 +117,38 @@ impl CrateGraph {
         }
         None
     }
-}
 
-fn check_name(name: &str) -> Result<(), GraphError> {
-    if is_crate_name(name) { Ok(()) } else { Err(GraphError::InvalidName { name: name.to_string() }) }
+    /// Is `name` a crate or dependency name: one identifier, no keyword, not `std`.
+    pub fn is_crate_name(name: &str) -> bool {
+        if name == "std" {
+            return false;
+        }
+        let (tokens, diagnostics) = Lexer::lex(name);
+        diagnostics.is_empty() && matches!(tokens.as_slice(), [(Token::Ident(text), _)] if text == name)
+    }
+
+    /// The name of the crate whose root file is `path`: the file stem, with every character that is
+    /// no ASCII letter, digit or `_` replaced by `_` and a `_` before a leading digit. A stem that is
+    /// then a keyword, `std` or `_` gets a `_` appended, and is returned as the second value so that the
+    /// design can report it (`E0171`).
+    pub(super) fn crate_name_of(path: &Path) -> (String, Option<String>) {
+        let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let mut name: String = stem.chars().map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' }).collect();
+        if name.is_empty() || name.starts_with(|c: char| c.is_ascii_digit()) {
+            name.insert(0, '_');
+        }
+        // A file with no stem at all (the empty design's synthetic root) is `_` by construction and
+        // reports nothing; a stem that is itself `_` is reserved like any other.
+        if Self::is_crate_name(&name) || stem.is_empty() {
+            return (name, None);
+        }
+        let reserved = name.clone();
+        name.push('_');
+        (name, Some(reserved))
+    }
+
+    /// `name` when it is a crate name, else the error that says so.
+    fn check_name(name: &str) -> Result<(), GraphError> {
+        if Self::is_crate_name(name) { Ok(()) } else { Err(GraphError::InvalidName { name: name.to_string() }) }
+    }
 }

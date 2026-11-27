@@ -121,7 +121,7 @@ impl Checker<'_> {
                 self.report(file, Diagnostic::new("E0318", message, node.span, format!("`{name}` is declared later")));
             }
         }
-        for child in crate::pom::expr_children(&node.kind, self.design) {
+        for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
             self.where_reads_later_param(decl, child);
         }
     }
@@ -751,7 +751,7 @@ impl Checker<'_> {
     /// solve.
     fn no_placement_in(&mut self, value: ExprId) {
         let mut all = Vec::new();
-        crate::pom::preorder(self.design, value, &mut all);
+        crate::pom::BodyWalk::new(self.design).descendants_depth_first(value, &mut all);
         for expr in all {
             let node = self.design.expr_node(expr).clone();
             if matches!(node.kind, ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. }) {

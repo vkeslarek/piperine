@@ -222,13 +222,8 @@ crates/piperine-lang/src/pom/body.rs::PatNode	1
 crates/piperine-lang/src/pom/body.rs::StmtKind	1
 crates/piperine-lang/src/pom/body.rs::StmtNode	1
 crates/piperine-lang/src/pom/body.rs::args	1
-crates/piperine-lang/src/pom/body.rs::block_exprs	1
-crates/piperine-lang/src/pom/body.rs::expr_children	1
 crates/piperine-lang/src/pom/body.rs::pat	3
-crates/piperine-lang/src/pom/body.rs::preorder	1
 crates/piperine-lang/src/pom/body.rs::res	4
-crates/piperine-lang/src/pom/body.rs::stmt_children	1
-crates/piperine-lang/src/pom/body.rs::stmt_own_exprs	1
 crates/piperine-lang/src/pom/body.rs::stmts	1
 crates/piperine-lang/src/pom/body.rs::ty	1
 crates/piperine-lang/src/pom/bundles.rs::decl	2
@@ -307,7 +302,6 @@ crates/piperine-lang/src/pom/lower/items.rs::struct_decl	1
 crates/piperine-lang/src/pom/lower/items.rs::trait_decl	1
 crates/piperine-lang/src/pom/lower/items.rs::use_decl	1
 crates/piperine-lang/src/pom/lower/meta.rs::doc	1
-crates/piperine-lang/src/pom/lower/mod.rs::new_decl	1
 crates/piperine-lang/src/pom/meta.rs::AttrArgNode	1
 crates/piperine-lang/src/pom/meta.rs::AttrInputNode	1
 crates/piperine-lang/src/pom/meta.rs::AttrNode	1
@@ -325,15 +319,11 @@ crates/piperine-lang/src/pom/reflect/body.rs::ast	1
 crates/piperine-lang/src/pom/reflect/body.rs::expr	1
 crates/piperine-lang/src/pom/reflect/body.rs::krate	1
 crates/piperine-lang/src/pom/reflect/body.rs::lhs	1
-crates/piperine-lang/src/pom/reflect/body.rs::nested_stmts	1
 crates/piperine-lang/src/pom/reflect/body.rs::pat	1
 crates/piperine-lang/src/pom/reflect/body.rs::rhs	1
 crates/piperine-lang/src/pom/reflect/body.rs::stmt	6
 crates/piperine-lang/src/pom/reflect/body.rs::stmts	1
 crates/piperine-lang/src/pom/reflect/body.rs::ty	1
-crates/piperine-lang/src/pom/reflect/body.rs::walk_expr	1
-crates/piperine-lang/src/pom/reflect/body.rs::walk_expr_inner	1
-crates/piperine-lang/src/pom/reflect/body.rs::walk_stmt	1
 crates/piperine-lang/src/pom/reflect/crates.rs::decls	1
 crates/piperine-lang/src/pom/reflect/crates.rs::krate	1
 crates/piperine-lang/src/pom/reflect/hardware.rs::GenArm	1

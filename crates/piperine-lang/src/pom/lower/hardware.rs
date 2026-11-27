@@ -2,7 +2,6 @@
 //! and the generation constructs that repeat module and digital items.
 
 use super::Lowerer;
-use super::body::name;
 use crate::msl::ast;
 use crate::pom::body::QuantityRole;
 use crate::pom::decl::{
@@ -12,23 +11,23 @@ use crate::pom::decl::{
 use crate::pom::ids::DeclId;
 use crate::pom::resolution::{NatureKind, PortKind};
 
-/// The kind of a nature from the fields it declares: one `potential` is
-/// `SignalFlow`, with one `flow` `Conservative`, one `value` `Discrete`; anything else is
-/// `Invalid`. Whether a discrete nature is resolved is the checker's question (its `impl Resolve`).
-fn nature_kind(fields: &[ast::NatureField]) -> NatureKind {
-    let count = |f: fn(&ast::NatureFieldKind) -> bool| fields.iter().filter(|n| f(&n.kind)).count();
-    let potentials = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Potential, .. }));
-    let flows = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Flow, .. }));
-    let values = count(|k| matches!(k, ast::NatureFieldKind::Value(_)));
-    match (potentials, flows, values) {
-        (1, 1, 0) => NatureKind::Conservative,
-        (1, 0, 0) => NatureKind::SignalFlow,
-        (0, 0, 1) => NatureKind::Discrete,
-        _ => NatureKind::Invalid,
-    }
-}
-
 impl Lowerer<'_> {
+    /// The kind of a nature from the fields it declares: one `potential` is
+    /// `SignalFlow`, with one `flow` `Conservative`, one `value` `Discrete`; anything else is
+    /// `Invalid`. Whether a discrete nature is resolved is the checker's question (its `impl Resolve`).
+    fn nature_kind(fields: &[ast::NatureField]) -> NatureKind {
+        let count = |f: fn(&ast::NatureFieldKind) -> bool| fields.iter().filter(|n| f(&n.kind)).count();
+        let potentials = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Potential, .. }));
+        let flows = count(|k| matches!(k, ast::NatureFieldKind::Quantity { which: QuantityRole::Flow, .. }));
+        let values = count(|k| matches!(k, ast::NatureFieldKind::Value(_)));
+        match (potentials, flows, values) {
+            (1, 1, 0) => NatureKind::Conservative,
+            (1, 0, 0) => NatureKind::SignalFlow,
+            (0, 0, 1) => NatureKind::Discrete,
+            _ => NatureKind::Invalid,
+        }
+    }
+
     /// A nature: generics, then one `Quantity` per quantity field, as
     /// children of the nature (the current owner).
     pub(crate) fn nature_decl(&mut self, n: &ast::NatureDecl) -> DeclKind {
@@ -38,7 +37,7 @@ impl Lowerer<'_> {
             .iter()
             .map(|f| match &f.kind {
                 ast::NatureFieldKind::Quantity { which, name: ident, attrs } => {
-                    let id = self.new_decl(DeclKind::Error, Some(ident), f.span.0, false);
+                    let id = self.new_declaration(DeclKind::Error, Some(ident), f.span.0, false);
                     let (attrs, meta) =
                         self.within(id, |lw| (attrs.iter().map(|a| lw.field_init(a)).collect(), lw.meta(&f.meta)));
                     let decl = self.design.decl_mut(id);
@@ -51,14 +50,14 @@ impl Lowerer<'_> {
                 }
             })
             .collect();
-        DeclKind::Nature(NatureData { fields, kind: nature_kind(&n.fields) })
+        DeclKind::Nature(NatureData { fields, kind: Self::nature_kind(&n.fields) })
     }
 
     /// A module: generics, ports, then the body items, as children.
     pub(crate) fn module_decl(&mut self, m: &ast::ModuleDecl) -> DeclKind {
         self.generics(&m.generics);
         for p in &m.ports {
-            let id = self.new_decl(DeclKind::Error, Some(&p.name), p.span.0, false);
+            let id = self.new_declaration(DeclKind::Error, Some(&p.name), p.span.0, false);
             let (kind, meta) = self.within(id, |lw| {
                 let data = PortData {
                     dir: p.dir,
@@ -87,7 +86,7 @@ impl Lowerer<'_> {
             ast::ModuleItemKind::Param { name, .. } | ast::ModuleItemKind::Signal { name, .. } => Some(name),
             _ => None,
         };
-        let id = self.new_decl(DeclKind::Error, ident, item.span.0, item.public);
+        let id = self.new_declaration(DeclKind::Error, ident, item.span.0, item.public);
         let (kind, meta) = self.within(id, |lw| (lw.module_item_kind(&item.kind), lw.meta(&item.meta)));
         let decl = self.design.decl_mut(id);
         decl.kind = kind;
@@ -143,7 +142,7 @@ impl Lowerer<'_> {
 
     /// A `Generation` declaration as the last child of the owner.
     fn generation<X>(&mut self, g: &ast::Gen<X>, item: fn(&mut Self, &X) -> DeclId) -> DeclId {
-        let id = self.new_decl(DeclKind::Error, None, g.span.0, false);
+        let id = self.new_declaration(DeclKind::Error, None, g.span.0, false);
         let kind = self.within(id, |lw| lw.generation_kind(g, item));
         self.design.decl_mut(id).kind = kind;
         id
@@ -152,7 +151,7 @@ impl Lowerer<'_> {
     /// A behavior block at file scope: kind, names and target, then either
     /// the analog statements or the digital items.
     pub(crate) fn behavior_decl(&mut self, b: &ast::BehaviorBlock) -> DeclKind {
-        let names = b.names.iter().map(name).collect();
+        let names = b.names.iter().map(Self::name).collect();
         let target = self.path(&b.target);
         let body = match &b.body {
             ast::BehaviorBody::Analog(stmts) => stmts.iter().map(|s| self.stmt(s)).collect(),
@@ -170,7 +169,7 @@ impl Lowerer<'_> {
         let id = match &item.kind {
             ast::DigitalItemKind::Reaction(r) => self.reaction(r, item.span.0),
             ast::DigitalItemKind::Gen(g) => self.generation(g, Self::digital_item),
-            ast::DigitalItemKind::Error => self.new_decl(DeclKind::Error, None, item.span.0, false),
+            ast::DigitalItemKind::Error => self.new_declaration(DeclKind::Error, None, item.span.0, false),
         };
         let meta = self.within(id, |lw| lw.meta(&item.meta));
         self.design.decl_mut(id).meta = meta;

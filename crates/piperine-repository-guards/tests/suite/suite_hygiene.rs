@@ -95,7 +95,7 @@ impl ModRsFiles {
             "the walk found only {} `mod.rs` files — the layout moved and this guard is blind",
             files.len()
         );
-        for known in ["crates/piperine-lang/src/pom/reflect/mod.rs", "crates/piperine-lang/src/pom/lower/mod.rs"] {
+        for known in ["crates/piperine-lang/src/pom/reflect/mod.rs"] {
             assert!(files.iter().any(|(path, _, _)| path == known), "the walk does not reach {known}: this guard is blind");
         }
         files
@@ -114,9 +114,8 @@ impl ModRsFiles {
     /// reason for the ones that remain.
     fn registered_oversized_mod_rs(path: &str) -> Option<&'static str> {
         Some(match path {
-            // Follow-up (ROADMAP.md, `code-clarity`): refactor these two into named modules.
+            // Follow-up (ROADMAP.md, `code-clarity`): refactor this one into named modules.
             "crates/piperine-lang/src/pom/reflect/mod.rs" => "POM reflection surface; split pending",
-            "crates/piperine-lang/src/pom/lower/mod.rs" => "lowering driver; split pending",
             _ => return None,
         })
     }
@@ -719,7 +718,7 @@ fn mod_rs_declares_only() {
     );
     assert_eq!(
         exempted.len(),
-        2,
+        1,
         "the exempted set changed — update the registry and the count: {exempted:?}"
     );
 }

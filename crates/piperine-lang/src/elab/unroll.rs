@@ -134,7 +134,7 @@ impl Elaboration<'_, '_> {
 
     /// What `body` holds that unrolls the loop around it: a contribution first, else a placement.
     fn held_by_loop(&self, body: &BlockNode) -> Option<Held> {
-        if crate::pom::nested_stmts(self.design, &body.stmts).iter().any(|s| matches!(self.design.stmt_node(*s).kind, StmtKind::Contribution { .. })) {
+        if crate::pom::BodyWalk::new(self.design).nested_statements(&body.stmts).iter().any(|s| matches!(self.design.stmt_node(*s).kind, StmtKind::Contribution { .. })) {
             return Some(Held::Contribution);
         }
         if !self.placements_in(body).is_empty() {
@@ -157,8 +157,8 @@ impl Elaboration<'_, '_> {
     /// Every expression of `body`, nested ones included.
     pub(super) fn body_exprs(&self, body: &BlockNode) -> Vec<ExprId> {
         let mut inside = Vec::new();
-        for expr in crate::pom::block_exprs(self.design, body) {
-            crate::pom::preorder(self.design, expr, &mut inside);
+        for expr in crate::pom::BodyWalk::new(self.design).block_expressions(body) {
+            crate::pom::BodyWalk::new(self.design).descendants_depth_first(expr, &mut inside);
         }
         inside
     }
@@ -178,8 +178,8 @@ impl Elaboration<'_, '_> {
         if let DeclKind::Module(data) = &self.design.decl_data(module).kind {
             for block in data.behaviors.clone() {
                 let DeclKind::Behavior(behavior) = &self.design.decl_data(block).kind else { continue };
-                for stmt in crate::pom::nested_stmts(self.design, &behavior.body) {
-                    for expr in crate::pom::stmt_own_exprs(self.design, stmt) {
+                for stmt in crate::pom::BodyWalk::new(self.design).nested_statements(&behavior.body) {
+                    for expr in crate::pom::BodyWalk::new(self.design).statement_own_expressions(stmt) {
                         if let ExprKind::For { body, .. } | ExprKind::While { body, .. } | ExprKind::Loop { body } = &self.design.expr_node(expr).kind {
                             found.extend(self.placements_in(body));
                         }

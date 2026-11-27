@@ -91,116 +91,133 @@ impl Index {
     }
 }
 
-/// The declaration at the root of a place: `Field`, `Index` and `Paren` are
-/// stripped down to a path, whose last segment names it.
-fn place_root(design: &Design, mut at: ExprId) -> Option<DeclId> {
-    loop {
-        match &design.expr_node(at).kind {
-            ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } | ExprKind::Paren(expr) => at = *expr,
-            ExprKind::Path(p) => {
-                return match design.path_node(*p).segments.last()?.res {
-                    Resolution::Decl(d) => Some(d),
-                    _ => None,
-                };
-            }
-            _ => return None,
-        }
-    }
+/// Computes the reference, writer and instantiation tables of one resolved design.
+pub(super) struct IndexBuilder<'design> {
+    design: &'design Design,
 }
 
-/// The declarations a place writes. A place ending in a resolved member of an
-/// instance (`c.w`, `c.w[i]`) writes that member and not the instance's name; a
-/// bundle field (`bus.valid`) writes the field's carrier root as well as the
-/// field; anything else writes its root.
-fn place_targets(design: &Design, place: ExprId) -> Vec<DeclId> {
-    let mut at = place;
-    loop {
-        match &design.expr_node(at).kind {
-            ExprKind::Index { expr, .. } | ExprKind::Paren(expr) => at = *expr,
-            ExprKind::Field { expr, res: Resolution::Decl(member), .. } => {
-                let item = matches!(design.decl_data(*member).kind, DeclKind::Port(_) | DeclKind::Signal(_) | DeclKind::Param(_) | DeclKind::Binding(_));
-                let mut targets = vec![*member];
-                if !item {
-                    targets.extend(place_root(design, *expr));
-                }
-                return targets;
-            }
-            _ => return place_root(design, place).into_iter().collect(),
-        }
+impl<'design> IndexBuilder<'design> {
+    /// A builder over `design`.
+    pub(super) fn new(design: &'design Design) -> Self {
+        Self { design }
     }
-}
 
-/// Compute the tables of a resolved design.
-pub(super) fn build(design: &Design) -> Index {
-    let n = design.decl_count();
-    let mut references: Vec<Vec<(usize, usize, ReferenceId)>> = vec![Vec::new(); n];
-    let mut writers: Vec<Vec<(usize, usize, WriterId)>> = vec![Vec::new(); n];
-    let mut instantiated_by: Vec<Vec<ExprId>> = vec![Vec::new(); n];
-    let file_of = |owner: DeclId| design.decl_data(owner).file.index();
+    /// The declaration at the root of a place: `Field`, `Index` and `Paren` are
+    /// stripped down to a path, whose last segment names it.
+    fn place_root(&self, mut at: ExprId) -> Option<DeclId> {
+        loop {
+            match &self.design.expr_node(at).kind {
+                ExprKind::Field { expr, .. } | ExprKind::Index { expr, .. } | ExprKind::Paren(expr) => at = *expr,
+                ExprKind::Path(p) => {
+                    return match self.design.path_node(*p).segments.last()?.res {
+                        Resolution::Decl(d) => Some(d),
+                        _ => None,
+                    };
+                }
+                _ => return None,
+            }
+        }
+    }
 
-    for i in 0..design.path_count() {
-        let id = PathId(i as u32);
-        let node = design.path_node(id);
-        let mut seen: Vec<DeclId> = Vec::new();
-        for segment in &node.segments {
-            if let Resolution::Decl(d) = segment.res {
-                if !seen.contains(&d) {
-                    seen.push(d);
-                    references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Path(id)));
+
+    /// The declarations a place writes. A place ending in a resolved member of an
+    /// instance (`c.w`, `c.w[i]`) writes that member and not the instance's name; a
+    /// bundle field (`bus.valid`) writes the field's carrier root as well as the
+    /// field; anything else writes its root.
+    fn place_targets(&self, place: ExprId) -> Vec<DeclId> {
+        let mut at = place;
+        loop {
+            match &self.design.expr_node(at).kind {
+                ExprKind::Index { expr, .. } | ExprKind::Paren(expr) => at = *expr,
+                ExprKind::Field { expr, res: Resolution::Decl(member), .. } => {
+                    let item = matches!(self.design.decl_data(*member).kind, DeclKind::Port(_) | DeclKind::Signal(_) | DeclKind::Param(_) | DeclKind::Binding(_));
+                    let mut targets = vec![*member];
+                    if !item {
+                        targets.extend(self.place_root(*expr));
+                    }
+                    return targets;
                 }
+                _ => return self.place_root(place).into_iter().collect(),
             }
         }
     }
-    for i in 0..design.expr_count() {
-        let id = ExprId(i as u32);
-        let node = design.expr_node(id);
-        if let ExprKind::Field { res: Resolution::Decl(d), .. } | ExprKind::MethodCall { res: Resolution::Decl(d), .. } = &node.kind {
-            references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Member(id)));
-        }
-    }
-    for i in 0..design.pat_count() {
-        let id = PatId(i as u32);
-        let node = design.pat_node(id);
-        if let PatKind::Ident { res: Resolution::Decl(d), .. } = &node.kind {
-            references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Pattern(id)));
-        }
-    }
-    for i in 0..n {
-        let id = DeclId(i as u32);
-        let data = design.decl_data(id);
-        match &data.kind {
-            DeclKind::Definition(def) => {
-                for target in place_targets(design, def.place) {
-                    writers[target.index()].push((data.file.index(), data.span.start, WriterId::Definition(id)));
-                }
-            }
-            DeclKind::Module(m) => {
-                for e in &m.instances {
-                    if let ExprKind::Call { class: CallClass::Instance { module: Some(target), .. }, .. } = &design.expr_node(*e).kind {
-                        instantiated_by[target.index()].push(*e);
+
+
+    /// Compute the tables of a resolved self.design.
+    pub(super) fn build(&self) -> Index {
+        let n = self.design.decl_count();
+        let mut references: Vec<Vec<(usize, usize, ReferenceId)>> = vec![Vec::new(); n];
+        let mut writers: Vec<Vec<(usize, usize, WriterId)>> = vec![Vec::new(); n];
+        let mut instantiated_by: Vec<Vec<ExprId>> = vec![Vec::new(); n];
+        let file_of = |owner: DeclId| self.design.decl_data(owner).file.index();
+
+        for i in 0..self.design.path_count() {
+            let id = PathId(i as u32);
+            let node = self.design.path_node(id);
+            let mut seen: Vec<DeclId> = Vec::new();
+            for segment in &node.segments {
+                if let Resolution::Decl(d) = segment.res {
+                    if !seen.contains(&d) {
+                        seen.push(d);
+                        references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Path(id)));
                     }
                 }
             }
-            _ => {}
         }
-    }
-    for i in 0..design.stmt_count() {
-        let id = StmtId(i as u32);
-        let node = design.stmt_node(id);
-        if let StmtKind::Commit { place, .. } = &node.kind {
-            for target in place_targets(design, *place) {
-                writers[target.index()].push((file_of(node.owner), node.span.start, WriterId::Commit(id)));
+        for i in 0..self.design.expr_count() {
+            let id = ExprId(i as u32);
+            let node = self.design.expr_node(id);
+            if let ExprKind::Field { res: Resolution::Decl(d), .. } | ExprKind::MethodCall { res: Resolution::Decl(d), .. } = &node.kind {
+                references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Member(id)));
             }
+        }
+        for i in 0..self.design.pat_count() {
+            let id = PatId(i as u32);
+            let node = self.design.pat_node(id);
+            if let PatKind::Ident { res: Resolution::Decl(d), .. } = &node.kind {
+                references[d.index()].push((file_of(node.owner), node.span.start, ReferenceId::Pattern(id)));
+            }
+        }
+        for i in 0..n {
+            let id = DeclId(i as u32);
+            let data = self.design.decl_data(id);
+            match &data.kind {
+                DeclKind::Definition(def) => {
+                    for target in self.place_targets(def.place) {
+                        writers[target.index()].push((data.file.index(), data.span.start, WriterId::Definition(id)));
+                    }
+                }
+                DeclKind::Module(m) => {
+                    for e in &m.instances {
+                        if let ExprKind::Call { class: CallClass::Instance { module: Some(target), .. }, .. } = &self.design.expr_node(*e).kind {
+                            instantiated_by[target.index()].push(*e);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        for i in 0..self.design.stmt_count() {
+            let id = StmtId(i as u32);
+            let node = self.design.stmt_node(id);
+            if let StmtKind::Commit { place, .. } = &node.kind {
+                for target in self.place_targets(*place) {
+                    writers[target.index()].push((file_of(node.owner), node.span.start, WriterId::Commit(id)));
+                }
+            }
+        }
+
+        Index {
+            references: references.into_iter().map(Self::ordered).collect(),
+            writers: writers.into_iter().map(Self::ordered).collect(),
+            instantiated_by,
         }
     }
 
+
+    /// Sorts what a table collected by file and position, and drops the keys.
     fn ordered<T: Copy>(mut v: Vec<(usize, usize, T)>) -> Vec<T> {
         v.sort_by_key(|(file, start, _)| (*file, *start));
         v.into_iter().map(|(_, _, t)| t).collect()
-    }
-    Index {
-        references: references.into_iter().map(ordered).collect(),
-        writers: writers.into_iter().map(ordered).collect(),
-        instantiated_by,
     }
 }
