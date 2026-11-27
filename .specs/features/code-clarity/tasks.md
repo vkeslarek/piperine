@@ -1217,8 +1217,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The four crates have no row in the three allowances
-- [ ] Gate check passes: Quick for the four crates
+- [ ] The four crates have no row in the three allowances. Closed here: every row of a `tests/` file, and the digital-solver `test_helper_functions.tsv` file is gone. Not closed: 36 `test_helper_functions` rows of `#[cfg(test)]` helpers in back-end `src/` (abi `raw.rs` 1; analog-solver `convergence.rs`, `math/{faer,integration,newton_raphson,singular}.rs`, `stamp_validation.rs` 6; solver `analyses/{pz,sp,test_devices}.rs`, `protocol/statistics.rs` 29). Those files are lane K's `src/**` (a lane T edit of them was refused); they stay open for lane K's back-end phase, T77 to T85 (T84 for the solver analyses).
+- [x] Gate check passes: Quick for the four crates
 
 **Tests**: integration
 **Gate**: quick
