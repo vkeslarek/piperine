@@ -1,8 +1,8 @@
 # Nested Reach verification
 
-**Verdict**: FAIL (round 4, at 11c0c6b8f)
-**Round**: 4
-**Proofs**: `proofs.md` at 11c0c6b8f (`check_proofs.py` rerun by the Verifier: 31 pass, 0 fail; `validate_tasks.py` 0 errors). Round 3 was at bf43b1b18 (28 pass), round 2 at 1c69c6df2 (25 pass), round 1 at 13c4c1357 (21 pass).
+**Verdict**: FAIL (round 5, at f64497daa)
+**Round**: 5
+**Proofs**: `proofs.md` at f64497daa (`check_proofs.py` rerun by the Verifier: 38 pass, 0 fail). Round 4 was at 11c0c6b8f (31 pass), round 3 at bf43b1b18 (28), round 2 at 1c69c6df2 (25), round 1 at 13c4c1357 (21).
 **Verifier**: independent sub-agent (author != verifier), Opus
 
 ## Checks
@@ -38,6 +38,13 @@
 | C27 | `elab_nested_reach.rs` `a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_three_and_four_levels_below` | yes - fails on the pre-fix `reach.rs`/`hoist.rs` (b8c52a28e hunks restored locally, then put back): the read is refused |
 | C28 | `types_nested_reach.rs` `a_let_over_a_param_and_the_solve_types_one_three_and_four_levels_below_the_reader` | yes - a checker claim, which held before the fix too (the refusal was at elaboration) |
 | C29 | `source_nested_reach.rs` `a_let_over_a_param_and_the_solve_one_three_and_four_levels_down_reads_the_placements_params` | yes - fails on the pre-fix hunks (the compile is refused) |
+| C30 | `elab_nested_reach.rs` `a_given_value_over_a_param_of_the_reader_is_read_in_place_one_and_three_levels_below` | yes - asserts the lowered read over the cell's node and one pass; the round-4 repro (`k: m * 2.0`) now runs |
+| C31 | `source_nested_reach.rs` `a_given_value_over_a_param_of_the_reader_one_and_three_levels_down_reads_the_cell_it_sets` | yes |
+| C32 | `elab_nested_reach.rs` `a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_reach` | yes - asserts the exact code list (one diagnostic) |
+| C33 | `elab_nested_reach.rs` `a_placement_in_generation_reads_a_param_of_its_module_and_the_loop_variable` | yes |
+| C34 | `source_nested_reach.rs` `a_cell_in_generation_whose_param_reads_a_param_and_the_loop_variable_runs_at_each_iteration` | yes |
+| C35 | `elab_nested_reach.rs` `a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_levels` | yes - fails with `structural.rs` of 03ce77fff restored locally (then put back) |
+| C36 | `source_nested_reach.rs` `the_params_of_a_cell_in_generation_over_a_param_and_the_loop_variable_read_three_levels_down` | yes |
 
 ## What was probed (throwaway tests, not committed)
 
@@ -162,3 +169,27 @@ reads that never needed a param:
 | --- | --- | --- | --- |
 | 11. **High** - regression of the one-level reach: a read of a child's node or `let` (`v(c.sn)`, `c.vs`) is refused when the placement gives a param a value over a param of the reader that is not a key (`let c = Cell(a) { k: m * 2.0 }` in a module with `m: f64 = 1.0`). It ran before 3c96146ce and at the merge base; it is the most common shape of a parameterised child. No check covers a given value over the reader's own params. | `reach.rs:262` `frame.params = self.reach_frame_params(..)?` folds every param when the frame is made, with `caller = scope.keys.overlaid(&scope.unrolled)` (`reach.rs:299-308`), which holds only key params; the fold fault `UnboundParam` is reported (`diagnose.rs:55`) and the `?` drops the frame | fold a reach frame's non-key params without refusing: leave out a param whose given value does not fold, and refuse only a read that lowers that param in that frame (the named refusal at `lower.rs`), or bind it as the reader's own param expression; pin `v(c.sn)`, `c.vs` and `c.deep` with `k: m * 2.0` at one and three levels || ef5f6347a - C30, C31 (`placement_params.rs`: a param that does not fold is deferred and read in place) |
 | 12. **Low** - a read through a placement with a false `where` or a missing required param reports `E0317`/`E0319` twice, once for the reach frame and once for the placement. | `placement_params` reports the fault for the reach frame (`reach.rs:299-308` -> `hoist.rs` `placement_params`), and `place.rs` reports it again for the placement | fold a reach frame's params without reporting what the placement itself reports (a silent fold, or skip the `where`/required checks for a reach frame), and pin one diagnostic for each || ef5f6347a (the reach frame's fold reports nothing), 920be02d2 - C32 |
+
+## Round 5 (at f64497daa)
+
+750b25c8e makes `ParamReads::collect` (`structural.rs:169-170`) accept a generation `for` variable as a constant. `ParamReads` has
+seven callers (`structural.rs:399, 537, 587, 623, 653, 744`, `reach/fields.rs:623`): contribution conditions, array lengths,
+generation ranges and `if`s, initial values, values given to key params, and the key-param fold of `fold_bindings`. The claim
+"nothing else moved" was probed against `structural.rs` of 03ce77fff (swapped in locally, then restored), same sources:
+
+| Probe | 03ce77fff | f64497daa |
+| --- | --- | --- |
+| nested generations, `k: m + (i as f64) * 10.0 + (j as f64)`, read `p.c[1][2].k + p.c[0][1].twice` | `P0001` | runs, 12.25 and `(1.25 * 2.0)` - right |
+| a loop variable named as a param of the module (`k: f64 = 100.0; for k in 0..2 { .. { k: m + (k as f64) } }`) | `P0001` | runs, the loop variable wins (`c[1].k = 1.25`) - right |
+| a loop variable in a generation `if` with a param (`if (j as f64) > m`) | runs | runs, same instances |
+| a loop variable only (`k: (j as f64) + 0.5`) | runs | runs |
+| a carrier's initial value over the loop variable and a param | `P0001` (named) | `P0001`, unchanged |
+| **one level**: `analog for Ac { potential(o) +> c[1].k; }` with `for j in 0..2 { pub let c = Cell(a) { k: m + (j as f64) }; }` | `P0001` "the value of a param that fixes structure that reads a param" | **`E0321`** "... is not an expression over params and constants: it reads a name with no value yet" |
+| one level, the same read under a condition (`if c[1].k > 1.0 { potential(o) +> 1.0 } else { .. }`) | `P0001` | **`E0321`** |
+| one level without generation (`k: m + 1.0`, `if c.k > 1.5`) | runs | runs |
+
+The final full suite was not run: the head carries a finding, and the gate policy spends the one full run on the head that passes.
+
+| Finding | Evidence | Fix | Closed |
+| --- | --- | --- | --- |
+| 13. **Medium** - the loop-variable change moves a neighbour from an honest `P0001` to a wrong user error: a body that reads the param of its own generated child (`c[1].k`, one level, `k: m + (j as f64)`) is now `E0321`, which tells the author the param's value is not an expression over params and constants - it is one. The same read three levels down runs (C35), so the one-level read, the simplest form, is the one left refused, under an `E` code. | `structural.rs:169-170` lets `ParamReads::of` return `{m}` for `m + (j as f64)`; `m` becomes a key and the key value is then folded without the iteration's loop variable bound (`consts.rs:591`, `ConstFault::Dynamic` "a name with no value yet", reported as `E0321`). Repro: `module Cell(a: Electrical) { pub k: f64 = 1.0; pub signal sn: Electrical; } analog for Cell { i(a, sn) +> v(a, sn) * k; }` / `module Ac(a: Electrical, o: Electrical) { m: f64 = 0.5; for j in 0..2 { pub let c = Cell(a) { k: m + (j as f64) }; } } analog for Ac { potential(o) +> c[1].k; }` / `module Top() { signal a: Electrical; signal o: Electrical; let p = Ac(a, o) { m: 0.25 }; } analog for Top { potential(a) +> 1.0; }` | bind the iteration's loop variables wherever a key value of a generated placement is folded at one level (as the three-level path does), so `c[1].k` reads 1.25; pin it with and without a condition. If deferred, it must stay a named `P0001` with a GAPS row, never `E0321` | |
