@@ -1,0 +1,2 @@
+# T27: a trace sink replaces the debug prints (CC-07, A8). The source-grep test of tf.rs leaves with the prints it pinned.
+retire piperine-solver/tf::no_eprintln_in_tf_solver_a13 a unit test that greps its own source for a macro; no src of the two crates holds one now, and the guard-side rule is the trace sink test

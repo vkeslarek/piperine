@@ -916,8 +916,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `eprintln!` in `src/` of the two crates; the trace a flag printed is the same bytes through the sink (one test)
-- [ ] Gate check passes: Ledger
+- [x] No `eprintln!` in `src/` of the two crates; the trace a flag printed is the same bytes through the sink (one test: `a_trace_line_reaches_the_sink_with_the_bytes_the_flag_printed`)
+- [x] Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

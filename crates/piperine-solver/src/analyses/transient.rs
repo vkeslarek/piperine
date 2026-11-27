@@ -1744,13 +1744,13 @@ impl TransientSolver<'_> {
     /// The `REJECT` trace record of a step that failed the truncation test.
     fn trace_rejection(&self, run: &DeviceRun, prediction: &StepPrediction, milne: f64) {
         if self.policy.trace.transient {
-            eprintln!(
+            self.policy.trace.sink.write(format!(
                 "REJECT t={:.3e} dt={:.3e} milne={:.3e} (trtol={})",
                 run.st.origin + run.st.current_time,
                 prediction.dt_actual,
                 milne,
                 self.system.context.tolerances.trtol
-            );
+            ));
         }
     }
 

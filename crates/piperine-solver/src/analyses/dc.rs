@@ -275,7 +275,7 @@ impl<'a> DcSolver<'a> {
     pub(crate) fn equilibrium(&mut self, first: bool) -> crate::core::result::Result<ndarray::Array1<f64>> {
         if first {
             let plan = std::sync::Arc::clone(&self.plan);
-            let trace = self.policy.trace;
+            let trace = self.policy.trace.clone();
             let outcome = plan.solve_traced(self, trace)?;
             self.homotopy_strategy = outcome.strategy;
             return Ok(outcome.solution);
