@@ -56,6 +56,21 @@ pub struct TestTarget {
     pub name: String,
     /// The names of its `#[test]` functions, without module path.
     pub tests: BTreeSet<String>,
+    /// The paths of its `#[test]` functions as cargo prints them, module path from the target's root.
+    pub paths: BTreeSet<String>,
+}
+
+impl TestTarget {
+    /// Whether a test path as a proof writes it names the test at `full`: equal to it, or the end
+    /// of it after a `::` (a proof may leave out leading modules, never write a wrong one).
+    pub fn path_names(full: &str, written: &str) -> bool {
+        full == written || full.strip_suffix(written).is_some_and(|start| start.ends_with("::"))
+    }
+
+    /// Whether the target holds a test that the written path names.
+    pub fn holds_path(&self, written: &str) -> bool {
+        self.paths.iter().any(|full| Self::path_names(full, written))
+    }
 }
 
 /// One package: its integration-test targets and the test functions of the rest of its sources.
@@ -66,6 +81,8 @@ pub struct PackageTests {
     pub on_demand: Vec<String>,
     /// Every `#[test]` function of the package's `src/`, the unit tests.
     pub unit_tests: BTreeSet<String>,
+    /// The paths of the unit tests as cargo prints them, from the library, main or binary root.
+    pub unit_paths: BTreeSet<String>,
 }
 
 impl PackageTests {
@@ -73,6 +90,11 @@ impl PackageTests {
     pub fn all_tests(&self) -> BTreeSet<&str> {
         let integration = self.targets.iter().flat_map(|target| target.tests.iter());
         self.unit_tests.iter().chain(integration).map(String::as_str).collect()
+    }
+
+    /// Whether a unit or integration test of the package is the one the written path names.
+    pub fn holds_path(&self, written: &str) -> bool {
+        self.unit_paths.iter().any(|full| TestTarget::path_names(full, written)) || self.targets.iter().any(|target| target.holds_path(written))
     }
 }
 
@@ -95,9 +117,9 @@ impl TestTargets {
                 }
             }
         }
-        let mut found: BTreeMap<PathBuf, BTreeSet<String>> = BTreeMap::new();
+        let mut found: BTreeMap<PathBuf, BTreeSet<(String, String)>> = BTreeMap::new();
         for item in scan.items().iter().filter(|i| i.kind == ScannedKind::FreeFunction && i.permit == Some(FreeFunctionPermit::TestAttribute)) {
-            found.entry(item.file.clone()).or_default().insert(item.name.clone());
+            found.entry(item.file.clone()).or_default().insert((item.scope.clone(), item.name.clone()));
         }
         let mut packages = BTreeMap::new();
         for (directory, manifest_path) in manifests {
@@ -109,7 +131,7 @@ impl TestTargets {
     }
 
     /// The targets and tests of one package.
-    fn package_tests(tree: &SourceTree, found: &BTreeMap<PathBuf, BTreeSet<String>>, directory: &Path, manifest: &ManifestText) -> PackageTests {
+    fn package_tests(tree: &SourceTree, found: &BTreeMap<PathBuf, BTreeSet<(String, String)>>, directory: &Path, manifest: &ManifestText) -> PackageTests {
         let mut roots: Vec<(String, PathBuf)> = manifest.explicit_tests.iter().map(|(name, path)| (name.clone(), directory.join(path))).collect();
         let tests_directory = directory.join("tests");
         for file in tree.files() {
@@ -129,17 +151,71 @@ impl TestTargets {
         let targets = roots
             .into_iter()
             .map(|(name, root)| {
-                let tests = tree.reached_from(&root).iter().flat_map(|file| found.get(file.path()).into_iter().flatten().cloned()).collect();
-                TestTarget { name, tests }
+                let paths = Self::test_paths(tree, found, &root);
+                let tests = paths.iter().map(|path| path.rsplit("::").next().unwrap_or(path).to_string()).collect();
+                TestTarget { name, tests, paths }
             })
             .collect();
         let source_directory = directory.join("src");
-        let unit_tests = found.iter().filter(|(path, _)| path.starts_with(&source_directory)).flat_map(|(_, names)| names.iter().cloned()).collect();
-        PackageTests { targets, on_demand: manifest.on_demand.clone(), unit_tests }
+        let unit_tests = found.iter().filter(|(path, _)| path.starts_with(&source_directory)).flat_map(|(_, names)| names.iter().map(|(_, name)| name.clone())).collect();
+        let mut unit_roots = vec![source_directory.join("lib.rs"), source_directory.join("main.rs")];
+        unit_roots.extend(tree.files().iter().map(|file| file.path().to_path_buf()).filter(|path| path.parent() == Some(source_directory.join("bin").as_path())));
+        let mut unit_paths: BTreeSet<String> = unit_roots.iter().flat_map(|root| Self::test_paths(tree, found, root)).collect();
+        // a source file no root reaches (a `#[path]` the reader does not follow) keeps its inline path
+        let reached: BTreeSet<PathBuf> = unit_roots.iter().flat_map(|root| tree.reached_from(root)).map(|file| file.path().to_path_buf()).collect();
+        for (_, names) in found.iter().filter(|(path, _)| path.starts_with(&source_directory) && !reached.contains(*path)) {
+            unit_paths.extend(names.iter().map(|(scope, name)| if scope.is_empty() { name.clone() } else { format!("{scope}::{name}") }));
+        }
+        PackageTests { targets, on_demand: manifest.on_demand.clone(), unit_tests, unit_paths }
+    }
+
+    /// The paths, as cargo prints them, of the `#[test]` functions reached from the crate root `root`:
+    /// the file's module path, then the inline modules the function sits in, then its name.
+    fn test_paths(tree: &SourceTree, found: &BTreeMap<PathBuf, BTreeSet<(String, String)>>, root: &Path) -> BTreeSet<String> {
+        let mut paths = BTreeSet::new();
+        for (file, module_path) in tree.modules_reached_from(root) {
+            for (scope, name) in found.get(file.path()).into_iter().flatten() {
+                let segments = [module_path.as_str(), scope.as_str(), name.as_str()];
+                paths.insert(segments.iter().filter(|segment| !segment.is_empty()).copied().collect::<Vec<_>>().join("::"));
+            }
+        }
+        paths
     }
 
     /// The package of that name, when the workspace has it.
     pub fn package(&self, name: &str) -> Option<&PackageTests> {
         self.packages.get(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_written_path_names_a_test_only_with_its_own_modules() {
+        let full = "workspace_shape::examples_hold_only_package_sources";
+        assert!(TestTarget::path_names(full, "examples_hold_only_package_sources"));
+        assert!(TestTarget::path_names(full, full));
+        assert!(!TestTarget::path_names(full, "workspace_shape::workspace_shape::examples_hold_only_package_sources"));
+        assert!(!TestTarget::path_names(full, "crate_boundaries::examples_hold_only_package_sources"));
+        assert!(!TestTarget::path_names(full, "package_sources"));
+    }
+
+    #[test]
+    fn a_test_path_follows_the_module_declarations_from_the_root() {
+        let tree = SourceTree::of_sources(&[
+            ("crates/demo/tests/merged/main.rs", "mod shape;\nmod inline { mod deep; }\n#[test]\nfn at_root() {}\n"),
+            ("crates/demo/tests/merged/shape.rs", "#[test]\nfn in_shape() {}\nmod tests {\n    #[test]\n    fn nested() {}\n}\n"),
+            ("crates/demo/tests/merged/inline/deep.rs", "#[test]\nfn in_deep() {}\n"),
+        ]);
+        let scan = ItemScan::of(&tree);
+        let mut found: BTreeMap<PathBuf, BTreeSet<(String, String)>> = BTreeMap::new();
+        for item in scan.items().iter().filter(|i| i.permit == Some(FreeFunctionPermit::TestAttribute)) {
+            found.entry(item.file.clone()).or_default().insert((item.scope.clone(), item.name.clone()));
+        }
+        let paths = TestTargets::test_paths(&tree, &found, Path::new("crates/demo/tests/merged/main.rs"));
+        let expected: BTreeSet<String> = ["at_root", "shape::in_shape", "shape::tests::nested", "inline::deep::in_deep"].into_iter().map(str::to_string).collect();
+        assert_eq!(paths, expected);
     }
 }

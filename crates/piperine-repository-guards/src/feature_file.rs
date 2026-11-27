@@ -35,8 +35,8 @@ pub struct ProofLine {
     pub run_name: String,
     /// The words after the bar.
     pub expected: String,
-    /// The test function the expected line names (`test <name> ... ok`), module path removed.
-    pub test_name: Option<String>,
+    /// The test the expected line names (`test <path> ... ok`), with the module path it writes.
+    pub test_path: Option<String>,
     /// The line number, from 1.
     pub line_number: usize,
 }
@@ -248,8 +248,8 @@ impl FeatureFile {
                 current = id;
             } else if let Some(proof) = Self::parse_proof(line) {
                 if let Some((run_name, expected)) = Self::parse_run_proof(&proof) {
-                    let test_name = Self::test_named_by(&expected);
-                    proofs.push(ProofLine { check_id: current.clone(), run_name, expected, test_name, line_number: number });
+                    let test_path = Self::test_path_named_by(&expected);
+                    proofs.push(ProofLine { check_id: current.clone(), run_name, expected, test_path, line_number: number });
                 }
             }
         }
@@ -288,14 +288,14 @@ impl FeatureFile {
         Some((name.to_string(), expected.trim().to_string()))
     }
 
-    /// The test function a `test <name> ... ok` expected line names, module path removed; `None`
-    /// when the line names none or only a module prefix (`inventory_guard::`).
-    pub fn test_named_by(expected: &str) -> Option<String> {
+    /// The test a `test <path> ... ok` expected line names, with the module path it writes
+    /// (`merged::inner::it_holds`); `None` when the line names none or only a module prefix
+    /// (`inventory_guard::`).
+    pub fn test_path_named_by(expected: &str) -> Option<String> {
         let words: Vec<&str> = expected.split_whitespace().collect();
         let at = words.iter().position(|w| *w == "test")?;
-        let name = words.get(at + 1)?;
-        let last = name.rsplit("::").next()?;
-        if last.is_empty() || *name == "..." { None } else { Some(last.to_string()) }
+        let path = words.get(at + 1)?;
+        if path.ends_with("::") || *path == "..." { None } else { Some(path.to_string()) }
     }
 }
 
@@ -321,7 +321,7 @@ mod tests {
         assert_eq!(file.runs(), vec![RunLine { name: "docs".into(), command: "cargo test -p a --test docs".into(), line_number: 1 }]);
         assert_eq!(file.checks(), vec![CheckLine { id: "C3".into(), claim: "It holds.".into(), line_number: 5 }]);
         let proofs = file.proofs();
-        assert_eq!((proofs[0].check_id.as_str(), proofs[0].run_name.as_str(), proofs[0].test_name.as_deref()), ("C3", "docs", Some("it_holds")));
+        assert_eq!((proofs[0].check_id.as_str(), proofs[0].run_name.as_str(), proofs[0].test_path.as_deref()), ("C3", "docs", Some("it_holds")));
         assert_eq!(file.lone_proofs().iter().map(|p| p.command.as_str()).collect::<Vec<_>>(), vec!["cargo test -p a --lib"]);
     }
 
@@ -335,10 +335,10 @@ mod tests {
     }
 
     #[test]
-    fn a_module_path_is_removed_and_a_prefix_names_no_test() {
-        assert_eq!(FeatureFile::test_named_by("test merged::inner::it_holds ... ok").as_deref(), Some("it_holds"));
-        assert_eq!(FeatureFile::test_named_by("test inventory_guard:: ... ok"), None);
-        assert_eq!(FeatureFile::test_named_by("result ok"), None);
+    fn a_module_path_is_kept_and_a_prefix_names_no_test() {
+        assert_eq!(FeatureFile::test_path_named_by("test merged::inner::it_holds ... ok").as_deref(), Some("merged::inner::it_holds"));
+        assert_eq!(FeatureFile::test_path_named_by("test inventory_guard:: ... ok"), None);
+        assert_eq!(FeatureFile::test_path_named_by("result ok"), None);
     }
 
     #[test]

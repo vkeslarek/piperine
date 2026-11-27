@@ -734,7 +734,7 @@ Proof: `cargo metadata --no-deps --format-version 1 > /dev/null`
 Proof: run boundaries | test workspace_shape::root_tests_hold_no_end_to_end_target ... ok
 
 **C11** - `examples/` holds no `.vams`, `.py` or `.png` file and no `requirements.txt` (SR-02, AC 5)
-Proof: run boundaries | test workspace_shape::workspace_shape::examples_hold_only_package_sources ... ok
+Proof: run boundaries | test workspace_shape::examples_hold_only_package_sources ... ok
 
 **C12** - `default-members` is `piperine-lang` plus the three solver crates (SR-02, AC 6)
 Proof: run boundaries | test workspace_shape::default_members_are_the_green_crates ... ok

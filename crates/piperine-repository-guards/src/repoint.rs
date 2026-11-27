@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 
 use crate::cargo_command::{CargoCommandLine, CargoTestCommand};
 use crate::feature_file::FeatureFile;
+use crate::test_targets::TestTarget;
 
 /// The proof a retired check carries instead of its removed test.
 const RETIRED_PROOF: &str = "Proof: run ledger | test every_retired_check_is_recorded ... ok";
@@ -344,7 +345,7 @@ impl FeatureRewriter {
             let Some(proof) = FeatureFile::parse_proof(line) else { continue };
             let Some((run_name, expected)) = FeatureFile::parse_run_proof(&proof) else { continue };
             let targets_it = runs.get(&run_name).and_then(|command| CargoTestCommand::parse(command)).is_some_and(|c| c.package() == Some(&test.package) && (c.targets().is_empty() || c.targets().contains(&test.target.as_str())));
-            if targets_it && FeatureFile::test_named_by(&expected).as_deref() == Some(test.function()) {
+            if targets_it && FeatureFile::test_path_named_by(&expected).is_some_and(|written| TestTarget::path_names(&test.test, &written)) {
                 found.push((index, run_name, check.clone()));
             }
         }
@@ -361,7 +362,11 @@ impl FeatureRewriter {
             let new_run = self.run_for(&to.package, &to.target);
             // a run line inserted above the proof shifts its index
             let at = index + (self.lines.len() - before);
-            self.lines[at] = self.lines[at].replacen(&format!("run {run_name}"), &format!("run {new_run}"), 1).replacen(from.function(), &to.test, 1);
+            // the whole test path the proof writes gives way to the survivor's, so a module the
+            // proof already names is not written twice
+            let written = FeatureFile::parse_proof(&self.lines[at]).and_then(|proof| FeatureFile::parse_run_proof(&proof)).and_then(|(_, expected)| FeatureFile::test_path_named_by(&expected)).unwrap_or_else(|| from.function().to_string());
+            let renamed = self.lines[at].replacen(&format!("run {run_name}"), &format!("run {new_run}"), 1).replacen(&format!("test {written} "), &format!("test {} ", to.test), 1);
+            self.lines[at] = renamed;
         }
     }
 
@@ -424,11 +429,11 @@ impl InventoryRewriter {
                 None => cell.to_string(),
             },
             RepointRow::Replace { from, to } => match TestReference::parse(cell) {
-                Ok(held) if held.package == from.package && held.target == from.target && held.function() == from.function() => to.spelled(),
+                Ok(held) if held.package == from.package && held.target == from.target && TestTarget::path_names(&from.test, &held.test) => to.spelled(),
                 _ => cell.to_string(),
             },
             RepointRow::Retire { test, .. } => match TestReference::parse(cell) {
-                Ok(held) if held.package == test.package && held.target == test.target && held.function() == test.function() => {
+                Ok(held) if held.package == test.package && held.target == test.target && TestTarget::path_names(&test.test, &held.test) => {
                     return Err(format!("an inventory row of the Book is covered by `{}`, which is retired: replace it instead", test.spelled()));
                 }
                 _ => cell.to_string(),
@@ -544,6 +549,15 @@ mod tests {
         fixture.apply("T12", "replace alpha/old_target::a_copy alpha/other_target::it_holds_too\n");
         assert_eq!(fixture.read(".specs/features/demo/tasks.md"), Fixture::TASKS.replace("run old | test a_copy", "run other | test it_holds_too"));
         assert_eq!(fixture.read("tests/book/inventory.tsv"), Fixture::INVENTORY.replace("alpha/old_target::a_copy", "alpha/other_target::it_holds_too"));
+    }
+
+    #[test]
+    fn a_replace_inside_a_module_writes_the_module_once() {
+        let text = "**Run guards**: `cargo test -p alpha --test boundaries`\n\n**C1** - It holds.\nProof: run guards | test shape::old_name ... ok\n";
+        let file = FeatureFile::new(PathBuf::from("tasks.md"), "demo", text.to_string());
+        let map = RepointMap::parse("T9", "replace alpha/boundaries::shape::old_name alpha/boundaries::shape::new_name\n").expect("a map");
+        let (rewritten, _) = FeatureRewriter::rewrite(&file, &map).expect("a rewrite");
+        assert_eq!(rewritten, text.replace("test shape::old_name", "test shape::new_name"));
     }
 
     #[test]
