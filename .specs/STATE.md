@@ -1969,6 +1969,26 @@ whoever merges second). Found by `generics` phase E (T109): `idtmod` never wrapp
    back what a pulse took away (`restore_passed`). GAPS X1 closed (its §15 text was already the solve-then-react order; the
    stale §15.2 note is replaced).
 
+### MD-85: the clarity ground: a guards crate with ratchet allowances, dev-only test support, one module layout, `LanguageItems`, `Refusal`
+
+`code-clarity` (2026-11-26; the number follows MD-84; a collision at merge is renumbered by whoever merges second). The standing
+rules once the feature has landed, from the approved `.specs/features/code-clarity/design.md`:
+
+1. **Repository guards have their own crate.** `piperine-repository-guards` is a test-only crate with no in-tree dependency:
+   the source scan (`SourceTree`, `ItemScan`), the proof ledger and the targets `structure`, `boundaries`, `ownership`,
+   `naming`, `documentation`, `suite`, `worklists`, `proof_ledger`. A guard is a ratchet: what a rule finds today is a row of
+   `allowances/<crate>/` or `worklists/`, a task closes a finding by deleting rows and adds none, and a row that no longer
+   exists fails the guard.
+2. **Test support is a dev-only crate**, never a `#[path]` include across crates.
+3. **One module layout**: `x.rs` beside `x/`, never `x/mod.rs`; a module is named for a concern.
+4. **`LanguageItems` is the only way the compiler finds a `std` item**; no special case by name.
+5. **Every `P0001` goes through `Refusal`**, one place words a refusal.
+6. **MD-28 is amended**: the repository guards live in their own crate, and the Book is one test target with one module per chapter.
+7. Behaviour does not change (CC-09): goldens, twins, parity and Book listings stay byte-identical; no tolerance moves.
+
+**Scope:** every crate; `docs/spec` for the language changes of phases 15 to 17.
+**Status:** Accepted (2026-11-26), from the approved `code-clarity` feature (spec Assumptions 1 to 17).
+
 ## Handoff Snapshot
 
 ### Feature - `solver-abi-integration` (2026-11-15)
