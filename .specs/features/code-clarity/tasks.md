@@ -938,8 +938,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Both `lib.rs` hold no `struct`, `enum`, `impl` or `fn`; every public path is unchanged
-- [ ] Gate check passes: Golden
+- [x] Both `lib.rs` hold no `struct`, `enum`, `impl` or `fn`; every public path is unchanged
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
