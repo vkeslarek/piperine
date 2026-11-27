@@ -35,10 +35,10 @@ use crate::analyses::transient::TransientSolver;
 pub struct CircuitInstance {
     pub title: String,
     pub netlist: Netlist,
-    /// The bound device instances (the device contract); `Some` from `build` on.
-    pub(crate) abi: Option<crate::core::bind::Bound>,
-    /// What the device instances were bound from (a circuit of devices).
-    pub(crate) recipe: Option<crate::core::bind::Recipe>,
+    /// The bound device instances (the device contract), bound by `build`.
+    pub(crate) abi: crate::core::bind::Bound,
+    /// What the device instances were bound from.
+    pub(crate) recipe: crate::core::bind::Recipe,
     /// The name each node was given to `CircuitBuilder::node` (ground excluded).
     pub(crate) node_names: Vec<(String, piperine_analog_solver::netlist::AnalogReference)>,
     is_set_up: bool,
@@ -52,25 +52,23 @@ impl CircuitInstance {
 
     pub fn netlist(&self) -> &Netlist { &self.netlist }
 
-    /// The bound device instances, when the circuit was built from devices.
-    pub fn bound(&self) -> Option<&crate::core::bind::Bound> { self.abi.as_ref() }
+    /// The bound device instances; always `Some`, because `build` binds them.
+    pub fn bound(&self) -> Option<&crate::core::bind::Bound> { Some(&self.abi) }
     /// A run error with its unknowns named by the pins and branches of this
     /// circuit; any other error passes through.
     pub(crate) fn name_error(&self, error: piperine_analog_solver::error::Error) -> piperine_analog_solver::error::Error {
-        match &self.abi {
-            Some(bound) => bound.name(error),
-            None => error,
-        }
+        self.abi.name(error)
     }
-    pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { self.abi.as_mut() }
+
+    /// The bound device instances, mutably; always `Some`, because `build` binds them.
+    pub fn bound_mut(&mut self) -> Option<&mut crate::core::bind::Bound> { Some(&mut self.abi) }
 
     /// The values the device instance at `path` is created with, by param
     /// name: what `CircuitBuilder::device` was given (or a later structural
     /// `set` wrote), which bind hands to the module's `create`. A param absent
     /// here keeps its prototype's default. `None` when no instance has `path`.
     pub fn given(&self, path: &str) -> Option<&[(String, crate::core::bind::ParamValue)]> {
-        let recipe = self.recipe.as_ref()?;
-        recipe.specs.iter().find(|s| s.path == path).map(|s| s.values.as_slice())
+        self.recipe.specs.iter().find(|s| s.path == path).map(|s| s.values.as_slice())
     }
 
     /// Every solved signal in the circuit — analog nodes and analog branch
@@ -191,9 +189,7 @@ impl CircuitInstance {
 
     pub(crate) fn setup_all(&mut self, ctx: &Context) -> crate::core::result::Result<()> {
         if self.is_set_up { return Ok(()); }
-        if let Some(bound) = self.abi.as_mut() {
-            bound.set_temperature(ctx.tolerances.temperature, ctx.tolerances.temperature_given);
-        }
+        self.abi.set_temperature(ctx.tolerances.temperature, ctx.tolerances.temperature_given);
         self.is_set_up = true;
         Ok(())
     }
@@ -202,9 +198,7 @@ impl CircuitInstance {
     /// from the next analysis on, `TEMPERATURE_GIVEN` says the run set it, and a
     /// device that reads them recomputes.
     pub fn set_temperature(&mut self, t: f64) {
-        if let Some(bound) = self.abi.as_mut() {
-            bound.set_temperature(t, true);
-        }
+        self.abi.set_temperature(t, true);
     }
 
     /// Sets `param` of the device instance at `path` to `value` between
@@ -221,9 +215,7 @@ impl CircuitInstance {
         value: crate::core::bind::ParamValue,
     ) -> crate::core::result::Result<()> {
         use piperine_digital_solver::engine::Shadow;
-        let bound = self.abi.as_mut().ok_or_else(|| {
-            Error::simple(SolverDomain::Device, "`set` addresses device instances; this circuit has none")
-        })?;
+        let bound = &mut self.abi;
         let (net, bytes) = bound.param_bytes(path, param, &value)?;
         let shadow = bound
             .digital
@@ -250,8 +242,12 @@ impl CircuitInstance {
             }
             Shadow::Accept | Shadow::Reshape { .. } => {}
         }
-        let recipe = self.recipe.as_mut().expect("a circuit of devices keeps its recipe");
-        let spec = recipe.specs.iter_mut().find(|s| s.path == path).expect("the instance was bound");
+        let spec = self
+            .recipe
+            .specs
+            .iter_mut()
+            .find(|s| s.path == path)
+            .ok_or_else(|| Error::simple(SolverDomain::Device, format!("no device instance at `{path}`")))?;
         spec.values.retain(|(n, _)| n != param);
         spec.values.push((param.to_string(), value));
         if structural || !matches!(shadow, Shadow::Accept) {
@@ -265,9 +261,7 @@ impl CircuitInstance {
     /// `where`, and the write must not need another shape. The refusal is the error.
     pub fn check_set(&self, path: &str, param: &str, value: &crate::core::bind::ParamValue) -> crate::core::result::Result<()> {
         use piperine_digital_solver::engine::Shadow;
-        let bound = self.abi.as_ref().ok_or_else(|| {
-            Error::simple(SolverDomain::Device, "`check_set` addresses device instances; this circuit has none")
-        })?;
+        let bound = &self.abi;
         let (net, bytes) = bound.param_bytes(path, param, value)?;
         match bound.digital.shadow(net, 0, &bytes).map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))? {
             Shadow::Accept => Ok(()),
@@ -284,7 +278,7 @@ impl CircuitInstance {
     /// Whether the host has written the discrete net `net` (its name in the digital plan) before
     /// the run, so that the write is the net's initial value; `false` for a name that is no net.
     pub fn net_written(&self, net: &str) -> bool {
-        let Some(bound) = self.abi.as_ref() else { return false };
+        let bound = &self.abi;
         let Some(at) = bound.digital.plan().nets.iter().position(|n| n.name == net) else { return false };
         bound.host_writes.iter().any(|(id, _)| id.0 as usize == at)
     }
@@ -296,9 +290,7 @@ impl CircuitInstance {
     /// its value bytes only.
     pub fn write_net(&mut self, net: &str, value: crate::core::bind::ParamValue) -> crate::core::result::Result<()> {
         use piperine_digital_solver::engine::Shadow;
-        let bound = self.abi.as_mut().ok_or_else(|| {
-            Error::simple(SolverDomain::Device, "`write_net` addresses device instances; this circuit has none")
-        })?;
+        let bound = &mut self.abi;
         let (id, bytes) = bound.net_bytes(net, &value)?;
         let shadow = bound
             .digital
@@ -327,7 +319,7 @@ impl CircuitInstance {
     /// the recipe, over the circuit's own nodes.
     fn rebind(&mut self) -> crate::core::result::Result<()> {
         use piperine_analog_solver::netlist::AnalogVariable;
-        let recipe = self.recipe.clone().expect("a circuit of devices keeps its recipe");
+        let recipe = self.recipe.clone();
         // The nodes keep their indices: the builder allocated them before bind.
         let mut nodes: Vec<_> = self
             .netlist
@@ -344,7 +336,6 @@ impl CircuitInstance {
                 return Err(Error::simple(SolverDomain::Device, "a node was allocated after bind; cannot bind again"));
             }
         }
-        self.abi = None;
         let bound = crate::core::bind::bind(crate::core::bind::BindInput {
             specs: recipe.specs,
             arrays: recipe.arrays,
@@ -357,7 +348,7 @@ impl CircuitInstance {
             temperature: recipe.temperature,
         })?;
         self.netlist = netlist;
-        self.abi = Some(bound);
+        self.abi = bound;
         Ok(())
     }
 
@@ -371,9 +362,14 @@ impl CircuitInstance {
     // the MD-18 restamp path re-enters via [`set`](Self::set)
     // + a re-run of the analysis — never via a new constructor).
 
-    /// Build a `CircuitInstance` over a netlist; the builder binds the device
-    /// instances into it.
-    pub(crate) fn from_netlist(title: impl Into<String>, netlist: Netlist) -> Self {
-        Self { title: title.into(), netlist, abi: None, recipe: None, node_names: Vec::new(), is_set_up: false }
+    /// Build a `CircuitInstance` over a netlist and the device instances the
+    /// builder bound into it, with the recipe they were bound from.
+    pub(crate) fn from_netlist(
+        title: impl Into<String>,
+        netlist: Netlist,
+        abi: crate::core::bind::Bound,
+        recipe: crate::core::bind::Recipe,
+    ) -> Self {
+        Self { title: title.into(), netlist, abi, recipe, node_names: Vec::new(), is_set_up: false }
     }
 }

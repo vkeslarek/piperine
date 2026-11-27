@@ -335,15 +335,13 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
     }
 
     fn any_limiting_report(&self) -> bool {
-        self.circuit.abi.as_ref().is_some_and(|bound| !bound.analog.limiting_active().is_empty())
+        !self.circuit.abi.analog.limiting_active().is_empty()
     }
 
     /// Every Newton iteration but the first ends here (abi.md A2).
     fn before_iter_callback(&mut self, _state: &CircularArrayBuffer2<f64>, iteration_number: usize) {
-        if iteration_number > 0
-            && let Some(bound) = self.circuit.abi.as_mut()
-        {
-            bound.analog.end_iteration();
+        if iteration_number > 0 {
+            self.circuit.abi.analog.end_iteration();
         }
     }
 
@@ -357,11 +355,10 @@ impl<'a> NonLinearSystem<AnalogReference, f64> for TransientSystem<'a> {
         converged: &ArrayView1<f64>,
     ) {
         let amb = self.ambient();
-        if let Some(bound) = self.circuit.abi.as_mut() {
-            bound.analog.end_iteration();
-            if let Err(e) = bound.analog.push_stage(&converged.to_vec(), amb) {
-                self.callback_error.get_or_insert(e);
-            }
+        let bound = &mut self.circuit.abi;
+        bound.analog.end_iteration();
+        if let Err(e) = bound.analog.push_stage(&converged.to_vec(), amb) {
+            self.callback_error.get_or_insert(e);
         }
     }
 }
@@ -396,7 +393,7 @@ impl TransientSystem<'_> {
         };
         let stage = Stage { phase: self.phase, h: self.h, prev_h: self.prev_h, jump: self.jump };
         let amb = self.ambient();
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         bound.analog.assemble_tran_into(x, amb, stage, out)?;
         if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", out) {
             return Err(err);
@@ -642,11 +639,10 @@ impl<'a> TransientSolver<'a> {
             uic_hold: false,
             callback_error: None,
         };
-        if let Some(bound) = &system.circuit.abi {
-            let mut tolerances = system.context.tolerances.clone();
-            bound.tighten(&mut tolerances);
-            system.context.tolerances = tolerances;
-        }
+        let bound = &system.circuit.abi;
+        let mut tolerances = system.context.tolerances.clone();
+        bound.tighten(&mut tolerances);
+        system.context.tolerances = tolerances;
 
         let solver = match NewtonRaphsonSolver::new(&mut system, size, 4) {
             Ok(solver) => solver,
@@ -682,7 +678,7 @@ impl<'a> TransientSolver<'a> {
         circuit: &CircuitInstance,
         selection: &crate::core::introspect::ProbeSelection,
     ) -> crate::core::result::Result<()> {
-        let bound = circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &circuit.abi;
         for (label, observable) in &selection.requests {
             let Some((terms, vars)) = bound.analog.observable_names(label) else {
                 return Err(piperine_analog_solver::error::Error::simple(
@@ -752,21 +748,17 @@ impl<'a> TransientSolver<'a> {
     /// the two stay aligned (the equilibrium rows count as `STATIC`).
     fn push_initial(&mut self, ivs: Vec<InitialValue<AnalogReference, f64>>) -> crate::core::result::Result<()> {
         self.solver.push_initial_conditions(ivs);
-        if self.system.circuit.abi.is_none() {
-            return Ok(());
-        }
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
         let amb = Ambient { time: self.options.start_time, is_static: true, ..self.system.ambient() };
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            bound.analog.push_stage(&x, amb)?;
-        }
+        let bound = &mut self.system.circuit.abi;
+        bound.analog.push_stage(&x, amb)?;
         Ok(())
     }
 
     /// The `(plus, minus, ic)` seeds of the circuit: a continuous pin's `init`
     /// (abi.md §3.1).
     fn initial_seeds(&self) -> Vec<(Option<AnalogReference>, Option<AnalogReference>, f64)> {
-        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &self.system.circuit.abi;
         bound.holds.iter().map(|h| (Some(h.reference.clone()), None, h.value)).collect()
     }
 
@@ -848,7 +840,7 @@ impl<'a> TransientSolver<'a> {
     /// first-order estimate of its own two stages (`TrBdf2::jump_lte`) against the same `trtol`.
     fn assess_step(&self, prediction: &StepPrediction) -> StepAssessment {
         let tolerances = &self.system.context.tolerances;
-        let states = self.system.circuit.abi.as_ref().map(|bound| bound.analog.ddt_states()).unwrap_or_default();
+        let states = self.system.circuit.abi.analog.ddt_states();
         let error = match prediction.kind {
             StepKind::Ordinary => TrBdf2::state_lte(&states, tolerances, prediction.dt_actual),
             StepKind::ReadsJump => TrBdf2::jump_lte(&states, tolerances, prediction.dt_actual),
@@ -970,7 +962,7 @@ impl<'a> TransientSolver<'a> {
     /// `probe_selection` requested. Empty `probe_selection` +
     /// `record_device_state = false` records nothing.
     fn collect_device_banks(&self) -> HashMap<String, (Vec<f64>, Vec<f64>)> {
-        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &self.system.circuit.abi;
         Self::collect_instance_banks(bound, &self.options.probe_selection)
     }
 
@@ -1175,7 +1167,7 @@ impl TransientSolver<'_> {
                 later_nets.push(write);
             }
         }
-        let bound = self.system.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.system.circuit.abi;
         let mut writes = Vec::with_capacity(later.len() + later_nets.len());
         for (t, path, param, value) in &later {
             let (net, bytes) = bound.param_bytes(path, param, value)?;
@@ -1297,16 +1289,15 @@ impl TransientSolver<'_> {
         let statistics = protocol.statistics().clone();
         let (side, analog) = protocol.into_sides();
         let mut run = analog.run;
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            bound.digital = side.into_digital();
-        }
+        let bound = &mut self.system.circuit.abi;
+        bound.digital = side.into_digital();
         ran.map_err(|error| self.system.circuit.name_error(error))?;
         // Under `Keep::Last` the one step kept is the last, from the final solution.
         if self.options.keep == Keep::Last {
             run.steps.push(self.full_snapshot(run.st.origin + run.st.current_time));
         }
         // The last step carries the state a later run re-enters from.
-        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &self.system.circuit.abi;
         let nets = (0..bound.digital.plan().nets.len())
             .map(|i| bound.digital.read_analog(piperine_digital_solver::net::NetId(i as u32)))
             .collect();
@@ -1888,19 +1879,18 @@ impl TransientSolver<'_> {
         restart: crate::protocol::Restart,
     ) {
         use crate::protocol::Restart;
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            for b in boundary {
-                bound.analog.set_discrete(b.slot, &b.bytes);
-            }
-            run.delivered = match restart {
-                Restart::None => Vec::new(),
-                Restart::Integrator | Restart::IntegratorSmall => boundary
-                    .iter()
-                    .filter_map(|b| bound.names.slot_nets.get(b.slot as usize))
-                    .filter_map(|net| run.net_names.get(net.0 as usize).cloned())
-                    .collect(),
-            };
+        let bound = &mut self.system.circuit.abi;
+        for b in boundary {
+            bound.analog.set_discrete(b.slot, &b.bytes);
         }
+        run.delivered = match restart {
+            Restart::None => Vec::new(),
+            Restart::Integrator | Restart::IntegratorSmall => boundary
+                .iter()
+                .filter_map(|b| bound.names.slot_nets.get(b.slot as usize))
+                .filter_map(|net| run.net_names.get(net.0 as usize).cloned())
+                .collect(),
+        };
         match restart {
             Restart::None => {}
             Restart::Integrator => {
@@ -1924,19 +1914,18 @@ impl TransientSolver<'_> {
     const HOST_RESTART_FRACTION: f64 = 0.1;
 
     pub(crate) fn device_mark(&self) -> DeviceMark {
-        let bound = self.system.circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &self.system.circuit.abi;
         (self.solver.state_snapshot(), bound.analog.snapshot())
     }
 
     pub(crate) fn device_restore(&mut self, mark: &DeviceMark) {
         self.solver.restore_state(mark.0.clone());
-        if let Some(bound) = self.system.circuit.abi.as_mut() {
-            bound.analog.restore(&mark.1);
-        }
+        let bound = &mut self.system.circuit.abi;
+        bound.analog.restore(&mark.1);
     }
 
     pub(crate) fn device_bound(&mut self) -> &mut crate::core::bind::Bound {
-        self.system.circuit.abi.as_mut().expect("a circuit of devices")
+        &mut self.system.circuit.abi
     }
 }
 

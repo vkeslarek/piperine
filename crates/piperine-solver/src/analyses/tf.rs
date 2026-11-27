@@ -226,7 +226,7 @@ impl<'a> TransferFunctionSolver<'a> {
             }
         }
 
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: 0.0,

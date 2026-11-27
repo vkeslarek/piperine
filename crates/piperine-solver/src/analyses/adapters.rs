@@ -436,7 +436,7 @@ pub(crate) struct EquilibriumSide<'s, 'c> {
 
 impl EquilibriumSide<'_, '_> {
     fn bound(&mut self) -> &mut Bound {
-        self.dc.system.circuit.abi.as_mut().expect("a circuit of devices")
+        &mut self.dc.system.circuit.abi
     }
 }
 
@@ -479,7 +479,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
     }
 
     fn mark(&self) -> AssemblySnapshot {
-        self.dc.system.circuit.abi.as_ref().expect("a circuit of devices").analog.snapshot()
+        self.dc.system.circuit.abi.analog.snapshot()
     }
 
     fn restore(&mut self, mark: &AssemblySnapshot) {

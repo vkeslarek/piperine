@@ -125,7 +125,7 @@ impl AcSystem<'_> {
             gmin: self.context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let (mut matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
         matrix.extend(rhs);
         Ok(matrix)

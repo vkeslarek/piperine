@@ -51,7 +51,6 @@ crates/piperine-solver/src/analyses/transient.rs::TransientSolver::new	1
 crates/piperine-solver/src/core/bind.rs::::bind_error	1
 crates/piperine-solver/src/core/bind.rs::::create	1
 crates/piperine-solver/src/core/circuit.rs::CircuitInstance::ac	1
-crates/piperine-solver/src/core/circuit.rs::CircuitInstance::bound_mut	1
 crates/piperine-solver/src/core/circuit.rs::CircuitInstance::dc	1
 crates/piperine-solver/src/core/circuit.rs::CircuitInstance::netlist	1
 crates/piperine-solver/src/core/circuit.rs::CircuitInstance::noise	1

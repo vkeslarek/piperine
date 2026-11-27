@@ -82,7 +82,7 @@ impl<'a> SensSolver<'a> {
     fn param_value(&self, label: &str, param: &str) -> crate::core::result::Result<f64> {
         use piperine_abi::raw::{leaf, pin_flag, role};
         let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
-        let bound = self.circuit.abi.as_ref().expect("a circuit of devices");
+        let bound = &self.circuit.abi;
         let Some(inst) = bound.names.instances.iter().position(|p| p == label) else {
             return Err(sens(format!("no instance labeled `{label}`")));
         };

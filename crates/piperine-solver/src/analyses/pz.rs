@@ -270,7 +270,7 @@ impl<'a> PoleZeroSolver<'a> {
         }
 
         let mut g = Array2::<f64>::zeros((size, size));
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: 0.0,
@@ -306,7 +306,7 @@ impl<'a> PoleZeroSolver<'a> {
             gmin: context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut circuit.abi;
         for stamp in bound.analog.assemble_ac(&op, amb)?.0 {
             if let Stamp::Matrix(r, c, val) = stamp
                 && let (Some(ri), Some(ci)) = (r.idx(), c.idx())

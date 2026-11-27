@@ -826,8 +826,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `expect` on the binding remains in `analyses/` or `core/circuit.rs`
-- [ ] Gate check passes: Quick
+- [x] No `expect` on the binding remains in `analyses/` or `core/circuit.rs`
+- [x] Gate check passes: Quick
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

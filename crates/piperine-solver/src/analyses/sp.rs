@@ -98,7 +98,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
             gmin: self.context.tolerances.gmin,
             source_scale: 1.0,
         };
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let (matrix, rhs) = bound.analog.assemble_ac(&op, amb)?;
         stamps.extend(matrix);
         stamps.extend(rhs);
@@ -243,7 +243,7 @@ impl<'a> SpSolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use piperine_analog_solver::netlist::{Netlist, NodeIdentifier};
+    use piperine_analog_solver::netlist::NodeIdentifier;
     use crate::analyses::test_devices as td;
     use crate::core::builder::CircuitBuilder;
     use num_complex::Complex64;
@@ -393,9 +393,7 @@ mod tests {
 
     #[test]
     fn zero_ports_fails_loud() {
-        let mut netlist = Netlist::new();
-        let _gnd = netlist.connect_node(NodeIdentifier::Gnd);
-        let mut circuit = CircuitInstance::from_netlist("empty", netlist);
+        let mut circuit = crate::core::builder::CircuitBuilder::new("empty").build().expect("an empty circuit builds");
         let options = SpOptions {
             ports: vec![],
             sweep: AcSweepAnalysisOptions { start_frequency: 1e6, stop_frequency: 1e6, steps: 1, logarithmic: false },

@@ -111,7 +111,7 @@ impl<'a> ParamStampCollector<'a> {
         let tolerances = self.context.tolerances.clone();
         let ref_map = index_refs(self.circuit.netlist().all_references());
         let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
-        let bound = self.circuit.abi.as_mut().expect("a circuit of devices");
+        let bound = &mut self.circuit.abi;
         let Some(inst) = bound.names.instances.iter().position(|p| *p == req.label) else {
             return Err(sens(format!("no instance `{}`", req.label)));
         };
