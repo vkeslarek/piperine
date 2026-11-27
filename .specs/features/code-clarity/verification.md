@@ -1223,3 +1223,156 @@ The `?` is not dead code worth deleting. It is the T25-style replacement of an `
   - T55 (lane K, wave 2) edits `lang/src/elab/{place,resolvers}.rs`.
 
   No other lane owns those paths in wave 2, so nothing collides. The table should still name them, or T49's item should move to a P10 task.
+
+## Phase 5 (B2a Device fixtures and the back-end merges, T33 to T40)
+
+**Verdict**: FAIL (three Medium findings, five Low)
+**Head**: ef7a2da28 on `feature/code-clarity-p5`, base 97d327d58
+**Verifier**: independent sub-agent (Opus; author != verifier). There is no `proofs.md` yet, because `check_proofs.py` runs after T155. This round reran the phase gates itself, one at a time.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, then filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (all targets, after touching `src/*.rs`) | all pass: lib 50, boundaries 20, suite 29 (with the two new ratchets), proof_ledger 4, worklists 5, ownership 5, the rest 2 each |
+| `cargo test -p piperine-abi` | 59 passed (58 at the base, plus the T33 test) |
+| `cargo test -p piperine-analog-solver` | 111 passed, the same as the base |
+| `cargo test -p piperine-digital-solver` | 161 passed, the same as the base |
+| `cargo test -p piperine-device-fixtures` | 1 passed (`its_devices_pass_the_partials_verifier`) |
+| `cargo test -p piperine-solver`, and `--tests -- --test-threads=1` | 371 passed both ways, the same as the base |
+| `cargo test -p piperine-parity` | 645 passed |
+| `cargo test -p piperine --test book_inventory` | 18 passed |
+| CC-09: `git diff 97d327d58..HEAD` over `docs/`, `examples/`, `tests/`, `crates/piperine-{parity,transpile,cli}`, `*.msl` and goldens | empty. `crates/piperine-parity/src/contract.rs` is untouched |
+
+### Timing (the user's goal: a leaner, faster suite)
+
+Measured in the same target dir with a warm dependency cache. The base came from a `git archive` of 97d327d58 in `/var/tmp`, which was deleted afterwards.
+
+| `piperine-solver` | 97d327d58 (57 binaries) | ef7a2da28 (8 binaries) |
+| --- | --- | --- |
+| `touch src/lib.rs`, then `cargo test --no-run` (lib rebuild plus every test link) | 68.2 s | 50.8 s (the fixtures crate rebuild included) |
+| `cargo test -p piperine-solver`, with everything built | 6.25 s | 1.67 s |
+
+The same 371 tests run in both. The gain is real: link time drops by about a quarter and run time to a quarter.
+
+### Tests kept (scrutiny 1)
+
+- I extracted every `#[test] fn` from the five crates at both revisions, 699 before and 701 after. Each name keeps its count.
+- The two additions are the T33 test `a_device_that_only_evaluates_reacts_and_continues` and the fixtures crate's `its_devices_pass_the_partials_verifier` (28 copies of that name now, 27 before).
+- For every test I compared the assertion count and the numeric and string literals between the two revisions. 4 tests differ, and all four are the boundary edits judged under scrutiny 5:
+  - `crate_declares_no_dependency`
+  - `the_crate_depends_on_the_abi_crate_only`, in both analog and digital
+  - `every_hand_written_device_is_in_a_partials_check`, see P5-5
+  - `a_whole_read_cell_holds_an_array_view`, where only the `extern "C" fn` moved into `ArrayViews`
+- Every other body change is a call-path rewrite: a free helper became `Type::method`, and `add_vsrc` became `CircuitBuilding::add_voltage_source`.
+- The repoints are all `move` rows, 11 + 13 + 16 + 22 + 30 = 92. Four modules carry a full-word name rather than the former target's: `abi_sens`→`abi_sensitivity`, `adjoint_vs_sens`→`adjoint_against_sensitivity`, `sens`→`sensitivity`, `stepper_fold`→`step_fold`. Each has its `move` row, and I accept them under the full-words rule.
+- `proof_ledger` passes.
+
+### Seeded allowances (scrutiny 2)
+
+- At T34 (026c8d269), `test_support_shared_by_path` holds 548 rows with a summed count of 548. `allow_in_test_code` holds 243 rows with a summed count of 498, and `allow_attributes` holds 3 rows with a count of 4.
+- At the base, `allow_attributes` held 246 rows with a count of 502. 243 + 3 = 246 and 498 + 4 = 502, so the move is net-zero.
+- At the head, the files hold 401 rows/401 and 169 rows/352. The back-end crates have no row in either file.
+- The rows are exact keys `file::item<TAB>count`, with no wildcard. `Allowance::judge` fails on a count above the real one (stale) and on one below it (unlisted), so a green guard proves the rows are exactly today's violations.
+- Throwaway probes, all reverted, with `git status` clean afterwards:
+  - I appended `#[allow(dead_code)] #[path = "host_set.rs"] mod probe_duplicate;` to `solver/tests/host/main.rs` and raised `piperine-lang/tests/book.rs`'s two rows to 2. Both ratchets failed, each naming the new row as unlisted and the raised row as stale.
+  - I put a free `#[allow]`ed fn into `device-fixtures/src/lib.rs`. `no_free_helper_function_in_test_code` failed on it, so the fixtures crate is held to the test-code rules.
+
+### Judgements
+
+- **Scrutiny 5, the fixtures dev-cycle.**
+  - design.md:255 names the crate's users as "abi, analog-solver, digital-solver, solver (dev-dependency)". The fixtures crate depends on solver, so the dev-cycle is inherent to the approved design. The `DOCUMENTED_ARROWS` row and the three boundary edits are its necessary consequence.
+  - Every loosening is scoped to the one name `piperine-device-fixtures`.
+  - A normal (non-dev) dependency on it from a back-end crate would be a cargo cycle, and `DOCUMENTED_ARROWS` would refuse it anyway. Accepted.
+  - Cost noted: `cargo test -p piperine-abi` now builds the whole back end.
+- **Scrutiny 5, "each device once".** Not met: P5-2.
+- **Scrutiny 5, `*-fixtures` as test code.**
+  - Acceptable as a classification. It is what makes `test_only_items` and the test-code ratchets right, and `#![deny(missing_docs)]` covers the documentation rule.
+  - It also removes the crate from `long_functions` (none over 60 lines today), `single_implementor_traits`, `repeated_type_names` (which would have flagged P5-2) and the module-structure rule.
+  - `is_fixtures_crate` (`source_tree.rs:120`) has no unit test. Low: P5-8.
+- **Scrutiny 6, `context_init`.** The reason is real. `Context::init_global` sets faer's global parallelism behind a process `Once`, and the test asserts that `Context::default()` has not done so. Any earlier solver build in the same binary would make it fail or pass vacuously. The approved T39 text said 6, though: P5-6.
+- **Scrutiny 9, the code rules.**
+  - There is no free function, no macro and no `#[allow]` in the new test or fixtures code (the guards are green, and the probe above shows they reach the fixtures).
+  - Names pass the dictionary guard, and no new undeclared word was added (the allowances only shrank: abi 53→42, analog 120→96, digital 37→27, solver 288→216).
+  - Doc quality is poor: P5-7.
+
+### Checks
+
+| Check | Test | Holds |
+| --- | --- | --- |
+| T33: a device with `eval` only, and its `react` thunk returns `Continue` | `thunks::thunks::a_device_that_only_evaluates_reacts_and_continues` | yes. `EvalOnly` declares one reaction and writes no `react`. The test asserts `status::OK` and that nothing is committed |
+| T34: `#![deny(missing_docs)]`, no free function, one `PartialsCheck` over every device, once | `device-fixtures/tests/partials.rs` `its_devices_pass_the_partials_verifier` | **no**. 27 copies plus 4 variants remain, and the check misses `digital::PulseGenerator` (P5-1, P5-5). "Each device once" and "analog-only ones with no `react`" are unmet (P5-2, P5-4) |
+| T34: the two ratchets pass under `**Run suite**` | `suite::test_code::{no_test_support_is_shared_by_path,no_allow_in_test_code}` | yes, both ways (probes above) |
+| T35: 2 targets, a header each, names kept, no `#[path]`/`#[allow]`/free helper; plan 2 | `target_plan`, the ratchets, the name diff | yes |
+| T36: 3 targets, names kept, `support/devices.rs` gone, plan 3 | the same | yes |
+| T37: 3 targets, names kept, `support/devices.rs` gone, plan 3 | the same | yes |
+| T38: the three targets pass with `--test-threads=1` and the default; names kept | solver run both ways | yes on the Done-when. **no** on the What: the 27 copies did not leave, and there are no `replace` rows (P5-1) |
+| T39: 7 targets, `tests/helpers/` gone, plan 7, both ways | the same | yes, against an approved text the implementer edited from 6 (P5-6) |
+| T40: no row of the four crates in the three allowances | the allowance files | honestly unticked. The `tests/` rows are closed and 36 `src/` rows remain. The named owners do not carry them (P5-3) |
+
+### P5-1 (Medium): the 27 partials-verifier copies were not retired, and nothing owns them
+
+- tasks.md:1166 (T38 What): "the 27 copies of `its_devices_pass_the_partials_verifier` leave with `replace` rows to the one of T34". T34's Done-when (tasks.md:1086) ticks "`its_devices_pass_the_partials_verifier`, once".
+- At the head:
+  - 27 copies remain in `crates/piperine-solver/tests/`, plus `its_device_passes_the_partials_verifier` in `analyses/noise_report.rs:137` and `transient/truncation.rs:222`, and `its_corner_source_…`/`its_once_faulting_device_…` in `truncation.rs:216,227`.
+  - The 59 `impl Device for` in the solver's tests stay target-local.
+  - `repoints/T38.tsv` has no `replace` row.
+- Both boxes are ticked, and no task owns the remainder.
+- Repro: `grep -rln 'fn its_devices_pass_the_partials_verifier' crates/piperine-solver/tests | wc -l` prints 27.
+- Fix: either move the target-local devices into the fixtures crate and retire the copies with `replace` rows, or untick the T34 and T38 items and name an owner task with a Done-when line.
+
+### P5-2 (Medium): "each device once" is not met, and the M6 file was copied rather than replaced
+
+- T34 What: "each device once" and "`solver/src/analyses/test_devices.rs` (M6)" among the sources replaced.
+- The fixtures crate declares one device type several times:
+  - `Resistor` 3× (`examples.rs:30`, `circuit.rs:43`, `analyses.rs:18`).
+  - `Capacitor` and `VoltageSource` 3× each.
+  - `Diode`, `Comparator`, `Counter`, `Timer`, `DataFlipFlop`, `Inverter`, `Recorder`, `Sampler`, `Stub`, `Faulty`, `Tracer`, `Inductor`, `NoisyResistor` and `Call` 2× each, for 18 repeated names in all.
+- The three `Resistor`s are the same `I = V/r` device. They differ in the `origin` string, the default bytes and whether `∂/∂r` is declared. The commit's reason, that "merging would change behaviour", holds for the stateful digital variants but not for these.
+- `fixtures/src/analyses.rs` (391 lines) is a copy of `solver/src/analyses/test_devices.rs`, which still exists and is still what `pz.rs:381` and `sp.rs:246` use. The copy's only consumer is the fixtures partials test.
+- Repro: `grep -rlE '^\s*pub struct Resistor\b' crates/piperine-device-fixtures/src` lists 3 files.
+- Fix: merge the pure-analog duplicates. The `test_devices.rs` side is lane K's `src/**`, so either drop `analyses.rs` until lane K repoints `pz`/`sp` to it, or give that repoint an owner line.
+
+### P5-3 (Medium): the T40 deferral names owners whose text does not carry it, and the dependency is circular
+
+- T40's box (tasks.md:1219) says the 36 `test_helper_functions` rows stay open "for lane K's back-end phase, T77 to T85 (T84 for the solver analyses)". None of T77 to T85 mentions `test_helper_functions`, `#[cfg(test)]` helpers, or `test_devices.rs`.
+  - T84 (tasks.md:2208) closes the **free-function** allowance of product code.
+  - T78 splits `raw.rs` by section.
+- T77 and the lane-K phase "Start after T40" (tasks.md:178, 2057), so T40 waits on lane K and lane K waits on T40.
+- The box itself is honestly unticked.
+- Rows still open: abi `raw.rs` 1; analog `convergence.rs`, `math/{faer,integration,newton_raphson,singular}.rs`, `stamp_validation.rs` 6; solver `pz.rs` 5, `sp.rs` 3, `test_devices.rs` 20, `protocol/statistics.rs` 1.
+- Fix:
+  - Add a Done-when line naming these rows to the owning tasks (T77 for abi, T79 or T80 for analog, T84 for solver).
+  - Make T40's remaining item depend on them, or split T40 so lane K's start does not wait on its open half.
+
+### P5-4 (Low): 55 trivial `react` bodies survive the T33 default
+
+- T34 What: "analog-only ones with no `react`".
+- `crates/piperine-device-fixtures/src` still holds 55 `fn react(&self, _k: u32, _cx: &mut React) -> Result<Flow, Fault> { Ok(Flow::Continue) }`, for example `circuit.rs:88,159,221`. Each is exactly the new default.
+- Repro: `grep -rn -A1 'fn react' crates/piperine-device-fixtures/src | grep -c 'Ok(Flow::Continue)'`.
+
+### P5-5 (Low): the "every device is in a partials check" guard no longer reaches the shared devices
+
+- At the base, `every_hand_written_device_is_in_a_partials_check` scanned `tests/helpers/*.rs` with `device_impls` and required each helper device in a check.
+- At the head (`solver/tests/abi_devices/abi_devices.rs:77`), it scans only the solver's `tests/`. The fixtures crate's coverage rests on the hand-written list `EveryDevice` (`device-fixtures/tests/partials.rs`), which no scan holds to the crate's `impl Device for` set.
+- That list already misses `digital::PulseGenerator` (`device-fixtures/src/digital.rs:916`). Before, that device lived in digital-solver's support, where no partials check ran, so nothing regressed for it. The guard's reach is what shrank.
+- Repro: `grep -c PulseGenerator crates/piperine-device-fixtures/tests/partials.rs` prints 0.
+- Fix: build `EveryDevice` from a scan of the crate's `impl Device for` items, or add a test that compares the two.
+
+### P5-6 (Low): an approved Done-when was edited without a recorded approval
+
+- T39's Done-when read "6 targets … Plan lowered to 6". The implementer changed it to 7 in tasks.md:1198-1199.
+- The reason is sound (scrutiny 6), and C25's "75 link steps" total shifts with it, as does the new `piperine-device-fixtures 1` plan row.
+- An approved task text needs the coordinator's or the user's word in a Deferred or Notes line. A silent rewrite of the criterion does not do that.
+
+### P5-7 (Low): tautological doc comments and a stray comment
+
+- 147 doc comments in the fixtures crate read "The shape helper `shape`." or "The module helper `module`." (for example `circuit.rs:49,67`). They satisfy `///` on every item and say nothing, against the manual-style docs rule.
+- `crates/piperine-abi/tests/thunks/thunks.rs:321` holds a leftover `// 2.0f64` as the first line of `impl ProbeCalls`.
+
+### P5-8 (Low): `is_fixtures_crate` is unpinned and broader than its doc
+
+- `source_tree.rs:120` treats every crate whose name ends in `-fixtures` as test code. That matches the planned `piperine-ir-fixtures` (T63) and is fine, but no unit test pins it.
+- It also removes the crate from the product-only `repeated_type_names`, `long_functions` and `single_implementor_traits` guards.
+- Fix: add a unit test in `item_scan.rs`'s scenarios. A test-origin `repeated_type_names` would also have caught P5-2.
