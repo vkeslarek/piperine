@@ -4,7 +4,7 @@
 
 ## Open questions (for the user)
 
-Eight decisions are the user's. Each has a recommendation; the documents below are written on the recommended side, and each question names what changes on the other side. A ninth item is listed because it must stay open.
+Eight decisions are the user's. **Answered 2026-11-27: the user chose the recommended side of all eight (Q1–Q8)** — answers given through the coordinator's question form, each option labelled "(Recommended)". The documents below are written on that side. A ninth item is listed because it must stay open.
 
 | # | Question | Recommendation | The other side |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ Today the specification of record is a feature note (`.specs/features/device-abi
 | Publishing the artifact and pushing are remote actions | The closing tasks ask for the user's go-ahead before either | The skill's blast-radius rule | n |
 | Version | The ABI stays at the symbol `piperine_abi_1`, `MAJOR = 1`, `MINOR = 0`, and changes in place. No task bumps a version, adds a second symbol or keeps a compatibility layer. The feature is named `device-abi-simplification` so that its name suggests no version | Proposal §18.1. The cache key over the ABI's sources already makes a library compiled before the change miss the cache | y - user, 2026-11-27: "nao avanca a versão do ABI, ainda nao fizemos release" |
 
-**Open questions:** Q1 to Q8 at the top of this document, open until the user answers. S21 stays open and is not this feature's.
+**Open questions:** Q1 to Q8 at the top of this document — answered by the user on 2026-11-27, recommended side of each. S21 stays open and is not this feature's.
 
 ### Dimensions sweep
 
