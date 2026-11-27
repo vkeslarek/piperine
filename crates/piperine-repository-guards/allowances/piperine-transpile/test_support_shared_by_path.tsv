@@ -4,7 +4,6 @@ crates/piperine-transpile/tests/amended.rs::mixed	1
 crates/piperine-transpile/tests/analog_if.rs::alone	1
 crates/piperine-transpile/tests/carrier_arrays.rs::mixed	1
 crates/piperine-transpile/tests/commits.rs::mixed	1
-crates/piperine-transpile/tests/compiled.rs::circuits	1
 crates/piperine-transpile/tests/control.rs::alone	1
 crates/piperine-transpile/tests/control.rs::probe	1
 crates/piperine-transpile/tests/differential.rs::both	1
@@ -14,15 +13,11 @@ crates/piperine-transpile/tests/environment.rs::mixed	1
 crates/piperine-transpile/tests/generics.rs::alone	1
 crates/piperine-transpile/tests/generics.rs::mixed	1
 crates/piperine-transpile/tests/generics.rs::probe	1
-crates/piperine-transpile/tests/golden.rs::circuits	1
 crates/piperine-transpile/tests/number_widths.rs::alone	1
 crates/piperine-transpile/tests/operators.rs::compiled	1
-crates/piperine-transpile/tests/operators.rs::fixtures	1
 crates/piperine-transpile/tests/pid.rs::mixed	1
 crates/piperine-transpile/tests/reaction.rs::alone	1
 crates/piperine-transpile/tests/reject.rs::alone	1
 crates/piperine-transpile/tests/residue.rs::both	1
 crates/piperine-transpile/tests/resolve.rs::alone	1
 crates/piperine-transpile/tests/resolve.rs::compiled	1
-crates/piperine-transpile/tests/session.rs::circuits	1
-crates/piperine-transpile/tests/structure.rs::structure	1

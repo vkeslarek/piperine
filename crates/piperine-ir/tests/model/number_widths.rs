@@ -7,9 +7,7 @@
 //! limbs).
 
 use piperine_ir_fixtures::digital;
-#[path = "support/shape.rs"]
-#[allow(dead_code)]
-mod shape;
+use crate::shape;
 
 use digital::ValueAliases;
 use piperine_ir::{BinaryOp, Expr, ExprId, Ir, IrBuilder, Local, Method, ValueType, WideData, WideId};

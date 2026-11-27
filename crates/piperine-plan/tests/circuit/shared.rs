@@ -13,14 +13,12 @@ use piperine_ir::{BodyId, Ir};
 use piperine_plan::{BodyPlan, Modules, Netlist};
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
+use piperine_ir_fixtures::circuits;
 #[allow(dead_code)]
-#[path = "../../piperine-interp/tests/support/circuits.rs"]
-mod circuits;
-#[allow(dead_code)]
-#[path = "../../piperine-interp/tests/support/models.rs"]
+#[path = "../../../piperine-interp/tests/interpreter/models.rs"]
 mod models;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 use models::{Models, View};
 
 #[test]
@@ -76,7 +74,7 @@ fn instances(ir: &Ir, supplier: &Supplier) -> (Vec<String>, piperine_solver::pre
 
 #[test]
 fn the_netlist_binds_whatever_supplies_the_modules() {
-    let ir = Circuits::divider();
+    let ir = HandCircuits::divider();
     let supplier = |withheld| Supplier { from: Interpreter::new(Arc::new(ir.clone())).expect("a checked IR"), withheld };
 
     // every module supplied: the three instances are bound and the divider reads 7.5 V

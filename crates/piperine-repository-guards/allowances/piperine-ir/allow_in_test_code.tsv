@@ -1,4 +1,0 @@
-crates/piperine-ir/tests/aggregates.rs::allow(dead_code)	1
-crates/piperine-ir/tests/control.rs::allow(dead_code)	1
-crates/piperine-ir/tests/number_widths.rs::allow(dead_code)	1
-crates/piperine-ir/tests/operators.rs::allow(dead_code)	1

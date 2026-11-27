@@ -4,11 +4,9 @@
 use std::mem::size_of;
 
 use piperine_ir_fixtures::devices;
-#[path = "support/sources.rs"]
-mod sources;
 
 use devices::Devices;
-use sources::SourceTree;
+use piperine_ir_fixtures::sources::RustSources;
 use piperine_ir::{
     BinaryOp, Body, BodyId, BodyNode, BodySpec, Branch, BranchKind, NodeRef, Site, Constant, Env, Expr, ExprId, Function,
     FunctionId, Instance, InstanceId, InstanceSpec, Ir, IrBuilder, MathFn, Nature, NatureId, Node,
@@ -48,7 +46,7 @@ fn a_finished_ir_has_no_mutating_operation() {
     // No `&mut self` method on `Ir` or on a handle: the builder (and the printer's own buffer)
     // are the only types that mutate.
     let read_only = ["Ir ", "Ir{", "Body<", "Function<", "Instance<", "Node<", "Nature<"];
-    for (path, text) in SourceTree::files() {
+    for (path, text) in RustSources::files(env!("CARGO_MANIFEST_DIR")) {
         let mut guarded = false;
         for (n, line) in text.lines().enumerate() {
             if line.starts_with("impl") {

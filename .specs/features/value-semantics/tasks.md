@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run errors**: `cargo test -p piperine-lang --test msl_errors`
 **Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
 **Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
-**Run iragg**: `cargo test -p piperine-ir --test aggregates`
+**Run iragg**: `cargo test -p piperine-ir --test model aggregates::`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run stdlib**: `cargo test -p piperine-lang --test std_library`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`

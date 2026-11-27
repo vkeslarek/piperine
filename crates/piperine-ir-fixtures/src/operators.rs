@@ -1,8 +1,8 @@
-//! The body `Op(a)` the analog-operator tests of `piperine-ir` and `piperine-plan` build by hand
-//! (`#[path]`-included, never a target itself): one flow branch `(a, gnd)`, the param `td`, and
-//! the sites a test writes (delays, noise sources, session parameters, trace sites).
+//! The body `Op(a)` the analog-operator tests of `piperine-ir`, `piperine-plan`, `piperine-interp` and
+//! `piperine-transpile` build by hand: one flow branch `(a, gnd)`, the param `td`, and the sites a test writes
+//! (delays, noise sources, session parameters, trace sites).
 
-use piperine_ir_fixtures::devices::{Devices, Ex};
+use crate::devices::{Devices, Ex};
 use piperine_ir::{
     Addend, BodyNode, BodySpec, Branch, BranchKind, Carrier, Constant, DelaySite, EmitField, Event, Expr, ExprId, InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NoiseSource, Operator, Origin, Param, QuantityRole, Reaction, Real,
     SessionParameter, Stmt, StmtId, Stream, StreamField, Terminal, TraceSite, ValueType,
@@ -10,15 +10,24 @@ use piperine_ir::{
 
 /// What a test writes into the body `Operators` builds.
 #[derive(Default)]
-pub struct Written {
+pub struct OperatorWrites {
+    /// The statements of the `analog` block.
     pub analog: Vec<StmtId>,
+    /// The delay sites of the body.
     pub delays: Vec<DelaySite>,
+    /// The noise sources of the body.
     pub noise_sources: Vec<NoiseSource>,
+    /// The session parameters of the body.
     pub session_parameters: Vec<SessionParameter>,
+    /// The streams of the body.
     pub streams: Vec<Stream>,
+    /// The trace sites of the body.
     pub traces: Vec<TraceSite>,
+    /// The carriers of the body.
     pub carriers: Vec<Carrier>,
+    /// The events of the body.
     pub events: Vec<Event>,
+    /// The reactions of the body.
     pub reactions: Vec<Reaction>,
 }
 
@@ -27,6 +36,7 @@ pub struct Written {
 pub struct Operators;
 
 impl Operators {
+    /// The file every node of `Operators` is attributed to.
     pub const FILE: &'static str = "operators.msl";
 
     /// The origin every form of the fixture shares.
@@ -45,11 +55,11 @@ impl Operators {
     }
 
     /// The design `Op` with everything `write` returns.
-    pub fn ir(write: impl FnOnce(&mut IrBuilder) -> Written) -> Ir {
+    pub fn ir(write: impl FnOnce(&mut IrBuilder) -> OperatorWrites) -> Ir {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, delays, noise_sources, session_parameters, streams, traces, carriers, events, reactions } = write(&mut b);
+        let OperatorWrites { analog, delays, noise_sources, session_parameters, streams, traces, carriers, events, reactions } = write(&mut b);
         let delay_time = Param { name: "td".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Op".into(),
@@ -171,6 +181,6 @@ impl Operators {
 
     /// A design tracing the probe, the trace being in the `analog` block.
     pub fn tracing() -> Ir {
-        Self::ir(|b| Written { analog: vec![Self::trace_the_probe(b, 0)], streams: vec![Self::newton()], traces: vec![Self::trace_site()], ..Written::default() })
+        Self::ir(|b| OperatorWrites { analog: vec![Self::trace_the_probe(b, 0)], streams: vec![Self::newton()], traces: vec![Self::trace_site()], ..OperatorWrites::default() })
     }
 }

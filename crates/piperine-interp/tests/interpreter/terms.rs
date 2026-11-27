@@ -17,9 +17,7 @@ use piperine_ir::{
 };
 
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "support/models.rs"]
-mod models;
+use crate::models;
 
 use devices::{Devices, Ex};
 use models::{In, Models, View};

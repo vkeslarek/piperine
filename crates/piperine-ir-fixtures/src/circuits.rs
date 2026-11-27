@@ -7,25 +7,30 @@ use piperine_ir::{
     NodeRole, NodeSpec, Origin, Real, Terminal,
 };
 
-use piperine_ir_fixtures::devices::Devices;
+use crate::devices::Devices;
 
 /// One child placement: its name, body, terminals (`None` is ground) and bound params.
-pub struct Place {
+pub struct ChildPlacement {
+    /// The instance name.
     pub name: &'static str,
+    /// The body placed.
     pub body: BodyId,
+    /// The signal each terminal is on, by index; `None` is ground.
     pub nodes: Vec<Option<usize>>,
+    /// The bound params, in the body's order.
     pub params: Vec<f64>,
 }
 
-pub struct Circuits;
+/// The hand-built circuits themselves, one constructor each.
+pub struct HandCircuits;
 
-impl Circuits {
+impl HandCircuits {
     fn at(line: u32) -> Origin {
         Origin { file: "circuits.msl".into(), line, col: 1 }
     }
 
     /// A top `name` with `signals` (name, initial potential) and the placements, as an `Ir`.
-    fn top(mut b: IrBuilder, name: &str, signals: &[(&str, Option<f64>)], places: Vec<Place>) -> Ir {
+    fn top(mut b: IrBuilder, name: &str, signals: &[(&str, Option<f64>)], places: Vec<ChildPlacement>) -> Ir {
         let el = Devices::electrical(&mut b);
         let terminal = |n: &Option<usize>| n.map_or(Terminal::Ground, |i| Terminal::Node(i as u32));
         let body = b.body(BodySpec {
@@ -112,9 +117,9 @@ impl Circuits {
         let mut b = IrBuilder::new();
         let (v, r, d) = (Devices::vsource(&mut b), Devices::resistor(&mut b), Devices::diode(&mut b));
         let places = vec![
-            Place { name: "v1", body: v, nodes: vec![Some(0), None], params: vec![0.8, 0.0] },
-            Place { name: "r1", body: r, nodes: vec![Some(0), Some(1)], params: vec![1.0] },
-            Place { name: "d1", body: d, nodes: vec![Some(1), None], params: vec![1e-14, 1.0, 0.0] },
+            ChildPlacement { name: "v1", body: v, nodes: vec![Some(0), None], params: vec![0.8, 0.0] },
+            ChildPlacement { name: "r1", body: r, nodes: vec![Some(0), Some(1)], params: vec![1.0] },
+            ChildPlacement { name: "d1", body: d, nodes: vec![Some(1), None], params: vec![1e-14, 1.0, 0.0] },
         ];
         Self::top(b, "DiodeCircuit", &[("vin", None), ("a", None)], places)
     }
@@ -133,9 +138,9 @@ impl Circuits {
         let mut b = IrBuilder::new();
         let (v, r, c) = (Devices::vsource(&mut b), Devices::resistor(&mut b), Devices::capacitor(&mut b));
         let places = vec![
-            Place { name: "v1", body: v, nodes: vec![Some(0), None], params: source },
-            Place { name: "r1", body: r, nodes: vec![Some(0), Some(1)], params: vec![1000.0] },
-            Place { name: "c1", body: c, nodes: vec![Some(1), None], params: vec![Self::FARADS] },
+            ChildPlacement { name: "v1", body: v, nodes: vec![Some(0), None], params: source },
+            ChildPlacement { name: "r1", body: r, nodes: vec![Some(0), Some(1)], params: vec![1000.0] },
+            ChildPlacement { name: "c1", body: c, nodes: vec![Some(1), None], params: vec![Self::FARADS] },
         ];
         Self::top(b, name, &[("vin", None), ("out", out_init)], places)
     }

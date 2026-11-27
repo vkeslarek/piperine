@@ -6,13 +6,13 @@ piperine-api	26
 piperine-cli	10
 piperine-device-fixtures	1
 piperine-digital-solver	3
-piperine-interp	7
-piperine-ir	15
+piperine-interp	1
+piperine-ir	2
 piperine-ir-fixtures	1
 piperine-lang	82
 piperine-numbers	8
 piperine-parity	62
-piperine-plan	9
+piperine-plan	2
 piperine-project	5
 piperine-repository-guards	8
 piperine-solver	7

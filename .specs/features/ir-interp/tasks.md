@@ -15,12 +15,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Build**: `cargo build -p piperine-abi --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-interp || cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run factory**: `cargo test -p piperine-abi --test thunks factory::`
 **Run lib**: `cargo test -p piperine-interp --lib`
-**Run shape**: `cargo test -p piperine-interp --test shape`
-**Run terms**: `cargo test -p piperine-interp --test terms`
-**Run limit**: `cargo test -p piperine-interp --test limit`
-**Run stim**: `cargo test -p piperine-interp --test stim`
-**Run circuit**: `cargo test -p piperine-interp --test circuit`
-**Run partials**: `cargo test -p piperine-interp --test partials`
+**Run shape**: `cargo test -p piperine-interp --test interpreter shape::`
+**Run terms**: `cargo test -p piperine-interp --test interpreter terms::`
+**Run limit**: `cargo test -p piperine-interp --test interpreter limit::`
+**Run stim**: `cargo test -p piperine-interp --test interpreter stimulus::`
+**Run circuit**: `cargo test -p piperine-interp --test interpreter circuit::`
+**Run partials**: `cargo test -p piperine-interp --test interpreter partials::`
 
 Executors: Opus implements T1 and T5 to T9 (the one task with `unsafe`, and the tasks that decide numbers: the shape plan, the `Terms` walk, the affine rule, `limit`); Sonnet implements T2 to T4 and T10 to T12; a different Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` merged into the worktree first (the crate `piperine-ir` and `crates/piperine-ir/tests/support/devices.rs`). It does not need `piperine-lang`: every test runs on IR built by hand.
 

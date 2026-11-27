@@ -6,9 +6,7 @@
 
 use piperine_ir_fixtures::digital;
 
-#[path = "support/shape.rs"]
-#[allow(dead_code)]
-mod shape;
+use crate::shape;
 
 use digital::{Buck, Dx, ValueAliases};
 use shape::{Entries, Shape, Written, FILE};

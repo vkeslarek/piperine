@@ -18,14 +18,10 @@ use piperine_ir::{
 };
 
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "support/circuits.rs"]
-mod circuits;
-#[allow(dead_code)]
-#[path = "support/models.rs"]
-mod models;
+use piperine_ir_fixtures::circuits;
+use crate::models;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 use devices::{Devices, Ex};
 use models::{Models, View};
 
@@ -75,7 +71,7 @@ impl Odd {
 #[test]
 fn a_held_node_gives_has_init() {
     // `RcHeld.out` is held at 0 V; `Quiet.s` at 0.25 V.
-    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let held = Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked");
     let top = held.ir().top().body().id();
     let shape = held.module(top).expect("a body with a held node has a module").prototype();
     let view = View { shape };
@@ -183,7 +179,7 @@ fn a_block_without_contributions_gives_no_term() {
 
 #[test]
 fn a_held_node_without_analog_is_ports_only() {
-    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let held = Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked");
     let top = held.ir().top().body();
     assert!(top.analog().is_none());
     let shape = held.module(top.id()).expect("a held node gives a module").prototype();
@@ -191,7 +187,7 @@ fn a_held_node_without_analog_is_ports_only() {
     assert!(shape.pins.iter().all(|p| p.kind == kind::CONTINUOUS && p.role == role::PORT));
     assert_eq!((shape.terms.len(), shape.inputs.len(), shape.functions.len(), shape.reactions.len()), (0, 0, 0, 0));
     // a top with no held node and no analog block has no module
-    let divider = Interpreter::new(Arc::new(Circuits::divider())).expect("checked");
+    let divider = Interpreter::new(Arc::new(HandCircuits::divider())).expect("checked");
     assert!(divider.module(divider.ir().top().body().id()).is_none());
 }
 
@@ -345,7 +341,7 @@ fn every_entry_carries_its_origin() {
     assert_eq!(vsource.functions.get(0).unwrap().origin.as_str(), "devices.msl:21:62");
 
     // nothing is left without an origin
-    let (quiet, held) = (Odd::quiet(), Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked"));
+    let (quiet, held) = (Odd::quiet(), Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked"));
     for (name, shape) in Cells::every_shape(&m, &quiet, &held) {
         let origins = shape
             .pins
@@ -363,7 +359,7 @@ fn every_entry_carries_its_origin() {
 #[test]
 fn every_m1_shape_validates() {
     let (m, quiet) = (Models::all(), Odd::quiet());
-    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let held = Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked");
     let shapes = Cells::every_shape(&m, &quiet, &held);
     assert_eq!(shapes.len(), 7);
     for (name, shape) in shapes {
@@ -374,7 +370,7 @@ fn every_m1_shape_validates() {
 #[test]
 fn no_function_writes_a_limit_and_a_term() {
     let (m, quiet) = (Models::all(), Odd::quiet());
-    let held = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let held = Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked");
     let mut limit_writers = 0;
     for (name, shape) in Cells::every_shape(&m, &quiet, &held) {
         for f in shape.functions.iter() {

@@ -3,10 +3,10 @@ crates/piperine-interp/src/dual.rs::pair	1
 crates/piperine-interp/src/walk.rs::close	1
 crates/piperine-interp/src/walk.rs::pnjlim	1
 crates/piperine-interp/src/walk.rs::real	1
-crates/piperine-interp/tests/circuit.rs::ac_magnitude	1
-crates/piperine-interp/tests/circuit.rs::built	1
-crates/piperine-interp/tests/circuit.rs::dc	1
-crates/piperine-interp/tests/circuit.rs::follow	1
-crates/piperine-interp/tests/circuit.rs::node	1
-crates/piperine-interp/tests/circuit.rs::tight	1
-crates/piperine-interp/tests/circuit.rs::tolerances	1
+crates/piperine-interp/tests/interpreter/circuit.rs::ac_magnitude	1
+crates/piperine-interp/tests/interpreter/circuit.rs::built	1
+crates/piperine-interp/tests/interpreter/circuit.rs::dc	1
+crates/piperine-interp/tests/interpreter/circuit.rs::follow	1
+crates/piperine-interp/tests/interpreter/circuit.rs::node	1
+crates/piperine-interp/tests/interpreter/circuit.rs::tight	1
+crates/piperine-interp/tests/interpreter/circuit.rs::tolerances	1

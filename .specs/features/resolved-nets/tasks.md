@@ -17,9 +17,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sourcenatures**: `cargo test -p piperine-parity --test source_natures`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol protocol_transient::`
-**Run irresolved**: `cargo test -p piperine-ir --test resolved`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run planshape**: `cargo test -p piperine-plan --test digital_shape`
+**Run irresolved**: `cargo test -p piperine-ir --test model resolved::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
 **Run transresolve**: `cargo test -p piperine-transpile --test resolve`
 **Run sourceresolved**: `cargo test -p piperine-parity --test source_resolved`
 **Run sourcenets**: `cargo test -p piperine-parity --test source_nets`

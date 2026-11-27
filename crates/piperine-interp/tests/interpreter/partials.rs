@@ -8,9 +8,7 @@ use piperine_abi::device::{Access, cell_lens};
 use piperine_abi::raw::{Cell, Shape, ambient, cell, part, role};
 use piperine_abi::verify::{Verdict, verify_partials};
 
-#[allow(dead_code)]
-#[path = "support/models.rs"]
-mod models;
+use crate::models;
 
 use models::Models;
 

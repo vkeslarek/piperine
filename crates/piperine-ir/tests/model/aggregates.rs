@@ -4,9 +4,7 @@
 //! built by hand, checked (valid and refused) and printed.
 
 use piperine_ir_fixtures::digital;
-#[path = "support/shape.rs"]
-#[allow(dead_code)]
-mod shape;
+use crate::shape;
 
 use digital::ValueAliases;
 use piperine_ir::{AggregateData, AggregateId, BinaryOp, Constant, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Param, Place, Projection, Real, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};

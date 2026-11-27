@@ -13,7 +13,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/ir-rust/design.md`
 **Status**: Approved
 **Build**: `cargo build -p piperine-ir -p piperine-interp -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-plan || cargo build -p piperine-plan --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-transpile || cargo build -p piperine-transpile --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run plan**: `cargo test -p piperine-plan --test shared`
+**Run plan**: `cargo test -p piperine-plan --test circuit shared::`
 **Run reject**: `cargo test -p piperine-transpile --test reject`
 **Run lib**: `cargo test -p piperine-transpile --lib`
 **Run golden**: `cargo test -p piperine-transpile --test golden`
@@ -30,9 +30,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`
 **Run backends**: `cargo test -p piperine-parity --test backends`
 **Run contract**: `cargo test -p piperine-parity --lib`
-**Run irdigital**: `cargo test -p piperine-ir --test digital`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
-**Run planshape**: `cargo test -p piperine-plan --test digital_shape`
+**Run irdigital**: `cargo test -p piperine-ir --test model digital::`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
 **Run reaction**: `cargo test -p piperine-transpile --test reaction`
 **Run environment**: `cargo test -p piperine-transpile --test environment`
 **Run nets**: `cargo test -p piperine-transpile --test digital_circuit`

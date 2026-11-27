@@ -9,11 +9,9 @@ use piperine_interp::Interpreter;
 use piperine_ir::{IrBuilder, NodeRef};
 
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "support/circuits.rs"]
-mod circuits;
+use piperine_ir_fixtures::circuits;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 use devices::Devices;
 
 #[test]
@@ -32,7 +30,7 @@ fn an_ir_that_fails_check_is_rejected() {
 
 #[test]
 fn a_checked_ir_is_accepted() {
-    for ir in [Circuits::divider(), Circuits::diode(), Circuits::rc_lowpass(), Circuits::rc_held()] {
+    for ir in [HandCircuits::divider(), HandCircuits::diode(), HandCircuits::rc_lowpass(), HandCircuits::rc_held()] {
         assert_eq!(ir.check(), vec![]);
         assert!(Interpreter::new(Arc::new(ir)).is_ok());
     }
@@ -40,7 +38,7 @@ fn a_checked_ir_is_accepted() {
 
 #[test]
 fn the_held_circuit_holds_out_at_zero() {
-    let ir = Circuits::rc_held();
+    let ir = HandCircuits::rc_held();
     let out = ir.node_at("RcHeld.out").expect("node out");
     assert_eq!(out.init().map(|r| r.get()), Some(0.0));
     let r1 = ir.instance_at("RcHeld.r1").expect("r1");
@@ -117,7 +115,7 @@ mod bound {
 
 #[test]
 fn the_divider_reads_seven_and_a_half_volts() {
-    let (ir, mut circuit) = bound::built(Circuits::divider());
+    let (ir, mut circuit) = bound::built(HandCircuits::divider());
     let mid = bound::node(&ir, "Divider.mid");
     let v = bound::dc(&mut circuit, &mid);
     assert!((v - 7.5).abs() < 1e-9, "v(mid) = {v}");
@@ -125,7 +123,7 @@ fn the_divider_reads_seven_and_a_half_volts() {
 
 #[test]
 fn a_diode_converges_to_the_shockley_point() {
-    let (ir, mut circuit) = bound::built(Circuits::diode());
+    let (ir, mut circuit) = bound::built(HandCircuits::diode());
     let a = bound::node(&ir, "DiodeCircuit.a");
     let vd = circuit.dc(bound::tight()).expect("dc").solve().expect("solve").get_node(&a).expect("v(a)");
     // the source is 0.8 V behind 1 ohm: (0.8 - vd) = is*(exp(vd/nvt) - 1) + gmin*vd
@@ -140,7 +138,7 @@ fn a_diode_converges_to_the_shockley_point() {
 
 #[test]
 fn an_rc_low_pass_is_at_minus_three_db_at_its_corner() {
-    let (ir, mut circuit) = bound::built(Circuits::rc_lowpass());
+    let (ir, mut circuit) = bound::built(HandCircuits::rc_lowpass());
     let out = bound::node(&ir, "RcLowpass.out");
     let m = bound::ac_magnitude(&mut circuit, &out, 100e3);
     assert!((m - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9, "|v(out)| = {m}");
@@ -148,9 +146,9 @@ fn an_rc_low_pass_is_at_minus_three_db_at_its_corner() {
 
 #[test]
 fn a_held_node_starts_the_transient() {
-    let (ir, mut circuit) = bound::built(Circuits::rc_held());
+    let (ir, mut circuit) = bound::built(HandCircuits::rc_held());
     let out = bound::node(&ir, "RcHeld.out");
-    let rc = 1000.0 * Circuits::FARADS;
+    let rc = 1000.0 * HandCircuits::FARADS;
     let steps = bound::follow(&mut circuit, &out, rc);
     let (t0, v0) = steps[0];
     assert_eq!(t0, 0.0);
@@ -166,13 +164,13 @@ fn a_held_node_starts_the_transient() {
 
 #[test]
 fn one_module_per_body_with_behaviour_or_a_held_node() {
-    let interp = Interpreter::new(Arc::new(Circuits::rc_held())).expect("checked");
+    let interp = Interpreter::new(Arc::new(HandCircuits::rc_held())).expect("checked");
     let by_name = |n: &str| interp.ir().bodies().find(|b| b.name() == n).expect(n).id();
     for body in ["Vsource", "Resistor", "Capacitor", "RcHeld"] {
         assert!(interp.module(by_name(body)).is_some(), "{body} has a module");
     }
     // the divider's top has neither an `analog` block nor a held node
-    let plain = Interpreter::new(Arc::new(Circuits::divider())).expect("checked");
+    let plain = Interpreter::new(Arc::new(HandCircuits::divider())).expect("checked");
     let top = plain.ir().top().body().id();
     assert!(plain.module(top).is_none());
     assert!(plain.ir().bodies().filter(|b| plain.module(b.id()).is_some()).count() == 2);
@@ -180,7 +178,7 @@ fn one_module_per_body_with_behaviour_or_a_held_node() {
 
 #[test]
 fn a_circuit_binds_instances_nodes_and_params() {
-    let (ir, mut circuit) = bound::built(Circuits::divider());
+    let (ir, mut circuit) = bound::built(HandCircuits::divider());
     let bound = circuit.bound();
     let mut paths = bound.names.instances.clone();
     paths.sort();
@@ -208,7 +206,7 @@ fn an_unset_param_keeps_its_default() {
     // The diode's `is`, `n` and `cj0` are bound at their defaults (1e-14, 1, 0): the circuit
     // passes no value for them, and their pins hold the defaults. The source's `dc` = 0.8 is off
     // its default 0 and is passed; its `ac` = 0 is not.
-    let (_, mut circuit) = bound::built(Circuits::diode());
+    let (_, mut circuit) = bound::built(HandCircuits::diode());
     // what `create` receives
     let d1 = circuit.given("DiodeCircuit.d1").expect("the diode instance");
     assert!(d1.is_empty(), "the diode is created with {d1:?}");
@@ -230,7 +228,7 @@ fn an_unset_param_keeps_its_default() {
 #[test]
 fn a_set_that_breaks_a_where_is_refused() {
     use piperine_solver::prelude::ParamValue;
-    let (ir, mut circuit) = bound::built(Circuits::divider());
+    let (ir, mut circuit) = bound::built(HandCircuits::divider());
     let mid = bound::node(&ir, "Divider.mid");
     assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
     // `r` has `where r > 0`: a negative value is refused and the next dc reads what it read

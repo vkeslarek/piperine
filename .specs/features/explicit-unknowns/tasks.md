@@ -19,9 +19,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinv**: `cargo test -p piperine --test book_inventory`
 **Run types**: `cargo test -p piperine-lang --test types_explicit`
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
-**Run ir**: `cargo test -p piperine-ir --test digital`
+**Run ir**: `cargo test -p piperine-ir --test model digital::`
 **Run abi**: `cargo test -p piperine-abi --test contract layouts::`
-**Run plan**: `cargo test -p piperine-plan --test digital_shape`
+**Run plan**: `cargo test -p piperine-plan --test shape digital_shape::`
 **Run cache**: `cargo test -p piperine-transpile --test cache`
 **Run abicontract**: `cargo test -p piperine-abi --test contract contract::`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`

@@ -10,8 +10,8 @@ crates/piperine-plan/src/plan.rs::StimValue	1
 crates/piperine-plan/src/plan.rs::affine	1
 crates/piperine-plan/src/plan.rs::derivative_abstols	1
 crates/piperine-plan/src/resolved.rs::init_bytes	1
-crates/piperine-plan/tests/amended_shape.rs::freq_reads_the_ambient_and_analysis_reads_its_global_pin	1
-crates/piperine-plan/tests/composite_shape.rs::tx	1
-crates/piperine-plan/tests/digital_shape.rs::init	1
-crates/piperine-plan/tests/operators_shape.rs::a_delay_without_a_maximum_bounds_the_history_by_td	1
-crates/piperine-plan/tests/structure_shape.rs::a_switch_equation_is_not_affine	1
+crates/piperine-plan/tests/shape/amended_shape.rs::freq_reads_the_ambient_and_analysis_reads_its_global_pin	1
+crates/piperine-plan/tests/shape/composite_shape.rs::tx	1
+crates/piperine-plan/tests/shape/digital_shape.rs::init	1
+crates/piperine-plan/tests/shape/operators_shape.rs::a_delay_without_a_maximum_bounds_the_history_by_td	1
+crates/piperine-plan/tests/shape/structure_shape.rs::a_switch_equation_is_not_affine	1

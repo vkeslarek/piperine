@@ -9,10 +9,10 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
 **Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
-**Run irgen**: `cargo test -p piperine-ir --test generics`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
+**Run irgen**: `cargo test -p piperine-ir --test model generics::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test generics`
-**Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
+**Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`
 **Run parityproject**: `cargo test -p piperine-parity --test project`

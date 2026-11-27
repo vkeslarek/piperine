@@ -13,11 +13,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-ir/design.md`
 **Status**: Done - T1 to T8 delivered; Verifier rounds 1 and 2; **Verdict**: PASS after fixes (round-2 findings closed by 626bd373, 75f2885b, 7c63ce64, 336ff9e9, 94b14b89; see `verification.md`)
 **Build**: `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-ir || cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run model**: `cargo test -p piperine-ir --test model`
-**Run serde**: `cargo test -p piperine-ir --test serde`
-**Run print**: `cargo test -p piperine-ir --test print`
-**Run check**: `cargo test -p piperine-ir --test check`
-**Run deps**: `cargo test -p piperine-ir --test deps`
+**Run model**: `cargo test -p piperine-ir --test model model::`
+**Run serde**: `cargo test -p piperine-ir --test text serialization::`
+**Run print**: `cargo test -p piperine-ir --test text print::`
+**Run check**: `cargo test -p piperine-ir --test model check::`
+**Run deps**: `cargo test -p piperine-ir --test model dependencies::`
 
 Executors: Sonnet implements T1 to T7, Opus implements T8 (the dependency analysis decides the Jacobian pattern of every backend); Opus verifies the feature. The worktree and branch are told at dispatch. This feature has no dependency on another M1 feature: it runs in wave 1.
 

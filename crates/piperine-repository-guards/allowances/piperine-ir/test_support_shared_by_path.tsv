@@ -1,6 +1,0 @@
-crates/piperine-ir/tests/aggregates.rs::shape	1
-crates/piperine-ir/tests/control.rs::shape	1
-crates/piperine-ir/tests/model.rs::sources	1
-crates/piperine-ir/tests/number_widths.rs::shape	1
-crates/piperine-ir/tests/operators.rs::fixtures	1
-crates/piperine-ir/tests/print.rs::sources	1

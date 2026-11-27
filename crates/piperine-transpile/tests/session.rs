@@ -14,11 +14,9 @@ use piperine_solver::prelude::{
 };
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-interp/tests/support/circuits.rs"]
-mod circuits;
+use piperine_ir_fixtures::circuits;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 
 /// Writing an executable and exec'ing it races with another thread's `fork` holding the write
 /// descriptor (ETXTBSY); the tests here take turns.
@@ -84,7 +82,7 @@ fn follow(circuit: &mut CircuitInstance, id: &NodeIdentifier, stop: f64) -> Vec<
 fn no_analysis_runs_the_compiler() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let compiler = Counting::new();
-    let (diode_ir, rc_ir, held_ir) = (Circuits::diode(), Circuits::rc_lowpass(), Circuits::rc_held());
+    let (diode_ir, rc_ir, held_ir) = (HandCircuits::diode(), HandCircuits::rc_lowpass(), HandCircuits::rc_held());
     let diode = compiler.compile(&diode_ir);
     let rc = compiler.compile(&rc_ir);
     let held = compiler.compile(&held_ir);
@@ -104,7 +102,7 @@ fn no_analysis_runs_the_compiler() {
 
     let mut circuit = held.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
     let out = node(&held_ir, "RcHeld.out");
-    let rc_time = 1000.0 * Circuits::FARADS;
+    let rc_time = 1000.0 * HandCircuits::FARADS;
     let steps = follow(&mut circuit, &out, rc_time);
     let (_, v) = *steps.last().expect("steps");
     assert!((v - (1.0 - (-1.0_f64).exp())).abs() < 1e-3, "out at RC: {v}");
@@ -118,8 +116,8 @@ fn no_analysis_runs_the_compiler() {
 fn a_set_between_analyses_runs_no_compiler_and_applies() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let compiler = Counting::new();
-    let diode_ir = Circuits::diode();
-    let rc_ir = Circuits::rc_lowpass();
+    let diode_ir = HandCircuits::diode();
+    let rc_ir = HandCircuits::rc_lowpass();
     let diode = compiler.compile(&diode_ir);
     let rc = compiler.compile(&rc_ir);
     let built = compiler.calls();
@@ -139,7 +137,7 @@ fn a_set_between_analyses_runs_no_compiler_and_applies() {
     let corner = ac_magnitude(&mut circuit, &out, 100e3);
     circuit.set("RcLowpass.r1", "r", ParamValue::Real(2000.0)).expect("set the resistor");
     let doubled = ac_magnitude(&mut circuit, &out, 100e3);
-    let expected = 1.0 / (1.0 + (2.0 * std::f64::consts::PI * 100e3 * 2000.0 * Circuits::FARADS).powi(2)).sqrt();
+    let expected = 1.0 / (1.0 + (2.0 * std::f64::consts::PI * 100e3 * 2000.0 * HandCircuits::FARADS).powi(2)).sqrt();
     assert!((doubled - expected).abs() < 1e-9, "|v(out)| with 2 k: {doubled} vs {expected}");
     assert!(doubled < corner, "{doubled} < {corner}");
 

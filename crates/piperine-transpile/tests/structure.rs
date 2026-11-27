@@ -14,11 +14,9 @@ use piperine_ir::{BinaryOp, BodyId, BranchKind, Ir, IrBuilder, Operator, Quantit
 use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/structure.rs"]
-mod structure;
+use piperine_ir_fixtures::structure;
 
-use structure::{ParamEvents, Switching, Written};
+use structure::{ParamEvents, Switching, SwitchingWrites};
 
 /// One body of a design compiled with `rustc` and instantiated at its defaults. The cache
 /// directory lives as long as this does.
@@ -95,7 +93,7 @@ fn a_conditional_flow_contribution_adds_only_when_its_arm_runs() {
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let always = Switching::contribute(b, QuantityRole::Flow, 1.0);
         let (cond, taken) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Flow, 2.0));
-        Written { analog: vec![always, Switching::branch_on(b, cond, vec![taken], vec![])], ..Written::default() }
+        SwitchingWrites { analog: vec![always, Switching::branch_on(b, cond, vec![taken], vec![])], ..SwitchingWrites::default() }
     });
     let device = Device::of(ir);
     assert_eq!(device.run("terms", &[&Bytes::bit(true)]).expect("terms"), [3.0]);
@@ -122,7 +120,7 @@ fn a_switch_with_neither_kind_has_zero_flow() {
     // so the branch has zero flow (§11 rule 4): the row is `f = 0`, whose value is `f` itself.
     let ir = Switching::ir(BranchKind::Switch, |b| {
         let (cond, potential) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0));
-        Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![])], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![])], ..SwitchingWrites::default() }
     });
     let device = Device::of(ir);
     let (a, f) = (Bytes::real(0.5), Bytes::real(0.25));
@@ -136,7 +134,7 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
     // in one solve, §11 rule 2 makes that `E0418` naming the branch; with it low neither is.
     let both = Switching::ir(BranchKind::Switch, |b| {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
-        Written { analog: vec![Switching::branch_on(b, cond, vec![potential, flow], vec![])], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![potential, flow], vec![])], ..SwitchingWrites::default() }
     });
     let device = Device::of(both);
     let (a, f) = (Bytes::real(0.5), Bytes::real(0.25));
@@ -158,7 +156,7 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
         let first = Switching::branch_on(b, c1, vec![potential], vec![]);
         let (c2, flow) = (below(b, 0.9), Switching::contribute(b, QuantityRole::Flow, 2.0));
         let second = Switching::branch_on(b, c2, vec![flow], vec![]);
-        Written { analog: vec![first, second], ..Written::default() }
+        SwitchingWrites { analog: vec![first, second], ..SwitchingWrites::default() }
     });
     let device = Device::of(at_zero);
     assert_eq!(device.run("terms", &[&Bytes::real(0.75), &Bytes::real(0.25)]).expect("only the flow is enabled"), [0.25, -1.75]);
@@ -180,7 +178,7 @@ fn rate_in_a_flow(under_a_condition: bool, abstol: bool) -> Ir {
         } else {
             vec![contribution]
         };
-        Written { analog, derivatives: vec![site], ..Written::default() }
+        SwitchingWrites { analog, derivatives: vec![site], ..SwitchingWrites::default() }
     })
 }
 
@@ -231,7 +229,7 @@ fn a_disabled_limit_writes_its_last_value() {
         let (cond, enabled) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
         let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, read);
         let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
-        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..SwitchingWrites::default() }
     });
     let device = Device::of(ir);
     let (last, age, held) = (Bytes::real(0.75), [1u8], [0u8]);
@@ -249,7 +247,7 @@ fn a_disabled_cap_writes_infinity() {
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let (step, when) = (Switching::ex(b).real(0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
-        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+        SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
     let device = Device::of(ir);
     assert_eq!(device.run("cap:0", &[&Bytes::real(1.0)]).expect("cap"), [0.5]);
@@ -266,7 +264,7 @@ fn an_executed_cap_that_is_not_finite_and_positive_is_e0509() {
         let ir = Switching::ir(BranchKind::Flow, |b| {
             let (step, when) = (Switching::ex(b).real(bad), Switching::compare(b, BinaryOp::Gt, 0.5));
             let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
-            Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+            SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
         });
         let device = Device::of(ir);
         let fault = device.run("cap:0", &[&Bytes::real(1.0)]).expect_err("an executed cap that is not valid");
@@ -277,7 +275,7 @@ fn an_executed_cap_that_is_not_finite_and_positive_is_e0509() {
     let unguarded = Switching::ir(BranchKind::Flow, |b| {
         let step = Switching::ex(b).real(f64::INFINITY);
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
-        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+        SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
     let fault = Device::of(unguarded).run("cap:0", &[]).expect_err("an unguarded bound_step(inf) is executed");
     assert_eq!(fault.code, 509, "{fault}");

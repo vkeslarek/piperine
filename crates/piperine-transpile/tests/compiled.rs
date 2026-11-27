@@ -18,11 +18,9 @@ use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_transpile::{Compiled, Error, Settings, Transpiler};
 
 use piperine_ir_fixtures::devices;
-#[allow(dead_code)]
-#[path = "../../piperine-interp/tests/support/circuits.rs"]
-mod circuits;
+use piperine_ir_fixtures::circuits;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 use devices::Devices;
 
 /// Writing an executable and exec'ing it races with another thread's `fork` holding the write
@@ -63,7 +61,7 @@ fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
 fn modules_come_through_the_symbol_and_bind_like_the_interpreter() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let (_cache, settings) = fresh();
-    let ir = Circuits::divider();
+    let ir = HandCircuits::divider();
     let compiled = compile(&ir, &settings);
     let interp = Interpreter::new(Arc::new(ir.clone())).expect("a checked IR");
 
@@ -224,7 +222,7 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
 fn the_compiled_divider_solves() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let (_cache, settings) = fresh();
-    let ir = Circuits::divider();
+    let ir = HandCircuits::divider();
     let compiled = compile(&ir, &settings);
     let mid = NodeIdentifier::Anonymous(ir.node_at("Divider.mid").expect("node mid").id().index());
     let vin = ir.node_at("Divider.vin").expect("node vin");

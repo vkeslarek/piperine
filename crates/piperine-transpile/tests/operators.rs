@@ -12,15 +12,13 @@ use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/operators.rs"]
-mod fixtures;
+use piperine_ir_fixtures::operators;
 #[allow(dead_code)]
 #[path = "support/compiled.rs"]
 mod compiled;
 
 use compiled::{Bytes, Device};
-use fixtures::{Operators, Written};
+use operators::{Operators, OperatorWrites};
 
 
 /// The bodies the tests compile and the bytes they feed them.
@@ -31,7 +29,7 @@ impl Bodies {
     fn delayed(maximum: Option<f64>) -> Ir {
         Operators::ir(|b| {
             let site = Operators::delay_site(b, maximum);
-            Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+            OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..OperatorWrites::default() }
         })
     }
 
@@ -40,13 +38,13 @@ impl Bodies {
         Operators::ir(|b| {
             let density = b.expr(density, ValueType::F64, Operators::at());
             let source = NoiseSource { name: "hiss".into(), group: Some("thermal".into()), density, origin: Operators::at() };
-            Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+            OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..OperatorWrites::default() }
         })
     }
 
     /// `i(a, gnd) +> simparam("gmin").unwrap_or(<default>)` as the body `Op`, the read `Option::unwrap_or_default` with none.
     fn parameterised() -> Ir {
-        Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() })
+        Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..OperatorWrites::default() })
     }
 
     /// The bytes of a session parameter's pin: the value, then the `known` byte at 8 (all zero when
@@ -71,7 +69,7 @@ impl Bodies {
             let otherwise = b.expr(Expr::Block { stmts: vec![], value: None }, ValueType::Unit, at.clone());
             let branch = b.expr(Expr::If { cond, then, otherwise }, ValueType::Unit, at);
             let statement = b.stmt(Stmt::Expr(branch));
-            Written { analog: vec![statement], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+            OperatorWrites { analog: vec![statement], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..OperatorWrites::default() }
         })
     }
 }
@@ -151,13 +149,13 @@ fn a_reaction_reads_noise_as_zero() {
         let above = b.expr(Expr::Binary { op: BinaryOp::Gt, lhs: read, rhs: half }, ValueType::Bool, Operators::at());
         let commit = b.stmt(Stmt::Commit { carrier: 1, value: above, after: None, target: None });
         let carrier = |name: &str, role| Carrier { name: name.into(), ty: ValueType::Bool, role, init: Some(Constant::Bool(false)), origin: Operators::at(), count: None };
-        Written {
+        OperatorWrites {
             analog: vec![Operators::contribute_the_noise(b, 0)],
             noise_sources: vec![source],
             carriers: vec![carrier("en", CarrierRole::In), carrier("q", CarrierRole::Out)],
             events: vec![Event { source: EventSource::Changed(0), guard: None, origin: Operators::at() }],
             reactions: vec![Reaction { on: vec![0], stmts: vec![commit], locals: vec![], origin: Operators::at() }],
-            ..Written::default()
+            ..OperatorWrites::default()
         }
     });
     let cache = tempfile::tempdir().expect("a temp dir");

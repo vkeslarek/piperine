@@ -12,12 +12,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
-**Run irstruct**: `cargo test -p piperine-ir --test structure`
-**Run plan**: `cargo test -p piperine-plan --test structure_shape`
+**Run irstruct**: `cargo test -p piperine-ir --test model structure::`
+**Run plan**: `cargo test -p piperine-plan --test shape structure_shape::`
 **Run tstruct**: `cargo test -p piperine-transpile --test structure`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run typestruct**: `cargo test -p piperine-lang --test types_structure`
 **Run elabstruct**: `cargo test -p piperine-lang --test elab_structure`
 **Run sswitch**: `cargo test -p piperine-parity --test source_switch`

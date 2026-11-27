@@ -8,11 +8,9 @@ use piperine_abi::raw::{Cell, DEFAULT, GROUND, Module, Shape, cell, global, inpu
 use piperine_ir::{BodyId, Env, Expr, Ir, NoiseSource, ValueType};
 use piperine_plan::{BodyPlan, FunctionPlan, Mode, Modules, Netlist, Source, Target, Term};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/operators.rs"]
-mod fixtures;
+use piperine_ir_fixtures::operators;
 
-use fixtures::{Operators, Written};
+use operators::{Operators, OperatorWrites};
 
 /// Entries of a shape, found by name.
 struct Find;
@@ -63,7 +61,7 @@ impl Bodies {
     fn delayed() -> Ir {
         Operators::ir(|b| {
             let site = Operators::delay_site(b, Some(2e-9));
-            Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+            OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..OperatorWrites::default() }
         })
     }
 
@@ -76,13 +74,13 @@ impl Bodies {
             } else {
                 Operators::noise_site(b, Some("thermal"))
             };
-            Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+            OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..OperatorWrites::default() }
         })
     }
 
     /// `i(a, gnd) +> simparam("gmin").unwrap_or_default()`.
     fn parameterised() -> Ir {
-        Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() })
+        Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..OperatorWrites::default() })
     }
 }
 
@@ -130,7 +128,7 @@ fn a_delay_without_a_maximum_bounds_the_history_by_td() {
     // D4: the `max` function of a site with no `max` reads `td`'s cone and writes the pin.
     let ir = Operators::ir(|b| {
         let site = Operators::delay_site(b, None);
-        Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..OperatorWrites::default() }
     });
     let plan = Find::plan(&ir);
     let bound_function = plan.functions().iter().find(|f| f.mode == Mode::DelayMaximum(0)).expect("the max function");
@@ -143,7 +141,7 @@ fn a_body_without_a_new_form_keeps_its_shape() {
     // The pins, terms and functions of a body that uses none of the new forms are what they were.
     let ir = Operators::ir(|b| {
         let value = Operators::ex(b).real(1.0);
-        Written { analog: vec![Operators::contribute(b, value)], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute(b, value)], ..OperatorWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();

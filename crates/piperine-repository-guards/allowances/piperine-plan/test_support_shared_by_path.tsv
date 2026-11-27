@@ -1,4 +1,1 @@
-crates/piperine-plan/tests/operators_shape.rs::fixtures	1
-crates/piperine-plan/tests/shared.rs::circuits	1
-crates/piperine-plan/tests/shared.rs::models	1
-crates/piperine-plan/tests/structure_shape.rs::structure	1
+crates/piperine-plan/tests/circuit/shared.rs::models	1

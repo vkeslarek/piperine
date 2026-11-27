@@ -2458,6 +2458,7 @@ sentence
 sentences
 sequence
 sequences
+serialization
 serialize
 serialized
 serializes
@@ -2853,11 +2854,11 @@ transition
 transitions
 transmission
 transparent
+transpiler
 transport
 transported
 transports
 transpose
-transpiler
 trapezoid
 trapezoidal
 travel

@@ -17,11 +17,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run abinoise**: `cargo test -p piperine-solver --test abi_devices abi_noise::`
 **Run retake**: `cargo test -p piperine-solver --test transient jump_retake::`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
-**Run irops**: `cargo test -p piperine-ir --test operators`
-**Run planops**: `cargo test -p piperine-plan --test operators_shape`
+**Run irops**: `cargo test -p piperine-ir --test model operators::`
+**Run planops**: `cargo test -p piperine-plan --test shape operators_shape::`
 **Run tops**: `cargo test -p piperine-transpile --test operators`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`
 **Run elabops**: `cargo test -p piperine-lang --test elab_operators`
 **Run subset**: `cargo test -p piperine-lang --test types_subset`

@@ -12,11 +12,9 @@ use piperine_ir::{
 };
 use piperine_plan::{BodyPlan, Mode, Source, Target, Term};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/structure.rs"]
-mod structure;
+use piperine_ir_fixtures::structure;
 
-use structure::{ParamEvents, Switching, Written};
+use structure::{ParamEvents, Switching, SwitchingWrites};
 
 /// Entries of a shape, found by name.
 struct Find;
@@ -82,7 +80,7 @@ fn a_conditional_flow_contribution_reads_its_condition() {
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let (cond, probe) = (Switching::carrier_high(b), Switching::probe(b));
         let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, probe);
-        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -100,7 +98,7 @@ fn a_switch_equation_is_not_affine() {
     // unconditional constant contribution stays affine, as today.
     let switch = Switching::ir(BranchKind::Switch, Switching::on_the_carrier);
     assert_eq!(Find::terms_plan(&Find::plan(&switch)).affine, [true, false], "b0.flow is linear in the potential, b0.eq is not");
-    let potential = Switching::ir(BranchKind::Potential, |b| Written { analog: vec![Switching::contribute(b, QuantityRole::Potential, 1.0)], ..Written::default() });
+    let potential = Switching::ir(BranchKind::Potential, |b| SwitchingWrites { analog: vec![Switching::contribute(b, QuantityRole::Potential, 1.0)], ..SwitchingWrites::default() });
     assert_eq!(Find::terms_plan(&Find::plan(&potential)).affine, [true, true]);
 }
 
@@ -111,7 +109,7 @@ fn a_body_without_new_forms_keeps_its_shape() {
     let ir = Switching::ir(BranchKind::Potential, |b| {
         let (potential, charge) = (Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::probe(b));
         let charge = Switching::contribute_expr(b, QuantityRole::Potential, Operator::Ddt, charge);
-        Written { analog: vec![potential, charge], ..Written::default() }
+        SwitchingWrites { analog: vec![potential, charge], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -132,7 +130,7 @@ fn a_derivative_site_has_a_rate_pin_and_two_terms() {
     // `d0.rate` follows the branch flow pin, and its two terms follow the branch terms.
     let ir = Switching::ir(BranchKind::Potential, |b| {
         let site = Switching::site(b, None);
-        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Potential, 0)], derivatives: vec![site], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Potential, 0)], derivatives: vec![site], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -163,7 +161,7 @@ fn a_derivative_abstol_names_its_pin() {
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let tolerance = b.expr(Expr::Param(0), ValueType::F64, Switching::at());
         let site = Switching::site(b, Some(tolerance));
-        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -189,7 +187,7 @@ fn a_derivative_read_is_a_differentiable_pin_read() {
     // rate is an unknown like a flow).
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let site = Switching::site(b, None);
-        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -215,7 +213,7 @@ fn a_guarded_limit_reads_its_enabled_sources() {
         let (read, cond, enabled) = (Switching::limit_read(b), Switching::carrier_high(b), Switching::carrier_high(b));
         let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, read);
         let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
-        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();
@@ -232,7 +230,7 @@ fn a_guarded_cap_reads_its_when_sources() {
     let ir = Switching::ir(BranchKind::Flow, |b| {
         let (step, when) = (Switching::ex(b).real(1e-9), Switching::carrier_high(b));
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
-        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+        SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
     let plan = Find::plan(&ir);
     let shape = plan.shape().shape();

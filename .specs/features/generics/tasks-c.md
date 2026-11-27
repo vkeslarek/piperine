@@ -20,8 +20,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
 **Run elabmods**: `cargo test -p piperine-lang --test elab_generic_modules`
 **Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
-**Run irgen**: `cargo test -p piperine-ir --test generics`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
+**Run irgen**: `cargo test -p piperine-ir --test model generics::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test generics`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srcmods**: `cargo test -p piperine-parity --test source_generic_modules`

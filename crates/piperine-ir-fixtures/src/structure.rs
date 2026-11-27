@@ -1,9 +1,8 @@
-//! The small bodies the `analog-structure` tests of the plan and the printer share: one body
-//! `Sw(a)` with one branch of a chosen kind, a param, an input carrier and an `analog` block the
-//! test writes (`Switching`), and one body `Lag` with a param event and a reaction
-//! (`ParamEvents`). The includer declares `mod devices` for the expression helper.
+//! The small bodies the `analog-structure` tests of the plan, the interpreter, the transpiler and the printer
+//! share: one body `Sw(a)` with one branch of a chosen kind, a param, an input carrier and an `analog` block the
+//! test writes (`Switching`), and one body `Lag` with a param event and a reaction (`ParamEvents`).
 
-use piperine_ir_fixtures::devices::{Devices, Ex};
+use crate::devices::{Devices, Ex};
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Drive, Event, EventSource, Expr, ExprId, InstanceSpec,
     Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Terminal, ValueType,
@@ -11,10 +10,14 @@ use piperine_ir::{
 
 /// What a test writes into the body `Sw` that `Switching` builds.
 #[derive(Default)]
-pub struct Written {
+pub struct SwitchingWrites {
+    /// The statements of the `analog` block.
     pub analog: Vec<StmtId>,
+    /// The derivative sites of the body.
     pub derivatives: Vec<Derivative>,
+    /// The `limit` sites of the body.
     pub limits: Vec<Site>,
+    /// The `ac_stim` sites of the body.
     pub stims: Vec<Site>,
     /// The body's locals: the parameters of a `limit` closure.
     pub locals: Vec<Local>,
@@ -25,8 +28,10 @@ pub struct Written {
 pub struct Switching;
 
 impl Switching {
+    /// The file every node of `Switching` is attributed to.
     pub const FILE: &'static str = "structure_shape.msl";
 
+    /// The origin every form of `Switching` carries: line 3, column 5 of `structure_shape.msl`.
     pub fn at() -> Origin {
         Origin { file: Self::FILE.into(), line: 3, col: 5 }
     }
@@ -87,11 +92,11 @@ impl Switching {
     }
 
     /// The design: `kind` is the kind of branch 0; `write` returns what the body holds.
-    pub fn ir(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> Written) -> Ir {
+    pub fn ir(kind: BranchKind, write: impl FnOnce(&mut IrBuilder) -> SwitchingWrites) -> Ir {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let origin = Origin { file: Self::FILE.into(), line: 1, col: 1 };
-        let Written { analog, derivatives, limits, stims, locals } = write(&mut b);
+        let SwitchingWrites { analog, derivatives, limits, stims, locals } = write(&mut b);
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec {
             name: "Sw".into(),
@@ -120,9 +125,9 @@ impl Switching {
     }
 
     /// `if en { v(a, gnd) +> 1.0; } else { i(a, gnd) +> 2.0; }`: a switch branch.
-    pub fn on_the_carrier(b: &mut IrBuilder) -> Written {
+    pub fn on_the_carrier(b: &mut IrBuilder) -> SwitchingWrites {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
-        Written { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![flow])], ..SwitchingWrites::default() }
     }
 
     /// The two `f64` locals `new` and `old` that `halving_limit` closes over.
@@ -157,10 +162,12 @@ impl Switching {
 pub struct ParamEvents;
 
 impl ParamEvents {
+    /// The origin of the event and the reaction: line 2, column 3 of `param_events.msl`.
     pub fn at() -> Origin {
         Origin { file: "param_events.msl".into(), line: 2, col: 3 }
     }
 
+    /// The design: the body `Lag` whose reaction commits what `value` builds, to a `seen` carrier of type `seen_ty`.
     pub fn ir(seen_ty: ValueType, value: impl FnOnce(&mut IrBuilder) -> ExprId) -> Ir {
         let mut b = IrBuilder::new();
         let origin = Origin { file: "param_events.msl".into(), line: 1, col: 1 };

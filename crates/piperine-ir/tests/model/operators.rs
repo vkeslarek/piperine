@@ -4,11 +4,9 @@
 
 use piperine_ir_fixtures::devices;
 
-#[path = "support/operators.rs"]
-#[allow(dead_code)]
-mod fixtures;
+use piperine_ir_fixtures::operators;
 
-use fixtures::{Operators, Written};
+use operators::{Operators, OperatorWrites};
 
 /// A design after a serde round trip.
 struct RoundTrip;
@@ -31,7 +29,7 @@ fn a_delay_site_is_built_checked_printed_and_round_tripped() {
     // `i(a, gnd) +> 0.5 * delay(v(a), td, 2e-9)`: one site D0 read once.
     let ir = Operators::ir(|b| {
         let site = Operators::delay_site(b, Some(2e-9));
-        Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..OperatorWrites::default() }
     });
     assert_eq!(ir.check(), vec![], "{}", ir);
     let text = ir.to_string();
@@ -55,17 +53,17 @@ fn a_delay_read_out_of_range_or_in_a_function_is_broken() {
     // `delay1` with one site, and `delay0` in a body with none.
     let one_site = Operators::ir(|b| {
         let site = Operators::delay_site(b, None);
-        Written { analog: vec![Operators::contribute_half_the_delay(b, 1)], delays: vec![site], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 1)], delays: vec![site], ..OperatorWrites::default() }
     });
     assert!(Operators::names(&one_site.check(), "delay read of site 1, out of range (1 sites)"), "{:?}", one_site.check());
-    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![], ..Written::default() });
+    let none = Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![], ..OperatorWrites::default() });
     assert!(Operators::names(&none.check(), "delay read of site 0, out of range (0 sites)"), "{:?}", none.check());
     // A function that reads a delay: a function has no body to own the site.
     let in_function = Operators::ir(|b| {
         let read = b.expr(Expr::Delay(0), ValueType::F64, Operators::at());
         b.function(FunctionSpec { name: "late".into(), origin: Operators::at(), params: vec![], ret: ValueType::F64, locals: vec![], body: read });
         let site = Operators::delay_site(b, None);
-        Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![site], ..OperatorWrites::default() }
     });
     assert!(Operators::names(&in_function.check(), "a delay read outside a body"), "{:?}", in_function.check());
 }
@@ -76,7 +74,7 @@ fn a_noise_source_is_built_checked_printed_and_round_tripped() {
     // `i(a, gnd) +> noise(4e-21, "thermal")`: one source N0 read once.
     let ir = Operators::ir(|b| {
         let source = Operators::noise_site(b, Some("thermal"));
-        Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..OperatorWrites::default() }
     });
     assert_eq!(ir.check(), vec![], "{}", ir);
     let text = ir.to_string();
@@ -91,7 +89,7 @@ fn a_noise_source_is_built_checked_printed_and_round_tripped() {
     // An unnamed source prints its group as `none` and round-trips too.
     let unnamed = Operators::ir(|b| {
         let source = Operators::noise_site(b, None);
-        Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..OperatorWrites::default() }
     });
     assert!(unnamed.to_string().contains("noise0(4e-21, none)"), "{unnamed}");
     assert_eq!(RoundTrip::of(&unnamed), unnamed);
@@ -99,13 +97,13 @@ fn a_noise_source_is_built_checked_printed_and_round_tripped() {
 
 #[test]
 fn a_noise_read_out_of_range_or_in_a_function_is_broken() {
-    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_noise(b, 0)], ..Written::default() });
+    let none = Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], ..OperatorWrites::default() });
     assert!(Operators::names(&none.check(), "noise read of source 0, out of range (0 sources)"), "{:?}", none.check());
     let in_function = Operators::ir(|b| {
         let read = b.expr(Expr::Noise(0), ValueType::F64, Operators::at());
         b.function(FunctionSpec { name: "hiss".into(), origin: Operators::at(), params: vec![], ret: ValueType::F64, locals: vec![], body: read });
         let source = Operators::noise_site(b, None);
-        Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![source], ..OperatorWrites::default() }
     });
     assert!(Operators::names(&in_function.check(), "a noise read outside a body"), "{:?}", in_function.check());
 }
@@ -115,7 +113,7 @@ fn a_noise_read_out_of_range_or_in_a_function_is_broken() {
 fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
     // `i(a, gnd) +> simparam("gmin").unwrap_or_default()`: one parameter S0, an `Option<f64>` read
     // through its `Value` part.
-    let ir = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..Written::default() });
+    let ir = Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..OperatorWrites::default() });
     assert_eq!(ir.check(), vec![], "{}", ir);
     let text = ir.to_string();
     assert!(text.contains("session S0 \"gmin\""), "{text}");
@@ -131,12 +129,12 @@ fn a_session_parameter_is_built_checked_printed_and_round_tripped() {
 
 #[test]
 fn a_session_parameter_read_out_of_range_or_typed_as_a_real_is_broken() {
-    let none = Operators::ir(|b| Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], ..Written::default() });
+    let none = Operators::ir(|b| OperatorWrites { analog: vec![Operators::contribute_the_session_parameter(b, 0)], ..OperatorWrites::default() });
     assert!(Operators::names(&none.check(), "session parameter read 0, out of range (0 parameters)"), "{:?}", none.check());
     // the read is an `Option<f64>`: an `f64` type on it is a mismatch
     let typed = Operators::ir(|b| {
         let read = b.expr(Expr::SessionParameter { parameter: 0 }, ValueType::F64, Operators::at());
-        Written { analog: vec![Operators::contribute(b, read)], session_parameters: vec![Operators::gmin()], ..Written::default() }
+        OperatorWrites { analog: vec![Operators::contribute(b, read)], session_parameters: vec![Operators::gmin()], ..OperatorWrites::default() }
     });
     assert!(!typed.check().is_empty(), "{typed}");
 }
@@ -158,7 +156,7 @@ fn a_trace_site_is_built_checked_printed_and_round_tripped() {
 #[test]
 fn a_trace_out_of_range_in_a_function_or_mistyped_is_broken() {
     // A trace of a site the body does not have.
-    let none = Operators::ir(|b| Written { analog: vec![Operators::trace_the_probe(b, 0)], streams: vec![Operators::newton()], ..Written::default() });
+    let none = Operators::ir(|b| OperatorWrites { analog: vec![Operators::trace_the_probe(b, 0)], streams: vec![Operators::newton()], ..OperatorWrites::default() });
     assert!(Operators::names(&none.check(), "trace of site 0, out of range (0 sites)"), "{:?}", none.check());
     // A trace in a function: the analog block alone writes one.
     let in_function = Operators::ir(|b| {
@@ -166,14 +164,14 @@ fn a_trace_out_of_range_in_a_function_or_mistyped_is_broken() {
         let unit = Operators::ex(b).unit();
         let body = Operators::ex(b).block(vec![trace], Some(unit), ValueType::Unit);
         b.function(FunctionSpec { name: "log".into(), origin: Operators::at(), params: vec![], ret: ValueType::Unit, locals: vec![], body });
-        Written { analog: vec![], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+        OperatorWrites { analog: vec![], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..OperatorWrites::default() }
     });
     assert!(Operators::names(&in_function.check(), "a trace outside the analog block of a body"), "{:?}", in_function.check());
     // A field of the wrong type: `x: f64` written a `bool`.
     let mistyped = Operators::ir(|b| {
         let flag = Operators::ex(b).boolean(true);
         let trace = b.stmt(Stmt::Trace { site: 0, fields: vec![EmitField::Value { field: 0, value: flag }] });
-        Written { analog: vec![trace], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..Written::default() }
+        OperatorWrites { analog: vec![trace], streams: vec![Operators::newton()], traces: vec![Operators::trace_site()], ..OperatorWrites::default() }
     });
     assert!(Operators::names(&mistyped.check(), "the value of a trace field"), "{:?}", mistyped.check());
 }

@@ -21,9 +21,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run evalues**: `cargo test -p piperine-lang --test elab_values`
 **Run eanalog**: `cargo test -p piperine-lang --test elab_analog`
 **Run edig**: `cargo test -p piperine-lang --test elab_digital`
-**Run iramend**: `cargo test -p piperine-ir --test amendments`
-**Run plan**: `cargo test -p piperine-plan --test amended_shape`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
+**Run iramend**: `cargo test -p piperine-ir --test model amendments::`
+**Run plan**: `cargo test -p piperine-plan --test shape amended_shape::`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tlib**: `cargo test -p piperine-transpile --lib`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run env**: `cargo test -p piperine-solver --test transient environment::`

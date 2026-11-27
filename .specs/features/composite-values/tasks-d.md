@@ -21,9 +21,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run conversions**: `cargo test -p piperine-numbers --test conversions`
 **Run precision**: `cargo test -p piperine-numbers --test precision`
 **Run transcendental**: `cargo test -p piperine-numbers --release --test transcendental`
-**Run irw**: `cargo test -p piperine-ir --test number_widths`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run planw**: `cargo test -p piperine-plan --test number_widths`
+**Run irw**: `cargo test -p piperine-ir --test model number_widths::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planw**: `cargo test -p piperine-plan --test shape number_widths::`
 **Run rtw**: `cargo test -p piperine-transpile --lib rt::widths`
 **Run tw**: `cargo test -p piperine-transpile --test number_widths`
 **Run typesw**: `cargo test -p piperine-lang --test types_number_widths`

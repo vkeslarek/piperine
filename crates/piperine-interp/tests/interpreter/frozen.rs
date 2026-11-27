@@ -17,21 +17,15 @@ use piperine_ir::Method as M;
 
 use piperine_ir_fixtures::devices;
 use piperine_ir_fixtures::digital;
-#[allow(dead_code)]
-#[path = "support/models.rs"]
-mod models;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/structure.rs"]
-mod structure;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/operators.rs"]
-mod operators;
+use crate::models;
+use piperine_ir_fixtures::structure;
+use piperine_ir_fixtures::operators;
 
 use devices::Devices;
 use digital::{Buck, Dx, ValueAliases};
 use models::{In, Models, View};
 use operators::Operators;
-use structure::{ParamEvents, Switching, Written};
+use structure::{ParamEvents, Switching, SwitchingWrites};
 
 #[test]
 fn a_digital_body_is_rejected_by_name() {
@@ -627,14 +621,14 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
     // a contribution under an `if` (a selector), and the same in a nested block
     let nested = Switching::ir(BranchKind::Flow, |b| {
         let (cond, taken) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::contribute(b, QuantityRole::Flow, 1.0));
-        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], ..SwitchingWrites::default() }
     });
     held(&Structured::refused(nested), "a contribution under a selector");
 
     // a switch branch: both quantities written at the top of the block, so no selector is named
     let switch = Switching::ir(BranchKind::Switch, |b| {
         let (potential, flow) = (Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
-        Written { analog: vec![potential, flow], ..Written::default() }
+        SwitchingWrites { analog: vec![potential, flow], ..SwitchingWrites::default() }
     });
     assert_eq!(Structured::refused(switch), ["a switch branch"]);
 
@@ -648,7 +642,7 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
     // a `ddt` that is not a whole addend: a derivative site
     let derivative = Switching::ir(BranchKind::Flow, |b| {
         let site = Switching::site(b, None);
-        Written { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::contribute_twice_the_rate(b, QuantityRole::Flow, 0)], derivatives: vec![site], ..SwitchingWrites::default() }
     });
     assert_eq!(Structured::refused(derivative), ["a ddt off a whole addend or with abstol"]);
 
@@ -678,13 +672,13 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
         let (cond, enabled) = (Switching::compare(b, BinaryOp::Gt, 0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
         let taken = Switching::contribute_expr(b, QuantityRole::Flow, Operator::Direct, read);
         let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
-        Written { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..Written::default() }
+        SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..SwitchingWrites::default() }
     });
     held(&Structured::refused(limit), "a guarded limit");
     let capped = Switching::ir(BranchKind::Flow, |b| {
         let (step, when) = (Switching::ex(b).real(0.5), Switching::compare(b, BinaryOp::Gt, 0.5));
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
-        Written { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..Written::default() }
+        SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
     held(&Structured::refused(capped), "a bound_step under a selector");
 }
@@ -699,9 +693,9 @@ fn the_interpreter_refuses_each_analog_operator_by_name() {
         // a `simparam` is also an `Option` part, which the composite forms name: the form is among them
         assert!(named.contains(&form), "{form} among {named:?}");
     };
-    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![Operators::delay_site(b, None)], ..operators::Written::default() }), "delay");
-    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![Operators::noise_site(b, None)], ..operators::Written::default() }), "noise");
-    held(Operators::ir(|b| operators::Written { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..operators::Written::default() }), "simparam");
+    held(Operators::ir(|b| operators::OperatorWrites { analog: vec![Operators::contribute_half_the_delay(b, 0)], delays: vec![Operators::delay_site(b, None)], ..operators::OperatorWrites::default() }), "delay");
+    held(Operators::ir(|b| operators::OperatorWrites { analog: vec![Operators::contribute_the_noise(b, 0)], noise_sources: vec![Operators::noise_site(b, None)], ..operators::OperatorWrites::default() }), "noise");
+    held(Operators::ir(|b| operators::OperatorWrites { analog: vec![Operators::contribute_the_session_parameter(b, 0)], session_parameters: vec![Operators::gmin()], ..operators::OperatorWrites::default() }), "simparam");
     held(Operators::tracing(), "emit! in analog");
     // the record of a `ddx` is a `PartialDerivative`: the body holds it though its value is an expression
     let mut b = IrBuilder::new();
@@ -740,7 +734,7 @@ impl Composite {
         let ir = Switching::ir(BranchKind::Flow, |b| {
             let (locals, mut analog) = write(b);
             analog.push(Switching::contribute(b, QuantityRole::Flow, 1.0));
-            Written { analog, locals, ..Written::default() }
+            SwitchingWrites { analog, locals, ..SwitchingWrites::default() }
         });
         Structured::refused(ir)
     }
@@ -1030,7 +1024,7 @@ fn each_generics_form_is_refused_by_name() {
         let encode = b.function(FunctionSpec { name: "OneHot::encode".into(), origin: Switching::at(), params: vec![x.clone()], ret: levels.clone(), locals: vec![x], body: written });
         let decode = b.function(FunctionSpec { name: "OneHot::decode".into(), origin: Switching::at(), params: vec![l.clone()], ret: ValueType::Option(Box::new(ValueType::Enum(one_hot))), locals: vec![l], body: read });
         b.set_repr(one_hot, ReprForm::HandWritten { width: 4, encode, decode });
-        Written::default()
+        SwitchingWrites::default()
     });
     let Err(rejected) = Interpreter::new(Arc::new(ir)) else { panic!("a hand-written Repr was accepted") };
     assert_eq!(rejected.entries.iter().filter(|e| e.item.starts_with("type ")).map(|e| e.what.as_str()).collect::<Vec<_>>(), ["type OneHot holds a hand-written Repr: the interpreter runs the M1 analog subset only"]);

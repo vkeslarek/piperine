@@ -1,3 +1,6 @@
+crates/piperine-ir-fixtures/src/circuits.rs::rc	1
+crates/piperine-ir-fixtures/src/circuits.rs::rc_held	1
+crates/piperine-ir-fixtures/src/circuits.rs::rc_lowpass	1
 crates/piperine-ir-fixtures/src/devices.rs::Ex	1
 crates/piperine-ir-fixtures/src/devices.rs::b	1
 crates/piperine-ir-fixtures/src/devices.rs::col	1
@@ -26,3 +29,7 @@ crates/piperine-ir-fixtures/src/digital.rs::stmt	1
 crates/piperine-ir-fixtures/src/digital.rs::u	1
 crates/piperine-ir-fixtures/src/digital.rs::un	1
 crates/piperine-ir-fixtures/src/mixed.rs::b	1
+crates/piperine-ir-fixtures/src/operators.rs::ex	1
+crates/piperine-ir-fixtures/src/structure.rs::contribute_expr	1
+crates/piperine-ir-fixtures/src/structure.rs::ex	1
+crates/piperine-ir-fixtures/src/structure.rs::stims	1

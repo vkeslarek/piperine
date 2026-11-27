@@ -3,9 +3,7 @@
 //! seed (or `x` with no seed) when `AGE` is 0 or `STATIC` and `AGE` is 1, else `LAST` (abi.md
 //! A2); starting from the seed, a limited value below it is raised to it (§18 rule 2).
 
-#[allow(dead_code)]
-#[path = "support/models.rs"]
-mod models;
+use crate::models;
 
 use models::{In, Models, View};
 
