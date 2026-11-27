@@ -9,8 +9,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 ---
 
 **Design**: `.specs/features/device-abi-simplification/design.md`
-**Status**: Draft
-**Approved**:
+**Status**: Approved
+**Approved**: 2026-11-27 - user: "Aceito os dois que estao comigo" (answer to the coordinator listing the tasks as awaiting the user)
 **Build**: `cargo build --workspace --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite`
 **Run abicontract**: `cargo test -p piperine-abi --test contract`
 **Run abidoc**: `cargo test -p piperine-abi --doc`
