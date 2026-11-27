@@ -33,16 +33,16 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build release binary
-        run: cargo build --release -p piperine-cli -p piperine-lang-server
+        run: cargo build --release -p piperine-cli
 
       - name: Package binary
         shell: bash
         run: |
           cd target/release
           if [[ "${{ matrix.archive_name }}" == *.zip ]]; then
-            7z a ../../${{ matrix.archive_name }} piperine.exe piperine-lang-server.exe
+            7z a ../../${{ matrix.archive_name }} piperine.exe
           else
-            tar -czvf ../../${{ matrix.archive_name }} piperine piperine-lang-server
+            tar -czvf ../../${{ matrix.archive_name }} piperine
           fi
           cd ../..
 
@@ -52,64 +52,9 @@ jobs:
           name: ${{ matrix.archive_name }}
           path: ${{ matrix.archive_name }}
 
-  build-ide:
-    name: Build VS Code Extension
-    needs: build
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: editors/vscode
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: downloaded_artifacts
-
-      - name: Extract and organize binaries
-        run: |
-          mkdir -p bin
-          
-          # Linux
-          tar -xzf $GITHUB_WORKSPACE/downloaded_artifacts/piperine-linux-x86_64.tar.gz/piperine-linux-x86_64.tar.gz
-          mv piperine bin/piperine-linux-x86_64
-          mv piperine-lang-server bin/piperine-lang-server-linux-x86_64
-          
-          # Mac
-          tar -xzf $GITHUB_WORKSPACE/downloaded_artifacts/piperine-macos-aarch64.tar.gz/piperine-macos-aarch64.tar.gz
-          mv piperine bin/piperine-macos-aarch64
-          mv piperine-lang-server bin/piperine-lang-server-macos-aarch64
-          
-          # Windows
-          7z x $GITHUB_WORKSPACE/downloaded_artifacts/piperine-windows-x86_64.zip/piperine-windows-x86_64.zip
-          mv piperine.exe bin/piperine-windows-x86_64.exe
-          mv piperine-lang-server.exe bin/piperine-lang-server-windows-x86_64.exe
-          
-          chmod +x bin/*
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: 'editors/vscode/package-lock.json'
-
-      - name: Install Dependencies
-        run: npm ci
-
-      - name: Package Extension
-        run: npx vsce package
-
-      - name: Upload VSIX artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: piperine-vscode-extension
-          path: editors/vscode/*.vsix
-
   release:
     name: Create GitHub Release
-    needs: [build, build-ide]
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Download all artifacts

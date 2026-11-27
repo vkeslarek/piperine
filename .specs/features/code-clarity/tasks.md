@@ -11,7 +11,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/code-clarity/design.md`
 **Status**: Approved
 **Approved**: 2026-11-25 - user: "Aprovo o code-clarity. Pode engatilhar ele para desenvolver em seguida das correçoes do nested-reach"
-**Build**: `cargo build --workspace --exclude piperine-lang-server --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
+**Build**: `cargo build --workspace --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-lang --test suite_hygiene`
 **Run structure**: `cargo test -p piperine-repository-guards --test structure`
 **Run boundaries**: `cargo test -p piperine-repository-guards --test boundaries`
 **Run ownership**: `cargo test -p piperine-repository-guards --test ownership`
@@ -3945,7 +3945,7 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Settled mid-build:** none
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
-**Progress:** T1 done.
+**Progress:** T1, T2 done.
 **Dispatched:** none
 **Walked:** none - the feature has no screen; each story's Independent Test is a guard target of `## Checks`.
 

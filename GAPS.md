@@ -53,17 +53,17 @@ change of the IR or the ABI.
 | digital and mixed-signal | on the Rust backend only: `examples/buck` whole, closed loop at 0.8 V (`buck_closed_loop`, `buck_long`), scenarios S2 to S10 on the Rust host (`buck_scenarios`) |
 | stdlib that runs | `since`, `idt`, `idtmod`, `zi_*`, `laplace_*`, `noise_table`, `Stable`, `Setup`, `Hold`, `MinPulse`, `inertial`, `TribufDelayed`, `Short`, `cast`, `same`, `rise`, `fall`, `init`, `every`, `settle`, `vt`, `pnjlim`, `fetlim`, `deltalim`, `limexp`, `above`, `last_crossing`, `transition`, `normal`, `D2A`, `A2D`, `Never`, `State`, `log`, `require`, `cover`, `target`, the six constants. About 30 of the 75 names of the §22 index |
 | command line and host library | `check`, `build`, `run`, `test`, `new`, `clean`, `fmt`; tables, record lines, CSV, JSON Lines, SVG; `--param` before a run; a transient keeps rows, not steps: `piperine run startup` in `examples/buck` prints the whole 600 µs start |
-| language server | **does not build**, deferred by the user |
 
 ---
 
 ## 2. Broken — does not build or run
 
-### B3. `piperine-lang-server` does not build — size M, deferred
+### B3. No language server — size M, deferred
 
-- It targets the deleted front end and sits outside `default-members`. User, 2026-11-16: "O
-  lang-server é o menos importante, vai ficar para bem depois." `piperine check` gives the same
-  diagnostics meanwhile.
+- `piperine-lang-server` and the VS Code extension targeted the deleted front end and were removed
+  by `code-clarity` (user, 2026-11-25, Q1). The `lang-server` feature rebuilds it on the POM's
+  reflection (`ROADMAP.md`). User, 2026-11-16: "O lang-server é o menos importante, vai ficar para
+  bem depois." `piperine check` gives the same diagnostics meanwhile.
 
 ### B4. No Python host — size L
 
@@ -232,7 +232,7 @@ adjoint and PSS (`core/circuit.rs:111` to `:172`); the host exposes four analyse
 | H8 | Gradients: gradient params, `∂(record)/∂p`, saltation, `E0807` to `E0809`. The solver's `adjoint` and `sens` are not reached from MSL | §21 rule 7, §23.3 | L |
 | H9 | Host error codes: `E0804` (drive of a carrier that is no top `in` port), `E0805` (late subscription) and `E0806` (past time) are delivered. `E0803` (timed `set` of a structural param) is checked and is reachable by a param an array length reads (structural since composite-values phase C, QC2: marked by the IR's `structural`); generation in a module body is still `P0001` | §23.1 | with L-generation |
 | H10 | Command line: `add`, `remove`, `tree`, `update`, `--locked`, `--offline`, plugin scripts, a REPL, ngspice raw output, a terminal or PNG plot | — | S each |
-| H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `editors/vscode` (a Verilog-AMS extension) and `piperine-lang-server` (postponed); `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
+| H13 | Stale repository documents: the first 270 lines of `ROADMAP.md` (PHDL, a Python bench, Cranelift), the `STATE.md` handoff below `solver-restructure`, `SPEC_DEVIATIONS.md`, `CLEANUP_PLAN.md`, `docs/audit/`, `docs/reference/` and `VAMS-LRM-2-4.md` are deleted (2026-11-20) | — | S |
 | H14 | A flow term `i(<instance>)` of an instance with no potential branch prints in `op` and `dc` only; `transient`, `ac`, `pss` and `sens` refuse it (`E0801`/`P0010`) because `StepView` carries no device term, so a transient table cannot show it. Needs a `StepView` read of `Assembly::term_value`. Owner: `host-analyses` | §21 | S |
 | H15 | `pss` of a design whose `transition` holds an absolute time (`ramp.t0`, a `D2A` driven by a discrete clock) never closes its digital periodicity (`digital state is not periodic at T`), so a D2A-driven design cannot shoot; the `pss_rc` twin drives the source from `now()` instead. Any digital state that grows with time breaks it too (the stdlib `every` counter rises +2 per period). Needs time-like state marked through lang, IR, plan, transpile and solver; a `now()`-computed edge also lacks a breakpoint, so it needs a step cap. Owner: `periodic-small-signal` (user, 2026-11-18) | §16.3 | M |
 | H16 | No run key or flag for the transient's minimum step (`dt_min`, ngspice's `delmin`): `piperine run` always runs the default floor, so a design that needs ngspice's `delmin=1n` (the `tran_corner` twin) is run through the library (`Session::circuit` into `transient`). Owner: `host-analyses` | §23 table | S |

@@ -287,7 +287,6 @@ const KEPT_CRATES: &[&str] = &[
     "piperine-digital-solver",
     "piperine-api",
     "piperine-cli",
-    "piperine-lang-server",
     "piperine-parity",
     "piperine-plan",
     "piperine-transpile",

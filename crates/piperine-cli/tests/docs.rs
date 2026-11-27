@@ -80,25 +80,24 @@ fn the_buck_readme_points_at_the_scenarios() {
 #[test]
 fn the_instruction_files_say_the_host_crates_build() {
     // CLI-20 AC 1, narrowed by the CLAUDE.md rewrite of 2026-11-24: the crate table's rows say the
-    // host library holds `Project` and `Session`, and the language server is deferred
+    // host library holds `Project` and `Session`
     let claude = read("CLAUDE.md");
     let row = |name: &str| claude.lines().find(|l| l.starts_with(&format!("| `{name}` |"))).unwrap_or_else(|| panic!("CLAUDE.md has a row for {name}")).to_string();
     let api = row("piperine-api");
     assert!(api.contains("`Project`") && api.contains("`Session`"), "the piperine-api row names Project and Session: {api}");
-    assert!(row("piperine-lang-server").contains("deferred"), "the language server row says it is deferred");
     assert!(read("AGENTS.md").contains("CLAUDE.md"), "AGENTS.md points at CLAUDE.md");
 }
 
 #[test]
 fn gaps_drops_what_closed_and_lists_what_is_left() {
     // CLI-20 AC 2: `GAPS.md` no longer says the CLI and the API do not build, and lists what is
-    // left: no host sequences from the command line, no Python host, the language server
-    // (deferred by the user); "No trace records" (L49) left with `analog-operators` T37 and T38
+    // left: no host sequences from the command line, no Python host
+    // (the language server left the tree with `code-clarity`); "No trace records" (L49) left with `analog-operators` T37 and T38
     let gaps = read("GAPS.md");
     for stale in ["**`piperine-api`** (165 errors)", "CLI / host API / LSP | **do not build**", "an MSL project\n  can only be run from a Rust test"] {
         assert!(!gaps.contains(stale), "GAPS.md still says `{stale}`");
     }
-    for left in ["No host sequences from the command line", "No Python host", "`piperine-lang-server`", "vai ficar para bem depois"] {
+    for left in ["No host sequences from the command line", "No Python host"] {
         assert!(gaps.contains(left), "GAPS.md lists `{left}`");
     }
     assert!(!gaps.contains("No trace records"), "No trace records (L49) is closed: emit! in analog is a trace");

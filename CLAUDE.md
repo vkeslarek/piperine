@@ -57,7 +57,6 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
 | `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
-| `piperine-lang-server` | **Broken and deferred.** Targets the retired front end. Not in `default-members`; do not edit. |
 
 ## Build and test
 
@@ -68,8 +67,8 @@ cargo test -p <crate> --test <target>         # one target
 cargo test -p piperine --test integrated      # small mixed-signal designs end to end (~30 s)
 ```
 
-- **Never `cargo build/test --workspace` bare** — the language server does not build. A full
-  run is `--workspace --exclude piperine-lang-server`.
+- The whole workspace builds: `cargo build --workspace --all-targets`. The full test run is
+  `cargo test --workspace`, once per feature (gate policy below).
 - **Gate policy:** per task and per batch, build + the touched crates/targets only. The full
   suite (all packages, `piperine-parity --nocapture` with ngspice, the buck targets, the twins)
   runs **once per feature**, at final verification before merge.

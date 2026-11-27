@@ -1,7 +1,0 @@
-{
-    "phdl.server.path": "target/debug/piperine-lang-server",
-    "files.associations": {
-        "*.phdl": "phdl",
-        "*.ppr": "phdl"
-    }
-}

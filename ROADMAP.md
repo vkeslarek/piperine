@@ -88,7 +88,7 @@ code (user, 2026-11-18 and 2026-11-21).
 | `arduino-simulator` | An Arduino / AVR firmware co-simulated with the circuit: our own Rust AVR core (based on avr8js, MIT; per-core facts distilled from datasheets and simavr), pins through the device ABI, ADC/UART/interrupts | discussion + proof of concept in `.specs/features/arduino-simulator/discussion.md`; **depends on `device-plugins`**; **much later** (user, 2026-11-24: "coloca lá para depois, bem depois") |
 | `esp32-simulator` | An ESP32 firmware co-simulated with the circuit through Renode (MIT, to confirm; QEMU fork as the alternative) behind a device plugin: GPIO, LEDC, ADC, DAC, UART; pull-on-read sync with validity windows | idea in `.specs/features/esp32-simulator/idea.md`; **depends on `device-plugins`**; **much later** (user, 2026-11-24) |
 | `python-host` | A Python host | deferred until the host features are done (user, 2026-11-18) |
-| `lang-server` | The language server on MSL (broken today) | last (user) |
+| `lang-server` | The language server, rebuilt on the POM's reflection (the old crate and the VS Code extension were removed by `code-clarity`) | last (user) |
 
 ---
 
