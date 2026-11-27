@@ -3912,7 +3912,7 @@ Proof: run srcio | test emit_writes_the_records_it_wrote_before ... ok
 Proof: run srcio | test finish_and_check_are_the_writers_of_the_reserved_streams ... ok
 Proof: run srcio | test a_user_wrapper_over_emit_writes_the_record ... ok
 
-**C23** - The inventory measured the suite: targets, tests, build and run time, duplicates, obsolete pins, uncited tests, duplicated helpers. (CC-12, AC 1; done in `findings.md` §3)
+**C23** - The inventory measured the suite: targets, tests, run time, duplicates, obsolete pins, uncited tests, duplicated helpers. (CC-12, AC 1; done in `findings.md` §3)
 Proof: `grep -q '^## 3. The test suite (CC-12)' .specs/features/code-clarity/findings.md`
 
 **C24** - Where two tests proved one rule one is kept, and a removed prose pin is recorded with the check it retired. (CC-12, AC 2; T9 to T14, T90)
@@ -3933,7 +3933,7 @@ Proof: run ledger | test every_proof_names_a_test_that_exists ... ok
 Proof: run ledger | test every_inventory_row_names_a_test_that_exists ... ok
 Proof: run ledger | test the_parity_oracles_are_not_reduced ... ok
 
-**C28** - The suite's test count, target count and build and run time are reported before and after. (CC-12, AC 6; T8, T153)
+**C28** - The suite's test count, target count and test run time are reported before and after; build time is not measured (user, 2026-11-26: "O build não precisa de métrica... Tá de boa"; "O importante é menor tempo de testes (conjunto mais bem dimensionado deles)"). (CC-12, AC 6; T8, T153)
 Proof: run suite | test the_suite_report_has_before_and_after ... ok
 
 ---

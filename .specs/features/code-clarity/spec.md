@@ -154,7 +154,7 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 3. WHEN many small targets in one crate cover one concern THEN they SHALL be merged into fewer targets (fewer link steps), each still opening with its `//!` scope header (MD-28 placement rule kept) (CC-12)
 4. WHEN shared test helpers are duplicated THEN they SHALL live once, as methods of owner types in each crate's test support (no free functions, the user's rules) (CC-12)
 5. WHEN a test is removed or merged THEN every `## Checks` proof line, `inventory.tsv` row and Book claim that cites it SHALL be re-pointed in the same commit, and the parity oracles (ngspice twins, `ToleranceContract`, buck) SHALL NOT be reduced — no criterion of any feature may lose its proof (CC-09, CC-12)
-6. WHEN the feature closes THEN the suite's test count, target count and total build+run time SHALL be reported before and after (CC-12)
+6. WHEN the feature closes THEN the suite's test count, target count and test run time SHALL be reported before and after; build time is not measured (user, 2026-11-26: "O build não precisa de métrica... Tá de boa"; "O importante é menor tempo de testes (conjunto mais bem dimensionado deles)") (CC-12)
 
 **Independent Test**: the before/after report; `check_proofs.py` of every feature still green; `suite_hygiene` green.
 
@@ -228,4 +228,4 @@ User, 2026-11-18, verbatim: "Coloca na feature do code-clarity também para come
 - [ ] The seven rules hold over every crate, checked by the guards CC-01, CC-04, CC-05, CC-06 and by the inventory closed.
 - [ ] Every type and method is commented (CC-10).
 - [ ] Every test, golden and Book listing is byte-identical before and after (tests removed or merged under CC-12 keep every criterion proved).
-- [ ] The test suite is sanitised: duplicates and obsolete pins removed, small targets merged, helpers shared; before/after counts and times reported (CC-12).
+- [ ] The test suite is sanitised: duplicates and obsolete pins removed, small targets merged, helpers shared; before/after counts and run time reported (CC-12).
