@@ -15,9 +15,6 @@ use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/structure.rs"]
 mod structure;
 

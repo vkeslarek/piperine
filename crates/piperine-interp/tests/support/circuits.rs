@@ -7,7 +7,7 @@ use piperine_ir::{
     NodeRole, NodeSpec, Origin, Real, Terminal,
 };
 
-use crate::devices::Devices;
+use piperine_ir_fixtures::devices::Devices;
 
 /// One child placement: its name, body, terminals (`None` is ground) and bound params.
 pub struct Place {

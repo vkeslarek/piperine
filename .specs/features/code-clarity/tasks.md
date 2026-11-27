@@ -1752,8 +1752,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate builds with `#![deny(missing_docs)]` and no free function; its bodies pass `Ir::check`
-- [ ] Gate check passes: Quick
+- [x] The crate builds with `#![deny(missing_docs)]` and no free function; its bodies pass `Ir::check`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick

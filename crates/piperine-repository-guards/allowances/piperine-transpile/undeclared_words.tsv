@@ -102,4 +102,3 @@ crates/piperine-transpile/tests/support/both.rs::interp	1
 crates/piperine-transpile/tests/support/both.rs::interp_module	1
 crates/piperine-transpile/tests/support/both.rs::jac	1
 crates/piperine-transpile/tests/support/both.rs::jac_bits	1
-crates/piperine-transpile/tests/support/mixed.rs::b	1

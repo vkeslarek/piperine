@@ -12,7 +12,7 @@ use piperine_ir::{
     QuantityRole, Site, Stmt, Terminal, ValueType,
 };
 
-use crate::devices::{Devices, Ex};
+use piperine_ir_fixtures::devices::{Devices, Ex};
 
 /// An `Interpreter` over a design that holds every M1 device body.
 pub struct Models {

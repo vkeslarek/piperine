@@ -2,8 +2,8 @@
 //! test writes (its locals, its statements, its contributed value) into a whole design, and the
 //! filter over a failed check's entries.
 
-use super::devices::Ex;
-use super::digital::{Buck, Dx};
+use piperine_ir_fixtures::devices::Ex;
+use piperine_ir_fixtures::digital::{Buck, Dx};
 use piperine_ir::{Addend, BodyNode, BodySpec, Branch, BranchKind, Broken, Deps, Env, Expr, ExprId, FunctionId, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, NodeRef, NodeRole, Operator, Origin, QuantityRole, Place, Stmt, StmtId, Target, Terminal, ValueType, BinaryOp, Constant, Param};
 
 pub const FILE: &str = "control.msl";

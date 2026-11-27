@@ -11,17 +11,15 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::rise;
 use support::{HIGH, LOW, build, series, transient, with_buck};
 
 /// One nanosecond in ticks.
@@ -48,11 +46,11 @@ fn the_gate_driver_delays_and_interlocks() {
     // writes the value the gate already holds: "a commit of the value the carrier already holds
     // is not a change" (part II §5.3.5). Each gate's first change is therefore its first
     // command-driven one.
-    let hs = vec![(rise(1) + tpd, HIGH.to_vec()), (rise(4) + tpd, LOW.to_vec()), (rise(11) + tpd, HIGH.to_vec())];
+    let hs = vec![(TopDesign::rising_edge(1) + tpd, HIGH.to_vec()), (TopDesign::rising_edge(4) + tpd, LOW.to_vec()), (TopDesign::rising_edge(11) + tpd, HIGH.to_vec())];
     // `ls_gate = (ls_cmd & !hs_cmd) after tpd`: rises `tpd` after `ls_cmd` (edge 6); the low side
     // command with `hs_cmd` high at edge 8 is a command to neither: it falls `tpd` after (edge
     // 8); and it stays false when `ls_cmd` falls (edge 11)
-    let ls = vec![(rise(6) + tpd, HIGH.to_vec()), (rise(8) + tpd, LOW.to_vec())];
+    let ls = vec![(TopDesign::rising_edge(6) + tpd, HIGH.to_vec()), (TopDesign::rising_edge(8) + tpd, LOW.to_vec())];
     let (hs_seen, ls_seen) = (transient(&seen, "DriverBench.hs_gate"), transient(&seen, "DriverBench.ls_gate"));
     for gate in ["DriverBench.hs_gate", "DriverBench.ls_gate"] {
         let start = series(&seen, gate);

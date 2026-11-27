@@ -7,9 +7,7 @@
 
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Expr, FunctionSpec, IrBuilder, Local, ValueType};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
@@ -19,7 +17,7 @@ mod compiled;
 
 use alone::Alone;
 use compiled::{Bytes, Device};
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 
 const F: &str = "sum.msl";
 
@@ -44,19 +42,19 @@ impl Fixture {
                 let mut x = Dx::new(b, F, 3, 5);
                 let mut total = x.real(1000.0 * count as f64);
                 for at in 0..count {
-                    let drives = x.local(0, ValueType::Array(Box::new(Ty::u(8)), count));
-                    let index = x.int(at as i128, Ty::u(64));
-                    let element = x.b.expr(Expr::Index { expr: drives, index }, Ty::u(8), x.origin());
+                    let drives = x.local(0, ValueType::Array(Box::new(ValueAliases::u(8)), count));
+                    let index = x.int(at as i128, ValueAliases::u(64));
+                    let element = x.b.expr(Expr::Index { expr: drives, index }, ValueAliases::u(8), x.origin());
                     let widened = x.cast(element, ValueType::F64, ValueType::F64);
                     total = x.bin(BinaryOp::Add, total, widened, ValueType::F64);
                 }
                 b.function(FunctionSpec {
                     name: format!("resolve~{count}"),
                     origin: Buck::origin(F, 3, 5),
-                    params: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(Ty::u(8)), count), mutable: false }],
+                    params: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueAliases::u(8)), count), mutable: false }],
                     ret: ValueType::F64,
                     // the locals of a function begin with its parameters
-                    locals: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(Ty::u(8)), count), mutable: false }],
+                    locals: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueAliases::u(8)), count), mutable: false }],
                     body: total,
                 })
             })
@@ -68,7 +66,7 @@ impl Fixture {
         let by_count = Fixture::instances(b);
         let body = b.body(Buck::spec("Sum$resolve~2", F, 4));
         for name in ["d0", "d1"] {
-            b.carrier(body, Buck::carrier(name, Ty::u(8), CarrierRole::In, None, F, 4, 5));
+            b.carrier(body, Buck::carrier(name, ValueAliases::u(8), CarrierRole::In, None, F, 4, 5));
         }
         b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::Out, None, F, 4, 5));
         let resolve = b.expr(Expr::Resolve { by_count, drives: vec![0, 1], except: None }, ValueType::F64, Buck::origin(F, 4, 9));
@@ -79,10 +77,10 @@ impl Fixture {
     /// The holder: `w` is resolved (value `f64`, driven `u8`), driven with 5; `seen` follows `w.others()`.
     fn source(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", F, 6));
-        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: Ty::u(8), port: true }, None, F, 7, 5));
+        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: ValueAliases::u(8), port: true }, None, F, 7, 5));
         b.carrier(body, Buck::carrier("seen", ValueType::F64, CarrierRole::Signal, None, F, 8, 5));
         let mut x = Dx::new(b, F, 7, 9);
-        let five = x.int(5, Ty::u(8));
+        let five = x.int(5, ValueAliases::u(8));
         b.drive(body, Drive { carrier: 0, value: five, after: None, origin: Buck::origin(F, 7, 9), element: None, path: vec![] });
         let others = b.expr(Expr::Others(0), ValueType::F64, Buck::origin(F, 8, 9));
         b.drive(body, Drive { carrier: 1, value: others, after: None, origin: Buck::origin(F, 8, 9), element: None, path: vec![] });

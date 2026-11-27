@@ -17,15 +17,13 @@ use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource,
 use piperine_plan::{Mode, Modules, Source};
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
 
 use alone::Alone;
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 
 const F: &str = "react.msl";
 
@@ -48,21 +46,21 @@ fn order(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Order", F, 1));
     for (name, ty, role, col) in [
         ("clk", ValueType::Bool, CarrierRole::In, 20),
-        ("a", Ty::u(8), CarrierRole::Out, 30),
-        ("b", Ty::u(8), CarrierRole::Out, 40),
+        ("a", ValueAliases::u(8), CarrierRole::Out, 30),
+        ("b", ValueAliases::u(8), CarrierRole::Out, 40),
         ("c", ValueType::Bool, CarrierRole::Out, 50),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, None, F, 1, col));
     }
     let rise = Buck::rise(b, body, 0, F, 3, 8);
     let mut x = Dx::new(b, F, 4, 9);
-    let one = x.int(1, Ty::u(8));
+    let one = x.int(1, ValueAliases::u(8));
     let first = x.commit(1, one, None);
     x.at(5, 9);
     let clk = x.carrier(0, ValueType::Bool);
-    let two = x.int(2, Ty::u(8));
+    let two = x.int(2, ValueAliases::u(8));
     let then = x.commit(2, two, None);
-    let three = x.int(3, Ty::u(8));
+    let three = x.int(3, ValueAliases::u(8));
     let otherwise = x.commit(2, three, None);
     let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
     let branch = x.when(clk, vec![then], Some(otherwise));
@@ -89,11 +87,11 @@ fn tables(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Tables", F, 60));
     for (name, ty, role, col) in [
         ("clk", ValueType::Bool, CarrierRole::In, 20),
-        ("a", Ty::u(8), CarrierRole::In, 21),
-        ("b", Ty::u(8), CarrierRole::In, 22),
+        ("a", ValueAliases::u(8), CarrierRole::In, 21),
+        ("b", ValueAliases::u(8), CarrierRole::In, 22),
         ("x", ValueType::F64, CarrierRole::In, 23),
         ("sm", ValueType::Bool, CarrierRole::Out, 24),
-        ("cs", Ty::i(8), CarrierRole::Out, 25),
+        ("cs", ValueAliases::i(8), CarrierRole::Out, 25),
         ("ex", ValueType::F64, CarrierRole::Out, 26),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, None, F, 60, col));
@@ -101,11 +99,11 @@ fn tables(b: &mut IrBuilder) -> BodyId {
     let rise = Buck::rise(b, body, 0, F, 61, 8);
     let mut x = Dx::new(b, F, 62, 9);
     let mut stmts = Vec::new();
-    let (a, bb) = (x.carrier(1, Ty::u(8)), x.carrier(2, Ty::u(8)));
+    let (a, bb) = (x.carrier(1, ValueAliases::u(8)), x.carrier(2, ValueAliases::u(8)));
     let same = x.same(a, bb);
     stmts.push(x.commit(4, same, None));
-    let recast = x.level_cast(a, Ty::i(8), None, ValueType::Option(Box::new(Ty::i(8))));
-    let recast = x.option_value(recast, Ty::i(8));
+    let recast = x.level_cast(a, ValueAliases::i(8), None, ValueType::Option(Box::new(ValueAliases::i(8))));
+    let recast = x.option_value(recast, ValueAliases::i(8));
     stmts.push(x.commit(5, recast, None));
     let v = x.carrier(3, ValueType::F64);
     let exp = x.math(MathFn::Exp, v, ValueType::F64);
@@ -125,13 +123,13 @@ fn guarded(b: &mut IrBuilder) -> BodyId {
         ("clk", ValueType::Bool, CarrierRole::In, 20),
         ("d", ValueType::Bool, CarrierRole::In, 30),
         ("q", ValueType::Bool, CarrierRole::Out, 40),
-        ("r", Ty::u(8), CarrierRole::Out, 50),
+        ("r", ValueAliases::u(8), CarrierRole::Out, 50),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, None, F, 10, col));
     }
     let rise = Buck::rise(b, body, 0, F, 11, 8);
     let mut x = Dx::new(b, F, 11, 20);
-    let nine = x.int(9, Ty::u(8));
+    let nine = x.int(9, ValueAliases::u(8));
     let first = x.commit(3, nine, None);
     x.at(12, 9);
     let d = x.carrier(1, ValueType::Bool);
@@ -177,15 +175,15 @@ fn late(b: &mut IrBuilder) -> BodyId {
 fn divide(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Divide", F, 40));
     for (name, ty, role, col) in [
-        ("a", Ty::u(8), CarrierRole::In, 20),
-        ("b", Ty::u(8), CarrierRole::In, 30),
-        ("q", Ty::u(8), CarrierRole::Out, 40),
+        ("a", ValueAliases::u(8), CarrierRole::In, 20),
+        ("b", ValueAliases::u(8), CarrierRole::In, 30),
+        ("q", ValueAliases::u(8), CarrierRole::Out, 40),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, None, F, 40, col));
     }
     let mut x = Dx::new(b, F, 41, 9);
-    let (a, c) = (x.carrier(0, Ty::u(8)), x.carrier(1, Ty::u(8)));
-    let quotient = x.bin(BinaryOp::Div, a, c, Ty::u(8));
+    let (a, c) = (x.carrier(0, ValueAliases::u(8)), x.carrier(1, ValueAliases::u(8)));
+    let quotient = x.bin(BinaryOp::Div, a, c, ValueAliases::u(8));
     let origin = Origin { file: F.to_string(), line: 41, col: 5 };
     b.drive(body, Drive { carrier: 2, value: quotient, after: None, origin, element: None, path: vec![] });
     body

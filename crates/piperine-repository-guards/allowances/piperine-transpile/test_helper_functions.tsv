@@ -135,6 +135,3 @@ crates/piperine-transpile/tests/session.rs::dc	1
 crates/piperine-transpile/tests/session.rs::follow	1
 crates/piperine-transpile/tests/session.rs::node	1
 crates/piperine-transpile/tests/structure.rs::rate_in_a_flow	1
-crates/piperine-transpile/tests/support/mixed.rs::at	1
-crates/piperine-transpile/tests/support/mixed.rs::constant	1
-crates/piperine-transpile/tests/support/mixed.rs::rise	1

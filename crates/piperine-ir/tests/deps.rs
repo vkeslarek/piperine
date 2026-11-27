@@ -3,9 +3,7 @@
 //! `where` checks), reached through locals and function calls; the fixed order of each set;
 //! `Body::is_affine` with one row per operator of the affine rule.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{

@@ -9,9 +9,6 @@
 use piperine_abi::raw::{Shape, ambient};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "support/both.rs"]
 mod both;
 

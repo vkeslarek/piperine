@@ -3,9 +3,7 @@
 //! misplaced or duplicated `limit`/`ac_stim` sites and contributions, wrong types in analog
 //! positions, duplicated paths. A built IR checks clean; a lone top instance prints and checks.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{

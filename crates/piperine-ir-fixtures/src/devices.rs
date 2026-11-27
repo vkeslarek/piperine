@@ -1,6 +1,6 @@
 //! The five M1 device bodies, the functions they call and the divider design, built by hand
 //! through `IrBuilder` exactly as `tests/e2e/twins/devices.msl` and `divider.msl` read, in source
-//! order. Shared by `piperine-interp`'s tests through `#[path]`.
+//! order.
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Child, Constant, Env, Expr,
@@ -11,13 +11,18 @@ use piperine_ir::{
 
 /// Expression construction at one source position; types follow the operator.
 pub struct Ex<'b> {
+    /// The builder every node is made through.
     pub b: &'b mut IrBuilder,
+    /// The source file every node is attributed to.
     pub file: &'static str,
+    /// The source line the next node is attributed to.
     pub line: u32,
+    /// The source column the next node is attributed to.
     pub col: u32,
 }
 
 impl<'b> Ex<'b> {
+    /// A builder positioned at `file:line:col`.
     pub fn new(b: &'b mut IrBuilder, file: &'static str, line: u32, col: u32) -> Self {
         Ex { b, file, line, col }
     }
@@ -26,43 +31,51 @@ impl<'b> Ex<'b> {
         Origin { file: self.file.to_string(), line: self.line, col: self.col }
     }
 
+    /// Moves the position the next nodes are attributed to.
     pub fn at(&mut self, line: u32, col: u32) -> &mut Self {
         self.line = line;
         self.col = col;
         self
     }
 
+    /// A real literal.
     pub fn real(&mut self, v: f64) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Real(Real::new(v)), ValueType::F64, o)
     }
 
+    /// A boolean literal.
     pub fn boolean(&mut self, v: bool) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Bool(v), ValueType::Bool, o)
     }
 
+    /// The unit value.
     pub fn unit(&mut self) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Unit, ValueType::Unit, o)
     }
 
+    /// The read of local `i`.
     pub fn local(&mut self, i: u32) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Local(i), ValueType::F64, o)
     }
 
+    /// The read of parameter `i`.
     pub fn param(&mut self, i: u32) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Param(i), ValueType::F64, o)
     }
 
+    /// A unary operation, `f64` for negation and `bool` otherwise.
     pub fn unary(&mut self, op: UnaryOp, expr: ExprId) -> ExprId {
         let o = self.origin();
         let ty = if op == UnaryOp::Neg { ValueType::F64 } else { ValueType::Bool };
         self.b.expr(Expr::Unary { op, expr }, ty, o)
     }
 
+    /// A binary operation, `f64` for arithmetic and `bool` otherwise.
     pub fn binary(&mut self, op: BinaryOp, lhs: ExprId, rhs: ExprId) -> ExprId {
         let o = self.origin();
         let ty = match op {
@@ -78,32 +91,38 @@ impl<'b> Ex<'b> {
         self.b.expr(Expr::If { cond, then, otherwise }, ValueType::F64, o)
     }
 
+    /// A block of statements with an optional value of type `ty`.
     pub fn block(&mut self, stmts: Vec<piperine_ir::StmtId>, value: Option<ExprId>, ty: ValueType) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Block { stmts, value }, ty, o)
     }
 
+    /// A call of `function`.
     pub fn call(&mut self, function: FunctionId, args: Vec<ExprId>) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Call { function, args }, ValueType::F64, o)
     }
 
+    /// A math function applied to `arg`.
     pub fn math(&mut self, f: MathFn, arg: ExprId) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Math { f, args: vec![arg] }, ValueType::F64, o)
     }
 
+    /// A closure over the parameters `params` with body `body`.
     pub fn closure(&mut self, params: Vec<u32>, body: ExprId) -> ExprId {
         let o = self.origin();
         let ty = ValueType::Fn(vec![ValueType::F64; params.len()], Box::new(ValueType::F64));
         self.b.expr(Expr::Closure { params, body }, ty, o)
     }
 
+    /// The probe of the branch from `plus` to `minus`.
     pub fn probe(&mut self, plus: Terminal, minus: Terminal) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Probe { plus, minus }, ValueType::F64, o)
     }
 
+    /// The read of an environment value.
     pub fn env(&mut self, env: Env) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Env(env), ValueType::F64, o)
@@ -115,11 +134,13 @@ impl<'b> Ex<'b> {
         self.b.expr(Expr::Env(env), ValueType::Bool, o)
     }
 
+    /// A `$limit` call at `site` of `x` through `f`, with an optional seed.
     pub fn limit(&mut self, site: u32, x: ExprId, f: ExprId, seed: Option<ExprId>) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Limit { site, x, f, seed }, ValueType::F64, o)
     }
 
+    /// An AC stimulus at `site` of magnitude `mag` and optional `phase`.
     pub fn stim(&mut self, site: u32, mag: ExprId, phase: Option<ExprId>) -> ExprId {
         let o = self.origin();
         self.b.expr(Expr::Stim { site, mag, phase }, ValueType::F64, o)

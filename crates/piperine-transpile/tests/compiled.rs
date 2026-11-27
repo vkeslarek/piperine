@@ -17,9 +17,7 @@ use piperine_plan::{BodyPlan, Modules};
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_transpile::{Compiled, Error, Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "../../piperine-interp/tests/support/circuits.rs"]
 mod circuits;

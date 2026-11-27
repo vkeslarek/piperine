@@ -4,18 +4,13 @@
 //! dependency analysis, whose fixed points (a loop's later iteration, a recursive function's
 //! result) are what these tests pin.
 
-#[path = "support/digital.rs"]
-#[allow(dead_code)]
-mod digital;
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::digital;
 
 #[path = "support/shape.rs"]
 #[allow(dead_code)]
 mod shape;
 
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 use shape::{Entries, Shape, Written, FILE};
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, CarrierRole, Constant, Deps, Env, Expr, FunctionId, InstanceSpec, IrBuilder, NodeRef,
@@ -118,7 +113,7 @@ fn loops_check_type_and_print() {
 
         let (low, high) = {
             let mut x = Shape::dx(b, 4);
-            (x.int(0, Ty::u(8)), x.int(4, Ty::u(8)))
+            (x.int(0, ValueAliases::u(8)), x.int(4, ValueAliases::u(8)))
         };
         let skip = Shape::expr(b, Expr::Continue, ValueType::Unit, 4);
         let skip = b.stmt(Stmt::Expr(skip));
@@ -127,13 +122,13 @@ fn loops_check_type_and_print() {
 
         let (low, high) = {
             let mut x = Shape::dx(b, 5);
-            (x.int(0, Ty::u(8)), x.int(4, Ty::u(8)))
+            (x.int(0, ValueAliases::u(8)), x.int(4, ValueAliases::u(8)))
         };
         let reversed = Shape::expr(b, Expr::ForRange { local: 1, low, high, inclusive: true, reverse: true, body: vec![] }, ValueType::Unit, 5);
         let reversed = b.stmt(Stmt::Expr(reversed));
 
         let read = Shape::dx(b, 6).local(0, ValueType::F64);
-        Written { locals: vec![Shape::local("x", ValueType::F64), Shape::local("k", Ty::u(8))], stmts: vec![declare, whiled, ranged, reversed], value: read }
+        Written { locals: vec![Shape::local("x", ValueType::F64), Shape::local("k", ValueAliases::u(8))], stmts: vec![declare, whiled, ranged, reversed], value: read }
     });
     assert_eq!(ir.check(), vec![], "loops of every kind check");
     let text = ir.to_string();
@@ -151,12 +146,12 @@ fn loops_check_type_and_print() {
         let declare = Shape::dx(b, 2).let_(0, looped);
         let (low, high) = {
             let mut x = Shape::dx(b, 3);
-            (x.int(0, Ty::u(8)), x.int(4, Ty::u(9)))
+            (x.int(0, ValueAliases::u(8)), x.int(4, ValueAliases::u(9)))
         };
         let ranged = Shape::expr(b, Expr::ForRange { local: 1, low, high, inclusive: false, reverse: false, body: vec![] }, ValueType::Unit, 3);
         let ranged = b.stmt(Stmt::Expr(ranged));
         let read = Shape::dx(b, 4).real(0.0);
-        Written { locals: vec![Shape::local("b", ValueType::Bool), Shape::local("k", Ty::u(8))], stmts: vec![declare, ranged], value: read }
+        Written { locals: vec![Shape::local("b", ValueType::Bool), Shape::local("k", ValueAliases::u(8))], stmts: vec![declare, ranged], value: read }
     });
     let broken = ir.check();
     assert_eq!(Entries::with(&broken, "the value of a `break` must be bool, found f64").len(), 1, "{broken:?}");
@@ -229,12 +224,12 @@ fn a_loop_reaching_a_probe_on_a_later_iteration_reads_it() {
         let (take, remember) = (Shape::assign(b, 1, None, before), Shape::assign(b, 0, None, probe));
         let (low, high) = {
             let mut x = Shape::dx(b, 4);
-            (x.int(0, Ty::u(8)), x.int(3, Ty::u(8)))
+            (x.int(0, ValueAliases::u(8)), x.int(3, ValueAliases::u(8)))
         };
         let ranged = Shape::expr(b, Expr::ForRange { local: 2, low, high, inclusive: false, reverse: false, body: vec![take, remember] }, ValueType::Unit, 4);
         let ranged = b.stmt(Stmt::Expr(ranged));
         let read = Shape::dx(b, 7).local(1, ValueType::F64);
-        let locals = vec![Shape::mutable("prev", ValueType::F64), Shape::mutable("acc", ValueType::F64), Shape::local("k", Ty::u(8))];
+        let locals = vec![Shape::mutable("prev", ValueType::F64), Shape::mutable("acc", ValueType::F64), Shape::local("k", ValueAliases::u(8))];
         Written { locals, stmts: vec![prev, acc, ranged], value: read }
     });
     assert_eq!(looped.check(), vec![]);

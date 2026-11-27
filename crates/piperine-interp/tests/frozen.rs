@@ -15,12 +15,8 @@ use piperine_ir::{
 use piperine_ir::{Derives, FieldsForm, GenericInstance, ReprForm, TypeData, TypeKind, VariantData};
 use piperine_ir::Method as M;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::devices;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/models.rs"]
 mod models;
@@ -32,7 +28,7 @@ mod structure;
 mod operators;
 
 use devices::Devices;
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 use models::{In, Models, View};
 use operators::Operators;
 use structure::{ParamEvents, Switching, Written};
@@ -468,7 +464,7 @@ fn the_interpreter_refuses_each_new_form_by_name() {
     );
 
     // The walk names a method row, `unwrap` and `expect` when it meets one: one case per row.
-    let (f, i8_, u8_, u32_, i32_) = (ValueType::F64, Ty::i(8), Ty::u(8), Ty::u(32), Ty::i(32));
+    let (f, i8_, u8_, u32_, i32_) = (ValueType::F64, ValueAliases::i(8), ValueAliases::u(8), ValueAliases::u(32), ValueAliases::i(32));
     let rows: Vec<(M, ValueType, Vec<ValueType>, ValueType)> = vec![
         (M::Sin, f.clone(), vec![], f.clone()),
         (M::Cos, f.clone(), vec![], f.clone()),
@@ -528,14 +524,14 @@ fn the_interpreter_refuses_each_new_form_by_name() {
 fn resolved_forms_are_refused_by_name() {
     let named = Added::refused(|b| {
         let mut x = Dx::new(b, Amended::F, 2, 10);
-        let zero = x.int(0, Ty::u(8));
+        let zero = x.int(0, ValueAliases::u(8));
         let instances: Vec<_> = (0..=1u64)
             .map(|count| {
                 b.function(FunctionSpec {
                     name: format!("resolve~{count}"),
                     origin: Amended::at(2),
                     params: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count), mutable: false }],
-                    ret: Ty::u(8),
+                    ret: ValueAliases::u(8),
                     locals: vec![],
                     body: zero,
                 })
@@ -543,15 +539,15 @@ fn resolved_forms_are_refused_by_name() {
             .collect();
         let resolver = b.body(Buck::spec("Resolver", Amended::F, 1));
         b.carrier(resolver, Buck::carrier("d0", ValueType::Bool, CarrierRole::In, None, Amended::F, 1, 20));
-        b.carrier(resolver, Buck::carrier("v", Ty::u(8), CarrierRole::Out, None, Amended::F, 1, 30));
+        b.carrier(resolver, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Amended::F, 1, 30));
         let x = Dx::new(b, Amended::F, 3, 10);
-        let resolve = x.b.expr(Expr::Resolve { by_count: instances, drives: vec![0], except: None }, Ty::u(8), x.origin());
+        let resolve = x.b.expr(Expr::Resolve { by_count: instances, drives: vec![0], except: None }, ValueAliases::u(8), x.origin());
         b.drive(resolver, piperine_ir::Drive { carrier: 1, value: resolve, after: None, origin: Amended::at(3), element: None, path: vec![] });
         let holder = b.body(Buck::spec("Holder", Amended::F, 1));
-        b.carrier(holder, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20));
-        b.carrier(holder, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Amended::F, 1, 30));
+        b.carrier(holder, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20));
+        b.carrier(holder, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Amended::F, 1, 30));
         let x = Dx::new(b, Amended::F, 4, 10);
-        let others = x.b.expr(Expr::Others(0), Ty::u(8), x.origin());
+        let others = x.b.expr(Expr::Others(0), ValueAliases::u(8), x.origin());
         b.drive(holder, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Amended::at(4), element: None, path: vec![] });
     });
     assert!(named.contains(&"others() of a resolved carrier".to_string()), "`others()` is named: {named:?}");
@@ -566,7 +562,7 @@ fn the_level_nodes_are_refused_by_name() {
     type Node = fn(&mut Dx<'_>, piperine_ir::ExprId) -> piperine_ir::ExprId;
     let nodes: [(&str, Node); 2] = [
         ("same", |x, v| x.same(v, v)),
-        ("cast", |x, v| x.level_cast(v, Ty::u(64), None, ValueType::Option(Box::new(Ty::u(64))))),
+        ("cast", |x, v| x.level_cast(v, ValueAliases::u(64), None, ValueType::Option(Box::new(ValueAliases::u(64))))),
     ];
     for (name, node) in nodes {
         let mut b = IrBuilder::new();
@@ -787,10 +783,10 @@ fn each_composite_values_form_is_refused_by_name() {
     let ranged = Composite::refused(|b| {
         let (low, high) = {
             let mut x = Dx::new(b, "composite.msl", 2, 5);
-            (x.int(0, Ty::u(8)), x.int(2, Ty::u(8)))
+            (x.int(0, ValueAliases::u(8)), x.int(2, ValueAliases::u(8)))
         };
         let kind = Expr::ForRange { local: 0, low, high, inclusive: false, reverse: false, body: vec![] };
-        (vec![Local { name: "k".into(), ty: Ty::u(8), mutable: false }], vec![Composite::run(b, kind, ValueType::Unit)])
+        (vec![Local { name: "k".into(), ty: ValueAliases::u(8), mutable: false }], vec![Composite::run(b, kind, ValueType::Unit)])
     });
     assert_eq!(ranged, ["a for loop"]);
 
@@ -827,7 +823,7 @@ fn each_composite_values_form_is_refused_by_name() {
         let array_type = ValueType::Array(Box::new(ValueType::F64), 2);
         let repeated = b.expr(Expr::ArrayRepeat { element: field, count: 2 }, array_type.clone(), Switching::at());
         let listed = b.expr(Expr::Array(vec![one, two]), array_type, Switching::at());
-        let zero = Dx::new(b, "composite.msl", 2, 5).int(0, Ty::u(8));
+        let zero = Dx::new(b, "composite.msl", 2, 5).int(0, ValueAliases::u(8));
         let element = b.expr(Expr::Index { expr: listed, index: zero }, ValueType::F64, Switching::at());
         let length = b.expr(Expr::Length(repeated), ValueType::UInt(64), Switching::at());
         let shape = b.type_data(TypeData {
@@ -882,9 +878,9 @@ fn each_composite_values_form_is_refused_by_name() {
     // `mem[1]`, `mem[1].prev()` and `mem[1].changed()` read in the `analog` block, and `on mem[1].changed()` (CV-34,
     // T70): each is named, after the carrier the body holds
     let reads = CarrierArrays::refused(true, |b| {
-        let one = Dx::new(b, "ram.msl", 4, 5).int(1, Ty::u(8));
-        let value = b.expr(Expr::CarrierElement { carrier: 0, index: one }, Ty::u(8), Switching::at());
-        let before = b.expr(Expr::ElementPrevious { carrier: 0, index: one }, Ty::u(8), Switching::at());
+        let one = Dx::new(b, "ram.msl", 4, 5).int(1, ValueAliases::u(8));
+        let value = b.expr(Expr::CarrierElement { carrier: 0, index: one }, ValueAliases::u(8), Switching::at());
+        let before = b.expr(Expr::ElementPrevious { carrier: 0, index: one }, ValueAliases::u(8), Switching::at());
         let flag = b.expr(Expr::ElementChanged { carrier: 0, index: one }, ValueType::Bool, Switching::at());
         vec![value, before, flag]
     });
@@ -920,7 +916,7 @@ impl CarrierArrays {
         let at = |line: u32| Origin { file: "ram.msl".into(), line, col: 1 };
         let leaf = window.then(|| {
             let leaf = b.body(BodySpec { name: "Leaf".into(), origin: at(8), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-            b.carrier(leaf, Carrier { name: "q".into(), ty: Ty::u(8), role: CarrierRole::Out, init: None, origin: at(8), count: None });
+            b.carrier(leaf, Carrier { name: "q".into(), ty: ValueAliases::u(8), role: CarrierRole::Out, init: None, origin: at(8), count: None });
             leaf
         });
         let mut analog: Vec<StmtId> = forms(&mut b).into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect();
@@ -937,15 +933,15 @@ impl CarrierArrays {
             analog: Some(analog),
             children: leaf.map(|body| vec![piperine_ir::Child { name: "leaf".into(), body, nodes: vec![], params: vec![], origin: at(9) }]).unwrap_or_default(),
         });
-        b.carrier(body, Carrier { name: "mem".into(), ty: Ty::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) });
+        b.carrier(body, Carrier { name: "mem".into(), ty: ValueAliases::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) });
         if event {
             b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 1 }, guard: None, origin: at(3) });
         }
         if writes {
-            let one = Dx::new(&mut b, "ram.msl", 5, 5).int(1, Ty::u(8));
-            let seven = Dx::new(&mut b, "ram.msl", 5, 9).int(7, Ty::u(8));
+            let one = Dx::new(&mut b, "ram.msl", 5, 5).int(1, ValueAliases::u(8));
+            let seven = Dx::new(&mut b, "ram.msl", 5, 9).int(7, ValueAliases::u(8));
             b.drive(body, piperine_ir::Drive { carrier: 0, value: one, after: None, origin: at(5), element: Some(2), path: vec![] });
-            let at_one = Dx::new(&mut b, "ram.msl", 6, 5).int(1, Ty::u(8));
+            let at_one = Dx::new(&mut b, "ram.msl", 6, 5).int(1, ValueAliases::u(8));
             let commit = b.stmt(Stmt::Commit { carrier: 0, value: seven, after: None, target: Some(piperine_ir::CommitTarget { element: Some(at_one), path: vec![] }) });
             let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: at(6) });
             b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![commit], locals: vec![], origin: at(6) });
@@ -955,7 +951,7 @@ impl CarrierArrays {
             b.bind_child_windows(body, 0, vec![Some(piperine_ir::CarrierWindow { first: 2, length: None })]);
         }
         let top = b.next_instance_id();
-        let net = b.net(NetSpec { path: "Ram.mem".into(), ty: Ty::u(8), declared_by: top, init: None, origin: at(2) });
+        let net = b.net(NetSpec { path: "Ram.mem".into(), ty: ValueAliases::u(8), declared_by: top, init: None, origin: at(2) });
         let top = b.instance(InstanceSpec { path: "Ram".into(), name: "Ram".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: at(1) });
         b.bind_nets(top, vec![net]);
         let ir = b.finish(top);

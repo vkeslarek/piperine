@@ -3,7 +3,7 @@
 //! test writes (`Switching`), and one body `Lag` with a param event and a reaction
 //! (`ParamEvents`). The includer declares `mod devices` for the expression helper.
 
-use crate::devices::{Devices, Ex};
+use piperine_ir_fixtures::devices::{Devices, Ex};
 use piperine_ir::{
     Addend, BinaryOp, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Derivative, Drive, Event, EventSource, Expr, ExprId, InstanceSpec,
     Ir, IrBuilder, Local, NetSpec, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Reaction, Real, Site, Stmt, StmtId, Terminal, ValueType,

@@ -13,9 +13,6 @@ use piperine_ir::{
 use piperine_plan::{BodyPlan, Mode, Source, Target, Term};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "../../piperine-ir/tests/support/structure.rs"]
 mod structure;
 

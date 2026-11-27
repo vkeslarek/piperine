@@ -8,16 +8,13 @@ use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::rise;
 use std::path::Path;
 use support::{HIGH, LOW, build, transient};
 
@@ -84,6 +81,6 @@ fn rise_and_fall_fire_on_transitions() {
     // 2, 4, 6 and 8; `fall()` a change that ends false: true to false at edges 3, 5 and 7; the commit of false at edge 1
     // is no change. Each run commits once to its counter, at its instant.
     let seen = build(&project(), "EdgeBench").run(40e-9, 1e-9);
-    assert_eq!(seen.commits("EdgeBench.rises"), vec![rise(2), rise(4), rise(6), rise(8)], "rise() runs");
-    assert_eq!(seen.commits("EdgeBench.falls"), vec![rise(3), rise(5), rise(7)], "fall() runs");
+    assert_eq!(seen.commits("EdgeBench.rises"), vec![TopDesign::rising_edge(2), TopDesign::rising_edge(4), TopDesign::rising_edge(6), TopDesign::rising_edge(8)], "rise() runs");
+    assert_eq!(seen.commits("EdgeBench.falls"), vec![TopDesign::rising_edge(3), TopDesign::rising_edge(5), TopDesign::rising_edge(7)], "fall() runs");
 }

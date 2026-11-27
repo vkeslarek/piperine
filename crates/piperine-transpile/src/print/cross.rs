@@ -100,7 +100,7 @@ mod tests {
 
     use super::*;
     use crate::alone::Alone;
-    use crate::digital::Buck;
+    use piperine_ir_fixtures::digital::Buck;
     use crate::print::AnalogPrinter;
 
     #[test]

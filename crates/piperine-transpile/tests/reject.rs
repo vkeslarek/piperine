@@ -12,12 +12,8 @@ use piperine_ir::{
 };
 use piperine_transpile::{Error, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::devices;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;

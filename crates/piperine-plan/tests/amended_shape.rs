@@ -11,9 +11,7 @@ use piperine_ir::{
 };
 use piperine_plan::{BodyPlan, Mode, Source, Target};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 
 use digital::{Buck, Dx};
 

@@ -643,7 +643,7 @@ mod tests {
     use piperine_ir::{BinaryOp, Env, ExprId, FunctionSpec, Ir, IrBuilder, Local, MathFn, Origin, Stmt, Terminal, UnaryOp, ValueType};
 
     use super::{Value, Walk};
-    use crate::devices::{Devices, Ex};
+    use piperine_ir_fixtures::devices::{Devices, Ex};
 
     /// A one-off IR holding hand-built expressions; the resistor top only completes the design.
     struct Lab {

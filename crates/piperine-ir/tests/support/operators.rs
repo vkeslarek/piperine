@@ -2,11 +2,7 @@
 //! (`#[path]`-included, never a target itself): one flow branch `(a, gnd)`, the param `td`, and
 //! the sites a test writes (delays, noise sources, session parameters, trace sites).
 
-#[path = "devices.rs"]
-#[allow(dead_code)]
-mod devices;
-
-use devices::{Devices, Ex};
+use piperine_ir_fixtures::devices::{Devices, Ex};
 use piperine_ir::{
     Addend, BodyNode, BodySpec, Branch, BranchKind, Carrier, Constant, DelaySite, EmitField, Event, Expr, ExprId, InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NoiseSource, Operator, Origin, Param, QuantityRole, Reaction, Real,
     SessionParameter, Stmt, StmtId, Stream, StreamField, Terminal, TraceSite, ValueType,

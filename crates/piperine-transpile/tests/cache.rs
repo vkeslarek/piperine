@@ -11,9 +11,7 @@ use std::time::Duration;
 use piperine_ir::IrBuilder;
 use piperine_transpile::{AbiSource, Cache, Entry, Error, Key, Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::Devices;
 

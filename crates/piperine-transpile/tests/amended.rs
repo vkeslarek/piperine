@@ -15,15 +15,14 @@ use piperine_solver::prelude::NodeIdentifier;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use piperine_transpile::{Error, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/mixed.rs"]
 mod mixed;
 
 use digital::{Buck, Dx};
-use mixed::{Built, Wire};
+use mixed::Built;
+use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "amended.msl";
 /// One nanosecond in ticks of one femtosecond, the solver's default resolution.
@@ -34,7 +33,7 @@ const BIT: ValueType = ValueType::Bool;
 const REAL: ValueType = ValueType::F64;
 
 /// The 200 MHz oscillator on the net `Top.clk`: it toggles every 2.5 ns from 2.5 ns.
-fn clock(w: &mut Wire) {
+fn clock(w: &mut TopDesign) {
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
 }
@@ -91,7 +90,7 @@ fn node(ir: &piperine_ir::Ir, name: &str) -> NodeIdentifier {
 
 #[test]
 fn now_is_the_time_of_the_instant_and_of_the_solve() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let stamp = on_clock(&mut w.b, "Stamp", "t", REAL, |x| env(x, Env::Time));
     w.place("stamp", stamp, vec![], &[("clk", BIT), ("t", REAL)]);
@@ -120,7 +119,7 @@ fn now_is_the_time_of_the_instant_and_of_the_solve() {
 
 #[test]
 fn static_is_true_only_in_the_equilibrium() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let mode = on_clock(&mut w.b, "Mode", "s", BIT, |x| env(x, Env::Static));
     w.place("mode", mode, vec![], &[("clk", BIT), ("s", BIT)]);
@@ -194,7 +193,7 @@ fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
 
 #[test]
 fn hoisted_names_print_as_rust_identifiers() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let body = hoisted(&mut w.b, "Hoisted", None);
     // every carrier is bound to a net, a signal to the one its instance declares
@@ -212,7 +211,7 @@ fn hoisted_names_print_as_rust_identifiers() {
     assert!(seen.series_of("Top.h.gate_dx").is_empty(), "no pin is named by its Rust spelling");
 
     // a name that spells like a hoisted one is refused, not shadowed
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let body = hoisted(&mut w.b, "Clash", Some("gate_dx"));
     w.place("h", body, vec![], &[("clk", BIT), ("h.gate.x", BIT), ("h.above$0.init$0.up", BIT), ("q", BIT), ("h.gate_dx", BIT)]);
     let transpiler = Transpiler::new(std::sync::Arc::new(w.finish())).unwrap_or_else(|e| panic!("{e}"));
@@ -263,7 +262,7 @@ fn timer(b: &mut IrBuilder, rearm: bool) -> BodyId {
 
 /// The transient changes of `count` from a 40 ns run of the timer.
 fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let body = timer(&mut w.b, rearm);
     w.place("timer", body, vec![], &[("timer.t0", REAL), ("timer.dt", REAL), ("count", ValueType::UInt(8))]);
     Built::new(w.finish()).run(40e-9, 1e-9).transient("count")
@@ -325,7 +324,7 @@ fn late(b: &mut IrBuilder, name: &str, time: Time) -> BodyId {
 #[test]
 fn a_past_time_does_not_fire() {
     // a 100 MHz clock: its first rise is at 5 ns, the next at 15 ns, after the run
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(Real::new(100e6))], &[("clk", BIT)]);
     for (name, module, time) in [
@@ -378,7 +377,7 @@ fn probe(b: &mut IrBuilder, emits: bool) -> BodyId {
 
 /// The probe under the 200 MHz clock, compiled.
 fn probed(emits: bool) -> Built {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let body = probe(&mut w.b, emits);
     w.place("probe", body, vec![], &[("clk", BIT), ("n", ValueType::UInt(8))]);
@@ -460,7 +459,7 @@ fn the_inductor_functions_pass_verify_partials() {
     use piperine_abi::verify::{Verdict, verify_partials};
     use piperine_plan::Modules;
 
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     // the power stage's inductor: `v(p, n) +> ddt(l * i(p, n))`
     let inductor = potential(&mut w.b, "Inductor", "l", 10e-6, |x, l, flow| {
         let charge = x.bin(piperine_ir::BinaryOp::Mul, l, flow, REAL);
@@ -563,7 +562,7 @@ fn sequence(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let body = sequence(&mut w.b);
     let u8 = ValueType::UInt(8);
     w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);

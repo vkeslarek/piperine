@@ -3,12 +3,8 @@
 //! runtime by `rustc` and run; nested argument lists spell apart.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::digital;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
@@ -21,7 +17,7 @@ mod mixed;
 
 use alone::Alone;
 use devices::{Devices, Ex};
-use digital::{Dx, Ty};
+use digital::{Dx, ValueAliases};
 use piperine_ir::{Addend, Branch, BranchKind, BodyId, BodyNode, BodySpec, InstanceSpec, NodeRef, NodeRole, Operator, QuantityRole, Stmt, Terminal};
 use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
@@ -60,10 +56,10 @@ impl Instances {
     /// `Pair<Pair<u8>, u8>` and `Pair<Pair<u8, u8>>` (the last two differ only in their nesting).
     fn design() -> Ir {
         let mut b = IrBuilder::new();
-        let inner = Self::pair(&mut b, "Pair", &["u8"], vec![("0".into(), Ty::u(8))]);
-        Self::pair(&mut b, "Pair", &["Pair<u8>", "u8"], vec![("0".into(), ValueType::Struct(inner)), ("1".into(), Ty::u(8))]);
-        Self::pair(&mut b, "Pair", &["Pair<u8, u8>"], vec![("0".into(), Ty::u(8)), ("1".into(), Ty::u(8))]);
-        Self::identity(&mut b, "u8", Ty::u(8), 10);
+        let inner = Self::pair(&mut b, "Pair", &["u8"], vec![("0".into(), ValueAliases::u(8))]);
+        Self::pair(&mut b, "Pair", &["Pair<u8>", "u8"], vec![("0".into(), ValueType::Struct(inner)), ("1".into(), ValueAliases::u(8))]);
+        Self::pair(&mut b, "Pair", &["Pair<u8, u8>"], vec![("0".into(), ValueAliases::u(8)), ("1".into(), ValueAliases::u(8))]);
+        Self::identity(&mut b, "u8", ValueAliases::u(8), 10);
         Self::identity(&mut b, "Pair<u8>", ValueType::Struct(inner), 12);
         Alone::finish(b)
     }
@@ -137,7 +133,7 @@ impl OneHot {
         let mut chain = none;
         for k in (0..4).rev() {
             let l = Dx::new(&mut b, FILE, 6, 5).local(0, levels.clone());
-            let index = Dx::new(&mut b, FILE, 6, 8).int(i128::from(k), Ty::u(8));
+            let index = Dx::new(&mut b, FILE, 6, 8).int(i128::from(k), ValueAliases::u(8));
             let level = b.expr(Expr::Index { expr: l, index }, ValueType::Bool, Instances::origin(6));
             let (yes, payload) = (Dx::new(&mut b, FILE, 6, 12).boolean(true), b.expr(Expr::VariantOf { ty: one_hot, variant: k, fields: vec![] }, value.clone(), Instances::origin(6)));
             let some = b.expr(Expr::OptionPack { is: yes, value: payload }, option.clone(), Instances::origin(6));
@@ -262,7 +258,7 @@ impl RunTemperature {
 
     /// The last value of nets `given` and `kelvin` after a run in the session `context`.
     fn run(context: piperine_solver::prelude::Context) -> [f64; 2] {
-        let mut w = mixed::Wire::new();
+        let mut w = piperine_ir_fixtures::mixed::TopDesign::new();
         let body = Self::body(&mut w.b);
         w.place("reads", body, vec![], &[("given", ValueType::F64), ("kelvin", ValueType::F64)]);
         let (seen, _) = mixed::Built::new(w.finish()).run_in(context, 2e-9, 1e-9);

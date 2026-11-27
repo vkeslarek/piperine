@@ -7,15 +7,14 @@
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{BinaryOp, BodyId, Carrier, CarrierRole, CommitTarget, Constant, Event, EventSource, Expr, IrBuilder, Stmt, ValueType};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/mixed.rs"]
 mod mixed;
 
-use digital::{Buck, Dx, Ty};
-use mixed::{Built, Wire};
+use digital::{Buck, Dx, ValueAliases};
+use mixed::Built;
+use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "ram.msl";
 /// One nanosecond in ticks.
@@ -38,7 +37,7 @@ impl Fixture {
     /// ```
     fn ram(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Ram", F, 1));
-        let byte = Ty::u(8);
+        let byte = ValueAliases::u(8);
         b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
         b.carrier(body, Carrier { count: Some(4), ..Buck::carrier("mem", byte.clone(), CarrierRole::Signal, Some(Constant::Int(5)), F, 2, 5) });
         b.carrier(body, Buck::carrier("k", byte.clone(), CarrierRole::Signal, Some(Constant::Int(2)), F, 3, 5));
@@ -79,11 +78,11 @@ impl Fixture {
 
 #[test]
 fn element_reads_and_commits_compile_and_run() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(piperine_ir::Real::new(200e6))], &[("clk", BIT)]);
     let ram = Fixture::ram(&mut w.b);
-    w.place("ram", ram, vec![], &[("clk", BIT), ("mem", Ty::u(8)), ("k", Ty::u(8)), ("q", Ty::u(8)), ("hit", BIT)]);
+    w.place("ram", ram, vec![], &[("clk", BIT), ("mem", ValueAliases::u(8)), ("k", ValueAliases::u(8)), ("q", ValueAliases::u(8)), ("hit", BIT)]);
     let seen = Built::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.1 and CV-25: at the first rising edge (2.5 ns) `mem[k] <- 9` commits element 2, the commit lands at the
     // next microstep of the same instant, and the element event `mem[2].changed()` then fires the reaction that

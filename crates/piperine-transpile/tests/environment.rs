@@ -10,15 +10,14 @@
 use piperine_ir::{BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, IrBuilder, ValueType};
 use piperine_solver::prelude::Context;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/mixed.rs"]
 mod mixed;
 
 use digital::Buck;
-use mixed::{Built, Wire};
+use mixed::Built;
+use piperine_ir_fixtures::mixed::TopDesign;
 
 const A: &str = "env.msl";
 /// The host's temperature and the session's `gmin`, neither a default.
@@ -59,7 +58,7 @@ fn ambient(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scale() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![piperine_ir::Constant::Real(piperine_ir::Real::new(200e6))], &[("clk", ValueType::Bool)]);
     let body = ambient(&mut w.b);

@@ -10,19 +10,16 @@
 use piperine_ir::{BodyId, CarrierRole, Constant, IrBuilder, Real, ValueType};
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::digital;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 
 use devices::Devices;
-use digital::{Buck, Dx, Ty};
-use mixed::{Built, Wire};
+use digital::{Buck, Dx, ValueAliases};
+use mixed::Built;
 
 const BIT: ValueType = ValueType::Bool;
 /// A true and a false `Bit`: `{ v @0 }` (abi.md §3.1).
@@ -47,7 +44,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
     let expected_code = |v: f64| -> u16 { (v / VREF * 1024.0 + 0.5).floor().clamp(0.0, 1023.0) as u16 };
     assert_eq!(volts.map(expected_code), [0, 1, 512, 1023, 1023]);
 
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let (osc, adc, vsource) = (Buck::osc(&mut w.b), Buck::adc(&mut w.b), Devices::vsource(&mut w.b));
     // a sample strobe once per 1 us: the oscillator rises at 0.5 us and again at 1.5 us
     w.place("osc", osc, vec![real(1e6)], &[("sample", BIT)]);
@@ -60,7 +57,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
             adc,
             &[&node],
             vec![real(VREF), real(TCONV), real(TSTROBE)],
-            &[("sample", BIT), (&code, Ty::u(10)), (&done, BIT)],
+            &[("sample", BIT), (&code, ValueAliases::u(10)), (&done, BIT)],
         );
     }
     // 1.4 us: the first conversion ends at 1.0 us and the second sample is not reached
@@ -134,7 +131,7 @@ const NETWORK: Network = Network { v: 1.0, ron: 1e3, roff: 1e6, r2: 9e3, c: 0.5e
 /// Places the source, the switch, the load, the capacitor and the oscillator that drives the
 /// gate: the gate rises at 3 us and falls at 6 us (one period of 1 / f = 6 us, half a period
 /// from the start, from low).
-fn network(w: &mut Wire) {
+fn network(w: &mut TopDesign) {
     let (osc, switch) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b));
     let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
     w.place("osc", osc, vec![real(1.0 / 6e-6)], &[("gate", BIT)]);
@@ -150,7 +147,7 @@ fn the_comparator_trips_at_its_thresholds() {
     // 0.625 V rising and false at vth - hyst / 2 = 0.575 V falling
     const UP: f64 = 0.6 + 0.05 / 2.0;
     const DOWN: f64 = 0.6 - 0.05 / 2.0;
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     network(&mut w);
     let a2d = Buck::comparator(&mut w.b);
     w.place_with("cmp", a2d, &["x"], vec![real(0.6), real(50e-3)], &[("d", BIT)]);
@@ -198,7 +195,7 @@ fn kick(b: &mut IrBuilder) -> BodyId {
 #[test]
 fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     use piperine_solver::prelude::NodeIdentifier;
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     // the oscillator's first rising edge is the instant t0 = 3.0037 us, off the 1 ns grid the step
     // cap gives, so only a time point lands there; a compiled reaction commits
     // the gate high there, and the switch (closed: Ron) connects the source to the RC

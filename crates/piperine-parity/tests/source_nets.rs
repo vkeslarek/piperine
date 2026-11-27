@@ -17,9 +17,6 @@ use piperine_solver::prelude::NodeIdentifier;
 use piperine_transpile::Settings;
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
 #[allow(dead_code)]

@@ -1,8 +1,7 @@
 //! The digital and mixed bodies of the buck slice (ir-rust phase B), built by hand through
 //! `IrBuilder` from the MSL text each one transcribes, and the expression helper they share.
 //! Every expression is given the type the MSL source gives it, written out at each node: the
-//! fixture states the types, `Ir::check` judges them. Shared by the tests of `piperine-plan` and
-//! `piperine-transpile` through `#[path]`.
+//! fixture states the types, `Ir::check` judges them.
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
@@ -11,13 +10,15 @@ use piperine_ir::{
 };
 
 /// The value types of the MSL source, by their aliases.
-pub struct Ty;
+pub struct ValueAliases;
 
-impl Ty {
+impl ValueAliases {
+    /// The unsigned integer type of `n` bits.
     pub fn u(n: u32) -> ValueType {
         ValueType::UInt(n)
     }
 
+    /// The signed integer type of `n` bits.
     pub fn i(n: u32) -> ValueType {
         ValueType::Int(n)
     }
@@ -25,21 +26,28 @@ impl Ty {
 
 /// Expression construction at one source position; every node takes its type from the caller.
 pub struct Dx<'b> {
+    /// The builder every node is made through.
     pub b: &'b mut IrBuilder,
+    /// The source file every node is attributed to.
     pub file: &'static str,
+    /// The source line the next node is attributed to.
     pub line: u32,
+    /// The source column the next node is attributed to.
     pub col: u32,
 }
 
 impl<'b> Dx<'b> {
+    /// A builder positioned at `file:line:col`.
     pub fn new(b: &'b mut IrBuilder, file: &'static str, line: u32, col: u32) -> Self {
         Dx { b, file, line, col }
     }
 
+    /// The origin of the current position.
     pub fn origin(&self) -> Origin {
         Origin { file: self.file.to_string(), line: self.line, col: self.col }
     }
 
+    /// Moves the position the next nodes are attributed to.
     pub fn at(&mut self, line: u32, col: u32) -> &mut Self {
         self.line = line;
         self.col = col;
@@ -51,62 +59,77 @@ impl<'b> Dx<'b> {
         self.b.expr(kind, ty, o)
     }
 
+    /// An integer literal of type `ty`.
     pub fn int(&mut self, v: i128, ty: ValueType) -> ExprId {
         self.emit(Expr::Int(v), ty)
     }
 
+    /// A real literal.
     pub fn real(&mut self, v: f64) -> ExprId {
         self.emit(Expr::Real(Real::new(v)), ValueType::F64)
     }
 
+    /// A boolean literal.
     pub fn boolean(&mut self, v: bool) -> ExprId {
         self.emit(Expr::Bool(v), ValueType::Bool)
     }
 
+    /// The unit value.
     pub fn unit(&mut self) -> ExprId {
         self.emit(Expr::Unit, ValueType::Unit)
     }
 
+    /// The read of local `i`, of type `ty`.
     pub fn local(&mut self, i: u32, ty: ValueType) -> ExprId {
         self.emit(Expr::Local(i), ty)
     }
 
+    /// The read of parameter `i`, of type `ty`.
     pub fn param(&mut self, i: u32, ty: ValueType) -> ExprId {
         self.emit(Expr::Param(i), ty)
     }
 
+    /// A binary operation of type `ty`.
     pub fn bin(&mut self, op: BinaryOp, lhs: ExprId, rhs: ExprId, ty: ValueType) -> ExprId {
         self.emit(Expr::Binary { op, lhs, rhs }, ty)
     }
 
+    /// A unary operation of type `ty`.
     pub fn un(&mut self, op: UnaryOp, expr: ExprId, ty: ValueType) -> ExprId {
         self.emit(Expr::Unary { op, expr }, ty)
     }
 
+    /// A cast of `expr` to `to`, of type `ty`.
     pub fn cast(&mut self, expr: ExprId, to: ValueType, ty: ValueType) -> ExprId {
         self.emit(Expr::Cast { expr, to }, ty)
     }
 
+    /// A method call on `receiver`, of type `ty`.
     pub fn method(&mut self, method: Method, receiver: ExprId, args: Vec<ExprId>, ty: ValueType) -> ExprId {
         self.emit(Expr::Method { method, receiver, args }, ty)
     }
 
+    /// A call of `function`, of type `ty`.
     pub fn call(&mut self, function: FunctionId, args: Vec<ExprId>, ty: ValueType) -> ExprId {
         self.emit(Expr::Call { function, args }, ty)
     }
 
+    /// A conditional of type `ty`.
     pub fn if_(&mut self, cond: ExprId, then: ExprId, otherwise: ExprId, ty: ValueType) -> ExprId {
         self.emit(Expr::If { cond, then, otherwise }, ty)
     }
 
+    /// A block of statements with an optional value of type `ty`.
     pub fn block(&mut self, stmts: Vec<StmtId>, value: Option<ExprId>, ty: ValueType) -> ExprId {
         self.emit(Expr::Block { stmts, value }, ty)
     }
 
+    /// The statement binding local `local` to `init`.
     pub fn let_(&mut self, local: u32, init: ExprId) -> StmtId {
         self.b.stmt(Stmt::Let { local, init })
     }
 
+    /// The statement evaluating `e` for its effect.
     pub fn stmt(&mut self, e: ExprId) -> StmtId {
         self.b.stmt(Stmt::Expr(e))
     }
@@ -136,6 +159,7 @@ impl<'b> Dx<'b> {
         self.emit(Expr::Carrier(i), ty)
     }
 
+    /// The probe of the branch from `plus` to `minus`.
     pub fn probe(&mut self, plus: Terminal, minus: Terminal) -> ExprId {
         self.emit(Expr::Probe { plus, minus }, ValueType::F64)
     }
@@ -164,6 +188,7 @@ impl Buck {
         piperine_ir::Local { name: name.to_string(), ty, mutable: false }
     }
 
+    /// The origin `file:line:col`.
     pub fn origin(file: &str, line: u32, col: u32) -> Origin {
         Origin { file: file.to_string(), line, col }
     }
@@ -209,6 +234,7 @@ impl Buck {
         Buck::bound(b, file, line, col, index, BinaryOp::Gt, zero)
     }
 
+    /// A carrier declaration of the given type, role and initial value, at `file:line:col`.
     pub fn carrier(name: &str, ty: ValueType, role: CarrierRole, init: Option<Constant>, file: &str, line: u32, col: u32) -> Carrier {
         Carrier { name: name.into(), ty, role, init, origin: Buck::origin(file, line, col), count: None }
     }
@@ -231,6 +257,7 @@ impl Buck {
         b.event(body, Event { source: EventSource::Changed(carrier), guard: Some(guard), origin: Buck::origin(file, line, col) })
     }
 
+    /// Adds a reaction on the carriers `on` to `body`, returning its index.
     pub fn reaction(b: &mut IrBuilder, body: BodyId, on: Vec<u32>, stmts: Vec<StmtId>, locals: Vec<piperine_ir::Local>, file: &str, line: u32) -> u32 {
         b.reaction(body, Reaction { on, stmts, locals, origin: Buck::origin(file, line, 5) })
     }
@@ -279,7 +306,7 @@ impl Buck {
     pub fn ref_ramp(b: &mut IrBuilder) -> BodyId {
         const F: &str = "control.msl";
         let body = b.body(Buck::spec("RefRamp", F, 22));
-        let word = Ty::u(10);
+        let word = ValueAliases::u(10);
         for (name, ty, role, init, line, col) in [
             ("tick", ValueType::Bool, CarrierRole::In, None, 22, 20),
             ("run", ValueType::Bool, CarrierRole::In, None, 22, 34),
@@ -357,7 +384,7 @@ impl Buck {
             nodes: vec![BodyNode { name: "ain".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 19, 18) }],
             ..Buck::spec("Adc", F, 19)
         });
-        let word = Ty::u(10);
+        let word = ValueAliases::u(10);
         b.carrier(body, Buck::carrier("sample", ValueType::Bool, CarrierRole::In, None, F, 19, 33));
         b.carrier(body, Buck::carrier("code", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 19, 52));
         b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 19, 76));
@@ -475,7 +502,7 @@ impl Buck {
     /// ```
     pub fn setpoint_reg(b: &mut IrBuilder) -> BodyId {
         const F: &str = "control.msl";
-        let u8_ = Ty::u(8);
+        let u8_ = ValueAliases::u(8);
         let body = b.body(Buck::spec("SetpointReg", F, 9));
         b.carrier(body, Buck::carrier("wr", ValueType::Bool, CarrierRole::In, None, F, 9, 27));
         b.carrier(body, Buck::carrier("data", u8_.clone(), CarrierRole::In, None, F, 9, 39));
@@ -525,7 +552,7 @@ impl Buck {
         let rev3 = Buck::rev3(b);
         let dithered = Buck::dithered_width(b, rev3);
         let body = b.body(Buck::spec("Dpwm", F, 40));
-        let (bit, u9, u3, u12) = (ValueType::Bool, Ty::u(9), Ty::u(3), Ty::u(12));
+        let (bit, u9, u3, u12) = (ValueType::Bool, ValueAliases::u(9), ValueAliases::u(3), ValueAliases::u(12));
         let no = || Some(Constant::Bool(false));
         let zero = || Some(Constant::Int(0));
         for (name, ty, role, init, line, col) in [
@@ -727,7 +754,7 @@ impl Buck {
     pub fn pid(b: &mut IrBuilder) -> BodyId {
         const F: &str = "control.msl";
         let body = b.body(Buck::spec("Pid", F, 46));
-        let (bit, u10, u12, i16_, i32_) = (ValueType::Bool, Ty::u(10), Ty::u(12), Ty::i(16), Ty::i(32));
+        let (bit, u10, u12, i16_, i32_) = (ValueType::Bool, ValueAliases::u(10), ValueAliases::u(12), ValueAliases::i(16), ValueAliases::i(32));
         let zero = || Some(Constant::Int(0));
         for (name, ty, role, init, line, col) in [
             ("tick", bit.clone(), CarrierRole::In, None, 46, 19),
@@ -946,21 +973,21 @@ impl Buck {
     /// `dpwm.msl:14`: `fn rev3(k: u3) -> u3 { ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1) }`. A shift
     /// amount literal is `i32`, Rust's fallback for an unconstrained shift operand.
     pub fn rev3(b: &mut IrBuilder) -> FunctionId {
-        let k_ty = Ty::u(3);
+        let k_ty = ValueAliases::u(3);
         let mut x = Dx::new(b, "dpwm.msl", 14, 24);
         let k = x.local(0, k_ty.clone());
-        let one = x.int(1, Ty::u(3));
+        let one = x.int(1, ValueAliases::u(3));
         let k_and_1 = x.bin(BinaryOp::BitAnd, k, one, k_ty.clone());
-        let two = x.int(2, Ty::i(32));
+        let two = x.int(2, ValueAliases::i(32));
         let shifted = x.bin(BinaryOp::Shl, k_and_1, two, k_ty.clone());
         let k = x.local(0, k_ty.clone());
-        let two_mask = x.int(2, Ty::u(3));
+        let two_mask = x.int(2, ValueAliases::u(3));
         let middle = x.bin(BinaryOp::BitAnd, k, two_mask, k_ty.clone());
         let high_low = x.bin(BinaryOp::BitOr, shifted, middle, k_ty.clone());
         let k = x.local(0, k_ty.clone());
-        let two = x.int(2, Ty::i(32));
+        let two = x.int(2, ValueAliases::i(32));
         let down = x.bin(BinaryOp::Shr, k, two, k_ty.clone());
-        let one = x.int(1, Ty::u(3));
+        let one = x.int(1, ValueAliases::u(3));
         let low = x.bin(BinaryOp::BitAnd, down, one, k_ty.clone());
         let body = x.bin(BinaryOp::BitOr, high_low, low, k_ty.clone());
         let origin = Origin { file: "dpwm.msl".into(), line: 14, col: 1 };
@@ -984,29 +1011,29 @@ impl Buck {
     /// }
     /// ```
     pub fn dithered_width(b: &mut IrBuilder, rev3: FunctionId) -> FunctionId {
-        let frame_ty = Ty::u(3);
-        let width_ty = Ty::u(9);
+        let frame_ty = ValueAliases::u(3);
+        let width_ty = ValueAliases::u(9);
         let mut x = Dx::new(b, "dpwm.msl", 19, 18);
-        let duty = x.local(0, Ty::u(12));
-        let three = x.int(3, Ty::i(32));
-        let coarse = x.bin(BinaryOp::Shr, duty, three, Ty::u(12));
-        let coarse = x.cast(coarse, Ty::u(9), Ty::u(9));
+        let duty = x.local(0, ValueAliases::u(12));
+        let three = x.int(3, ValueAliases::i(32));
+        let coarse = x.bin(BinaryOp::Shr, duty, three, ValueAliases::u(12));
+        let coarse = x.cast(coarse, ValueAliases::u(9), ValueAliases::u(9));
         let let_coarse = x.let_(2, coarse);
         x.at(20, 16);
-        let duty = x.local(0, Ty::u(12));
-        let seven = x.int(7, Ty::u(12));
-        let fine = x.bin(BinaryOp::BitAnd, duty, seven, Ty::u(12));
-        let fine = x.cast(fine, Ty::u(3), Ty::u(3));
+        let duty = x.local(0, ValueAliases::u(12));
+        let seven = x.int(7, ValueAliases::u(12));
+        let fine = x.bin(BinaryOp::BitAnd, duty, seven, ValueAliases::u(12));
+        let fine = x.cast(fine, ValueAliases::u(3), ValueAliases::u(3));
         let let_fine = x.let_(3, fine);
         x.at(21, 5);
         let frame = x.local(1, frame_ty.clone());
         let rev = x.call(rev3, vec![frame], frame_ty.clone());
-        let fine = x.local(3, Ty::u(3));
+        let fine = x.local(3, ValueAliases::u(3));
         let cond = x.bin(BinaryOp::Lt, rev, fine, ValueType::Bool);
-        let coarse = x.local(2, Ty::u(9));
-        let one = x.int(1, Ty::u(9));
-        let wider = x.bin(BinaryOp::Add, coarse, one, Ty::u(9));
-        let coarse = x.local(2, Ty::u(9));
+        let coarse = x.local(2, ValueAliases::u(9));
+        let one = x.int(1, ValueAliases::u(9));
+        let wider = x.bin(BinaryOp::Add, coarse, one, ValueAliases::u(9));
+        let coarse = x.local(2, ValueAliases::u(9));
         let width = x.if_(cond, wider, coarse, width_ty.clone());
         x.at(18, 52);
         let body = x.block(vec![let_coarse, let_fine], Some(width), width_ty.clone());
@@ -1014,13 +1041,13 @@ impl Buck {
         b.function(piperine_ir::FunctionSpec {
             name: "dithered_width".into(),
             origin,
-            params: vec![Buck::local("duty", Ty::u(12)), Buck::local("frame", frame_ty.clone())],
+            params: vec![Buck::local("duty", ValueAliases::u(12)), Buck::local("frame", frame_ty.clone())],
             ret: width_ty,
             locals: vec![
-                Buck::local("duty", Ty::u(12)),
+                Buck::local("duty", ValueAliases::u(12)),
                 Buck::local("frame", frame_ty),
-                Buck::local("coarse", Ty::u(9)),
-                Buck::local("fine", Ty::u(3)),
+                Buck::local("coarse", ValueAliases::u(9)),
+                Buck::local("fine", ValueAliases::u(3)),
             ],
             body,
         })

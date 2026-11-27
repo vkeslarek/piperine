@@ -6,17 +6,12 @@
 //! (§1 rule 5: a width is any `N >= 1`; Q4 of the user: IEEE 754 bit patterns, two's complement
 //! limbs).
 
-#[path = "support/digital.rs"]
-#[allow(dead_code)]
-mod digital;
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::digital;
 #[path = "support/shape.rs"]
 #[allow(dead_code)]
 mod shape;
 
-use digital::Ty;
+use digital::ValueAliases;
 use piperine_ir::{BinaryOp, Expr, ExprId, Ir, IrBuilder, Local, Method, ValueType, WideData, WideId};
 use shape::{Entries, Shape, Written};
 
@@ -60,20 +55,20 @@ fn number_width_types_and_constants_are_checked_printed_and_serialized() {
         let half_float = Widths::sum_as_f64(b, ValueType::F16, 4, |b, line| Widths::expr(b, Expr::FloatBits(0x3c00), ValueType::F16, line));
         let quad = Widths::sum_as_f64(b, ValueType::F128, 5, |b, line| Widths::expr(b, Expr::FloatBits(0x3fff_0000_0000_0000_0000_0000_0000_0000), ValueType::F128, line));
         let wide = Widths::wide(b, &[7, 0, 0, 0]);
-        let wide_value = Widths::sum_as_f64(b, Ty::u(200), 6, |b, line| Widths::expr(b, Expr::Wide(wide), Ty::u(200), line));
+        let wide_value = Widths::sum_as_f64(b, ValueAliases::u(200), 6, |b, line| Widths::expr(b, Expr::Wide(wide), ValueAliases::u(200), line));
         // `x.floor()` of an `f32`, `a < b` of two `f16`, `n.min(m)` of two wide integers
         let lit32 = Widths::expr(b, Expr::FloatBits(0x3fc0_0000), ValueType::F32, 7);
         let floor = Widths::expr(b, Expr::Method { method: Method::Floor, receiver: lit32, args: vec![] }, ValueType::F32, 7);
         let floor_f64 = Widths::expr(b, Expr::Cast { expr: floor, to: ValueType::F64 }, ValueType::F64, 7);
         let (low, high) = (Widths::expr(b, Expr::FloatBits(0x3c00), ValueType::F16, 8), Widths::expr(b, Expr::FloatBits(0x4000), ValueType::F16, 8));
         let less = Widths::expr(b, Expr::Binary { op: BinaryOp::Lt, lhs: low, rhs: high }, ValueType::Bool, 8);
-        let (n, m) = (Widths::expr(b, Expr::Wide(wide), Ty::u(200), 9), Widths::expr(b, Expr::Wide(wide), Ty::u(200), 9));
-        let minimum = Widths::expr(b, Expr::Method { method: Method::Min, receiver: n, args: vec![m] }, Ty::u(200), 9);
+        let (n, m) = (Widths::expr(b, Expr::Wide(wide), ValueAliases::u(200), 9), Widths::expr(b, Expr::Wide(wide), ValueAliases::u(200), 9));
+        let minimum = Widths::expr(b, Expr::Method { method: Method::Min, receiver: n, args: vec![m] }, ValueAliases::u(200), 9);
         let minimum_f64 = Widths::expr(b, Expr::Cast { expr: minimum, to: ValueType::F64 }, ValueType::F64, 9);
         let zero = Shape::dx(b, 10).real(0.0);
         let picked = Widths::expr(b, Expr::If { cond: less, then: minimum_f64, otherwise: zero }, ValueType::F64, 10);
         let total = [one_and_a_half, half_float, quad, wide_value, floor_f64, picked].into_iter().reduce(|lhs, rhs| Widths::expr(b, Expr::Binary { op: BinaryOp::Add, lhs, rhs }, ValueType::F64, 11)).expect("six terms");
-        let locals = [ValueType::F32, ValueType::F16, ValueType::F128, Ty::u(200), Ty::i(100), Ty::u(4_294_967_295), Ty::i(65)].into_iter().enumerate().map(|(i, ty)| Shape::local(&format!("v{i}"), ty)).collect();
+        let locals = [ValueType::F32, ValueType::F16, ValueType::F128, ValueAliases::u(200), ValueAliases::i(100), ValueAliases::u(4_294_967_295), ValueAliases::i(65)].into_iter().enumerate().map(|(i, ty)| Shape::local(&format!("v{i}"), ty)).collect();
         (locals, total)
     });
     assert_eq!(ir.check(), vec![], "a design of the number widths checks (§1 rule 5)");
@@ -116,7 +111,7 @@ fn a_design_without_number_widths_serializes_without_the_arena() {
 #[test]
 fn a_malformed_number_width_form_is_refused() {
     // §1 rule 5: a width below 1 is refused, any width from 1 is not.
-    let zero = Widths::ir(|b| (vec![Shape::local("v", Ty::u(0)), Shape::local("w", Ty::i(0))], Shape::dx(b, 3).real(0.0)));
+    let zero = Widths::ir(|b| (vec![Shape::local("v", ValueAliases::u(0)), Shape::local("w", ValueAliases::i(0))], Shape::dx(b, 3).real(0.0)));
     assert_eq!(Entries::with(&zero.check(), "has a width outside 1..=4294967295").len(), 2);
 
     // a `FloatBits` literal is typed `f32`, `f16` or `f128`, and holds no bit past the width
@@ -134,14 +129,14 @@ fn a_malformed_number_width_form_is_refused() {
 
     // a `Wide` literal names an entry, has an integer type over 64 bits, and is canonical
     let outside = Widths::ir(|b| {
-        let literal = Widths::expr(b, Expr::Wide(WideId(5)), Ty::u(200), 3);
+        let literal = Widths::expr(b, Expr::Wide(WideId(5)), ValueAliases::u(200), 3);
         let value = Widths::expr(b, Expr::Cast { expr: literal, to: ValueType::F64 }, ValueType::F64, 3);
         (vec![], value)
     });
     assert_eq!(Entries::with(&outside.check(), "is outside the arena").len(), 1);
     let narrow = Widths::ir(|b| {
         let wide = Widths::wide(b, &[1, 0]);
-        let literal = Widths::expr(b, Expr::Wide(wide), Ty::u(64), 3);
+        let literal = Widths::expr(b, Expr::Wide(wide), ValueAliases::u(64), 3);
         let value = Widths::expr(b, Expr::Cast { expr: literal, to: ValueType::F64 }, ValueType::F64, 3);
         (vec![], value)
     });
@@ -150,8 +145,8 @@ fn a_malformed_number_width_form_is_refused() {
         // `UInt<70>` holds 6 bits of its second limb: bit 6 of the limb is past the width
         let too_big = Widths::wide(b, &[0, 1 << 6]);
         let wrong_count = Widths::wide(b, &[0, 0, 0]);
-        let (a, c) = (Widths::expr(b, Expr::Wide(too_big), Ty::u(70), 3), Widths::expr(b, Expr::Wide(wrong_count), Ty::u(70), 4));
-        let sum = Widths::expr(b, Expr::Binary { op: BinaryOp::Add, lhs: a, rhs: c }, Ty::u(70), 5);
+        let (a, c) = (Widths::expr(b, Expr::Wide(too_big), ValueAliases::u(70), 3), Widths::expr(b, Expr::Wide(wrong_count), ValueAliases::u(70), 4));
+        let sum = Widths::expr(b, Expr::Binary { op: BinaryOp::Add, lhs: a, rhs: c }, ValueAliases::u(70), 5);
         let value = Widths::expr(b, Expr::Cast { expr: sum, to: ValueType::F64 }, ValueType::F64, 5);
         (vec![], value)
     });
@@ -159,7 +154,7 @@ fn a_malformed_number_width_form_is_refused() {
     // an `Int<70>` sign-extends: all ones in the high bits of the top limb is the value -1 and is canonical
     let negative = Widths::ir(|b| {
         let minus_one = Widths::wide(b, &[u64::MAX, u64::MAX]);
-        let literal = Widths::expr(b, Expr::Wide(minus_one), Ty::i(70), 3);
+        let literal = Widths::expr(b, Expr::Wide(minus_one), ValueAliases::i(70), 3);
         let value = Widths::expr(b, Expr::Cast { expr: literal, to: ValueType::F64 }, ValueType::F64, 3);
         (vec![], value)
     });

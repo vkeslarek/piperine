@@ -10,15 +10,14 @@
 
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, Event, EventSource, IrBuilder, Local, Real, UnaryOp, ValueType};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/mixed.rs"]
 mod mixed;
 
-use digital::{Buck, Dx, Ty};
-use mixed::{Built, Seen, Wire, rise};
+use digital::{Buck, Dx, ValueAliases};
+use mixed::{Built, Seen};
+use piperine_ir_fixtures::mixed::TopDesign;
 
 const BIT: ValueType = ValueType::Bool;
 const F: &str = "script.msl";
@@ -54,8 +53,8 @@ fn chain(x: &mut Dx<'_>, steps: &[(i128, i128)], last: i128, ty: &ValueType) -> 
     let make = |x: &mut Dx<'_>, v: i128| if *ty == BIT { x.boolean(v != 0) } else { x.int(v, ty.clone()) };
     let mut tail = make(x, last);
     for (limit, value) in steps.iter().rev() {
-        let s = x.local(0, Ty::u(8));
-        let at = x.int(*limit, Ty::u(8));
+        let s = x.local(0, ValueAliases::u(8));
+        let at = x.int(*limit, ValueAliases::u(8));
         let below = x.bin(BinaryOp::Lt, s, at, BIT);
         let v = make(x, *value);
         tail = x.if_(below, v, tail, ty.clone());
@@ -84,7 +83,7 @@ fn chain(x: &mut Dx<'_>, steps: &[(i128, i128)], last: i128, ty: &ValueType) -> 
 /// edge `m` is at `m` periods: the `fall` with `n = s` writes the inputs of sample `s`.
 fn script_body(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Script", F, 1));
-    let (u8_, u10) = (Ty::u(8), Ty::u(10));
+    let (u8_, u10) = (ValueAliases::u(8), ValueAliases::u(10));
     b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
     b.carrier(body, Buck::carrier("run", BIT, CarrierRole::Out, Some(Constant::Bool(script(0).0)), F, 1, 30));
     b.carrier(body, Buck::carrier("target", u10.clone(), CarrierRole::Out, Some(Constant::Int(script(0).1 as i128)), F, 1, 40));
@@ -117,14 +116,14 @@ fn script_body(b: &mut IrBuilder) -> BodyId {
 }
 
 fn design() -> Built {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     let script_body = script_body(&mut w.b);
     let ramp = Buck::ref_ramp(&mut w.b);
     let pid = Buck::pid(&mut w.b);
-    let (u10, u12) = (Ty::u(10), Ty::u(12));
+    let (u10, u12) = (ValueAliases::u(10), ValueAliases::u(12));
     w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
-    w.place("script", script_body, vec![], &[("clk", BIT), ("run", BIT), ("target", u10.clone()), ("meas", u10.clone()), ("script.n", Ty::u(8))]);
+    w.place("script", script_body, vec![], &[("clk", BIT), ("run", BIT), ("target", u10.clone()), ("meas", u10.clone()), ("script.n", ValueAliases::u(8))]);
     // tick, run, target, reference, at_target
     w.place("ramp", ramp, vec![], &[("clk", BIT), ("run", BIT), ("target", u10.clone()), ("reference", u10.clone()), ("at_target", BIT)]);
     // tick, run, reference, meas, duty, then the signals integ, deriv, e_prev
@@ -136,11 +135,11 @@ fn design() -> Built {
             ("clk", BIT),
             ("run", BIT),
             ("reference", u10),
-            ("meas", Ty::u(10)),
+            ("meas", ValueAliases::u(10)),
             ("duty", u12),
-            ("pid.integ", Ty::i(32)),
-            ("pid.deriv", Ty::i(32)),
-            ("pid.e_prev", Ty::i(16)),
+            ("pid.integ", ValueAliases::i(32)),
+            ("pid.deriv", ValueAliases::i(32)),
+            ("pid.e_prev", ValueAliases::i(16)),
         ],
     );
     Built::new(w.finish())
@@ -233,7 +232,7 @@ fn observed(seen: &Seen) -> Vec<State> {
     (0..SAMPLES)
         .map(|s| {
             // sample `s` is the rising edge `s + 1`; its commits apply at that instant
-            let at = rise(s + 1);
+            let at = TopDesign::rising_edge(s + 1);
             State {
                 reference: decode(value_at(&reference, at), 2, false),
                 duty: decode(value_at(&duty, at), 2, false),

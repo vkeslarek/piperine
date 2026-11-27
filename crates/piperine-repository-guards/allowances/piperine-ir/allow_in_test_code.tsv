@@ -1,13 +1,4 @@
-crates/piperine-ir/tests/aggregates.rs::allow(dead_code)	3
-crates/piperine-ir/tests/amendments.rs::allow(dead_code)	2
-crates/piperine-ir/tests/check.rs::allow(dead_code)	1
-crates/piperine-ir/tests/control.rs::allow(dead_code)	3
-crates/piperine-ir/tests/deps.rs::allow(dead_code)	1
-crates/piperine-ir/tests/digital.rs::allow(dead_code)	2
-crates/piperine-ir/tests/model.rs::allow(dead_code)	1
-crates/piperine-ir/tests/number_widths.rs::allow(dead_code)	3
-crates/piperine-ir/tests/operators.rs::allow(dead_code)	2
-crates/piperine-ir/tests/print.rs::allow(dead_code)	1
-crates/piperine-ir/tests/serde.rs::allow(dead_code)	1
-crates/piperine-ir/tests/structure.rs::allow(dead_code)	1
-crates/piperine-ir/tests/support/operators.rs::allow(dead_code)	1
+crates/piperine-ir/tests/aggregates.rs::allow(dead_code)	1
+crates/piperine-ir/tests/control.rs::allow(dead_code)	1
+crates/piperine-ir/tests/number_widths.rs::allow(dead_code)	1
+crates/piperine-ir/tests/operators.rs::allow(dead_code)	1

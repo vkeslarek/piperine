@@ -3,17 +3,12 @@
 //! `Ir::check` demands of it (§1.3.7, §1.3.8, §2 rule 5, H.8), and how it prints. Each form is
 //! built by hand, checked (valid and refused) and printed.
 
-#[path = "support/digital.rs"]
-#[allow(dead_code)]
-mod digital;
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::digital;
 #[path = "support/shape.rs"]
 #[allow(dead_code)]
 mod shape;
 
-use digital::Ty;
+use digital::ValueAliases;
 use piperine_ir::{AggregateData, AggregateId, BinaryOp, Constant, Derives, Expr, ExprId, FieldsForm, FunctionId, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Param, Place, Projection, Real, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
 use shape::{Entries, FILE, Shape, Written};
 
@@ -237,7 +232,7 @@ fn a_local_is_assignable_exactly_when_its_body_assigns_it() {
             let one = Shape::dx(b, 2).real(1.0);
             let array = Forms::e(b, Expr::ArrayRepeat { element: one, count: 3 }, array_type.clone(), 3);
             let declare = Shape::dx(b, 3).let_(0, array);
-            let index = Shape::dx(b, 4).int(1, Ty::u(8));
+            let index = Shape::dx(b, 4).int(1, ValueAliases::u(8));
             let set = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: None, value: one });
             let other = Shape::dx(b, 5).let_(1, one);
             vec![declare, set, other]
@@ -265,14 +260,14 @@ fn ir_check_types_every_aggregate_expression() {
         let array = Forms::e(b, Expr::Array(vec![one, first, one]), array_type.clone(), 4);
         let declare = Shape::dx(b, 4).let_(0, array);
         let repeated = Forms::e(b, Expr::ArrayRepeat { element: one, count: 3 }, array_type.clone(), 5);
-        let index = Shape::dx(b, 5).int(1, Ty::u(8));
+        let index = Shape::dx(b, 5).int(1, ValueAliases::u(8));
         let element = Forms::e(b, Expr::Index { expr: repeated, index }, ValueType::F64, 5);
         let read = Forms::e(b, Expr::Local(0), array_type.clone(), 6);
         let total = Forms::total(b);
         let call = Forms::e(b, Expr::Call { function: total, args: vec![read] }, ValueType::UInt(64), 6);
         let built = Forms::e(b, Expr::StructOf { ty: pair, fields: vec![element, yes] }, ValueType::Struct(pair), 7);
         let flag = Forms::e(b, Expr::Field { expr: built, index: 1 }, ValueType::Bool, 7);
-        let three = Shape::dx(b, 8).int(3, Ty::u(3));
+        let three = Shape::dx(b, 8).int(3, ValueAliases::u(3));
         let variant = Forms::e(b, Expr::VariantOf { ty: tx, variant: 1, fields: vec![three] }, ValueType::Enum(tx), 8);
         let set = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: None, value: one });
         let add = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: Some(BinaryOp::Add), value: one });
@@ -310,7 +305,7 @@ fn ill_typed_aggregate_expressions_are_refused() {
         let read = Forms::e(b, Expr::Local(0), array_type.clone(), 10);
         let real_index = Forms::e(b, Expr::Index { expr: read, index: one }, ValueType::F64, 10);
         let length_of_scalar = Forms::e(b, Expr::Length(one), ValueType::UInt(64), 11);
-        let index = Shape::dx(b, 13).int(0, Ty::u(8));
+        let index = Shape::dx(b, 13).int(0, ValueAliases::u(8));
         let through_field = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Field(0)] }, op: None, value: one });
         let wrong_value = b.stmt(Stmt::Assign { place: Place { local: 0, path: vec![Projection::Index(index)] }, op: None, value: yes });
         let mut stmts = vec![through_field, wrong_value];
@@ -345,7 +340,7 @@ fn variant_tests_option_packs_and_comparisons_check() {
         let pair = Forms::pair(b);
         let tx = Types::tx(b, 2, [0, 1, 2]);
         let (one, yes) = (Shape::dx(b, 2).real(1.0), Shape::dx(b, 2).boolean(true));
-        let three = Shape::dx(b, 3).int(3, Ty::u(3));
+        let three = Shape::dx(b, 3).int(3, ValueAliases::u(3));
         let data = Forms::e(b, Expr::VariantOf { ty: tx, variant: 1, fields: vec![three] }, ValueType::Enum(tx), 3);
         let is_data = Forms::e(b, Expr::IsVariant { expr: data, variant: 1 }, ValueType::Bool, 4);
         let payload = Forms::e(b, Expr::VariantField { expr: data, variant: 1, field: 0 }, ValueType::UInt(3), 4);

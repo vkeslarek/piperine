@@ -4,9 +4,7 @@
 //! compared with the same Rust written in the test.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
@@ -15,7 +13,7 @@ mod alone;
 mod probe;
 
 use alone::Alone;
-use digital::{Dx, Ty};
+use digital::{Dx, ValueAliases};
 use piperine_ir::{BinaryOp, Derives, Expr, ExprId, FieldsForm, FunctionSpec, Ir, IrBuilder, LevelPart, Local, Origin, Place, Projection, Stmt, StmtId, TypeData, TypeId, TypeKind, ValueType, VariantData};
 use piperine_transpile::print::{TypeItems, ValuePrinter};
 use probe::Probe;
@@ -158,12 +156,12 @@ impl Library {
     /// The design: types and functions, each function with the MSL it transcribes above it.
     fn ir() -> Ir {
         let mut b = IrBuilder::new();
-        let (u8t, boolean) = (Ty::u(8), ValueType::Bool);
+        let (u8t, boolean) = (ValueAliases::u(8), ValueType::Bool);
         let pair_fields = vec![("a".to_string(), ValueType::F64), ("b".to_string(), ValueType::Bool)];
         let pair = Fixtures::entry(&mut b, "Pair", 1, TypeKind::Struct { form: FieldsForm::Named, fields: pair_fields }, Derives { clone: true, copy: true, default: true, ..Derives::default() });
         let level = vec![Fixtures::variant("Low", 0, FieldsForm::Unit, &[]), Fixtures::variant("High", 1, FieldsForm::Unit, &[])];
         let level = Fixtures::entry(&mut b, "Level", 3, TypeKind::Enum { tag_levels: 1, variants: level }, Derives { clone: true, copy: true, partial_eq: true, eq: true, partial_ord: true, ord: true, ..Derives::default() });
-        let tx = vec![Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]), Fixtures::variant("Data", 1, FieldsForm::Named, &[("n", Ty::u(3))])];
+        let tx = vec![Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]), Fixtures::variant("Data", 1, FieldsForm::Named, &[("n", ValueAliases::u(3))])];
         let tx = Fixtures::entry(&mut b, "Tx", 5, TypeKind::Enum { tag_levels: 1, variants: tx }, Derives { clone: true, copy: true, ..Derives::default() });
         let (pair_t, level_t, tx_t) = (ValueType::Struct(pair), ValueType::Enum(level), ValueType::Enum(tx));
         let array3 = ValueType::Array(Box::new(u8t.clone()), 3);
@@ -205,13 +203,13 @@ impl Library {
 
         // aggregates.msl:30  fn span(a: [u8; 4]) -> u64 { a.len() }
         let a = Library::e(&mut b, Expr::Local(0), array4.clone(), 30);
-        let body = Library::e(&mut b, Expr::Length(a), Ty::u(64), 30);
-        Library::define(&mut b, "span", 30, vec![Library::local("a", array4.clone(), false)], 1, Ty::u(64), body);
+        let body = Library::e(&mut b, Expr::Length(a), ValueAliases::u(64), 30);
+        Library::define(&mut b, "span", 30, vec![Library::local("a", array4.clone(), false)], 1, ValueAliases::u(64), body);
 
         // aggregates.msl:32  fn payload(t: Tx) -> u8 { if matches!(t, Tx::Data) { t.n as u8 } else { 255 } }
         let t = Library::e(&mut b, Expr::Local(0), tx_t.clone(), 32);
         let test = Library::e(&mut b, Expr::IsVariant { expr: t, variant: 1 }, boolean.clone(), 32);
-        let n = Library::e(&mut b, Expr::VariantField { expr: t, variant: 1, field: 0 }, Ty::u(3), 32);
+        let n = Library::e(&mut b, Expr::VariantField { expr: t, variant: 1, field: 0 }, ValueAliases::u(3), 32);
         let widened = Dx::new(&mut b, FILE, 32, 30).cast(n, u8t.clone(), u8t.clone());
         let none = Dx::new(&mut b, FILE, 32, 40).int(255, u8t.clone());
         let body = Dx::new(&mut b, FILE, 32, 5).if_(test, widened, none, u8t.clone());
@@ -347,21 +345,21 @@ impl Carried {
         let mut b = IrBuilder::new();
         let repr = Derives { clone: true, copy: true, partial_eq: true, debug: true, repr: true, ..Derives::default() };
         let named = |fields: &[(&str, ValueType)]| TypeKind::Struct { form: FieldsForm::Named, fields: fields.iter().map(|(n, ty)| (n.to_string(), ty.clone())).collect() };
-        Fixtures::entry(&mut b, "Bits", 1, named(&[("a", ValueType::Bool), ("n", Ty::u(2))]), repr);
+        Fixtures::entry(&mut b, "Bits", 1, named(&[("a", ValueType::Bool), ("n", ValueAliases::u(2))]), repr);
         let tx = vec![
             Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]),
             Fixtures::variant("Start", 1, FieldsForm::Unit, &[]),
-            Fixtures::variant("Data", 2, FieldsForm::Named, &[("n", Ty::u(3))]),
+            Fixtures::variant("Data", 2, FieldsForm::Named, &[("n", ValueAliases::u(3))]),
             Fixtures::variant("Stop", 3, FieldsForm::Unit, &[]),
         ];
         let tx = Fixtures::entry(&mut b, "Tx", 3, TypeKind::Enum { tag_levels: 2, variants: tx }, repr);
         Fixtures::entry(&mut b, "Frame", 5, named(&[("state", ValueType::Enum(tx)), ("ok", ValueType::Bool)]), repr);
         Fixtures::entry(&mut b, "Sample", 7, named(&[("v", ValueType::F64), ("valid", ValueType::Bool)]), repr);
-        let solo = vec![Fixtures::variant("Only", 0, FieldsForm::Named, &[("x", Ty::u(2))])];
+        let solo = vec![Fixtures::variant("Only", 0, FieldsForm::Named, &[("x", ValueAliases::u(2))])];
         Fixtures::entry(&mut b, "Solo", 9, TypeKind::Enum { tag_levels: 0, variants: solo }, repr);
         let three = vec![Fixtures::variant("A", 0, FieldsForm::Unit, &[]), Fixtures::variant("B", 1, FieldsForm::Unit, &[]), Fixtures::variant("C", 2, FieldsForm::Unit, &[])];
         Fixtures::entry(&mut b, "Three", 11, TypeKind::Enum { tag_levels: 2, variants: three }, repr);
-        let pair = vec![("0".to_string(), Ty::u(2)), ("1".to_string(), ValueType::Bool)];
+        let pair = vec![("0".to_string(), ValueAliases::u(2)), ("1".to_string(), ValueType::Bool)];
         Fixtures::entry(&mut b, "Pair", 13, TypeKind::Struct { form: FieldsForm::Tuple, fields: pair }, repr);
         let ir = Alone::finish(b);
         TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"))

@@ -8,9 +8,7 @@ use std::sync::Arc;
 use piperine_interp::Interpreter;
 use piperine_ir::{IrBuilder, NodeRef};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "support/circuits.rs"]
 mod circuits;

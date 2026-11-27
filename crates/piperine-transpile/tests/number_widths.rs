@@ -3,9 +3,7 @@
 //! `f128` and integers wider than 64 bits compiled by `rustc` and run. The oracle for a result is
 //! Rust's own `f32` arithmetic evaluated in the test and `piperine-numbers` called in the test.
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;

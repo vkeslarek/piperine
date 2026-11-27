@@ -4,9 +4,7 @@
 //! plain Rust and every loop is counted by an `rt::Trips` (Q5 (b)).
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;
@@ -17,7 +15,7 @@ mod probe;
 use std::sync::{Mutex, OnceLock};
 
 use alone::Alone;
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 use piperine_abi::caller::{Commit, Handle};
 use piperine_abi::raw::{Module, cell, status};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Expr, ExprId, FunctionId, FunctionSpec, Ir, IrBuilder, Local, Origin, Place, Stmt, StmtId, ValueType};
@@ -57,7 +55,7 @@ impl Functions {
 
     /// The IR of the functions of the tests below, with the MSL each transcribes.
     fn library() -> Ir {
-        let (u16, boolean) = (Ty::u(16), ValueType::Bool);
+        let (u16, boolean) = (ValueAliases::u(16), ValueType::Bool);
         let mut b = IrBuilder::new();
 
         // control.msl:1  fn sum_to(n: u16) -> u16 { let mut s = 0; let mut i = 0; while i < n { s += i; i += 1; } s }
@@ -162,15 +160,15 @@ impl Functions {
         // control.msl:40  fn doubled(x: f64, n: u8) -> f64 { let mut y = x; for _k in 0..n { y *= 2.0; } y }
         let locals = vec![
             Functions::local("x", ValueType::F64, false),
-            Functions::local("n", Ty::u(8), false),
+            Functions::local("n", ValueAliases::u(8), false),
             Functions::local("y", ValueType::F64, true),
-            Functions::local("k", Ty::u(8), false),
+            Functions::local("k", ValueAliases::u(8), false),
         ];
         let mut x = Dx::new(&mut b, FILE, 41, 5);
         let start = x.local(0, ValueType::F64);
         let let_y = x.let_(2, start);
         let two = x.real(2.0);
-        let (zero, n) = (x.int(0, Ty::u(8)), x.local(1, Ty::u(8)));
+        let (zero, n) = (x.int(0, ValueAliases::u(8)), x.local(1, ValueAliases::u(8)));
         let scale = Functions::assign(&mut b, 2, Some(BinaryOp::Mul), two);
         let looped = Functions::control(&mut b, Expr::ForRange { local: 3, low: zero, high: n, inclusive: false, reverse: false, body: vec![scale] }, ValueType::Unit, 42);
         let looped = b.stmt(Stmt::Expr(looped));
@@ -184,7 +182,7 @@ impl Functions {
 
     /// The IR of `fact`, `twice` and `demo`, with the MSL each transcribes.
     fn function_library() -> Ir {
-        let (u16, boolean) = (Ty::u(16), ValueType::Bool);
+        let (u16, boolean) = (ValueAliases::u(16), ValueType::Bool);
         let function = ValueType::Fn(vec![u16.clone()], Box::new(u16.clone()));
         let mut b = IrBuilder::new();
 
@@ -396,7 +394,7 @@ fn known_control_prints_plain_rust_and_runs() {
 fn a_known_loop_past_the_bound_panics_naming_it() {
     // Q5 (b): a loop that never ends is a panic naming the loop, not a hang: `loop {}` made of
     // `let mut i = 0; loop { i += 1; }` at control.msl:50
-    let u16 = Ty::u(16);
+    let u16 = ValueAliases::u(16);
     let mut b = IrBuilder::new();
     let locals = vec![Functions::local("i", u16.clone(), true)];
     let mut x = Dx::new(&mut b, FILE, 51, 5);
@@ -434,14 +432,14 @@ impl Design {
     /// }
     /// ```
     fn looper(b: &mut IrBuilder) -> BodyId {
-        let byte = Ty::u(8);
+        let byte = ValueAliases::u(8);
         let body = b.body(Buck::spec("Looper", FILE, 90));
-        for (name, ty, role, col) in [("clk", ValueType::Bool, CarrierRole::In, 20), ("stop", ValueType::Bool, CarrierRole::In, 30), ("q", Ty::u(8), CarrierRole::Out, 40)] {
+        for (name, ty, role, col) in [("clk", ValueType::Bool, CarrierRole::In, 20), ("stop", ValueType::Bool, CarrierRole::In, 30), ("q", ValueAliases::u(8), CarrierRole::Out, 40)] {
             b.carrier(body, Buck::carrier(name, ty, role, None, FILE, 90, col));
         }
         let rise = Buck::rise(b, body, 0, FILE, 91, 8);
         let mut x = Dx::new(b, FILE, 92, 9);
-        let zero = x.int(0, Ty::u(8));
+        let zero = x.int(0, ValueAliases::u(8));
         let let_i = x.let_(0, zero);
         let i = x.local(0, byte.clone());
         let commit = x.commit(2, i, None);
@@ -451,10 +449,10 @@ impl Design {
         let mut x = Dx::new(b, FILE, 94, 9);
         let if_stop = x.when(stop, vec![leave], None);
         let if_stop = x.stmt(if_stop);
-        let one = x.int(1, Ty::u(8));
+        let one = x.int(1, ValueAliases::u(8));
         let step = Functions::assign(b, 0, Some(BinaryOp::Add), one);
         let mut x = Dx::new(b, FILE, 95, 9);
-        let (i, two) = (x.local(0, byte.clone()), x.int(2, Ty::u(8)));
+        let (i, two) = (x.local(0, byte.clone()), x.int(2, ValueAliases::u(8)));
         let is_two = x.bin(BinaryOp::Eq, i, two, ValueType::Bool);
         let leave = Functions::control(b, Expr::Break(None), ValueType::Unit, 95);
         let leave = b.stmt(Stmt::Expr(leave));

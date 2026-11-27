@@ -27,15 +27,5 @@ pub use transpiler::Transpiler;
 
 #[cfg(test)]
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-
-#[cfg(test)]
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-
-#[cfg(test)]
-#[allow(dead_code)]
 #[path = "../tests/support/alone.rs"]
 mod alone;

@@ -9,22 +9,21 @@
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, IrBuilder, Real, ValueType};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/mixed.rs"]
 mod mixed;
 
-use digital::{Buck, Dx, Ty};
-use mixed::{Built, Wire};
+use digital::{Buck, Dx, ValueAliases};
+use mixed::Built;
+use piperine_ir_fixtures::mixed::TopDesign;
 
 const F: &str = "commit.msl";
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
 const BIT: ValueType = ValueType::Bool;
 
-fn clock(w: &mut Wire) {
+fn clock(w: &mut TopDesign) {
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
 }
@@ -60,7 +59,7 @@ fn swap(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn two_commits_exchange_two_carriers() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let swap = swap(&mut w.b);
     w.place("swap", swap, vec![], &[("clk", BIT), ("a", BIT), ("b", BIT)]);
@@ -82,13 +81,13 @@ fn two_commits_exchange_two_carriers() {
 fn later(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Later", F, 1));
     input(b, body, "clk", BIT, 20);
-    output(b, body, "x", Ty::u(8), Constant::Int(0), 30);
+    output(b, body, "x", ValueAliases::u(8), Constant::Int(0), 30);
     let rise = Buck::rise(b, body, 0, F, 2, 8);
     let mut x = Dx::new(b, F, 2, 22);
-    let one = x.int(1, Ty::u(8));
+    let one = x.int(1, ValueAliases::u(8));
     let first = x.commit(1, one, None);
     x.at(2, 34);
-    let two = x.int(2, Ty::u(8));
+    let two = x.int(2, ValueAliases::u(8));
     let second = x.commit(1, two, None);
     Buck::reaction(b, body, vec![rise], vec![first, second], vec![], F, 2);
     body
@@ -96,10 +95,10 @@ fn later(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn the_later_statement_wins() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let later = later(&mut w.b);
-    w.place("later", later, vec![], &[("clk", BIT), ("x", Ty::u(8))]);
+    w.place("later", later, vec![], &[("clk", BIT), ("x", ValueAliases::u(8))]);
     let seen = Built::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.2: commits to one level that apply in the same microstep are ordered by the instant
     // they were made, then by source order; the last one is the value. At 2.5 ns `x` takes 2,
@@ -134,7 +133,7 @@ fn pulse(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn two_statements_make_a_pulse() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let pulse = pulse(&mut w.b);
     w.place("pulse", pulse, vec![], &[("clk", BIT), ("p", BIT), ("q", BIT)]);
@@ -169,15 +168,15 @@ fn latch(b: &mut IrBuilder) -> BodyId {
 fn count(b: &mut IrBuilder) -> BodyId {
     let body = b.body(Buck::spec("Count", F, 10));
     input(b, body, "q", BIT, 20);
-    output(b, body, "n", Ty::u(8), Constant::Int(0), 30);
+    output(b, body, "n", ValueAliases::u(8), Constant::Int(0), 30);
     let changed = b.event(
         body,
         piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Buck::origin(F, 11, 8) },
     );
     let mut x = Dx::new(b, F, 11, 22);
-    let n = x.carrier(1, Ty::u(8));
-    let one = x.int(1, Ty::u(8));
-    let next = x.bin(BinaryOp::Add, n, one, Ty::u(8));
+    let n = x.carrier(1, ValueAliases::u(8));
+    let one = x.int(1, ValueAliases::u(8));
+    let next = x.bin(BinaryOp::Add, n, one, ValueAliases::u(8));
     let commit = x.commit(1, next, None);
     Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 11);
     body
@@ -185,11 +184,11 @@ fn count(b: &mut IrBuilder) -> BodyId {
 
 #[test]
 fn an_unchanged_commit_fires_nothing() {
-    let mut w = Wire::new();
+    let mut w = TopDesign::new();
     clock(&mut w);
     let (latch, count) = (latch(&mut w.b), count(&mut w.b));
     w.place("latch", latch, vec![], &[("clk", BIT), ("q", BIT)]);
-    w.place("count", count, vec![], &[("q", BIT), ("n", Ty::u(8))]);
+    w.place("count", count, vec![], &[("q", BIT), ("n", ValueAliases::u(8))]);
     // 20 ns: rising edges at 2.5, 7.5, 12.5 and 17.5 ns
     let seen = Built::new(w.finish()).run(20e-9, 1e-9);
     // §12.1.18: a commit that changes a level fires `changed()` where it applies, and one that

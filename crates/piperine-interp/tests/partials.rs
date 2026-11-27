@@ -9,9 +9,6 @@ use piperine_abi::raw::{Cell, Shape, ambient, cell, part, role};
 use piperine_abi::verify::{Verdict, verify_partials};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "support/models.rs"]
 mod models;
 

@@ -2,9 +2,7 @@
 //! trace sites and symbolic differentiation), built by hand through `IrBuilder`, checked,
 //! printed and round-tripped through serde (AO-01, AO-02, AO-03, AO-07, AO-09).
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 #[path = "support/operators.rs"]
 #[allow(dead_code)]

@@ -14,6 +14,7 @@ piperine-solver = { path = "../piperine-solver" }
 tempfile.workspace = true
 
 [dev-dependencies]
+piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
 piperine-numbers = { path = "../piperine-numbers" }

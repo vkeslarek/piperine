@@ -5,16 +5,12 @@
 //! dependency set; the earlier prints stay byte-identical. Expected texts are written from the
 //! MSL source each fixture transcribes.
 
-#[path = "support/digital.rs"]
-#[allow(dead_code)]
-mod digital;
+use piperine_ir_fixtures::digital;
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::Devices;
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 use piperine_ir::{
     AnalysisKind, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, ChildValue, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
@@ -958,7 +954,7 @@ fn a_child_records_its_carrier_bindings() {
     // of range are one entry each.
     let broken = Stage::ir(
         vec![(3, vec![Some(0)]), (1, vec![Some(9)]), (2, vec![Some(4)]), (8, vec![Some(0)])],
-        Some(Ty::u(4)),
+        Some(ValueAliases::u(4)),
     )
     .check();
     let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
@@ -978,7 +974,7 @@ fn the_new_method_rows_type_their_operands_and_results() {
     use piperine_ir::Method as M;
     const F: &str = "rows.msl";
     let f = ValueType::F64;
-    let (i8_, i32_, u8_, u32_) = (Ty::i(8), Ty::i(32), Ty::u(8), Ty::u(32));
+    let (i8_, i32_, u8_, u32_) = (ValueAliases::i(8), ValueAliases::i(32), ValueAliases::u(8), ValueAliases::u(32));
     // (row, MSL name, receiver, argument types, result)
     let rows: Vec<(M, &str, ValueType, Vec<ValueType>, ValueType)> = vec![
         (M::Sin, "sin", f.clone(), vec![], f.clone()),

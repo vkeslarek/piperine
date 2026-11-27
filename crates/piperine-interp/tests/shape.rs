@@ -17,9 +17,7 @@ use piperine_ir::{
     BodyNode, BodySpec, InstanceSpec, IrBuilder, NodeRef, NodeRole, NodeSpec, Origin, Real, Stmt,
 };
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "support/circuits.rs"]
 mod circuits;

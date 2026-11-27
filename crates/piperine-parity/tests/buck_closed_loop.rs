@@ -15,12 +15,11 @@ use std::sync::OnceLock;
 use piperine_solver::prelude::{NodeIdentifier, Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
@@ -191,7 +190,7 @@ fn no_shoot_through_during_the_start() {
     // last at 599.9975 us. Exactly one record at each, none elsewhere
     assert_eq!(o.checks.len(), 120_000, "one record per rising edge of 600 us of 200 MHz");
     let made: Vec<i64> = o.checks.iter().map(|(t, _, _)| *t).collect();
-    let edges: Vec<i64> = (1..=120_000).map(mixed::rise).collect();
+    let edges: Vec<i64> = (1..=120_000).map(TopDesign::rising_edge).collect();
     assert!(made == edges, "the records are made at the rising edges: first difference at {:?}", made.iter().zip(&edges).position(|(a, b)| a != b));
     let never = vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())];
     assert!(o.checks.iter().all(|(_, _, t)| *t == never), "every record is the `never` check");

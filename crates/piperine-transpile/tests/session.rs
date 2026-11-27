@@ -15,9 +15,6 @@ use piperine_solver::prelude::{
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "../../piperine-interp/tests/support/circuits.rs"]
 mod circuits;
 

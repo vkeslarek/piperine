@@ -3,9 +3,7 @@
 
 use std::mem::size_of;
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[path = "support/sources.rs"]
 mod sources;
 

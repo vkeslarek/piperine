@@ -5,9 +5,7 @@
 //! form ignores origins and arena order and shows forms and types; no function builds an `Ir`
 //! from text. `PIPERINE_UPDATE_GOLDEN=1` rewrites the goldens.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[path = "support/sources.rs"]
 mod sources;
 

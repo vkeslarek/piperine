@@ -1158,6 +1158,7 @@ dependencies = [
  "piperine-api",
  "piperine-cli",
  "piperine-ir",
+ "piperine-ir-fixtures",
  "piperine-lang",
  "piperine-parity",
  "piperine-plan",
@@ -1248,6 +1249,7 @@ version = "0.2.0"
 dependencies = [
  "piperine-abi",
  "piperine-ir",
+ "piperine-ir-fixtures",
  "piperine-plan",
  "piperine-solver",
 ]
@@ -1256,8 +1258,16 @@ dependencies = [
 name = "piperine-ir"
 version = "0.2.0"
 dependencies = [
+ "piperine-ir-fixtures",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "piperine-ir-fixtures"
+version = "0.2.0"
+dependencies = [
+ "piperine-ir",
 ]
 
 [[package]]
@@ -1292,6 +1302,7 @@ dependencies = [
  "piperine-api",
  "piperine-interp",
  "piperine-ir",
+ "piperine-ir-fixtures",
  "piperine-lang",
  "piperine-numbers",
  "piperine-plan",
@@ -1308,6 +1319,7 @@ dependencies = [
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",
+ "piperine-ir-fixtures",
  "piperine-solver",
 ]
 
@@ -1360,6 +1372,7 @@ dependencies = [
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",
+ "piperine-ir-fixtures",
  "piperine-plan",
  "piperine-solver",
  "sha2",

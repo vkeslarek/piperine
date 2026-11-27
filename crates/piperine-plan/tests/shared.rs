@@ -14,9 +14,6 @@ use piperine_plan::{BodyPlan, Modules, Netlist};
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "../../piperine-interp/tests/support/circuits.rs"]
 mod circuits;
 #[allow(dead_code)]

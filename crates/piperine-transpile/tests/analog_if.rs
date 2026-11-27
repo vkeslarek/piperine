@@ -18,9 +18,7 @@ use piperine_ir::{
 use piperine_plan::Modules;
 use piperine_transpile::{Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "support/alone.rs"]
 mod alone;

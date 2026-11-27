@@ -16,9 +16,7 @@ use piperine_ir::{
     Operator, Origin, Param, QuantityRole, Real, Stmt, Terminal, ValueType,
 };
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "support/models.rs"]
 mod models;

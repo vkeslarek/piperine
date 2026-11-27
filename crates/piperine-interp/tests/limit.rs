@@ -4,9 +4,6 @@
 //! A2); starting from the seed, a limited value below it is raised to it (§18 rule 2).
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
 #[path = "support/models.rs"]
 mod models;
 

@@ -2,9 +2,7 @@
 //! printed and round-tripped through serde (the printer is one way, `tests/print.rs`): the own
 //! terminal of a child's own signal (AS-16).
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{

@@ -461,7 +461,7 @@ mod tests {
     use piperine_plan::BodyPlan;
 
     use super::ShapePrinter;
-    use crate::devices::Devices;
+    use piperine_ir_fixtures::devices::Devices;
 
     /// Each entry's call: the comment line before it names the entry and its origin.
     fn entries(shape: &Shape<'_>) -> Vec<(&'static str, String, String)> {

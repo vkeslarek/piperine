@@ -14,11 +14,9 @@ use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::plan::FnNode;
 use piperine_plan::{BodyPlan, Mode, RecordLayout, Source, Target};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 
 /// One body alone in a design, under an empty top body, as the IR's own tests place it.
 struct Alone;
@@ -136,7 +134,7 @@ fn an_option_carrier_pin_is_presence_then_payload() {
     // `Option<f64>` is the presence byte then the eight bytes of the real
     fn options(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Options", "options.msl", 1));
-        let carriers = [("o", ValueType::Option(Box::new(Ty::u(8)))), ("x", ValueType::Option(Box::new(ValueType::F64)))];
+        let carriers = [("o", ValueType::Option(Box::new(ValueAliases::u(8)))), ("x", ValueType::Option(Box::new(ValueType::F64)))];
         for (k, (name, ty)) in carriers.into_iter().enumerate() {
             b.carrier(body, Buck::carrier(name, ty, CarrierRole::Signal, None, "options.msl", 2 + k as u32, 5));
         }
@@ -163,20 +161,20 @@ fn carriers_are_discrete_pins_that_hold_the_value_only() {
         let carriers: [(&str, ValueType, CarrierRole, Option<Constant>); 16] = [
             ("b", ValueType::Bool, CarrierRole::In, None),
             ("r", ValueType::F64, CarrierRole::Out, Some(Constant::Real(Real::new(1.5)))),
-            ("u1", Ty::u(1), CarrierRole::Out, Some(Constant::Int(1))),
-            ("u8", Ty::u(8), CarrierRole::Signal, Some(Constant::Int(255))),
-            ("u9", Ty::u(9), CarrierRole::Signal, Some(Constant::Int(300))),
-            ("u16", Ty::u(16), CarrierRole::Signal, None),
-            ("u17", Ty::u(17), CarrierRole::Signal, None),
-            ("u32", Ty::u(32), CarrierRole::Signal, None),
-            ("u33", Ty::u(33), CarrierRole::Signal, None),
-            ("u64", Ty::u(64), CarrierRole::Signal, Some(Constant::Int(u64::MAX as i128))),
-            ("i1", Ty::i(1), CarrierRole::Signal, Some(Constant::Int(-1))),
-            ("i8", Ty::i(8), CarrierRole::Signal, Some(Constant::Int(-128))),
-            ("i9", Ty::i(9), CarrierRole::Signal, Some(Constant::Int(-2))),
-            ("i32", Ty::i(32), CarrierRole::Signal, None),
-            ("i33", Ty::i(33), CarrierRole::Signal, None),
-            ("i64", Ty::i(64), CarrierRole::Signal, Some(Constant::Int(i64::MIN as i128))),
+            ("u1", ValueAliases::u(1), CarrierRole::Out, Some(Constant::Int(1))),
+            ("u8", ValueAliases::u(8), CarrierRole::Signal, Some(Constant::Int(255))),
+            ("u9", ValueAliases::u(9), CarrierRole::Signal, Some(Constant::Int(300))),
+            ("u16", ValueAliases::u(16), CarrierRole::Signal, None),
+            ("u17", ValueAliases::u(17), CarrierRole::Signal, None),
+            ("u32", ValueAliases::u(32), CarrierRole::Signal, None),
+            ("u33", ValueAliases::u(33), CarrierRole::Signal, None),
+            ("u64", ValueAliases::u(64), CarrierRole::Signal, Some(Constant::Int(u64::MAX as i128))),
+            ("i1", ValueAliases::i(1), CarrierRole::Signal, Some(Constant::Int(-1))),
+            ("i8", ValueAliases::i(8), CarrierRole::Signal, Some(Constant::Int(-128))),
+            ("i9", ValueAliases::i(9), CarrierRole::Signal, Some(Constant::Int(-2))),
+            ("i32", ValueAliases::i(32), CarrierRole::Signal, None),
+            ("i33", ValueAliases::i(33), CarrierRole::Signal, None),
+            ("i64", ValueAliases::i(64), CarrierRole::Signal, Some(Constant::Int(i64::MIN as i128))),
         ];
         for (k, (name, ty, role, init)) in carriers.into_iter().enumerate() {
             b.carrier(body, Buck::carrier(name, ty, role, init, "widths.msl", 2 + k as u32, 5));
@@ -493,14 +491,14 @@ fn an_if_lists_its_then_statement_before_its_else() {
         let body = b.body(Buck::spec("Arms", "a.msl", 1));
         b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20));
         b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30));
-        b.carrier(body, Buck::carrier("b", Ty::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
+        b.carrier(body, Buck::carrier("b", ValueAliases::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
         let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
         let mut x = Dx::new(b, "a.msl", 3, 9);
         let c = x.carrier(1, ValueType::Bool);
-        let two = x.int(2, Ty::u(8));
+        let two = x.int(2, ValueAliases::u(8));
         let one_ns = x.real(1e-9);
         let then = x.commit(2, two, Some(one_ns));
-        let three = x.int(3, Ty::u(8));
+        let three = x.int(3, ValueAliases::u(8));
         let two_ns = x.real(2e-9);
         let otherwise = x.commit(2, three, Some(two_ns));
         let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
@@ -1020,26 +1018,26 @@ impl Resolved {
     /// The holder: `w` is resolved (value `u8`, driven `bool`), driven with `true`; `seen` follows `w.others()`.
     fn holder(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", Resolved::F, 1));
-        b.carrier(body, Buck::carrier("w", Ty::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5));
-        b.carrier(body, Buck::carrier("seen", Ty::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
+        b.carrier(body, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5));
+        b.carrier(body, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
         let mut x = Dx::new(b, Resolved::F, 2, 9);
         let drive = x.boolean(true);
         b.drive(body, piperine_ir::Drive { carrier: 0, value: drive, after: None, origin: Resolved::at(2), element: None, path: vec![] });
-        let others = b.expr(piperine_ir::Expr::Others(0), Ty::u(8), Resolved::at(3));
+        let others = b.expr(piperine_ir::Expr::Others(0), ValueAliases::u(8), Resolved::at(3));
         b.drive(body, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Resolved::at(3), element: None, path: vec![] });
         body
     }
 
     /// The resolver of two `bool` drives into a `u8`: `v = resolve(d0, d1)` over one instance per count.
     fn resolver(b: &mut IrBuilder) -> BodyId {
-        let zero = b.expr(piperine_ir::Expr::Int(0), Ty::u(8), Resolved::at(4));
+        let zero = b.expr(piperine_ir::Expr::Int(0), ValueAliases::u(8), Resolved::at(4));
         let by_count: Vec<_> = (0..=2u64)
             .map(|count| {
                 b.function(piperine_ir::FunctionSpec {
                     name: format!("resolve~{count}"),
                     origin: Resolved::at(4),
                     params: vec![piperine_ir::Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count), mutable: false }],
-                    ret: Ty::u(8),
+                    ret: ValueAliases::u(8),
                     locals: vec![],
                     body: zero,
                 })
@@ -1049,8 +1047,8 @@ impl Resolved {
         for name in ["d0", "d1"] {
             b.carrier(body, Buck::carrier(name, ValueType::Bool, CarrierRole::In, None, Resolved::F, 4, 5));
         }
-        b.carrier(body, Buck::carrier("v", Ty::u(8), CarrierRole::Out, None, Resolved::F, 4, 5));
-        let resolve = b.expr(piperine_ir::Expr::Resolve { by_count, drives: vec![0, 1], except: None }, Ty::u(8), Resolved::at(4));
+        b.carrier(body, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Resolved::F, 4, 5));
+        let resolve = b.expr(piperine_ir::Expr::Resolve { by_count, drives: vec![0, 1], except: None }, ValueAliases::u(8), Resolved::at(4));
         b.drive(body, piperine_ir::Drive { carrier: 2, value: resolve, after: None, origin: Resolved::at(4), element: None, path: vec![] });
         body
     }
@@ -1114,7 +1112,7 @@ fn the_drive_layout_appends_a_plain_driving_byte() {
         fields.iter().map(|f| (f.name.as_str().to_string(), f.leaf, f.offset)).collect::<Vec<_>>(),
         [("v".to_string(), leaf::F64, 0), ("driving".to_string(), leaf::BOOL, 8)]
     );
-    let u16 = piperine_plan::DriveLayout::of(&ir, &Ty::u(16)).expect("a u16 is driven");
+    let u16 = piperine_plan::DriveLayout::of(&ir, &ValueAliases::u(16)).expect("a u16 is driven");
     assert_eq!((u16.driving_at(), u16.size(), u16.align()), (2, 4, 2));
 }
 
@@ -1184,11 +1182,11 @@ impl Resolved {
         let top = b.next_instance_id();
         let at = || Resolved::at(1);
         let net = |b: &mut IrBuilder, path: &str, ty: ValueType| b.net(piperine_ir::NetSpec { path: path.into(), ty, declared_by: top, init: None, origin: at() });
-        let value = net(&mut b, "Source.w", Ty::u(8));
-        let seen = net(&mut b, "Source.seen", Ty::u(8));
+        let value = net(&mut b, "Source.w", ValueAliases::u(8));
+        let seen = net(&mut b, "Source.seen", ValueAliases::u(8));
         let first = net(&mut b, "Source.w$drive0", ValueType::Bool);
         let second = net(&mut b, "Source.w$drive1", ValueType::Bool);
-        let others = net(&mut b, "Source.w$others0", Ty::u(8));
+        let others = net(&mut b, "Source.w$others0", ValueAliases::u(8));
         let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: holder, parent: None, nodes: vec![], params: vec![], origin: at() });
         b.bind_nets(root, vec![value, seen]);
         let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: at() });

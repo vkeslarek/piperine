@@ -23,9 +23,7 @@ use piperine_ir::{
 use piperine_transpile::Transpiler;
 use piperine_transpile::print::Text;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
+use piperine_ir_fixtures::devices;
 #[allow(dead_code)]
 #[path = "support/both.rs"]
 mod both;

@@ -33,12 +33,8 @@ use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 use piperine_transpile::{Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::devices;
+use piperine_ir_fixtures::digital;
 
 use devices::Devices;
 use digital::{Buck, Dx};

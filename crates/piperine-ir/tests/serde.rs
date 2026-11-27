@@ -2,9 +2,7 @@
 //! trip gives an equal `Ir` (reals bit for bit, `inf` and `-0.0` included), and text that is no
 //! `Ir` fails to deserialize.
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
 use piperine_ir::{

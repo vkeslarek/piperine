@@ -12,17 +12,16 @@ use std::path::Path;
 use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
+use piperine_ir_fixtures::digital;
 #[allow(dead_code)]
 #[path = "../../piperine-transpile/tests/support/mixed.rs"]
 mod mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen, rise};
+use mixed::{Built, Seen};
 use support::{HIGH, LOW, build, series};
 
 /// 10 switching periods of 2 us (SPEC §2: 500 kHz).
@@ -93,7 +92,7 @@ fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
     assert_eq!(vin_ok.last(), Some(&(0, HIGH.to_vec())), "vin_ok is true at time 0 and never changes after: {vin_ok:?}");
     // the clock ran the whole time: 10 periods of 400 counts at 200 MHz
     let clk = series(&seen, "Buck.clk");
-    assert!(clk.iter().any(|(t, _)| *t == rise(4000)), "the clock's 4000th rising edge is at {} ticks", rise(4000));
+    assert!(clk.iter().any(|(t, _)| *t == TopDesign::rising_edge(4000)), "the clock's 4000th rising edge is at {} ticks", TopDesign::rising_edge(4000));
 }
 
 #[test]

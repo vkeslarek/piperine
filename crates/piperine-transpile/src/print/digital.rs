@@ -318,7 +318,7 @@ mod tests {
 
     use super::DigitalPrinter;
     use crate::alone::Alone;
-    use crate::digital::Buck;
+    use piperine_ir_fixtures::digital::Buck;
 
     /// Every discrete function of the body `make` builds, by its name in the shape.
     fn printed(make: fn(&mut IrBuilder) -> BodyId, name: &str) -> String {

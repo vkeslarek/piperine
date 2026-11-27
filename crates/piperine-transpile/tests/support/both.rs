@@ -12,7 +12,7 @@ use piperine_ir::{Ir, IrBuilder};
 use piperine_plan::Modules;
 use piperine_transpile::{Compiled, Settings, Transpiler};
 
-use crate::devices::Devices;
+use piperine_ir_fixtures::devices::Devices;
 
 /// The five bodies on both backends. The cache directory lives as long as this does.
 pub struct Both {

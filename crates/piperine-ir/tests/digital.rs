@@ -4,15 +4,11 @@
 //! of a defective digital body; the M1 prints unchanged; the buck-slice bodies pinned as golden
 //! texts. Expected texts are written from the MSL source each fixture transcribes.
 
-#[path = "support/digital.rs"]
-#[allow(dead_code)]
-mod digital;
+use piperine_ir_fixtures::digital;
 
-#[path = "support/devices.rs"]
-#[allow(dead_code)]
-mod devices;
+use piperine_ir_fixtures::devices;
 
-use digital::{Buck, Dx, Ty};
+use digital::{Buck, Dx, ValueAliases};
 use devices::Devices;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
@@ -66,18 +62,18 @@ impl Design {
     /// `REF_BASE` folded to its value 128 (`spec.msl:20`).
     fn target_codes(b: &mut IrBuilder) -> FunctionId {
         let mut x = Dx::new(b, "control.msl", 17, 44);
-        let base = x.int(128, Ty::u(10));
-        let setpoint = x.local(0, Ty::u(8));
-        let wide = x.cast(setpoint, Ty::u(10), Ty::u(10));
-        let two = x.int(2, Ty::i(32));
-        let shifted = x.bin(BinaryOp::Shl, wide, two, Ty::u(10));
-        let body = x.bin(BinaryOp::Add, base, shifted, Ty::u(10));
+        let base = x.int(128, ValueAliases::u(10));
+        let setpoint = x.local(0, ValueAliases::u(8));
+        let wide = x.cast(setpoint, ValueAliases::u(10), ValueAliases::u(10));
+        let two = x.int(2, ValueAliases::i(32));
+        let shifted = x.bin(BinaryOp::Shl, wide, two, ValueAliases::u(10));
+        let body = x.bin(BinaryOp::Add, base, shifted, ValueAliases::u(10));
         b.function(FunctionSpec {
             name: "target_codes".into(),
             origin: Design::origin("control.msl", 17, 1),
-            params: vec![Design::local("setpoint", Ty::u(8))],
-            ret: Ty::u(10),
-            locals: vec![Design::local("setpoint", Ty::u(8))],
+            params: vec![Design::local("setpoint", ValueAliases::u(8))],
+            ret: ValueAliases::u(10),
+            locals: vec![Design::local("setpoint", ValueAliases::u(8))],
             body,
         })
     }
@@ -96,10 +92,10 @@ impl Design {
     /// }
     /// ```
     fn pid_duty(b: &mut IrBuilder) -> FunctionId {
-        let i32_ = Ty::i(32);
+        let i32_ = ValueAliases::i(32);
         let mut x = Dx::new(b, "control.msl", 62, 21);
         let kp = x.int(64, i32_.clone());
-        let e = x.local(0, Ty::i(16));
+        let e = x.local(0, ValueAliases::i(16));
         let e = x.cast(e, i32_.clone(), i32_.clone());
         let p = x.bin(BinaryOp::Mul, kp, e, i32_.clone());
         let let_p = x.let_(4, p);
@@ -108,9 +104,9 @@ impl Design {
         let pole = x.int(2, i32_.clone());
         let filtered = x.bin(BinaryOp::Shr, deriv, pole, i32_.clone());
         let kd = x.int(1024, i32_.clone());
-        let e = x.local(0, Ty::i(16));
-        let e_prev = x.local(1, Ty::i(16));
-        let de = x.bin(BinaryOp::Sub, e, e_prev, Ty::i(16));
+        let e = x.local(0, ValueAliases::i(16));
+        let e_prev = x.local(1, ValueAliases::i(16));
+        let de = x.bin(BinaryOp::Sub, e, e_prev, ValueAliases::i(16));
         let de = x.cast(de, i32_.clone(), i32_.clone());
         let kick = x.bin(BinaryOp::Mul, kd, de, i32_.clone());
         let d = x.bin(BinaryOp::Add, filtered, kick, i32_.clone());
@@ -125,7 +121,7 @@ impl Design {
         let u = x.bin(BinaryOp::Shr, sum, q, i32_.clone());
         let let_u = x.let_(6, u);
         x.at(65, 25);
-        let duty_max = x.int(2880, Ty::u(12));
+        let duty_max = x.int(2880, ValueAliases::u(12));
         let u_max = x.cast(duty_max, i32_.clone(), i32_.clone());
         let let_u_max = x.let_(7, u_max);
         x.at(72, 21);
@@ -133,21 +129,21 @@ impl Design {
         let zero = x.int(0, i32_.clone());
         let u_max = x.local(7, i32_.clone());
         let clamped = x.method(Method::Clamp, u, vec![zero, u_max], i32_.clone());
-        let duty = x.cast(clamped, Ty::u(12), Ty::u(12));
-        let body = x.block(vec![let_p, let_d, let_u, let_u_max], Some(duty), Ty::u(12));
+        let duty = x.cast(clamped, ValueAliases::u(12), ValueAliases::u(12));
+        let body = x.block(vec![let_p, let_d, let_u, let_u_max], Some(duty), ValueAliases::u(12));
         b.function(FunctionSpec {
             name: "pid_duty".into(),
             origin: Design::origin("control.msl", 62, 13),
             params: vec![
-                Design::local("e", Ty::i(16)),
-                Design::local("e_prev", Ty::i(16)),
+                Design::local("e", ValueAliases::i(16)),
+                Design::local("e_prev", ValueAliases::i(16)),
                 Design::local("integ", i32_.clone()),
                 Design::local("deriv", i32_.clone()),
             ],
-            ret: Ty::u(12),
+            ret: ValueAliases::u(12),
             locals: vec![
-                Design::local("e", Ty::i(16)),
-                Design::local("e_prev", Ty::i(16)),
+                Design::local("e", ValueAliases::i(16)),
+                Design::local("e_prev", ValueAliases::i(16)),
                 Design::local("integ", i32_.clone()),
                 Design::local("deriv", i32_.clone()),
                 Design::local("p", i32_.clone()),
@@ -174,12 +170,12 @@ impl Design {
         let lo = x.real(0.0);
         let hi = x.real(1023.0);
         let clamped = x.method(Method::Clamp, floor, vec![lo, hi], ValueType::F64);
-        let body = x.cast(clamped, Ty::u(10), Ty::u(10));
+        let body = x.cast(clamped, ValueAliases::u(10), ValueAliases::u(10));
         b.function(FunctionSpec {
             name: "adc_code".into(),
             origin: Design::origin("sense.msl", 29, 9),
             params: vec![Design::local("v", ValueType::F64), Design::local("vref", ValueType::F64)],
-            ret: Ty::u(10),
+            ret: ValueAliases::u(10),
             locals: vec![Design::local("v", ValueType::F64), Design::local("vref", ValueType::F64)],
             body,
         })
@@ -188,7 +184,7 @@ impl Design {
     /// The operators of RS-09 AC 1 the buck does not use, at the widths 1 and 64:
     /// `fn mix(a: i64, b: u64, c: u1) -> i64 { (-(a % 7) ^ !a).max(a / 3).min((b as i64) - (c as i64)) }`.
     fn mix(b: &mut IrBuilder) -> FunctionId {
-        let i64_ = Ty::i(64);
+        let i64_ = ValueAliases::i(64);
         let mut x = Dx::new(b, "mix.msl", 1, 40);
         let a = x.local(0, i64_.clone());
         let seven = x.int(7, i64_.clone());
@@ -201,13 +197,13 @@ impl Design {
         let three = x.int(3, i64_.clone());
         let third = x.bin(BinaryOp::Div, a, three, i64_.clone());
         let max = x.method(Method::Max, xor, vec![third], i64_.clone());
-        let bv = x.local(1, Ty::u(64));
+        let bv = x.local(1, ValueAliases::u(64));
         let bv = x.cast(bv, i64_.clone(), i64_.clone());
-        let c = x.local(2, Ty::u(1));
+        let c = x.local(2, ValueAliases::u(1));
         let c = x.cast(c, i64_.clone(), i64_.clone());
         let diff = x.bin(BinaryOp::Sub, bv, c, i64_.clone());
         let body = x.method(Method::Min, max, vec![diff], i64_.clone());
-        let params = vec![Design::local("a", i64_.clone()), Design::local("b", Ty::u(64)), Design::local("c", Ty::u(1))];
+        let params = vec![Design::local("a", i64_.clone()), Design::local("b", ValueAliases::u(64)), Design::local("c", ValueAliases::u(1))];
         b.function(FunctionSpec {
             name: "mix".into(),
             origin: Design::origin("mix.msl", 1, 1),
@@ -286,19 +282,19 @@ fn integers_and_their_operators_print() {
     // integer types, and a node typed other than its form gives are each one entry.
     let mut b = IrBuilder::new();
     let mut x = Dx::new(&mut b, "bad.msl", 1, 1);
-    let eight = x.int(8, Ty::u(3));
-    let three = x.int(3, Ty::u(9));
+    let eight = x.int(8, ValueAliases::u(3));
+    let three = x.int(3, ValueAliases::u(9));
     x.at(2, 1);
-    let mixed = x.bin(BinaryOp::Add, eight, three, Ty::u(3));
+    let mixed = x.bin(BinaryOp::Add, eight, three, ValueAliases::u(3));
     x.at(3, 1);
-    let one = x.int(1, Ty::u(3));
-    let wrong = x.bin(BinaryOp::BitAnd, mixed, one, Ty::u(9));
+    let one = x.int(1, ValueAliases::u(3));
+    let wrong = x.bin(BinaryOp::BitAnd, mixed, one, ValueAliases::u(9));
     let f = b.function(FunctionSpec {
         name: "bad".into(),
         origin: Design::origin("bad.msl", 1, 1),
-        params: vec![Design::local("w", Ty::u(0))],
-        ret: Ty::u(9),
-        locals: vec![Design::local("w", Ty::u(0))],
+        params: vec![Design::local("w", ValueAliases::u(0))],
+        ret: ValueAliases::u(9),
+        locals: vec![Design::local("w", ValueAliases::u(0))],
         body: wrong,
     });
     let _ = f;
@@ -561,11 +557,11 @@ fn carriers_and_drives_print() {
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Bad", "bad.msl", 1));
     b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
-    b.carrier(body, Buck::carrier("w", Ty::u(4), CarrierRole::Out, None, "bad.msl", 1, 30));
-    let value = Dx::new(&mut b, "bad.msl", 2, 9).int(3, Ty::u(8));
+    b.carrier(body, Buck::carrier("w", ValueAliases::u(4), CarrierRole::Out, None, "bad.msl", 1, 30));
+    let value = Dx::new(&mut b, "bad.msl", 2, 9).int(3, ValueAliases::u(8));
     b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5), element: None, path: vec![] });
     let top = b.next_instance_id();
-    let net = b.net(NetSpec { path: "Bad.q".into(), ty: Ty::u(8), declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
+    let net = b.net(NetSpec { path: "Bad.q".into(), ty: ValueAliases::u(8), declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
     let top = Stage::instance(&mut b, "Bad", body, None, vec![], vec![], vec![net], 1);
     let ir = b.finish(top);
     let broken = ir.check();
@@ -641,8 +637,8 @@ fn events_and_reactions_print() {
         &mut b,
         &[
             ("osc", osc, 0, vec![bit()], vec![200e6]),
-            ("ramp", ramp, 0, vec![bit(), bit(), Ty::u(10), Ty::u(10), bit()], vec![]),
-            ("adc", adc, 1, vec![bit(), Ty::u(10), bit()], vec![1.6, 500e-9, 5e-9]),
+            ("ramp", ramp, 0, vec![bit(), bit(), ValueAliases::u(10), ValueAliases::u(10), bit()], vec![]),
+            ("adc", adc, 1, vec![bit(), ValueAliases::u(10), bit()], vec![1.6, 500e-9, 5e-9]),
             ("a2d", a2d, 1, vec![bit()], vec![0.6, 50e-3]),
         ],
     );
@@ -732,9 +728,9 @@ fn events_and_reactions_print() {
     let body = b.body(Buck::spec("Bad", "bad.msl", 1));
     b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
     let mut x = Dx::new(&mut b, "bad.msl", 2, 9);
-    let guard = x.int(1, Ty::u(8));
+    let guard = x.int(1, ValueAliases::u(8));
     x.at(3, 9);
-    let value = x.int(3, Ty::u(8));
+    let value = x.int(3, ValueAliases::u(8));
     let commit = x.commit(0, value, None);
     let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: Some(guard), origin: Design::origin("bad.msl", 2, 5) });
     Buck::reaction(&mut b, body, vec![event], vec![commit], vec![], "bad.msl", 3);
@@ -792,7 +788,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
         ("stop", ValueType::Bool, CarrierRole::In, None, 1, 82),
         ("q", ValueType::Bool, CarrierRole::Out, None, 1, 57),
         ("aux", ValueType::Bool, CarrierRole::Out, None, 1, 69),
-        ("count", Ty::u(4), CarrierRole::Signal, Some(Constant::Int(0)), 2, 12),
+        ("count", ValueAliases::u(4), CarrierRole::Signal, Some(Constant::Int(0)), 2, 12),
     ] {
         b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
     }
@@ -802,7 +798,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     let q = x.carrier(0, ValueType::Bool);
     b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5), element: None, path: vec![] });
     let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
-    let count = Dx::new(&mut b, F, 6, 14).carrier(4, Ty::u(4));
+    let count = Dx::new(&mut b, F, 6, 14).carrier(4, ValueAliases::u(4));
     b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross { e: count, ttol: None, etol: None }, guard: None, origin: Design::origin(F, 6, 8) });
     let mut x = Dx::new(&mut b, F, 8, 15);
     let no = x.boolean(false);
@@ -812,7 +808,7 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
     let to_driven = x.commit(2, yes, None);
     Buck::reaction(&mut b, body, vec![changed, 7], vec![to_input, to_driven], vec![], F, 7);
     let top = b.next_instance_id();
-    let nets: Vec<NetId> = [("en", ValueType::Bool), ("stop", ValueType::Bool), ("q", ValueType::Bool), ("aux", ValueType::Bool), ("count", Ty::u(4))]
+    let nets: Vec<NetId> = [("en", ValueType::Bool), ("stop", ValueType::Bool), ("q", ValueType::Bool), ("aux", ValueType::Bool), ("count", ValueAliases::u(4))]
         .into_iter()
         .map(|(n, ty)| b.net(NetSpec { path: format!("Bad.{n}"), ty, declared_by: top, init: None, origin: Design::origin(F, 1, 1) }))
         .collect();
@@ -847,12 +843,12 @@ fn a_carrier_initial_value_outside_its_type_is_an_entry() {
     let body = b.body(Buck::spec("Inits", F, 1));
     for (name, ty, init, col) in [
         ("a", ValueType::Bool, Constant::Int(1), 18),
-        ("b", Ty::u(4), Constant::Int(16), 32),
-        ("c", Ty::i(4), Constant::Int(-9), 51),
+        ("b", ValueAliases::u(4), Constant::Int(16), 32),
+        ("c", ValueAliases::i(4), Constant::Int(-9), 51),
         ("d", ValueType::F64, Constant::Bool(true), 70),
-        ("e", Ty::u(4), Constant::Int(15), 92),
-        ("f", Ty::i(4), Constant::Int(-8), 111),
-        ("g", Ty::u(4), Constant::Int(-1), 130),
+        ("e", ValueAliases::u(4), Constant::Int(15), 92),
+        ("f", ValueAliases::i(4), Constant::Int(-8), 111),
+        ("g", ValueAliases::u(4), Constant::Int(-1), 130),
     ] {
         b.carrier(body, Buck::carrier(name, ty, CarrierRole::Out, Some(init), F, 1, col));
     }
@@ -957,7 +953,7 @@ impl Levels {
 
     /// `fn alike(a: Bit<u8>, b: Bit<u8>) -> bool { same(a, b) }`.
     fn alike(b: &mut IrBuilder) {
-        let word = Ty::u(8);
+        let word = ValueAliases::u(8);
         let mut x = Dx::new(b, Levels::F, 4, 9);
         let (l, r) = (x.local(0, word.clone()), x.local(1, word.clone()));
         let body = x.same(l, r);
@@ -969,13 +965,13 @@ impl Levels {
     /// `fn tagged(a: u2) -> Option<u2> { cast::<u2, State>(a) }` (tags 0, 1, 2): a cast is an `Option` (§22.1.3).
     fn casts(b: &mut IrBuilder) {
         let mut x = Dx::new(b, Levels::F, 5, 9);
-        let a = x.local(0, Ty::u(4));
-        let body = x.level_cast(a, Ty::i(4), None, ValueType::Option(Box::new(Ty::i(4))));
-        Functions::function(b, "recode", Levels::F, 5, vec![Design::local("a", Ty::u(4))], ValueType::Option(Box::new(Ty::i(4))), vec![], body);
+        let a = x.local(0, ValueAliases::u(4));
+        let body = x.level_cast(a, ValueAliases::i(4), None, ValueType::Option(Box::new(ValueAliases::i(4))));
+        Functions::function(b, "recode", Levels::F, 5, vec![Design::local("a", ValueAliases::u(4))], ValueType::Option(Box::new(ValueAliases::i(4))), vec![], body);
         let mut x = Dx::new(b, Levels::F, 6, 9);
-        let a = x.local(0, Ty::u(2));
-        let body = x.level_cast(a, Ty::u(2), Some(vec![0, 1, 2]), ValueType::Option(Box::new(Ty::u(2))));
-        Functions::function(b, "tagged", Levels::F, 6, vec![Design::local("a", Ty::u(2))], ValueType::Option(Box::new(Ty::u(2))), vec![], body);
+        let a = x.local(0, ValueAliases::u(2));
+        let body = x.level_cast(a, ValueAliases::u(2), Some(vec![0, 1, 2]), ValueType::Option(Box::new(ValueAliases::u(2))));
+        Functions::function(b, "tagged", Levels::F, 6, vec![Design::local("a", ValueAliases::u(2))], ValueType::Option(Box::new(ValueAliases::u(2))), vec![], body);
     }
 }
 
@@ -1000,13 +996,13 @@ fn same_and_cast_type_print_and_check() {
     // Each form whose operands fit no rule is one entry at its origin.
     let mut b = IrBuilder::new();
     let mut x = Dx::new(&mut b, Levels::F, 1, 9);
-    let (l, r) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(1)));
+    let (l, r) = (x.local(0, ValueType::Bool), x.local(1, ValueAliases::u(1)));
     let alike = x.same(l, r);
-    Functions::function(&mut b, "bad_same", Levels::F, 1, vec![Design::local("a", ValueType::Bool), Design::local("b", Ty::u(1))], ValueType::Bool, vec![], alike);
+    Functions::function(&mut b, "bad_same", Levels::F, 1, vec![Design::local("a", ValueType::Bool), Design::local("b", ValueAliases::u(1))], ValueType::Bool, vec![], alike);
     let mut x = Dx::new(&mut b, Levels::F, 2, 9);
-    let a = x.local(0, Ty::u(4));
-    let wide = x.level_cast(a, Ty::u(5), None, ValueType::Option(Box::new(Ty::u(5))));
-    Functions::function(&mut b, "bad_cast", Levels::F, 2, vec![Design::local("a", Ty::u(4))], ValueType::Option(Box::new(Ty::u(5))), vec![], wide);
+    let a = x.local(0, ValueAliases::u(4));
+    let wide = x.level_cast(a, ValueAliases::u(5), None, ValueType::Option(Box::new(ValueAliases::u(5))));
+    Functions::function(&mut b, "bad_cast", Levels::F, 2, vec![Design::local("a", ValueAliases::u(4))], ValueType::Option(Box::new(ValueAliases::u(5))), vec![], wide);
     let broken = Design::finish(b).check();
     let at = |line: u32, what: &str| broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).count();
     assert_eq!(at(1, "the operands of `same` do not fit its types"), 1, "{broken:#?}");
