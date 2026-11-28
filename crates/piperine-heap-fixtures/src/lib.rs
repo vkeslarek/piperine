@@ -1,6 +1,9 @@
-//! A counting allocator for the tests that bound a run's memory (feature `long-run`, LR-04,
-//! LR-12). The target that uses it installs one `#[global_allocator]` static of `HeapCounter` and
-//! calls `begin` before the run it measures and `peak_since` after it.
+//! A counting allocator for the tests that bound a run's memory (feature `long-run`, LR-04, LR-12). The target that uses it
+//! installs one `#[global_allocator]` static of `HeapCounter` and calls `begin` before the run it measures and
+//! `peak_since` after it. A dev-only crate: no product crate depends on it.
+
+#![deny(missing_docs)]
+
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};

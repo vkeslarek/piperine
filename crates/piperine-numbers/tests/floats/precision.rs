@@ -3,14 +3,14 @@
 //! published digits (CV-31). Every bound is checked exactly: no tolerance.
 
 
-use piperine_device_fixtures::exact::ExactRational;
+use piperine_numbers_fixtures::exact::ExactRational;
 use num_bigint::{BigInt, BigUint};
 use piperine_numbers::constants::ReferenceConstants;
 use piperine_numbers::quad::Float128;
 use piperine_numbers::reduction::ArgumentReduction;
 use piperine_numbers::ziv::ZivRounding;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
-use piperine_device_fixtures::random::ShiftGenerator;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;

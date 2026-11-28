@@ -7,20 +7,22 @@ use piperine_repository_guards::SourceTree;
 /// Each crate and the in-tree crates its `[dependencies]` table names. The leaves (`piperine-abi`,
 /// `piperine-ir`, `piperine-numbers`) name none; the sub-solvers name only `piperine-abi`; the owner
 /// names both sub-solvers; the guards crate names nothing and nothing names it.
-const DOCUMENTED_ARROWS: [(&str, &[&str]); 19] = [
+const DOCUMENTED_ARROWS: [(&str, &[&str]); 21] = [
     ("piperine", &["piperine-api"]),
     ("piperine-abi", &[]),
     ("piperine-analog-solver", &["piperine-abi"]),
     ("piperine-api", &["piperine-abi", "piperine-digital-solver", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-numbers", "piperine-plan", "piperine-project", "piperine-solver", "piperine-transpile"]),
     ("piperine-cli", &["piperine-api", "piperine-lang", "piperine-transpile"]),
-    ("piperine-device-fixtures", &["piperine-abi", "piperine-analog-solver", "piperine-digital-solver", "piperine-numbers", "piperine-solver"]),
+    ("piperine-device-fixtures", &["piperine-abi", "piperine-analog-solver", "piperine-digital-solver", "piperine-solver"]),
     ("piperine-digital-solver", &["piperine-abi"]),
+    ("piperine-heap-fixtures", &[]),
     ("piperine-interp", &["piperine-abi", "piperine-ir", "piperine-plan", "piperine-solver"]),
     ("piperine-ir", &[]),
     ("piperine-ir-fixtures", &["piperine-ir"]),
     ("piperine-lang-fixtures", &["piperine-ir", "piperine-lang"]),
     ("piperine-lang", &["piperine-ir", "piperine-numbers"]),
     ("piperine-numbers", &[]),
+    ("piperine-numbers-fixtures", &["piperine-numbers"]),
     ("piperine-parity", &["piperine-abi", "piperine-api", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-plan", "piperine-solver", "piperine-transpile"]),
     ("piperine-plan", &["piperine-abi", "piperine-ir", "piperine-solver"]),
     ("piperine-project", &["piperine-lang"]),
@@ -71,8 +73,8 @@ fn every_crate_of_the_tree_has_a_documented_row() {
 fn the_leaves_and_the_sub_solvers_keep_their_dev_dependencies_out_of_the_tree() {
     for name in ["piperine-abi", "piperine-ir", "piperine-numbers", "piperine-analog-solver", "piperine-digital-solver", "piperine-repository-guards"] {
         let dev = SourceTree::manifest_section(&ManifestArrows::manifest_of(name), "dev-dependencies");
-        let ir_fixtures_allowed = name == "piperine-ir";
-        let held = dev.lines().filter(|line| line.trim().starts_with("piperine-") && !line.trim().starts_with("piperine-device-fixtures") && !(ir_fixtures_allowed && line.trim().starts_with("piperine-ir-fixtures")));
+        let own_fixtures = format!("{name}-fixtures");
+        let held = dev.lines().filter(|line| line.trim().starts_with("piperine-") && !line.trim().starts_with("piperine-device-fixtures") && !line.trim().starts_with(own_fixtures.as_str()));
         assert!(held.count() == 0, "{name} has an in-tree dev-dependency other than a fixtures crate:\n{dev}");
     }
 }

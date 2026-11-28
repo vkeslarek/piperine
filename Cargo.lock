@@ -1195,8 +1195,8 @@ dependencies = [
  "ndarray",
  "num-complex",
  "piperine-abi",
- "piperine-device-fixtures",
  "piperine-digital-solver",
+ "piperine-heap-fixtures",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
@@ -1228,12 +1228,10 @@ name = "piperine-device-fixtures"
 version = "0.2.0"
 dependencies = [
  "ndarray",
- "num-bigint",
  "num-complex",
  "piperine-abi",
  "piperine-analog-solver",
  "piperine-digital-solver",
- "piperine-numbers",
  "piperine-solver",
 ]
 
@@ -1244,6 +1242,10 @@ dependencies = [
  "piperine-abi",
  "piperine-device-fixtures",
 ]
+
+[[package]]
+name = "piperine-heap-fixtures"
+version = "0.2.0"
 
 [[package]]
 name = "piperine-interp"
@@ -1303,7 +1305,15 @@ name = "piperine-numbers"
 version = "0.2.0"
 dependencies = [
  "num-bigint",
- "piperine-device-fixtures",
+ "piperine-numbers-fixtures",
+]
+
+[[package]]
+name = "piperine-numbers-fixtures"
+version = "0.2.0"
+dependencies = [
+ "num-bigint",
+ "piperine-numbers",
 ]
 
 [[package]]
@@ -1313,12 +1323,12 @@ dependencies = [
  "num-bigint",
  "piperine-abi",
  "piperine-api",
- "piperine-device-fixtures",
  "piperine-interp",
  "piperine-ir",
  "piperine-ir-fixtures",
  "piperine-lang",
  "piperine-numbers",
+ "piperine-numbers-fixtures",
  "piperine-plan",
  "piperine-solver",
  "piperine-transpile",

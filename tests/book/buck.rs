@@ -10,6 +10,8 @@ use std::rc::Rc;
 
 use piperine::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
+use piperine_parity::copied_tree::CopiedTree;
+use piperine_parity::table_columns::TableColumns;
 
 /// A sink that drops every record: the buck's start is read from the table.
 struct DroppedRecords;
@@ -32,31 +34,11 @@ impl BuckStart {
     fn open(name: &str, overrides: Overrides) -> BuckStart {
         let directory = tempfile::Builder::new().prefix("piperine-book-").tempdir().expect("a model directory");
         let root = directory.path().join("buck");
-        Self::copy_tree(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/buck"), &root);
+        CopiedTree::copy(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/buck"), &root);
         let project = Project::at(&root).unwrap_or_else(|failure| panic!("{failure}"));
         let spec = project.request(Some(name), &overrides).unwrap_or_else(|failure| panic!("{failure}"));
         let session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|failure| panic!("{failure}"));
         BuckStart { session, _directory: directory }
-    }
-
-    /// The cell of `table` at `row` under `column`.
-    fn cell<'t>(table: &'t Table, row: usize, column: &str) -> &'t Cell {
-        let at = table.columns.iter().position(|name| name == column).unwrap_or_else(|| panic!("no column `{column}` in {:?}", table.columns));
-        &table.rows[row][at]
-    }
-
-    /// Copies the tree `from` to `to`.
-    fn copy_tree(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).expect("a directory for the copy");
-        for entry in std::fs::read_dir(from).unwrap_or_else(|error| panic!("{}: {error}", from.display())) {
-            let entry = entry.expect("a directory entry");
-            let target = to.join(entry.file_name());
-            if entry.file_type().expect("a file type").is_dir() {
-                Self::copy_tree(&entry.path(), &target);
-            } else {
-                std::fs::copy(entry.path(), &target).unwrap_or_else(|error| panic!("{}: {error}", target.display()));
-            }
-        }
     }
 }
 
@@ -69,7 +51,7 @@ fn the_buck_bench_starts_with_the_supervisor_off() {
     let table = buck.session.run(Rc::new(RefCell::new(DroppedRecords))).unwrap_or_else(|failure| panic!("{failure}"));
     assert_eq!(table.rows.len(), 5, "0 to 2 us on the 0.5 us grid of the run");
     for row in 0..5 {
-        assert_eq!(BuckStart::cell(&table, row, "Startup.mode"), &Cell::Text("Off".into()), "row {row}: the supervisor is off");
-        assert_eq!(BuckStart::cell(&table, row, "Startup.buck.ctl.reference"), &Cell::Int(0), "row {row}: the reference is 0");
+        assert_eq!(TableColumns::cell(&table, row, "Startup.mode"), &Cell::Text("Off".into()), "row {row}: the supervisor is off");
+        assert_eq!(TableColumns::cell(&table, row, "Startup.buck.ctl.reference"), &Cell::Int(0), "row {row}: the reference is 0");
     }
 }

@@ -2,6 +2,7 @@
 //! afterwards in the order the solver delivered them.
 
 use piperine::{Cell, CompositeCell, Field, Record, RecordSink};
+use piperine_parity::table_columns::TableColumns;
 
 /// A `RecordSink` that keeps every record it is handed.
 #[derive(Default)]
@@ -86,7 +87,7 @@ impl DrivenCells {
 
     /// The cells of the column `column` of `table`, one text each, in row order.
     pub fn column(table: &piperine::Table, column: &str) -> Vec<String> {
-        let at = table.columns.iter().position(|name| name == column).unwrap_or_else(|| panic!("no column `{column}` in {:?}", table.columns));
+        let at = TableColumns::position(table, column);
         table.rows.iter().map(|row| Self::text(&row[at])).collect()
     }
 }

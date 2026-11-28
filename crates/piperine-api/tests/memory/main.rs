@@ -5,4 +5,4 @@ mod memory;
 
 /// The counting allocator of the target: one for the process, shared by every test that measures.
 #[global_allocator]
-static HEAP: piperine_device_fixtures::heap::HeapCounter = piperine_device_fixtures::heap::HeapCounter::new();
+static HEAP: piperine_heap_fixtures::HeapCounter = piperine_heap_fixtures::HeapCounter::new();

@@ -1,0 +1,8 @@
+[package]
+name = "piperine-heap-fixtures"
+version.workspace = true
+edition.workspace = true
+description = "The counting allocator the memory-bound tests share (dev-only)"
+publish = false
+
+[dependencies]

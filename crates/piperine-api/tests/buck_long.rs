@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
-use piperine_device_fixtures::heap::HeapCounter;
+use piperine_heap_fixtures::HeapCounter;
 use piperine_digital_solver::landing::TimePointRule;
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table, TransientStatistics};
 use piperine_solver::protocol::{LandingCause, StepEnd};

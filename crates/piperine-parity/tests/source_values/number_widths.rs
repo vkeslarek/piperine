@@ -9,9 +9,9 @@
 
 use piperine_parity::source::widths;
 
-use piperine_device_fixtures::exact::ExactRational;
+use piperine_numbers_fixtures::exact::ExactRational;
 use num_bigint::BigInt;
-use piperine_device_fixtures::oracle::ExactOracle;
+use piperine_numbers_fixtures::oracle::ExactOracle;
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
 use piperine_plan::{CarrierLayout, NumberLayout};

@@ -8,8 +8,8 @@ use num_bigint::BigInt;
 use piperine_numbers::decimal::DecimalText;
 use piperine_numbers::format::{BinaryFormat, FloatClass};
 use piperine_numbers::limbs::ToLimbs;
-use piperine_device_fixtures::exact::ExactRational;
-use piperine_device_fixtures::random::ShiftGenerator;
+use piperine_numbers_fixtures::exact::ExactRational;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 
 /// Big-integer helper shared with the integer targets.
 struct BigOracle;

@@ -4,7 +4,7 @@
 
 use num_bigint::BigUint;
 use piperine_numbers::limbs::{Limbs, ToLimbs};
-use piperine_device_fixtures::random::ShiftGenerator;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 
 /// The big-integer oracle: conversions between limbs and `BigUint`, and random limb vectors.
 struct BigOracle;

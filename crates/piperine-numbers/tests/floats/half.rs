@@ -3,10 +3,10 @@
 //! 2^22 deterministic pairs (CV-30; IEEE 754-2019 clause 5, H.2).
 
 
-use piperine_device_fixtures::oracle::ExactOracle;
+use piperine_numbers_fixtures::oracle::ExactOracle;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::half::Float16;
-use piperine_device_fixtures::random::ShiftGenerator;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 use std::cmp::Ordering;
 
 /// The scenario of one test: the oracle and the comparison of patterns.

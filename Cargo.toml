@@ -8,19 +8,21 @@ members = [
     "crates/piperine-digital-solver",
     "crates/piperine-interp",
     "crates/piperine-ir",
+    "crates/piperine-heap-fixtures",
     "crates/piperine-ir-fixtures",
     "crates/piperine-lang-fixtures",
     "crates/piperine-lang",
     "crates/piperine-project",
     "crates/piperine-repository-guards",
     "crates/piperine-numbers",
+    "crates/piperine-numbers-fixtures",
     "crates/piperine-parity",
     "crates/piperine-plan",
     "crates/piperine-solver",
     "crates/piperine-transpile",
 ]
 
-default-members = [".", "crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-api", "crates/piperine-cli", "crates/piperine-device-fixtures", "crates/piperine-digital-solver", "crates/piperine-interp", "crates/piperine-ir", "crates/piperine-ir-fixtures", "crates/piperine-lang", "crates/piperine-lang-fixtures", "crates/piperine-numbers", "crates/piperine-parity", "crates/piperine-plan", "crates/piperine-project", "crates/piperine-repository-guards", "crates/piperine-solver", "crates/piperine-transpile"]
+default-members = [".", "crates/piperine-abi", "crates/piperine-analog-solver", "crates/piperine-api", "crates/piperine-cli", "crates/piperine-device-fixtures", "crates/piperine-digital-solver", "crates/piperine-heap-fixtures", "crates/piperine-interp", "crates/piperine-ir", "crates/piperine-ir-fixtures", "crates/piperine-lang", "crates/piperine-lang-fixtures", "crates/piperine-numbers", "crates/piperine-numbers-fixtures", "crates/piperine-parity", "crates/piperine-plan", "crates/piperine-project", "crates/piperine-repository-guards", "crates/piperine-solver", "crates/piperine-transpile"]
 
 [workspace.package]
 version = "0.2.0"

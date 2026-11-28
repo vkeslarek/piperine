@@ -1,0 +1,10 @@
+[package]
+name = "piperine-numbers-fixtures"
+version.workspace = true
+edition.workspace = true
+description = "The exact-rational oracle and the deterministic generator the number tests share (dev-only)"
+publish = false
+
+[dependencies]
+num-bigint = "0.4"
+piperine-numbers = { path = "../piperine-numbers" }

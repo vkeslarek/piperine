@@ -57,7 +57,9 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-cli` | The `piperine` binary, a thin shell over `piperine-api`. |
 | `piperine-project` | `Piperine.toml`, dependencies, lockfile. |
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
-| `piperine-device-fixtures` | Test-only: the hand-written ABI devices the back-end test suites share, one type per device, and `PartialsCheck`. Depends on `piperine-abi` alone. |
+| `piperine-device-fixtures` | Test-only: the hand-written ABI devices the back-end test suites share, one type per device, `PartialsCheck`, and `View` (an ABI shape read as plain values). Depends on the ABI and the sub-solvers. |
+| `piperine-numbers-fixtures` | Test-only: `ExactRational`/`ExactOracle` (the exact oracle) and `ShiftGenerator` (the deterministic operand generator) the number tests of `piperine-numbers` and `piperine-parity` share. Depends on `piperine-numbers` alone. |
+| `piperine-heap-fixtures` | Test-only: `HeapCounter`, the counting allocator the two memory-bound `piperine-api` targets share. No in-tree dependency. |
 | `piperine-ir-fixtures` | Test-only: the hand-built IR bodies the tests of ir, plan, interp, transpile and parity share (`Buck`, `Devices`, the expression builders, `TopDesign`). Depends on `piperine-ir` alone. |
 | `piperine-lang-fixtures` | Test-only: the source texts, designs and readers the tests of `piperine-lang` share (`PomSource`, `CheckedSource`, `LoweringCodes`, `SourceElaboration`, `ElaborationForms`, `IrReading`, `BuckSource`, `GenericSources`, `SpecCorpus`, `SpecTables`). Depends on `piperine-lang` and `piperine-ir`. |
 | `piperine-repository-guards` | Test-only: the guards over the repository itself (workspace boundaries, suite hygiene, the proof ledger) and the source scan they share. |
