@@ -162,7 +162,7 @@ impl PlantedRuns {
         PlantedRuns { base }
     }
 
-    /// Whether the folder `name` is still in the base after the cleanup a run does at its start.
+    /// Whether the folder `name` is still in the base after the removal a run does at its start.
     fn remains(&self, name: &str) -> bool {
         CompileCache::remove_finished_runs(self.base.path());
         self.base.path().join(name).exists()
@@ -170,7 +170,7 @@ impl PlantedRuns {
 }
 
 #[test]
-fn a_live_process_keeps_its_folder_at_the_cleanup() {
+fn a_live_process_keeps_its_folder_when_finished_runs_are_removed() {
     let live = std::process::id().to_string();
     assert!(PlantedRuns::named(&[live.clone()]).remains(&live));
 }
