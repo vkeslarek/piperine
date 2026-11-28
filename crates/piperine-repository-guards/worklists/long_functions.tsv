@@ -65,19 +65,13 @@ crates/piperine-lang/src/pom/resolve/name_resolution.rs::NameResolution::run	kep
 crates/piperine-lang/src/pom/resolve/names.rs::Names::decl	-
 crates/piperine-lang/src/pom/resolve/names.rs::Names::expr_inner	-
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::expr_inner	-
-crates/piperine-lang/src/types/analog.rs::Checker::core_call	-
-crates/piperine-lang/src/types/analog.rs::Checker::probe	-
-crates/piperine-lang/src/types/call.rs::Checker::method_call	-
-crates/piperine-lang/src/types/check.rs::Checker::lower_type_node	-
-crates/piperine-lang/src/types/check.rs::Checker::new	-
-crates/piperine-lang/src/types/expr.rs::Checker::binary	-
-crates/piperine-lang/src/types/expr.rs::Checker::check_as	-
-crates/piperine-lang/src/types/expr.rs::Checker::closure	-
-crates/piperine-lang/src/types/expr.rs::Checker::infer_kind	-
-crates/piperine-lang/src/types/expr.rs::Checker::let_statement	-
-crates/piperine-lang/src/types/expr.rs::Checker::path	-
-crates/piperine-lang/src/types/module.rs::Checker::connections	-
-crates/piperine-lang/src/types/module.rs::Checker::placement	-
+crates/piperine-lang/src/types/analog/analog.rs::AnalogTyping::probe	kept: the rules of one probe in the order of their diagnostics (the access it names, the place, the arity, the natures of its nodes, then the role it reads); each rule is a guard and an early return, and the access lookup is already its own method
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::binary	kept: one match over the binary operators, an arm per rule of §1.5; each arm names the operand rule of its operators
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::expected_flow	kept: an exhaustive match over the expression kinds, one arm per form that hands the expected type to the part it flows into; the arms that took more than a line are the methods `if_as` and `negated_integer_as`
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::infer_kind	kept: an exhaustive match over the expression kinds, each arm dispatching to the method of its form
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::let_statement	kept: the steps of one `let` of a plain name in order (the annotation, a closure whose parameters wait for a call, the initializer, the bookkeeping of the binding), each reading what the one before it fixed, with an early return where one ends it
+crates/piperine-lang/src/types/module/module.rs::ModuleTyping::connections	kept: the connection rules of one placement in order (the ports and their types, the arity as E0141 or E0312, then one arm per kind of port, each arm one call); the order is the order of the diagnostics
+crates/piperine-lang/src/types/module/module.rs::ModuleTyping::placement	kept: the steps of one placement in the order its rules need them: the place is judged first, the placement is pushed before its arguments are typed so a feedback through it reads it, and popped after the connections; each step reads what the one before fixed, with an early return where one ends it
 crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
 crates/piperine-solver/src/analyses/adjoint.rs::AdjointSolver::solve	-
 crates/piperine-solver/src/analyses/noise.rs::NoiseSolver::solve	-

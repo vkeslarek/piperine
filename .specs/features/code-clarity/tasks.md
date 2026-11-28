@@ -1901,9 +1901,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Checker` has two fields; each table struct documents what it holds
-- [ ] `cargo test -p piperine-lang` passes with no existing test edited
-- [ ] Gate check passes: Golden
+- [x] `Checker` has two fields; each table struct documents what it holds
+- [x] `cargo test -p piperine-lang` passes with no existing test edited
+- [x] Gate check passes: Golden
+  - Note (P10-3): T69's What names a `PatternTables`; none exists. No field of the checker belongs to patterns alone (a pattern reads the value tables and the type tables), so `types/pattern/` has no table struct of its own (commit c0a1b5786).
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1915,6 +1916,7 @@ T152 → T153 → T154 → T155
 ### T70: `ExpressionTyping` and `types/value/`
 
 **What**: Move the files design.md lists into `types/value/` and their methods from `impl Checker` to `impl ExpressionTyping`; `ValueTables`' fields become private to the directory.
+**Decision (coordinator, user AFK, pending review)**: every typing view (`ExpressionTyping`, `PatternTyping`, `ModuleTyping`, `AnalogTyping`, `CarrierTyping`, `GenericsSolver`) borrows `&mut Checker`, not `&mut CheckState` as design.md's sketch says: `reach` and `check_ahead` use the worklist and re-enter `declaration()`, so a view must reach the worklist. The worklist stays in `Checker`, so "`Checker` has two fields" (T69, T76) stays true. A view is declared in its directory's `mod.rs` (the guard `an_inherent_impl_lives_with_its_type` accepts impls below the declaring `mod.rs`), derefs to `Checker` for what is no concern of its own (reporting, the worklist), and a call into another concern's method goes through `Checker`'s accessor (`self.expressions().check(..)`). A table's fields are private to its directory; another concern asks through a method of the table.
 **Where**: `crates/piperine-lang/src/types/value`
 **Depends on**: T69
 **Reuses**: T69
@@ -1924,8 +1926,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/value/`; the diagnostics of every test are unchanged in text and order
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/value/`; the diagnostics of every test are unchanged in text and order
+  - Note: no test edited, and no call path of a moved `pub` item either: every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1946,8 +1949,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/pattern/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/pattern/`
+  - Note: no test edited; every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1959,6 +1963,7 @@ T152 → T153 → T154 → T155
 ### T72: `GenericsSolver`, `TraitTable` and their directories
 
 **What**: The same for `types/generics/` (generics, generic values, inference, substitution, obligations, bounds, module bounds, module generics) under `GenericsSolver`, and for `types/traits/` (traits, coherence, derives, repr) as methods of `TraitTable`.
+**Decision (coordinator, user AFK, pending review)**: the methods of `types/traits/` report diagnostics and reach declarations, which a table of impls cannot do, so they are methods of a view, `TraitTyping`, declared in `traits/mod.rs` over the unchanged data type `ImplTable` (`CheckState::traits`); `traits.rs`, which declares `ImplTable`, becomes `traits/impl_table.rs`.
 **Where**: `crates/piperine-lang/src/types/generics`
 **Depends on**: T71
 **Reuses**: T69
@@ -1968,8 +1973,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in the two directories
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in the two directories
+  - Note: no test edited; every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -1990,8 +1996,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/module/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/module/`
+  - Note: no test edited; every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2012,8 +2019,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/analog/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/analog/`
+  - Note: no test edited; every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2034,8 +2042,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/carrier/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/carrier/`
+  - Note: no test edited; every moved item was `pub(super)`.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2047,6 +2056,7 @@ T152 → T153 → T154 → T155
 ### T76: `Checker` keeps the worklist
 
 **What**: `types/table.rs` splits into `result_table.rs` (`Types`) and `callee.rs`; `model.rs` becomes `whole_model.rs`; `check.rs` holds the declaration worklist and the pass order; the allowance row of `Checker` in `an_inherent_impl_lives_with_its_type` is deleted; `types/`'s rows of `long_functions.tsv` have verdicts.
+**Note (fix round 1, from verification P10-2)**: the first pass left `check.rs` carrying reporting, type lowering, signatures and the declaration passes. Round 1 moved them to their owners: reporting to the methods of `Diagnostics` (`Checker` keeps one-line forwarders of `report`, `coded`, `refuse`, `refuse_with`, and the three `mismatch*`, which need the design or `ModuleTyping`, plus `file_of_expr`: about 200 call sites ask `Checker` for them); type lowering, `function*`, `constant` and the signatures to `ExpressionTyping` (`value/lowering.rs`, `value/functions.rs`); `module`, `module_of`, `module_item`, `inside_generation` to `ModuleTyping` (`module/body.rs`). `check.rs` holds the worklist, the pass order, the accessors and those forwarders.
 **Where**: `crates/piperine-lang/src/types/check.rs`
 **Depends on**: T75
 **Reuses**: T69
@@ -2056,9 +2066,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `an_inherent_impl_lives_with_its_type` passes under `**Run ownership**` with no row for `Checker`
-- [ ] `types/` holds 8 files at its root and 6 directories, as design.md's map
-- [ ] Gate check passes: Golden
+- [x] `an_inherent_impl_lives_with_its_type` passes under `**Run ownership**` with no row for `Checker`
+  - Note: the last row, `attributes.rs`, went when `AttributeCatalogue::misplaced` took over `check_attributes`.
+- [x] `types/` holds 8 files at its root and 6 directories, as design.md's map
+  - Note: the count in this box was a slip. design.md's map lists seven directories under `types/` (`value`, `pattern`, `module`, `analog`, `carrier`, `generics`, `traits`), and the root files are `attributes`, `callee`, `catalogue`, `check`, `mod`, `result_table`, `ty`, `whole_model`. The tree has seven.
+- [x] Gate check passes: Golden
+  - Note: also run, beyond the gate: `cargo test -p piperine-cli --test twins` and `cargo test -p piperine-parity`.
 
 **Tests**: integration
 **Gate**: golden

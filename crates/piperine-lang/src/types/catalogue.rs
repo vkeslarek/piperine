@@ -123,7 +123,7 @@ pub(super) enum Lookup {
     /// A row: its method, its argument types and its result.
     Row(Method, Vec<Ty>, Ty),
     /// A row of H.3 or H.4 whose arguments are typed from the receiver's payload and a closure's
-    /// body (`Checker::payload_row`).
+    /// body (`ExpressionTyping::payload_row`).
     Payload(Method),
     /// The receiver's catalogue is complete and has no such row: `E0161` (Appendix H rule 1).
     Absent,
@@ -309,7 +309,7 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("now", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     // `cross` and `at` are core modules with an `Event` result, placed in event positions only
-    // (`core_call` judges the position, `Checker::event_arguments` the tolerances and the time).
+    // (`core_call` judges the position, `CarrierTyping::event_arguments` the tolerances and the time).
     ("cross", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionF64, CoreParam::OptionF64], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     ("at", CoreSig { required: &[CoreParam::F64], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     // `freq()` is continuous (§14.4.2, `continuity.rs`); `bound_step(dt)` is a statement of `analog` (§14.10).

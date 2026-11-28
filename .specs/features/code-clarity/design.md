@@ -360,6 +360,8 @@ Target module map of `crates/piperine-lang/src/types/` (67 files today; file nam
 
 Order: T69 partitions the fields with no method moved; T70 to T75 move one concern each (a commit moves the files with `git mv`, changes the `impl` headers and the receivers, and nothing else); T76 leaves `Checker` with the worklist and closes its allowance row. The guard that holds it: `an_inherent_impl_lives_with_its_type` (every `impl T` block is in the file that declares `T` or below its directory), in `ownership`.
 
+**Annotation (Phase 10 fix round 1, P10-2)**: `check.rs` first kept reporting, type lowering, signatures and the module pass. They moved to their owners, pure moves: reporting into the methods of `Diagnostics`; type lowering, `function*`, `constant` and the signatures into `ExpressionTyping` (`value/lowering.rs`, `value/functions.rs`); `module`, `module_of`, `module_item`, `inside_generation` into `ModuleTyping` (`module/body.rs`). What stays in `check.rs` beyond the worklist, the pass order and the view accessors is eight one-line forwarders of `Diagnostics` (`report`, `coded`, `refuse`, `refuse_with`) and the three `mismatch*` and `file_of_expr` that read the design: about 200 call sites in the views ask `Checker` for them, and the views reach `Checker` through `Deref`, not `Diagnostics`.
+
 ### Splitting `Elaboration` — B6c (G1, G3, M1)
 
 The same approach. `Elaboration` (716 methods in 67 files, 37 fields) and its `Scope` (42 fields, `elab/lower.rs:26`) become:

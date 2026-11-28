@@ -22,10 +22,10 @@ piperine-lang	BodyWalk	T49
 piperine-lang	CheckState	T69
 piperine-lang	ExpressionTyping	T70
 piperine-lang	PatternTyping	T71
-piperine-lang	ModuleTyping	T72
-piperine-lang	AnalogTyping	T73
-piperine-lang	CarrierTyping	T74
-piperine-lang	GenericsSolver	T75
+piperine-lang	ModuleTyping	T73
+piperine-lang	AnalogTyping	T74
+piperine-lang	CarrierTyping	T75
+piperine-lang	GenericsSolver	T72
 piperine-lang	ElaborationState	T92
 piperine-lang	ValueLowering	T93
 piperine-lang	FunctionLowering	T94
