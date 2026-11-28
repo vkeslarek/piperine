@@ -2505,8 +2505,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/analog/`
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_behavior`
+- [x] No `impl Elaboration` in `elab/analog/`
+  - Note: `analog.rs` is `analog/blocks.rs` (a module `analog/analog.rs` would repeat its directory). Seven read-only queries the shared `&self` code reaches stay on `Elaboration` in `elaborator.rs`: `assignment_reads`, `read_bindings`, `let_initializer`, `block_declaring`, `conditions_of`, `quantity_role`, `module_exprs`, `body_exprs`.
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_behavior`
+  - Note: no `source_behavior` target exists (merged into the `source_*` targets by an earlier phase); the analog `source_natures`, `source_derivative`, `source_delay`, `source_noise`, `source_partial`, `source_environment`, `source_limexp` and `source_reach` ran in its place, 8 targets, all green.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

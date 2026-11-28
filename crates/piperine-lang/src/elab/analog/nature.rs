@@ -1,18 +1,18 @@
 //! Natures: each nature a reached module's ports and signals are made of becomes one IR nature,
 //! in first-use order, so the ids do not depend on anything but the source.
 
+use super::AnalogLowering;
 use piperine_ir::{Constant, NatureId, Quantity, Real};
 
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
+use crate::elab::consts::Bindings;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprKind, FileId, QuantityRole};
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The natures of `modules`' ports and signals, added to the IR before any body.
-    pub(super) fn lower_natures(&mut self, modules: &[DeclId]) {
+    pub(in crate::elab) fn lower_natures(&mut self, modules: &[DeclId]) {
         for module in modules {
             for child in self.state.design.decl_data(*module).children.clone() {
                 let ty = match &self.state.design.decl_data(child).kind {
@@ -30,7 +30,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The IR nature of a `nature` declaration, added the first time it is asked for.
-    pub(super) fn nature(&mut self, nature: DeclId) -> Option<NatureId> {
+    pub(in crate::elab) fn nature(&mut self, nature: DeclId) -> Option<NatureId> {
         if let Some(id) = self.state.analog.natures.get(&nature) {
             return Some(*id);
         }

@@ -201,9 +201,9 @@ impl Elaboration<'_, '_> {
     /// in the reaction where the call stands (§19 rule 10), and whose value is the function's.
     /// `None` after a diagnostic.
     pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
-        if self.takes_handle(function) && self.reaches_recursion(function) {
+        if self.takes_handle(function) && self.analog().reaches_recursion(function) {
             let span = self.state.design.decl_data(function).span;
-            self.unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
+            self.analog().unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
             return None;
         }
         let (stmts, value) = self.inline_emitting_parts(scope, function, args)?;

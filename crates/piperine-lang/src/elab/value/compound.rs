@@ -17,13 +17,13 @@
 //!   literal `None` or `Some` is its value.
 //! - `let (a, b) = (x, y);` is one local per component.
 
+use crate::elab::analog::AnalogLowering;
 use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
-use crate::elab::elaborator::Elaboration;
 use crate::elab::elements::Lookup;
 use super::patterns::Subject;
-use crate::elab::selectors::ArmCondition;
+use crate::elab::analog::selectors::ArmCondition;
 use crate::elab::elaborator::Scope;
 use crate::refusal::forms::{PatternForm, ValueForm};
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
@@ -180,7 +180,7 @@ impl ValueLowering<'_, '_, '_> {
             }
             let test = if last { None } else { tested.test };
             let everything = !last && test.is_none();
-            let own = Elaboration::enter_arm(scope, test, true);
+            let own = AnalogLowering::enter_arm(scope, test, true);
             let condition = match arm.guard {
                 Some(_) => ArmCondition::Guarded,
                 None => ArmCondition::MatchArm { scrutinee, earlier: arms[..k].iter().map(|a| a.pat).collect(), pat: (!last).then_some(arm.pat) },
@@ -199,8 +199,8 @@ impl ValueLowering<'_, '_, '_> {
                 None => ok = false,
             }
             scope.analog.guards.pop();
-            Elaboration::leave_arm(scope, own);
-            Elaboration::enter_arm(scope, test, false);
+            AnalogLowering::leave_arm(scope, own);
+            AnalogLowering::enter_arm(scope, test, false);
             tests.push(test);
             if everything {
                 break;
@@ -397,9 +397,9 @@ impl ValueLowering<'_, '_, '_> {
             // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
             ExprKind::Call { .. } if self.result_callee(expr).is_some() => self.lower_result_pair(scope, expr),
             // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
-            ExprKind::Call { .. } if matches!(self.state.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.lower_session_pair(scope, expr, origin),
+            ExprKind::Call { .. } if matches!(self.state.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.analog().lower_session_pair(scope, expr, origin),
             // `temperature()`: whether the run set it and the run's kelvin, the two environment reads (`session.rs`)
-            ExprKind::Call { .. } if matches!(self.state.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "temperature") => Some(self.lower_temperature_pair(origin)),
+            ExprKind::Call { .. } if matches!(self.state.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "temperature") => Some(self.analog().lower_temperature_pair(origin)),
             ExprKind::Call { args, .. } if matches!(self.typed(expr), Some(Ty::Option(_))) && self.is_some_call(expr) => {
                 let [arg] = args.as_slice() else { return refused(self) };
                 let val = self.lower_expr(scope, arg.value)?;
@@ -482,7 +482,7 @@ impl ValueLowering<'_, '_, '_> {
             // `match s { p => a, .. }` of `Option`s: the flag and the payload each a `match` chain
             // over `s`, an arm's body read as its pair.
             ExprKind::Match { scrutinee, arms } => {
-                if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) {
+                if let Some(selected) = self.analog().folded_selection(scope, *scrutinee, arms) {
                     return self.lower_option(scope, arms[selected].body);
                 }
                 scope.values.decisions += 1;

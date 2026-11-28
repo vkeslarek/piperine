@@ -14,12 +14,12 @@
 
 use super::FunctionLowering;
 use crate::elab::events::Disjunct;
-use crate::elab::expansion::Environment;
+use crate::elab::analog::expansion::Environment;
 use super::instances::ConcreteValue;
 use crate::elab::elaborator::Scope;
 use crate::elab::value::patterns::Subject;
-use crate::elab::symbolic::{ExpandedBody, Flow, Step};
-use crate::elab::unroll::Expansion;
+use crate::elab::analog::symbolic::{ExpandedBody, Flow, Step};
+use crate::elab::analog::unroll::Expansion;
 use crate::refusal::forms::EventFunctionForm;
 use crate::msl::Span;
 use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, StmtId, StmtKind};
@@ -117,8 +117,8 @@ impl FunctionLowering<'_, '_, '_> {
             return None;
         };
         slots.resize(data.children.iter().filter(|child| matches!(self.state.design.decl_data(**child).kind, DeclKind::FnParam(_))).count(), None);
-        let arguments = self.expanded_arguments(scope, call, &data.children, &slots)?;
-        if !self.may_expand(scope, function, span) {
+        let arguments = self.analog().expanded_arguments(scope, call, &data.children, &slots)?;
+        if !self.analog().may_expand(scope, function, span) {
             return None;
         }
         let before = Environment::of(scope);
@@ -140,7 +140,7 @@ impl FunctionLowering<'_, '_, '_> {
             return None;
         }
         let mut steps = Vec::new();
-        self.push_block(&mut steps, stmts, true);
+        self.analog().push_block(&mut steps, stmts, true);
         self.run_event_steps(scope, steps, at)
     }
 
@@ -173,7 +173,7 @@ impl FunctionLowering<'_, '_, '_> {
         match &node.kind {
             StmtKind::Empty => Some(Flow::Next),
             StmtKind::Let { pat, init: Some(init), else_: None, .. } => {
-                self.bind_expanded_let(scope, *pat, *init, node.span, ExpandedBody::EventFunction)?;
+                self.analog().bind_expanded_let(scope, *pat, *init, node.span, ExpandedBody::EventFunction)?;
                 Some(Flow::Next)
             }
             _ => {
@@ -193,15 +193,15 @@ impl FunctionLowering<'_, '_, '_> {
                 Some(Flow::Done(self.run_event_steps(scope, event, at)?))
             }
             ExprKind::Assign { .. } => {
-                self.run_assignment(scope, expr, ExpandedBody::EventFunction)?;
+                self.analog().run_assignment(scope, expr, ExpandedBody::EventFunction)?;
                 Some(Flow::Next)
             }
             ExprKind::Block(block) => {
-                self.push_block(steps, &block.stmts, value);
+                self.analog().push_block(steps, &block.stmts, value);
                 Some(Flow::Next)
             }
             ExprKind::For { pat, iter, body } => {
-                self.unroll_expanded(scope, *pat, *iter, body, steps, node.span, ExpandedBody::EventFunction)?;
+                self.analog().unroll_expanded(scope, *pat, *iter, body, steps, node.span, ExpandedBody::EventFunction)?;
                 Some(Flow::Next)
             }
             ExprKind::If { cond, then, else_ } => self.run_event_if(scope, *cond, then, *else_, value, steps, at),
@@ -227,10 +227,10 @@ impl FunctionLowering<'_, '_, '_> {
             self.refuse(scope.values.file, span, EventFunctionForm::IfLetInFunctionThatReturnsEvent);
             return None;
         }
-        if let Some(holds) = self.folded_decision(scope, cond) {
+        if let Some(holds) = self.analog().folded_decision(scope, cond) {
             match (holds, else_) {
-                (true, _) => self.push_block(steps, &then.stmts, value),
-                (false, Some(otherwise)) => self.push_else(scope, otherwise, value, steps, ExpandedBody::EventFunction)?,
+                (true, _) => self.analog().push_block(steps, &then.stmts, value),
+                (false, Some(otherwise)) => self.analog().push_else(scope, otherwise, value, steps, ExpandedBody::EventFunction)?,
                 (false, None) => {}
             }
             return Some(Flow::Next);
@@ -238,12 +238,12 @@ impl FunctionLowering<'_, '_, '_> {
         let before = Environment::of(scope);
         scope.values.decisions += 1;
         let mut taken = steps.clone();
-        self.push_block(&mut taken, &then.stmts, value);
+        self.analog().push_block(&mut taken, &then.stmts, value);
         let first = self.run_event_steps(scope, taken, at);
         before.clone().restore(scope);
         let mut skipped = steps.clone();
         let pushed = match else_ {
-            Some(otherwise) => self.push_else(scope, otherwise, value, &mut skipped, ExpandedBody::EventFunction),
+            Some(otherwise) => self.analog().push_else(scope, otherwise, value, &mut skipped, ExpandedBody::EventFunction),
             None => Some(()),
         };
         let second = pushed.and_then(|()| self.run_event_steps(scope, skipped, at));
@@ -277,7 +277,7 @@ impl FunctionLowering<'_, '_, '_> {
     /// forks the run per arm, the event of arm `k` guarded by the tests that select it: no earlier pattern matched
     /// and this one did. An arm with a guard or a name in its pattern is refused. `None` after a diagnostic.
     fn run_event_match(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[Arm], steps: &mut Vec<Step>, at: Span) -> Option<Flow<Vec<Disjunct>>> {
-        if let Some(selected) = self.folded_selection(scope, scrutinee, arms) {
+        if let Some(selected) = self.analog().folded_selection(scope, scrutinee, arms) {
             steps.push(Step::Expression { expr: arms[selected].body, value: true });
             return Some(Flow::Next);
         }

@@ -166,7 +166,7 @@ impl Elaboration<'_, '_> {
         }
         if self.state.types.carrier(port).is_none() {
             let terminal = match &source {
-                LeafSource::Expression(expr) => self.lower_terminal(scope, *expr),
+                LeafSource::Expression(expr) => self.analog().lower_terminal(scope, *expr),
                 // a node field, or the node of the element of an array of bundles the argument names
                 LeafSource::Leaf(from) => self.leaf_node_run(scope, from).and_then(|nodes| nodes.first().copied()),
             };

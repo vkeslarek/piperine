@@ -345,7 +345,7 @@ impl Elaboration<'_, '_> {
         self.state.consts.set_substitution(outer);
         let Some((Some(shape), Some(offset), array)) = found else { return false };
         let crate::types::Ty::Node(nature) = array.innermost().clone() else { return false };
-        let Some(nature) = self.nature(nature) else { return false };
+        let Some(nature) = self.analog().nature(nature) else { return false };
         let name = self.state.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let first = self.state.digital.structure.nodes.len() as u32;
         for flat in 0..shape.count() {
@@ -514,7 +514,7 @@ impl Elaboration<'_, '_> {
         if self.state.types.carrier(decl).is_some() {
             return None;
         }
-        let nature = self.nature_decl_of(ty).and_then(|n| self.nature(n))?;
+        let nature = self.nature_decl_of(ty).and_then(|n| self.analog().nature(n))?;
         let name = format!("{}{}", self.state.structure.frames[frame].prefix, data.name.as_ref().map_or("", |n| n.text.as_str()));
         let origin = self.state.locator.decl(decl);
         let (child, child_node) = match self.state.structure.frames[frame].child {

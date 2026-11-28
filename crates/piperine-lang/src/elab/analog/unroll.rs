@@ -14,13 +14,13 @@
 //!   or a depth past 1 024, is `E0126` naming the function: the IR never holds a recursion reached
 //!   from `analog`.
 
+use super::AnalogLowering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt};
 
-use super::consts::{Bindings, ConstFault};
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::consts::{Bindings, ConstFault};
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::StructureForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution, StmtKind};
@@ -66,7 +66,7 @@ impl Held {
 
 /// One recursive call being expanded: the function, and how many decisions that did not fold the
 /// code sat under when its expansion began.
-pub(super) struct Expansion {
+pub(in crate::elab) struct Expansion {
     /// The function whose body is being lowered in place.
     function: DeclId,
     /// `Scope::decisions` at the call.
@@ -75,7 +75,7 @@ pub(super) struct Expansion {
 
 impl Expansion {
     /// The expansion of a call of `function` that begins with `decisions` decisions that did not fold around it.
-    pub(super) fn begin(function: DeclId, decisions: u32) -> Expansion {
+    pub(in crate::elab) fn begin(function: DeclId, decisions: u32) -> Expansion {
         Expansion { function, decisions }
     }
 
@@ -88,20 +88,20 @@ impl Expansion {
 
 /// The functions on a call cycle, and the functions that reach one: asked often, answered once.
 #[derive(Default)]
-pub(super) struct CallCycles {
+pub(in crate::elab) struct CallCycles {
     /// Whether a function can call itself, directly or through others.
     cyclic: BTreeMap<DeclId, bool>,
     /// Whether a function is, or calls, one on a cycle.
     reaching: BTreeMap<DeclId, bool>,
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     // ---- loops -------------------------------------------------------------------------------
 
     /// The loop statement `expr` of an `analog` block as its unrolling, its statements appended to
     /// `out`; `None` when it is no loop of an `analog` block or holds nothing that unrolls it,
     /// `Some(false)` after a diagnostic.
-    pub(super) fn lower_analog_loop(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
+    pub(in crate::elab) fn lower_analog_loop(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
         if !scope.analog.in_analog_block {
             return None;
         }
@@ -154,15 +154,6 @@ impl Elaboration<'_, '_> {
         self.body_exprs(body).iter().any(delay).then_some(Held::Delay)
     }
 
-    /// Every expression of `body`, nested ones included.
-    pub(super) fn body_exprs(&self, body: &BlockNode) -> Vec<ExprId> {
-        let mut inside = Vec::new();
-        for expr in crate::pom::BodyWalk::new(self.state.design).block_expressions(body) {
-            crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(expr, &mut inside);
-        }
-        inside
-    }
-
     /// The placements of hoisted modules inside `body`.
     fn placements_in(&self, body: &BlockNode) -> Vec<ExprId> {
         self.body_exprs(body).into_iter().filter(|e| self.hoisted_callee(*e).is_some()).collect()
@@ -170,7 +161,7 @@ impl Elaboration<'_, '_> {
 
     /// The placements of hoisted modules that `module` writes inside a loop: hoisted by the
     /// unrolling of the loop, never up front.
-    pub(super) fn looped_placements(&mut self, module: DeclId) -> BTreeSet<ExprId> {
+    pub(in crate::elab) fn looped_placements(&mut self, module: DeclId) -> BTreeSet<ExprId> {
         if let Some(known) = self.state.analog.looped.get(&module) {
             return known.clone();
         }
@@ -259,7 +250,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether the condition `cond` is decided at elaboration: it reads only the key params and
     /// constants (§11 rule 3), or the loop variables and parameters an unrolling has bound.
-    pub(super) fn folded_decision(&mut self, scope: &Scope, cond: ExprId) -> Option<bool> {
+    pub(in crate::elab) fn folded_decision(&mut self, scope: &Scope, cond: ExprId) -> Option<bool> {
         let chain = self.placement_chain(scope.values.frame);
         if let Some(holds) = self.folded_condition(&scope.values.keys.clone(), &chain, cond) {
             return Some(holds);
@@ -272,7 +263,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The arm a `match` on `scrutinee` selects at elaboration, by the same two rules.
-    pub(super) fn folded_selection(&mut self, scope: &Scope, scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
+    pub(in crate::elab) fn folded_selection(&mut self, scope: &Scope, scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
         let chain = self.placement_chain(scope.values.frame);
         if let Some(selected) = self.folded_arm(&scope.values.keys.clone(), &chain, scrutinee, arms) {
             return Some(selected);
@@ -337,7 +328,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether `function` is on a call cycle or calls a function that is: the functions an `analog`
     /// block must expand rather than call (§3 rule 12).
-    pub(super) fn reaches_recursion(&mut self, function: DeclId) -> bool {
+    pub(in crate::elab) fn reaches_recursion(&mut self, function: DeclId) -> bool {
         if let Some(known) = self.state.analog.cycles.reaching.get(&function) {
             return *known;
         }
@@ -360,7 +351,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `E0126`: the recursion of `function` cannot be expanded; `why` says what stops it.
-    pub(super) fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
+    pub(in crate::elab) fn unfoldable_recursion(&mut self, scope: &Scope, function: DeclId, span: Span, why: &str) {
         let name = self.state.design.decl_data(function).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the recursion of `{name}` cannot be unrolled: {why} (§3 rule 12)");
         self.report(scope.values.file, Diagnostic::new("E0126", message, span, "recursion does not fold"));
@@ -370,7 +361,7 @@ impl Elaboration<'_, '_> {
     /// in place as a block, each parameter a local holding its argument and, when the argument
     /// folds, bound to that constant too, so the decisions of the body fold. `None` after a
     /// diagnostic.
-    pub(super) fn lower_expanded_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_expanded_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(expr).span;
         let data = self.state.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };

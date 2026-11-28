@@ -11,13 +11,13 @@
 //!
 //! A pattern that matches every value has no test.
 
+use crate::elab::analog::AnalogLowering;
 use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
-use crate::elab::elaborator::Elaboration;
 use crate::elab::elaborator::Scope;
-use crate::elab::selectors::ArmCondition;
+use crate::elab::analog::selectors::ArmCondition;
 use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId, StmtKind};
@@ -492,7 +492,7 @@ impl ValueLowering<'_, '_, '_> {
         let matched = self.test_pattern(scope, &subject, pat)?;
         let names = self.bind_names(scope, &matched.bindings)?;
         let test = self.condition_of(&matched, &origin);
-        let arm = Elaboration::enter_arm(scope, Some(test), true);
+        let arm = AnalogLowering::enter_arm(scope, Some(test), true);
         scope.analog.guards.push(ArmCondition::IfLet);
         let lets = self.binding_lets(&names);
         let taken = match half {
@@ -500,15 +500,15 @@ impl ValueLowering<'_, '_, '_> {
             None => self.bound_block(scope, lets, &then.stmts, then.span),
         };
         scope.analog.guards.pop();
-        Elaboration::leave_arm(scope, arm);
-        let arm = Elaboration::enter_arm(scope, Some(test), false);
+        AnalogLowering::leave_arm(scope, arm);
+        let arm = AnalogLowering::enter_arm(scope, Some(test), false);
         scope.analog.guards.push(ArmCondition::IfLet);
         let otherwise = match else_ {
             Some(else_) => self.lower_arm_value(scope, else_, half),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
         scope.analog.guards.pop();
-        Elaboration::leave_arm(scope, arm);
+        AnalogLowering::leave_arm(scope, arm);
         let (taken, otherwise) = (taken?, otherwise?);
         let (taken, otherwise) = (self.fit_to(taken, &base), self.fit_to(otherwise, &base));
         let ty = base;

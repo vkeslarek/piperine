@@ -309,7 +309,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // a reached node (`c0.sn`) is bound once its child is placed; placement places that child first (`place.rs`)
-            match self.lower_terminal(scope, arg.value) {
+            match self.analog().lower_terminal(scope, arg.value) {
                 Some(terminal) => terminals.push(terminal),
                 None => ok = false,
             }

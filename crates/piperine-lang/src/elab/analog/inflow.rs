@@ -9,21 +9,21 @@
 //! not written in the source, so the merge of zero-potential branches (`structural.rs`) never
 //! sees it: its flow is read.
 
+use super::AnalogLowering;
 use piperine_ir::{Addend, Branch, BranchKind, BodyNode, Constant, Expr, ExprId as LoweredExpr, Inflow, Operator, Origin, QuantityRole, Real, Stmt, StmtId as LoweredStmt, Terminal, ValueType};
 
-use super::body::NodePlan;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::body::NodePlan;
+use crate::elab::elaborator::Scope;
 use super::selectors::ContributionRecord;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprKind, Resolution};
 use crate::types::Builtin;
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The ammeter of each port of `module` whose `inflow()` the module reads: its inside node and
     /// its zero-potential branch, added to the body, and the statements that drive the branches.
     /// Run right after the nodes are lowered, before any name is read.
-    pub(super) fn lower_ammeters(&mut self, scope: &mut Scope, module: DeclId) -> Vec<LoweredStmt> {
+    pub(in crate::elab) fn lower_ammeters(&mut self, scope: &mut Scope, module: DeclId) -> Vec<LoweredStmt> {
         self.state.analog.ammeters.clear();
         let mut stmts = Vec::new();
         for port in self.ports_read_by_inflow(module) {
@@ -52,7 +52,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `p.inflow()` as a value: the flow of the ammeter branch of `p`.
-    pub(super) fn lower_inflow(&mut self, scope: &Scope, receiver: crate::pom::ExprId, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_inflow(&mut self, scope: &Scope, receiver: crate::pom::ExprId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(receiver).span;
         let branch = match &self.state.design.expr_node(self.peel_parens(receiver)).kind {
             ExprKind::Path(path) if scope.values.frame == 0 => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {

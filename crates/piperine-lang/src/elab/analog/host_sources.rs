@@ -7,11 +7,11 @@
 //! MD-25): the source is IR the author never wrote, built from IR expressions, with no MSL
 //! source behind it (design D8). A value input of the top has no such source and is `E0811`.
 
+use super::AnalogLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, BodyId, BodyNode, BodySpec, Constant, Env, Expr, ExprId, InstanceId, InstanceSpec, IrBuilder, Method, NatureId, NodeId, NodeRef, NodeRole, Operator, Origin, Param, QuantityRole, Real, Site, Stmt, Terminal, ValueType};
 
-use super::elaborator::Elaboration;
 use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind};
 
@@ -67,15 +67,15 @@ impl HostSourceParam {
 }
 
 /// A node port of the top and the node the placement made for it.
-pub(super) struct HostPort {
+pub(in crate::elab) struct HostPort {
     /// The port's name in the top.
-    pub(super) name: String,
+    pub(in crate::elab) name: String,
     /// The node the top's port is bound to.
-    pub(super) node: NodeId,
+    pub(in crate::elab) node: NodeId,
     /// The port's nature, which the source's node shares.
-    pub(super) nature: NatureId,
+    pub(in crate::elab) nature: NatureId,
     /// The port's position in the source.
-    pub(super) origin: Origin,
+    pub(in crate::elab) origin: Origin,
 }
 
 /// The expressions of the body `HostSource` over one `IrBuilder`: the data path from a param to
@@ -129,7 +129,7 @@ impl HostSourceExpressions<'_> {
 
 /// The host sources of one elaboration: the body `HostSource` of each nature a top port has,
 /// and the instances placed from them.
-pub(super) struct HostSources<'a> {
+pub(in crate::elab) struct HostSources<'a> {
     /// The builder the bodies and the instances are added to.
     ir: &'a mut IrBuilder,
     /// The body `HostSource` built for each nature so far.
@@ -138,12 +138,12 @@ pub(super) struct HostSources<'a> {
 
 impl<'a> HostSources<'a> {
     /// The host sources of an elaboration that has built none yet.
-    pub(super) fn new(ir: &'a mut IrBuilder) -> Self {
+    pub(in crate::elab) fn new(ir: &'a mut IrBuilder) -> Self {
         HostSources { ir, bodies: BTreeMap::new() }
     }
 
     /// One instance of `HostSource` per port, children of `top` at `<top_path>.<port>.source`.
-    pub(super) fn place(&mut self, top: InstanceId, top_path: &str, ports: &[HostPort]) {
+    pub(in crate::elab) fn place(&mut self, top: InstanceId, top_path: &str, ports: &[HostPort]) {
         for port in ports {
             let body = self.body_for(port);
             let params = HostSourceParam::ALL.iter().map(|p| Constant::Real(Real::new(p.default_value()))).collect();
@@ -181,11 +181,11 @@ impl<'a> HostSources<'a> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// `E0811` for each value input of `top`, and `true` when there is one (§8.1.14, §23.1 rule
     /// 1): the host drives a top's node ports and discrete `in` ports, and a value input has no
     /// source to hold it.
-    pub(super) fn refuse_value_inputs(&mut self, top: DeclId) -> bool {
+    pub(in crate::elab) fn refuse_value_inputs(&mut self, top: DeclId) -> bool {
         let data = self.state.design.decl_data(top);
         let module = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let inputs: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_)) && self.is_value_input(*c)).collect();

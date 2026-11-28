@@ -10,14 +10,14 @@
 //! module is the caller's), anything else is `P0001` naming it. Two sources with one name stay
 //! two inputs: their powers add.
 
+use super::AnalogLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, NoiseSource, Origin, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, Resolution};
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// A `noise` call read as a value: `Expr::Noise(k)`. The source is made the first time the call
     /// is read in the frame; `None` after a diagnostic.
     pub(super) fn lower_noise(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
@@ -54,7 +54,7 @@ impl Elaboration<'_, '_> {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.noise_group(scope, Some(given))),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.analog().noise_group(scope, Some(given))),
                     None => {}
                 },
                 _ => {}

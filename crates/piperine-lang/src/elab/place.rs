@@ -14,7 +14,7 @@ use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::functions::instances::Instance;
 use super::structural::BodyKey;
-use super::host_sources::{HostPort, HostSources};
+use super::analog::host_sources::{HostPort, HostSources};
 use super::resolvers::{DeclaredNet, ResolvedUse};
 use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};

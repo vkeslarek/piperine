@@ -6,6 +6,7 @@
 //! An integer expression that reads only literals and constants is folded to one literal, by
 //! the rules the compiled code follows (`ConstEval`).
 
+use crate::elab::analog::AnalogLowering;
 use super::ValueLowering;
 use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
@@ -13,8 +14,8 @@ use crate::elab::elements::ElementPart;
 use super::compound::EnumLayout;
 use crate::elab::functions::variants::Half;
 use crate::elab::consts::Bindings;
-use crate::elab::elaborator::{Elaboration, Scope};
-use crate::elab::selectors::ArmCondition;
+use crate::elab::elaborator::{Scope};
+use crate::elab::analog::selectors::ArmCondition;
 use crate::refusal::forms::ValueForm;
 use crate::refusal::RefusedForm;
 use crate::msl::Span;
@@ -155,7 +156,7 @@ impl ValueLowering<'_, '_, '_> {
             ExprKind::If { cond, then, else_ } if matches!(self.state.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
-            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_decision(scope, *cond) => self.lower_folded_if(scope, expr, holds, &then.stmts, *else_, origin),
+            ExprKind::If { cond, then, else_ } if let Some(holds) = self.analog().folded_decision(scope, *cond) => self.lower_folded_if(scope, expr, holds, &then.stmts, *else_, origin),
             ExprKind::If { cond, then, else_ } => self.lower_if(scope, expr, *cond, &then.stmts, *else_, ty, origin),
             ExprKind::Block(block) => self.lower_block_expression(scope, file, &block.stmts, node.span),
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
@@ -170,7 +171,7 @@ impl ValueLowering<'_, '_, '_> {
             ExprKind::MethodCall { recv, args, method: method_name, .. } => self.lower_method_expression(scope, expr, *recv, args, &method_name.text, ty, origin),
             ExprKind::Cast { expr: operand, .. } => self.lower_cast(scope, *operand, ty, origin),
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
-            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
+            ExprKind::Match { scrutinee, arms } if let Some(selected) = self.analog().folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
             ExprKind::Match { scrutinee, arms } => self.lower_decided_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
@@ -257,19 +258,19 @@ impl ValueLowering<'_, '_, '_> {
         let source = cond;
         let cond = self.lower_expr(scope, cond);
         scope.values.decisions += 1;
-        let arm = Elaboration::enter_arm(scope, cond, true);
+        let arm = AnalogLowering::enter_arm(scope, cond, true);
         scope.analog.guards.push(ArmCondition::If { condition: source, holds: true });
         let then = self.lower_block(scope, file, then, span);
         scope.analog.guards.pop();
-        Elaboration::leave_arm(scope, arm);
-        let arm = Elaboration::enter_arm(scope, cond, false);
+        AnalogLowering::leave_arm(scope, arm);
+        let arm = AnalogLowering::enter_arm(scope, cond, false);
         scope.analog.guards.push(ArmCondition::If { condition: source, holds: false });
         let otherwise = match else_ {
             Some(else_) => self.lower_expr(scope, else_),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
         scope.analog.guards.pop();
-        Elaboration::leave_arm(scope, arm);
+        AnalogLowering::leave_arm(scope, arm);
         scope.values.decisions -= 1;
         let (cond, then, otherwise) = (cond?, then?, otherwise?);
         let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
@@ -395,7 +396,7 @@ impl ValueLowering<'_, '_, '_> {
     fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(expr).span;
         // a `fn` called in a value that is differentiated is expanded where it stands (`expansion.rs`)
-        if scope.analog.differentiated && class != CallClass::Probe && let Some(expanded) = self.expand_function_call(scope, expr) {
+        if scope.analog.differentiated && class != CallClass::Probe && let Some(expanded) = self.analog().expand_function_call(scope, expr) {
             return expanded;
         }
         // a call of a generic function is typed (generics T20 to T23) and instantiated by T33 and T34: until
@@ -434,17 +435,17 @@ impl ValueLowering<'_, '_, '_> {
             return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
         }
         match (class, self.state.types.callee(expr)) {
-            (CallClass::Probe, _) => self.lower_probe(scope, expr, ty, origin),
+            (CallClass::Probe, _) => self.analog().lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
             (_, Some(Callee::Function(function))) if self.is_inlined(function) => self.inline_emitting_value(scope, function, args, origin),
             // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
-            (_, Some(Callee::Function(function))) if scope.analog.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
+            (_, Some(Callee::Function(function))) if scope.analog.in_analog_block && self.analog().reaches_recursion(function) => self.analog().lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
                 let (id, ret) = self.functions().request(function, Half::Whole)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
-            (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),
+            (_, Some(Callee::Core(id))) => self.analog().lower_core(scope, expr, id, args, ty, origin),
             // A module with a result is hoisted: its result is read where the placement stands.
             (_, Some(Callee::Module(_)) | None) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
@@ -562,18 +563,18 @@ impl ValueLowering<'_, '_, '_> {
                 // `place = value;` and `place op= value;` (§1.5.12, `control.rs`).
                 StmtKind::Expr { expr, .. } if matches!(self.state.design.expr_node(*expr).kind, ExprKind::Assign { .. }) => ok &= self.lower_assignment(scope, &mut out, *expr),
                 // A loop of an `analog` block that contributes or places is its unrolling (`unroll.rs`).
-                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_analog_loop(scope, &mut out, *expr) => ok &= lowered,
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.analog().lower_analog_loop(scope, &mut out, *expr) => ok &= lowered,
                 // `emit!` and a call of a function that emits are statements (`records.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
                 // `bound_step(dt);` is a statement of the analog block (`analog.rs`).
-                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_bound_step(scope, &mut out, *expr) => ok &= lowered,
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.analog().lower_bound_step(scope, &mut out, *expr) => ok &= lowered,
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
                     Some(lowered) if i + 1 == stmts.len() && !semi => value = Some(lowered),
                     Some(lowered) => out.push(self.stmt(Stmt::Expr(lowered))),
                     None => ok = false,
                 },
                 StmtKind::Empty => {}
-                StmtKind::Contribution { lhs, rhs } => ok &= self.lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
+                StmtKind::Contribution { lhs, rhs } => ok &= self.analog().lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
                 StmtKind::Commit { place, value, after } => ok &= self.lower_commit(scope, &mut out, *place, *value, *after),
                 _ => {
                     self.refuse(file, node.span, ValueForm::Statement);

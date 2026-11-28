@@ -200,22 +200,22 @@ impl Elaboration<'_, '_> {
         }
         self.lower_nodes(module);
         self.lower_nested_demands(&scope, module);
-        let ammeters = self.lower_ammeters(&mut scope, module);
+        let ammeters = self.analog().lower_ammeters(&mut scope, module);
         scope.analog.merged = self.merged_branches(&scope, module);
         self.lower_carriers(0, module);
         self.lower_nested_carrier_demands(&scope, module);
         self.lower_definitions(&scope);
         self.hoist_placements(&scope);
-        scope.analog.addend_lets = self.addend_only_ddt_lets(&scope, module);
-        let mut analog = self.lower_analog(&mut scope, module);
+        scope.analog.addend_lets = self.analog().addend_only_ddt_lets(&scope, module);
+        let mut analog = self.analog().lower_analog(&mut scope, module);
         if !ammeters.is_empty() {
             analog.get_or_insert_with(Vec::new).splice(0..0, ammeters);
         }
         if let Some(hoisted) = self.lower_hoisted_analog(&mut scope) {
             analog.get_or_insert_with(Vec::new).extend(hoisted);
         }
-        self.decide_branch_kinds(&mut scope);
-        self.check_selector_rule(&scope);
+        self.analog().decide_branch_kinds(&mut scope);
+        self.analog().check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
         self.lower_digital(&mut scope, module);
         self.judge_element_coverage(module, &name);
@@ -379,8 +379,8 @@ impl Elaboration<'_, '_> {
             _ => return None,
         };
         let nature = match self.state.consts.typed_node_array(decl).map(|t| t.innermost().clone()) {
-            Some(Ty::Node(nature)) => self.nature(nature)?,
-            _ => self.nature_decl_of(ty).and_then(|n| self.nature(n))?,
+            Some(Ty::Node(nature)) => self.analog().nature(nature)?,
+            _ => self.nature_decl_of(ty).and_then(|n| self.analog().nature(n))?,
         };
         let init = match (init, self.state.types.node_array(decl).is_some()) {
             (_, true) => None,

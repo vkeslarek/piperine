@@ -9,15 +9,15 @@
 //! top of the chain, under a condition, with an `abstol`) reaches value lowering, which makes it a
 //! derivative site (`derivatives.rs`).
 
+use super::AnalogLowering;
 use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredExpr, Operator, QuantityRole, Stmt, StmtId as LoweredStmt, Terminal, ValueType};
 
-use super::elaborator::Elaboration;
 use super::derivatives::LeafRules;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use super::selectors::ContributionRecord;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{self, BinOp, DeclKind, ExprId, ExprKind, Resolution, UnOp};
+use crate::pom::{self, BinOp, ExprId, ExprKind, UnOp};
 use crate::types::Callee;
 
 /// A signed leaf of the top-level chain of a contribution's right side.
@@ -28,9 +28,9 @@ struct Leaf {
     ddt: bool,
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// A contribution statement `lhs +> rhs`, appended to `out`; `false` after a diagnostic.
-    pub(super) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
+    pub(in crate::elab) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
         if plus == minus {
             let at = self.state.design.expr_node(lhs).span;
@@ -92,23 +92,6 @@ impl Elaboration<'_, '_> {
                 self.refuse(scope.values.file, node.span, AnalogForm::ContributionToProbeOfMoreThanTwo);
                 None
             }
-        }
-    }
-
-    /// The quantity the call of `callee` reads or contributes: a nature's access alias (`i`, `v`)
-    /// or the built-in `flow` and `potential`; `None` for anything else.
-    pub(super) fn quantity_role(&self, callee: ExprId) -> Option<pom::QuantityRole> {
-        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
-        match self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
-                DeclKind::Quantity(data) => Some(data.role),
-                _ => None,
-            },
-            Resolution::Builtin(id) if id.info().name == "flow" => Some(pom::QuantityRole::Flow),
-            Resolution::Builtin(id) if id.info().name == "potential" => Some(pom::QuantityRole::Potential),
-            // an access the resolver left ambiguous takes the role the checker read from the node (`v(y)`, `let y = x;`)
-            Resolution::Deferred(_) => self.state.types.access_role(callee),
-            _ => None,
         }
     }
 

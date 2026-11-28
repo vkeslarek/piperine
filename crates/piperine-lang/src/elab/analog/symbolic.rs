@@ -14,12 +14,12 @@
 //! A form with no finite symbolic reading (a `while`, a `loop`, a `break`, a `match` statement, a `let` that takes
 //! a pattern, a call made for its effect) is `P0001` naming it (GAPS L74), never a wrong value.
 
-use super::value::ValueLowering;
+use super::AnalogLowering;
+use crate::elab::value::ValueLowering;
 use piperine_ir::{Constant, Expr, ExprId as LoweredExpr};
 
-use super::elaborator::Elaboration;
 use super::expansion::Environment;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, PatKind, Resolution, StmtId, StmtKind};
@@ -33,7 +33,7 @@ const ITERATIONS: i128 = 1 << 12;
 
 /// What an expanded body still has to run; the next step is the last of the list.
 #[derive(Clone)]
-pub(super) enum Step {
+pub(in crate::elab) enum Step {
     /// A statement that is no expression: a `let`, a lone `;`.
     Statement(StmtId),
     /// An expression statement, and whether it is the value of the body.
@@ -47,7 +47,7 @@ pub(super) enum Step {
 /// What a body is expanded for: it words the refusal of a form the expansion cannot run, so a diagnostic names the
 /// construct the author wrote.
 #[derive(Clone, Copy)]
-pub(super) enum ExpandedBody {
+pub(in crate::elab) enum ExpandedBody {
     /// A `fn` called inside a differentiated value (§14.2.3).
     Differentiated,
     /// A `fn` whose result is an `Event` (§13 rule 7).
@@ -65,14 +65,14 @@ impl ExpandedBody {
 }
 
 /// Where a step leaves the run: the body is done with a value, or the next step runs.
-pub(super) enum Flow<T = LoweredExpr> {
+pub(in crate::elab) enum Flow<T = LoweredExpr> {
     /// The body is done: the value of the call.
     Done(T),
     /// The next step runs.
     Next,
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The value of the body `body` of a `fn` expanded at the call at `at`, its parameters bound in `scope`. `None`
     /// after a diagnostic.
     pub(super) fn run_body(&mut self, scope: &mut Scope, body: &BlockNode, at: Span) -> Option<LoweredExpr> {
@@ -106,7 +106,7 @@ impl Elaboration<'_, '_> {
 
     /// Pushes the statements `stmts` of a block on `steps`, the first to run last; the last of them, written with
     /// no `;`, is the value when `value`.
-    pub(super) fn push_block(&self, steps: &mut Vec<Step>, stmts: &[StmtId], value: bool) {
+    pub(in crate::elab) fn push_block(&self, steps: &mut Vec<Step>, stmts: &[StmtId], value: bool) {
         for (index, stmt) in stmts.iter().enumerate().rev() {
             steps.push(match &self.state.design.stmt_node(*stmt).kind {
                 StmtKind::Expr { expr, semi } => Step::Expression { expr: *expr, value: value && !*semi && index + 1 == stmts.len() },
@@ -133,7 +133,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `let name = init;`: the name holds the lowered initializer (an `Option` its pair, a `str` its text).
-    pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span, body: ExpandedBody) -> Option<()> {
+    pub(in crate::elab) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span, body: ExpandedBody) -> Option<()> {
         let PatKind::Ident { binding, sub: None, .. } = self.state.design.pat_node(pat).kind else {
             self.refuse_with(scope.values.file, span, AnalogForm::LetOfPatternThatIsNoName, [body.describes().to_string()]);
             return None;
@@ -203,7 +203,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `name = value;` and `name op= value;`: the name of a parameter or a `let` holds the new expression.
-    pub(super) fn run_assignment(&mut self, scope: &mut Scope, assignment: ExprId, body: ExpandedBody) -> Option<()> {
+    pub(in crate::elab) fn run_assignment(&mut self, scope: &mut Scope, assignment: ExprId, body: ExpandedBody) -> Option<()> {
         let node = self.state.design.expr_node(assignment).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return None };
         let target = self.peel_parens(lhs);
@@ -275,12 +275,12 @@ impl Elaboration<'_, '_> {
     }
 
     /// The `else` of an `if`: a block, or the `if` of an `else if`.
-    pub(super) fn push_else(&mut self, scope: &Scope, otherwise: ExprId, value: bool, steps: &mut Vec<Step>, body: ExpandedBody) -> Option<()> {
+    pub(in crate::elab) fn push_else(&mut self, scope: &Scope, otherwise: ExprId, value: bool, steps: &mut Vec<Step>, body: ExpandedBody) -> Option<()> {
         match &self.state.design.expr_node(otherwise).kind {
             ExprKind::Block(block) => self.push_block(steps, &block.stmts, value),
             ExprKind::If { .. } => steps.push(Step::Expression { expr: otherwise, value }),
             _ => {
-                self.refuse_with(scope.values.file, self.state.design.expr_node(otherwise).span, AnalogForm::ElseThatIsNoBlockOrIf, [body.describes().to_string()]);
+                self.elaboration.refuse_with(scope.values.file, self.state.design.expr_node(otherwise).span, AnalogForm::ElseThatIsNoBlockOrIf, [body.describes().to_string()]);
                 return None;
             }
         }
@@ -288,7 +288,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `for i in lo..hi { body }` over bounds that fold: the body once per value of `i`, pushed on `steps`.
-    pub(super) fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span, context: ExpandedBody) -> Option<()> {
+    pub(in crate::elab) fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span, context: ExpandedBody) -> Option<()> {
         let iter = self.peel_parens(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.state.design.expr_node(iter).kind else {
             self.refuse_with(scope.values.file, span, AnalogForm::ForThatIsNotOverRangeWith, [context.describes().to_string()]);

@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::{Ir, NodeId, NodeRef, QuantityRole, Terminal};
 
 /// One signal-flow node that does not have exactly one potential driver.
-pub(super) struct SignalFlowFault {
+pub(in crate::elab) struct SignalFlowFault {
     /// The path of the node.
     pub node: String,
     /// The paths of the instances that contribute a potential to `(node, gnd)`, in path order:
@@ -20,14 +20,14 @@ pub(super) struct SignalFlowFault {
 }
 
 /// The §6 rule 2 count over one elaborated design.
-pub(super) struct SignalFlowCheck<'ir> {
+pub(in crate::elab) struct SignalFlowCheck<'ir> {
     /// The design under check.
     ir: &'ir Ir,
 }
 
 impl<'ir> SignalFlowCheck<'ir> {
     /// Every signal-flow node of `ir` with zero or several potential drivers, in node order.
-    pub(super) fn run(ir: &'ir Ir) -> Vec<SignalFlowFault> {
+    pub(in crate::elab) fn run(ir: &'ir Ir) -> Vec<SignalFlowFault> {
         let check = SignalFlowCheck { ir };
         let (signal_flow, drivers) = (check.signal_flow_nodes(), check.potential_drivers());
         signal_flow

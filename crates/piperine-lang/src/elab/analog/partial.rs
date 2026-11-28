@@ -10,14 +10,14 @@
 //! (`BodyData::partial_derivatives`), so a reader and the interpreter see where one was.
 //! A call of a `fn` inside `e` is expanded where it stands (`expansion.rs`).
 
+use super::AnalogLowering;
 use piperine_ir::{BodyId, Differentiation, Expr, ExprId as LoweredExpr, Origin, PartialDerivative, Terminal, ValueType, Variable};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, QuantityRole};
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// A `ddx(e, probe)` read as a value: the derivative expression; `None` after a diagnostic.
     pub(super) fn lower_ddx(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(call).span;

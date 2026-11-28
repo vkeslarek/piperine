@@ -546,7 +546,7 @@ impl Elaboration<'_, '_> {
                     Some(self.previous(carrier, origin))
                 }
             },
-            Builtin::Inflow => self.lower_inflow(scope, recv, origin),
+            Builtin::Inflow => self.analog().lower_inflow(scope, recv, origin),
             // `s.others()`: the resolution of every drive but the body's own (§5.2.7)
             Builtin::Others => {
                 let carrier = self.carrier_of(scope, recv)?;

@@ -19,12 +19,12 @@
 //! potential contribution anywhere in the module has a kind that is constant during a solve, so no
 //! condition enclosing a contribution to it, potential or flow, may read a probe (`E0414`).
 
+use super::AnalogLowering;
 use std::collections::HashSet;
 
 use piperine_ir::{BranchKind, Condition, Expr, ExprId as LoweredExpr, QuantityRole, Terminal};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclKind, ExprId, FileId, PatId};
@@ -32,12 +32,12 @@ use crate::pom::{DeclKind, ExprId, FileId, PatId};
 /// One contribution as lowered: its branch, its quantity, the conditions of the arms that enclose
 /// it (outermost first, empty when it is unconditional) and where it was written.
 #[derive(Clone)]
-pub(super) struct ContributionRecord {
-    pub(super) branch: u32,
-    pub(super) quantity: QuantityRole,
-    pub(super) conditions: Vec<Condition>,
-    pub(super) file: FileId,
-    pub(super) span: Span,
+pub(in crate::elab) struct ContributionRecord {
+    pub(in crate::elab) branch: u32,
+    pub(in crate::elab) quantity: QuantityRole,
+    pub(in crate::elab) conditions: Vec<Condition>,
+    pub(in crate::elab) file: FileId,
+    pub(in crate::elab) span: Span,
 }
 
 /// What the value of a condition depends on, read off its lowered expression.
@@ -45,13 +45,13 @@ pub(super) struct ContributionRecord {
 pub(super) struct SelectorReads {
     /// The first probe, branch flow, derivative or `limit` value it reads, as the diagnostic
     /// names it: what no selector of a potential-capable branch may read.
-    pub(super) probe: Option<String>,
+    pub(in crate::elab) probe: Option<String>,
 }
 
 /// A condition of an enclosing arm as written, so a guarded site can lower it again with no local
 /// in reach (§14 rule 9): what its `enabled` or `when` is made of.
 #[derive(Clone)]
-pub(super) enum ArmCondition {
+pub(in crate::elab) enum ArmCondition {
     /// The arm of `if condition` taken when `holds`, or the right operand of `&&` (`holds`) or `||`.
     If { condition: ExprId, holds: bool },
     /// The arm of a `match` on `scrutinee` whose pattern is `pat` (`None`: the last arm), reached
@@ -70,12 +70,12 @@ impl ContributionRecord {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// Enters the arm of an `if` (or one arm of a `match`) whose condition is `condition`,
     /// taken when it `holds` or when it does not; `true` when a condition was pushed (a test
     /// that matches everything, or that failed to lower, has none). Pair every call with
     /// `leave_arm`.
-    pub(super) fn enter_arm(scope: &mut Scope, condition: Option<LoweredExpr>, holds: bool) -> bool {
+    pub(in crate::elab) fn enter_arm(scope: &mut Scope, condition: Option<LoweredExpr>, holds: bool) -> bool {
         match condition {
             Some(expr) => {
                 scope.analog.conditions.push(Condition { expr, holds });
@@ -86,7 +86,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Leaves the arm `enter_arm` entered, when it pushed a condition.
-    pub(super) fn leave_arm(scope: &mut Scope, entered: bool) {
+    pub(in crate::elab) fn leave_arm(scope: &mut Scope, entered: bool) {
         if entered {
             scope.analog.conditions.pop();
         }
@@ -95,7 +95,7 @@ impl Elaboration<'_, '_> {
     /// Fixes the kind of every branch of the body from the contributions it received (the table
     /// of this file): `E0415` for a potential and a flow contribution that nothing separates. A
     /// branch no contribution reached (a flow read numbered it) keeps the kind it was given.
-    pub(super) fn decide_branch_kinds(&mut self, scope: &mut Scope) {
+    pub(in crate::elab) fn decide_branch_kinds(&mut self, scope: &mut Scope) {
         for branch in 0..scope.analog.branches.len() {
             let own: Vec<ContributionRecord> = scope.analog.contributions.iter().filter(|r| r.branch == branch as u32).cloned().collect();
             let of = |quantity: QuantityRole| own.iter().filter(move |r| r.quantity == quantity);
@@ -142,11 +142,11 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// `E0414` for every contribution, to a branch that has a potential contribution, whose
     /// enclosing conditions read a probe (§11 rule 3). Run after `decide_branch_kinds`; a branch
     /// of kind `Flow` has no potential contribution, so a probe may select between its flows.
-    pub(super) fn check_selector_rule(&mut self, scope: &Scope) {
+    pub(in crate::elab) fn check_selector_rule(&mut self, scope: &Scope) {
         for record in &scope.analog.contributions {
             if scope.analog.branches[record.branch as usize].kind == BranchKind::Flow {
                 continue;
@@ -206,7 +206,7 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The conjunction of the conditions of the arms `scope` sits in, lowered standalone (no local
     /// in reach, §14 rule 9); `Some(None)` when nothing encloses the code, `None` after a diagnostic
     /// (`P0001` for an `if let` arm).

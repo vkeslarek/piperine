@@ -127,7 +127,7 @@ impl Elaboration<'_, '_> {
         let module = self.state.structure.frames[scope.values.frame].module;
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return };
         // A placement in a loop is hoisted by the unrolling of the loop, once per iteration.
-        let looped = self.looped_placements(module);
+        let looped = self.analog().looped_placements(module);
         for call in data.instances.clone() {
             if self.hoisted_callee(call).is_none() || looped.contains(&call) {
                 continue;
@@ -242,7 +242,7 @@ impl Elaboration<'_, '_> {
             return name.text.clone();
         }
         let caller = self.state.structure.frames[parent].module;
-        let looped = self.looped_placements(caller);
+        let looped = self.analog().looped_placements(caller);
         let same = |c: &ExprId| self.result_callee(*c) == Some(module);
         let outside: Vec<ExprId> = match &self.state.design.decl_data(caller).kind {
             DeclKind::Module(m) => m.instances.iter().copied().filter(|c| same(c) && !looped.contains(c)).collect(),
@@ -339,7 +339,7 @@ impl Elaboration<'_, '_> {
         }
         // A node port is the caller's terminal for its argument, read in the caller's frame.
         for (port, arg) in node_ports {
-            let terminal = self.lower_terminal(scope, arg?)?;
+            let terminal = self.analog().lower_terminal(scope, arg?)?;
             frame.nodes.insert(port, terminal);
         }
         self.state.structure.frames.push(frame);
@@ -458,7 +458,7 @@ impl Elaboration<'_, '_> {
             }
             let module = self.state.structure.frames[frame].module;
             let entry = self.enter_frame(scope, frame);
-            let lowered = self.lower_analog(scope, module);
+            let lowered = self.analog().lower_analog(scope, module);
             self.leave_frame(scope, entry);
             if let Some(lowered) = lowered {
                 stmts.get_or_insert_with(Vec::new).extend(lowered);

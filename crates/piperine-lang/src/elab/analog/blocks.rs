@@ -1,19 +1,19 @@
 //! The `analog` block of a body: its statements lowered in source order. Probes, environment
 //! reads and sites are lowered here; the contribution to a branch is `contribute.rs`.
 
+use super::AnalogLowering;
 use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The statements of the `analog` block bound to `module`, in source order; `None` when it
     /// has none. Every `analog` block of the module is lowered in source order into the one body
     /// (§10 rule 7); each binding is its own local, so two blocks keep their names apart.
-    pub(super) fn lower_analog(&mut self, scope: &mut Scope, module: DeclId) -> Option<Vec<LoweredStmt>> {
+    pub(in crate::elab) fn lower_analog(&mut self, scope: &mut Scope, module: DeclId) -> Option<Vec<LoweredStmt>> {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
         let blocks = data.behaviors.clone();
         let mut stmts = None;
@@ -46,7 +46,7 @@ impl Elaboration<'_, '_> {
 
     /// A potential probe `v(a)` or `v(a, b)`: a `Probe` over the terminals of its nodes (one
     /// node is a probe against ground).
-    pub(super) fn lower_probe(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_probe(&mut self, scope: &mut Scope, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
         // The type checker lets a module read the flow of a branch it drives with a potential.
@@ -169,7 +169,7 @@ impl Elaboration<'_, '_> {
 
     /// A call of a core primitive of the subset: an environment read, a `limit` or an `ac_stim`
     /// site. A site is numbered when it is met, so numbering follows the source.
-    pub(super) fn lower_core(&mut self, scope: &mut Scope, expr: ExprId, id: BuiltinId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_core(&mut self, scope: &mut Scope, expr: ExprId, id: BuiltinId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(expr).span;
         match id.info().name {
             "temperature" => Some(self.lower_temperature(origin)),
@@ -317,7 +317,7 @@ impl Elaboration<'_, '_> {
     /// When `expr`, a statement of a block, is `bound_step(dt)` (§14.10): a `BoundStep` appended
     /// to `out`, and `Some(false)` after a diagnostic (a `bound_step` under an `if`, a `match` or
     /// in a nested block is not lowered). `None` for any other expression.
-    pub(super) fn lower_bound_step(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
+    pub(in crate::elab) fn lower_bound_step(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
         let expr = self.peel_parens(expr);
         let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
@@ -353,7 +353,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// A node argument: a port or signal of the body, or ground; parentheses around it name the same node (`v((x))`).
-    pub(super) fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
+    pub(in crate::elab) fn lower_terminal(&mut self, scope: &Scope, arg: ExprId) -> Option<Terminal> {
         let arg = self.peel_parens(arg);
         // `if k > 0.5 { x } else { p }`: the node the choice folds to at elaboration (`node_choice.rs`)
         if let Some(chosen) = self.chosen_node(scope, arg) {

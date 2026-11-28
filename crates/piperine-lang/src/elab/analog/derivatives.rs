@@ -14,12 +14,13 @@
 //! block-local `let` it reads inlined from its source expression (`Scope::let_sources`), a `match`
 //! scrutinee read again at each test.
 
+use super::AnalogLowering;
+use crate::elab::elaborator::Elaboration;
 use std::collections::BTreeSet;
 
 use piperine_ir::{Derivative, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
@@ -27,10 +28,10 @@ use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 /// and the body `let`s that bind a bare `ddt` call and are read only as whole addends.
 pub(super) struct LeafRules<'a> {
     pub(super) whole_addends: bool,
-    pub(super) lets: &'a BTreeSet<DeclId>,
+    pub(in crate::elab) lets: &'a BTreeSet<DeclId>,
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// The `ddt` call that `expr`, a leaf of a contribution, is as a whole addend: itself when it is
     /// a call with one argument, or the call of the body `let` it names when that `let` is read only
     /// as a whole addend. `None` when the leaf is no whole addend (it is lowered as a value).
@@ -61,7 +62,7 @@ impl Elaboration<'_, '_> {
 
     /// The body `let`s of `module` that bind a bare `ddt(x)` call and whose every read, in `module`,
     /// is a whole addend of an unconditional contribution (keys folded as `scope.keys`).
-    pub(super) fn addend_only_ddt_lets(&mut self, scope: &Scope, module: DeclId) -> BTreeSet<DeclId> {
+    pub(in crate::elab) fn addend_only_ddt_lets(&mut self, scope: &Scope, module: DeclId) -> BTreeSet<DeclId> {
         let candidates: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter_map(|child| self.ddt_let_binding(child)).collect();
         if candidates.is_empty() {
             return BTreeSet::new();
@@ -98,22 +99,6 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// Every expression owned by `module` or by one of its behaviors.
-    pub(super) fn module_exprs(&self, module: DeclId) -> Vec<ExprId> {
-        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
-        let behaviors = &data.behaviors;
-        let inside = |mut owner: DeclId| loop {
-            if owner == module || behaviors.contains(&owner) {
-                return true;
-            }
-            match self.state.design.decl_data(owner).parent {
-                Some(parent) => owner = parent,
-                None => return false,
-            }
-        };
-        (0..self.state.design.expr_count() as u32).map(ExprId).filter(|e| inside(self.state.design.expr_node(*e).owner)).collect()
-    }
-
     /// A `ddt` call that is no whole addend, as the site it is: `Expr::Derivative(k)`. The site is
     /// made the first time the call is read in the frame and its state and `abstol` are lowered
     /// standalone; `None` after a diagnostic.
@@ -143,8 +128,8 @@ impl Elaboration<'_, '_> {
 
     /// A scope that reads what `scope` names but holds no local (§14 rule 9): a block-local `let`
     /// is read as its source expression, a `match` scrutinee is read at each test.
-    pub(super) fn standalone_scope(scope: &Scope) -> Scope {
-        let mut standalone = Self::sub_scope(scope);
+    pub(in crate::elab) fn standalone_scope(scope: &Scope) -> Scope {
+        let mut standalone = Elaboration::sub_scope(scope);
         standalone.digital.no_locals = true;
         standalone.analog.in_analog_code = scope.analog.in_analog_code;
         standalone.analog.at_solution = scope.analog.at_solution;

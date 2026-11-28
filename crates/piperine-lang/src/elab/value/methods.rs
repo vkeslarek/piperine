@@ -23,7 +23,7 @@ impl ValueLowering<'_, '_, '_> {
         // a method called in a value that is differentiated is expanded where it stands (`expansion.rs`)
         if scope.analog.differentiated {
             let instance = if self.is_trait_function(function) { vec![ConcreteValue::Type(self.typed(receiver)?)] } else { impl_arguments };
-            return self.expand_method_call(scope, expr, function, receiver, arguments, instance);
+            return self.analog().expand_method_call(scope, expr, function, receiver, arguments, instance);
         }
         // a method with a handle for `self` (an `impl` on a nature) is inlined at the call (`handles.rs`)
         if self.is_inlined(function) {

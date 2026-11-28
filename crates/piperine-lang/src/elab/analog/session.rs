@@ -7,15 +7,15 @@
 //! `lower_session_pair` gives the two halves (`is`, `value`) an `Option` operation reads. `temperature()` is the same
 //! kind of read over two environment cells (`lower_temperature`).
 
+use super::AnalogLowering;
 use piperine_ir::{Env, Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionParameter, ValueType};
 
-use super::value::compound::Pair;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::value::compound::Pair;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::pom::ExprId;
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// A `simparam` call read as a value: the packed `Option<f64>` read; `None` after a diagnostic.
     pub(super) fn lower_simparam(&mut self, scope: &mut Scope, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [name] = args else { return None };
@@ -35,7 +35,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The pair an `Option` operation reads of a `simparam` call: each half unpacked from the read.
-    pub(super) fn lower_session_pair(&mut self, scope: &mut Scope, call: ExprId, origin: Origin) -> Option<Pair> {
+    pub(in crate::elab) fn lower_session_pair(&mut self, scope: &mut Scope, call: ExprId, origin: Origin) -> Option<Pair> {
         let crate::pom::ExprKind::Call { args, .. } = self.state.design.expr_node(call).kind.clone() else { return None };
         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
         let packed = self.lower_simparam(scope, &args, origin.clone())?;
@@ -46,7 +46,7 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// `temperature()` read as a value: the `Option<f64>` of the run's temperature, `Some(kelvin)` when the run set it
     /// (`temp`) and `None` otherwise (§8.5.2). It packs the two environment reads of `lower_temperature_pair`.
     pub(super) fn lower_temperature(&mut self, origin: Origin) -> LoweredExpr {
@@ -56,7 +56,7 @@ impl Elaboration<'_, '_> {
 
     /// The two halves an `Option` operation reads of a `temperature()` call: whether the run set its temperature, and
     /// the run's temperature in kelvin (the solver's default, 300.15 K, when it did not).
-    pub(super) fn lower_temperature_pair(&mut self, origin: Origin) -> Pair {
+    pub(in crate::elab) fn lower_temperature_pair(&mut self, origin: Origin) -> Pair {
         let is = self.emit(Expr::Env(Env::TemperatureGiven), ValueType::Bool, origin.clone());
         let val = self.emit(Expr::Env(Env::Temperature), ValueType::F64, origin);
         Pair { is, val, literal: None }

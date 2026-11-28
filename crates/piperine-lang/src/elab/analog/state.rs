@@ -15,13 +15,13 @@ use crate::pom::{DeclId, ExprId};
 #[derive(Default)]
 pub(in crate::elab) struct AnalogSites {
     /// The IR nature of each reached nature declaration (`nature.rs`).
-    pub(super) natures: BTreeMap<DeclId, NatureId>,
+    pub(in crate::elab) natures: BTreeMap<DeclId, NatureId>,
     /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
-    pub(super) ammeters: BTreeMap<DeclId, u32>,
+    pub(in crate::elab) ammeters: BTreeMap<DeclId, u32>,
     /// The placements inside a loop, by module (`unroll.rs`).
-    pub(super) looped: BTreeMap<DeclId, BTreeSet<ExprId>>,
+    pub(in crate::elab) looped: BTreeMap<DeclId, BTreeSet<ExprId>>,
     /// The functions on a call cycle (`unroll.rs`).
-    pub(super) cycles: CallCycles,
+    pub(in crate::elab) cycles: CallCycles,
 }
 
 /// The branch and site context of the analog code being lowered: the `limit`, `ac_stim` and `bound_step` sites, the
@@ -51,7 +51,7 @@ pub(in crate::elab) struct AnalogScope {
     pub(in crate::elab) limit_name: Option<(ExprId, String)>,
     /// Code a core primitive evaluates at a converged solution (a `noise` density, a `delay` input): a `limit` there is
     /// its argument, since limiting changes no iterate that has stopped moving (§14.7.4).
-    pub(super) at_solution: bool,
+    pub(in crate::elab) at_solution: bool,
     /// Code a primitive evaluates on its own, outside every statement of the `analog` block (a `noise` density, a
     /// `delay` input, a `ddt` state): an `ac_stim` read there is also a statement of the block, which is where the
     /// stimulus site is written (`analog.rs`).
@@ -68,13 +68,13 @@ pub(in crate::elab) struct AnalogScope {
     /// The `Option` parameters and `let`s of the `fn` being expanded: the flag and the payload each holds.
     pub(in crate::elab) option_values: BTreeMap<DeclId, (LoweredExpr, LoweredExpr)>,
     /// The forks the `fn` being expanded has made so far (`symbolic.rs`).
-    pub(super) forks: u32,
+    pub(in crate::elab) forks: u32,
     /// Whether the code being lowered reads `freq()` from the solve (§14.4.4): the analog block
     /// and the functions it calls (a function's `freq_` is the caller's; a reaction reads 0). An
     /// `emit!` there is a trace (`records.rs`).
     pub(in crate::elab) in_analog_code: bool,
     /// The `bound_step` statements met so far: the next one's site.
-    pub(super) bounds: u32,
+    pub(in crate::elab) bounds: u32,
     /// The conditions of the arms the code being lowered sits in, outermost first: the selector
     /// of a contribution (§11), read off the same structure `Body::contributions` reads.
     pub(in crate::elab) conditions: Vec<Condition>,
@@ -83,7 +83,7 @@ pub(in crate::elab) struct AnalogScope {
     /// The branches the body merges (`structural.rs`): contributions to them are not lowered.
     pub(in crate::elab) merged: Vec<(Terminal, Terminal)>,
     /// Every contribution lowered so far, for `selectors.rs` to decide the branch kinds.
-    pub(super) contributions: Vec<ContributionRecord>,
+    pub(in crate::elab) contributions: Vec<ContributionRecord>,
     /// Whether the code being lowered is a statement of an `analog` block, not a function's body. The analog side reads
     /// constant elements of an array of carriers only, each through its mirror (`elements.rs`), so an array read whole
     /// or at a run-time element is read there as the array of its elements.

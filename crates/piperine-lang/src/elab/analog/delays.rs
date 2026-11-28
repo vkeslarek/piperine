@@ -9,15 +9,15 @@
 //! A `max` is a discrete pin written on the parameter cone: one that reads anything else is
 //! `P0001` naming it (D6).
 
+use super::AnalogLowering;
 use piperine_ir::{DelaySite, Env, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::pom::ExprId;
 
-impl Elaboration<'_, '_> {
+impl AnalogLowering<'_, '_, '_> {
     /// A `delay` call read as a value: `Expr::Delay(k)`. The site is made the first time the call
     /// is read in the frame; `None` after a diagnostic.
     pub(super) fn lower_delay(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {

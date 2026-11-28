@@ -1,13 +1,14 @@
 //! The entry point and the pass order of one elaboration run: `Types::check` first, then the
 //! passes over what it reached, each writing through `IrBuilder`.
 
+use crate::elab::analog::AnalogLowering;
 use crate::elab::functions::FunctionLowering;
 use crate::elab::value::ValueLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{BodyId, Env, Expr, ExprId as LoweredExpr, Ir, IrBuilder, Origin, Stmt, StmtId as LoweredStmt, ValueType};
 
-use super::analog_state::{AnalogScope, AnalogSites};
+use super::analog::state::{AnalogScope, AnalogSites};
 use super::consts::{Bindings, ConstEval};
 use super::digital_state::{DigitalScope, DigitalTables};
 use super::functions::state::FunctionTables;
@@ -15,14 +16,14 @@ use super::functions::instances::ConcreteValue;
 use super::loops::DriveLoops;
 use super::value::expressions::ValueTypes;
 use super::origin::Locator;
-use super::signal_flow::SignalFlowCheck;
+use super::analog::signal_flow::SignalFlowCheck;
 use super::structural::{BodyKey, BodyVariants, Overrides};
 use super::structure_state::StructureTables;
 use super::value::state::{ExpressionTables, ValueScope};
 use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId};
+use crate::pom::{self, BlockNode, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, PatKind, Resolution, StmtKind};
 use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Substitution, Ty, Types};
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
@@ -180,6 +181,11 @@ impl<'d, 't> Elaboration<'d, 't> {
         FunctionLowering::new(self)
     }
 
+    /// The view that lowers analog code.
+    pub(super) fn analog(&mut self) -> AnalogLowering<'_, 'd, 't> {
+        AnalogLowering::new(self)
+    }
+
     /// The view that lowers value code.
     pub(super) fn values(&mut self) -> ValueLowering<'_, 'd, 't> {
         ValueLowering::new(self)
@@ -209,7 +215,7 @@ impl<'d, 't> Elaboration<'d, 't> {
 
     /// The passes of one run.
     fn elaborate(&mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
-        if self.refuse_value_inputs(top) {
+        if self.analog().refuse_value_inputs(top) {
             return Err(std::mem::take(&mut self.state.diagnostics));
         }
         // A module with a result or a value input gets no body: it is hoisted into each body that
@@ -230,7 +236,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.state.structure.keys.of(*m).is_empty()).collect();
         self.state.structure.body_ids = unkeyed.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
         self.state.structure.body_variants = BodyVariants::starting_at(unkeyed.len() as u32);
-        self.lower_natures(&reached);
+        self.analog().lower_natures(&reached);
         for module in &unkeyed {
             if let Some(id) = self.state.structure.body_ids.get(module).copied() {
                 self.lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
@@ -651,6 +657,140 @@ impl<'d, 't> Elaboration<'d, 't> {
     /// Whether `function` takes a handle: a parameter the checker found to be one.
     pub(in crate::elab) fn takes_handle(&self, function: DeclId) -> bool {
         self.state.design.decl_data(function).children.iter().any(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::FnParam(_)) && self.state.types.handle(*child))
+    }
+
+    /// What the assignments of the `let` `local` read, in the block that declares it: each value assigned and each condition around
+    /// an assignment (an `if`, a `match`, a loop's condition or range, and every condition inside a loop around it), whose params
+    /// a choice by `local` makes structural as it does those of the initializer (`structural.rs`).
+    pub(in crate::elab) fn assignment_reads(&self, local: DeclId) -> Vec<ExprId> {
+        let Some((stmts, from)) = self.block_declaring(local) else { return Vec::new() };
+        let mut inside = Vec::new();
+        for stmt in &stmts[from..] {
+            for child in crate::pom::BodyWalk::new(self.state.design).statement_children(*stmt) {
+                crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(child, &mut inside);
+            }
+        }
+        let within = |outer: crate::msl::Span, inner: crate::msl::Span| outer.start <= inner.start && inner.end <= outer.end;
+        let mut reads = Vec::new();
+        for assignment in inside.iter().copied() {
+            let ExprKind::Assign { lhs, rhs, .. } = &self.state.design.expr_node(assignment).kind else { continue };
+            if !self.read_bindings(*lhs).contains(&local) {
+                continue;
+            }
+            reads.push(*rhs);
+            let at = self.state.design.expr_node(assignment).span;
+            for around in inside.iter().copied().filter(|expr| within(self.state.design.expr_node(*expr).span, at)) {
+                match &self.state.design.expr_node(around).kind {
+                    ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::For { .. } => {
+                        let span = self.state.design.expr_node(around).span;
+                        reads.extend(inside.iter().filter(|expr| within(span, self.state.design.expr_node(**expr).span)).flat_map(|expr| Self::conditions_of(&self.state.design.expr_node(*expr).kind)));
+                    }
+                    kind => reads.extend(Self::conditions_of(kind)),
+                }
+            }
+        }
+        reads
+    }
+
+    /// The bindings `expr` names, anywhere in it.
+    pub(in crate::elab) fn read_bindings(&self, expr: ExprId) -> Vec<DeclId> {
+        let node = self.state.design.expr_node(expr);
+        match &node.kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, crate::pom::DeclKind::Binding(_)) => vec![decl],
+                _ => Vec::new(),
+            },
+            kind => crate::pom::BodyWalk::new(self.state.design).expression_children(kind).into_iter().flat_map(|child| self.read_bindings(child)).collect(),
+        }
+    }
+
+    /// The initializer of the `let` that binds `local` with a name, in a statement or a module's body.
+    pub(in crate::elab) fn let_initializer(&self, local: DeclId) -> Option<ExprId> {
+        if let Some(value) = self.body_let_value(local) {
+            return Some(value);
+        }
+        (0..self.state.design.stmt_count()).find_map(|index| match &self.state.design.stmt_node(crate::pom::StmtId(index as u32)).kind {
+            StmtKind::Let { pat, init: Some(init), .. } if matches!(&self.state.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local) => Some(*init),
+            _ => None,
+        })
+    }
+
+    /// The quantity the call of `callee` reads or contributes: a nature's access alias (`i`, `v`)
+    /// or the built-in `flow` and `potential`; `None` for anything else.
+    pub(in crate::elab) fn quantity_role(&self, callee: ExprId) -> Option<pom::QuantityRole> {
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
+                DeclKind::Quantity(data) => Some(data.role),
+                _ => None,
+            },
+            Resolution::Builtin(id) if id.info().name == "flow" => Some(pom::QuantityRole::Flow),
+            Resolution::Builtin(id) if id.info().name == "potential" => Some(pom::QuantityRole::Potential),
+            // an access the resolver left ambiguous takes the role the checker read from the node (`v(y)`, `let y = x;`)
+            Resolution::Deferred(_) => self.state.types.access_role(callee),
+            _ => None,
+        }
+    }
+
+    /// Every expression owned by `module` or by one of its behaviors.
+    pub(in crate::elab) fn module_exprs(&self, module: DeclId) -> Vec<ExprId> {
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
+        let behaviors = &data.behaviors;
+        let inside = |mut owner: DeclId| loop {
+            if owner == module || behaviors.contains(&owner) {
+                return true;
+            }
+            match self.state.design.decl_data(owner).parent {
+                Some(parent) => owner = parent,
+                None => return false,
+            }
+        };
+        (0..self.state.design.expr_count() as u32).map(ExprId).filter(|e| inside(self.state.design.expr_node(*e).owner)).collect()
+    }
+
+    /// Every expression of `body`, nested ones included.
+    pub(in crate::elab) fn body_exprs(&self, body: &BlockNode) -> Vec<ExprId> {
+        let mut inside = Vec::new();
+        for expr in crate::pom::BodyWalk::new(self.state.design).block_expressions(body) {
+            crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(expr, &mut inside);
+        }
+        inside
+    }
+
+    /// The statements of the block that declares the `let` `local` with a name, and the index of its `let` among them: the body
+    /// of a function, an `analog` block or a reaction, or a block of an expression of the same owner.
+    pub(super) fn block_declaring(&self, local: DeclId) -> Option<(Vec<crate::pom::StmtId>, usize)> {
+        let declares = |stmt: &crate::pom::StmtId| matches!(&self.state.design.stmt_node(*stmt).kind, StmtKind::Let { pat, .. } if matches!(&self.state.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local));
+        let statement = (0..self.state.design.stmt_count() as u32).map(crate::pom::StmtId).find(|stmt| declares(stmt))?;
+        let owner = self.state.design.stmt_node(statement).owner;
+        let mut blocks: Vec<Vec<crate::pom::StmtId>> = match &self.state.design.decl_data(owner).kind {
+            crate::pom::DeclKind::Fn(data) => data.body.iter().map(|body| body.stmts.clone()).collect(),
+            crate::pom::DeclKind::Behavior(data) => vec![data.body.clone()],
+            crate::pom::DeclKind::Reaction(data) => vec![data.body.stmts.clone()],
+            _ => Vec::new(),
+        };
+        for index in 0..self.state.design.expr_count() as u32 {
+            let node = self.state.design.expr_node(ExprId(index));
+            if node.owner != owner {
+                continue;
+            }
+            match &node.kind {
+                ExprKind::Block(block) | ExprKind::If { then: block, .. } | ExprKind::While { body: block, .. } | ExprKind::Loop { body: block } | ExprKind::For { body: block, .. } => blocks.push(block.stmts.clone()),
+                _ => {}
+            }
+        }
+        blocks.into_iter().find_map(|stmts| stmts.iter().position(declares).map(|from| (stmts, from)))
+    }
+
+    /// The conditions an expression of kind `kind` decides by: an `if`'s, a `match`'s scrutinee and guards, a `while`'s, a `for`'s
+    /// range.
+    pub(super) fn conditions_of(kind: &ExprKind) -> Vec<ExprId> {
+        match kind {
+            ExprKind::If { cond, .. } | ExprKind::While { cond, .. } => vec![*cond],
+            ExprKind::For { iter, .. } => vec![*iter],
+            ExprKind::Match { scrutinee, arms } => std::iter::once(*scrutinee).chain(arms.iter().filter_map(|arm| arm.guard)).collect(),
+            _ => Vec::new(),
+        }
     }
 }
 
