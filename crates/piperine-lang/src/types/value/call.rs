@@ -133,7 +133,7 @@ impl ExpressionTyping<'_, '_> {
         if let Some(owner) = self.generic_impl_of(function) {
             return self.associated_call(expr, callee, function, owner, args);
         }
-        let (params, ret) = self.expressions().signature(function)?;
+        let (params, ret) = self.signature(function)?;
         self.finish_call(expr, callee, function, params, ret, args, true)
     }
 
@@ -533,7 +533,7 @@ impl ExpressionTyping<'_, '_> {
                 continue;
             };
             if let Some(annotation) = param.ty
-                && let Some(written) = self.expressions().lower_type(annotation)
+                && let Some(written) = self.lower_type(annotation)
                 && written != *ty
             {
                 let span = self.state.design.type_node(annotation).span;
@@ -541,7 +541,7 @@ impl ExpressionTyping<'_, '_> {
             }
             self.state.result.locals.insert(*binding, ty.clone());
         }
-        let written = ret.and_then(|annotation| self.expressions().lower_type(annotation).map(|ty| (annotation, ty)));
+        let written = ret.and_then(|annotation| self.lower_type(annotation).map(|ty| (annotation, ty)));
         if let (Some(result), Some((annotation, written))) = (result, &written)
             && written != result
         {

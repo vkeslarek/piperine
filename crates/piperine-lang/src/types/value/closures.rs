@@ -62,7 +62,7 @@ impl ExpressionTyping<'_, '_> {
             self.coded(file, "E0181", node.span, message, "parameter type unknown");
             return None;
         }
-        let declared: Vec<Ty> = params.iter().filter_map(|p| p.ty.and_then(|t| self.expressions().lower_type(t))).collect();
+        let declared: Vec<Ty> = params.iter().filter_map(|p| p.ty.and_then(|t| self.lower_type(t))).collect();
         if declared.len() != params.len() {
             return None;
         }

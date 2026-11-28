@@ -37,7 +37,7 @@ impl ExpressionTyping<'_, '_> {
     /// Whether the first parameter of the `impl` function `function` takes a value of type `given` once the `impl`'s
     /// parameters are read from it.
     fn accepts_first_parameter(&mut self, function: DeclId, given: &Ty) -> bool {
-        let Some((params, _)) = self.expressions().declared_signature(function) else { return false };
+        let Some((params, _)) = self.declared_signature(function) else { return false };
         let Some(wanted) = params.first() else { return false };
         let Some(owner) = self.generic_impl_of(function) else { return given.fits(wanted) };
         let signature = self.generics().generic_signature(owner);
@@ -48,7 +48,7 @@ impl ExpressionTyping<'_, '_> {
 
     /// The type a written type is, without a diagnostic of its own: `None` when it has none.
     pub(in crate::types) fn lower_type_quietly(&mut self, ty: TypeId) -> Option<Ty> {
-        self.state.result.written.get(&ty).cloned().or_else(|| self.expressions().lower_type(ty))
+        self.state.result.written.get(&ty).cloned().or_else(|| self.lower_type(ty))
     }
 
     /// A call of `function`, written in the generic `impl` `owner`: the arguments of the `impl` are read from the types
@@ -57,7 +57,7 @@ impl ExpressionTyping<'_, '_> {
     pub(super) fn associated_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, owner: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
-        let (params, ret) = self.expressions().declared_signature(function)?;
+        let (params, ret) = self.declared_signature(function)?;
         let signature = self.generics().generic_signature(owner);
         let mut inference = Inference::new(&signature);
         self.generics().learn_from_arguments(&mut inference, &params, args);

@@ -135,7 +135,7 @@ impl ExpressionTyping<'_, '_> {
     /// Whether the second parameter of the `impl` function `function` takes a value of type `rhs_ty` once the
     /// `impl`'s parameters are read from `lhs_ty` and `rhs_ty`.
     fn accepts_operand(&mut self, function: DeclId, lhs_ty: &Ty, rhs_ty: &Ty) -> bool {
-        let Some((params, _)) = self.expressions().declared_signature(function) else { return false };
+        let Some((params, _)) = self.declared_signature(function) else { return false };
         let [own, wanted, ..] = params.as_slice() else { return false };
         let generic_owner = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some());
         let Some(owner) = generic_owner else { return rhs_ty.fits(wanted) };
@@ -174,8 +174,8 @@ impl ExpressionTyping<'_, '_> {
         let Some(entry) = table.impls().iter().find(|entry| entry.decl == decl) else { return };
         let Some(trait_name) = entry.builtin_trait else { return };
         let (file, span) = (self.state.design.decl_data(decl).file, self.state.design.decl_data(decl).span);
-        let Some(own) = self.expressions().lower_type(self_ty) else { return };
-        let written: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| self.expressions().lower_type(*argument)).collect();
+        let Some(own) = self.lower_type(self_ty) else { return };
+        let written: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect();
         let Some(written) = written else { return };
         let head = format!("`impl {trait_name} for {}`", own.source_name(self.state.design));
         let argument = |index: usize, default: Ty| written.get(index).cloned().unwrap_or(default);
@@ -201,7 +201,7 @@ impl ExpressionTyping<'_, '_> {
                 self.coded(item_file, "E0187", item_span, format!("{head} defines `{name}`, which the trait does not have (Appendix H)"), "an item the trait lacks");
                 continue;
             };
-            let Some((params, ret)) = self.expressions().declared_signature(*item) else { continue };
+            let Some((params, ret)) = self.declared_signature(*item) else { continue };
             let takes_self = !matches!(trait_name, "From" | "Default");
             let given: Vec<Ty> = if takes_self { std::iter::once(own.clone()).chain(parameters.iter().cloned()).collect() } else if trait_name == "From" { written.clone() } else { Vec::new() };
             let found = Ty::Fn(params, Box::new(ret));

@@ -42,7 +42,7 @@ impl ExpressionTyping<'_, '_> {
                 if self.state.design.bundle_struct_of_type(self_ty).is_some() {
                     return self.modules().bundle_type(self_ty);
                 }
-                self.expressions().lower_type(self_ty)
+                self.lower_type(self_ty)
             }
             DeclKind::Trait(_) => Some(Ty::Param(owner)),
             _ => {
@@ -128,7 +128,7 @@ impl ExpressionTyping<'_, '_> {
             implementations.into_iter().for_each(|item| self.reach(item));
         }
         let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let (params, ret) = self.expressions().declared_signature(function)?;
+        let (params, ret) = self.declared_signature(function)?;
         let takes_self = matches!(self.state.design.decl_data(function).children.iter().find_map(|child| match &self.state.design.decl_data(*child).kind {
             DeclKind::FnParam(param) => Some(param.clone()),
             _ => None,

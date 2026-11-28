@@ -20,7 +20,7 @@ impl ExpressionTyping<'_, '_> {
     /// `const NAME: T = value;`: typed by its declared type, its initializer checked once.
     pub(in crate::types) fn constant(&mut self, decl: DeclId) {
         let DeclKind::Const(data) = self.state.design.decl_data(decl).kind.clone() else { return };
-        let Some(ty) = self.expressions().lower_type(data.ty) else { return };
+        let Some(ty) = self.lower_type(data.ty) else { return };
         match data.value {
             Some(value) => self.within(Context::Const, |this| this.expressions().check(value, &ty)),
             None => {
@@ -48,7 +48,7 @@ impl ExpressionTyping<'_, '_> {
             self.refuse(file, span, ValueForm::GenericFunction);
             return None;
         }
-        let parts = self.expressions().signature_parts(decl)?;
+        let parts = self.signature_parts(decl)?;
         let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
         match (parts.ok, params, parts.ret) {
             (true, Some(params), Some(ret)) => Some((params, ret)),
@@ -59,7 +59,7 @@ impl ExpressionTyping<'_, '_> {
     /// The declared parameter types and result of a function whatever its generics: a generic
     /// function's mention its type parameters as `Ty::Param`. `None` after a refusal.
     pub(in crate::types) fn declared_signature(&mut self, decl: DeclId) -> Option<(Vec<Ty>, Ty)> {
-        let parts = self.expressions().signature_parts(decl)?;
+        let parts = self.signature_parts(decl)?;
         let params: Option<Vec<Ty>> = parts.params.iter().map(|(_, ty)| ty.clone()).collect();
         match (parts.ok, params, parts.ret) {
             (true, Some(params), Some(ret)) => Some((params, ret)),
@@ -99,8 +99,8 @@ impl ExpressionTyping<'_, '_> {
         for child in data.children.iter().copied() {
             let DeclKind::FnParam(p) = &self.state.design.decl_data(child).kind else { continue };
             let ty = match p {
-                FnParamData::Named { ty } => self.expressions().lower_type(*ty),
-                FnParamData::SelfValue => self.expressions().self_parameter(decl, child),
+                FnParamData::Named { ty } => self.lower_type(*ty),
+                FnParamData::SelfValue => self.self_parameter(decl, child),
                 FnParamData::Error => {
                     let d = self.state.design.decl_data(child);
                     self.refuse(d.file, d.span, ValueForm::SelfParameter);
@@ -111,7 +111,7 @@ impl ExpressionTyping<'_, '_> {
             params.push((child, ty));
         }
         let ret = match f.ret {
-            Some(r) => self.expressions().lower_type(r),
+            Some(r) => self.lower_type(r),
             None => Some(Ty::Unit),
         };
         ok &= ret.is_some();
@@ -131,7 +131,7 @@ impl ExpressionTyping<'_, '_> {
 
     /// [`ExpressionTyping::function`] with the generic item set.
     fn function_of(&mut self, decl: DeclId) {
-        let Some(parts) = self.expressions().signature_parts(decl) else { return };
+        let Some(parts) = self.signature_parts(decl) else { return };
         let data = self.state.design.decl_data(decl).clone();
         let DeclKind::Fn(f) = &data.kind else { return };
         // §3 rule 8: the `where` ranges over const generics and associated consts, which the
@@ -170,7 +170,7 @@ impl ExpressionTyping<'_, '_> {
         match (&f.body, parts.ret) {
             (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
             (Some(body), None) => {
-                self.expressions().statements(&body.stmts, None);
+                self.statements(&body.stmts, None);
             }
             // a function a trait declares has no body; its implementations do
             (None, _) if data.parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
@@ -184,7 +184,7 @@ impl ExpressionTyping<'_, '_> {
     /// The statements of a body against the declared result. A missing result is reported
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
-        if let Some(found) = self.expressions().statements(&body.stmts, Some(ret))
+        if let Some(found) = self.statements(&body.stmts, Some(ret))
             && !self.generics().compatible_at(file, body.span, &found, ret)
             && found != Ty::Never
         {

@@ -177,17 +177,17 @@ impl ExpressionTyping<'_, '_> {
     /// `found`, the type `expr` was found to have where `expected` was wanted, is a mismatch of `expr` unless the two are
     /// compatible; an event read is the carrier concern's to report.
     fn report_found_mismatch(&mut self, expr: ExprId, file: FileId, span: Span, found: Option<Ty>, expected: &Ty, code: &'static str) {
-    if let Some(found) = found
-        && !self.generics().compatible(expr, &found, expected)
-        && found != Ty::Never
-    {
-        if self.state.result.event_reads.contains(&expr) {
-            self.carriers().event_where_another_type_is_expected(expr, expected);
-        } else {
-            let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
-            self.mismatch_coded(file, span, code, &expected_name, &found_name);
+        if let Some(found) = found
+            && !self.generics().compatible(expr, &found, expected)
+            && found != Ty::Never
+        {
+            if self.state.result.event_reads.contains(&expr) {
+                self.carriers().event_where_another_type_is_expected(expr, expected);
+            } else {
+                let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
+                self.mismatch_coded(file, span, code, &expected_name, &found_name);
+            }
         }
-    }
     }
 
     /// The function a plain path names, if it names one.
@@ -202,7 +202,7 @@ impl ExpressionTyping<'_, '_> {
     fn function_value(&mut self, expr: ExprId) -> Option<Ty> {
         let decl = self.function_named(expr)?;
         self.reach(decl);
-        let (params, ret) = self.expressions().signature(decl)?;
+        let (params, ret) = self.signature(decl)?;
         Some(Ty::Fn(params, Box::new(ret)))
     }
 
@@ -474,7 +474,7 @@ impl ExpressionTyping<'_, '_> {
     /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
     /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
-        let target = self.expressions().lower_type(ty);
+        let target = self.lower_type(ty);
         // `c0.n as f64`: `as` gives its result a type, never its operand (§1.4.5), so an item read through a template there has
         // no type the checker can give (§8.4.8, `E0181`)
         if self.modules().untyped_template_operand(operand) {
@@ -659,11 +659,11 @@ impl ExpressionTyping<'_, '_> {
                 match kind {
                     DeclKind::Const(c) => {
                         self.reach(decl);
-                        self.expressions().lower_type(c.ty)
+                        self.lower_type(c.ty)
                     }
-                    DeclKind::Param(p) => self.expressions().lower_type(p.ty),
+                    DeclKind::Param(p) => self.lower_type(p.ty),
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
-                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.expressions().lower_type(ty),
+                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     // a bundle is no value (§7 rule 9)
                     DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.modules().bundle_as_value(expr),
                     DeclKind::Port(p) => self.carriers().read_type(decl, p.ty),
@@ -812,7 +812,7 @@ impl ExpressionTyping<'_, '_> {
             return;
         }
         let annotated = match ty {
-            Some(t) => match self.expressions().lower_type(t).filter(|ty| {
+            Some(t) => match self.lower_type(t).filter(|ty| {
                 let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
                 if carriers {
                     self.checker.refuse(file, self.checker.state.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);

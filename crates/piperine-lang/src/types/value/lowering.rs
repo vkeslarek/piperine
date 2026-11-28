@@ -40,13 +40,13 @@ impl ExpressionTyping<'_, '_> {
             ("bool", _) => Some(Ty::Bool),
             // §1.2.9: `str` is a value type, the type of a string.
             ("str", _) => Some(Ty::Str),
-            ("uN", Some(w)) => self.expressions().integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
-            ("iN", Some(w)) => self.expressions().integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
+            ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
+            ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
             // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
             ("usize", _) => Some(Ty::UInt(64)),
             ("isize", _) => Some(Ty::Int(64)),
             (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, span, path, family),
-            ("Option", _) => self.expressions().option_type(file, span, path),
+            ("Option", _) => self.option_type(file, span, path),
             ("Event", _) => Some(Ty::Event),
             _ => {
                 self.refuse_with(file, span, ValueForm::Type, [id.name().to_string()]);
@@ -70,8 +70,8 @@ impl ExpressionTyping<'_, '_> {
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
                 // §3.8.2: a type or nature parameter is a type of the generic body, opaque
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_)) => self.expressions().enum_type(d, file, node.span),
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_)) => self.expressions().struct_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it; a generic one's names its
                 // arguments, `G<2>` (§8.4.3)
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Module(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generics().generic_module_type(*path, d, file, node.span),
@@ -87,16 +87,16 @@ impl ExpressionTyping<'_, '_> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            TypeKind::Tuple(items) => self.expressions().tuple_type(items),
-            TypeKind::Array { elem, len } => self.expressions().array_type(file, node.span, *elem, *len),
+            TypeKind::Tuple(items) => self.tuple_type(items),
+            TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
             TypeKind::Flip(_) | TypeKind::Infer => {
                 self.refuse(file, node.span, RefusedForm::type_form(&node.kind));
                 None
             }
             TypeKind::FnPtr { params, ret } => {
-                let params: Option<Vec<Ty>> = params.iter().map(|p| self.expressions().lower_type(*p)).collect();
+                let params: Option<Vec<Ty>> = params.iter().map(|p| self.lower_type(*p)).collect();
                 let ret = match ret {
-                    Some(r) => self.expressions().lower_type(*r),
+                    Some(r) => self.lower_type(*r),
                     None => Some(Ty::Unit),
                 };
                 Some(Ty::Fn(params?, Box::new(ret?)))
@@ -132,8 +132,8 @@ impl ExpressionTyping<'_, '_> {
         };
         let written = format!("{family}<{width}>");
         match family {
-            "UInt" => self.expressions().integer_type(file, span, Ty::UInt, width, &written),
-            "Int" => self.expressions().integer_type(file, span, Ty::Int, width, &written),
+            "UInt" => self.integer_type(file, span, Ty::UInt, width, &written),
+            "Int" => self.integer_type(file, span, Ty::Int, width, &written),
             _ => match u32::try_from(width).ok().and_then(Ty::float) {
                 Some(float) => Some(float),
                 None => {
