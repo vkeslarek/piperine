@@ -46,6 +46,20 @@ pub struct Net {
 }
 
 impl Net {
+    /// The `v(node)` / `i(branch)` label an analog variable carries as a [`Net`].
+    fn analog_label(variable: &AnalogVariable) -> String {
+        match variable {
+            AnalogVariable::Node(node) => format!("v({node})"),
+            AnalogVariable::Branch(branch) => match &branch.name {
+                Some(name) => format!("i({}.{})", branch.component, name),
+                None => format!("i({})", branch.component),
+            },
+            AnalogVariable::Time => "time".into(),
+            AnalogVariable::Frequency => "freq".into(),
+            AnalogVariable::Iteration => "iter".into(),
+        }
+    }
+
     const NONE: usize = usize::MAX;
 
     /// An analog node voltage at dense index `dense`.
@@ -124,23 +138,10 @@ impl fmt::Display for Net {
     }
 }
 
-/// The `v(node)` / `i(branch)` label an analog variable carries as a [`Net`].
-fn analog_label(variable: &AnalogVariable) -> String {
-    match variable {
-        AnalogVariable::Node(node) => format!("v({node})"),
-        AnalogVariable::Branch(branch) => match &branch.name {
-            Some(name) => format!("i({}.{})", branch.component, name),
-            None => format!("i({})", branch.component),
-        },
-        AnalogVariable::Time => "time".into(),
-        AnalogVariable::Frequency => "freq".into(),
-        AnalogVariable::Iteration => "iter".into(),
-    }
-}
 
 impl From<&AnalogReference> for Net {
     fn from(reference: &AnalogReference) -> Self {
-        let label = analog_label(reference.variable());
+        let label = Net::analog_label(reference.variable());
         let dense = reference.idx().unwrap_or(Net::NONE);
         let variable: Arc<AnalogVariable> = reference.variable().clone();
         let kind = match reference.variable().as_ref() {

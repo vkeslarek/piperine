@@ -15,7 +15,7 @@ use piperine_abi::caller::Handle;
 use piperine_abi::raw::{
     Cell, DEFAULT, Layout, Module, Pin, cell, global, kind, leaf, pin_flag, role, watch,
 };
-use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
+use piperine_analog_solver::device::{Ambient, AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
 use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, BranchIdentifier, Netlist, NodeIdentifier};
 use piperine_analog_solver::tolerances::Tolerances;
@@ -27,6 +27,7 @@ use piperine_digital_solver::tick::Resolution;
 use piperine_digital_solver::limits::DigitalLimits;
 
 use crate::core::result::Result;
+use crate::protocol::{Accepted, Observation, ObservationKind};
 
 /// What a netlist hands to one `PORT` pin.
 #[derive(Clone, Debug, PartialEq)]
@@ -174,6 +175,17 @@ pub struct NameMap {
 }
 
 impl NameMap {
+    /// The net of an instance's event pin (a `CROSS` watch's), as bind placed it.
+    pub(crate) fn event_net(&self, instance: usize, pin: u32) -> Result<u32> {
+        match self.pins.get(instance).and_then(|p| p.get(pin as usize)) {
+            Some(Site::Net(n)) => Ok(n.0),
+            _ => Err(Error::simple(
+                SolverDomain::Device,
+                format!("instance `{}`: crossing event pin {pin} is bound to no net", self.instances[instance]),
+            )),
+        }
+    }
+
     /// The slot of `net` (the whole net, or a window of an array net) and its bytes within the net's own, created on first use.
     fn slot_of(&mut self, net: NetId, window: Option<(u32, u32)>) -> u32 {
         let slot = match window {
@@ -322,6 +334,25 @@ pub(crate) struct Recipe {
 }
 
 impl Bound {
+    /// An accepted solution of the assembly, as the discrete side reads it.
+    pub(crate) fn accepted(&mut self, x: &[f64], amb: Ambient) -> Result<(Accepted, f64)> {
+        let acc = self.analog.accept(x, amb)?;
+        let fired = acc.fired.iter().map(|(i, p)| self.names.event_net(*i, *p)).collect::<Result<Vec<u32>>>()?;
+        Ok((Accepted { fired, samples: self.analog.samples(x) }, acc.cap))
+    }
+
+    /// The trace records of the assembly, as the sink reads them.
+    pub(crate) fn drain_traces(&mut self, time: f64, out: &mut Vec<Observation>) {
+        for t in self.analog.drain_traces() {
+            out.push(Observation {
+                path: format!("{}.{}", t.instance, t.watch),
+                analysis: Default::default(),
+                time,
+                kind: ObservationKind::Trace { iteration: t.iteration as u32, bytes: t.bytes },
+            });
+        }
+    }
+
     /// The param net of `(path, param)` and the bytes of `value` in its layout.
     pub(crate) fn param_bytes(&self, path: &str, param: &str, value: &ParamValue) -> Result<(NetId, Vec<u8>)> {
         let net = *self.names.params.get(&(path.to_string(), param.to_string())).ok_or_else(|| {

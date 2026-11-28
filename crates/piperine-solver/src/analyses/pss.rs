@@ -111,6 +111,75 @@ pub struct PssSolver<'a> {
 }
 
 impl<'a> PssSolver<'a> {
+    /// Dominant eigenvalue magnitude of the monodromy `M = J + I` (the shooting
+    /// Jacobian is `M − I`) by power iteration — the per-period decay factor of
+    /// the slowest free-response mode.
+    fn dominant_monodromy_magnitude(j: &[Vec<f64>]) -> Option<f64> {
+        let n = j.len();
+        if n == 0 {
+            return None;
+        }
+        let mut v = vec![1.0_f64; n];
+        let mut rho = 0.0;
+        for _ in 0..60 {
+            let mut w = vec![0.0_f64; n];
+            for row in 0..n {
+                let mut acc = if row < v.len() { v[row] } else { 0.0 }; // + I·v
+                for col in 0..n {
+                    acc += j[row][col] * v[col];
+                }
+                w[row] = acc;
+            }
+            let norm = w.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
+            if norm == 0.0 {
+                return Some(0.0);
+            }
+            for x in &mut w {
+                *x /= norm;
+            }
+            rho = norm;
+            v = w;
+        }
+        Some(rho)
+    }
+
+    /// Dense `A·x = b` by Gaussian elimination with partial pivoting; `None`
+    /// on a (numerically) singular matrix. Shooting systems are circuit-sized,
+    /// so dense is fine.
+    fn solve_dense(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
+        let n = b.len();
+        let mut m: Vec<Vec<f64>> = a.to_vec();
+        let mut x: Vec<f64> = b.to_vec();
+        for col in 0..n {
+            let pivot = (col..n).max_by(|&i, &j| {
+                m[i][col].abs().total_cmp(&m[j][col].abs())
+            })?;
+            if m[pivot][col].abs() < 1.0e-300 {
+                return None;
+            }
+            m.swap(col, pivot);
+            x.swap(col, pivot);
+            for row in (col + 1)..n {
+                let f = m[row][col] / m[col][col];
+                let (a, b) = m.split_at_mut(row);
+                let src = &a[col][col..n];
+                let dst = &mut b[0][col..n];
+                for (t, s) in dst.iter_mut().zip(src.iter()) {
+                    *t -= f * *s;
+                }
+                x[row] -= f * x[col];
+            }
+        }
+        for col in (0..n).rev() {
+            for row in 0..col {
+                let f = m[row][col] / m[col][col];
+                x[row] -= f * x[col];
+            }
+            x[col] /= m[col][col];
+        }
+        Some(x)
+    }
+
     pub fn new(
         circuit: &'a mut CircuitInstance,
         options: PssAnalysisOptions,
@@ -257,7 +326,7 @@ impl<'a> PssSolver<'a> {
                 let trace = self.shoot(&x0_step, t0, period)?;
                 let estimated_settle_time = jacobian
                     .as_ref()
-                    .and_then(|j| dominant_monodromy_magnitude(j))
+                    .and_then(|j| Self::dominant_monodromy_magnitude(j))
                     .filter(|rho| *rho < 1.0 && *rho > 0.0)
                     .map(|rho| {
                         period * (self.context.tolerances.reltol.ln() / rho.ln()).max(0.0)
@@ -310,7 +379,7 @@ impl<'a> PssSolver<'a> {
             };
 
             // Solve J·dx = −g (dense Gaussian elimination, partial pivot).
-            let dx = solve_dense(&j, &g.iter().map(|v| -v).collect::<Vec<_>>()).ok_or_else(
+            let dx = Self::solve_dense(&j, &g.iter().map(|v| -v).collect::<Vec<_>>()).ok_or_else(
                 || {
                     Error::simple(
                         SolverDomain::Pss,
@@ -389,74 +458,7 @@ impl<'a> PssSolver<'a> {
     }
 }
 
-/// Dominant eigenvalue magnitude of the monodromy `M = J + I` (the shooting
-/// Jacobian is `M − I`) by power iteration — the per-period decay factor of
-/// the slowest free-response mode.
-fn dominant_monodromy_magnitude(j: &[Vec<f64>]) -> Option<f64> {
-    let n = j.len();
-    if n == 0 {
-        return None;
-    }
-    let mut v = vec![1.0_f64; n];
-    let mut rho = 0.0;
-    for _ in 0..60 {
-        let mut w = vec![0.0_f64; n];
-        for row in 0..n {
-            let mut acc = if row < v.len() { v[row] } else { 0.0 }; // + I·v
-            for col in 0..n {
-                acc += j[row][col] * v[col];
-            }
-            w[row] = acc;
-        }
-        let norm = w.iter().fold(0.0_f64, |m, x| m.max(x.abs()));
-        if norm == 0.0 {
-            return Some(0.0);
-        }
-        for x in &mut w {
-            *x /= norm;
-        }
-        rho = norm;
-        v = w;
-    }
-    Some(rho)
-}
 
-/// Dense `A·x = b` by Gaussian elimination with partial pivoting; `None`
-/// on a (numerically) singular matrix. Shooting systems are circuit-sized,
-/// so dense is fine.
-fn solve_dense(a: &[Vec<f64>], b: &[f64]) -> Option<Vec<f64>> {
-    let n = b.len();
-    let mut m: Vec<Vec<f64>> = a.to_vec();
-    let mut x: Vec<f64> = b.to_vec();
-    for col in 0..n {
-        let pivot = (col..n).max_by(|&i, &j| {
-            m[i][col].abs().total_cmp(&m[j][col].abs())
-        })?;
-        if m[pivot][col].abs() < 1.0e-300 {
-            return None;
-        }
-        m.swap(col, pivot);
-        x.swap(col, pivot);
-        for row in (col + 1)..n {
-            let f = m[row][col] / m[col][col];
-            let (a, b) = m.split_at_mut(row);
-            let src = &a[col][col..n];
-            let dst = &mut b[0][col..n];
-            for (t, s) in dst.iter_mut().zip(src.iter()) {
-                *t -= f * *s;
-            }
-            x[row] -= f * x[col];
-        }
-    }
-    for col in (0..n).rev() {
-        for row in 0..col {
-            let f = m[row][col] / m[col][col];
-            x[row] -= f * x[col];
-        }
-        x[col] /= m[col][col];
-    }
-    Some(x)
-}
 
 impl std::fmt::Debug for PssSolver<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

@@ -60,10 +60,6 @@ pub struct ParamDerivative {
 /// (absolute fallback when the parameter value is ~0). Mirrors `.sens`.
 const DP_REL: f64 = 1e-6;
 
-fn step(value: f64) -> f64 {
-    let base = value.abs().max(1e-12);
-    (DP_REL * base).max(1e-12)
-}
 
 /// Collects `∂F/∂param` per request, recording which elements used the
 /// stamp-perturbation fallback (DVG-07). One collector per operating point;
@@ -79,6 +75,165 @@ pub struct ParamStampCollector<'a> {
 }
 
 impl<'a> ParamStampCollector<'a> {
+    /// The finite-difference step for a parameter of `value`.
+    fn step(value: f64) -> f64 {
+        let base = value.abs().max(1e-12);
+        (DP_REL * base).max(1e-12)
+    }
+
+    /// Build `node index → AnalogReference` from the netlist's references, so the
+    /// fallback can emit `Stamp::Rhs` for a computed row index.
+    fn index_refs(refs: Vec<&AnalogReference>) -> HashMap<usize, AnalogReference> {
+        let mut map = HashMap::new();
+        for r in refs {
+            if let Some(i) = r.idx() {
+                map.entry(i).or_insert_with(|| r.clone());
+            }
+        }
+        map
+    }
+
+    /// `∂F/∂param = ((A_pert − A_nom)·V_op − (b_pert − b_nom)) / dp` per MNA row,
+    /// as `Stamp::Rhs` entries. The residual is `A·V − b`; differencing the two
+    /// stamp sets at the fixed operating point isolates the parameter's effect
+    /// without touching the solution.
+    fn diff_residual(
+        nominal: &[Stamp<AnalogReference, f64>],
+        perturbed: &[Stamp<AnalogReference, f64>],
+        op: &[f64],
+        dp: f64,
+        ref_map: &HashMap<usize, AnalogReference>,
+    ) -> Vec<Stamp<AnalogReference, f64>> {
+        /// A stamp position: a right-side row or a matrix entry.
+        #[derive(Hash, Eq, PartialEq)]
+        enum Key {
+            /// The right side of a row.
+            Rhs(usize),
+            /// The matrix entry at (row, column).
+            Matrix(usize, usize),
+        }
+        let mut nom: HashMap<Key, f64> = HashMap::new();
+        let accum = |stamps: &[Stamp<AnalogReference, f64>], into: &mut HashMap<Key, f64>| {
+            for s in stamps {
+                match s {
+                    Stamp::Rhs(r, v) => {
+                        if let Some(i) = r.idx() {
+                            *into.entry(Key::Rhs(i)).or_default() += *v;
+                        }
+                    }
+                    Stamp::Matrix(r, c, v) => {
+                        if let (Some(ri), Some(ci)) = (r.idx(), c.idx()) {
+                            *into.entry(Key::Matrix(ri, ci)).or_default() += *v;
+                        }
+                    }
+                }
+            }
+        };
+        accum(nominal, &mut nom);
+        let mut pert: HashMap<Key, f64> = HashMap::new();
+        accum(perturbed, &mut pert);
+
+        let mut contrib: HashMap<usize, f64> = HashMap::new();
+        let apply = |key: &Key, delta: f64, contrib: &mut HashMap<usize, f64>| {
+            if delta == 0.0 {
+                return;
+            }
+            match key {
+                // Residual = A·V − b → −Δb contributes −delta.
+                Key::Rhs(i) => *contrib.entry(*i).or_default() -= delta,
+                // ΔA contributes ΔA·V_op.
+                Key::Matrix(ri, ci) => {
+                    let vj = op.get(*ci).copied().unwrap_or(0.0);
+                    *contrib.entry(*ri).or_default() += delta * vj;
+                }
+            }
+        };
+        for (key, pv) in &pert {
+            apply(key, pv - nom.get(key).copied().unwrap_or(0.0), &mut contrib);
+        }
+        for (key, nv) in &nom {
+            if !pert.contains_key(key) {
+                apply(key, -nv, &mut contrib);
+            }
+        }
+
+        let mut out: Vec<Stamp<AnalogReference, f64>> = Vec::new();
+        for (i, c) in contrib {
+            let v = c / dp;
+            if v != 0.0
+                && let Some(r) = ref_map.get(&i)
+            {
+                out.push(Stamp::Rhs(r.clone(), v));
+            }
+        }
+        out
+    }
+
+    /// The derivative of every net's bytes with respect to the param on `net`: 1 on the
+    /// param's own net, and across each discrete function the sum over its declared
+    /// partials (read net derivative times the partial), evaluated at the engine's
+    /// present net values.
+    fn net_derivatives(bound: &Bound, net: NetId) -> Result<HashMap<NetId, f64>> {
+        let plan = bound.digital.plan();
+        let mut edges: Vec<(NetId, NetId, f64)> = Vec::new();
+        for node in plan.analysis().functions() {
+            let inst = &plan.instances[node.instance as usize];
+            let shape = inst.handle.shape();
+            let f = shape.functions.get(node.k as usize).expect("an analyzed function");
+            if f.partials.is_empty() {
+                continue;
+            }
+            let net_of = |c: &Cell| match (c.kind == cell::PIN).then(|| bound.names.pins[node.instance as usize].get(c.index as usize)) {
+                Some(Some(Site::Net(n))) => Some(*n),
+                _ => None,
+            };
+            let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
+            let reads = shape.cell_lens(&f.reads, Access::FunctionRead).ok_or_else(|| sens(format!("{}: bad read cells", inst.path)))?;
+            let writes = shape.cell_lens(&f.writes, Access::FunctionWrite).ok_or_else(|| sens(format!("{}: bad write cells", inst.path)))?;
+            let inputs: Vec<Vec<u8>> = f
+                .reads
+                .iter()
+                .zip(&reads)
+                .map(|(c, len)| match net_of(c).filter(|_| c.part == part::VALUE) {
+                    Some(n) => {
+                        let mut b = bound.digital.read(n).to_vec();
+                        b.resize(*len, 0);
+                        b
+                    }
+                    None => vec![0; *len],
+                })
+                .collect();
+            let input: Vec<&[u8]> = inputs.iter().map(Vec::as_slice).collect();
+            let mut out: Vec<Vec<u8>> = writes.iter().map(|n| vec![0; *n]).collect();
+            let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+            let mut jac = vec![0.0; f.partials.len()];
+            let seed = vec![1u8; f.partials.len()];
+            inst.handle
+                .eval(node.k, &input, &mut output, &seed, &mut jac)
+                .map_err(|e| sens(format!("instance `{}`: function `{}`: {e}", inst.path, f.name.as_str())))?;
+            for (pi, p) in f.partials.iter().enumerate() {
+                let (Some(r), Some(w)) = (f.reads.get(p.read as usize), f.writes.get(p.write as usize)) else { continue };
+                if let (Some(rn), Some(wn)) = (net_of(r), net_of(w)) {
+                    edges.push((rn, wn, jac[pi]));
+                }
+            }
+        }
+        let mut derivs: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
+        for _ in 0..=edges.len() {
+            let mut next: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
+            for (rn, wn, g) in &edges {
+                if let Some(d) = derivs.get(rn) {
+                    *next.entry(*wn).or_default() += g * d;
+                }
+            }
+            if next == derivs {
+                break;
+            }
+            derivs = next;
+        }
+        Ok(derivs)
+    }
+
     pub fn new(circuit: &'a mut CircuitInstance, context: Context) -> Self {
         Self { circuit, context, fallback_users: HashSet::new(), force_fallback: false }
     }
@@ -109,7 +264,7 @@ impl<'a> ParamStampCollector<'a> {
     /// derivative across a rebuild is not a sensitivity.
     fn collect_device(&mut self, req: &ParamRequest, op: &[f64]) -> Result<ParamDerivative> {
         let tolerances = self.context.tolerances.clone();
-        let ref_map = index_refs(self.circuit.netlist().all_references());
+        let ref_map = Self::index_refs(self.circuit.netlist().all_references());
         let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
         let bound = &mut self.circuit.abi;
         let Some(inst) = bound.names.instances.iter().position(|p| *p == req.label) else {
@@ -139,7 +294,7 @@ impl<'a> ParamStampCollector<'a> {
         let amb = Ambient { time: 0.0, freq: 0.0, is_static: true, gmin: tolerances.gmin, source_scale: 1.0 };
 
         if !self.force_fallback {
-            let derivs = net_derivatives(bound, net)?;
+            let derivs = Self::net_derivatives(bound, net)?;
             let mut stamps = Vec::new();
             for j in 0..bound.names.instances.len() {
                 let wrt: Vec<(u32, f64)> = bound.names.pins[j]
@@ -184,7 +339,7 @@ impl<'a> ParamStampCollector<'a> {
             .map(|(_, b)| b.clone())
             .unwrap_or_else(|| bound.digital.plan().nets[net.0 as usize].init.clone());
         let value = init.get(..8).and_then(|b| b.try_into().ok()).map_or(0.0, f64::from_le_bytes);
-        let dp = step(value);
+        let dp = Self::step(value);
         // Central difference: the same iterate, the param moved by `±dp`.
         let mut at = |v: f64| -> Result<Vec<Stamp<AnalogReference, f64>>> {
             let mut moved = init.clone();
@@ -194,7 +349,7 @@ impl<'a> ParamStampCollector<'a> {
         };
         let (plus, minus) = (at(value + dp), at(value - dp));
         bound.analog.set_discrete(slot, &init);
-        let stamps = diff_residual(&minus?, &plus?, op, 2.0 * dp, &ref_map);
+        let stamps = Self::diff_residual(&minus?, &plus?, op, 2.0 * dp, &ref_map);
         Ok(ParamDerivative {
             label: req.label.clone(),
             param: req.param.clone(),
@@ -205,152 +360,5 @@ impl<'a> ParamStampCollector<'a> {
 
 }
 
-/// Build `node index → AnalogReference` from the netlist's references, so the
-/// fallback can emit `Stamp::Rhs` for a computed row index.
-fn index_refs(refs: Vec<&AnalogReference>) -> HashMap<usize, AnalogReference> {
-    let mut map = HashMap::new();
-    for r in refs {
-        if let Some(i) = r.idx() {
-            map.entry(i).or_insert_with(|| r.clone());
-        }
-    }
-    map
-}
 
-/// `∂F/∂param = ((A_pert − A_nom)·V_op − (b_pert − b_nom)) / dp` per MNA row,
-/// as `Stamp::Rhs` entries. The residual is `A·V − b`; differencing the two
-/// stamp sets at the fixed operating point isolates the parameter's effect
-/// without touching the solution.
-fn diff_residual(
-    nominal: &[Stamp<AnalogReference, f64>],
-    perturbed: &[Stamp<AnalogReference, f64>],
-    op: &[f64],
-    dp: f64,
-    ref_map: &HashMap<usize, AnalogReference>,
-) -> Vec<Stamp<AnalogReference, f64>> {
-    #[derive(Hash, Eq, PartialEq)]
-    enum Key {
-        Rhs(usize),
-        Matrix(usize, usize),
-    }
-    let mut nom: HashMap<Key, f64> = HashMap::new();
-    let accum = |stamps: &[Stamp<AnalogReference, f64>], into: &mut HashMap<Key, f64>| {
-        for s in stamps {
-            match s {
-                Stamp::Rhs(r, v) => {
-                    if let Some(i) = r.idx() {
-                        *into.entry(Key::Rhs(i)).or_default() += *v;
-                    }
-                }
-                Stamp::Matrix(r, c, v) => {
-                    if let (Some(ri), Some(ci)) = (r.idx(), c.idx()) {
-                        *into.entry(Key::Matrix(ri, ci)).or_default() += *v;
-                    }
-                }
-            }
-        }
-    };
-    accum(nominal, &mut nom);
-    let mut pert: HashMap<Key, f64> = HashMap::new();
-    accum(perturbed, &mut pert);
 
-    let mut contrib: HashMap<usize, f64> = HashMap::new();
-    let apply = |key: &Key, delta: f64, contrib: &mut HashMap<usize, f64>| {
-        if delta == 0.0 {
-            return;
-        }
-        match key {
-            // Residual = A·V − b → −Δb contributes −delta.
-            Key::Rhs(i) => *contrib.entry(*i).or_default() -= delta,
-            // ΔA contributes ΔA·V_op.
-            Key::Matrix(ri, ci) => {
-                let vj = op.get(*ci).copied().unwrap_or(0.0);
-                *contrib.entry(*ri).or_default() += delta * vj;
-            }
-        }
-    };
-    for (key, pv) in &pert {
-        apply(key, pv - nom.get(key).copied().unwrap_or(0.0), &mut contrib);
-    }
-    for (key, nv) in &nom {
-        if !pert.contains_key(key) {
-            apply(key, -nv, &mut contrib);
-        }
-    }
-
-    let mut out: Vec<Stamp<AnalogReference, f64>> = Vec::new();
-    for (i, c) in contrib {
-        let v = c / dp;
-        if v != 0.0
-            && let Some(r) = ref_map.get(&i)
-        {
-            out.push(Stamp::Rhs(r.clone(), v));
-        }
-    }
-    out
-}
-
-/// The derivative of every net's bytes with respect to the param on `net`: 1 on the
-/// param's own net, and across each discrete function the sum over its declared
-/// partials (read net derivative times the partial), evaluated at the engine's
-/// present net values.
-fn net_derivatives(bound: &Bound, net: NetId) -> Result<HashMap<NetId, f64>> {
-    let plan = bound.digital.plan();
-    let mut edges: Vec<(NetId, NetId, f64)> = Vec::new();
-    for node in plan.analysis().functions() {
-        let inst = &plan.instances[node.instance as usize];
-        let shape = inst.handle.shape();
-        let f = shape.functions.get(node.k as usize).expect("an analyzed function");
-        if f.partials.is_empty() {
-            continue;
-        }
-        let net_of = |c: &Cell| match (c.kind == cell::PIN).then(|| bound.names.pins[node.instance as usize].get(c.index as usize)) {
-            Some(Some(Site::Net(n))) => Some(*n),
-            _ => None,
-        };
-        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
-        let reads = shape.cell_lens(&f.reads, Access::FunctionRead).ok_or_else(|| sens(format!("{}: bad read cells", inst.path)))?;
-        let writes = shape.cell_lens(&f.writes, Access::FunctionWrite).ok_or_else(|| sens(format!("{}: bad write cells", inst.path)))?;
-        let inputs: Vec<Vec<u8>> = f
-            .reads
-            .iter()
-            .zip(&reads)
-            .map(|(c, len)| match net_of(c).filter(|_| c.part == part::VALUE) {
-                Some(n) => {
-                    let mut b = bound.digital.read(n).to_vec();
-                    b.resize(*len, 0);
-                    b
-                }
-                None => vec![0; *len],
-            })
-            .collect();
-        let input: Vec<&[u8]> = inputs.iter().map(Vec::as_slice).collect();
-        let mut out: Vec<Vec<u8>> = writes.iter().map(|n| vec![0; *n]).collect();
-        let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
-        let mut jac = vec![0.0; f.partials.len()];
-        let seed = vec![1u8; f.partials.len()];
-        inst.handle
-            .eval(node.k, &input, &mut output, &seed, &mut jac)
-            .map_err(|e| sens(format!("instance `{}`: function `{}`: {e}", inst.path, f.name.as_str())))?;
-        for (pi, p) in f.partials.iter().enumerate() {
-            let (Some(r), Some(w)) = (f.reads.get(p.read as usize), f.writes.get(p.write as usize)) else { continue };
-            if let (Some(rn), Some(wn)) = (net_of(r), net_of(w)) {
-                edges.push((rn, wn, jac[pi]));
-            }
-        }
-    }
-    let mut derivs: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
-    for _ in 0..=edges.len() {
-        let mut next: HashMap<NetId, f64> = HashMap::from([(net, 1.0)]);
-        for (rn, wn, g) in &edges {
-            if let Some(d) = derivs.get(rn) {
-                *next.entry(*wn).or_default() += g * d;
-            }
-        }
-        if next == derivs {
-            break;
-        }
-        derivs = next;
-    }
-    Ok(derivs)
-}

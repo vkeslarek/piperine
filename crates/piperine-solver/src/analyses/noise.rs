@@ -316,7 +316,7 @@ impl<'a> NoiseSolver<'a> {
         adjoint: &Array1<Complex<f64>>,
         functional: &OutputFunctional,
     ) -> crate::core::result::Result<Vec<(String, String, NoiseKind, f64)>> {
-        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(self.circuit, &self.dc_point);
         let amb = Ambient {
             time: 0.0,
             freq: f_hz,
@@ -351,7 +351,7 @@ impl<'a> NoiseSolver<'a> {
 
     /// The operating point as the assembly's solution vector, and the ambient at `frequency`.
     fn small_signal_point(circuit: &CircuitInstance, dc_point: &DcAnalysisResult, frequency: f64, context: &Context) -> (Vec<f64>, Ambient) {
-        let operating_point = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let operating_point = crate::analyses::ac::AcSystem::operating_vector(circuit, dc_point);
         let ambient = Ambient { time: 0.0, freq: frequency, is_static: false, gmin: context.tolerances.gmin, source_scale: 1.0 };
         (operating_point, ambient)
     }
@@ -458,7 +458,7 @@ impl<'a> NoiseSolver<'a> {
         f_hz: f64,
         context: &Context,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(circuit, dc_point);
         let amb = Ambient {
             time: 0.0,
             freq: f_hz,

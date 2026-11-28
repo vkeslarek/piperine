@@ -89,7 +89,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
         _state: &CircularArrayBuffer2<Complex<f64>>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let mut stamps = Vec::new();
-        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(self.circuit, &self.dc_point);
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: self.frequency,

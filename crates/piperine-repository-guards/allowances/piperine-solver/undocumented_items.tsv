@@ -23,8 +23,6 @@ crates/piperine-solver/src/analyses/sens.rs::SensAnalysisOptions::new	1
 crates/piperine-solver/src/analyses/sens.rs::SensSolver::new	1
 crates/piperine-solver/src/analyses/sens.rs::SensSolver::solve	1
 crates/piperine-solver/src/analyses/sens.rs::SensSolver::solve_op	1
-crates/piperine-solver/src/analyses/sensitivity.rs::::Key	1
-crates/piperine-solver/src/analyses/sensitivity.rs::::step	1
 crates/piperine-solver/src/analyses/sensitivity.rs::ParamStampCollector::new	1
 crates/piperine-solver/src/analyses/solver.rs::Solver::ac	1
 crates/piperine-solver/src/analyses/solver.rs::Solver::circuit	1

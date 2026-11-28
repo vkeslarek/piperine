@@ -288,14 +288,14 @@ impl<'a> DcSolver<'a> {
     /// (abi.md §10): the digital engine leaves the circuit for the run and
     /// comes back after it, whatever the outcome.
     pub fn solve(&mut self) -> crate::core::result::Result<DcAnalysisResult> {
-        use crate::analyses::adapters::{DigitalSide, EquilibriumSide, empty_digital};
+        use crate::analyses::adapters::{DigitalSide, EquilibriumSide};
         use crate::protocol::{Protocol, ProtocolOptions};
         self.solver.reset_iteration_counter();
         self.newton_calls = 0;
         let more_points = self.more_points;
         let bound = &mut self.system.circuit.abi;
         let spt = bound.digital.plan().resolution.seconds_per_tick;
-        let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let mut digital = std::mem::replace(&mut bound.digital, DigitalSide::empty_digital(spt)?);
         // Reactions and discrete functions read the continuation values at rest: every
         // instant runs after the last solve of its sequence (abi.md §4.2).
         digital.set_continuation(self.system.context.tolerances.gmin, 1.0);

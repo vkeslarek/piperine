@@ -71,7 +71,7 @@ crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
 crates/piperine-solver/src/analyses/adjoint.rs::AdjointSolver::solve	-
 crates/piperine-solver/src/analyses/noise.rs::NoiseSolver::solve	-
 crates/piperine-solver/src/analyses/pss.rs::PssSolver::solve	-
-crates/piperine-solver/src/analyses/sensitivity.rs::::diff_residual	-
+crates/piperine-solver/src/analyses/sensitivity.rs::ParamStampCollector::diff_residual	-
 crates/piperine-solver/src/analyses/sensitivity.rs::ParamStampCollector::collect_device	-
 crates/piperine-solver/src/analyses/sp.rs::SpSolver::new	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::calculate_gain	-

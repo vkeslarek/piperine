@@ -98,6 +98,104 @@ pub struct AdjointSolver<'a> {
 }
 
 impl<'a> AdjointSolver<'a> {
+    /// Re-stamp the Jacobian at the converged operating point: the assembly's DC
+    /// stamps at `op`. This is the same shape the noise driver's
+    /// `assemble_linearized` uses for AC, applied to the DC residual — the matrix
+    /// half is `∂F/∂x`, the adjoint's `J`.
+    fn restamp_jacobian(
+        circuit: &mut CircuitInstance,
+        op: &[f64],
+        ctx: &Context,
+    ) -> Result<Vec<Stamp<AnalogReference, f64>>> {
+        let bound = &mut circuit.abi;
+        let amb = piperine_analog_solver::device::Ambient {
+            time: 0.0,
+            freq: 0.0,
+            is_static: true,
+            gmin: ctx.tolerances.gmin,
+            source_scale: 1.0,
+        };
+        bound.analog.assemble_dc(op, amb)
+    }
+
+    /// Materialize the converged DC solution into the index-addressed vector
+    /// the transpose solve and `param_stamps` read. Mirrors the helper in
+    /// `tests/sensitivity_fallback.rs` — pulled in-crate so the driver and its
+    /// tests share one shape.
+    fn op_vector(circuit: &CircuitInstance, dc: &DcAnalysisResult) -> Vec<f64> {
+        let pairs: Vec<(usize, f64)> = circuit
+            .netlist()
+            .all_references()
+            .iter()
+            .filter_map(|r| Some((r.idx()?, dc.get(r.variable().clone())?)))
+            .collect();
+        let n = pairs.iter().map(|(i, _)| i + 1).max().unwrap_or(0);
+        let mut op = vec![0.0; n];
+        for (i, v) in pairs {
+            op[i] = v;
+        }
+        op
+    }
+
+    /// Resolve the output net to its row index in the Jacobian. A node output
+    /// is read directly from the op vector; a branch output reads the branch
+    /// unknown's index from the netlist. Loud when the net is not a solved
+    /// analog unknown at this size.
+    fn output_index(
+        circuit: &CircuitInstance,
+        output: &Net,
+        dc: &DcAnalysisResult,
+        op: &[f64],
+        size: usize,
+    ) -> Result<usize> {
+        let Some(var) = output.analog_variable() else {
+            return Err(Error::simple(
+                SolverDomain::Sens,
+                format!(
+                    "adjoint output `{}` is not a solved analog net",
+                    output.label()
+                ),
+            ));
+        };
+        // Prefer the netlist's index for the variable (covers nodes and
+        // branches uniformly); fall back to scanning `op` for the value if the
+        // variable is not in the netlist (defensive — the DC result covers
+        // every solved unknown).
+        let idx = circuit
+            .netlist()
+            .all_references()
+            .iter()
+            .find(|r| r.variable().as_ref() == var.as_ref())
+            .and_then(|r| r.idx());
+        if let Some(i) = idx
+            && i < size
+        {
+            return Ok(i);
+        }
+        // The DC result must have produced a value for this variable — if it
+        // did not, the requested output was not solved.
+        dc.get(var.as_ref().clone())
+            .ok_or_else(|| {
+                Error::simple(
+                    SolverDomain::Sens,
+                    format!(
+                        "adjoint output `{}` is not in the solved DC result",
+                        output.label()
+                    ),
+                )
+            })?;
+        // The variable has a value but no netlist index (e.g. a future
+        // pseudo-unknown) — the transpose solve needs an index, so fail loud.
+        let _ = op;
+        Err(Error::simple(
+            SolverDomain::Sens,
+            format!(
+                "adjoint output `{}` has no Jacobian row index — not a solved MNA unknown",
+                output.label()
+            ),
+        ))
+    }
+
     pub fn new(
         circuit: &'a mut CircuitInstance,
         options: AdjointOptions,
@@ -133,14 +231,14 @@ impl<'a> AdjointSolver<'a> {
 
         // 2. Build the op vector indexed by `AnalogReference::idx`, the shape
         //    `load_dc` and `param_stamps` read. Ground rows stay 0.
-        let op = op_vector(self.circuit, &dc_result);
+        let op = Self::op_vector(self.circuit, &dc_result);
         let size = self.circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
 
         // 3. Re-stamp the Jacobian once at the converged op. Only Matrix
         //    entries feed the transpose solve's LHS; the residual Rhs the
         //    devices also produced here is the DC source vector, not the
         //    adjoint's ∂f/∂x RHS (which is set explicitly below).
-        let stamps = restamp_jacobian(self.circuit, &op, &self.context)?;
+        let stamps = Self::restamp_jacobian(self.circuit, &op, &self.context)?;
         let matrix_stamps: Vec<Stamp<AnalogReference, f64>> = stamps
             .into_iter()
             .filter(|s| matches!(s, Stamp::Matrix(..)))
@@ -155,9 +253,9 @@ impl<'a> AdjointSolver<'a> {
         //    treated as "no `−1` contribution" — mathematically correct,
         //    since V(gnd) = 0 differentiates to zero.
         let out_idx =
-            output_index(self.circuit, &self.options.output, &dc_result, &op, size)?;
+            Self::output_index(self.circuit, &self.options.output, &dc_result, &op, size)?;
         let out_ref_idx = match &self.options.output_ref {
-            Some(r) => output_index(self.circuit, r, &dc_result, &op, size).ok(),
+            Some(r) => Self::output_index(self.circuit, r, &dc_result, &op, size).ok(),
             None => None,
         };
 
@@ -211,100 +309,5 @@ impl<'a> AdjointSolver<'a> {
     }
 }
 
-/// Re-stamp the Jacobian at the converged operating point: the assembly's DC
-/// stamps at `op`. This is the same shape the noise driver's
-/// `assemble_linearized` uses for AC, applied to the DC residual — the matrix
-/// half is `∂F/∂x`, the adjoint's `J`.
-fn restamp_jacobian(
-    circuit: &mut CircuitInstance,
-    op: &[f64],
-    ctx: &Context,
-) -> Result<Vec<Stamp<AnalogReference, f64>>> {
-    let bound = &mut circuit.abi;
-    let amb = piperine_analog_solver::device::Ambient {
-        time: 0.0,
-        freq: 0.0,
-        is_static: true,
-        gmin: ctx.tolerances.gmin,
-        source_scale: 1.0,
-    };
-    bound.analog.assemble_dc(op, amb)
-}
 
-/// Materialize the converged DC solution into the index-addressed vector
-/// the transpose solve and `param_stamps` read. Mirrors the helper in
-/// `tests/sensitivity_fallback.rs` — pulled in-crate so the driver and its
-/// tests share one shape.
-fn op_vector(circuit: &CircuitInstance, dc: &DcAnalysisResult) -> Vec<f64> {
-    let pairs: Vec<(usize, f64)> = circuit
-        .netlist()
-        .all_references()
-        .iter()
-        .filter_map(|r| Some((r.idx()?, dc.get(r.variable().clone())?)))
-        .collect();
-    let n = pairs.iter().map(|(i, _)| i + 1).max().unwrap_or(0);
-    let mut op = vec![0.0; n];
-    for (i, v) in pairs {
-        op[i] = v;
-    }
-    op
-}
 
-/// Resolve the output net to its row index in the Jacobian. A node output
-/// is read directly from the op vector; a branch output reads the branch
-/// unknown's index from the netlist. Loud when the net is not a solved
-/// analog unknown at this size.
-fn output_index(
-    circuit: &CircuitInstance,
-    output: &Net,
-    dc: &DcAnalysisResult,
-    op: &[f64],
-    size: usize,
-) -> Result<usize> {
-    let Some(var) = output.analog_variable() else {
-        return Err(Error::simple(
-            SolverDomain::Sens,
-            format!(
-                "adjoint output `{}` is not a solved analog net",
-                output.label()
-            ),
-        ));
-    };
-    // Prefer the netlist's index for the variable (covers nodes and
-    // branches uniformly); fall back to scanning `op` for the value if the
-    // variable is not in the netlist (defensive — the DC result covers
-    // every solved unknown).
-    let idx = circuit
-        .netlist()
-        .all_references()
-        .iter()
-        .find(|r| r.variable().as_ref() == var.as_ref())
-        .and_then(|r| r.idx());
-    if let Some(i) = idx
-        && i < size
-    {
-        return Ok(i);
-    }
-    // The DC result must have produced a value for this variable — if it
-    // did not, the requested output was not solved.
-    dc.get(var.as_ref().clone())
-        .ok_or_else(|| {
-            Error::simple(
-                SolverDomain::Sens,
-                format!(
-                    "adjoint output `{}` is not in the solved DC result",
-                    output.label()
-                ),
-            )
-        })?;
-    // The variable has a value but no netlist index (e.g. a future
-    // pseudo-unknown) — the transpose solve needs an index, so fail loud.
-    let _ = op;
-    Err(Error::simple(
-        SolverDomain::Sens,
-        format!(
-            "adjoint output `{}` has no Jacobian row index — not a solved MNA unknown",
-            output.label()
-        ),
-    ))
-}

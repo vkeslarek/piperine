@@ -33,7 +33,7 @@ use super::sides::{
 };
 use super::statistics::{InstantCause, StepEnd, StepStatistics};
 use super::sink::{Delivery, Sink};
-use super::step::{StepObserver, observe};
+use super::step::{StepObserver, StepView};
 
 /// How the protocol maps time and bounds its loops.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -137,7 +137,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// Hands the observer the sides as they stand at `time`: after each flush, and for the start
     /// of a transient (called by its driver).
     pub(crate) fn observe_step(&mut self, time: f64) {
-        observe(&mut self.observer, time, &self.discrete, &self.analog);
+        StepView::observe(&mut self.observer, time, &self.discrete, &self.analog);
     }
 
     /// Sends every observation to `sink` from now on.

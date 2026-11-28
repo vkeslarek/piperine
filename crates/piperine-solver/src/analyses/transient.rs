@@ -1071,27 +1071,6 @@ struct Located {
     past: Vec<((usize, usize), (f64, f64, u32))>,
 }
 
-/// The crossing time of a watch between the last accepted solution `(t0, e0)`, `e0 ≤ 0`, and the
-/// attempt `(t1, e1)`, `e1 > 0`. `prev` is this step's last attempt past the crossing and how
-/// many there were. The secant through the attempt and `prev` when it falls inside the
-/// bracket; else the bracket's secant, with `e0` halved once per earlier attempt past the
-/// crossing (the Illinois rule). The bracket's plain secant stalls on a curved `e`: each retake
-/// lands past the crossing again and closes in from one side; the two-point secant and the
-/// halving pull the estimate across it (Appendix C.2).
-fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64, u32)>) -> f64 {
-    let mut halvings = 0;
-    if let Some((tp, ep, n)) = prev {
-        if tp > t1 && ep > e1 {
-            let t = t1 - e1 * (tp - t1) / (ep - e1);
-            if t > t0 && t < t1 {
-                return t;
-            }
-        }
-        halvings = n.min(1000);
-    }
-    let e0 = e0 * 0.5f64.powi(halvings as i32);
-    Prediction::from_samples(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
-}
 
 /// A converged attempt and its truncation verdict, until `device_accept`.
 struct PendingStep {
@@ -1106,12 +1085,34 @@ struct PendingStep {
 pub(crate) type DeviceMark = (CircularArrayBuffer2<f64>, AssemblySnapshot);
 
 impl TransientSolver<'_> {
+    /// The crossing time of a watch between the last accepted solution `(t0, e0)`, `e0 ≤ 0`, and the
+    /// attempt `(t1, e1)`, `e1 > 0`. `prev` is this step's last attempt past the crossing and how
+    /// many there were. The secant through the attempt and `prev` when it falls inside the
+    /// bracket; else the bracket's secant, with `e0` halved once per earlier attempt past the
+    /// crossing (the Illinois rule). The bracket's plain secant stalls on a curved `e`: each retake
+    /// lands past the crossing again and closes in from one side; the two-point secant and the
+    /// halving pull the estimate across it (Appendix C.2).
+    fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64, u32)>) -> f64 {
+        let mut halvings = 0;
+        if let Some((tp, ep, n)) = prev {
+            if tp > t1 && ep > e1 {
+                let t = t1 - e1 * (tp - t1) / (ep - e1);
+                if t > t0 && t < t1 {
+                    return t;
+                }
+            }
+            halvings = n.min(1000);
+        }
+        let e0 = e0 * 0.5f64.powi(halvings as i32);
+        Prediction::from_samples(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
+    }
+
     /// A transient of a circuit of devices, through the protocol (abi.md §5,
     /// §10): the operating point with every continuous `init` held, then the
     /// step loop. The digital engine leaves the circuit for the run and comes
     /// back after it, whatever the outcome.
     pub fn solve(&mut self) -> crate::core::result::Result<TransientAnalysisResult> {
-        use crate::analyses::adapters::{DigitalSide, TransientSide, empty_digital};
+        use crate::analyses::adapters::{DigitalSide, TransientSide};
         use crate::protocol::{Protocol, ProtocolOptions};
         use piperine_analog_solver::error::{Error, SolverDomain};
         // Re-entry: the captured step and the state of the instances it carries.
@@ -1190,7 +1191,7 @@ impl TransientSolver<'_> {
             ));
         }
         let spt = bound.digital.plan().resolution.seconds_per_tick;
-        let mut digital = std::mem::replace(&mut bound.digital, empty_digital(spt)?);
+        let mut digital = std::mem::replace(&mut bound.digital, DigitalSide::empty_digital(spt)?);
         // Reactions and discrete functions read the continuation values at rest: every
         // instant runs after the last solve of its sequence (abi.md §4.2).
         digital.set_continuation(self.system.context.tolerances.gmin, 1.0);
@@ -1714,7 +1715,7 @@ impl TransientSolver<'_> {
             let prev = run.located.as_ref().and_then(|l| {
                 l.past.iter().find(|(k, _)| *k == (r.instance, r.watch)).map(|(_, p)| *p)
             });
-            let estimate = crossing_estimate(t0, r.before, t1, r.now, prev);
+            let estimate = Self::crossing_estimate(t0, r.before, t1, r.now, prev);
             let within = r.now < r.etol.unwrap_or(etol) || t1 - estimate <= r.ttol.unwrap_or(ttol);
             if !within {
                 earliest = earliest.min(estimate);
@@ -1782,7 +1783,7 @@ impl TransientSolver<'_> {
         st.dt_max_seen = st.dt_max_seen.max(dt_actual);
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
         let amb = Ambient { time: run.st.origin + t_next, ..self.system.ambient() };
-        let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
+        let (accepted, cap) = self.device_bound().accepted(&x, amb)?;
         run.cap = cap;
         let st = &mut run.st;
         self.record_step(&mut run.steps, st.origin + t_next, snapshot);
@@ -1857,7 +1858,7 @@ impl TransientSolver<'_> {
         self.record_step(&mut run.steps, time, snapshot);
         let x = self.solver.current_guess().map(|g| g.to_vec()).unwrap_or_default();
         let amb = Ambient { time, ..self.system.ambient() };
-        let (accepted, cap) = crate::analyses::adapters::accepted(self.device_bound(), &x, amb)?;
+        let (accepted, cap) = self.device_bound().accepted(&x, amb)?;
         run.cap = cap;
         run.st.sets_just_applied = true;
         Ok(Some(accepted))
