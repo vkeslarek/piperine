@@ -1,4 +1,3 @@
-crates/piperine-lang/src/elab/diagnose.rs::Elaboration	1
 crates/piperine-lang/src/pom/bundles.rs::Design	1
 crates/piperine-lang/src/pom/check.rs::Design	1
 crates/piperine-lang/src/pom/reflect/body.rs::Design	2

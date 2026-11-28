@@ -1,12 +1,14 @@
-//! Faults of the constant evaluator, turned into the diagnostic of the position they sit in.
+//! What the run reports: the diagnostic of a position, a refusal by form, and the faults of the constant evaluator turned into the diagnostic of the position they sit in.
 
-use super::consts::ConstFault;
-use super::elaborator::Elaboration;
+use crate::elab::consts::ConstFault;
+use super::Elaboration;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Diagnostic;
-use crate::refusal::Refusal;
+use crate::refusal::{Refusal, RefusedForm};
+use crate::msl::Span;
+use crate::pom::{DesignDiagnostic, FileId};
 
-impl Elaboration<'_, '_> {
+impl<'d, 't> Elaboration<'d, 't> {
     /// The name of the `const` item `fault` sits in and what is wrong with it, when the fault is
     /// one §3.9.2 makes `E0188`: a `const` initializer that reads a run value, a `const` that
     /// depends on itself, or a `const` without a value outside a trait.
@@ -29,7 +31,7 @@ impl Elaboration<'_, '_> {
     /// A fault found inside the initializer of a `const` item is `E0188` naming the `const`
     /// (§3.9.2): a read of something only a run gives, a `const` without a value outside a trait,
     /// a `const` that depends on itself. A param default keeps `E0321`.
-    pub(super) fn const_fault(&mut self, fault: &ConstFault, position: &str) {
+    pub(in crate::elab) fn const_fault(&mut self, fault: &ConstFault, position: &str) {
         let (file, span) = match fault {
             ConstFault::NoValue { decl } => {
                 let data = self.state.design.decl_data(*decl);
@@ -68,5 +70,68 @@ impl Elaboration<'_, '_> {
                 self.report(file, Diagnostic::new("E0104", message, span, "panics"));
             }
         }
+    }
+
+    /// Records `diagnostic`, once: a construct lowered in two halves (the `is` and the `val` of an `Option`)
+    /// reports the same refusal at the same place twice, which is one finding.
+    pub(in crate::elab) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
+        let found = DesignDiagnostic { file, diagnostic };
+        if !self.state.diagnostics.contains(&found) {
+            self.state.diagnostics.push(found);
+        }
+    }
+
+    /// `P0004`: an invariant of the elaborator broken (a bug in it, not in the model), reported at the module of the body being
+    /// lowered; the run then gives no `Ir`, as for an ill-formed one (`well_formed`).
+    pub(in crate::elab) fn internal_error(&mut self, what: &str) {
+        // every lowering runs with frame 0 set; before one, the body asked for (`lowering`) names the module
+        let module = self.state.structure.frames.first().map(|frame| frame.module).or_else(|| self.state.structure.lowering.as_ref().map(|key| key.module));
+        let (file, span) = match module {
+            Some(module) => {
+                let data = self.state.design.decl_data(module);
+                (data.file, data.name.as_ref().map_or(data.span, |n| n.span))
+            }
+            None => (FileId(0), Span::default()),
+        };
+        self.report(file, Diagnostic::new("P0004", format!("internal error: {what}"), span, "this is a bug in the elaborator, not in the model"));
+    }
+
+    /// `P0001` at `span`, naming `form`: a construct inside the type-checked subset that elaboration does not lower.
+    pub(in crate::elab) fn refuse(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        self.report(file, Refusal::of(form).diagnostic(span));
+    }
+
+    /// [`refuse`](Self::refuse) with `details` for the `{}` of the form's words.
+    pub(in crate::elab) fn refuse_with(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) {
+        let refusal = details.into_iter().fold(Refusal::of(form), Refusal::with_detail);
+        self.report(file, refusal.diagnostic(span));
+    }
+
+    /// [`refuse`](Self::refuse) unless the read through the frame `frame` passes through a module refused for its own
+    /// cause (`refused_modules`): that refusal is the read's, reported once. Any other refusal of the run, of another module or of
+    /// another read, hides nothing.
+    pub(in crate::elab) fn refuse_unless_refused(&mut self, frame: usize, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        if !self.reads_through_refused(frame) {
+            self.refuse(file, span, form);
+        }
+    }
+
+    /// Whether the frame `frame`, or a frame it hangs from, is of a module refused for its own cause (`refused_modules`).
+    pub(in crate::elab) fn reads_through_refused(&self, frame: usize) -> bool {
+        let mut at = Some(frame);
+        while let Some(index) = at {
+            let Some(held) = self.state.structure.frames.get(index) else { return false };
+            if self.state.structure.refused_modules.contains(&held.module) {
+                return true;
+            }
+            at = held.parent;
+        }
+        false
+    }
+
+    /// `P0001` for something that failed to lower while no diagnostic was reported: the one place the elaborator says
+    /// "nothing vanishes silently".
+    pub(in crate::elab) fn refuse_silent_failure(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
+        self.refuse(file, span, form);
     }
 }

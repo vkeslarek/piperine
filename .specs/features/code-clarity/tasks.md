@@ -2601,9 +2601,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `an_inherent_impl_lives_with_its_type` passes with no row for `Elaboration` or `ConstEval`
-- [ ] `elab/` holds 3 files at its root and 6 directories, as design.md's map
-- [ ] Gate check passes: Golden
+- [x] `an_inherent_impl_lives_with_its_type` passes with no row for `Elaboration` or `ConstEval`
+- [x] `elab/` holds 3 files at its root and 6 directories, as design.md's map
+  - Departure (design.md, T99 annotation): `elab/` holds `elaborator.rs`, `mod.rs` and seven directories; `origin.rs` and `diagnose.rs` are below `elaborator/` with the shared helpers (`emitted.rs`, `typing.rs`, `naming.rs`, `queries.rs`, `imports.rs`), `Scope` and `ElaborationState`, so no `impl Elaboration` is away from its type. `elaborator.rs` is 291 lines. The 19 `long_functions` rows of `elab/` have verdicts: `lower_path` was split (`lower_param_path`, `lower_carrier_path`, `lower_binding_path`, 49 lines now) and its row deleted; `lower_option` lost its path, checked-arithmetic and `if` arms (209 to 128 lines); 18 rows are `kept` with a reason.
+- [x] Gate check passes: Golden
 
 **Tests**: integration
 **Gate**: golden

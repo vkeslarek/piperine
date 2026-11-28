@@ -391,6 +391,92 @@ impl ValueLowering<'_, '_, '_> {
         lowered
     }
 
+    /// A read of a param of the module: its index in the body, the constant its placement bound, or the value it was given
+    /// read in place.
+    fn lower_param_path(&mut self, scope: &mut Scope, decl: DeclId, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.state.design.expr_node(expr).span;
+        match (scope.values.params.get(&decl), self.state.structure.frames.get(scope.values.frame).and_then(|f| f.params.get(&decl)).copied()) {
+            (Some(index), _) if scope.values.frame == 0 => Some(self.emit(Expr::Param(*index), ty, origin)),
+            // A param of a hoisted module is the constant its placement bound (`hoist.rs`).
+            (_, Some(value)) => Some(self.constant_expr(value, ty, origin)),
+            // a param of a reach frame whose given value does not fold is read in place (`reach/placement_params.rs`)
+            _ if scope.values.frame != 0 && self.state.structure.frames.get(scope.values.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.structure().lower_deferred_param(scope, decl),
+            _ => {
+                self.refuse(scope.values.file, span, ValueForm::ParamOfAnotherModule);
+                None
+            }
+        }
+    }
+
+    /// A read of a port or a signal: an element of the carrier a generation made, the carrier itself, the expression a
+    /// hoisted module's caller gave it, or the empty array.
+    fn lower_carrier_path(&mut self, scope: &mut Scope, decl: DeclId, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.state.design.expr_node(expr).span;
+        // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
+        if matches!(self.state.design.decl_data(decl).kind, DeclKind::Signal(_)) && !self.digital().generated_carrier_levels(scope, expr).is_empty() {
+            return match self.digital().element_lookup(scope, expr) {
+                crate::elab::digital::elements::Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
+                _ => None,
+            };
+        }
+        match (self.structure().frame_carrier(scope.values.frame, decl), self.structure().input_of(scope, decl)) {
+            (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.digital().elements_of_array(scope, index, ElementPart::Value, origin)),
+            (Some(index), _) => Some(self.digital().carrier_read(index, origin)),
+            // A value input of a hoisted module: the caller's expression, in the caller's frame.
+            (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
+            (None, Some(None)) => {
+                self.refuse(scope.values.file, span, ValueForm::ValueInputLeftOutReadAsValue);
+                None
+            }
+            // an array of carriers of length 0 read whole is the empty array (§1.2.3)
+            (None, None) if self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) => Some(self.emit(Expr::Array(Vec::new()), ty, origin)),
+            (None, None) => {
+                self.refuse(scope.values.file, span, ValueForm::NodeOrPortReadAsValue);
+                None
+            }
+        }
+    }
+
+    /// A read of a function parameter or a binding: the constant of the unrolled iteration or call, the carrier a handle was
+    /// bound to, a local, a `let` of the body written in generation or not, or a block-local `let` read as its source.
+    fn lower_binding_path(&mut self, scope: &mut Scope, decl: DeclId, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let span = self.state.design.expr_node(expr).span;
+        // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
+        // are the constant of this iteration or call (`unroll.rs`).
+        if let Some(value) = scope.analog.values.get(&decl).copied() {
+            return Some(value);
+        }
+        // a handle read: the carrier the caller passed (`handles.rs`)
+        if matches!(self.state.design.decl_data(decl).kind, DeclKind::FnParam(_)) && let Some(bound) = scope.digital.handles.get(&decl).copied() {
+            return self.lower_expr(scope, bound);
+        }
+        if let Some(value) = scope.values.unrolled.get(decl) {
+            return Some(self.constant_expr(value, ty, origin));
+        }
+        match scope.values.local_index.get(&decl) {
+            Some(index) => {
+                let ty = scope.values.locals[*index as usize].ty.clone();
+                Some(self.emit(Expr::Local(*index), ty, origin))
+            }
+            // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
+            None if self.body_let_value(decl).is_some() && self.state.structure.generated.of(self.state.design.decl_data(decl).parent?).is_some() => self.structure().lower_generated_let(scope, expr, decl, ty, origin),
+            // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
+            None if self.body_let_value(decl).is_some() => {
+                let value = self.body_let_value(decl)?;
+                self.structure().lower_body_let(scope, value)
+            }
+            // A block-local `let` in a standalone scope is its source expression (`derivatives.rs`).
+            None if scope.digital.no_locals && scope.values.let_sources.contains_key(&decl) => {
+                let source = scope.values.let_sources[&decl];
+                self.lower_expr(scope, source)
+            }
+            None => {
+                self.refuse(scope.values.file, span, ValueForm::NameWithNoValueHere);
+                None
+            }
+        }
+    }
+
     /// A call: of a function of the reachable set (one `Call` node, the function lowered once
     /// however many bodies call it), or of a core primitive or a probe (see `analog.rs`).
     fn lower_call(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], class: CallClass, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
@@ -749,66 +835,9 @@ impl ValueLowering<'_, '_, '_> {
                     None
                 }
             },
-            DeclKind::Param(_) => match (scope.values.params.get(&decl), self.state.structure.frames.get(scope.values.frame).and_then(|f| f.params.get(&decl)).copied()) {
-                (Some(index), _) if scope.values.frame == 0 => Some(self.emit(Expr::Param(*index), ty, origin)),
-                // A param of a hoisted module is the constant its placement bound (`hoist.rs`).
-                (_, Some(value)) => Some(self.constant_expr(value, ty, origin)),
-                // a param of a reach frame whose given value does not fold is read in place (`reach/placement_params.rs`)
-                _ if scope.values.frame != 0 && self.state.structure.frames.get(scope.values.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.structure().lower_deferred_param(scope, decl),
-                _ => {
-                    self.refuse(scope.values.file, node.span, ValueForm::ParamOfAnotherModule);
-                    None
-                }
-            },
-            // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
-            DeclKind::Signal(_) if !self.digital().generated_carrier_levels(scope, expr).is_empty() => match self.digital().element_lookup(scope, expr) {
-                crate::elab::digital::elements::Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
-                _ => None,
-            },
-            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.structure().frame_carrier(scope.values.frame, decl), self.structure().input_of(scope, decl)) {
-                (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.digital().elements_of_array(scope, index, ElementPart::Value, origin)),
-                (Some(index), _) => Some(self.digital().carrier_read(index, origin)),
-                // A value input of a hoisted module: the caller's expression, in the caller's frame.
-                (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
-                (None, Some(None)) => {
-                    self.refuse(scope.values.file, node.span, ValueForm::ValueInputLeftOutReadAsValue);
-                    None
-                }
-                // an array of carriers of length 0 read whole is the empty array (§1.2.3)
-                (None, None) if self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) => Some(self.emit(Expr::Array(Vec::new()), ty, origin)),
-                (None, None) => {
-                    self.refuse(scope.values.file, node.span, ValueForm::NodeOrPortReadAsValue);
-                    None
-                }
-            },
-            // The loop variable of an unrolled analog loop and the parameter of an expanded recursion
-            // are the constant of this iteration or call (`unroll.rs`).
-            // a handle read: the carrier the caller passed (`handles.rs`)
-            DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.analog.values.get(&decl).copied() => Some(value),
-            DeclKind::FnParam(_) if let Some(bound) = scope.digital.handles.get(&decl).copied() => self.lower_expr(scope, bound),
-            DeclKind::FnParam(_) | DeclKind::Binding(_) if let Some(value) = scope.values.unrolled.get(decl) => Some(self.constant_expr(value, ty, origin)),
-            DeclKind::FnParam(_) | DeclKind::Binding(_) => match scope.values.local_index.get(&decl) {
-                Some(index) => {
-                    let ty = scope.values.locals[*index as usize].ty.clone();
-                    Some(self.emit(Expr::Local(*index), ty, origin))
-                }
-                // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
-                None if self.body_let_value(decl).is_some() && self.state.structure.generated.of(self.state.design.decl_data(decl).parent?).is_some() => self.structure().lower_generated_let(scope, expr, decl, ty, origin),
-                // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
-                None if self.body_let_value(decl).is_some() => {
-                    let value = self.body_let_value(decl)?;
-                    self.structure().lower_body_let(scope, value)
-                }
-                // A block-local `let` in a standalone scope is its source expression (`derivatives.rs`).
-                None if scope.digital.no_locals && scope.values.let_sources.contains_key(&decl) => {
-                    let source = scope.values.let_sources[&decl];
-                    self.lower_expr(scope, source)
-                }
-                None => {
-                    self.refuse(scope.values.file, node.span, ValueForm::NameWithNoValueHere);
-                    None
-                }
-            },
+            DeclKind::Param(_) => self.lower_param_path(scope, decl, expr, ty, origin),
+            DeclKind::Port(_) | DeclKind::Signal(_) => self.lower_carrier_path(scope, decl, expr, ty, origin),
+            DeclKind::FnParam(_) | DeclKind::Binding(_) => self.lower_binding_path(scope, decl, expr, ty, origin),
             // a const parameter read in the body of an instance is the constant of its argument (T33, GN-02)
             DeclKind::GenericParam(_) => match self.state.consts.substitution().get(decl) {
                 Some(crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value))) => Some(self.constant_expr(piperine_ir::Constant::Int(*value), ty, origin)),

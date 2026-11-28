@@ -13,7 +13,7 @@ crates/piperine-lang/src/elab/functions/instances.rs::Instance	1
 crates/piperine-lang/src/elab/value/iterators.rs::Bound	1
 crates/piperine-lang/src/elab/value/iterators.rs::Source	1
 crates/piperine-lang/src/elab/value/iterators.rs::Stage	1
-crates/piperine-lang/src/elab/elaborator.rs::Scope	1
+crates/piperine-lang/src/elab/elaborator/scope.rs::Scope	1
 crates/piperine-lang/src/elab/value/patterns.rs::Subject	1
 crates/piperine-lang/src/elab/structure/structural.rs::Given	1
 crates/piperine-lang/src/elab/structure/structural.rs::Overrides	1

@@ -7,17 +7,17 @@ use crate::pom::{DeclId, Design, FileId};
 
 /// Turns the byte offsets of the design's spans into the text origins the IR holds.
 #[derive(Clone, Copy)]
-pub(super) struct Locator<'d> {
+pub(in crate::elab) struct Locator<'d> {
     design: &'d Design,
 }
 
 impl<'d> Locator<'d> {
-    pub(super) fn new(design: &'d Design) -> Self {
+    pub(in crate::elab) fn new(design: &'d Design) -> Self {
         Locator { design }
     }
 
     /// The start of `span` in `file`: 1-based line and column, the column counted in characters.
-    pub(super) fn origin(&self, file: FileId, span: Span) -> Origin {
+    pub(in crate::elab) fn origin(&self, file: FileId, span: Span) -> Origin {
         let data = self.design.file_data(file);
         let offset = span.start.min(data.text.len());
         let before = data.text.get(..offset).unwrap_or("");
@@ -28,7 +28,7 @@ impl<'d> Locator<'d> {
     }
 
     /// The origin of a declaration: the start of its span.
-    pub(super) fn decl(&self, decl: DeclId) -> Origin {
+    pub(in crate::elab) fn decl(&self, decl: DeclId) -> Origin {
         let data = self.design.decl_data(decl);
         self.origin(data.file, data.span)
     }

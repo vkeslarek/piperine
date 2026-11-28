@@ -12,7 +12,7 @@ crates/piperine-lang/src/elab/digital/events.rs::DigitalLowering::not	1
 crates/piperine-lang/src/elab/value/levels.rs::ValueLowering::decode_levels	1
 crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::binary_op	1
 crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_expr_unchecked	1
-crates/piperine-lang/src/elab/origin.rs::Locator::new	1
+crates/piperine-lang/src/elab/elaborator/origin.rs::Locator::new	1
 crates/piperine-lang/src/msl/ast.rs::::Arm	1
 crates/piperine-lang/src/msl/ast.rs::::AttrArg	1
 crates/piperine-lang/src/msl/ast.rs::::AttrInput	1

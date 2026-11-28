@@ -341,59 +341,7 @@ impl ValueLowering<'_, '_, '_> {
                 let val = half(self, LevelPart::Value, payload.clone())?;
                 Some(Pair { is, val, literal: None })
             }
-            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-                Resolution::Builtin(id) if id.info().name == "None" => {
-                    let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                    let Some(val) = self.zero(&payload, origin) else { return refused(self) };
-                    Some(Pair { is, val, literal: Some(false) })
-                }
-                // an `Option` parameter or `let` of a `fn` expanded in a differentiated value: the pair it holds
-                Resolution::Decl(decl) if let Some((is, val)) = scope.analog.option_values.get(&decl).copied() => Some(Pair { is, val, literal: None }),
-                Resolution::Decl(decl) => match (scope.values.options.get(&decl).copied(), self.structure().input_of(scope, decl)) {
-                    (Some((is, val)), _) => {
-                        let (is_ty, val_ty) = (scope.values.locals[is as usize].ty.clone(), scope.values.locals[val as usize].ty.clone());
-                        let is = self.emit(Expr::Local(is), is_ty, origin.clone());
-                        let val = self.emit(Expr::Local(val), val_ty, origin);
-                        Some(Pair { is, val, literal: None })
-                    }
-                    // An `Option` value input of a hoisted module: the caller's argument, in the
-                    // caller's frame (an `f64` given there is `Some` of it, §3.2.3).
-                    (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_option(scope, given)),
-                    // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
-                    (None, Some(None)) => {
-                        let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
-                        let Some(val) = self.zero(&payload, origin) else { return refused(self) };
-                        Some(Pair { is, val, literal: Some(false) })
-                    }
-                    // A body `let` or a `const` of `Option` type reads its initializer where it is
-                    // read: it holds only literals and consts, so every read has the same levels
-                    // (§3.3.9)
-                    // A carrier holding an `Option`: the two halves of its value, each unpacked from
-                    // the read where it stands.
-                    // A param of `Option` type (PI-03): its two halves, each unpacked from the param read
-                    // where it stands.
-                    (None, None) if let Some(packed) = self.option_param_read(scope, decl, &payload, &origin) => {
-                        let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
-                        let packed = self.option_param_read(scope, decl, &payload, &origin)?;
-                        let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, payload.clone(), origin);
-                        Some(Pair { is, val, literal: None })
-                    }
-                    (None, None) if let Some(carrier) = self.structure().frame_carrier(scope.values.frame, decl) => {
-                        let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                            let packed = this.digital().carrier_read(carrier, origin.clone());
-                            Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
-                        };
-                        let is = half(self, LevelPart::Is, ValueType::Bool)?;
-                        let val = half(self, LevelPart::Value, payload.clone())?;
-                        Some(Pair { is, val, literal: None })
-                    }
-                    (None, None) => match self.body_let_value(decl).or_else(|| self.const_value(decl)) {
-                        Some(value) => self.lower_option(scope, value),
-                        None => refused(self),
-                    },
-                },
-                _ => refused(self),
-            },
+            ExprKind::Path(path) => self.lower_option_path(scope, expr, *path, &payload, origin),
             // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
             ExprKind::Call { .. } if self.structure().result_callee(expr).is_some() => self.structure().lower_result_pair(scope, expr),
             // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
@@ -440,23 +388,8 @@ impl ValueLowering<'_, '_, '_> {
                 let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                 self.lower_array_option(scope, method, *recv, &args, payload, origin)
             }
-            // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is
-            // `!overflows(a, b)` and the payload is the wrapping result, each reading `a` and `b`
-            // where they stand.
-            ExprKind::MethodCall { recv, args, .. } if matches!(self.state.types.method(expr), Some(Method::CheckedAdd | Method::CheckedSub | Method::CheckedMul)) => {
-                let (overflows, op) = match self.state.types.method(expr)? {
-                    Method::CheckedAdd => (IrMethod::AddOverflows, BinaryOp::Add),
-                    Method::CheckedSub => (IrMethod::SubOverflows, BinaryOp::Sub),
-                    _ => (IrMethod::MulOverflows, BinaryOp::Mul),
-                };
-                let [arg] = args.as_slice() else { return refused(self) };
-                let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
-                let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, ValueType::Bool, origin.clone());
-                let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, ValueType::Bool, origin.clone());
-                let (a, b) = (self.lower_expr(scope, *recv)?, self.lower_expr(scope, arg.value)?);
-                let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, payload, origin);
-                Some(Pair { is, val, literal: None })
-            }
+            // `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1)
+            ExprKind::MethodCall { recv, args, .. } if matches!(self.state.types.method(expr), Some(Method::CheckedAdd | Method::CheckedSub | Method::CheckedMul)) => self.lower_checked_option(scope, expr, *recv, args, payload, origin),
             // `o.map(|x| e)`, `o.and_then(|x| p)`, `a.or(b)`, `c.then(|| v)`, `c.then_some(v)` (H.3, H.4).
             ExprKind::MethodCall { recv, args, .. } if matches!(self.state.types.method(expr), Some(Method::Map | Method::AndThen | Method::Or | Method::Then | Method::ThenSome)) => {
                 let method = self.state.types.method(expr)?;
@@ -464,21 +397,7 @@ impl ValueLowering<'_, '_, '_> {
                 self.lower_option_row(scope, method, *recv, arg.value, payload, origin)
             }
             // `if c { a } else { b }` of `Option`s: the flag and the payload each an `if` on `c`.
-            ExprKind::If { cond, then, else_: Some(else_) } if !matches!(self.state.design.expr_node(*cond).kind, ExprKind::Let { .. }) => {
-                let [stmt] = then.stmts.as_slice() else { return refused(self) };
-                let crate::pom::StmtKind::Expr { expr: then_value, semi: false } = self.state.design.stmt_node(*stmt).kind.clone() else { return refused(self) };
-                let first = self.lower_expr(scope, *cond)?;
-                scope.analog.nesting += 1;
-                let (then, otherwise) = (self.lower_option(scope, then_value), self.lower_option(scope, *else_));
-                scope.analog.nesting -= 1;
-                let (then, otherwise) = (then?, otherwise?);
-                let second = self.lower_expr(scope, *cond)?;
-                let is_ty = ValueType::Bool;
-                let val_ty = payload;
-                let is = self.emit(Expr::If { cond: first, then: then.is, otherwise: otherwise.is }, is_ty, origin.clone());
-                let val = self.emit(Expr::If { cond: second, then: then.val, otherwise: otherwise.val }, val_ty, origin);
-                Some(Pair { is, val, literal: None })
-            }
+            ExprKind::If { cond, then, else_: Some(else_) } if !matches!(self.state.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_option_if(scope, expr, *cond, then, *else_, payload, origin),
             // `match s { p => a, .. }` of `Option`s: the flag and the payload each a `match` chain
             // over `s`, an arm's body read as its pair.
             ExprKind::Match { scrutinee, arms } => {
@@ -508,6 +427,106 @@ impl ValueLowering<'_, '_, '_> {
             },
             _ => refused(self),
         }
+    }
+
+    /// The pair a name of `Option` type lowers to: `None`, an `Option` local or input, a param, a carrier, or the initializer
+    /// of a `let` or a `const`.
+    fn lower_option_path(&mut self, scope: &mut Scope, expr: ExprId, path: crate::pom::PathId, payload: &ValueType, origin: Origin) -> Option<Pair> {
+        let span = self.state.design.expr_node(expr).span;
+        let payload = payload.clone();
+        match self.state.design.path_node(path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            Resolution::Builtin(id) if id.info().name == "None" => {
+                let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+                let Some(val) = self.zero(&payload, origin) else { return self.refuse_option_form(scope.values.file, span) };
+                Some(Pair { is, val, literal: Some(false) })
+            }
+            // an `Option` parameter or `let` of a `fn` expanded in a differentiated value: the pair it holds
+            Resolution::Decl(decl) if let Some((is, val)) = scope.analog.option_values.get(&decl).copied() => Some(Pair { is, val, literal: None }),
+            Resolution::Decl(decl) => match (scope.values.options.get(&decl).copied(), self.structure().input_of(scope, decl)) {
+                (Some((is, val)), _) => {
+                    let (is_ty, val_ty) = (scope.values.locals[is as usize].ty.clone(), scope.values.locals[val as usize].ty.clone());
+                    let is = self.emit(Expr::Local(is), is_ty, origin.clone());
+                    let val = self.emit(Expr::Local(val), val_ty, origin);
+                    Some(Pair { is, val, literal: None })
+                }
+                // An `Option` value input of a hoisted module: the caller's argument, in the
+                // caller's frame (an `f64` given there is `Some` of it, §3.2.3).
+                (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_option(scope, given)),
+                // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
+                (None, Some(None)) => {
+                    let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
+                    let Some(val) = self.zero(&payload, origin) else { return self.refuse_option_form(scope.values.file, span) };
+                    Some(Pair { is, val, literal: Some(false) })
+                }
+                // A body `let` or a `const` of `Option` type reads its initializer where it is
+                // read: it holds only literals and consts, so every read has the same levels
+                // (§3.3.9)
+                // A carrier holding an `Option`: the two halves of its value, each unpacked from
+                // the read where it stands.
+                // A param of `Option` type (PI-03): its two halves, each unpacked from the param read
+                // where it stands.
+                (None, None) if let Some(packed) = self.option_param_read(scope, decl, &payload, &origin) => {
+                    let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+                    let packed = self.option_param_read(scope, decl, &payload, &origin)?;
+                    let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, payload.clone(), origin);
+                    Some(Pair { is, val, literal: None })
+                }
+                (None, None) if let Some(carrier) = self.structure().frame_carrier(scope.values.frame, decl) => {
+                    let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                        let packed = this.digital().carrier_read(carrier, origin.clone());
+                        Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+                    };
+                    let is = half(self, LevelPart::Is, ValueType::Bool)?;
+                    let val = half(self, LevelPart::Value, payload.clone())?;
+                    Some(Pair { is, val, literal: None })
+                }
+                (None, None) => match self.body_let_value(decl).or_else(|| self.const_value(decl)) {
+                    Some(value) => self.lower_option(scope, value),
+                    None => self.refuse_option_form(scope.values.file, span),
+                },
+            },
+            _ => self.refuse_option_form(scope.values.file, span),
+        }
+    }
+
+    /// `a.checked_add(b)`: `None` when the wrapping operation overflowed (H.1), so the flag is `!overflows(a, b)` and the
+    /// payload is the wrapping result, each reading `a` and `b` where they stand.
+    fn lower_checked_option(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, args: &[crate::pom::Arg], payload: ValueType, origin: Origin) -> Option<Pair> {
+        let (overflows, op) = match self.state.types.method(expr)? {
+            Method::CheckedAdd => (IrMethod::AddOverflows, BinaryOp::Add),
+            Method::CheckedSub => (IrMethod::SubOverflows, BinaryOp::Sub),
+            _ => (IrMethod::MulOverflows, BinaryOp::Mul),
+        };
+        let [arg] = args else { return self.refuse_option_form(scope.values.file, self.state.design.expr_node(expr).span) };
+        let (a, b) = (self.lower_expr(scope, recv)?, self.lower_expr(scope, arg.value)?);
+        let overflowed = self.emit(Expr::Method { method: overflows, receiver: a, args: vec![b] }, ValueType::Bool, origin.clone());
+        let is = self.emit(Expr::Unary { op: UnaryOp::Not, expr: overflowed }, ValueType::Bool, origin.clone());
+        let (a, b) = (self.lower_expr(scope, recv)?, self.lower_expr(scope, arg.value)?);
+        let val = self.emit(Expr::Binary { op, lhs: a, rhs: b }, payload, origin);
+        Some(Pair { is, val, literal: None })
+    }
+
+    /// `if c { a } else { b }` of `Option`s: the flag and the payload each an `if` on `c`.
+    fn lower_option_if(&mut self, scope: &mut Scope, expr: ExprId, cond: ExprId, then: &crate::pom::BlockNode, else_: ExprId, payload: ValueType, origin: Origin) -> Option<Pair> {
+        let [stmt] = then.stmts.as_slice() else { return self.refuse_option_form(scope.values.file, self.state.design.expr_node(expr).span) };
+        let crate::pom::StmtKind::Expr { expr: then_value, semi: false } = self.state.design.stmt_node(*stmt).kind.clone() else { return self.refuse_option_form(scope.values.file, self.state.design.expr_node(expr).span) };
+        let first = self.lower_expr(scope, cond)?;
+        scope.analog.nesting += 1;
+        let (then, otherwise) = (self.lower_option(scope, then_value), self.lower_option(scope, else_));
+        scope.analog.nesting -= 1;
+        let (then, otherwise) = (then?, otherwise?);
+        let second = self.lower_expr(scope, cond)?;
+        let is_ty = ValueType::Bool;
+        let val_ty = payload;
+        let is = self.emit(Expr::If { cond: first, then: then.is, otherwise: otherwise.is }, is_ty, origin.clone());
+        let val = self.emit(Expr::If { cond: second, then: then.val, otherwise: otherwise.val }, val_ty, origin);
+        Some(Pair { is, val, literal: None })
+    }
+
+    /// `P0001` for a form of `Option` value the elaborator does not lower; always `None`.
+    fn refuse_option_form(&mut self, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Pair> {
+        self.refuse(file, span, ValueForm::FormOfOptionValue);
+        None
     }
 
     /// The initializer of the `const` item `decl`; `None` for any other declaration or a `const`
