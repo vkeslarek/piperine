@@ -148,9 +148,9 @@ impl Amended {
     /// `on at(1.0) { q <- true; }`
     fn timer(b: &mut IrBuilder) {
         let body = b.body(Buck::spec("Timer", Amended::F, 21));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 21, 20));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 21, 20)).expect("a body this builder handed out");
         let when = Dx::new(b, Amended::F, 22, 10).real(1.0);
-        let event = b.event(body, Event { source: EventSource::At(when), guard: None, origin: Amended::at(22) });
+        let event = b.event(body, Event { source: EventSource::At(when), guard: None, origin: Amended::at(22) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, Amended::F, 22, 20);
         let yes = x.boolean(true);
         let commit = x.commit(0, yes, None);
@@ -160,8 +160,8 @@ impl Amended {
     /// `on settle { q <- true; }`
     fn settling(b: &mut IrBuilder) {
         let body = b.body(Buck::spec("Settling", Amended::F, 51));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 51, 20));
-        let event = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Amended::at(52) });
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 51, 20)).expect("a body this builder handed out");
+        let event = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Amended::at(52) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, Amended::F, 52, 20);
         let yes = x.boolean(true);
         let commit = x.commit(0, yes, None);
@@ -171,9 +171,9 @@ impl Amended {
     /// `on q.changed() { emit!("sim", finish = true); }`
     fn monitor(b: &mut IrBuilder) {
         let body = b.body(Buck::spec("Monitor", Amended::F, 31));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 31, 20));
-        let sim = b.stream(body, Stream { name: "sim".into(), fields: vec![StreamField { name: "finish".into(), ty: ValueType::Bool }] });
-        let event = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Amended::at(32) });
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 31, 20)).expect("a body this builder handed out");
+        let sim = b.stream(body, Stream { name: "sim".into(), fields: vec![StreamField { name: "finish".into(), ty: ValueType::Bool }] }).expect("a body this builder handed out");
+        let event = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Amended::at(32) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, Amended::F, 32, 20);
         let yes = x.boolean(true);
         let emit = x.b.stmt(Stmt::Emit { stream: sim, fields: vec![EmitField::Value { field: 0, value: yes }] });
@@ -200,7 +200,7 @@ impl Amended {
             analog: Some(vec![stmt]),
             ..Buck::spec("Edge", Amended::F, 41)
         });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, Amended::F, 41, 30));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, Amended::F, 41, 30)).expect("a body this builder handed out");
     }
 }
 
@@ -361,14 +361,14 @@ impl Added {
     fn cross(b: &mut IrBuilder, name: &str, ttol: bool, etol: bool) {
         let nodes = Amended::ports(b);
         let body = b.body(BodySpec { nodes, ..Buck::spec(name, Amended::F, 1) });
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 1, 20));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 1, 20)).expect("a body this builder handed out");
         let mut x = Dx::new(b, Amended::F, 2, 10);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let tol = x.real(1e-9);
         let event = b.event(
             body,
             Event { source: EventSource::Cross { e: v, ttol: ttol.then_some(tol), etol: etol.then_some(tol) }, guard: None, origin: Amended::at(2) },
-        );
+        ).expect("a body this builder handed out");
         let mut x = Dx::new(b, Amended::F, 3, 10);
         let yes = x.boolean(true);
         let commit = x.commit(0, yes, None);
@@ -445,8 +445,8 @@ fn the_interpreter_refuses_each_new_form_by_name() {
     assert_eq!(
         Added::refused(|b| {
             let body = b.body(Buck::spec("Which", Amended::F, 1));
-            b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 1, 20));
-            let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Amended::at(2) });
+            b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Amended::F, 1, 20)).expect("a body this builder handed out");
+            let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Amended::at(2) }).expect("a body this builder handed out");
             let mut x = Dx::new(b, Amended::F, 3, 10);
             let fired = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
             let commit = x.commit(0, fired, None);
@@ -533,17 +533,17 @@ fn resolved_forms_are_refused_by_name() {
             })
             .collect();
         let resolver = b.body(Buck::spec("Resolver", Amended::F, 1));
-        b.carrier(resolver, Buck::carrier("d0", ValueType::Bool, CarrierRole::In, None, Amended::F, 1, 20));
-        b.carrier(resolver, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Amended::F, 1, 30));
+        b.carrier(resolver, Buck::carrier("d0", ValueType::Bool, CarrierRole::In, None, Amended::F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(resolver, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Amended::F, 1, 30)).expect("a body this builder handed out");
         let x = Dx::new(b, Amended::F, 3, 10);
         let resolve = x.b.expr(Expr::Resolve { by_count: instances, drives: vec![0], except: None }, ValueAliases::u(8), x.origin());
-        b.drive(resolver, piperine_ir::Drive { carrier: 1, value: resolve, after: None, origin: Amended::at(3), element: None, path: vec![] });
+        b.drive(resolver, piperine_ir::Drive { carrier: 1, value: resolve, after: None, origin: Amended::at(3), element: None, path: vec![] }).expect("a body this builder handed out");
         let holder = b.body(Buck::spec("Holder", Amended::F, 1));
-        b.carrier(holder, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20));
-        b.carrier(holder, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Amended::F, 1, 30));
+        b.carrier(holder, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Amended::F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(holder, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Amended::F, 1, 30)).expect("a body this builder handed out");
         let x = Dx::new(b, Amended::F, 4, 10);
         let others = x.b.expr(Expr::Others(0), ValueAliases::u(8), x.origin());
-        b.drive(holder, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Amended::at(4), element: None, path: vec![] });
+        b.drive(holder, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Amended::at(4), element: None, path: vec![] }).expect("a body this builder handed out");
     });
     assert!(named.contains(&"others() of a resolved carrier".to_string()), "`others()` is named: {named:?}");
     assert!(named.contains(&"a resolve of drives".to_string()), "`resolve` is named: {named:?}");
@@ -593,12 +593,12 @@ impl Structured {
         let node = |name: &str, role| BodyNode { name: name.into(), nature: el, role, init: None, origin: at(1) };
         let spec = |name: &str, nodes, children| BodySpec { name: name.into(), origin: at(1), params: vec![], nodes, branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children };
         let leaf = b.body(spec("Leaf", vec![node("p", NodeRole::Port), node("s", NodeRole::Signal)], vec![]));
-        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2), count: None });
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2), count: None }).expect("a body this builder handed out");
         let child = Child { name: "leaf".into(), body: leaf, nodes: vec![Terminal::Node(0), Terminal::Own(1)], params: vec![], origin: at(5) };
         let top_body = b.body(spec("Top", vec![node("a", NodeRole::Signal), node("mid", NodeRole::Reached)], vec![child]));
-        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4), count: None });
-        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
-        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4), count: None }).expect("a body this builder handed out");
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } }).expect("a body this builder handed out");
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } }).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: at(4) });
         let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at(4) });
@@ -636,7 +636,7 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
     // a module placed in an expression whose node or `analog` block joined the body
     let hoisted = Added::refused(|b| {
         let body = Devices::resistor(b);
-        b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Amended::at(7) });
+        b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Amended::at(7) }).expect("a body this builder handed out");
     });
     assert_eq!(hoisted, ["a module placed in an expression with a node or an analog block"]);
 
@@ -658,7 +658,7 @@ fn the_interpreter_refuses_each_analog_structure_form_by_name() {
             branches: vec![Branch { plus: Terminal::Node(1), minus: Terminal::Node(0), kind: BranchKind::Potential }],
             ..Buck::spec("Ammeter", Amended::F, 1)
         });
-        b.inflow(body, Inflow { port: 0, branch: 0 });
+        b.inflow(body, Inflow { port: 0, branch: 0 }).expect("a body this builder handed out");
     });
     assert_eq!(inflow, ["inflow()"]);
 
@@ -701,7 +701,7 @@ fn the_interpreter_refuses_each_analog_operator_by_name() {
     // the record of a `ddx` is a `PartialDerivative`: the body holds it though its value is an expression
     let mut b = IrBuilder::new();
     let body = Devices::resistor(&mut b);
-    b.partial_derivative(body, piperine_ir::PartialDerivative { name: "v(p, n)".into(), origin: Origin { file: "ddx.msl".into(), line: 3, col: 5 } });
+    b.partial_derivative(body, piperine_ir::PartialDerivative { name: "v(p, n)".into(), origin: Origin { file: "ddx.msl".into(), line: 3, col: 5 } }).expect("a body this builder handed out");
     let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
     held(b.finish(top), "ddx");
     // a body with none of them is not named: the five M1 bodies still run
@@ -911,7 +911,7 @@ impl CarrierArrays {
         let at = |line: u32| Origin { file: "ram.msl".into(), line, col: 1 };
         let leaf = window.then(|| {
             let leaf = b.body(BodySpec { name: "Leaf".into(), origin: at(8), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-            b.carrier(leaf, Carrier { name: "q".into(), ty: ValueAliases::u(8), role: CarrierRole::Out, init: None, origin: at(8), count: None });
+            b.carrier(leaf, Carrier { name: "q".into(), ty: ValueAliases::u(8), role: CarrierRole::Out, init: None, origin: at(8), count: None }).expect("a body this builder handed out");
             leaf
         });
         let mut analog: Vec<StmtId> = forms(&mut b).into_iter().map(|e| b.stmt(Stmt::Expr(e))).collect();
@@ -928,22 +928,22 @@ impl CarrierArrays {
             analog: Some(analog),
             children: leaf.map(|body| vec![piperine_ir::Child { name: "leaf".into(), body, nodes: vec![], params: vec![], origin: at(9) }]).unwrap_or_default(),
         });
-        b.carrier(body, Carrier { name: "mem".into(), ty: ValueAliases::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) });
+        b.carrier(body, Carrier { name: "mem".into(), ty: ValueAliases::u(8), role: CarrierRole::Signal, init: None, origin: at(2), count: Some(4) }).expect("a body this builder handed out");
         if event {
-            b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 1 }, guard: None, origin: at(3) });
+            b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 1 }, guard: None, origin: at(3) }).expect("a body this builder handed out");
         }
         if writes {
             let one = Dx::new(&mut b, "ram.msl", 5, 5).int(1, ValueAliases::u(8));
             let seven = Dx::new(&mut b, "ram.msl", 5, 9).int(7, ValueAliases::u(8));
-            b.drive(body, piperine_ir::Drive { carrier: 0, value: one, after: None, origin: at(5), element: Some(2), path: vec![] });
+            b.drive(body, piperine_ir::Drive { carrier: 0, value: one, after: None, origin: at(5), element: Some(2), path: vec![] }).expect("a body this builder handed out");
             let at_one = Dx::new(&mut b, "ram.msl", 6, 5).int(1, ValueAliases::u(8));
             let commit = b.stmt(Stmt::Commit { carrier: 0, value: seven, after: None, target: Some(piperine_ir::CommitTarget { element: Some(at_one), path: vec![] }) });
-            let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: at(6) });
-            b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![commit], locals: vec![], origin: at(6) });
+            let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: at(6) }).expect("a body this builder handed out");
+            b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![commit], locals: vec![], origin: at(6) }).expect("a body this builder handed out");
         }
         if leaf.is_some() {
-            b.bind_child_carriers(body, 0, vec![Some(0)]);
-            b.bind_child_windows(body, 0, vec![Some(piperine_ir::CarrierWindow { first: 2, length: None })]);
+            b.bind_child_carriers(body, 0, vec![Some(0)]).expect("a body this builder handed out");
+            b.bind_child_windows(body, 0, vec![Some(piperine_ir::CarrierWindow { first: 2, length: None })]).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Ram.mem".into(), ty: ValueAliases::u(8), declared_by: top, init: None, origin: at(2) });
@@ -998,7 +998,7 @@ fn each_generics_form_is_refused_by_name() {
     let module = {
         let mut b = IrBuilder::new();
         let ladder = b.body(Buck::spec("Ladder::<3>", "top.msl", 1));
-        b.mark_body_instance(ladder, GenericInstance { item: "Ladder".into(), arguments: vec!["3".into()] });
+        b.mark_body_instance(ladder, GenericInstance { item: "Ladder".into(), arguments: vec!["3".into()] }).expect("a body this builder handed out");
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: ladder, parent: None, nodes: vec![], params: vec![], origin: Origin { file: "top.msl".into(), line: 1, col: 1 } });
         Structured::refused(b.finish(top))
     };

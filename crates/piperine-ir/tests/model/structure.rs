@@ -206,9 +206,9 @@ impl Switching {
             analog: Some(analog),
             children: vec![],
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
         for site in derivatives {
-            b.derivative(body, site);
+            b.derivative(body, site).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
@@ -291,9 +291,9 @@ fn a_contribution_in_a_function_or_a_reaction_is_broken() {
         analog: None,
         children: vec![],
     });
-    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
-    let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: origin.clone() });
-    b.reaction(body, Reaction { on: vec![event], stmts: vec![inside], locals: vec![], origin: origin.clone() });
+    b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
+    let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: origin.clone() }).expect("a body this builder handed out");
+    b.reaction(body, Reaction { on: vec![event], stmts: vec![inside], locals: vec![], origin: origin.clone() }).expect("a body this builder handed out");
     let top = b.next_instance_id();
     let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
     let top = b.instance(InstanceSpec { path: "Sw".into(), name: "Sw".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin });
@@ -555,7 +555,7 @@ impl Placements {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let lone = b.body(Self::body("Lone", vec![Self::node("p", NodeRole::Port, el), Self::node("n", NodeRole::Port, el)], vec![]));
-        b.merge(lone, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) });
+        b.merge(lone, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) }).expect("a body this builder handed out");
         let top_body = b.body(Self::body(
             "Top",
             vec![Self::node("x", NodeRole::Signal, el), Self::node("y", NodeRole::Signal, el), Self::node("z", NodeRole::Signal, el)],
@@ -577,18 +577,18 @@ impl Placements {
         let mut b = IrBuilder::new();
         let el = Devices::electrical(&mut b);
         let leaf = b.body(Self::body("Leaf", vec![Self::node("p", NodeRole::Port, el), Self::node("s", NodeRole::Signal, el)], vec![]));
-        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2), count: None });
+        let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Self::at(2), count: None }).expect("a body this builder handed out");
         let top_body = b.body(Self::body(
             "Top",
             vec![Self::node("a", NodeRole::Signal, el), Self::node("mid", NodeRole::Reached, el)],
             vec![Self::child("leaf", leaf, vec![Terminal::Node(0), Terminal::Own(1)])],
         ));
-        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4), count: None });
-        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } });
-        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
+        let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: Self::at(4), count: None }).expect("a body this builder handed out");
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Node { node: 1, child_node: 1 } }).expect("a body this builder handed out");
+        b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } }).expect("a body this builder handed out");
         if drive {
             let value = Ex::new(&mut b, "placements.msl", 6, 1).boolean(true);
-            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6), element: None, path: vec![] });
+            b.drive(top_body, Drive { carrier: seen, value, after: None, origin: Self::at(6), element: None, path: vec![] }).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let a = b.node(NodeSpec { path: "Top.a".into(), nature: el, declared_by: top, init: None, origin: Self::at(4) });
@@ -673,9 +673,9 @@ fn the_structure_records_print_and_round_trip() {
     let mut spec = Placements::body("Rec", vec![Placements::node("p", NodeRole::Port, el), Placements::node("p.inflow", NodeRole::Signal, el)], vec![]);
     spec.branches = vec![Branch { plus: Terminal::Node(1), minus: Terminal::Node(0), kind: BranchKind::Potential }];
     let body = b.body(spec);
-    b.inflow(body, Inflow { port: 0, branch: 0 });
-    b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Placements::at(7) });
-    b.merge(body, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) });
+    b.inflow(body, Inflow { port: 0, branch: 0 }).expect("a body this builder handed out");
+    b.hoisted(body, Hoisted { name: "lag".into(), module: "Lag".into(), origin: Placements::at(7) }).expect("a body this builder handed out");
+    b.merge(body, Merge { plus: Terminal::Node(0), minus: Terminal::Node(1) }).expect("a body this builder handed out");
     let top = b.instance(InstanceSpec { path: "Rec".into(), name: "Rec".into(), body, parent: None, nodes: vec![NodeRef::Ground, NodeRef::Ground], params: vec![], origin: Placements::at(1) });
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "{}", ir);
@@ -706,9 +706,9 @@ impl ParamEvents {
         let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: None });
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
-        let event = b.event(body, Event { source, guard: None, origin: Self::at() });
-        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
+        let event = b.event(body, Event { source, guard: None, origin: Self::at() }).expect("a body this builder handed out");
+        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() }).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });

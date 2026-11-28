@@ -1,0 +1,155 @@
+//! The targets of commits and definitions that name an element of an array of carriers or a part of a value
+//! (composite-values CV-25; part IV §12.1): `bits[3] <- x`, `mem[a] <- d`, `st.n <- 3`, `word[2] <- true`, `mem[a].f <- v`
+//! and the definitions `bits[0] = a`. The commit is `Stmt::Commit { target: Some(CommitTarget { element, path }) }`:
+//! `element` the flat element of the array carrier (any integer expression), `path` the fields and constant elements
+//! below it. A definition names a constant element (`Drive.element`), so a generation or an unrolled loop gives each
+//! element its own drive; one that does not fold is `E0188` naming it (QC4).
+
+use super::DigitalLowering;
+use piperine_ir::{CommitTarget, ExprId as LoweredExpr, Projection, ValueType};
+
+use crate::elab::elaborator::Scope;
+use crate::refusal::RefusedForm;
+use crate::refusal::forms::DigitalForm;
+use crate::pom::{ExprId, ExprKind};
+
+/// A place a commit or a definition writes, lowered.
+pub(in crate::elab) struct PlaceTarget {
+    /// The carrier of the body.
+    pub(in crate::elab) carrier: u32,
+    /// The flat element of an array carrier, as an expression.
+    pub(in crate::elab) element: Option<LoweredExpr>,
+    /// The element when it folds to a constant.
+    pub(in crate::elab) constant: Option<u64>,
+    /// The steps into the element's value.
+    pub(in crate::elab) path: Vec<Projection>,
+    /// The type of the levels the place names: what the written value has.
+    pub(in crate::elab) ty: ValueType,
+}
+
+impl PlaceTarget {
+    /// The IR target of a commit: `None` for the whole carrier.
+    pub(super) fn commit_target(&self) -> Option<CommitTarget> {
+        (self.element.is_some() || !self.path.is_empty()).then(|| CommitTarget { element: self.element, path: self.path.clone() })
+    }
+}
+
+/// One step of a place from its root carrier outward.
+enum Step {
+    /// `[index]`.
+    Index(ExprId),
+    /// `.name` of the value `inner` evaluates to.
+    Field { inner: ExprId, name: String },
+}
+
+impl DigitalLowering<'_, '_, '_> {
+    /// The place `place` of a commit or a definition, lowered. `None` after a diagnostic.
+    pub(super) fn place_target(&mut self, scope: &mut Scope, place: ExprId) -> Option<PlaceTarget> {
+        if let Some(reached) = self.structure().reached_place_target(scope, place) {
+            return reached;
+        }
+        let (root, steps) = self.place_steps(place);
+        if self.root_decl(scope, root).is_some_and(|d| self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
+            self.element_of_empty_array(scope.values.file, self.state.design.expr_node(place).span);
+            return None;
+        }
+        let carrier = self.drive_target(scope, root)?;
+        let carried = self.state.digital.structure.carriers[carrier as usize].clone();
+        // a resolved carrier is written with the type of its drive, not the one it reads (§5.2.15)
+        let mut ty = match &carried.role {
+            piperine_ir::CarrierRole::Resolved { driven, .. } => driven.clone(),
+            _ => carried.ty.clone(),
+        };
+        let mut steps = steps.into_iter().peekable();
+        let (mut element, mut constant) = (None, None);
+        if let Some(count) = carried.count {
+            let Some(decl) = self.root_decl(scope, root) else { return None };
+            let shape = self.carrier_array_shape(decl, scope.values.frame)?.0;
+            let span = self.state.design.expr_node(place).span;
+            // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
+            let generated = self.generated_carrier_levels(scope, root);
+            let mut indexes = Vec::new();
+            for _ in generated.len()..shape.dims.len() {
+                match steps.next() {
+                    Some(Step::Index(index)) => indexes.push(index),
+                    _ => {
+                        self.refuse(scope.values.file, span, DigitalForm::CommitOrDefinitionOfWholeArrayOf);
+                        return None;
+                    }
+                }
+            }
+            debug_assert_eq!(shape.count(), count);
+            let found = self.flat_element(scope, carrier, &shape, (&generated, &indexes), span)?;
+            (element, constant) = (Some(found.index), found.constant);
+        }
+        let mut path = Vec::new();
+        for step in steps {
+            match step {
+                Step::Index(index) => {
+                    path.push(Projection::Index(self.values().lower_expr(scope, index)?));
+                    ty = match ty {
+                        ValueType::Array(element, _) => *element,
+                        _ => return self.refuse_place(scope, place, DigitalForm::ElementOfValueThatIsNoArray),
+                    };
+                }
+                Step::Field { inner, name } => {
+                    let Some(index) = self.typed(inner).and_then(|inner_ty| self.values().field_index(&inner_ty, &name)) else {
+                        return self.refuse_place(scope, place, DigitalForm::FieldOfTypeThatHasNone);
+                    };
+                    path.push(Projection::Field(index));
+                    ty = match ty {
+                        ValueType::Tuple(parts) => parts.get(index as usize)?.clone(),
+                        ValueType::Struct(id) => self.state.values.type_arena.field_types(id).get(index as usize)?.clone(),
+                        _ => return self.refuse_place(scope, place, DigitalForm::FieldOfValueThatIsNoTuple),
+                    };
+                }
+            }
+        }
+        Some(PlaceTarget { carrier, element, constant, path, ty })
+    }
+
+    /// The root expression of a place and the steps from it, outermost last.
+    fn place_steps(&self, place: ExprId) -> (ExprId, Vec<Step>) {
+        let mut steps = Vec::new();
+        let mut at = self.peel_parens(place);
+        loop {
+            match self.state.design.expr_node(at).kind.clone() {
+                ExprKind::Index { expr, index } => {
+                    steps.push(Step::Index(index));
+                    at = self.peel_parens(expr);
+                }
+                // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`), and
+                // the element of an array of bundles it is in names the first levels of that leaf (`tx[k].a`, struct of arrays)
+                ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(at).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => {
+                    steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
+                    break;
+                }
+                ExprKind::Field { expr, name, .. } => {
+                    steps.push(Step::Field { inner: expr, name: name.text });
+                    at = self.peel_parens(expr);
+                }
+                _ => break,
+            }
+        }
+        steps.reverse();
+        (at, steps)
+    }
+
+    /// The port or signal declaration a root expression names.
+    fn root_decl(&mut self, scope: &Scope, root: ExprId) -> Option<crate::pom::DeclId> {
+        if let Some(leaf) = self.structure().bundle_leaf(scope, root) {
+            return Some(leaf.decl);
+        }
+        let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+            Some(crate::pom::Resolution::Decl(decl)) => Some(decl),
+            _ => None,
+        }
+    }
+
+    /// The refusal of a place step that does not apply: `P0001` naming it, `None`.
+    fn refuse_place(&mut self, scope: &Scope, place: ExprId, form: impl Into<RefusedForm>) -> Option<PlaceTarget> {
+        self.elaboration.refuse(scope.values.file, self.state.design.expr_node(place).span, form);
+        None
+    }
+}

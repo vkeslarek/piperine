@@ -431,7 +431,7 @@ impl Design {
         let byte = ValueAliases::u(8);
         let body = b.body(Buck::spec("Looper", FILE, 90));
         for (name, ty, role, col) in [("clk", ValueType::Bool, CarrierRole::In, 20), ("stop", ValueType::Bool, CarrierRole::In, 30), ("q", ValueAliases::u(8), CarrierRole::Out, 40)] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, FILE, 90, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, FILE, 90, col)).expect("a body this builder handed out");
         }
         let rise = Buck::rise(b, body, 0, FILE, 91, 8);
         let mut x = Dx::new(b, FILE, 92, 9);

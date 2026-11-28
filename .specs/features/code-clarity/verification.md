@@ -2804,3 +2804,120 @@ How N4 was closed:
 
 - **N5.** `array_nets.rs`'s new `Kit::placed` repeats the last line of `Kit::instance`. `instance` could end in `Kit::placed(path, module, pins)`.
 - **N6.** In `parity/src/compiled.rs`, `run` and the new `run_with_partials` each map the cells to `f64`. `run` could be `run_with_partials(..).map(|(values, _)| values)`, as the removed transpile copy wrote it.
+
+## Phase 13 (B6c `Elaboration` split into per-concern lowering views, T92 to T99)
+
+**Verdict**: PASS (no Medium or High finding; five Low findings and two notes)
+**Head**: 6e4e38057 on `feature/code-clarity-p13`. Base c1ab49a67 (`feature/code-clarity`, merged into the branch at 1d93818f7, so `git diff c1ab49a67 HEAD` is exactly the phase).
+**Verifier**: independent sub-agent (Opus; author != verifier). I reran the gates myself, one cargo command at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`, after touching `crates/piperine-repository-guards/src/*.rs`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 122 passed, 0 failed |
+| `cargo test -p piperine-lang` | 47 result lines, 1 439 passed, 0 failed |
+| `cargo test -p piperine-lang-fixtures` | 7 passed, 0 failed |
+| `cargo test -p piperine-ir` | 163 passed, 0 failed |
+| `cargo test -p piperine-ir-fixtures` | 2 passed, 0 failed |
+| `cargo test -p piperine-plan` | 68 passed, 0 failed |
+| `cargo test -p piperine-interp` | 72 passed, 0 failed |
+| `cargo test -p piperine-transpile` (goldens included) | 168 passed, 0 failed |
+| `cargo test -p piperine-parity` (whole; `ngspice` is installed, `/usr/bin/ngspice`, so the oracle comparisons ran) | 15 result lines, 653 passed, 0 failed |
+| `cargo test -p piperine-api` | 309 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 144 passed, 0 failed |
+| `cargo test -p piperine --test book --test integrated` | 399 passed, 0 failed (the stale `book_claims` row of Phase 10 is gone after the merge) |
+
+### Method
+
+- **Moves.** I extracted every `fn` of `crates/piperine-lang/src/elab/` at the base and at the head and compared the bodies by name, after undoing only the re-pointing the views impose: `self.<view>().` and `self.elaboration.` → `self.`, `self.state.<table>.` → `self.`, `scope.<part>.` → `scope.`, `builder` → `ir`, `in_analog_code` → `analog`.
+  - 960 bodies are identical.
+  - I read the other 94 one by one. 38 are the new view plumbing or new split helpers.
+  - The rest differ only in one of these ways:
+    - a borrow `let` (`let span = …; self.x(span)`);
+    - a `crate::elab::<dir>::` path for a moved type;
+    - `Self::` → `Scope::`/`AnalogLowering::`/`ValueLowering::`;
+    - a scope local's part (`standalone.analog.at_solution`);
+    - a builder call wrapped as `let built = …; self.built(built)` (T96).
+- **Splits.** For the three split functions I checked that every line of the base body appears in the head function or its new helpers: `lower_expr_unchecked` (213 → 64, twelve helpers), `lower_option` (four helpers) and `lower_path` (three helpers). I then read the arm order of each `match`.
+- **Tests.** The `#[test]` function names of the whole tree are listed at the base and the head (4 572 each, identical). Each edited test or fixture file was diffed after stripping `.expect("…")`.
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| No test lost or weakened, assertions unchanged | the name sets above; `git diff c1ab49a67 HEAD` over every `tests/` file, `piperine-ir-fixtures/src`, and the in-source test modules of `plan/src/derive.rs`, `api/src/params.rs` and `elab/elaborator.rs` | yes, with one exemption widened (P13-1). 32 of the 33 edited test or fixture files differ only by `.expect("a body this builder handed out")` on a builder call. The `plan` and `api` sites sit inside their `#[cfg(test)]` modules, so no product code gains a panic. The two tests of `elaborator.rs` re-point field paths (`elaboration.state.structure.frames`, `.state.builder`, `.state.diagnostics`) and call `values().constant_expr`; their `assert_eq!(codes, ["P0004"])` is unchanged. No golden, `.msl`, `.stdout` or doc changed: the diff holds only `.rs`, `.tsv` and the two spec files |
+| T92: `Elaboration` holds the state only; `Scope` has three fields; each table documented | `elaborator.rs`, `elaborator/state.rs`, `elaborator/scope.rs:10-17`, `*/state.rs` | yes. `Elaboration { state }`; `Scope { values, analog, digital }`; every table and field carries a `///`. The departures (the tables' files, `ExpressionTables`, `consts`/`impls` at the root, `in_analog_code`) are notes under the box and design.md's T92 annotation |
+| T93–T97: no `impl Elaboration` in `value/`, `functions/`, `analog/`, `digital/`, `structure/` | `grep -rn '^impl.*Elaboration' crates/piperine-lang/src/elab` | yes. `impl Elaboration` is only in `elaborator.rs` and below `elaborator/`; each directory's `mod.rs` declares its view with `Deref`/`DerefMut`, the shape of Phase 10 |
+| T97: no `#[allow]` in `crates/piperine-lang/src` | `grep -rn '#\[allow' crates/piperine-lang/src` | yes (the only hits are a doc comment and the parser's `macro_rules` keyword). The two `too_many_arguments` became `GenerationRange` and `GeneratedLet` (`structure/generation.rs:95-124`), each field documented and spelled in full. `expand_range` and `generated_let_level` destructure them into the old local names, so the bodies are unchanged. `allow_attributes.tsv`'s row is deleted |
+| T98: `ConstEval` one type, every `impl ConstEval` below `elab/consts/` | `grep -rn 'impl.*ConstEval'` | yes: `consts/evaluator.rs` and the 16 files of `consts/evaluator/` |
+| T99: no row for `Elaboration` or `ConstEval` in `an_inherent_impl_lives_with_its_type` | `impls_away_from_their_type.tsv` | yes. It went from 77 rows (90 counted) to 11 (12), none under `elab/`, and the guard passes |
+| T99: `elab/` holds 3 files at its root and 6 directories | `ls crates/piperine-lang/src/elab` | **no**: 2 files (`elaborator.rs`, `mod.rs`) and 7 directories. The box is ticked with a `Departure` note (P13-2) |
+| CC-09 behaviour: verbatim moves | Method | yes (above). No call is reordered, no diagnostic text or code changed, no `match` arm moved across another. `lower_expr_unchecked`: the `Field` triple and the `MethodCall` quintuple became `if` chains in the same order, evaluating the same guards in the same order. `lower_path`: the guarded `Signal` arm and the three guarded `FnParam`/`Binding` arms are the first statements of `lower_carrier_path` and `lower_binding_path`. `lower_option`: the `refused` closure became `refuse_option_form(scope.file, span)`, the same `file` and `span` |
+| CC-09 behaviour: `finish_structure` | base `carriers.rs` against head `digital/carriers.rs` | yes. `std::mem::take` of the whole `Structure`, then the 19 loops in the base order (hoisted … drives, events, reactions, streams, derivatives … partials, child carriers, windows, params, reaches, inflows), split over four methods called in that order. Each field is taken once, and the fields it never read stay dropped as before |
+| T96: `IrBuilder` returns `Result`; `Elaboration::built` reports `P0004` | `ir/src/build.rs`, `build/error.rs`, `elab/elaborator/diagnose.rs:84-94` | yes. `body_data` returns `BuildError::BodyOutOfRange` where it panicked, with the same text, and the 22 methods propagate it with `?`. `built` routes an `Err` to `internal_error`, the existing `P0004` channel T55 used for the other six builder sites and design.md:315 names for "an internal guard, unreachable by construction". It is the right code. For users nothing changes: a body id comes only from the same builder, so the `Err` arm is unreachable from any source. Before, it panicked; now it reports `P0004` and gives no `Ir`. Where a result is needed (`resolver_body`'s `self.built(built)?`) the lowering returns `None` after the diagnostic |
+| POM navigability (UNBREAKABLE rule) | `git diff --stat c1ab49a67 HEAD -- crates/piperine-lang/src/pom crates/piperine-lang/src/types` | empty. The phase touches only the elaborator (POM → IR) and the IR builder; `Design`'s structure is not written by either |
+| Allowances and worklists: nothing grows | per-identifier counts of `impls_away`, `repeated_type_names`, `undeclared_words`, `undocumented_items`; row diff of `owners`, `allow_attributes`, `long_functions`, `test_only_items` | yes. `impls_away` 90 → 12; `undocumented_items` 444 → 442; `repeated_type_names` 114 and `undeclared_words` 786 move net-zero with no identifier growing; `owners` −6 (the five views and `ElaborationState`, now declared with methods); `allow_attributes` −1; `test_only_items` 1 moved; `long_functions` −23 +22 (`lower_path` deleted after its split; 22 rows re-pathed with a verdict) |
+| No free fn, macro, `#[allow]`, `#[expect]`, `unwrap`, `panic!` added | `grep` of the `+` lines under `crates/*/src` | yes, none. The removed `panic!` of `body_data` is the only panic site touched |
+| Full words, `///` | read of the views, `ElaborationState`, the tables, `Scope`, `GenerationRange`, `GeneratedLet`, `built`, the split helpers | yes; the `undocumented_items` guard passes with two rows fewer |
+| Approved box text intact | `git diff c1ab49a67 HEAD -- .specs/features/code-clarity/tasks.md` | yes. Every approved line of T92–T99 is unchanged; each departure is an indented `Note:` or `Departure` under its box. T96's second box gained a `(done after the coordinator's decision …)` prefix on the box line itself, the form P10-1 asked to avoid (P13-5) |
+| Commit subjects | `git log --first-parent c1ab49a67..HEAD` | the eight task subjects are tasks.md's. Two extra commits exceed 72 characters: 6e4e38057 (80) and 6687c3ae0 (75) (P13-5) |
+
+### Judgements on the implementer's departures
+
+- **About 55 shared `&self` helpers stay on `Elaboration`, under `elab/elaborator/`.** Accepted, on Phase 10's reasoning. A view is reached through `&mut self`, so a helper called from `&self` code or inside another call's arguments (`self.emit(.., self.type_of(x), ..)`) cannot belong to a view without a borrow error. The files are split by what they answer (`diagnose`, `emitted`, `typing`, `naming`, `queries`, `imports`), and design.md's T93 and T99 annotations name each helper. `elaborator.rs` itself is 292 lines of pass order and accessors, which is design.md's "`Elaboration` keeps the pass order".
+- **Seven directories instead of six.** The seventh, `elaborator/`, follows from the decision above plus `an_inherent_impl_lives_with_its_type`: an `impl Elaboration` in `origin.rs` or `diagnose.rs` at the root would sit away from its type. The reason is sound, and design.md records it. But the T99 box states a count the tree does not meet and is ticked (P13-2).
+- **Renames.**
+  - `lower.rs` → `value/expressions.rs`, `functions.rs` → `functions/declarations.rs`, `analog.rs` → `analog/blocks.rs`: these avoid a module named like its directory.
+  - `place.rs` → `structure/placement.rs` and `reach/` → `structure/reach/`: these put each file under its concern.
+
+  Each rename is declared under its box, and every caller was re-pointed by the compiler. Accepted.
+- **`GenerationRange` and `GeneratedLet`.** Accepted: T97 asked for exactly this, the bodies are unchanged, and two `#[allow]` are gone.
+- **`lower_expr_unchecked` 213 → 64, `kept`.** Honest: an exhaustive `match` over `ExprKind` whose arms are one call each, design.md:412's own example.
+- **`finish_structure` with `std::mem::take`.** Order preserved (Checks).
+- **`Elaboration::built` and `P0004`.** The right code; no user-visible change (Checks).
+- **`ExpressionTables`.** Accepted. `ValueTables` is taken by `types/value/tables.rs`, and the table holds the type, continuity and origin of each lowered expression plus the type arena, so it is named for what it holds.
+- **The 22 `kept:` verdicts, now body-specific.** Mostly honest. The reasons name the real stages of each body, and a `match` with one arm per form or per Appendix H row (`lower_option_method`, `lower_option_row`, `known_method`, `run_row`, `test_pattern`, `lower_call`, `lower_expr_unchecked`) meets design.md:412. Three do not (P13-3).
+
+### P13-1 (Low): a structure test's exemption widened from one file to a directory
+
+`crates/piperine-lang/tests/elab_structure/generics.rs:50` changed from `!path.ends_with("consts.rs")` to `!path.starts_with("src/elab/consts")`. The rule the test holds is "the three raw reads of the type table live in `ConstEval` and nowhere else". Before, the exemption was the one file that declared `ConstEval`. Now it covers all 20 files of `consts/`, including `bindings.rs` (`Bindings`), `faults.rs` (`ConstFault`, `Exit`) and `mod.rs`, which are not `ConstEval`. The commit (2e5e9a00b) and the T98 note call it "a path only, the assertions unchanged". The assertion text is unchanged, but its reach is smaller. At the head the four raw reads are all in `consts/evaluator.rs:152-183`, so the test is still green and loses nothing today. Fix: `!path.starts_with("src/elab/consts/evaluator")`, which is `ConstEval`'s file and directory exactly.
+
+### P13-2 (Low, for the user): T99's directory box is ticked although its text is not met
+
+The box reads "`elab/` holds 3 files at its root and 6 directories, as design.md's map". The tree has 2 files and 7 directories. The departure is reasoned (judgement above) and recorded under the box and in design.md's T99 annotation. A coordinator decision under AFK cannot make the box true, though. Either the user accepts the amended map (design.md then states 2 + 7 as the target and the box is restated under it), or the box stays `[ ]` with its departure. Repro: `ls crates/piperine-lang/src/elab`.
+
+### P13-3 (Low): three `kept:` verdicts on bodies with separable parts
+
+design.md:412: "an exhaustive `match` with one-line arms is a reason". Phase 10's P10-4 settled that "the order of the steps" is a reason not to reorder, not a reason not to split.
+
+- `value/compound.rs::lower_option` (128 lines). The verdict says "one arm per form, the long ones already methods". Not so. Three arms (`Index` of an element, `Index` of an array, `Field`) each build the same `half` closure and the same `Pair { is, val, literal: None }`, a duplication one `option_halves(scope, read, payload, origin)` would remove. The `Match` and `if let` arms are each 8–10 lines.
+- `digital/events.rs::disjuncts` (116 lines). The `MethodCall` arm is about 27 lines and the `Call` arm about 50 lines of nested `match`. Each is its own form of event and splits as `method_event` / `call_event` with no call reordered.
+- `structure/children.rs::lower_child` (109 lines). The verdict lists five stages (classify, bind ports, fold key params, request the body, build the child). Each consumes the one before, which is exactly the shape that splits into five methods called in order.
+
+The other "stages" verdicts (`hoist` 86, `node_run` 76, `lower_body_under_substitution` 75, `bind_params` 71, `place_instance` 70, `classify_key_params` 66 and the 61–65-line ones) are near the line and describe their bodies. I accept them. Fix: split the three, or mark them `split` and owe them to a named task.
+
+### P13-4 (Low): T96 widened the IR builder's public signatures
+
+The 22 `pub fn`s of `IrBuilder` now return `Result<_, BuildError>`. That is the intent of the box. It is also a public API change of `piperine-ir` (`BuildError::BodyOutOfRange` is a new public variant), and it moves 345 call sites outside the elaborator to `.expect(..)`. The box's own text names only the elab callers. The extent is recorded in the note under the box and was coordinator-approved, so this is recorded for the user, not as a defect. No product caller outside `elab/` exists (the `plan` and `api` sites are in-source tests).
+
+### P13-5 (Low): form only
+
+- T96's second box carries "(done after the coordinator's decision of 2026-11-28; user AFK, pending review)" on the box line itself. Approved text should stay as written, with that line under the box as the other notes are (P10-1).
+- Two commit subjects exceed 72 characters: 6e4e38057 (80) and 6687c3ae0 (75).
+
+### Notes (not findings)
+
+- N1: the `source_behavior`, `source_carriers` and `source_structure` targets named by T95–T97's gates no longer exist (merged by an earlier phase). The notes list the `source_*` targets run in their place, and the whole `-p piperine-parity` run below covers them all.
+- N2: `elab/elaborator/` (about 900 lines) is now the shared surface every view reaches through `Deref`. It is the analogue of Phase 10's residue, and design.md names it. A later pass that wants it smaller should start with `queries.rs` (258 lines of read-only design questions, which are `Design`-level queries).
+
+### Phase 13 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P13-1 `elab_structure/generics.rs` exemption widened to all of `consts/` | Low | open |
+| P13-2 T99 directory box ticked, not met | Low | open (user decision) |
+| P13-3 `lower_option`, `disjuncts`, `lower_child` `kept:` verdicts | Low | open |
+| P13-4 `IrBuilder` public signatures changed (T96) | Low | note for the user |
+| P13-5 a box-line prefix; two subjects over 72 characters | Low | open |

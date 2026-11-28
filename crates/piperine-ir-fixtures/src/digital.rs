@@ -250,12 +250,12 @@ impl Buck {
         let mut x = Dx::new(b, file, line, col);
         let c = x.carrier(carrier, ValueType::Bool);
         let guard = c;
-        b.event(body, Event { source: EventSource::Changed(carrier), guard: Some(guard), origin: Buck::origin(file, line, col) })
+        b.event(body, Event { source: EventSource::Changed(carrier), guard: Some(guard), origin: Buck::origin(file, line, col) }).expect("a body this builder handed out")
     }
 
     /// Adds a reaction on the carriers `on` to `body`, returning its index.
     pub fn reaction(b: &mut IrBuilder, body: BodyId, on: Vec<u32>, stmts: Vec<StmtId>, locals: Vec<piperine_ir::Local>, file: &str, line: u32) -> u32 {
-        b.reaction(body, Reaction { on, stmts, locals, origin: Buck::origin(file, line, 5) })
+        b.reaction(body, Reaction { on, stmts, locals, origin: Buck::origin(file, line, 5) }).expect("a body this builder handed out")
     }
 
     /// `dpwm.msl:7-10`:
@@ -270,8 +270,8 @@ impl Buck {
         const F: &str = "dpwm.msl";
         let check = Buck::positive(b, F, 8, 22, 0);
         let body = b.body(BodySpec { params: vec![Buck::param("f", F, 8, Some(200e6), Some(check))], ..Buck::spec("Osc", F, 7) });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 7, 20));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 10, 22) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 7, 20)).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 10, 22) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 10, 45);
         let clk = x.carrier(0, ValueType::Bool);
         let toggled = x.un(UnaryOp::Not, clk, ValueType::Bool);
@@ -310,14 +310,14 @@ impl Buck {
             ("reference", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), 23, 20),
             ("at_target", ValueType::Bool, CarrierRole::Out, None, 23, 52),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col)).expect("a body this builder handed out");
         }
         let (tick, run, target, reference, at_target) = (0, 1, 2, 3, 4);
         let mut x = Dx::new(b, F, 24, 17);
         let r = x.carrier(reference, word.clone());
         let t = x.carrier(target, word.clone());
         let same = x.bin(BinaryOp::Eq, r, t, ValueType::Bool);
-        b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: at_target, value: same, after: None, origin: Buck::origin(F, 24, 5), element: None, path: vec![] }).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, tick, F, 27, 8);
         let mut x = Dx::new(b, F, 30, 14);
         let r = x.carrier(reference, word.clone());
@@ -381,9 +381,9 @@ impl Buck {
             ..Buck::spec("Adc", F, 19)
         });
         let word = ValueAliases::u(10);
-        b.carrier(body, Buck::carrier("sample", ValueType::Bool, CarrierRole::In, None, F, 19, 33));
-        b.carrier(body, Buck::carrier("code", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 19, 52));
-        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 19, 76));
+        b.carrier(body, Buck::carrier("sample", ValueType::Bool, CarrierRole::In, None, F, 19, 33)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("code", word.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 19, 52)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 19, 76)).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, 0, F, 28, 8);
         let mut x = Dx::new(b, F, 29, 17);
         let v = x.probe(Terminal::Node(0), Terminal::Ground);
@@ -434,7 +434,7 @@ impl Buck {
             nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 9, 19) }],
             ..Buck::spec("A2D", F, 9)
         });
-        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 9, 34));
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 9, 34)).expect("a body this builder handed out");
         // on above(v(a) - vth - hyst / 2.0) { d <- true; }
         let mut x = Dx::new(b, F, 11, 14);
         let v = x.probe(Terminal::Node(0), Terminal::Ground);
@@ -459,8 +459,8 @@ impl Buck {
         x.at(12, 41);
         let off = x.boolean(false);
         let clear = x.commit(0, off, None);
-        let up = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 11, 8) });
-        let down = b.event(body, Event { source: EventSource::Cross { e: falling, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 12, 8) });
+        let up = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 11, 8) }).expect("a body this builder handed out");
+        let down = b.event(body, Event { source: EventSource::Cross { e: falling, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 12, 8) }).expect("a body this builder handed out");
         Buck::reaction(b, body, vec![up], vec![set], vec![], F, 11);
         Buck::reaction(b, body, vec![down], vec![clear], vec![], F, 12);
         body
@@ -475,9 +475,9 @@ impl Buck {
     pub fn dff(b: &mut IrBuilder) -> BodyId {
         const F: &str = "dff.msl";
         let body = b.body(Buck::spec("Dff", F, 1));
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 19));
-        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 32));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 44));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 19)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 32)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 44)).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, 0, F, 2, 22);
         let mut x = Dx::new(b, F, 2, 37);
         let d = x.carrier(1, ValueType::Bool);
@@ -500,9 +500,9 @@ impl Buck {
         const F: &str = "control.msl";
         let u8_ = ValueAliases::u(8);
         let body = b.body(Buck::spec("SetpointReg", F, 9));
-        b.carrier(body, Buck::carrier("wr", ValueType::Bool, CarrierRole::In, None, F, 9, 27));
-        b.carrier(body, Buck::carrier("data", u8_.clone(), CarrierRole::In, None, F, 9, 39));
-        b.carrier(body, Buck::carrier("code", u8_.clone(), CarrierRole::Out, Some(Constant::Int(100)), F, 9, 60));
+        b.carrier(body, Buck::carrier("wr", ValueType::Bool, CarrierRole::In, None, F, 9, 27)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("data", u8_.clone(), CarrierRole::In, None, F, 9, 39)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("code", u8_.clone(), CarrierRole::Out, Some(Constant::Int(100)), F, 9, 60)).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, 0, F, 11, 8);
         let mut x = Dx::new(b, F, 12, 12);
         let data = x.carrier(1, u8_.clone());
@@ -568,7 +568,7 @@ impl Buck {
             ("hs_cut", bit.clone(), CarrierRole::Signal, no(), 48, 12),
             ("ls_cut", bit.clone(), CarrierRole::Signal, no(), 49, 12),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col)).expect("a body this builder handed out");
         }
         let (clk, run, duty, oc, sink_oc, hs, ls, sample, cut) = (0, 1, 2, 3, 4, 5, 6, 7, 8);
         let (count, width, frame, hs_off, hs_cut, ls_cut) = (9, 10, 11, 12, 13, 14);
@@ -580,7 +580,7 @@ impl Buck {
         let c = x.carrier(count, u9.clone());
         let at_zero = x.int(0, u9.clone());
         let same = x.bin(BinaryOp::Eq, c, at_zero, fb.clone());
-        b.drive(body, Drive { carrier: sample, value: same, after: None, origin: Buck::origin(F, 51, 5), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: sample, value: same, after: None, origin: Buck::origin(F, 51, 5), element: None, path: vec![] }).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, clk, F, 56, 8);
 
         let locals = [
@@ -762,7 +762,7 @@ impl Buck {
             ("deriv", i32_.clone(), CarrierRole::Signal, zero(), 51, 12),
             ("e_prev", i16_.clone(), CarrierRole::Signal, zero(), 53, 12),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+            b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col)).expect("a body this builder handed out");
         }
         let (tick, run, reference, meas, duty, integ, deriv, e_prev) = (0, 1, 2, 3, 4, 5, 6, 7);
         let rise = Buck::rise(b, body, tick, F, 56, 8);
@@ -905,7 +905,7 @@ impl Buck {
         let body = b.body(BodySpec { params: vec![Buck::param("tpd", F, 75, Some(10e-9), Some(check))], ..Buck::spec("GateDriver", F, 74) });
         let level = ValueType::Bool;
         for (name, role, col) in [("hs_cmd", CarrierRole::In, 30), ("ls_cmd", CarrierRole::In, 46), ("hs_gate", CarrierRole::Out, 63), ("ls_gate", CarrierRole::Out, 81)] {
-            b.carrier(body, Buck::carrier(name, level.clone(), role, None, F, 74, col));
+            b.carrier(body, Buck::carrier(name, level.clone(), role, None, F, 74, col)).expect("a body this builder handed out");
         }
         for (target, own, other, line) in [(2, 0, 1, 76), (3, 1, 0, 77)] {
             let mut x = Dx::new(b, F, line, 15);
@@ -915,7 +915,7 @@ impl Buck {
             let value = x.bin(BinaryOp::BitAnd, cmd, not, ValueType::Bool);
             x.at(line, 38);
             let after = x.param(0, ValueType::F64);
-            b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5), element: None, path: vec![] });
+            b.drive(body, Drive { carrier: target, value, after: Some(after), origin: Buck::origin(F, line, 5), element: None, path: vec![] }).expect("a body this builder handed out");
         }
         body
     }
@@ -962,7 +962,7 @@ impl Buck {
             analog: Some(vec![stmt]),
             ..Buck::spec("Switch", F, 1)
         });
-        b.carrier(body, Buck::carrier("g", ValueType::Bool, CarrierRole::In, None, F, 1, 52));
+        b.carrier(body, Buck::carrier("g", ValueType::Bool, CarrierRole::In, None, F, 1, 52)).expect("a body this builder handed out");
         body
     }
 

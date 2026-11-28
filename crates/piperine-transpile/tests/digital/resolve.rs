@@ -51,24 +51,24 @@ impl ResolveBodies {
         let by_count = ResolveBodies::instances(b);
         let body = b.body(Buck::spec("Sum$resolve~2", F, 4));
         for name in ["d0", "d1"] {
-            b.carrier(body, Buck::carrier(name, ValueAliases::u(8), CarrierRole::In, None, F, 4, 5));
+            b.carrier(body, Buck::carrier(name, ValueAliases::u(8), CarrierRole::In, None, F, 4, 5)).expect("a body this builder handed out");
         }
-        b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::Out, None, F, 4, 5));
+        b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::Out, None, F, 4, 5)).expect("a body this builder handed out");
         let resolve = b.expr(Expr::Resolve { by_count, drives: vec![0, 1], except: None }, ValueType::F64, Buck::origin(F, 4, 9));
-        b.drive(body, Drive { carrier: 2, value: resolve, after: None, origin: Buck::origin(F, 4, 9), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 2, value: resolve, after: None, origin: Buck::origin(F, 4, 9), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
     /// The holder: `w` is resolved (value `f64`, driven `u8`), driven with 5; `seen` follows `w.others()`.
     fn source(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", F, 6));
-        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: ValueAliases::u(8), port: true }, None, F, 7, 5));
-        b.carrier(body, Buck::carrier("seen", ValueType::F64, CarrierRole::Signal, None, F, 8, 5));
+        b.carrier(body, Buck::carrier("w", ValueType::F64, CarrierRole::Resolved { driven: ValueAliases::u(8), port: true }, None, F, 7, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("seen", ValueType::F64, CarrierRole::Signal, None, F, 8, 5)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 7, 9);
         let five = x.int(5, ValueAliases::u(8));
-        b.drive(body, Drive { carrier: 0, value: five, after: None, origin: Buck::origin(F, 7, 9), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 0, value: five, after: None, origin: Buck::origin(F, 7, 9), element: None, path: vec![] }).expect("a body this builder handed out");
         let others = b.expr(Expr::Others(0), ValueType::F64, Buck::origin(F, 8, 9));
-        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: Buck::origin(F, 8, 9), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: Buck::origin(F, 8, 9), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 }

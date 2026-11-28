@@ -60,7 +60,7 @@ impl CarrierlessBodies {
             nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 4, 16) }],
             ..Buck::spec("Monitor", F, 4)
         });
-        let trip = b.stream(body, Stream { name: "trip".into(), fields: vec![StreamField { name: "v".into(), ty: ValueType::F64 }] });
+        let trip = b.stream(body, Stream { name: "trip".into(), fields: vec![StreamField { name: "v".into(), ty: ValueType::F64 }] }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 32);
         let v = x.probe(Terminal::Node(0), Terminal::Ground);
         let level = x.param(0, ValueType::F64);
@@ -68,7 +68,7 @@ impl CarrierlessBodies {
         x.at(5, 57);
         let v = x.probe(Terminal::Node(0), Terminal::Ground);
         let emit = x.b.stmt(Stmt::Emit { stream: trip, fields: vec![EmitField::Value { field: 0, value: v }] });
-        let cross = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 5, 26) });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 5, 26) }).expect("a body this builder handed out");
         Buck::reaction(b, body, vec![cross], vec![emit], vec![], F, 5);
         body
     }

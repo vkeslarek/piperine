@@ -445,7 +445,7 @@ impl Stage {
             ..Buck::spec("Stage", Stage::F, 1)
         });
         for (name, role, line, col) in [("hs_cmd", CarrierRole::In, 1, 17), ("ls_cmd", CarrierRole::In, 1, 33), ("hs_gate", CarrierRole::Signal, 3, 12), ("ls_gate", CarrierRole::Signal, 3, 33)] {
-            b.carrier(stage, Buck::carrier(name, ValueType::Bool, role, None, Stage::F, line, col));
+            b.carrier(stage, Buck::carrier(name, ValueType::Bool, role, None, Stage::F, line, col)).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let vin = b.node(NodeSpec { path: "Stage.vin".into(), nature: el, declared_by: top, init: None, origin: Design::origin(Stage::F, 2, 12) });
@@ -546,10 +546,10 @@ fn carriers_and_drives_print() {
     // one entry.
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Bad", "bad.msl", 1));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
-    b.carrier(body, Buck::carrier("w", ValueAliases::u(4), CarrierRole::Out, None, "bad.msl", 1, 30));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("w", ValueAliases::u(4), CarrierRole::Out, None, "bad.msl", 1, 30)).expect("a body this builder handed out");
     let value = Dx::new(&mut b, "bad.msl", 2, 9).int(3, ValueAliases::u(8));
-    b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5), element: None, path: vec![] });
+    b.drive(body, Drive { carrier: 0, value, after: None, origin: Design::origin("bad.msl", 2, 5), element: None, path: vec![] }).expect("a body this builder handed out");
     let top = b.next_instance_id();
     let net = b.net(NetSpec { path: "Bad.q".into(), ty: ValueAliases::u(8), declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
     let top = Stage::instance(&mut b, "Bad", body, None, vec![], vec![], vec![net], 1);
@@ -568,13 +568,13 @@ fn carriers_and_drives_print() {
 fn a_settle_event_is_built_checked_and_printed() {
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Sampler", "settle.msl", 1));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "settle.msl", 1, 20));
-    b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, "settle.msl", 1, 30));
-    let bare = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: None, origin: Design::origin("settle.msl", 2, 8) });
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "settle.msl", 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, "settle.msl", 1, 30)).expect("a body this builder handed out");
+    let bare = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: None, origin: Design::origin("settle.msl", 2, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, "settle.msl", 3, 9);
     let ready = x.carrier(1, ValueType::Bool);
     let guard = ready;
-    let guarded = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: Some(guard), origin: Design::origin("settle.msl", 4, 8) });
+    let guarded = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Settle, guard: Some(guard), origin: Design::origin("settle.msl", 4, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, "settle.msl", 5, 9);
     let yes = x.boolean(true);
     let commit = x.commit(0, yes, None);
@@ -716,13 +716,13 @@ fn events_and_reactions_print() {
     // A commit of the wrong type and a guard that is no `bool` are typed like a drive.
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Bad", "bad.msl", 1));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "bad.msl", 1, 20)).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, "bad.msl", 2, 9);
     let guard = x.int(1, ValueAliases::u(8));
     x.at(3, 9);
     let value = x.int(3, ValueAliases::u(8));
     let commit = x.commit(0, value, None);
-    let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: Some(guard), origin: Design::origin("bad.msl", 2, 5) });
+    let event = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: Some(guard), origin: Design::origin("bad.msl", 2, 5) }).expect("a body this builder handed out");
     Buck::reaction(&mut b, body, vec![event], vec![commit], vec![], "bad.msl", 3);
     let top = b.next_instance_id();
     let net = b.net(NetSpec { path: "Bad.q".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: Design::origin("bad.msl", 1, 20) });
@@ -780,16 +780,16 @@ fn a_defective_digital_body_gives_one_entry_per_defect() {
         ("aux", ValueType::Bool, CarrierRole::Out, None, 1, 69),
         ("count", ValueAliases::u(4), CarrierRole::Signal, Some(Constant::Int(0)), 2, 12),
     ] {
-        b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col));
+        b.carrier(body, Buck::carrier(name, ty, role, init, F, line, col)).expect("a body this builder handed out");
     }
     let yes = Dx::new(&mut b, F, 3, 10).boolean(true);
-    b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5), element: None, path: vec![] });
+    b.drive(body, Drive { carrier: 0, value: yes, after: None, origin: Design::origin(F, 3, 5), element: None, path: vec![] }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 4, 9);
     let q = x.carrier(0, ValueType::Bool);
-    b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5), element: None, path: vec![] });
-    let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
+    b.drive(body, Drive { carrier: 2, value: q, after: None, origin: Design::origin(F, 4, 5), element: None, path: vec![] }).expect("a body this builder handed out");
+    let changed = b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) }).expect("a body this builder handed out");
     let count = Dx::new(&mut b, F, 6, 14).carrier(4, ValueAliases::u(4));
-    b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross { e: count, ttol: None, etol: None }, guard: None, origin: Design::origin(F, 6, 8) });
+    b.event(body, piperine_ir::Event { source: piperine_ir::EventSource::Cross { e: count, ttol: None, etol: None }, guard: None, origin: Design::origin(F, 6, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 8, 15);
     let no = x.boolean(false);
     let to_input = x.commit(1, no, None);
@@ -840,7 +840,7 @@ fn a_carrier_initial_value_outside_its_type_is_an_entry() {
         ("f", ValueAliases::i(4), Constant::Int(-8), 111),
         ("g", ValueAliases::u(4), Constant::Int(-1), 130),
     ] {
-        b.carrier(body, Buck::carrier(name, ty, CarrierRole::Out, Some(init), F, 1, col));
+        b.carrier(body, Buck::carrier(name, ty, CarrierRole::Out, Some(init), F, 1, col)).expect("a body this builder handed out");
     }
     let broken = Design::finish(b).check();
     let one = |carrier: &str, col: u32, what: &str| {

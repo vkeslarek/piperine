@@ -41,9 +41,9 @@ impl CarrierArrayDesign {
             origin: CarrierArrayDesign::origin(2),
             count: Some(8),
         };
-        b.carrier(body, mem);
+        b.carrier(body, mem).expect("a body this builder handed out");
         let en = Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: CarrierArrayDesign::origin(3), count: None };
-        b.carrier(body, en);
+        b.carrier(body, en).expect("a body this builder handed out");
         body
     }
 
@@ -108,9 +108,9 @@ impl CarrierArrayDesign {
         for (k, read) in reads(&mut b).into_iter().enumerate() {
             lets.push(b.stmt(Stmt::Let { local: k as u32, init: read }));
         }
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) });
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) }).expect("a body this builder handed out");
         let locals = (0..lets.len()).map(|k| piperine_ir::Local { name: format!("v{k}"), ty: ValueType::UInt(8), mutable: false }).collect();
-        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: lets, locals, origin: CarrierArrayDesign::origin(5) });
+        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: lets, locals, origin: CarrierArrayDesign::origin(5) }).expect("a body this builder handed out");
         CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check()
     }
 }
@@ -175,7 +175,7 @@ fn an_element_event_names_an_element_of_an_array_carrier() {
     // CV-24: `on mem[3].changed()` is `EventSource::ElementChanged { carrier: 0, element: 3 }`.
     let mut b = IrBuilder::new();
     let body = CarrierArrayDesign::memory(&mut b);
-    b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: CarrierArrayDesign::origin(4) });
+    b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: CarrierArrayDesign::origin(4) }).expect("a body this builder handed out");
     let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
     assert_eq!(ir.check(), vec![]);
     assert!(ir.to_string().contains("event E0 changed mem[3]"), "{ir}");
@@ -183,7 +183,7 @@ fn an_element_event_names_an_element_of_an_array_carrier() {
     for (carrier, element, what) in [(0, 8, "out of range for an array of 8"), (1, 0, "which is no array of carriers"), (9, 0, "out of range (2 carriers)")] {
         let mut b = IrBuilder::new();
         let body = CarrierArrayDesign::memory(&mut b);
-        b.event(body, Event { source: EventSource::ElementChanged { carrier, element }, guard: None, origin: CarrierArrayDesign::origin(4) });
+        b.event(body, Event { source: EventSource::ElementChanged { carrier, element }, guard: None, origin: CarrierArrayDesign::origin(4) }).expect("a body this builder handed out");
         let broken = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check();
         assert!(broken.iter().any(|e| e.what.contains(what)), "carrier {carrier} element {element}: {broken:#?}");
     }
@@ -199,7 +199,7 @@ fn an_array_of_nodes_names_consecutive_body_nodes_and_round_trips() {
         .map(|k| BodyNode { name: format!("bl[{k}]"), nature, role: NodeRole::Signal, init: None, origin: CarrierArrayDesign::origin(2) })
         .collect();
     let body = b.body(CarrierArrayDesign::spec("Ladder", nodes));
-    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) });
+    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) }).expect("a body this builder handed out");
     let ir = CarrierArrayDesign::design_with_nodes(b, body, &[], 4);
     assert_eq!(ir.check(), vec![]);
     let json = serde_json::to_string(&ir).expect("an IR serializes");
@@ -210,7 +210,7 @@ fn an_array_of_nodes_names_consecutive_body_nodes_and_round_trips() {
     // an array that runs past the body's nodes, and one whose nodes are named otherwise, are each refused
     let mut b = IrBuilder::new();
     let body = b.body(CarrierArrayDesign::spec("Bad", vec![]));
-    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) });
+    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) }).expect("a body this builder handed out");
     let broken = CarrierArrayDesign::design(b, body, &[]).check();
     assert!(broken.iter().any(|e| e.what.contains("array of nodes bl holds nodes 0..4, out of range (0 nodes)")), "{broken:#?}");
 }
@@ -236,12 +236,12 @@ impl Registers {
             origin: CarrierArrayDesign::origin(line),
             count,
         };
-        b.carrier(body, carrier("mem", ValueType::UInt(8), Some(8), 2));
-        b.carrier(body, carrier("st", Registers::pair(), None, 3));
-        b.carrier(body, carrier("en", ValueType::Bool, None, 4));
+        b.carrier(body, carrier("mem", ValueType::UInt(8), Some(8), 2)).expect("a body this builder handed out");
+        b.carrier(body, carrier("st", Registers::pair(), None, 3)).expect("a body this builder handed out");
+        b.carrier(body, carrier("en", ValueType::Bool, None, 4)).expect("a body this builder handed out");
         let stmts: Vec<_> = write(&mut b).into_iter().map(|stmt| b.stmt(stmt)).collect();
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(5) });
-        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts, locals: vec![], origin: CarrierArrayDesign::origin(6) });
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(5) }).expect("a body this builder handed out");
+        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts, locals: vec![], origin: CarrierArrayDesign::origin(6) }).expect("a body this builder handed out");
         let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("st", Registers::pair()), ("en", ValueType::Bool)]);
         let broken = ir.check();
         (ir, broken)
@@ -318,7 +318,7 @@ fn commit_targets_and_windows_are_checked() {
         let mut b = IrBuilder::new();
         let body = CarrierArrayDesign::memory(&mut b);
         let value = CarrierArrayDesign::expr(&mut b, Expr::Int(7), ValueType::UInt(8), 7);
-        b.drive(body, Drive { carrier: 0, value, after: None, origin: CarrierArrayDesign::origin(7), element: Some(element), path: vec![] });
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: CarrierArrayDesign::origin(7), element: Some(element), path: vec![] }).expect("a body this builder handed out");
         let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
         let broken = ir.check();
         if ok {
@@ -333,15 +333,15 @@ fn commit_targets_and_windows_are_checked() {
     for (first, ok) in [(3u64, true), (8, false)] {
         let mut b = IrBuilder::new();
         let leaf = b.body(CarrierArrayDesign::spec("Leaf", vec![]));
-        b.carrier(leaf, Carrier { name: "d".into(), ty: ValueType::UInt(8), role: CarrierRole::In, init: None, origin: CarrierArrayDesign::origin(2), count: None });
+        b.carrier(leaf, Carrier { name: "d".into(), ty: ValueType::UInt(8), role: CarrierRole::In, init: None, origin: CarrierArrayDesign::origin(2), count: None }).expect("a body this builder handed out");
         let child = Child { name: "leaf".into(), body: leaf, nodes: vec![], params: vec![], origin: CarrierArrayDesign::origin(3) };
         let ram = b.body(BodySpec { children: vec![child], ..CarrierArrayDesign::spec("Ram", vec![]) });
         b.carrier(
             ram,
             Carrier { name: "mem".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: None, origin: CarrierArrayDesign::origin(4), count: Some(8) },
-        );
-        b.bind_child_carriers(ram, 0, vec![Some(0)]);
-        b.bind_child_windows(ram, 0, vec![Some(CarrierWindow { first, length: None })]);
+        ).expect("a body this builder handed out");
+        b.bind_child_carriers(ram, 0, vec![Some(0)]).expect("a body this builder handed out");
+        b.bind_child_windows(ram, 0, vec![Some(CarrierWindow { first, length: None })]).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Ram.mem".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: CarrierArrayDesign::origin(4) });
         let spec = |path: &str, body: BodyId, parent: Option<piperine_ir::InstanceId>| InstanceSpec {
@@ -383,9 +383,9 @@ fn an_element_commit_in_a_loop_is_one_statement() {
         7,
     );
     let run = b.stmt(Stmt::Expr(looped));
-    let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) });
+    let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) }).expect("a body this builder handed out");
     let local = piperine_ir::Local { name: "k".into(), ty: ValueType::UInt(8), mutable: false };
-    let reaction = b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![run], locals: vec![local], origin: CarrierArrayDesign::origin(5) });
+    let reaction = b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![run], locals: vec![local], origin: CarrierArrayDesign::origin(5) }).expect("a body this builder handed out");
     let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
     assert_eq!(ir.check(), vec![]);
     assert_eq!(ir.body(body).reaction_statements(reaction), vec![commit], "the loop's one commit is one statement");

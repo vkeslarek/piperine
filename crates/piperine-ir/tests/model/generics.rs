@@ -67,7 +67,7 @@ impl Designs {
         let mut b = IrBuilder::new();
         let module = b.body(BodySpec { name: name.into(), origin: Self::origin(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
         if let Some(instance) = instance {
-            b.mark_body_instance(module, instance);
+            b.mark_body_instance(module, instance).expect("a body this builder handed out");
         }
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: module, parent: None, nodes: vec![], params: vec![], origin: Self::origin() });
         b.finish(top)

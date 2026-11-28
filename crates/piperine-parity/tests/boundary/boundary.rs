@@ -55,8 +55,8 @@ impl BoundaryDesign {
     fn kick(b: &mut IrBuilder) -> BodyId {
         const F: &str = "kick.msl";
         let body = b.body(Buck::spec("Kick", F, 1));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30)).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, 0, F, 2, 8);
         let mut x = Dx::new(b, F, 2, 22);
         let yes = x.boolean(true);

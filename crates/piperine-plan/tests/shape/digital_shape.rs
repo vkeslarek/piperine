@@ -128,7 +128,7 @@ impl ShapeBodies {
         let body = b.body(Buck::spec("Options", "options.msl", 1));
         let carriers = [("o", ValueType::Option(Box::new(ValueAliases::u(8)))), ("x", ValueType::Option(Box::new(ValueType::F64)))];
         for (k, (name, ty)) in carriers.into_iter().enumerate() {
-            b.carrier(body, Buck::carrier(name, ty, CarrierRole::Signal, None, "options.msl", 2 + k as u32, 5));
+            b.carrier(body, Buck::carrier(name, ty, CarrierRole::Signal, None, "options.msl", 2 + k as u32, 5)).expect("a body this builder handed out");
         }
         body
     }
@@ -155,7 +155,7 @@ impl ShapeBodies {
             ("i64", ValueAliases::i(64), CarrierRole::Signal, Some(Constant::Int(i64::MIN as i128))),
         ];
         for (k, (name, ty, role, init)) in carriers.into_iter().enumerate() {
-            b.carrier(body, Buck::carrier(name, ty, role, init, "widths.msl", 2 + k as u32, 5));
+            b.carrier(body, Buck::carrier(name, ty, role, init, "widths.msl", 2 + k as u32, 5)).expect("a body this builder handed out");
         }
         body
     }
@@ -164,15 +164,15 @@ impl ShapeBodies {
     // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
     fn event_guarded(b: &mut IrBuilder) -> BodyId {
         let body = b.body(BodySpec { params: vec![Buck::param("k", "g.msl", 1, Some(1.0), None)], ..Buck::spec("Guarded", "g.msl", 1) });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 20));
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30)).expect("a body this builder handed out");
         let mut x = Dx::new(b, "g.msl", 2, 22);
         let en = x.carrier(1, ValueType::Bool);
         let k = x.param(0, ValueType::F64);
         let zero = x.real(0.0);
         let positive = x.bin(piperine_ir::BinaryOp::Gt, k, zero, ValueType::Bool);
         let guard = x.bin(piperine_ir::BinaryOp::And, en, positive, ValueType::Bool);
-        b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) });
+        b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) }).expect("a body this builder handed out");
         body
     }
 
@@ -184,10 +184,10 @@ impl ShapeBodies {
     //   }
     fn arms(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Arms", "a.msl", 1));
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20));
-        b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30));
-        b.carrier(body, Buck::carrier("b", ValueAliases::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("b", ValueAliases::u(8), CarrierRole::Out, None, "a.msl", 1, 40)).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, "a.msl", 3, 9);
         let c = x.carrier(1, ValueType::Bool);
         let two = x.int(2, ValueAliases::u(8));
@@ -212,11 +212,11 @@ impl ShapeBodies {
     //   y = x after 3n;
     fn delays(b: &mut IrBuilder) -> BodyId {
         let body = b.body(BodySpec { params: vec![Buck::param("t", "d.msl", 1, Some(1e-9), None)], ..Buck::spec("Delays", "d.msl", 1) });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 20));
-        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 30));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 40));
-        b.carrier(body, Buck::carrier("y", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 50));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("d.msl", 2, 8) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 40)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("y", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 50)).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("d.msl", 2, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, "d.msl", 3, 9);
         let mut stmts = Vec::new();
         for delay in 0..6 {
@@ -239,7 +239,7 @@ impl ShapeBodies {
         let mut x = Dx::new(b, "d.msl", 5, 9);
         let value = x.carrier(1, ValueType::Bool);
         let after = x.real(3e-9);
-        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5), element: None, path: vec![] });
+        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
@@ -252,12 +252,12 @@ impl ShapeBodies {
             nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Buck::origin("gc.msl", 1, 10) }],
             ..Buck::spec("GuardedCross", "gc.msl", 1)
         });
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "gc.msl", 1, 30));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "gc.msl", 1, 30)).expect("a body this builder handed out");
         let mut x = Dx::new(b, "gc.msl", 2, 12);
         let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
         let en = x.carrier(0, ValueType::Bool);
         let guard = en;
-        b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
+        b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) }).expect("a body this builder handed out");
         body
     }
 }
@@ -760,7 +760,7 @@ fn every_record_layout_holds_its_declared_fields_only() {
                 ],
             ),
         ] {
-            b.stream(body, Stream { name: name.into(), fields });
+            b.stream(body, Stream { name: name.into(), fields }).expect("a body this builder handed out");
         }
         body
     });
@@ -800,14 +800,14 @@ impl Merging {
     fn body(b: &mut IrBuilder, name: &str) -> BodyId {
         let body = b.body(Buck::spec(name, Merging::F, 1));
         for (carrier, role, col) in [("go", CarrierRole::In, 14), ("en", CarrierRole::In, 28), ("q", CarrierRole::Out, 42)] {
-            b.carrier(body, Buck::carrier(carrier, ValueType::Bool, role, None, Merging::F, 1, col));
+            b.carrier(body, Buck::carrier(carrier, ValueType::Bool, role, None, Merging::F, 1, col)).expect("a body this builder handed out");
         }
         body
     }
 
     /// `on go.changed() && <guard> { q <- <value>; }`.
     fn react(b: &mut IrBuilder, body: BodyId, guard: Option<piperine_ir::ExprId>, value: piperine_ir::ExprId) {
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard, origin: Buck::origin(Merging::F, 2, 8) });
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard, origin: Buck::origin(Merging::F, 2, 8) }).expect("a body this builder handed out");
         let commit = Dx::new(b, Merging::F, 3, 9).commit(2, value, None);
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], Merging::F, 2);
     }
@@ -867,12 +867,12 @@ impl Settling {
     /// `on settle { q <- true; }`, or `on settle && ready { q <- true; }` when `guarded`.
     fn body(b: &mut IrBuilder, guarded: bool) -> BodyId {
         let body = b.body(Buck::spec("Settling", Settling::F, 1));
-        b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28));
+        b.carrier(body, Buck::carrier("ready", ValueType::Bool, CarrierRole::In, None, Settling::F, 1, 14)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Settling::F, 1, 28)).expect("a body this builder handed out");
         let mut x = Dx::new(b, Settling::F, 2, 20);
         let ready = x.carrier(0, ValueType::Bool);
         let guard = guarded.then_some(ready);
-        let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) });
+        let event = b.event(body, Event { source: EventSource::Settle, guard, origin: Buck::origin(Settling::F, 2, 8) }).expect("a body this builder handed out");
         let yes = Dx::new(b, Settling::F, 3, 14).boolean(true);
         let commit = Dx::new(b, Settling::F, 3, 9).commit(1, yes, None);
         Buck::reaction(b, body, vec![event], vec![commit], vec![], Settling::F, 2);
@@ -928,15 +928,15 @@ impl Guarding {
 
     fn body(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Guarding", Guarding::F, 1));
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 14));
-        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 28));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Guarding::F, 1, 40));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 14)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, Guarding::F, 1, 28)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, Guarding::F, 1, 40)).expect("a body this builder handed out");
         // the guard reads the event declared next: `Fired(1)`
         let mut x = Dx::new(b, Guarding::F, 2, 30);
         let still = x.b.expr(piperine_ir::Expr::Fired(1), ValueType::Bool, x.origin());
         let guard = x.un(piperine_ir::UnaryOp::Not, still, ValueType::Bool);
-        let d_changed = b.event(body, Event { source: EventSource::Changed(1), guard: Some(guard), origin: Buck::origin(Guarding::F, 2, 8) });
-        b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) });
+        let d_changed = b.event(body, Event { source: EventSource::Changed(1), guard: Some(guard), origin: Buck::origin(Guarding::F, 2, 8) }).expect("a body this builder handed out");
+        b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(Guarding::F, 2, 8) }).expect("a body this builder handed out");
         let yes = Dx::new(b, Guarding::F, 3, 14).boolean(true);
         let commit = Dx::new(b, Guarding::F, 3, 9).commit(2, yes, None);
         Buck::reaction(b, body, vec![d_changed], vec![commit], vec![], Guarding::F, 2);
@@ -1014,13 +1014,13 @@ impl Resolved {
     /// The holder: `w` is resolved (value `u8`, driven `bool`), driven with `true`; `seen` follows `w.others()`.
     fn holder(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Source", Resolved::F, 1));
-        b.carrier(body, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5));
-        b.carrier(body, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5));
+        b.carrier(body, Buck::carrier("w", ValueAliases::u(8), CarrierRole::Resolved { driven: ValueType::Bool, port: true }, None, Resolved::F, 2, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("seen", ValueAliases::u(8), CarrierRole::Signal, None, Resolved::F, 3, 5)).expect("a body this builder handed out");
         let mut x = Dx::new(b, Resolved::F, 2, 9);
         let drive = x.boolean(true);
-        b.drive(body, piperine_ir::Drive { carrier: 0, value: drive, after: None, origin: Resolved::at(2), element: None, path: vec![] });
+        b.drive(body, piperine_ir::Drive { carrier: 0, value: drive, after: None, origin: Resolved::at(2), element: None, path: vec![] }).expect("a body this builder handed out");
         let others = b.expr(piperine_ir::Expr::Others(0), ValueAliases::u(8), Resolved::at(3));
-        b.drive(body, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Resolved::at(3), element: None, path: vec![] });
+        b.drive(body, piperine_ir::Drive { carrier: 1, value: others, after: None, origin: Resolved::at(3), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
@@ -1041,11 +1041,11 @@ impl Resolved {
             .collect();
         let body = b.body(Buck::spec("Count$resolve~2", Resolved::F, 4));
         for name in ["d0", "d1"] {
-            b.carrier(body, Buck::carrier(name, ValueType::Bool, CarrierRole::In, None, Resolved::F, 4, 5));
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, CarrierRole::In, None, Resolved::F, 4, 5)).expect("a body this builder handed out");
         }
-        b.carrier(body, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Resolved::F, 4, 5));
+        b.carrier(body, Buck::carrier("v", ValueAliases::u(8), CarrierRole::Out, None, Resolved::F, 4, 5)).expect("a body this builder handed out");
         let resolve = b.expr(piperine_ir::Expr::Resolve { by_count, drives: vec![0, 1], except: None }, ValueAliases::u(8), Resolved::at(4));
-        b.drive(body, piperine_ir::Drive { carrier: 2, value: resolve, after: None, origin: Resolved::at(4), element: None, path: vec![] });
+        b.drive(body, piperine_ir::Drive { carrier: 2, value: resolve, after: None, origin: Resolved::at(4), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 }

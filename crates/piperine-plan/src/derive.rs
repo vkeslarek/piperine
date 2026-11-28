@@ -191,12 +191,12 @@ mod tests {
             let two = b.expr(Expr::Real(Real::new(2.0)), ValueType::F64, DerivedBodies::origin());
             let rr = b.expr(Expr::Param(0), ValueType::F64, DerivedBodies::origin());
             let doubled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: rr, rhs: two }, ValueType::F64, DerivedBodies::origin());
-            b.child_param(mid, 0, 0, ChildValue::Expr(doubled));
+            b.child_param(mid, 0, 0, ChildValue::Expr(doubled)).expect("a body this builder handed out");
             let three = b.expr(Expr::Real(Real::new(3.0)), ValueType::F64, DerivedBodies::origin());
             let t = b.expr(Expr::Param(0), ValueType::F64, DerivedBodies::origin());
             let tripled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: t, rhs: three }, ValueType::F64, DerivedBodies::origin());
-            b.child_param(top, 0, 0, ChildValue::Expr(tripled));
-            b.child_param(top, 0, 1, ChildValue::Const(Constant::Real(Real::new(7.0))));
+            b.child_param(top, 0, 0, ChildValue::Expr(tripled)).expect("a body this builder handed out");
+            b.child_param(top, 0, 1, ChildValue::Const(Constant::Real(Real::new(7.0)))).expect("a body this builder handed out");
             let t_i = b.instance(DerivedBodies::instance("Top", "Top", top, None, vec![DerivedBodies::real(1.0)]));
             let m_i = b.instance(DerivedBodies::instance("Top.m", "m", mid, Some(t_i), vec![DerivedBodies::real(3.0), DerivedBodies::real(7.0)]));
             b.instance(DerivedBodies::instance("Top.m.l", "l", leaf, Some(m_i), vec![DerivedBodies::real(6.0)]));

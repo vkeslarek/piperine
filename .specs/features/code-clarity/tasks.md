@@ -2459,8 +2459,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Elaboration` holds the state only; `Scope` has three fields; each table documents what it holds
-- [ ] Gate check passes: Golden
+- [x] `Elaboration` holds the state only; `Scope` has three fields; each table documents what it holds
+  - Note: the field-to-table partition, and how T93 to T97 use it (the views, the accessors, the visibility set for their `git mv`), is design.md's T92 annotation under "Splitting `Elaboration`".
+  - Note: the value table is `ExpressionTables`, not `ValueTables`: `types/value/tables.rs` declares that name and `no_bare_type_name_is_declared_twice` refuses a second. `consts` and `impls` sit at the root of `ElaborationState` with `design`, `types`, `builder` (was `ir`), `locator`, `overrides` and `diagnostics`. The `Scope` flag `analog` is `in_analog_code`, since `scope.analog` now names the `AnalogScope`.
+  - Note: the tables are not in `elaborator.rs` (the Where line) but in one file per concern at the `elab/` root (`value_state.rs`, `function_state.rs`, `analog_state.rs`, `digital_state.rs`, `structure_state.rs`), which T93 to T97 move as `<directory>/state.rs`; `elab/analog/` and `elab/functions/` cannot exist before `analog.rs` and `functions.rs` move.
+  - Note: two in-source tests of `elaborator.rs` read the fields that moved: `elaboration.frames`, `.ir` and `.diagnostics` are `elaboration.state.structure.frames`, `.state.builder` and `.state.diagnostics`, and the test module imports `Frame` and `ValueType`, which the file no longer imports. No assertion changed.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2481,8 +2485,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/value/`; goldens, twins and the Book inventory are byte-identical
-- [ ] Gate check passes: Golden
+- [x] No `impl Elaboration` in `elab/value/`; goldens, twins and the Book inventory are byte-identical
+  - Note: `lower.rs` held `Scope` and the helpers every concern reads (`typed`, `typed_local`, `typed_written`, `value_type`, `type_of`, `expr_origin`, `emit`, `stmt`, `refuse_silent_failure`, `peel_parens`, `is_trait_function`, `is_generic_impl_item`, and the `Repr` width lookups `with_hand_written_widths`, `level_count`, `hand_written_width`, `hand_written_arguments`, `continuous`, `continuous_kind`): they stay `&self` methods of `Elaboration` and `Scope` stays beside it, all in `elaborator.rs` (design.md, T93 annotation). `lower_expr_unchecked` is 64 lines after `lower_folded_expression`, `lower_unary`, `lower_binary`, `lower_folded_if`, `lower_if`, `lower_field_expression`, `lower_method_expression`, `lower_numeric_method`, `lower_literal`, `lower_block_expression`, `lower_cast` and `lower_decided_match` took the arms; it keeps a verdict of `kept` (an exhaustive match over `ExprKind`).
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2503,8 +2508,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/functions/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Elaboration` in `elab/functions/`
+  - Note: `functions.rs` is `functions/declarations.rs` (a module `functions/functions.rs` would repeat its directory) and `event_functions.rs` is `functions/events.rs`. Eight `&self` helpers that `Instance::name`, `is_inlined` and `instance_substitution` read from shared code stay on `Elaboration` in `elaborator.rs`: `impl_qualified_name`, `nature_target_name`, `trait_arguments_suffix`, `closure_owner_name`, `closure_ordinal`, `instance_substitution`, `callable_type`, `takes_handle` (design.md, T93 annotation).
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2525,8 +2531,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/analog/`
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_behavior`
+- [x] No `impl Elaboration` in `elab/analog/`
+  - Note: `analog.rs` is `analog/blocks.rs` (a module `analog/analog.rs` would repeat its directory). Seven read-only queries the shared `&self` code reaches stay on `Elaboration` in `elaborator.rs`: `assignment_reads`, `read_bindings`, `let_initializer`, `block_declaring`, `conditions_of`, `quantity_role`, `module_exprs`, `body_exprs`.
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_behavior`
+  - Note: no `source_behavior` target exists (merged into the `source_*` targets by an earlier phase); the analog `source_natures`, `source_derivative`, `source_delay`, `source_noise`, `source_partial`, `source_environment`, `source_limexp` and `source_reach` ran in its place, 8 targets, all green.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2547,9 +2555,13 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/digital/`
-- [ ] `IrBuilder::body_data` (`crates/piperine-ir/src/build.rs`) returns `Result<_, BuildError>` instead of panicking on an out-of-range body id, and the ~22 builder methods behind it and the elab callers (`carriers`, `resolvers`, `body`, `children`) propagate it as `Elaboration::internal_error`, the way T55 did for the other six sites (owner of T26's and T55's open box; coordinator decision, user AFK, pending review)
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_carriers`
+- [x] No `impl Elaboration` in `elab/digital/`
+  - Note: `concrete_implementation` (read by `resolved_plans` from `&self`) stays on `Elaboration`, and `sub_scope` (the copy of a `Scope`) is `Scope::sub_scope` in `elaborator.rs`.
+- [x] `IrBuilder::body_data` (`crates/piperine-ir/src/build.rs`) returns `Result<_, BuildError>` instead of panicking on an out-of-range body id, and the ~22 builder methods behind it and the elab callers (`carriers`, `resolvers`, `body`, `children`) propagate it as `Elaboration::internal_error`, the way T55 did for the other six sites (owner of T26's and T55's open box; coordinator decision, user AFK, pending review)
+  - Note: done after the coordinator's decision of 2026-11-28 (user AFK, pending review).
+  - Note: the 22 builder methods return `Result<_, BuildError>` (new variant `BodyOutOfRange`). The 27 callers in `elab/` report `P0004` through `Elaboration::built`; the call sites of test and fixture code (345: piperine-ir 113, piperine-plan 80, piperine-transpile 75, piperine-ir-fixtures 40, piperine-interp 34, piperine-parity 2, piperine-api 1) take `.expect("a body this builder handed out")`; no assertion, test name or behaviour changed.
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_carriers`
+  - Note: no `source_carriers` target exists; `source_carrier_arrays`, `source_events`, `source_commits`, `source_logic`, `source_aggregates`, `source_handles` and `source_implicit` ran in its place.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2570,8 +2582,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/structure/`; no `#[allow]` in `crates/piperine-lang/src`
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_structure`
+- [x] No `impl Elaboration` in `elab/structure/`; no `#[allow]` in `crates/piperine-lang/src`
+  - Note: `place.rs` is `structure/placement.rs`; `reach/` moved whole to `structure/reach/`. The read-only queries that shared `&self` code reaches stay on `Elaboration` in `elaborator.rs`: `frame_bindings`, `implicit_ordinals`, `generation_loops`, `hoisted_callee`, `body_let_value`, `is_hoisted`, `is_value_input`, `placed_module`, `is_module_param`, `template_array_length`. The two `#[allow(clippy::too_many_arguments)]` became `GenerationRange` (`expand_range`) and `GeneratedLet` (`generated_let_level`); the guard row of `allow_attributes.tsv` is deleted.
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_structure`
+  - Note: no `source_structure` target exists; `source_modules`, `source_generation`, `source_generic_modules`, `source_nested_reach`, `source_reach`, `source_bundles` and `source_templates` ran in its place.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2592,8 +2606,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `ConstEval` stays one type; every `impl ConstEval` is below `elab/consts/`
-- [ ] Gate check passes: Golden
+- [x] `ConstEval` stays one type; every `impl ConstEval` is below `elab/consts/`
+  - Note: `ConstEval` is declared in `consts/evaluator.rs` and every family file is below `consts/evaluator/` (the `impls_away_from_their_type` guard takes an `impl` as with its type when it is in the declaring file or below the directory that file opens, so the families sit under the file that declares the type, and `consts/mod.rs` stays a 35-line list). `evaluator.rs` holds the module doc, the struct, the constructor, the readers of its state and `fold`; `Bindings` is `consts/bindings.rs`, `ConstFault` and `Exit` `consts/faults.rs`. The methods that were in the 1 084-line file moved to the family files: `literal`, `real`, `boolean`, `unary`, `binary`, `known_binary`, `integer_binary`, `cast` to `numbers.rs`; `call`, `apply_function`, `instantiation_substitution` to `control.rs`; new `methods.rs` (`method`, `encoded_levels`, `known_method`) and `names.rs` (`path`, `body_let`, `body_let_value`, `is_trait_item`). `composite.rs` (978 lines) is 170 and the aggregate kinds have `aggregates.rs`, `comparison.rs`, `options.rs`, `patterns.rs`, `places.rs`, `sequences.rs`. `consts/imported.rs`, the only `impl Elaboration` of the directory, is `value/imported.rs` of `ValueLowering`; `bind_param`, `imported_tree`, `key_text` and `tree_text`, which `&self` code reads, stay on `Elaboration`. One test edited: `tests/elab_generics.rs::the_elaborator_reads_types_only_through_the_substitution` named the file `elab/consts.rs`; it names `elab/consts/` and `elab/consts/evaluator.rs` now, the assertions unchanged.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2614,9 +2629,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `an_inherent_impl_lives_with_its_type` passes with no row for `Elaboration` or `ConstEval`
-- [ ] `elab/` holds 3 files at its root and 6 directories, as design.md's map
-- [ ] Gate check passes: Golden
+- [x] `an_inherent_impl_lives_with_its_type` passes with no row for `Elaboration` or `ConstEval`
+- [x] `elab/` holds 3 files at its root and 6 directories, as design.md's map
+  - Departure (design.md, T99 annotation): `elab/` holds `elaborator.rs`, `mod.rs` and seven directories; `origin.rs` and `diagnose.rs` are below `elaborator/` with the shared helpers (`emitted.rs`, `typing.rs`, `naming.rs`, `queries.rs`, `imports.rs`), `Scope` and `ElaborationState`, so no `impl Elaboration` is away from its type. `elaborator.rs` is 291 lines. The 19 `long_functions` rows of `elab/` have verdicts: `lower_path` was split (`lower_param_path`, `lower_carrier_path`, `lower_binding_path`, 49 lines now) and its row deleted; `lower_option` lost its path, checked-arithmetic and `if` arms (209 to 128 lines); 18 rows are `kept` with a reason.
+- [x] Gate check passes: Golden
 
 **Tests**: integration
 **Gate**: golden

@@ -64,15 +64,15 @@ impl PidDesign {
     fn script_body(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Script", F, 1));
         let (u8_, u10) = (ValueAliases::u(8), ValueAliases::u(10));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier("run", BIT, CarrierRole::Out, Some(Constant::Bool(PidReference::script(0).0)), F, 1, 30));
-        b.carrier(body, Buck::carrier("target", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).1 as i128)), F, 1, 40));
-        b.carrier(body, Buck::carrier("meas", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).2 as i128)), F, 1, 50));
-        b.carrier(body, Buck::carrier("n", u8_.clone(), CarrierRole::Signal, Some(Constant::Int(0)), F, 2, 12));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("run", BIT, CarrierRole::Out, Some(Constant::Bool(PidReference::script(0).0)), F, 1, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("target", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).1 as i128)), F, 1, 40)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("meas", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).2 as i128)), F, 1, 50)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("n", u8_.clone(), CarrierRole::Signal, Some(Constant::Int(0)), F, 2, 12)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 12);
         let clk = x.carrier(0, BIT);
         let low = x.un(UnaryOp::Not, clk, BIT);
-        let fall = b.event(body, Event { source: EventSource::Changed(0), guard: Some(low), origin: Buck::origin(F, 5, 8) });
+        let fall = b.event(body, Event { source: EventSource::Changed(0), guard: Some(low), origin: Buck::origin(F, 5, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 6, 17);
         let n = x.carrier(4, u8_.clone());
         let let_s = x.let_(0, n);

@@ -1,0 +1,168 @@
+//! A node chosen at elaboration (§1.4.7, user decision of 2026-11-24): an `if`, a `match` or a block whose result is a node
+//! and whose value does not depend on the run names the node it folds to, wherever a node goes (a probe, a contribution
+//! target, a connection). Its conditions read params, constants, generation indexes and the `let`s of its blocks, which fold
+//! here; the params it reads are structural (`structural.rs`), so each body variant folds it to one node. A choice the run
+//! makes is refused by the checker (`E0133`), and one that does not fold here (a function that reads the run) is refused with
+//! the same code.
+
+use super::AnalogLowering;
+use std::collections::BTreeMap;
+
+use piperine_ir::Constant;
+
+use crate::elab::consts::Bindings;
+use crate::elab::elaborator::Scope;
+use crate::pom::{Arm, BlockNode, DeclId, ExprId, ExprKind, PatKind, Resolution, StmtKind};
+
+/// What folding a choice has bound so far: the constants of the `let`s of its blocks, and the `let`s that name a node.
+struct ChoiceScope {
+    /// The params, generation indexes and folded `let`s the conditions read.
+    bindings: Bindings,
+    /// Each `let` of a block bound to a node, to its initializer.
+    nodes: BTreeMap<DeclId, ExprId>,
+    /// The `let`s whose value binding was tried already, each once: a `let` that reads itself (`s = !s`), directly or through
+    /// others, is not followed again, so the fold ends.
+    followed: Vec<DeclId>,
+}
+
+impl AnalogLowering<'_, '_, '_> {
+    /// The node expression the choice `expr` folds to in `scope`: the arm its condition or scrutinee selects, the result of a
+    /// block, through every choice nested in them. `None` when `expr` is no choice; `Some(None)` after a diagnostic.
+    pub(super) fn chosen_node(&mut self, scope: &Scope, expr: ExprId) -> Option<Option<ExprId>> {
+        if !matches!(self.state.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_)) {
+            return None;
+        }
+        let mut within = ChoiceScope { bindings: self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled), nodes: BTreeMap::new(), followed: Vec::new() };
+        let chosen = self.fold_choice(&mut within, expr);
+        if chosen.is_none() {
+            // a condition that does not fold reads what only the run knows, through a function the checker cannot see into
+            let message = "a node chosen by a condition that does not fold at elaboration chooses hardware at run time: a node is hardware, chosen at elaboration or named (§1.4.7)".to_string();
+            let span = self.state.design.expr_node(expr).span;
+            self.report(scope.values.file, crate::msl::Diagnostic::new("E0133", message, span, "a node chosen at run time"));
+        }
+        Some(chosen)
+    }
+
+    /// The node expression `expr` names once every choice in it is folded: itself when it is no choice.
+    fn fold_choice(&mut self, within: &mut ChoiceScope, expr: ExprId) -> Option<ExprId> {
+        let expr = self.peel_parens(expr);
+        match self.state.design.expr_node(expr).kind.clone() {
+            ExprKind::If { cond, then, else_ } => match self.choice_value(within, cond) {
+                Ok(Constant::Bool(true)) => self.fold_block(within, &then),
+                Ok(Constant::Bool(false)) => self.fold_choice(within, else_?),
+                _ => None,
+            },
+            ExprKind::Match { scrutinee, arms } => {
+                let body = self.selected_arm(within, scrutinee, &arms)?;
+                self.fold_choice(within, body)
+            }
+            ExprKind::Block(block) => self.fold_block(within, &block),
+            ExprKind::Path(path) => match self.state.design.path_node(path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(local)) if let Some(init) = within.nodes.get(&local).copied() => self.fold_choice(within, init),
+                _ => Some(expr),
+            },
+            _ => Some(expr),
+        }
+    }
+
+    /// The node the block `block` results in: its `let`s bound first (a node to its initializer, a value to its constant).
+    fn fold_block(&mut self, within: &mut ChoiceScope, block: &BlockNode) -> Option<ExprId> {
+        let (last, statements) = block.stmts.split_last()?;
+        for statement in statements {
+            let StmtKind::Let { pat, init: Some(init), .. } = &self.state.design.stmt_node(*statement).kind else { continue };
+            let PatKind::Ident { binding, sub: None, .. } = &self.state.design.pat_node(*pat).kind else { continue };
+            let (binding, init) = (*binding, *init);
+            if matches!(self.typed_local(binding), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
+                within.nodes.insert(binding, init);
+            } else if let Ok(value) = self.state.consts.value(init, &within.bindings) {
+                within.bindings.bind(binding, value);
+            }
+        }
+        match &self.state.design.stmt_node(*last).kind {
+            StmtKind::Expr { expr, semi: false } => self.fold_choice(within, *expr),
+            _ => None,
+        }
+    }
+
+    /// The constant `expr` folds to, the `let`s it reads bound first to the constants of their initializers (§1.4.7: a `let` of
+    /// params and constants is one).
+    fn choice_value(&mut self, within: &mut ChoiceScope, expr: ExprId) -> Result<Constant, crate::elab::consts::ConstFault> {
+        self.bind_read_lets(within, expr);
+        self.state.consts.value_in_a_scope_of_its_own(expr, &within.bindings)
+    }
+
+    /// Binds every `let` `expr` reads that is not bound yet to the constant of its initializer, the `let`s that initializer reads
+    /// first, or, for one a body assigns, to the value its statements leave it where `expr` reads it (`value_where_read`); one
+    /// that does not fold stays unbound, so what reads it does not fold either.
+    fn bind_read_lets(&mut self, within: &mut ChoiceScope, expr: ExprId) {
+        for local in self.read_bindings(expr) {
+            if within.bindings.get(local).is_some() || within.followed.contains(&local) {
+                continue;
+            }
+            within.followed.push(local);
+            if self.state.types.is_assigned(local) {
+                if let Some(value) = self.value_where_read(within, local, expr) {
+                    within.bindings.bind(local, value);
+                }
+                continue;
+            }
+            let Some(init) = self.let_initializer(local) else { continue };
+            self.bind_read_lets(within, init);
+            if let Ok(value) = self.state.consts.value(init, &within.bindings) {
+                within.bindings.bind(local, value);
+            }
+        }
+    }
+
+    /// The value the `let` `local`, which its body assigns, holds where `at` reads it (§1.4.7; the checker judged its initializer,
+    /// every value assigned to it and the conditions around those constant): the statements of its block from its `let` to the
+    /// one that holds `at` run at elaboration, the `let`s they read from outside bound first. `None` when they do not fold, or
+    /// when the statement that holds `at` assigns `local` before it (a choice nested in a block with an assignment).
+    fn value_where_read(&mut self, within: &mut ChoiceScope, local: DeclId, at: ExprId) -> Option<Constant> {
+        let (stmts, from) = self.block_declaring(local)?;
+        let read = self.state.design.expr_node(at).span;
+        let holds = |span: crate::msl::Span| span.start <= read.start && read.end <= span.end;
+        let to = stmts.iter().position(|stmt| holds(self.state.design.stmt_node(*stmt).span))?;
+        if to <= from {
+            return None;
+        }
+        let assigned_before = |this: &Self, stmt: crate::pom::StmtId| {
+            crate::pom::BodyWalk::new(this.state.design).statement_children(stmt).into_iter().any(|child| {
+                let mut inside = Vec::new();
+                crate::pom::BodyWalk::new(this.state.design).descendants_depth_first(child, &mut inside);
+                inside.into_iter().any(|expr| matches!(&this.state.design.expr_node(expr).kind, ExprKind::Assign { lhs, .. } if this.read_bindings(*lhs).contains(&local) && this.state.design.expr_node(expr).span.end <= read.start))
+            })
+        };
+        if assigned_before(self, stmts[to]) {
+            return None;
+        }
+        for stmt in &stmts[from..to] {
+            for child in crate::pom::BodyWalk::new(self.state.design).statement_children(*stmt) {
+                self.bind_read_lets(within, child);
+            }
+        }
+        self.state.consts.local_after(at, &stmts[from..to], local, &within.bindings)
+    }
+
+    /// The body of the arm of a `match` over `scrutinee` that its constant selects: the first whose pattern holds and whose guard
+    /// is true. `None` when the scrutinee or a guard does not fold, or no arm matches.
+    fn selected_arm(&mut self, within: &mut ChoiceScope, scrutinee: ExprId, arms: &[Arm]) -> Option<ExprId> {
+        let subject = self.choice_value(within, scrutinee).ok()?;
+        for arm in arms {
+            if !self.structure().constant_pattern_holds(&within.bindings, arm.pat, subject)? {
+                continue;
+            }
+            let guarded = match arm.guard {
+                Some(guard) => match self.choice_value(within, guard) {
+                    Ok(Constant::Bool(holds)) => holds,
+                    _ => return None,
+                },
+                None => true,
+            };
+            if guarded {
+                return Some(arm.body);
+            }
+        }
+        None
+    }
+}

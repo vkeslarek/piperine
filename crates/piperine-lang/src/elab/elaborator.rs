@@ -1,25 +1,37 @@
 //! The entry point and the pass order of one elaboration run: `Types::check` first, then the
-//! passes over what it reached, each writing through `IrBuilder`.
+//! passes over what it reached, each writing through `IrBuilder`. What every concern reads of the run (its
+//! diagnostics, the types it was given, the nodes it emits, the queries of the design) is `impl Elaboration` in the
+//! files below `elaborator/`.
 
-use std::collections::BTreeMap;
+mod diagnose;
+mod emitted;
+mod imports;
+mod naming;
+mod origin;
+mod queries;
+mod scope;
+mod state;
+mod typing;
 
-use piperine_ir::{BodyId, Ir, IrBuilder, NatureId, ValueType};
+pub(super) use scope::Scope;
+pub(super) use state::ElaborationState;
 
-use super::body::{ModulePlan, ParamPlan};
-use super::carriers::{Frame, Structure};
-use super::consts::{Bindings, ConstEval};
-use super::exits::Divergences;
-use super::loops::DriveLoops;
-use super::origin::Locator;
-use super::signal_flow::SignalFlowCheck;
-use super::structural::{BodyKey, BodyVariants, KeyParams, Overrides};
-use super::unroll::CallCycles;
-use super::variants::Variants;
+use crate::elab::analog::AnalogLowering;
+use crate::elab::digital::DigitalLowering;
+use crate::elab::functions::FunctionLowering;
+use crate::elab::structure::StructureLowering;
+use crate::elab::value::ValueLowering;
+
+use piperine_ir::{BodyId, Ir, IrBuilder};
+
+use super::consts::{Bindings};
+use super::digital::loops::DriveLoops;
+use super::analog::signal_flow::SignalFlowCheck;
+use super::structure::structural::{BodyKey, BodyVariants, Overrides};
 use crate::refusal::forms::ValueForm;
-use crate::refusal::{Refusal, RefusedForm};
-use crate::msl::{Diagnostic, Span};
-use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, FileId};
-use crate::types::Types;
+use crate::msl::{Diagnostic};
+use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic};
+use crate::types::{Types};
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
 #[derive(Debug, Clone)]
@@ -59,7 +71,7 @@ impl<'d> Elaborator<'d> {
         // the reads the text names through children of children are the demands of the first run (`reach/seed.rs`); a run that meets
         // one its tables lack (a hop through a type-parameter template) says so, and is made again with it
         // (`reach/demands.rs`)
-        let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).static_demands();
+        let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).structure().static_demands();
         loop {
             let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
             statistics.passes += 1;
@@ -79,194 +91,116 @@ pub struct RunStatistics {
     pub passes: usize,
 }
 
-/// The state of one run. Its passes are `impl` blocks in the files named after them.
+/// One run: its state and the order of its passes. A concern's lowering is a view of it (`values`, `functions`, `analog`,
+/// `digital`, `structure`); what every concern reads of the run is `impl Elaboration` in the files below `elaborator/`.
 pub(super) struct Elaboration<'d, 't> {
-    pub(super) design: &'d Design,
-    pub(super) types: &'t Types<'d>,
-    pub(super) consts: ConstEval<'d, 't>,
-    pub(super) ir: IrBuilder,
-    pub(super) locator: Locator<'d>,
-    pub(super) natures: BTreeMap<DeclId, NatureId>,
-    /// The body each reached module will get: bodies are built in first-reach order, so a
-    /// placement can name its child's body before that body exists.
-    pub(super) body_ids: BTreeMap<DeclId, BodyId>,
-    /// The IR function of each `fn` and flag pattern a call reached.
-    pub(super) variants: Variants,
-    /// The type of every IR expression added so far, by id.
-    pub(super) expr_types: Vec<ValueType>,
-    /// Whether each IR expression added so far is continuous (part III §8.2), by id.
-    pub(super) expr_continuous: Vec<bool>,
-    /// Whether each IR statement added so far reads a continuous value, by id.
-    pub(super) stmt_continuous: Vec<bool>,
-    /// The origin of every IR expression added so far, by id.
-    pub(super) expr_origins: Vec<piperine_ir::Origin>,
-    /// The plan of every body lowered, by module and values of its key params.
-    pub(super) plans: BTreeMap<BodyKey, ModulePlan>,
-    /// The params of each reached module with a body, planned before any body is lowered.
-    pub(super) param_plans: BTreeMap<DeclId, Vec<ParamPlan>>,
-    /// The params of each instance of a generic module requested so far, planned under its arguments (`generic_bodies.rs`).
-    pub(super) instance_param_plans: BTreeMap<super::instances::Instance, Vec<ParamPlan>>,
-    /// How deep each body requested so far sits in the chain of module instances that asked for it (`generic_bodies.rs`).
-    pub(super) body_depths: BTreeMap<BodyKey, usize>,
-    /// The body being lowered.
-    pub(super) lowering: Option<BodyKey>,
-    /// The key params of each reached module with a body (`structural.rs`).
-    pub(super) keys: KeyParams,
-    /// The variants of keyed bodies requested so far.
-    pub(super) body_variants: BodyVariants,
-    /// The params the host bound before the run.
-    pub(super) overrides: Overrides,
-    /// The carriers, drives, events and reactions of the body being lowered.
-    pub(super) structure: Structure,
-    /// The frames of the body being lowered: frame 0 is its own module.
-    pub(super) frames: Vec<Frame>,
-    /// The index each placement of the body being lowered takes among its children (`reach/fields.rs`).
-    pub(super) child_indices: BTreeMap<crate::pom::ExprId, u32>,
-    /// The items of the body being lowered that are written inside generation, and how each unrolls (`generation.rs`).
-    pub(super) generated: super::generation::GeneratedItems,
-    /// The values of the key params of the body being lowered: what its initial values fold over.
-    pub(super) body_keys: Bindings,
-    /// The ammeter branch of each port whose `inflow()` the body being lowered reads (`inflow.rs`).
-    pub(super) ammeters: BTreeMap<crate::pom::DeclId, u32>,
-    /// The reach frame of each child a frame reads, by the frame that reads it and the placement (`reach/fields.rs`).
-    pub(super) reach_frames: BTreeMap<(usize, super::hoist::PlacementKey), usize>,
-    /// What the design reads through a child of a child, by module (`reach/demands.rs`).
-    pub(super) nested_demands: super::reach::demands::NestedDemands,
-    /// The modules refused for a cause of their own that a read through them meets: one that declares a node in generation
-    /// (`reach/fields.rs`), a hoisted one that holds a placement (`hoist.rs`). A read through one of them adds no second diagnostic.
-    pub(super) refused_modules: std::collections::BTreeSet<DeclId>,
-    /// The diverging expressions lowered so far (`exits.rs`).
-    pub(super) divergences: Divergences,
-    /// How many placements of a module an unrolled loop has hoisted so far, by the frame that
-    /// places them (`unroll.rs`).
-    pub(super) unrolled_names: BTreeMap<(usize, DeclId), u32>,
-    /// The placements inside a loop, by module (`unroll.rs`).
-    pub(super) looped: BTreeMap<DeclId, std::collections::BTreeSet<crate::pom::ExprId>>,
-    /// The functions on a call cycle (`unroll.rs`).
-    pub(super) cycles: CallCycles,
-    /// The IR type each reached struct and enum has (`types.rs`).
-    pub(super) type_arena: super::types::TypeArena,
-    /// Every trait and `impl` of the design: what a call through a bound resolves against (`methods.rs`).
-    pub(super) impls: crate::types::ImplTable<'d>,
-    /// The resolved nets of the placed tree and their resolver bodies (`resolvers.rs`).
-    pub(super) resolvers: super::resolvers::ResolverBodies,
-    pub(super) diagnostics: Vec<DesignDiagnostic>,
+    /// The inputs of the run, the IR being built, and one table per concern.
+    pub(super) state: ElaborationState<'d, 't>,
 }
 
 impl<'d, 't> Elaboration<'d, 't> {
-    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach::demands::NestedDemand>) -> Self {
-        Elaboration {
-            design,
-            types,
-            consts: ConstEval::new(design, types),
-            ir: IrBuilder::new(),
-            locator: Locator::new(design),
-            natures: BTreeMap::new(),
-            body_ids: BTreeMap::new(),
-            variants: Variants::default(),
-            expr_types: Vec::new(),
-            expr_continuous: Vec::new(),
-            stmt_continuous: Vec::new(),
-            expr_origins: Vec::new(),
-            plans: BTreeMap::new(),
-            param_plans: BTreeMap::new(),
-            instance_param_plans: BTreeMap::new(),
-            body_depths: BTreeMap::new(),
-            lowering: None,
-            keys: KeyParams::default(),
-            overrides,
-            body_variants: BodyVariants::default(),
-            structure: Structure::default(),
-            frames: Vec::new(),
-            child_indices: BTreeMap::new(),
-            generated: super::generation::GeneratedItems::default(),
-            body_keys: Bindings::new(),
-            ammeters: BTreeMap::new(),
-            reach_frames: BTreeMap::new(),
-            nested_demands: super::reach::demands::NestedDemands::known(demands),
-            refused_modules: std::collections::BTreeSet::new(),
-            divergences: Divergences::default(),
-            unrolled_names: BTreeMap::new(),
-            looped: BTreeMap::new(),
-            cycles: CallCycles::default(),
-            type_arena: super::types::TypeArena::default(),
-            impls: crate::types::ImplTable::new(design),
-            resolvers: super::resolvers::ResolverBodies::default(),
-            diagnostics: Vec::new(),
-        }
+    /// The view that lowers functions.
+    pub(super) fn functions(&mut self) -> FunctionLowering<'_, 'd, 't> {
+        FunctionLowering::new(self)
+    }
+
+    /// The view that lowers discrete code.
+    pub(super) fn digital(&mut self) -> DigitalLowering<'_, 'd, 't> {
+        DigitalLowering::new(self)
+    }
+
+    /// The view that lowers module structure.
+    pub(super) fn structure(&mut self) -> StructureLowering<'_, 'd, 't> {
+        StructureLowering::new(self)
+    }
+
+    /// The view that lowers analog code.
+    pub(super) fn analog(&mut self) -> AnalogLowering<'_, 'd, 't> {
+        AnalogLowering::new(self)
+    }
+
+    /// The view that lowers value code.
+    pub(super) fn values(&mut self) -> ValueLowering<'_, 'd, 't> {
+        ValueLowering::new(self)
+    }
+
+    /// A run over `design`, typed as `types`, with the params the host bound (`overrides`) and the reads through a child
+    /// of a child the runs before it found (`demands`).
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::structure::reach::demands::NestedDemand>) -> Self {
+        Elaboration { state: ElaborationState::new(design, types, overrides, demands) }
     }
 
     /// Copies the wide integer constants the evaluator made into the IR, in handle order, so each
     /// `Constant::Wide` and `Expr::Wide` the elaboration emitted names the entry it was made as
     /// (`consts/numbers.rs`).
     fn sync_wides(&mut self) {
-        for data in self.consts.take_new_wides() {
-            self.ir.wide(data);
+        for data in self.state.consts.take_new_wides() {
+            self.state.builder.wide(data);
         }
     }
 
     /// The run, and the demands it found that its tables did not hold (`reach/demands.rs`): when there are any, the
     /// result is not the run's and the caller runs again with them.
-    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::reach::demands::NestedDemand>) {
+    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::structure::reach::demands::NestedDemand>) {
         let result = self.elaborate(top);
-        (result, self.nested_demands.into_wanted())
+        (result, self.state.structure.nested_demands.into_wanted())
     }
 
     /// The passes of one run.
     fn elaborate(&mut self, top: DeclId) -> Result<Ir, Vec<DesignDiagnostic>> {
-        if self.refuse_value_inputs(top) {
-            return Err(std::mem::take(&mut self.diagnostics));
+        if self.analog().refuse_value_inputs(top) {
+            return Err(std::mem::take(&mut self.state.diagnostics));
         }
         // A module with a result or a value input gets no body: it is hoisted into each body that
         // places it. Its natures are still the IR's before any body.
-        let reached: Vec<DeclId> = self.types.reached().iter().copied().filter(|d| matches!(&self.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
+        let reached: Vec<DeclId> = self.state.types.reached().iter().copied().filter(|d| matches!(&self.state.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
         // a generic module has no body of its own: each instance a placement makes is one (`generic_bodies.rs`)
         let with_generic = modules.clone();
-        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.is_generic_module(*m)).collect();
-        self.read_included_files();
-        self.build_type_arena();
-        self.plan_params(&modules);
-        self.classify_module_param_keys(&with_generic);
-        self.classify_folded_param_keys(&with_generic);
-        self.classify_key_params(&modules);
+        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.structure().is_generic_module(*m)).collect();
+        self.values().read_included_files();
+        self.values().build_type_arena();
+        self.structure().plan_params(&modules);
+        self.structure().classify_module_param_keys(&with_generic);
+        self.structure().classify_folded_param_keys(&with_generic);
+        self.structure().classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
         // variants take the ids after them, on request.
-        let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.keys.of(*m).is_empty()).collect();
-        self.body_ids = unkeyed.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
-        self.body_variants = BodyVariants::starting_at(unkeyed.len() as u32);
-        self.lower_natures(&reached);
+        let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.state.structure.keys.of(*m).is_empty()).collect();
+        self.state.structure.body_ids = unkeyed.iter().enumerate().map(|(k, m)| (*m, BodyId(k as u32))).collect();
+        self.state.structure.body_variants = BodyVariants::starting_at(unkeyed.len() as u32);
+        self.analog().lower_natures(&reached);
         for module in &unkeyed {
-            if let Some(id) = self.body_ids.get(module).copied() {
-                self.lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
+            if let Some(id) = self.state.structure.body_ids.get(module).copied() {
+                self.structure().lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
             }
         }
-        self.lower_pending_bodies();
-        self.pad_child_nodes();
-        let top_instance = self.place_top(top);
+        self.structure().lower_pending_bodies();
+        self.structure().pad_child_nodes();
+        let top_instance = self.structure().place_top(top);
         // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
-        self.pad_child_nodes();
-        self.build_resolvers();
-        let reprs = self.lower_hand_written_reprs();
-        self.add_functions();
-        self.set_hand_written_reprs(reprs);
+        self.structure().pad_child_nodes();
+        self.digital().build_resolvers();
+        let reprs = self.values().lower_hand_written_reprs();
+        self.functions().add_functions();
+        self.values().set_hand_written_reprs(reprs);
         // the last net: an elaboration that placed no top and said nothing is refused by name, never an empty `Err`
-        if top_instance.is_none() && self.diagnostics.is_empty() {
-            let (file, span) = (self.design.decl_data(top).file, self.design.decl_data(top).span);
+        if top_instance.is_none() && self.state.diagnostics.is_empty() {
+            let (file, span) = (self.state.design.decl_data(top).file, self.state.design.decl_data(top).span);
             self.refuse_silent_failure(file, span, ValueForm::TopModuleItsElaborationFailedWithoutDiagnostic);
         }
         match top_instance {
-            Some(instance) if self.diagnostics.is_empty() => {
+            Some(instance) if self.state.diagnostics.is_empty() => {
                 self.sync_wides();
-                let ir = std::mem::replace(&mut self.ir, IrBuilder::new()).finish(instance);
-                self.diagnostics.extend(Self::signal_flow_diagnostics(self.design, top, &ir));
-                self.diagnostics.extend(Self::loop_diagnostics(self.design, top, &ir));
-                if !self.diagnostics.is_empty() {
-                    return Err(std::mem::take(&mut self.diagnostics));
+                let ir = std::mem::replace(&mut self.state.builder, IrBuilder::new()).finish(instance);
+                self.state.diagnostics.extend(Self::signal_flow_diagnostics(self.state.design, top, &ir));
+                self.state.diagnostics.extend(Self::loop_diagnostics(self.state.design, top, &ir));
+                if !self.state.diagnostics.is_empty() {
+                    return Err(std::mem::take(&mut self.state.diagnostics));
                 }
-                Self::well_formed(self.design, top, ir)
+                Self::well_formed(self.state.design, top, ir)
             }
-            _ => Err(std::mem::take(&mut self.diagnostics)),
+            _ => Err(std::mem::take(&mut self.state.diagnostics)),
         }
     }
 
@@ -318,69 +252,14 @@ impl<'d, 't> Elaboration<'d, 't> {
             .collect()
     }
 
-    /// Records `diagnostic`, once: a construct lowered in two halves (the `is` and the `val` of an `Option`)
-    /// reports the same refusal at the same place twice, which is one finding.
-    pub(super) fn report(&mut self, file: FileId, diagnostic: Diagnostic) {
-        let found = DesignDiagnostic { file, diagnostic };
-        if !self.diagnostics.contains(&found) {
-            self.diagnostics.push(found);
-        }
-    }
-
-    /// `P0004`: an invariant of the elaborator broken (a bug in it, not in the model), reported at the module of the body being
-    /// lowered; the run then gives no `Ir`, as for an ill-formed one (`well_formed`).
-    pub(super) fn internal_error(&mut self, what: &str) {
-        // every lowering runs with frame 0 set; before one, the body asked for (`lowering`) names the module
-        let module = self.frames.first().map(|frame| frame.module).or_else(|| self.lowering.as_ref().map(|key| key.module));
-        let (file, span) = match module {
-            Some(module) => {
-                let data = self.design.decl_data(module);
-                (data.file, data.name.as_ref().map_or(data.span, |n| n.span))
-            }
-            None => (FileId(0), Span::default()),
-        };
-        self.report(file, Diagnostic::new("P0004", format!("internal error: {what}"), span, "this is a bug in the elaborator, not in the model"));
-    }
-
-    /// `P0001` at `span`, naming `form`: a construct inside the type-checked subset that elaboration does not lower.
-    pub(super) fn refuse(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
-        self.report(file, Refusal::of(form).diagnostic(span));
-    }
-
-    /// [`refuse`](Self::refuse) with `details` for the `{}` of the form's words.
-    pub(super) fn refuse_with(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) {
-        let refusal = details.into_iter().fold(Refusal::of(form), Refusal::with_detail);
-        self.report(file, refusal.diagnostic(span));
-    }
-
-    /// [`refuse`](Self::refuse) unless the read through the frame `frame` passes through a module refused for its own
-    /// cause (`refused_modules`): that refusal is the read's, reported once. Any other refusal of the run, of another module or of
-    /// another read, hides nothing.
-    pub(super) fn refuse_unless_refused(&mut self, frame: usize, file: FileId, span: Span, form: impl Into<RefusedForm>) {
-        if !self.reads_through_refused(frame) {
-            self.refuse(file, span, form);
-        }
-    }
-
-    /// Whether the frame `frame`, or a frame it hangs from, is of a module refused for its own cause (`refused_modules`).
-    pub(super) fn reads_through_refused(&self, frame: usize) -> bool {
-        let mut at = Some(frame);
-        while let Some(index) = at {
-            let Some(held) = self.frames.get(index) else { return false };
-            if self.refused_modules.contains(&held.module) {
-                return true;
-            }
-            at = held.parent;
-        }
-        false
-    }
 }
 
 #[cfg(test)]
 mod tests {
-    use piperine_ir::{InstanceId, IrBuilder};
+    use piperine_ir::{InstanceId, IrBuilder, ValueType};
 
     use super::*;
+    use crate::elab::digital::carriers::Frame;
 
     #[test]
     fn an_ill_formed_ir_becomes_an_internal_error_and_no_ir() {
@@ -401,13 +280,13 @@ mod tests {
         let types = Types::check(&design, "Top").expect("a clean model");
         let top = types.reached()[0];
         let mut elaboration = Elaboration::new(&design, &types, Overrides::default(), Vec::new());
-        elaboration.frames = vec![Frame::root(top)];
-        let pair = elaboration.ir.aggregate(piperine_ir::AggregateData { ty: ValueType::Array(Box::new(ValueType::F64), 2), variant: None, parts: vec![piperine_ir::Constant::Real(piperine_ir::Real::new(1.0)); 2] });
+        elaboration.state.structure.frames = vec![Frame::root(top)];
+        let pair = elaboration.state.builder.aggregate(piperine_ir::AggregateData { ty: ValueType::Array(Box::new(ValueType::F64), 2), variant: None, parts: vec![piperine_ir::Constant::Real(piperine_ir::Real::new(1.0)); 2] });
         let origin = piperine_ir::Origin { file: "top.msl".to_string(), line: 1, col: 1 };
-        elaboration.constant_expr(piperine_ir::Constant::Aggregate(pair), ValueType::Bool, origin);
-        let codes: Vec<&str> = elaboration.diagnostics.iter().map(|d| d.diagnostic.code.as_ref()).collect();
-        assert_eq!(codes, ["P0004"], "{:?}", elaboration.diagnostics);
-        let found = &elaboration.diagnostics[0];
+        elaboration.values().constant_expr(piperine_ir::Constant::Aggregate(pair), ValueType::Bool, origin);
+        let codes: Vec<&str> = elaboration.state.diagnostics.iter().map(|d| d.diagnostic.code.as_ref()).collect();
+        assert_eq!(codes, ["P0004"], "{:?}", elaboration.state.diagnostics);
+        let found = &elaboration.state.diagnostics[0];
         assert!(found.diagnostic.message.starts_with("internal error: the composite constant") && found.file == design.decl_data(top).file, "{found:?}");
     }
 }

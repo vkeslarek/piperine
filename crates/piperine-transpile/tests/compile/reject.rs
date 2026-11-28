@@ -90,7 +90,7 @@ impl SampledBody {
             analog: Some(vec![let_x, contribute]),
             ..Buck::spec("Sampled", F, 1)
         });
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 33));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 33)).expect("a body this builder handed out");
         body
     }
 }

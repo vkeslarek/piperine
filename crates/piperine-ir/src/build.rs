@@ -217,180 +217,181 @@ impl IrBuilder {
         BodyId(self.bodies.len() as u32 - 1)
     }
 
-    /// The body `id` added before; an id this builder never handed out panics, as a handle given
-    /// an id out of range does.
-    fn body_data(&mut self, id: BodyId) -> &mut BodyData {
+    /// The body `id` added before; an id this builder never handed out is a [`BuildError`].
+    fn body_data(&mut self, id: BodyId) -> Result<&mut BodyData, BuildError> {
         let count = self.bodies.len();
-        match self.bodies.get_mut(id.index()) {
-            Some(body) => body,
-            None => panic!("body id {} out of range ({count} bodies)", id.0),
-        }
+        self.bodies.get_mut(id.index()).ok_or(BuildError::BodyOutOfRange { body: id, count })
     }
 
     /// Adds a carrier to `body`, after the ones added before: returns its index, the identity
     /// `Expr::Carrier` and `Drive` read it by.
-    pub fn carrier(&mut self, body: BodyId, carrier: Carrier) -> u32 {
-        let carriers = &mut self.body_data(body).carriers;
+    pub fn carrier(&mut self, body: BodyId, carrier: Carrier) -> Result<u32, BuildError> {
+        let carriers = &mut self.body_data(body)?.carriers;
         carriers.push(carrier);
-        carriers.len() as u32 - 1
+        Ok(carriers.len() as u32 - 1)
     }
 
     /// Adds a definition to `body`, in source order: returns its index.
-    pub fn drive(&mut self, body: BodyId, drive: Drive) -> u32 {
-        let drives = &mut self.body_data(body).drives;
+    pub fn drive(&mut self, body: BodyId, drive: Drive) -> Result<u32, BuildError> {
+        let drives = &mut self.body_data(body)?.drives;
         drives.push(drive);
-        drives.len() as u32 - 1
+        Ok(drives.len() as u32 - 1)
     }
 
     /// Adds an event to `body`: returns its index, the identity `Reaction::on` names it by.
-    pub fn event(&mut self, body: BodyId, event: Event) -> u32 {
-        let events = &mut self.body_data(body).events;
+    pub fn event(&mut self, body: BodyId, event: Event) -> Result<u32, BuildError> {
+        let events = &mut self.body_data(body)?.events;
         events.push(event);
-        events.len() as u32 - 1
+        Ok(events.len() as u32 - 1)
     }
 
     /// Adds a reaction to `body`, in source order: returns its index.
-    pub fn reaction(&mut self, body: BodyId, reaction: Reaction) -> u32 {
-        let reactions = &mut self.body_data(body).reactions;
+    pub fn reaction(&mut self, body: BodyId, reaction: Reaction) -> Result<u32, BuildError> {
+        let reactions = &mut self.body_data(body)?.reactions;
         reactions.push(reaction);
-        reactions.len() as u32 - 1
+        Ok(reactions.len() as u32 - 1)
     }
 
     /// Sets the value `value` of param `param` of child `child` (an index into the body's
     /// children), beside the child (contract D4: `Child` itself is built literally and gains no
     /// field). A param set twice keeps both entries; `Ir::check` names that.
-    pub fn child_param(&mut self, body: BodyId, child: u32, param: u32, value: ChildValue) {
-        let lists = &mut self.body_data(body).child_params;
+    pub fn child_param(&mut self, body: BodyId, child: u32, param: u32, value: ChildValue) -> Result<(), BuildError> {
+        let lists = &mut self.body_data(body)?.child_params;
         if lists.len() <= child as usize {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize].push((param, value));
+        Ok(())
     }
 
     /// Names `count` consecutive nodes of `body` as one array of nodes (`signal bl: [Electrical; 4]`): returns its
     /// index. The nodes themselves are `BodyNode`s named `name[0]` and on, added with the body.
-    pub fn node_array(&mut self, body: BodyId, array: NodeArray) -> u32 {
-        let arrays = &mut self.body_data(body).node_arrays;
+    pub fn node_array(&mut self, body: BodyId, array: NodeArray) -> Result<u32, BuildError> {
+        let arrays = &mut self.body_data(body)?.node_arrays;
         arrays.push(array);
-        arrays.len() as u32 - 1
+        Ok(arrays.len() as u32 - 1)
     }
 
     /// Records the array `array` of `body` declared with no element: no carrier and no node stand for it.
-    pub fn empty_array(&mut self, body: BodyId, array: EmptyArray) {
-        self.body_data(body).empty_arrays.push(array);
+    pub fn empty_array(&mut self, body: BodyId, array: EmptyArray) -> Result<(), BuildError> {
+        self.body_data(body)?.empty_arrays.push(array);
+        Ok(())
     }
 
     /// Records the part of an array of carriers each carrier port of child `child` of `body` is given, parallel to
     /// `bind_child_carriers`: `None` for a port bound whole or to a scalar carrier. Replaces what was set before.
-    pub fn bind_child_windows(&mut self, body: BodyId, child: u32, windows: Vec<Option<CarrierWindow>>) {
-        let lists = &mut self.body_data(body).child_windows;
+    pub fn bind_child_windows(&mut self, body: BodyId, child: u32, windows: Vec<Option<CarrierWindow>>) -> Result<(), BuildError> {
+        let lists = &mut self.body_data(body)?.child_windows;
         if lists.len() <= child as usize {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize] = windows;
+        Ok(())
     }
 
     /// Records what child `child` of `body` (an index into its children) binds at each carrier
     /// port of its body, in the port order: the parent's carrier, or `None` for an open port. The
     /// authored tree shows what a placement connects, carriers as well as nodes (`Child` itself
     /// gains no field, contract D4). Replaces what was set before.
-    pub fn bind_child_carriers(&mut self, body: BodyId, child: u32, carriers: Vec<Option<u32>>) {
-        let lists = &mut self.body_data(body).child_carriers;
+    pub fn bind_child_carriers(&mut self, body: BodyId, child: u32, carriers: Vec<Option<u32>>) -> Result<(), BuildError> {
+        let lists = &mut self.body_data(body)?.child_carriers;
         if lists.len() <= child as usize {
             lists.resize(child as usize + 1, Vec::new());
         }
         lists[child as usize] = carriers;
+        Ok(())
     }
 
     /// Replaces the node slots of child number `child` of `body`: the terminals it connects, then one
     /// slot per node of the child's own that is no port. A child's own nodes are known once its body
     /// is built, which is after its parent's.
-    pub fn set_child_nodes(&mut self, body: BodyId, child: u32, nodes: Vec<Terminal>) {
-        if let Some(slot) = self.body_data(body).children.get_mut(child as usize) {
+    pub fn set_child_nodes(&mut self, body: BodyId, child: u32, nodes: Vec<Terminal>) -> Result<(), BuildError> {
+        if let Some(slot) = self.body_data(body)?.children.get_mut(child as usize) {
             slot.nodes = nodes;
         }
+        Ok(())
     }
 
     /// Adds a derivative site to `body`: returns its index, the identity `Expr::Derivative`
     /// reads it by.
-    pub fn derivative(&mut self, body: BodyId, derivative: Derivative) -> u32 {
-        let derivatives = &mut self.body_data(body).derivatives;
+    pub fn derivative(&mut self, body: BodyId, derivative: Derivative) -> Result<u32, BuildError> {
+        let derivatives = &mut self.body_data(body)?.derivatives;
         derivatives.push(derivative);
-        derivatives.len() as u32 - 1
+        Ok(derivatives.len() as u32 - 1)
     }
 
     /// Adds a delay site to `body`: returns its index, the identity `Expr::Delay` reads it by.
-    pub fn delay(&mut self, body: BodyId, delay: DelaySite) -> u32 {
-        let delays = &mut self.body_data(body).delays;
+    pub fn delay(&mut self, body: BodyId, delay: DelaySite) -> Result<u32, BuildError> {
+        let delays = &mut self.body_data(body)?.delays;
         delays.push(delay);
-        delays.len() as u32 - 1
+        Ok(delays.len() as u32 - 1)
     }
 
     /// Adds a noise source to `body`: returns its index, the identity `Expr::Noise` reads it by.
-    pub fn noise_source(&mut self, body: BodyId, source: NoiseSource) -> u32 {
-        let sources = &mut self.body_data(body).noise_sources;
+    pub fn noise_source(&mut self, body: BodyId, source: NoiseSource) -> Result<u32, BuildError> {
+        let sources = &mut self.body_data(body)?.noise_sources;
         sources.push(source);
-        sources.len() as u32 - 1
+        Ok(sources.len() as u32 - 1)
     }
 
     /// Adds a session parameter to `body`: returns its index, the identity `Expr::SessionParameter`
     /// reads it by.
-    pub fn session_parameter(&mut self, body: BodyId, parameter: SessionParameter) -> u32 {
-        let parameters = &mut self.body_data(body).session_parameters;
+    pub fn session_parameter(&mut self, body: BodyId, parameter: SessionParameter) -> Result<u32, BuildError> {
+        let parameters = &mut self.body_data(body)?.session_parameters;
         parameters.push(parameter);
-        parameters.len() as u32 - 1
+        Ok(parameters.len() as u32 - 1)
     }
 
     /// Records that `body` placed a module in an expression whose node or `analog` statements
     /// joined it: returns its index.
-    pub fn hoisted(&mut self, body: BodyId, hoisted: Hoisted) -> u32 {
-        let list = &mut self.body_data(body).hoisted;
+    pub fn hoisted(&mut self, body: BodyId, hoisted: Hoisted) -> Result<u32, BuildError> {
+        let list = &mut self.body_data(body)?.hoisted;
         list.push(hoisted);
-        list.len() as u32 - 1
+        Ok(list.len() as u32 - 1)
     }
 
     /// Records that `body` dropped a fixed zero-potential branch as a node merge: returns its
     /// index. Placement then calls `merge_nodes` for each instance of the body.
-    pub fn merge(&mut self, body: BodyId, merge: Merge) -> u32 {
-        let list = &mut self.body_data(body).merges;
+    pub fn merge(&mut self, body: BodyId, merge: Merge) -> Result<u32, BuildError> {
+        let list = &mut self.body_data(body)?.merges;
         list.push(merge);
-        list.len() as u32 - 1
+        Ok(list.len() as u32 - 1)
     }
 
     /// Records that `body` reads a `pub` node or carrier of one of its children (`inst.name`):
     /// returns its index.
-    pub fn reach(&mut self, body: BodyId, reach: Reach) -> u32 {
-        let list = &mut self.body_data(body).reaches;
+    pub fn reach(&mut self, body: BodyId, reach: Reach) -> Result<u32, BuildError> {
+        let list = &mut self.body_data(body)?.reaches;
         list.push(reach);
-        list.len() as u32 - 1
+        Ok(list.len() as u32 - 1)
     }
 
     /// Records the ammeter of a `p.inflow()` of `body`: returns its index.
-    pub fn inflow(&mut self, body: BodyId, inflow: Inflow) -> u32 {
-        let list = &mut self.body_data(body).inflows;
+    pub fn inflow(&mut self, body: BodyId, inflow: Inflow) -> Result<u32, BuildError> {
+        let list = &mut self.body_data(body)?.inflows;
         list.push(inflow);
-        list.len() as u32 - 1
+        Ok(list.len() as u32 - 1)
     }
 
     /// Records a `ddx` of `body`: returns its index.
-    pub fn partial_derivative(&mut self, body: BodyId, partial: PartialDerivative) -> u32 {
-        let list = &mut self.body_data(body).partial_derivatives;
+    pub fn partial_derivative(&mut self, body: BodyId, partial: PartialDerivative) -> Result<u32, BuildError> {
+        let list = &mut self.body_data(body)?.partial_derivatives;
         list.push(partial);
-        list.len() as u32 - 1
+        Ok(list.len() as u32 - 1)
     }
 
     /// Adds a trace site to `body`: returns its index, the identity `Stmt::Trace` names it by.
-    pub fn trace(&mut self, body: BodyId, trace: TraceSite) -> u32 {
-        let traces = &mut self.body_data(body).traces;
+    pub fn trace(&mut self, body: BodyId, trace: TraceSite) -> Result<u32, BuildError> {
+        let traces = &mut self.body_data(body)?.traces;
         traces.push(trace);
-        traces.len() as u32 - 1
+        Ok(traces.len() as u32 - 1)
     }
 
     /// Adds a record stream to `body`: returns its index, the identity `Stmt::Emit` names it by.
-    pub fn stream(&mut self, body: BodyId, stream: Stream) -> u32 {
-        let streams = &mut self.body_data(body).streams;
+    pub fn stream(&mut self, body: BodyId, stream: Stream) -> Result<u32, BuildError> {
+        let streams = &mut self.body_data(body)?.streams;
         streams.push(stream);
-        streams.len() as u32 - 1
+        Ok(streams.len() as u32 - 1)
     }
 
     pub fn function(&mut self, spec: FunctionSpec) -> FunctionId {
@@ -409,8 +410,9 @@ impl IrBuilder {
     /// Records that `body` lowers `instance` of a generic module (GN-15); the body's name must be the instance's, then
     /// its key params' suffix (`Ir::check`). Set after `body` so that a module as written needs no extra field in its
     /// `BodySpec`.
-    pub fn mark_body_instance(&mut self, body: BodyId, instance: GenericInstance) {
-        self.body_data(body).instance = Some(instance);
+    pub fn mark_body_instance(&mut self, body: BodyId, instance: GenericInstance) -> Result<(), BuildError> {
+        self.body_data(body)?.instance = Some(instance);
+        Ok(())
     }
 
     /// Records that `function` is `instance` of a generic item (GN-02); the function's name must

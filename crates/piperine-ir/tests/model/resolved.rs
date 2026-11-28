@@ -60,11 +60,11 @@ impl ResolvedNets {
     fn resolver(b: &mut IrBuilder, by_count: Vec<FunctionId>, drives: Vec<u32>) -> BodyId {
         let body = b.body(ResolvedNets::spec("Count$resolve~2"));
         for name in ["d0", "d1"] {
-            b.carrier(body, Carrier { name: name.into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(3), count: None });
+            b.carrier(body, Carrier { name: name.into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(3), count: None }).expect("a body this builder handed out");
         }
-        b.carrier(body, Carrier { name: "v".into(), ty: ValueType::UInt(8), role: CarrierRole::Out, init: None, origin: ResolvedNets::origin(3), count: None });
+        b.carrier(body, Carrier { name: "v".into(), ty: ValueType::UInt(8), role: CarrierRole::Out, init: None, origin: ResolvedNets::origin(3), count: None }).expect("a body this builder handed out");
         let value = ResolvedNets::expr(b, Expr::Resolve { by_count, drives, except: None }, ValueType::UInt(8), 3);
-        b.drive(body, Drive { carrier: 2, value, after: None, origin: ResolvedNets::origin(3), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 2, value, after: None, origin: ResolvedNets::origin(3), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
@@ -72,12 +72,12 @@ impl ResolvedNets {
     /// `w.others()`.
     fn source(b: &mut IrBuilder, driven: ValueType, drive_value: Expr, drive_ty: ValueType) -> BodyId {
         let body = b.body(ResolvedNets::spec("Source"));
-        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven, port: true }, init: None, origin: ResolvedNets::origin(4), count: None });
-        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(5), count: None });
+        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven, port: true }, init: None, origin: ResolvedNets::origin(4), count: None }).expect("a body this builder handed out");
+        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(5), count: None }).expect("a body this builder handed out");
         let drive = ResolvedNets::expr(b, drive_value, drive_ty, 4);
-        b.drive(body, Drive { carrier: 0, value: drive, after: None, origin: ResolvedNets::origin(4), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 0, value: drive, after: None, origin: ResolvedNets::origin(4), element: None, path: vec![] }).expect("a body this builder handed out");
         let others = ResolvedNets::expr(b, Expr::Others(0), ValueType::UInt(8), 5);
-        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: ResolvedNets::origin(5), element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: ResolvedNets::origin(5), element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
@@ -181,7 +181,7 @@ fn a_resolve_with_a_missing_count_or_another_type_is_refused() {
     let resolver = ResolvedNets::resolver(&mut b, by_count, vec![0, 1]);
     let source = ResolvedNets::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
     let signal_others = ResolvedNets::expr(&mut b, Expr::Others(1), ValueType::UInt(8), 6);
-    b.drive(source, Drive { carrier: 1, value: signal_others, after: None, origin: ResolvedNets::origin(6), element: None, path: vec![] });
+    b.drive(source, Drive { carrier: 1, value: signal_others, after: None, origin: ResolvedNets::origin(6), element: None, path: vec![] }).expect("a body this builder handed out");
     let broken = ResolvedNets::design(b, source, resolver).check();
     assert!(broken.iter().any(|e| e.what.contains("`others()` of carrier 1, which is not a resolved carrier")), "others() of a signal: {broken:#?}");
 }
@@ -195,12 +195,12 @@ impl Placement {
     fn broken(port: bool, bound: Vec<Option<u32>>) -> Vec<Broken> {
         let mut b = IrBuilder::new();
         let holder = b.body(ResolvedNets::spec("Holder"));
-        b.carrier(holder, Carrier { name: "a".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(2), count: None });
-        b.carrier(holder, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven: ValueType::Bool, port }, init: None, origin: ResolvedNets::origin(3), count: None });
+        b.carrier(holder, Carrier { name: "a".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(2), count: None }).expect("a body this builder handed out");
+        b.carrier(holder, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven: ValueType::Bool, port }, init: None, origin: ResolvedNets::origin(3), count: None }).expect("a body this builder handed out");
         let parent = b.body(BodySpec { children: vec![Child { name: "h".into(), body: holder, nodes: vec![], params: vec![], origin: ResolvedNets::origin(5) }], ..ResolvedNets::spec("Parent") });
-        b.carrier(parent, Carrier { name: "x".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Bool(false)), origin: ResolvedNets::origin(4), count: None });
-        b.carrier(parent, Carrier { name: "y".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(4), count: None });
-        b.bind_child_carriers(parent, 0, bound);
+        b.carrier(parent, Carrier { name: "x".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Bool(false)), origin: ResolvedNets::origin(4), count: None }).expect("a body this builder handed out");
+        b.carrier(parent, Carrier { name: "y".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(4), count: None }).expect("a body this builder handed out");
+        b.bind_child_carriers(parent, 0, bound).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let net = |b: &mut IrBuilder, path: &str, ty: ValueType, init: piperine_ir::Constant| b.net(NetSpec { path: path.into(), ty, declared_by: top, init: Some(init), origin: ResolvedNets::origin(4) });
         let x = net(&mut b, "Parent.x", ValueType::Bool, piperine_ir::Constant::Bool(false));

@@ -1,0 +1,64 @@
+//! `simparam(name)` (Part IV §14.4, analog-operators AO-07, design mechanism 5): the session
+//! parameter `name`, an `Option<f64>` constant during an analysis: `Some` of what the run gave it,
+//! else `None` (user decision 2026-11-23: no default argument, no `E0456`; a model writes
+//! `simparam("x").unwrap_or(1.0)`). It lowers to `Expr::SessionParameter`, one `SessionParameter`
+//! per name per body, wherever a run-time value is read, definitions and selectors included
+//! (§14.4.1). `name` is a literal found after inlining; anything else is `P0001` naming it.
+//! `lower_session_pair` gives the two halves (`is`, `value`) an `Option` operation reads. `temperature()` is the same
+//! kind of read over two environment cells (`lower_temperature`).
+
+use super::AnalogLowering;
+use piperine_ir::{Env, Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionParameter, ValueType};
+
+use crate::elab::value::compound::Pair;
+use crate::elab::elaborator::Scope;
+use crate::refusal::forms::ValueForm;
+use crate::pom::ExprId;
+
+impl AnalogLowering<'_, '_, '_> {
+    /// A `simparam` call read as a value: the packed `Option<f64>` read; `None` after a diagnostic.
+    pub(super) fn lower_simparam(&mut self, scope: &mut Scope, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+        let [name] = args else { return None };
+        let span = self.state.design.expr_node(*name).span;
+        let Some(text) = self.digital().text_of(scope, *name) else {
+            self.refuse(scope.values.file, span, ValueForm::SimparamNameThatIsNotTextLiteral);
+            return None;
+        };
+        let parameter = match self.state.digital.structure.session_parameters.iter().position(|p| p.name == text) {
+            Some(at) => at,
+            None => {
+                self.state.digital.structure.session_parameters.push(SessionParameter { name: text, origin: origin.clone() });
+                self.state.digital.structure.session_parameters.len() - 1
+            }
+        };
+        Some(self.emit(Expr::SessionParameter { parameter: parameter as u32 }, ValueType::Option(Box::new(ValueType::F64)), origin))
+    }
+
+    /// The pair an `Option` operation reads of a `simparam` call: each half unpacked from the read.
+    pub(in crate::elab) fn lower_session_pair(&mut self, scope: &mut Scope, call: ExprId, origin: Origin) -> Option<Pair> {
+        let crate::pom::ExprKind::Call { args, .. } = self.state.design.expr_node(call).kind.clone() else { return None };
+        let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+        let packed = self.lower_simparam(scope, &args, origin.clone())?;
+        let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
+        let packed = self.lower_simparam(scope, &args, origin.clone())?;
+        let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, ValueType::F64, origin);
+        Some(Pair { is, val, literal: None })
+    }
+}
+
+impl AnalogLowering<'_, '_, '_> {
+    /// `temperature()` read as a value: the `Option<f64>` of the run's temperature, `Some(kelvin)` when the run set it
+    /// (`temp`) and `None` otherwise (§8.5.2). It packs the two environment reads of `lower_temperature_pair`.
+    pub(super) fn lower_temperature(&mut self, origin: Origin) -> LoweredExpr {
+        let pair = self.lower_temperature_pair(origin.clone());
+        self.emit(Expr::OptionPack { is: pair.is, value: pair.val }, ValueType::Option(Box::new(ValueType::F64)), origin)
+    }
+
+    /// The two halves an `Option` operation reads of a `temperature()` call: whether the run set its temperature, and
+    /// the run's temperature in kelvin (the solver's default, 300.15 K, when it did not).
+    pub(in crate::elab) fn lower_temperature_pair(&mut self, origin: Origin) -> Pair {
+        let is = self.emit(Expr::Env(Env::TemperatureGiven), ValueType::Bool, origin.clone());
+        let val = self.emit(Expr::Env(Env::Temperature), ValueType::F64, origin);
+        Pair { is, val, literal: None }
+    }
+}

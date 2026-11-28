@@ -98,8 +98,8 @@ fn time_and_static_reads_print_and_check() {
         analog: Some(vec![contribution]),
         ..Buck::spec("Clocked", F, 1)
     });
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 40));
-    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 3, 8) });
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 40)).expect("a body this builder handed out");
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 3, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 3, 30);
     let stat = Read::is_static(&mut x);
     let off = x.boolean(false);
@@ -148,11 +148,11 @@ fn time_and_static_reads_print_and_check() {
     let two = x.real(2.0);
     let guard = x.bin(piperine_ir::BinaryOp::Lt, now, two, ValueType::Bool);
     let body = b.body(Buck::spec("Bad", F, 1));
-    b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::Out, None, F, 1, 20));
-    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 30));
-    b.drive(body, Drive { carrier: 0, value: late, after: None, origin: Design::origin(F, 2, 3), element: None, path: vec![] });
-    b.drive(body, Drive { carrier: 1, value: via_call, after: None, origin: Design::origin(F, 4, 3), element: None, path: vec![] });
-    b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 3) });
+    b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::Out, None, F, 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 30)).expect("a body this builder handed out");
+    b.drive(body, Drive { carrier: 0, value: late, after: None, origin: Design::origin(F, 2, 3), element: None, path: vec![] }).expect("a body this builder handed out");
+    b.drive(body, Drive { carrier: 1, value: via_call, after: None, origin: Design::origin(F, 4, 3), element: None, path: vec![] }).expect("a body this builder handed out");
+    b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 3) }).expect("a body this builder handed out");
     let broken = Design::place(b, body, 0, &[ValueType::Bool, ValueType::Bool], vec![]).check();
     let one = |item: &str, line: u32, what: &str| {
         let hits: Vec<_> = broken.iter().filter(|e| e.item == item && e.what.contains(what)).collect();
@@ -191,8 +191,8 @@ fn an_at_event_prints_and_checks() {
     const F: &str = "pulse.msl";
     let mut b = IrBuilder::new();
     let body = b.body(BodySpec { params: vec![Buck::param("dt", F, 2, Some(1e-6), None)], ..Buck::spec("Pulse", F, 1) });
-    b.carrier(body, Buck::carrier("start", ValueType::F64, CarrierRole::In, None, F, 1, 20));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 45));
+    b.carrier(body, Buck::carrier("start", ValueType::F64, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 45)).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 3, 17);
     let start = x.carrier(0, ValueType::F64);
     let dt = x.param(0, ValueType::F64);
@@ -201,9 +201,9 @@ fn an_at_event_prints_and_checks() {
     let dt = x.param(0, ValueType::F64);
     let none = x.real(0.0);
     let guard = x.bin(piperine_ir::BinaryOp::Gt, dt, none, ValueType::Bool);
-    let first = b.event(body, Event { source: EventSource::At(when), guard: Some(guard), origin: Design::origin(F, 3, 8) });
+    let first = b.event(body, Event { source: EventSource::At(when), guard: Some(guard), origin: Design::origin(F, 3, 8) }).expect("a body this builder handed out");
     let at_start = Dx::new(&mut b, F, 4, 17).carrier(0, ValueType::F64);
-    let second = b.event(body, Event { source: EventSource::At(at_start), guard: None, origin: Design::origin(F, 4, 8) });
+    let second = b.event(body, Event { source: EventSource::At(at_start), guard: None, origin: Design::origin(F, 4, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 3, 62);
     let yes = x.boolean(true);
     let up = x.commit(1, yes, None);
@@ -252,7 +252,7 @@ fn an_at_event_prints_and_checks() {
     let via_call = Dx::new(&mut b, F, 5, 14).call(reads, vec![], ValueType::F64);
     let body = b.body(BodySpec { nodes, ..Buck::spec("Bad", F, 1) });
     for (line, time) in [(2, flag), (3, v), (4, now), (5, via_call)] {
-        b.event(body, Event { source: EventSource::At(time), guard: None, origin: Design::origin(F, line, 8) });
+        b.event(body, Event { source: EventSource::At(time), guard: None, origin: Design::origin(F, line, 8) }).expect("a body this builder handed out");
     }
     let broken = Design::place(b, body, 2, &[], vec![]).check();
     let one = |item: &str, line: u32, what: &str| {
@@ -291,23 +291,23 @@ impl Watch {
     fn ir() -> Ir {
         let mut b = IrBuilder::new();
         let body = b.body(Buck::spec("Watch", Watch::F, 1));
-        b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::In, None, Watch::F, 1, 20));
-        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::In, None, Watch::F, 1, 36));
-        b.carrier(body, Buck::carrier("seen", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), Watch::F, 1, 52));
+        b.carrier(body, Buck::carrier("v", ValueType::F64, CarrierRole::In, None, Watch::F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("done", ValueType::Bool, CarrierRole::In, None, Watch::F, 1, 36)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("seen", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), Watch::F, 1, 52)).expect("a body this builder handed out");
         let checks = b.stream(
             body,
             Stream {
                 name: "checks".into(),
                 fields: vec![StreamField { name: "pass".into(), ty: ValueType::Bool }, StreamField { name: "margin".into(), ty: ValueType::F64 }],
             },
-        );
+        ).expect("a body this builder handed out");
         let sim = b.stream(
             body,
             Stream {
                 name: "sim".into(),
                 fields: vec![StreamField { name: "finish".into(), ty: ValueType::Bool }, StreamField { name: "failed".into(), ty: ValueType::Bool }],
             },
-        );
+        ).expect("a body this builder handed out");
         let rise = Buck::rise(&mut b, body, 1, Watch::F, 3, 8);
         let mut x = Dx::new(&mut b, Watch::F, 4, 18);
         let yes = x.boolean(true);
@@ -407,16 +407,16 @@ fn an_emit_site_prints_and_checks() {
     let unit = Dx::new(&mut b, F, 11, 10).block(vec![in_function], None, ValueType::Unit);
     b.function(FunctionSpec { name: "loud".into(), origin: Design::origin(F, 10, 1), params: vec![], ret: ValueType::Unit, locals: vec![], body: unit });
     let body = b.body(BodySpec { analog: Some(vec![in_analog]), ..Buck::spec("Bad", F, 1) });
-    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 20));
+    b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::Out, None, F, 1, 20)).expect("a body this builder handed out");
     b.stream(
         body,
         Stream {
             name: "s".into(),
             fields: vec![StreamField { name: "a".into(), ty: ValueType::Bool }, StreamField { name: "a".into(), ty: ValueType::Bool }],
         },
-    );
-    b.stream(body, Stream { name: "t".into(), fields: vec![StreamField { name: "u".into(), ty: ValueType::Unit }] });
-    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) });
+    ).expect("a body this builder handed out");
+    b.stream(body, Stream { name: "t".into(), fields: vec![StreamField { name: "u".into(), ty: ValueType::Unit }] }).expect("a body this builder handed out");
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 8) }).expect("a body this builder handed out");
     Buck::reaction(&mut b, body, vec![changed], vec![in_reaction, no_stream, no_field], vec![], F, 5);
     let broken = Design::place(b, body, 0, &[ValueType::Bool], vec![]).check();
     let has = |what: &str| broken.iter().filter(|e| e.what.contains(what)).count();
@@ -578,8 +578,8 @@ fn a_previous_value_read_prints_and_checks() {
     const F: &str = "edge.msl";
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Edge", F, 1));
-    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 20));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 35));
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 35)).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 3, 30);
     let prev = Read::previous(&mut x, 0, ValueType::Bool);
     let was_low = x.un(piperine_ir::UnaryOp::Not, prev, ValueType::Bool);
@@ -587,8 +587,8 @@ fn a_previous_value_read_prints_and_checks() {
     let rising = x.bin(piperine_ir::BinaryOp::And, was_low, clk, ValueType::Bool);
     x.at(4, 30);
     let was_high = Read::previous(&mut x, 0, ValueType::Bool);
-    let edge = b.event(body, Event { source: EventSource::Changed(0), guard: Some(rising), origin: Design::origin(F, 3, 8) });
-    let known = b.event(body, Event { source: EventSource::Changed(0), guard: Some(was_high), origin: Design::origin(F, 4, 8) });
+    let edge = b.event(body, Event { source: EventSource::Changed(0), guard: Some(rising), origin: Design::origin(F, 3, 8) }).expect("a body this builder handed out");
+    let known = b.event(body, Event { source: EventSource::Changed(0), guard: Some(was_high), origin: Design::origin(F, 4, 8) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 3, 70);
     let yes = x.boolean(true);
     let up = x.commit(1, yes, None);
@@ -651,8 +651,8 @@ fn a_previous_value_read_prints_and_checks() {
         analog: Some(vec![drive, bare, missing]),
         ..Buck::spec("Bad", B, 1)
     });
-    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, B, 1, 20));
-    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(B, 6, 8) });
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, B, 1, 20)).expect("a body this builder handed out");
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(B, 6, 8) }).expect("a body this builder handed out");
     Buck::reaction(&mut b, body, vec![changed], vec![wrong], vec![], B, 6);
     let broken = Design::place(b, body, 2, &[ValueType::Bool], vec![]).check();
     let one = |what: &str, line: u32| {
@@ -708,7 +708,7 @@ impl Pair {
             ..Buck::spec("Pair", Pair::F, 1)
         });
         for (child, param, value) in mutate(&mut b, body, doubled) {
-            b.child_param(body, child, param, value);
+            b.child_param(body, child, param, value).expect("a body this builder handed out");
         }
         let at = b.next_instance_id();
         let nodes: Vec<NodeRef> =
@@ -892,14 +892,14 @@ impl Stage {
         });
         let mut types = vec![ValueType::Bool; 4];
         for (name, role, col) in [("hs_cmd", CarrierRole::In, 50), ("ls_cmd", CarrierRole::In, 66), ("hs_gate", CarrierRole::Signal, 15), ("ls_gate", CarrierRole::Signal, 35)] {
-            b.carrier(body, Buck::carrier(name, ValueType::Bool, role.clone(), None, Stage::F, if role == CarrierRole::Signal { 2 } else { 1 }, col));
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role.clone(), None, Stage::F, if role == CarrierRole::Signal { 2 } else { 1 }, col)).expect("a body this builder handed out");
         }
         if let Some(ty) = extra {
-            b.carrier(body, Buck::carrier("count", ty.clone(), CarrierRole::Signal, None, Stage::F, 2, 55));
+            b.carrier(body, Buck::carrier("count", ty.clone(), CarrierRole::Signal, None, Stage::F, 2, 55)).expect("a body this builder handed out");
             types.push(ty);
         }
         for (child, carriers) in bindings {
-            b.bind_child_carriers(body, child, carriers);
+            b.bind_child_carriers(body, child, carriers).expect("a body this builder handed out");
         }
         Design::place(b, body, 2, &types, vec![])
     }
@@ -1138,14 +1138,14 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
         analog: Some(vec![bound, contribution]),
         ..Buck::spec("Cmp", F, 1)
     });
-    b.carrier(body, Buck::carrier("flag", ValueType::Bool, CarrierRole::In, None, F, 1, 40));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 52));
+    b.carrier(body, Buck::carrier("flag", ValueType::Bool, CarrierRole::In, None, F, 1, 40)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 52)).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 5, 14);
     let v = x.probe(Terminal::Node(0), Terminal::Node(1));
     let tt = x.param(0, ValueType::F64);
     let et = x.param(1, ValueType::F64);
-    let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Design::origin(F, 5, 8) });
-    let flag = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 45) });
+    let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Design::origin(F, 5, 8) }).expect("a body this builder handed out");
+    let flag = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Design::origin(F, 5, 45) }).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 6, 17);
     let fired = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
     let c = x.carrier(0, ValueType::Bool);
@@ -1203,8 +1203,8 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
         analog: Some(vec![bad_step, fired_stmt, wrong_reads, wrong_freq]),
         ..Buck::spec("Bad", F, 1)
     });
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20));
-    b.carrier(body, Buck::carrier("r", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 20)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("r", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30)).expect("a body this builder handed out");
     let mut x = Dx::new(&mut b, F, 6, 5);
     let late = x.real(1.0);
     let late_step_in_reaction = x.b.stmt(Stmt::BoundStep { site: 2, value: late, when: None });
@@ -1219,13 +1219,13 @@ fn the_environment_bound_step_fired_and_unwrap_forms_print_and_check() {
     let v = x.probe(Terminal::Node(0), Terminal::Node(1));
     let flag_tol = x.boolean(true);
     let probe_tol = x.probe(Terminal::Node(0), Terminal::Node(1));
-    let e0 = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(flag_tol), etol: Some(probe_tol) }, guard: None, origin: Design::origin(F, 7, 8) });
+    let e0 = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(flag_tol), etol: Some(probe_tol) }, guard: None, origin: Design::origin(F, 7, 8) }).expect("a body this builder handed out");
     Buck::reaction(&mut b, body, vec![e0], reaction_stmts, vec![], F, 6);
     let mut x = Dx::new(&mut b, F, 8, 5);
     let freq = x.b.expr(Expr::Env(Env::Freq), ValueType::F64, x.origin());
     let level = x.real(0.0);
     let over = x.bin(piperine_ir::BinaryOp::Gt, freq, level, ValueType::Bool);
-    b.drive(body, Drive { carrier: 1, value: over, after: None, origin: Design::origin(F, 8, 3), element: None, path: vec![] });
+    b.drive(body, Drive { carrier: 1, value: over, after: None, origin: Design::origin(F, 8, 3), element: None, path: vec![] }).expect("a body this builder handed out");
     let broken = Design::place(b, body, 2, &[ValueType::Bool, ValueType::Bool], vec![]).check();
     let one = |line: u32, what: &str| {
         let hits: Vec<_> = broken.iter().filter(|e| e.origin.line == line && e.what.contains(what)).collect();
@@ -1254,13 +1254,13 @@ fn the_guard_of_an_event_reads_another_events_fired_never_its_own() {
     for (own, expected) in [(false, vec![]), (true, vec!["the guard of event 1 reads its own `fired`"])] {
         let mut b = IrBuilder::new();
         let body = b.body(Buck::spec("Guarding", F, 1));
-        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 14));
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 28));
-        let first = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Design::origin(F, 2, 8) });
+        b.carrier(body, Buck::carrier("d", ValueType::Bool, CarrierRole::In, None, F, 1, 14)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 28)).expect("a body this builder handed out");
+        let first = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Design::origin(F, 2, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(&mut b, F, 3, 8);
         let read = x.b.expr(Expr::Fired(if own { 1 } else { first }), ValueType::Bool, x.origin());
         let guard = x.un(piperine_ir::UnaryOp::Not, read, ValueType::Bool);
-        let second = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 8) });
+        let second = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Design::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(&mut b, F, 4, 8);
         let yes = x.boolean(true);
         let commit = x.commit(0, yes, None);

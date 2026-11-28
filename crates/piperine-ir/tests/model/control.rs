@@ -188,8 +188,8 @@ fn a_commit_in_a_loop_is_one_statement() {
     // often the loop runs (§12.1.14), so the reaction has one statement, the commit.
     let mut b = IrBuilder::new();
     let body = b.body(Buck::spec("Latch", FILE, 1));
-    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, FILE, 1, 19));
-    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), FILE, 1, 30));
+    b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, FILE, 1, 19)).expect("a body this builder handed out");
+    b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, Some(Constant::Bool(false)), FILE, 1, 30)).expect("a body this builder handed out");
     let rise = Buck::rise(&mut b, body, 0, FILE, 2, 22);
     let mut x = Dx::new(&mut b, FILE, 2, 37);
     let high = x.boolean(true);
