@@ -25,8 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run cache**: `cargo test -p piperine-transpile --test compile cache::`
 **Run abicontract**: `cargo test -p piperine-abi --test contract contract::`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
-**Run records**: `cargo test -p piperine-api --test records`
-**Run session**: `cargo test -p piperine-api --test session`
+**Run records**: `cargo test -p piperine-api --test records records::`
+**Run session**: `cargo test -p piperine-api --test session session::`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`

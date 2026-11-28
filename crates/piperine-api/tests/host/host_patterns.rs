@@ -9,16 +9,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, LogicPattern, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, LogicPattern, Overrides, Project, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps nothing: the tests read the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 /// The designs and runs of this target.
 struct Bench;
@@ -55,12 +48,6 @@ impl Bench {
     }
     ";
 
-    /// The settings of every run of this target: one build cache.
-    fn settings() -> Settings {
-        let dir = CompileCache::shared();
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
-    }
-
     /// A session of `Bench::DESIGN` for `analysis`.
     pub fn session(analysis: &str, extra: Overrides) -> Session {
         Bench::session_of(Bench::DESIGN, analysis, extra)
@@ -74,7 +61,7 @@ impl Bench {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { backend: Some("rust".into()), top: Some("Top".into()), analysis: Some(analysis.into()), ..extra };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        Session::open(&project, &spec, &Self::settings()).unwrap_or_else(|f| panic!("{f}"))
+        Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
     }
 
     /// The operating point of a session, as a table.

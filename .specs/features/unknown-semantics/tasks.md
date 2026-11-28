@@ -24,7 +24,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run irdigital**: `cargo test -p piperine-ir --test model digital::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run verdict**: `cargo test -p piperine-api --lib verdict`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run book**: `cargo test -p piperine-cli --test book`

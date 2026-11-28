@@ -7,24 +7,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Field, Overrides, ParamPath, ParamValue, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, Field, Overrides, ParamPath, ParamValue, Project, Record, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps every record, in the order it is handed over.
-#[derive(Default)]
-struct Kept(Vec<Record>);
-
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
-}
+use piperine_parity::sinks::Kept;
 
 /// A source, a resistor, a module whose structure a param selects, and a counter that reads two
 /// of the top's inputs; `Top` holds the analog part and the counter.
@@ -37,7 +22,7 @@ fn session(analysis: &str, extra: Overrides) -> Session {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { backend: Some("rust".into()), top: Some("Top".into()), analysis: Some(analysis.into()), ..extra };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+    Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
 }
 
 fn transient(stop: f64, print: &[&str]) -> Session {

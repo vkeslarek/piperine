@@ -19,15 +19,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run newton**: `cargo test -p piperine-analog-solver --lib math::newton_raphson::`
 **Run alloc**: `cargo test -p piperine-analog-solver --test numerics allocation::`
 **Run abialloc**: `cargo test -p piperine-abi --test thunks eval_allocation::`
-**Run apistats**: `cargo test -p piperine-api --test session`
+**Run apistats**: `cargo test -p piperine-api --test session session::`
 **Run bucklong**: `cargo test -p piperine-api --test buck_long -- --nocapture`
-**Run buckacc**: `cargo test -p piperine-api --test buck_accuracy -- --nocapture`
+**Run buckacc**: `cargo test -p piperine-api --test analyses buck_accuracy:: -- --nocapture`
 **Run scenarios**: `cargo test -p piperine --test buck_scenarios`
 **Run parity**: `cargo test -p piperine-parity`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run grid**: `cargo test -p piperine-solver --test parity_baseline`
 **Run epoch**: `cargo test -p piperine-solver --test protocol protocol_epoch::`
-**Run options**: `cargo test -p piperine-api --test options an_hour`
+**Run options**: `cargo test -p piperine-api --test params options::an_hour`
 **Run hostset**: `cargo test -p piperine-solver --test host host_set::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 

@@ -6,19 +6,13 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Overrides, Project, Session, Table};
 use piperine_transpile::Settings;
 
 use crate::backend::Backend;
 use crate::bench::Bench;
 use crate::compile_cache::CompileCache;
-
-/// A sink that keeps nothing: a parity run reads the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use crate::sinks::Ignore;
 
 /// One run of a twin through a `Session`.
 pub struct HostRun {

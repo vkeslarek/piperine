@@ -5,20 +5,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, Overrides, Project, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
-}
+use piperine_parity::sinks::Ignore;
 
 /// `Top`: 10 V over 1 kOhm then 3 kOhm, built from the parts; `Pair` has two flow contributions
 /// and no potential one.
@@ -35,7 +24,7 @@ fn run_text(text: &str, overrides: Overrides) -> Result<Table, Failure> {
     std::fs::write(&file, text).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Top".into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings())?;
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
     session.run(Rc::new(RefCell::new(Ignore)))
 }
 
@@ -98,7 +87,7 @@ fn opened(text: &str, overrides: Overrides) -> Session {
     std::fs::write(&file, text).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Top".into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+    Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
 }
 
 #[test]
@@ -141,7 +130,7 @@ fn metadata_lists_ports_and_streams() {
     std::fs::write(&file, PORTS).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some("rust".into()), ..as_top }).unwrap_or_else(|f| panic!("{f}"));
-    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     let ports = session.metadata().ports;
     assert_eq!(ports.iter().map(|p| (p.name.as_str(), p.direction, p.ty.as_str())).collect::<Vec<_>>(), [("clk", "in", "bool"), ("q", "out", "u8")]);
 }
@@ -179,7 +168,7 @@ fn a_bundle_field_is_named_by_its_dotted_path() {
     std::fs::write(&file, STREAM).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some("rust".into()), top: Some("Prod".into()), ..op(&[]) }).unwrap_or_else(|f| panic!("{f}"));
-    let ports = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}")).metadata().ports;
+    let ports = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}")).metadata().ports;
     assert_eq!(
         ports.iter().map(|p| (p.name.as_str(), p.direction, p.ty.as_str())).collect::<Vec<_>>(),
         [("tx.valid", "out", "bool"), ("tx.ready", "in", "bool"), ("tx.data", "out", "u8")]

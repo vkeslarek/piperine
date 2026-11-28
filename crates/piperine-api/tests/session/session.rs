@@ -11,9 +11,10 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Mutex;
 
-use piperine_api::{Built, Failure, Overrides, ParamValue, Project, Record, RecordSink, RunSpec, Session};
+use piperine_api::{Built, Failure, Overrides, ParamValue, Project, RunSpec, Session};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
 use piperine_transpile::Settings;
+use piperine_parity::sinks::Ignore;
 
 /// Writing an executable and exec'ing it races with another thread's `fork` holding the write
 /// descriptor (ETXTBSY); the tests that build take turns.
@@ -218,20 +219,13 @@ fn an_undriven_top_port_without_default_refuses_the_analysis() {
         "{DEVICES}\nmodule Top(in en: Bit) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
     );
     let mut refused = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
-    match refused.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))) {
+    match refused.run(std::rc::Rc::new(std::cell::RefCell::new(Ignore))) {
         Err(Failure::Host { code: "E0187", message }) => assert!(message.contains("`en`"), "the port is named: {message}"),
         other => panic!("E0187 naming `en`, found {other:?}"),
     }
     let mut driven = open(&text, &flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     driven.drive("en", ParamValue::Bool(true), 0.0).expect("a drive at 0");
-    driven.run(std::rc::Rc::new(std::cell::RefCell::new(NoRecords))).unwrap_or_else(|f| panic!("{f}"));
-}
-
-/// A sink that keeps no record.
-struct NoRecords;
-
-impl RecordSink for NoRecords {
-    fn record(&mut self, _record: &Record) {}
+    driven.run(std::rc::Rc::new(std::cell::RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
 }
 
 #[test]
@@ -274,13 +268,6 @@ fn a_module_typed_param_is_not_set_by_text() {
         Err(other) => panic!("E0802 from elaboration, found {other}"),
         Ok(_) => panic!("a text value was given to a param of an array of templates"),
     }
-}
-
-/// A sink that keeps nothing: the statistics test reads the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
 }
 
 #[test]
@@ -487,19 +474,12 @@ impl Structural {
         let param_texts = texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect();
         let overrides = Overrides { param_texts, print: vec![node.to_string()], ..flags("op", "rust", Some(top)) };
         let mut session = open(STRUCTURAL, &overrides, &settings)?;
-        let table = session.run(Rc::new(RefCell::new(Quiet)))?;
+        let table = session.run(Rc::new(RefCell::new(Ignore)))?;
         match &table.rows[0][1] {
             piperine_api::Cell::Real(value) => Ok(*value),
             other => panic!("a real, found {other:?}"),
         }
     }
-}
-
-/// A sink that keeps nothing: the table is read.
-struct Quiet;
-
-impl RecordSink for Quiet {
-    fn record(&mut self, _: &Record) {}
 }
 
 #[test]

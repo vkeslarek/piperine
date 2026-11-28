@@ -13,9 +13,10 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::OnceLock;
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Overrides, Project, Session, Table};
 use piperine_solver::protocol::{InstantCause, StepEnd};
 use piperine_transpile::Settings;
+use piperine_parity::sinks::Ignore;
 
 /// The largest difference of `buck.vout` the run may have against the fine reference, in volts.
 const VOUT_BOUND: f64 = 0.104e-3;
@@ -27,13 +28,6 @@ const LANDING_BOUND: u64 = 1000;
 /// (417 measured) and the instants scheduled at a step's end, never one per accepted step (127 611
 /// before the idle rule, 31 264 steps now). 668 measured.
 const INSTANT_BOUND: u64 = 1000;
-
-/// A sink that drops every record: the comparison reads the table only.
-struct Discard;
-
-impl RecordSink for Discard {
-    fn record(&mut self, _record: &Record) {}
-}
 
 /// One run of the first 100 us.
 struct Run {
@@ -67,7 +61,7 @@ impl Run {
         };
         let spec = project.request(Some("startup"), &overrides).unwrap_or_else(|f| panic!("{f}"));
         let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: cache.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
-        let table = session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
+        let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
         let steps = session.statistics().expect("a transient leaves its statistics").steps();
         let landings = StepEnd::ALL.iter().filter(|end| matches!(end, StepEnd::Landing(_))).map(|end| steps.ended(*end)).sum();
         let analog = session.statistics().expect("a transient leaves its statistics").analog().clone();

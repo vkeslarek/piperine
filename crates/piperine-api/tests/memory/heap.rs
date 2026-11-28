@@ -4,16 +4,24 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Mutex, MutexGuard};
 
 /// `System` that counts the bytes live and the most that were live since `begin`.
 pub struct Counting {
     live: AtomicUsize,
     peak: AtomicUsize,
+    turn: Mutex<()>,
 }
 
 impl Counting {
     pub const fn new() -> Counting {
-        Counting { live: AtomicUsize::new(0), peak: AtomicUsize::new(0) }
+        Counting { live: AtomicUsize::new(0), peak: AtomicUsize::new(0), turn: Mutex::new(()) }
+    }
+
+    /// The measuring turn: the allocator counts the whole process, so a test that measures holds the turn for its whole
+    /// body and no other measuring test allocates beside it.
+    pub fn alone(&self) -> MutexGuard<'_, ()> {
+        self.turn.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
     /// Starts a measurement: the peak restarts from what is live now, which is returned.

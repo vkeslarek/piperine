@@ -15,8 +15,9 @@ use std::process::Command;
 use std::rc::Rc;
 use std::time::Instant;
 
-use piperine_api::{NodeSource, Overrides, Project, Record, RecordSink, Session};
+use piperine_api::{NodeSource, Overrides, Project, Session};
 use piperine_transpile::Settings;
+use piperine_parity::sinks::Ignore;
 
 /// The switching period, the time the high side is on and the edge time of the controls, in seconds.
 const PERIOD: f64 = 2e-6;
@@ -25,13 +26,6 @@ const EDGE: f64 = 10e-9;
 /// Periods run, and the stop time they make.
 const PERIODS: usize = 50;
 const STOP: f64 = 100e-6;
-
-/// A sink that drops every record: the run is timed, not read.
-struct Discard;
-
-impl RecordSink for Discard {
-    fn record(&mut self, _record: &Record) {}
-}
 
 /// One run of the power stage: its accepted steps and its wall time in seconds.
 #[derive(Clone, Copy, Debug)]
@@ -93,7 +87,7 @@ impl PowerStage {
         session.source("ctl", NodeSource::dc(0.0).with_corners(high)).expect("a source on ctl");
         session.source("ctlb", NodeSource::dc(1.0).with_corners(low)).expect("a source on ctlb");
         let started = Instant::now();
-        session.run(Rc::new(RefCell::new(Discard))).unwrap_or_else(|f| panic!("{f}"));
+        session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
         let seconds = started.elapsed().as_secs_f64();
         Measured { steps: session.statistics().expect("a transient leaves its statistics").steps().accepted(), seconds }
     }

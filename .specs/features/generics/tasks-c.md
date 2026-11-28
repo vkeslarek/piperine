@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srcmods**: `cargo test -p piperine-parity --test source_generic_modules`
 **Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
-**Run apisession**: `cargo test -p piperine-api --test session`
+**Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
@@ -42,7 +42,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabcarrarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run dag**: `cargo test -p piperine-digital-solver --test plan dag::`
-**Run apicarrarr**: `cargo test -p piperine-api --test carrier_arrays`
+**Run apicarrarr**: `cargo test -p piperine-api --test host carrier_arrays::`
 **Run bookcompiler**: `cargo test -p piperine --test book_compiler`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`

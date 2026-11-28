@@ -6,20 +6,11 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Field, Overrides, Project, Record, RecordSink, Session};
+use piperine_api::{Field, Overrides, Project, Record, Session};
 use piperine_solver::protocol::AnalysisKind;
 use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps every record, in the order it is handed over.
-#[derive(Default)]
-struct Kept(Vec<Record>);
-
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
+use piperine_parity::sinks::Kept;
 
 /// A node held at 0.3 V by a source and traced at every evaluation, to the streams `conv` and `aux`.
 const BENCH: &str = "module Top() { signal a: Electrical; }\nanalog for Top { v(a, gnd) +> 0.3; emit!(\"conv\", v = v(a, gnd), who = \"top\"); emit!(\"aux\", v = v(a, gnd)); }\n";

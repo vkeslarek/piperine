@@ -8,20 +8,11 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use piperine_api::{Overrides, Project, Record, RecordSink, Session};
+use piperine_api::{Overrides, Project, Session};
 use piperine_transpile::Settings;
+use piperine_parity::sinks::Ignore;
 
-#[path = "support/heap.rs"]
-mod heap;
-
-#[global_allocator]
-static HEAP: heap::Counting = heap::Counting::new();
-
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use crate::HEAP;
 
 /// The rows and the peak live heap of `examples/rc`'s `step` run to `stop` on `print_step`.
 fn measured(stop: f64, print_step: f64, cache: &Path) -> (usize, usize) {
@@ -44,6 +35,7 @@ fn measured(stop: f64, print_step: f64, cache: &Path) -> (usize, usize) {
 
 #[test]
 fn a_run_ten_times_longer_at_equal_rows_holds_no_more_memory() {
+    let _turn = HEAP.alone();
     // LR-04 AC 2: both tables have 101 rows; AC 1: the peaks differ by at most 256 KiB
     let cache = tempfile::tempdir().expect("tmp");
     let (short_rows, short) = measured(5e-6, 5e-8, cache.path());

@@ -16,7 +16,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesbundles**: `cargo test -p piperine-lang --test types_bundles`
 **Run elabbundles**: `cargo test -p piperine-lang --test elab_bundles`
 **Run sourcebundles**: `cargo test -p piperine-parity --test source_bundles`
-**Run apimetadata**: `cargo test -p piperine-api --test metadata`
+**Run apimetadata**: `cargo test -p piperine-api --test session metadata::`
 **Run pomreflect**: `cargo test -p piperine-lang --test pom_reflect`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`

@@ -30,7 +30,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parop**: `cargo test -p piperine-parity --test parity_op`
 **Run pardc**: `cargo test -p piperine-parity --test parity_dc`
 **Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
-**Run apibind**: `cargo test -p piperine-api --test bindings`
+**Run apibind**: `cargo test -p piperine-api --test session bindings::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

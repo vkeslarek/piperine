@@ -10,25 +10,13 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Failure, Overrides, Project, Session, Table};
 use piperine_solver::prelude::{Context, TransientAnalysisOptions};
-use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// A sink that keeps nothing: these tests read tables.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 fn twin(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
-}
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
 }
 
 fn tran(stop: f64, print: &[&str]) -> Overrides {
@@ -38,7 +26,7 @@ fn tran(stop: f64, print: &[&str]) -> Overrides {
 fn session(path: &Path, backend: &str, overrides: Overrides) -> Session {
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some(backend.into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+    Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
 }
 
 /// The rows of the run of `overrides` on `backend`.
@@ -156,7 +144,7 @@ fn a_run_table_and_flags_give_equal_tables() {
     let rc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc");
     let project = Project::at(&rc).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(Some("step"), &Overrides::default()).unwrap_or_else(|f| panic!("{f}"));
-    let from_table = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
+    let from_table = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}")).run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
     let bench = rc.join("benches/step.msl");
     let flags = Overrides { analysis: Some("transient".into()), stop: Some(5e-6), print_step: Some(1e-6), ..Overrides::default() };
     let from_flags = run(&bench, "rust", flags);

@@ -8,18 +8,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-struct Kept;
-
-impl RecordSink for Kept {
-    fn record(&mut self, _: &Record) {}
-}
-
-fn settings() -> Settings {
-    Settings { rustc: None, cache: CompileCache::shared().path().to_path_buf() }
-}
+use piperine_parity::sinks::Ignore;
 
 /// `Sw` is a potential source of 0.25 V while `short` selects it and an open branch otherwise (the
 /// selector depends on the param only, so `short` is structural); `Load` reads the plain param
@@ -50,7 +40,7 @@ fn open(overrides: Overrides) -> Result<Session, piperine_api::Failure> {
     std::fs::write(&file, SOURCE).expect("write");
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings())
+    Session::open(&project, &spec, &CompileCache::shared().settings())
 }
 
 fn op_overrides(params: Vec<(String, f64)>) -> Overrides {
@@ -59,7 +49,7 @@ fn op_overrides(params: Vec<(String, f64)>) -> Overrides {
 
 fn run(params: Vec<(String, f64)>) -> Table {
     let mut session = open(op_overrides(params)).unwrap_or_else(|f| panic!("{f}"));
-    session.run(Rc::new(RefCell::new(Kept))).unwrap_or_else(|f| panic!("{f}"))
+    session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"))
 }
 
 fn real(cell: &Cell) -> f64 {
@@ -142,8 +132,8 @@ fn a_binding_of_k_recomputes_the_scale_a_body_let_derives() {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { analysis: Some("op".into()), backend: Some("rust".into()), top: Some("Top".into()), print: vec!["c".into()], params, ..Overrides::default() };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
-        session.run(Rc::new(RefCell::new(Kept))).unwrap_or_else(|f| panic!("{f}"))
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
+        session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"))
     };
     close(real(&run_derived(vec![]).rows[0][1]), 0.25, "k = 1");
     close(real(&run_derived(vec![("Top.k".into(), 2.0)]).rows[0][1]), 1.0 / 7.0, "k = 2");
@@ -185,7 +175,7 @@ fn watched(params: Vec<(String, f64)>, timed: Option<(f64, f64)>) -> Vec<(f64, S
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(3e-3), max_step: Some(1e-4), backend: Some("rust".into()), top: Some("Top".into()), params, ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     if let Some((value, at)) = timed {
         session.set_at("Top.w.r", value, at).unwrap_or_else(|f| panic!("{f}"));
     }
@@ -252,7 +242,7 @@ fn emitted(module: &str, params: Vec<(String, f64)>) -> Vec<(String, Vec<(String
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(1e-3), max_step: Some(1e-4), backend: Some("rust".into()), top: Some("Top".into()), params, ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     let kept = Rc::new(RefCell::new(All::default()));
     session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
     let records = kept.borrow().0.iter().map(|r| (r.stream.clone(), r.fields.clone())).collect();

@@ -17,11 +17,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run rcpkg**: `cargo test -p piperine-project --test project`
 **Run shape**: `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run apilib**: `cargo test -p piperine-api --lib`
-**Run project**: `cargo test -p piperine-api --test project`
-**Run session**: `cargo test -p piperine-api --test session`
-**Run probes**: `cargo test -p piperine-api --test probes`
-**Run analyses**: `cargo test -p piperine-api --test analyses`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run project**: `cargo test -p piperine-api --test session project::`
+**Run session**: `cargo test -p piperine-api --test session session::`
+**Run probes**: `cargo test -p piperine-api --test session probes::`
+**Run analyses**: `cargo test -p piperine-api --test analyses analyses::`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run clilib**: `cargo test -p piperine-cli --lib`
 **Run usage**: `cargo test -p piperine-cli --test usage`
 **Run run**: `cargo test -p piperine-cli --test run`

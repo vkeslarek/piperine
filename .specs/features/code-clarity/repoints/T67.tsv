@@ -1,0 +1,27 @@
+# T67: the 26 api targets become `session`, `host`, `records`, `params`, `analyses` and `memory`, one module per former target (buck_long stays a target of its own that is not run by cargo test).
+move piperine-api/memory piperine-api/memory::memory
+move piperine-api/analyses piperine-api/analyses::analyses
+move piperine-api/records piperine-api/records::records
+move piperine-api/session piperine-api/session::session
+move piperine-api/bindings piperine-api/session::bindings
+move piperine-api/probes piperine-api/session::probes
+move piperine-api/project piperine-api/session::project
+move piperine-api/metadata piperine-api/session::metadata
+move piperine-api/natures piperine-api/session::natures
+move piperine-api/host_actions piperine-api/host::host_actions
+move piperine-api/host_patterns piperine-api/host::host_patterns
+move piperine-api/host_sources piperine-api/host::host_sources
+move piperine-api/composites piperine-api/host::composites
+move piperine-api/carrier_arrays piperine-api/host::carrier_arrays
+move piperine-api/derived piperine-api/host::derived
+move piperine-api/number_widths piperine-api/host::number_widths
+move piperine-api/traces piperine-api/records::traces
+move piperine-api/grid piperine-api/records::grid
+move piperine-api/digital_only piperine-api/records::digital_only
+move piperine-api/options piperine-api/params::options
+move piperine-api/option_reach piperine-api/params::option_reach
+move piperine-api/session_parameters piperine-api/params::session_parameters
+move piperine-api/noise piperine-api/params::noise
+move piperine-api/buck_accuracy piperine-api/analyses::buck_accuracy
+move piperine-api/power_stage_bench piperine-api/analyses::power_stage_bench
+move piperine-api/carrier_array_storage piperine-api/memory::carrier_array_storage

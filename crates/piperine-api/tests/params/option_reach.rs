@@ -11,17 +11,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Overrides, Project, Session, Table};
 use piperine_solver::prelude::Context;
-use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps nothing: these tests read tables.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 /// The design and the closed forms of one bistable node.
 struct Bistable;
@@ -77,11 +70,6 @@ impl Bistable {
         -(1.0 / r + 3.0 * a * a - 4.0) / 1e-6
     }
 
-    fn settings() -> Settings {
-        let dir = CompileCache::shared();
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
-    }
-
     /// The table of the run of the bistable with `overrides`, on the interpreter.
     fn run(overrides: Overrides) -> Table {
         let dir = tempfile::tempdir().expect("tmp");
@@ -90,7 +78,7 @@ impl Bistable {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { top: Some("Top".into()), backend: overrides.backend.or(Some("interp".into())), reltol: Some(Bistable::TIGHT), vntol: Some(Bistable::TIGHT), print: vec!["a".into()], ..overrides };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &Bistable::settings()).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
         session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"))
     }
 

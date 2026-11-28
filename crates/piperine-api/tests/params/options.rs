@@ -9,25 +9,10 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Failure, Overrides, Project, Record, Session, Table};
 use piperine_solver::prelude::{Context, TimePointRule};
-use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps every record, in the order it is handed over.
-#[derive(Default)]
-struct Kept(Vec<Record>);
-
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
-}
+use piperine_parity::sinks::Kept;
 
 /// A source across a resistor, the modules the fixtures share.
 const PARTS: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
@@ -44,7 +29,7 @@ fn open_file(path: &Path, overrides: Overrides) -> Result<Session, Failure> {
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { top: Some("Top".into()), ..overrides };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings())
+    Session::open(&project, &spec, &CompileCache::shared().settings())
 }
 
 /// The table of one run of `text`, and the records it delivered.
@@ -227,7 +212,7 @@ fn a_smaller_trtol_takes_more_steps() {
         let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
         let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
         session.run(Rc::new(RefCell::new(Kept::default()))).unwrap_or_else(|f| panic!("{f}")).rows.len()
     };
     let (default, tight) = (steps(None), steps(Some(0.001)));
@@ -241,7 +226,7 @@ fn tran_rc_with_budget(max_steps: Option<u32>) -> Result<Table, Failure> {
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol: Some(0.001), max_steps, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
     let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &settings())?.run(Rc::new(RefCell::new(Kept::default())))
+    Session::open(&project, &spec, &CompileCache::shared().settings())?.run(Rc::new(RefCell::new(Kept::default())))
 }
 
 #[test]
@@ -384,7 +369,7 @@ fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
     let overrides = Overrides { top: Some("Top".into()), ..op(&["a"]) };
     let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     spec.options.time_point_rule = rule;
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     session.circuit().expect("a circuit").bound().digital.time_point_rule()
 }
 

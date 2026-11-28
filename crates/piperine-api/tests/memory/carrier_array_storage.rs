@@ -7,21 +7,11 @@ use std::cell::RefCell;
 use std::path::Path;
 use std::rc::Rc;
 
-use piperine_api::{Overrides, Project, Record, RecordSink, Session};
+use piperine_api::{Overrides, Project, Session};
 use piperine_transpile::Settings;
+use piperine_parity::sinks::Ignore;
 
-#[path = "support/heap.rs"]
-mod heap;
-
-#[global_allocator]
-static HEAP: heap::Counting = heap::Counting::new();
-
-/// A sink that drops every record: the table is not what is measured.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use crate::HEAP;
 
 /// One design of an array of `length` carriers that commits `writes` distinct elements, one per rising edge.
 struct Store {
@@ -59,6 +49,7 @@ impl Store {
 
 #[test]
 fn peak_heap_does_not_depend_on_the_declared_length() {
+    let _turn = HEAP.alone();
     // CV-27 AC 1: the peak of `1 << 32` elements and of `1 << 16`, a thousand distinct elements written in each, differ by
     // at most 256 KiB (a million-fold longer array that allocated per element would differ by gigabytes)
     let (directory, cache) = (tempfile::tempdir().expect("tmp"), tempfile::tempdir().expect("tmp"));

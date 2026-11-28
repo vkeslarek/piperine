@@ -8,16 +8,9 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, NodeSource, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, NodeSource, Overrides, Project, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-/// A sink that keeps nothing: these runs read the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 /// The runs of these tests: a design written by the test, opened on the Rust backend.
 struct Bench;
@@ -25,12 +18,6 @@ struct Bench;
 impl Bench {
     /// A resistor and the top the tests drive: node port `a` across 1 kohm to `gnd`.
     const DEVICES: &'static str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n";
-
-    /// The settings of the Rust backend, one cache directory shared by every test of the target.
-    fn settings() -> Settings {
-        let dir = CompileCache::shared();
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
-    }
 
     /// An `op` session of `top` that prints the nodes `print`.
     fn session(top: &str, print: &[&str]) -> Session {
@@ -52,7 +39,7 @@ impl Bench {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { backend: Some("rust".into()), top: Some("Top".into()), ..extra };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        Session::open(&project, &spec, &Self::settings()).unwrap_or_else(|f| panic!("{f}"))
+        Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
     }
 
     /// One run of `session`, its records dropped.

@@ -30,7 +30,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sfix**: `cargo test -p piperine-parity --test source_fixes`
 **Run scat**: `cargo test -p piperine-parity --test source_catalogue`
 **Run senv**: `cargo test -p piperine-parity --test source_environment`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run apilib**: `cargo test -p piperine-api --lib`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run clicmd**: `cargo test -p piperine-cli --test commands`

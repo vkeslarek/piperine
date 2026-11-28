@@ -11,28 +11,13 @@ use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 
-use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, RecordSink, Session, Streams, Verdict};
+use piperine_api::{Cell, Field, Failure, Overrides, Project, Record, Session, Streams, Verdict};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind};
-use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps every record, in the order it is handed over.
-#[derive(Default)]
-struct Kept(Vec<Record>);
-
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
+use piperine_parity::sinks::Kept;
 
 /// A source across a resistor: the analog part every fixture's top holds.
 const ANALOG: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
-}
 
 /// `module Top() { <a source and a resistor>; <placements> }` over the modules `modules`.
 fn design(modules: &str, placements: &str) -> String {
@@ -44,7 +29,7 @@ fn records_of(path: &Path, top: &str, analysis: &str, stop: Option<f64>) -> Resu
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some(analysis.into()), stop, top: Some(top.into()), max_step: stop.map(|s| s / 100.0), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings())?;
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
     let kept = Rc::new(RefCell::new(Kept::default()));
     session.run(kept.clone())?;
     let records = kept.borrow().0.clone();
@@ -80,7 +65,7 @@ fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
     let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let session = {
-                Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"))
+                Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"))
     };
     let streams = Streams::of(Arc::new(session.ir().clone()));
     let mut bytes = vec![0u8; 16];
@@ -113,7 +98,7 @@ fn a_record_holds_its_declared_fields_only() {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some("op".into()), top: Some("Top".into()), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     let streams = Streams::of(Arc::new(session.ir().clone()));
     let decode = |bytes: Vec<u8>| {
         let observation = Observation { path: "Top.m.s".into(), analysis: AnalysisKind::Transient, time: 1e-6, kind: ObservationKind::Record { site: Some((0, 0)), bytes } };
@@ -224,7 +209,7 @@ fn kept_records(text: &str, keep: &[&str]) -> Result<Vec<Record>, Failure> {
         ..Overrides::default()
     };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings())?;
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
     let kept = Rc::new(RefCell::new(Kept::default()));
     session.run(kept.clone())?;
     let records = kept.borrow().0.clone();
@@ -298,7 +283,7 @@ fn table_of(text: &str, print_step: Option<f64>) -> Result<piperine_api::Table, 
         ..Overrides::default()
     };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings())?;
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
     session.run(Rc::new(RefCell::new(Kept::default())))
 }
 
@@ -342,7 +327,7 @@ fn a_digital_only_run_without_finish_reaches_its_stop() {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { analysis: Some("transient".into()), stop: Some(5e-6), top: Some("Top".into()), ..Overrides::default() };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     let kept = Rc::new(RefCell::new(Kept::default()));
     let table = session.run(kept.clone()).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(table.rows.last().expect("rows")[0], Cell::Real(5e-6));

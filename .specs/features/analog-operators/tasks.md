@@ -38,11 +38,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parnoise**: `cargo test -p piperine-parity --test parity_noise`
 **Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
 **Run contract**: `cargo test -p piperine-parity --lib contract`
-**Run apinoise**: `cargo test -p piperine-api --test noise`
-**Run apioptions**: `cargo test -p piperine-api --test options`
-**Run apisession**: `cargo test -p piperine-api --test session_parameters`
-**Run apinatures**: `cargo test -p piperine-api --test natures`
-**Run apitraces**: `cargo test -p piperine-api --test traces`
+**Run apinoise**: `cargo test -p piperine-api --test params noise::`
+**Run apioptions**: `cargo test -p piperine-api --test params options::`
+**Run apisession**: `cargo test -p piperine-api --test params session_parameters::`
+**Run apinatures**: `cargo test -p piperine-api --test session natures::`
+**Run apitraces**: `cargo test -p piperine-api --test records traces::`
 **Run clianalyses**: `cargo test -p piperine-cli --test analyses`
 **Run clioptions**: `cargo test -p piperine-cli --test options`
 **Run twins**: `cargo test -p piperine-cli --test twins`

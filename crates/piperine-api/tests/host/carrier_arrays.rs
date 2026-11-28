@@ -7,16 +7,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, CompositeCell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, CompositeCell, Failure, Overrides, Project, Session, Table};
 use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Drops every record: the table is what a test reads.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 /// The slot `n` of `mem` takes `100 + n` at edge `n` (four edges), the others keep the initial value 9.
 const DESIGN: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\n\

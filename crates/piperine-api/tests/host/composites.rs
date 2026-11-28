@@ -8,19 +8,10 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{CellShape, Cell, Failure, Field, Overrides, ParamValue, Project, Record, RecordSink, Session};
+use piperine_api::{CellShape, Cell, Failure, Field, Overrides, ParamValue, Project, Record, Session};
 use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps every record, in the order it is handed over.
-#[derive(Default)]
-struct Kept(Vec<Record>);
-
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
+use piperine_parity::sinks::Kept;
 
 /// A struct, an array and a tuple param, each read by a reaction that emits what it holds.
 const DESIGN: &str = "#[derive(Repr, PartialEq)]\nstruct Gains { a: u8, b: f64, armed: bool }\n\

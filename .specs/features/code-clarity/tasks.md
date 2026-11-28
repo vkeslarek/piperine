@@ -1841,8 +1841,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 5 targets (the buck one stays `test = false`); every test keeps its name
-- [ ] Plan lowered; Gate check passes: Ledger
+- [x] 6 targets, not 5: `session`, `host`, `records`, `params`, `analyses` and `memory` (the buck one stays `test = false`); every test keeps its name. `memory` is a target of its own because its counting allocator is the whole process's: the two tests that measure take its turn (`Counting::alone`) and nothing else runs beside them in that process. The shared sinks and the settings are `piperine_parity::sinks::{Ignore, Kept}` and `CompileCache::settings`, not a support module of the crate
+- [x] Plan lowered (api 26 to 6); Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

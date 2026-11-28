@@ -16,7 +16,7 @@ use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table,
 use piperine_solver::protocol::{LandingCause, StepEnd};
 use piperine_transpile::Settings;
 
-#[path = "support/heap.rs"]
+#[path = "memory/heap.rs"]
 mod heap;
 
 #[global_allocator]

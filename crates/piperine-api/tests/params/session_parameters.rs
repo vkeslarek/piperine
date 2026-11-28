@@ -6,26 +6,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, Overrides, Project, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-/// Keeps nothing: these tests read the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 /// A design whose output `o` is held at `simparam(<read>)` volts.
 struct Reading;
 
 impl Reading {
-    fn settings() -> Settings {
-        let dir = CompileCache::shared();
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
-    }
-
     /// The source of the bench `Top`: `v(o) +> <read>` with a 1 kohm load, so the point is solvable.
     fn source(read: &str) -> String {
         format!("module Resistor(p: Electrical, n: Electrical) {{ r: f64 where r > 0.0; }}\nanalog for Resistor {{ i(p, n) +> v(p, n) / r; }}\nmodule Top() {{ signal o: Electrical; let r = Resistor {{ r: 1k }}(o, gnd); }}\nanalog for Top {{ v(o, gnd) +> {read}; }}\n")
@@ -39,7 +27,7 @@ impl Reading {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { top: Some("Top".into()), analysis: Some("op".into()), print: vec!["o".into()], ..overrides };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        Session::open(&project, &spec, &Self::settings())
+        Session::open(&project, &spec, &CompileCache::shared().settings())
     }
 
     /// `v(o)` of the operating point of the bench reading `read`.

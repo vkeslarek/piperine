@@ -30,7 +30,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run booktypes**: `cargo test -p piperine --test book_types`
 **Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
-**Run apicomp**: `cargo test -p piperine-api --test composites`
+**Run apicomp**: `cargo test -p piperine-api --test host composites::`
 **Run clirun**: `cargo test -p piperine-cli --test run`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`

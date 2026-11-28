@@ -9,20 +9,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, Overrides, Project, Record, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
+use piperine_parity::sinks::Kept;
 
-/// A record sink that keeps every record it is given.
-struct Kept(Vec<Record>);
+/// The `Blinky` design run through a session that keeps its records.
+struct StreamRun;
 
-impl RecordSink for Kept {
-    fn record(&mut self, record: &Record) {
-        self.0.push(record.clone());
-    }
-}
-
-impl Kept {
+impl StreamRun {
     /// The run of `source` that keeps only the record streams `streams` name (all of them when empty).
     fn run_streams(source: &str, stop: f64, print_step: Option<f64>, streams: Vec<String>) -> Result<(Table, Vec<Record>), Failure> {
         let dir = tempfile::tempdir().expect("tmp");
@@ -31,17 +25,12 @@ impl Kept {
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let overrides = Overrides { backend: Some("rust".into()), analysis: Some("transient".into()), top: Some("Blinky".into()), stop: Some(stop), print_step, print: vec!["clk".into(), "count".into()], streams, ..Overrides::default() };
         let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
         let kept = Rc::new(RefCell::new(Kept(Vec::new())));
         let table = session.run(kept.clone())?;
         let records = kept.borrow().0.clone();
         Ok((table, records))
     }
-}
-
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
 }
 
 const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where f > 0.0;\n}\ndigital for Osc {\n    on clk.changed() { clk <- !clk after 0.5 / f; }\n}\n\nmodule Counter(in clk: Bit, out count: Bit<u8> = 0) {}\ndigital for Counter {\n    on clk.rise() {\n        count <- count + 1;\n        emit!(\"edge\", t = now(), count = count);\n    }\n}\n\nmodule Blinky() {\n    signal clk: Bit;\n    pub signal count: Bit<u8>;\n    let osc = Osc(clk) { f: 1M };\n    let ctr = Counter(clk, count);\n}\n";
@@ -54,7 +43,7 @@ fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failu
 }
 
 fn run_source(source: &str, stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
-    Kept::run_streams(source, stop, print_step, Vec::new())
+    StreamRun::run_streams(source, stop, print_step, Vec::new())
 }
 
 #[test]
@@ -101,7 +90,7 @@ fn a_finish_ends_the_run_ok_when_the_sim_stream_is_not_kept() {
     // stream kept, the `sim` record that carries the finish is not delivered, and the run still
     // ends at 2 us ok and not "ended before its stop"
     let source = BLINKY.replace("    let ctr = Counter(clk, count);\n", "    let ctr = Counter(clk, count);\n    let stop = Stopper();\n") + FINISHING;
-    let (table, records) = Kept::run_streams(&source, 5e-6, None, vec!["edge".into()]).unwrap_or_else(|f| panic!("{f}"));
+    let (table, records) = StreamRun::run_streams(&source, 5e-6, None, vec!["edge".into()]).unwrap_or_else(|f| panic!("{f}"));
     let last = table.rows.last().expect("a table with rows");
     let Cell::Real(ended) = last[0] else { panic!("a time: {last:?}") };
     assert!((ended - 2e-6).abs() <= 1e-12, "the table ends at the finish instant: {last:?}");

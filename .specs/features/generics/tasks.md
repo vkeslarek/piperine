@@ -25,8 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`
 **Run parityproject**: `cargo test -p piperine-parity --test project`
-**Run apiproject**: `cargo test -p piperine-api --test project`
-**Run apisession**: `cargo test -p piperine-api --test session`
+**Run apiproject**: `cargo test -p piperine-api --test session project::`
+**Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`

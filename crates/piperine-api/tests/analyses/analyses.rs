@@ -8,32 +8,19 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
-use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Session, Table};
-use piperine_transpile::Settings;
+use piperine_api::{Cell, Failure, Overrides, Project, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-
-/// A sink that keeps nothing: these tests read tables.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use piperine_parity::sinks::Ignore;
 
 fn twin(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins").join(name)
-}
-
-/// One cache directory for every Rust-backend session of this target.
-fn settings() -> Settings {
-    let dir = CompileCache::shared();
-    Settings { rustc: None, cache: dir.path().to_path_buf() }
 }
 
 /// The run of the lone file `path` with `overrides`, on `backend`.
 fn run(path: &Path, backend: &str, overrides: Overrides) -> Result<Table, Failure> {
     let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(None, &Overrides { backend: Some(backend.into()), ..overrides }).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings())?;
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
     session.run(Rc::new(RefCell::new(Ignore)))
 }
 
@@ -493,7 +480,7 @@ fn a_pss_plot_draws_its_rows() {
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let overrides = Overrides { backend: Some("rust".into()), plot: Some("p.svg".into()), ..pss(4e-6, 8e-6, Some(4e-8)) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
     let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
     let plot = session.plot().unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(table.rows.len(), 101);

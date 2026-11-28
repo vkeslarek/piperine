@@ -34,7 +34,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
 **Run typesaggregates**: `cargo test -p piperine-lang --test types_aggregates`
 **Run sourcelogic**: `cargo test -p piperine-parity --test source_logic`
-**Run hostpatterns**: `cargo test -p piperine-api --test host_patterns`
+**Run hostpatterns**: `cargo test -p piperine-api --test host host_patterns::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 

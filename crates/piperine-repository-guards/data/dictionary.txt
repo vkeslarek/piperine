@@ -2537,6 +2537,7 @@ single
 singular
 singularity
 sink
+sinks
 site
 sites
 sits
@@ -2883,6 +2884,7 @@ truncation
 truth
 try
 tuple
+turn
 turned
 turns
 twentieth

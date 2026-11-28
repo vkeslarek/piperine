@@ -111,26 +111,9 @@ mod run {
     use std::path::{Path, PathBuf};
     use std::rc::Rc;
 
-    use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+    use piperine_api::{Cell, Overrides, Project, Session, Table};
     use piperine_parity::compile_cache::CompileCache;
-    use piperine_transpile::Settings;
-
-    /// A sink that keeps nothing: these tests read the table and the report.
-    struct Ignore;
-
-    impl RecordSink for Ignore {
-        fn record(&mut self, _: &Record) {}
-    }
-
-    /// The compile cache shared by the runs of this module.
-    struct Cache;
-
-    impl Cache {
-        fn settings() -> Settings {
-            let dir = CompileCache::shared();
-            Settings { rustc: None, cache: dir.path().to_path_buf() }
-        }
-    }
+    use piperine_parity::sinks::Ignore;
 
     /// A finished noise run of the AC RC twin.
     struct NoiseRun;
@@ -151,7 +134,7 @@ mod run {
                 ..Overrides::default()
             };
             let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-            let mut session = Session::open(&project, &spec, &Cache::settings()).unwrap_or_else(|f| panic!("{f}"));
+            let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
             let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
             (session, table)
         }

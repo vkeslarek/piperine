@@ -22,13 +22,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_grid --test parity_corpus`
 **Run newparity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_temp --test parity_tf --test parity_pz --test parity_sens --test parity_pss -- --nocapture`
 **Run apilib**: `cargo test -p piperine-api --lib`
-**Run apioptions**: `cargo test -p piperine-api --test options`
-**Run apianalyses**: `cargo test -p piperine-api --test analyses`
-**Run apimeta**: `cargo test -p piperine-api --test metadata`
-**Run apihost**: `cargo test -p piperine-api --test host_actions`
-**Run apidigital**: `cargo test -p piperine-api --test digital_only`
-**Run apiderived**: `cargo test -p piperine-api --test derived`
-**Run apireach**: `cargo test -p piperine-api --test option_reach`
+**Run apioptions**: `cargo test -p piperine-api --test params options::`
+**Run apianalyses**: `cargo test -p piperine-api --test analyses analyses::`
+**Run apimeta**: `cargo test -p piperine-api --test session metadata::`
+**Run apihost**: `cargo test -p piperine-api --test host host_actions::`
+**Run apidigital**: `cargo test -p piperine-api --test records digital_only::`
+**Run apiderived**: `cargo test -p piperine-api --test host derived::`
+**Run apireach**: `cargo test -p piperine-api --test params option_reach::`
 **Run clilib**: `cargo test -p piperine-cli --lib`
 **Run clianalyses**: `cargo test -p piperine-cli --test analyses`
 **Run cliinfo**: `cargo test -p piperine-cli --test info`
