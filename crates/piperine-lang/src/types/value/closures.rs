@@ -194,18 +194,18 @@ impl ExpressionTyping<'_, '_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         // a body `let` written after the call is typed first, so a closure it holds is settled by this call as in text order
-        self.binding_type(decl);
+        self.modules().binding_type(decl);
         self.settle_pending(decl, args);
         // a value of a type parameter bound by `Fn(A) -> R` is called through the bound (§3.8.6)
-        let local = match self.binding_type(decl) {
+        let local = match self.modules().binding_type(decl) {
             Some(Ty::Param(param)) => self.generics().callable_of(param).or(Some(Ty::Param(param))),
             other => other,
         };
         let Some(Ty::Fn(params, result)) = local else {
             match local {
                 // the name of an instance without a result is only the head of `inst.name` (§8.2.14)
-                Some(Ty::Module(module)) if self.binds_an_instance(decl) => {
-                    self.instance_as_value(file, span, decl, module.decl);
+                Some(Ty::Module(module)) if self.modules().binds_an_instance(decl) => {
+                    self.modules().instance_as_value(file, span, decl, module.decl);
                 }
                 // a template's type is placed through (§8.4.4): a `let` of one the classifier did not name has its own
                 // diagnostic where its value is written

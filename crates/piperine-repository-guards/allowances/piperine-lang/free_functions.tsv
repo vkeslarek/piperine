@@ -7,5 +7,5 @@ crates/piperine-lang/src/pom/builtin.rs::sized	1
 crates/piperine-lang/src/types/catalogue.rs::row	1
 crates/piperine-lang/src/types/catalogue.rs::signed	1
 crates/piperine-lang/src/types/continuity.rs::bind_pattern	1
-crates/piperine-lang/src/types/record.rs::is_reserved	1
-crates/piperine-lang/src/types/record.rs::reserved_field	1
+crates/piperine-lang/src/types/module/record.rs::is_reserved	1
+crates/piperine-lang/src/types/module/record.rs::reserved_field	1

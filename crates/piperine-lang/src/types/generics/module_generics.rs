@@ -81,7 +81,7 @@ impl GenericsSolver<'_, '_> {
         let outer = std::mem::replace(&mut self.state.generics.generic_item, Some(module));
         // a bundle port is typed as its `struct` with the arguments it is written with (`Stream<T>`), an array of bundles as the
         // array of it (`[Lane; N]`), so a connection can teach `T` and `N`
-        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.state.design.is_bundle_owner(*port) { self.bundle_type(*ty) } else { self.port_type(*ty) }).collect();
+        let types: Option<Vec<Ty>> = ports.iter().map(|(port, ty)| if self.state.design.is_bundle_owner(*port) { self.modules().bundle_type(*ty) } else { self.port_type(*ty) }).collect();
         self.state.generics.generic_item = outer;
         types
     }
@@ -91,7 +91,7 @@ impl GenericsSolver<'_, '_> {
     fn learn_from_connections(&mut self, inference: &mut Inference<'_>, declared: &[Ty], args: &[Arg], file: FileId) -> Option<()> {
         let mut natures: Vec<(DeclId, DeclId)> = Vec::new();
         for (arg, port) in args.iter().zip(declared) {
-            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.bundle_named_type(arg.value)).or_else(|| self.expressions().infer(arg.value));
+            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.modules().bundle_named_type(arg.value)).or_else(|| self.expressions().infer(arg.value));
             // `gnd` is a node of any nature: it names none, so it teaches nothing
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
             let declared_parameter = match port.innermost() {
@@ -139,7 +139,7 @@ impl GenericsSolver<'_, '_> {
     pub(in crate::types) fn port_type_under_placement(&mut self, ty: TypeId) -> Option<Ty> {
         let declared = match &self.state.generics.placement_substitution {
             Some(_) => {
-                let outer = std::mem::replace(&mut self.checker.state.generics.generic_item, self.checker.state.modules.placing.last().copied().flatten());
+                let outer = std::mem::replace(&mut self.checker.state.generics.generic_item, self.checker.state.modules.innermost_placement());
                 let declared = self.port_type(ty);
                 self.state.generics.generic_item = outer;
                 declared

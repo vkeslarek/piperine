@@ -70,7 +70,7 @@ impl ExpressionTyping<'_, '_> {
         let carries = data.children.iter().any(|c| matches!(&self.state.design.decl_data(*c).kind, DeclKind::Field(f) if f.dir.is_some()));
         if matches!(&data.kind, DeclKind::Struct(s) if s.bundle == Some(true)) || carries {
             // the type of a handle: a bundle is named, never held (`bundle_handles.rs`)
-            if self.state.modules.naming_bundle {
+            if self.state.modules.naming_bundle() {
                 return true;
             }
             self.refuse_with(file, span, ValueForm::StructItemUsedAsTypeHasCarrier, [name.to_string()]);

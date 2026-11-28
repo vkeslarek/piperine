@@ -7,12 +7,13 @@ use crate::refusal::forms::StructureForm;
 use crate::msl::Span;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, ModuleData, Resolution};
 
-use super::check::{Checker, Context};
-use super::{Callee, Ty};
+use crate::types::check::Context;
+use super::ModuleTyping;
+use crate::types::{Callee, Ty};
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// The result of a module: `-> T` and the trailing expression have the type `T` (`E0301`).
-    pub(super) fn module_result(&mut self, decl: DeclId, module: &ModuleData) {
+    pub(in crate::types) fn module_result(&mut self, decl: DeclId, module: &ModuleData) {
         let data = self.state.design.decl_data(decl);
         let (file, name_span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
         match (module.ret, module.result) {
@@ -46,7 +47,7 @@ impl Checker<'_> {
 
     /// The name `instance` of a placement of `module`, read as a value: an instance of a module
     /// without a result has no value, `E0333` naming it (§8.2.14). One with a result is that value.
-    pub(super) fn instance_as_value(&mut self, file: FileId, span: Span, instance: DeclId, module: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn instance_as_value(&mut self, file: FileId, span: Span, instance: DeclId, module: DeclId) -> Option<Ty> {
         let has_result = matches!(&self.state.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some());
         if has_result {
             return Some(Ty::module(module));
@@ -59,7 +60,7 @@ impl Checker<'_> {
 
     /// Whether the `let` name `binding` names an instance: its `let`'s value (through parentheses) is a placement of a module
     /// (§8.2.14), not a template (§8.4.1).
-    pub(super) fn binds_an_instance(&self, binding: DeclId) -> bool {
+    pub(in crate::types) fn binds_an_instance(&self, binding: DeclId) -> bool {
         let Some(parent) = self.state.design.decl_data(binding).parent else { return false };
         let DeclKind::Let(data) = &self.state.design.decl_data(parent).kind else { return false };
         let mut value = data.value;
@@ -72,7 +73,7 @@ impl Checker<'_> {
     /// `E0354` (§8.3.10): the name `binding` of a continuous result (a `let`, or a placement's
     /// result) read in a const context (a param default, a `where`, a `const` initializer), where no
     /// probe may be written. Reports and returns true when it is one.
-    pub(super) fn continuous_result_in_const(&mut self, file: FileId, span: Span, binding: DeclId) -> bool {
+    pub(in crate::types) fn continuous_result_in_const(&mut self, file: FileId, span: Span, binding: DeclId) -> bool {
         if self.state.values.context() != Context::Const {
             return false;
         }
@@ -89,7 +90,7 @@ impl Checker<'_> {
 
     /// `E0354` (§8.3.10): the placement `expr` has an `Event` result and stands outside an event
     /// position. Returns false for any other expression.
-    pub(super) fn event_result_out_of_place(&mut self, expr: ExprId) -> bool {
+    pub(in crate::types) fn event_result_out_of_place(&mut self, expr: ExprId) -> bool {
         let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Call { class: CallClass::Instance { module: Some(module), .. }, .. } = &node.kind else { return false };
         let name = self.state.design.decl_data(*module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
@@ -110,7 +111,7 @@ impl Checker<'_> {
     }
 
     /// Whether `expr` reads the declaration `target`, directly or through a `let`.
-    pub(super) fn reads_decl(&self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
+    pub(in crate::types) fn reads_decl(&self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
         let node = self.state.design.expr_node(expr);
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(d)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
@@ -144,7 +145,7 @@ impl Checker<'_> {
     /// `E0332` outside a placement; inside one, `E0353` when every result on the cycle has a direct
     /// dependence (a core module's result always has one, §8.3.6), else the type of a feedback
     /// through an unknown: the declared result type of the placement the `let` is bound to.
-    pub(super) fn self_read(&mut self, file: FileId, span: Span, binding: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn self_read(&mut self, file: FileId, span: Span, binding: DeclId) -> Option<Ty> {
         let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         if self.state.modules.placing.is_empty() {
             self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name (§8.2.16)"), "a `let` that reads itself");

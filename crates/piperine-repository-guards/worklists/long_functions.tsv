@@ -91,8 +91,8 @@ crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::check_as	kept: o
 crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::closure	kept: the body of `check_as`, which `Stack::deep` wraps to bound the recursion; it is the same match
 crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::infer_kind	kept: an exhaustive match over the expression kinds, each arm dispatching to the method of its form
 crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::let_statement	kept: the steps of one `let` of a plain name in order (the annotation, a closure whose parameters wait for a call, the initializer, the bookkeeping of the binding), each reading what the one before it fixed, with an early return where one ends it
-crates/piperine-lang/src/types/module.rs::Checker::connections	-
-crates/piperine-lang/src/types/module.rs::Checker::placement	-
+crates/piperine-lang/src/types/module/module.rs::ModuleTyping::connections	kept: the connection rules of one placement in order (the ports and their types, the arity as E0141 or E0312, then one arm per kind of port, each arm one call); the order is the order of the diagnostics
+crates/piperine-lang/src/types/module/module.rs::ModuleTyping::placement	kept: the steps of one placement in the order its rules need them: the place is judged first, the placement is pushed before its arguments are typed so a feedback through it reads it, and popped after the connections; each step reads what the one before fixed, with an early return where one ends it
 crates/piperine-plan/src/digital.rs::Digital::functions	-
 crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
 crates/piperine-plan/src/plan.rs::BodyPlan::build	-

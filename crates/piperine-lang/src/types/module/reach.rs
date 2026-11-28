@@ -7,14 +7,14 @@
 use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
-use super::check::Checker;
-use super::element_target::{DriveTarget, Element};
-use super::Ty;
+use super::ModuleTyping;
+use crate::types::element_target::{DriveTarget, Element};
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// The type of the field read `expr`: the type of the child's item it names, or `None` after
     /// a diagnostic (`E0343` was reported at resolution for an item that is not `pub`).
-    pub(super) fn field_read(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn field_read(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Field { expr: receiver, name, res } = &node.kind else { return None };
@@ -106,7 +106,7 @@ impl Checker<'_> {
     }
 
     /// Whether `receiver` names an instance whose `let` is being typed, directly (`p`) or as the head of a chain of children
-    /// (`b.c0`, `p.cells[1]`): its placement records the module before it types its arguments (`Checker::placement`).
+    /// (`b.c0`, `p.cells[1]`): its placement records the module before it types its arguments (`ModuleTyping::placement`).
     fn names_an_open_instance(&self, receiver: ExprId) -> bool {
         self.open_head(receiver).is_some()
     }
@@ -128,7 +128,7 @@ impl Checker<'_> {
         }
     }
 
-    /// The type of `receiver`, an instance [`Checker::names_an_open_instance`] accepts, recorded on each step of the chain: the
+    /// The type of `receiver`, an instance [`ModuleTyping::names_an_open_instance`] accepts, recorded on each step of the chain: the
     /// module its open `let` places, then each child's own type. `None` after a diagnostic.
     fn open_instance(&mut self, receiver: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(receiver).clone();
@@ -164,7 +164,7 @@ impl Checker<'_> {
             value = *inner;
         }
         match self.state.result.callees.get(&value) {
-            Some(super::Callee::Module(module)) => Some(*module),
+            Some(crate::types::Callee::Module(module)) => Some(*module),
             _ => None,
         }
     }
@@ -172,14 +172,14 @@ impl Checker<'_> {
     /// The target `inst.name` of a definition or a commit when `item` is a resolved carrier of the child that this module may
     /// drive (§5.2.2: any module that sees a `pub` signal drives it, §22.3): the nature has an `impl Resolve`, the item is no
     /// `in` port and holds no array. `None` leaves the field to `E0222`: a carrier with one driver is written by its own module.
-    pub(super) fn reached_drive_target(&mut self, place: ExprId, item: DeclId) -> Option<DriveTarget> {
+    pub(in crate::types) fn reached_drive_target(&mut self, place: ExprId, item: DeclId) -> Option<DriveTarget> {
         let (declared, direction) = match self.state.design.decl_data(item).kind.clone() {
             DeclKind::Port(p) => (p.ty, p.dir),
             DeclKind::Signal(s) => (s.ty, None),
             _ => return None,
         };
         let Some(Ty::Carrier { nature, .. }) = self.port_type(declared) else { return None };
-        if direction == Some(crate::msl::ast::Dir::In) || !super::nature_rules::NatureRules::of(self.state.design, nature).resolved {
+        if direction == Some(crate::msl::ast::Dir::In) || !crate::types::nature_rules::NatureRules::of(self.state.design, nature).resolved {
             return None;
         }
         let ExprKind::Field { expr: receiver, .. } = self.state.design.expr_node(place).kind.clone() else { return None };
@@ -210,7 +210,7 @@ impl Checker<'_> {
 
     /// The param `recv` names (through parentheses) and its type: a param of the module being
     /// checked, `f64` or `bool`.
-    pub(super) fn param_receiver(&mut self, recv: ExprId) -> Option<(DeclId, Ty)> {
+    pub(in crate::types) fn param_receiver(&mut self, recv: ExprId) -> Option<(DeclId, Ty)> {
         match &self.state.design.expr_node(recv).kind {
             ExprKind::Paren(inner) => self.param_receiver(*inner),
             ExprKind::Path(path) => {
@@ -225,11 +225,11 @@ impl Checker<'_> {
     /// `r.changed()` (an `Event`: the param changed by a host `set`) or `r.prev()` (the param's value
     /// before its latest `set`, its own value before any) on the param `recv` (§5.3.1). A param is
     /// known, so `prev()` has the param's type and is not flagged.
-    pub(super) fn param_history(&mut self, expr: ExprId, changed: bool, recv: ExprId, args: &[crate::pom::Arg]) -> Option<Ty> {
+    pub(in crate::types) fn param_history(&mut self, expr: ExprId, changed: bool, recv: ExprId, args: &[crate::pom::Arg]) -> Option<Ty> {
         let (_, ty) = self.param_receiver(recv)?;
         self.expressions().apply(expr, &[], args)?;
         self.expressions().infer(recv);
-        self.state.result.builtins.insert(expr, if changed { super::Builtin::Changed } else { super::Builtin::Prev });
+        self.state.result.builtins.insert(expr, if changed { crate::types::Builtin::Changed } else { crate::types::Builtin::Prev });
         Some(if changed { Ty::Event } else { ty })
     }
 

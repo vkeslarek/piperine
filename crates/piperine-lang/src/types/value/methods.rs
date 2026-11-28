@@ -40,7 +40,7 @@ impl ExpressionTyping<'_, '_> {
                 let self_ty = data.self_ty;
                 // `impl Diff { fn vd(self) }`: `self` is a handle to the bundle (§7 rule 13)
                 if self.state.design.bundle_struct_of_type(self_ty).is_some() {
-                    return self.bundle_type(self_ty);
+                    return self.modules().bundle_type(self_ty);
                 }
                 self.lower_type(self_ty)
             }

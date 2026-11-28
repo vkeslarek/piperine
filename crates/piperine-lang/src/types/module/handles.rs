@@ -4,16 +4,16 @@
 //! (`a.prev()`); it is never returned or stored (`E0133`, `handles` rules below).
 //!
 //! The type of a handle is the type of the carrier: `Ty::Node` for a continuous nature, `Ty::Carrier` for a
-//! discrete one. [`Types::handle`](super::Types::handle) says which parameters are handles.
+//! discrete one. [`Types::handle`](crate::types::Types::handle) says which parameters are handles.
 
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
 
-use super::check::Checker;
-use super::Bound;
-use super::Ty;
+use super::ModuleTyping;
+use crate::types::Bound;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// What a read of a handle of type `ty` is: the value of a discrete carrier, the node itself.
     pub(super) fn handle_read_type(ty: &Ty) -> Ty {
         match ty {
@@ -28,13 +28,13 @@ impl Checker<'_> {
     }
 
     /// Whether `ty` is a type parameter bound by `Nature`: what a function generic over a nature takes (`fn f<N: Nature>(a: N)`).
-    pub(super) fn is_nature_parameter(&mut self, ty: &Ty) -> bool {
+    pub(in crate::types) fn is_nature_parameter(&mut self, ty: &Ty) -> bool {
         matches!(ty, Ty::Param(param) if self.generics().bounds_of(*param).contains(&Bound::Nature))
     }
 
     /// Records the parameter `param` of type `ty` as a handle when `ty` is one: a node or a carrier of a nature, or a
     /// type parameter bound by `Nature`.
-    pub(super) fn note_handle(&mut self, param: DeclId, ty: &Ty) {
+    pub(in crate::types) fn note_handle(&mut self, param: DeclId, ty: &Ty) {
         if Self::is_handle_type(ty) || self.is_nature_parameter(ty) || self.is_bundle_type(ty) {
             self.state.result.handles.insert(param);
         }
@@ -42,7 +42,7 @@ impl Checker<'_> {
 
     /// The type of the argument `expr` for a parameter generic over a nature: the carrier it names (a discrete one is
     /// the carrier, not the value it reads, so the call's nature is inferred from it), else the type it reads as.
-    pub(super) fn infer_carrier(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn infer_carrier(&mut self, expr: ExprId) -> Option<Ty> {
         let read = self.expressions().infer(expr)?;
         match self.carrier_named(expr) {
             Some(carrier @ Ty::Carrier { .. }) => {
@@ -95,7 +95,7 @@ impl Checker<'_> {
 
     /// What a read of the handle `decl` is: the value of a discrete carrier (§3.1.6), the node itself for a
     /// continuous one. `None` when `decl` is not a handle.
-    pub(super) fn handle_read(&self, decl: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn handle_read(&self, decl: DeclId) -> Option<Ty> {
         if !self.state.result.handles.contains(&decl) {
             return None;
         }
@@ -106,18 +106,18 @@ impl Checker<'_> {
     }
 
     /// The carrier type of the handle `decl`, for the carrier methods and the arguments that pass it on.
-    pub(super) fn handle_type(&self, decl: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn handle_type(&self, decl: DeclId) -> Option<Ty> {
         self.state.result.handles.contains(&decl).then(|| self.state.result.locals.get(&decl).cloned()).flatten()
     }
 
     /// Whether every operand of a probe is a handle, which is what a function's probe may read (§3 rule 7).
-    pub(super) fn probes_only_handles(&self, operands: &[ExprId]) -> bool {
+    pub(in crate::types) fn probes_only_handles(&self, operands: &[ExprId]) -> bool {
         !operands.is_empty() && operands.iter().all(|operand| self.handle_named(*operand).is_some() || self.bundle_handle_root(*operand).is_some())
     }
 
     /// An argument for a parameter of a nature type: the carrier it names (a port, a signal or a handle of the
     /// same nature and value) is passed on as it is (§3.1.5); anything else is the plain mismatch.
-    pub(super) fn handle_argument(&mut self, expr: ExprId, expected: &Ty) {
+    pub(in crate::types) fn handle_argument(&mut self, expr: ExprId, expected: &Ty) {
         let passed = match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(_) | ExprKind::Paren(_) | ExprKind::Index { .. } => self.carrier_named(expr),
             _ => None,
@@ -136,7 +136,7 @@ impl Checker<'_> {
     }
 
     /// The type of the port, signal or handle `expr` names; `None` for any other expression.
-    pub(super) fn carrier_named(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn carrier_named(&mut self, expr: ExprId) -> Option<Ty> {
         match self.declared_port(expr) {
             Some((_, ty)) => Some(ty),
             None => self.handle_named(expr).and_then(|decl| self.handle_type(decl)),
@@ -146,7 +146,7 @@ impl Checker<'_> {
     /// `E0133` for every use of a handle in `function` that keeps it past a call (§3.1.5, D12): the result type of
     /// the function is a handle, a `return` names one, a `let`, a struct field, a tuple or array element or a closure
     /// holds one, or an assignment or a commit writes through one. Passing it as an argument is the use it is for.
-    pub(super) fn check_handle_uses(&mut self, function: DeclId) {
+    pub(in crate::types) fn check_handle_uses(&mut self, function: DeclId) {
         if self.state.result.handles.is_empty() {
             return;
         }
@@ -202,7 +202,7 @@ impl Checker<'_> {
 
     /// Records `expr`, of the type `ty`, when it is an `if` or a `match` whose result is a node: a choice of hardware, judged once
     /// the whole design is typed (`judge_node_choices`), when every assignment is known. It is typed as the node meanwhile.
-    pub(super) fn record_node_choice(&mut self, expr: ExprId, ty: Option<&Ty>) {
+    pub(in crate::types) fn record_node_choice(&mut self, expr: ExprId, ty: Option<&Ty>) {
         if matches!(ty, Some(Ty::Node(_) | Ty::AnyNode)) && matches!(self.state.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. }) {
             self.state.modules.node_choices.push(expr);
         }
@@ -211,7 +211,7 @@ impl Checker<'_> {
     /// `E0133` for every recorded choice of a node whose value depends on the run (§1.4.7, user decision of 2026-11-24): its
     /// condition, scrutinee or a guard reads a probe, a port, a signal, a core primitive of the run, or a variable whose value
     /// does. A choice over params, constants, generation indexes and `let`s of those is made at elaboration.
-    pub(super) fn judge_node_choices(&mut self) {
+    pub(in crate::types) fn judge_node_choices(&mut self) {
         for expr in std::mem::take(&mut self.state.modules.node_choices) {
             let (form, read) = match self.state.design.expr_node(expr).kind.clone() {
                 ExprKind::If { cond, .. } => ("an `if`", self.run_read(cond, &mut Vec::new())),
@@ -257,7 +257,7 @@ impl Checker<'_> {
     fn run_primitive(&self, callee: ExprId) -> Option<String> {
         let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
         match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Builtin(id)) if super::catalogue::Core::signature(id).is_some() => Some(id.name()),
+            Some(Resolution::Builtin(id)) if crate::types::catalogue::Core::signature(id).is_some() => Some(id.name()),
             _ => None,
         }
     }
@@ -297,7 +297,7 @@ impl Checker<'_> {
     /// What makes the assignment `write` of `decl` depend on the run: an assignment in a closure, the value it writes, or a condition
     /// around it inside the body that declares `decl` (an `if`, a `match`, a loop's condition or range, and every condition inside
     /// a loop around it, which may end the loop early).
-    fn write_reads_the_run(&self, decl: DeclId, write: super::value::assign::Write, followed: &mut Vec<DeclId>) -> Option<String> {
+    fn write_reads_the_run(&self, decl: DeclId, write: crate::types::value::assign::Write, followed: &mut Vec<DeclId>) -> Option<String> {
         if write.in_closure {
             return Some("an assignment inside a closure".to_string());
         }
@@ -346,7 +346,7 @@ impl Checker<'_> {
 
     /// Whether the node operand `operand` was refused already: a node chosen by an expression (through parentheses), or a `let`
     /// whose value was refused.
-    pub(super) fn operand_refused(&self, operand: ExprId) -> bool {
+    pub(in crate::types) fn operand_refused(&self, operand: ExprId) -> bool {
         match &self.state.design.expr_node(operand).kind {
             ExprKind::Paren(inner) => self.operand_refused(*inner),
             _ => self.state.modules.chosen_nodes.contains(&operand) || self.reads_poisoned(operand),
@@ -354,7 +354,7 @@ impl Checker<'_> {
     }
 
     /// `E0133` for a function whose result type is a handle (a node or a carrier of a nature).
-    pub(super) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
+    pub(in crate::types) fn check_handle_result(&mut self, function: DeclId, ret: Option<&Ty>) {
         let Some(ret) = ret.filter(|ty| Self::is_handle_type(ty)) else { return };
         let DeclKind::Fn(data) = &self.state.design.decl_data(function).kind else { return };
         let span = data.ret.map_or(self.state.design.decl_data(function).span, |ty| self.state.design.type_node(ty).span);

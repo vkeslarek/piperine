@@ -119,11 +119,11 @@ impl GenericsSolver<'_, '_> {
     /// bundle is; the view is the bound's own, read with [`GenericsSolver::callable_views`].
     pub(super) fn bound_input_type(&mut self, input: TypeId) -> Option<Ty> {
         if matches!(self.state.design.type_node(input).kind, TypeKind::Flip(_)) {
-            return self.bundle_type(input);
+            return self.modules().bundle_type(input);
         }
-        let outer = std::mem::replace(&mut self.state.modules.naming_bundle, true);
+        let outer = self.state.modules.replace_naming_bundle(true);
         let lowered = self.lower_type(input);
-        self.state.modules.naming_bundle = outer;
+        self.state.modules.replace_naming_bundle(outer);
         lowered
     }
 
@@ -144,7 +144,7 @@ impl GenericsSolver<'_, '_> {
         if matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return self.module_param_callable(decl).map(|_| decl);
         }
-        let Some(Ty::Param(param)) = self.binding_type(decl) else { return None };
+        let Some(Ty::Param(param)) = self.modules().binding_type(decl) else { return None };
         self.callable_of(param).map(|_| decl)
     }
 
@@ -200,9 +200,9 @@ impl GenericsSolver<'_, '_> {
             match ty {
                 Ty::Node(_) => {
                     let Some(found) = self.expressions().infer(arg.value) else { continue };
-                    self.connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
+                    self.modules().connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
                 }
-                _ if self.is_bundle_type(ty) => self.connect_bundle_input(arg.value, ty, views.get(position).copied().unwrap_or(BundleView::Producer), position),
+                _ if self.modules().is_bundle_type(ty) => self.modules().connect_bundle_input(arg.value, ty, views.get(position).copied().unwrap_or(BundleView::Producer), position),
                 _ => self.expressions().check_argument(arg.value, ty),
             }
         }

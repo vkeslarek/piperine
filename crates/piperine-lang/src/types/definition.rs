@@ -77,7 +77,7 @@ impl Checker<'_> {
                 if matches!(&self.state.design.decl_data(*item).kind, DeclKind::Field(field) if field.dir.is_some()) {
                     return None;
                 }
-                if let Some(reached) = self.reached_drive_target(place, *item) {
+                if let Some(reached) = self.modules().reached_drive_target(place, *item) {
                     return Some(reached);
                 }
                 let text = match self.state.design.decl_data(*item).kind {
@@ -119,7 +119,7 @@ impl Checker<'_> {
             _ => return self.not_drivable(file, node.span, what, "not a discrete carrier"),
         };
         // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
-        let ty = port_ty.and_then(|t| self.port_type(t)).map(|ty| self.generated_read(place, decl, ty))?;
+        let ty = port_ty.and_then(|t| self.port_type(t)).map(|ty| self.modules().generated_read(place, decl, ty))?;
         match ty {
             Ty::Carrier { value, .. } => {
                 if direction == Some(crate::msl::ast::Dir::In) {
@@ -221,7 +221,7 @@ impl Checker<'_> {
     /// naming the input. A discrete argument, or an input only an `analog` block reads, is accepted.
     pub(super) fn definition_value_input(&mut self, call: ExprId, module: DeclId, input: DeclId, arg: ExprId) {
         let read_by_a_definition = self.state.design.decl_data(module).children.clone().into_iter().any(|child| match &self.state.design.decl_data(child).kind {
-            DeclKind::Definition(definition) => [Some(definition.value), definition.after].into_iter().flatten().any(|expr| self.reads_decl(expr, input, &mut Vec::new())),
+            DeclKind::Definition(definition) => [Some(definition.value), definition.after].into_iter().flatten().any(|expr| self.modules().reads_decl(expr, input, &mut Vec::new())),
             _ => false,
         });
         if !read_by_a_definition || !self.continuous(arg) {

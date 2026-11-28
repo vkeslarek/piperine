@@ -48,7 +48,7 @@ impl ExpressionTyping<'_, '_> {
         }
         match class {
             CallClass::Function => {}
-            CallClass::Instance { module: Some(module), .. } => return self.placement(expr, *module),
+            CallClass::Instance { module: Some(module), .. } => return self.modules().placement(expr, *module),
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
             // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
             // reads the call as a placement because a module parameter has the same bound
@@ -120,7 +120,7 @@ impl ExpressionTyping<'_, '_> {
         }
         self.reach(function);
         self.refuse_outside_class(expr, function);
-        self.emitting_call(expr, function);
+        self.modules().emitting_call(expr, function);
         self.check_call_class(expr, function);
         if self.is_trait_function(function) {
             return self.trait_path_call(expr, function, args);
@@ -309,7 +309,7 @@ impl ExpressionTyping<'_, '_> {
             return None;
         }
         // `c0.cs.abs()`: the receiver's type is the concrete item's, which nothing here gives (§8.4.8)
-        if self.untyped_template_receiver(*recv, args) {
+        if self.modules().untyped_template_receiver(*recv, args) {
             return None;
         }
         // The built-in a stdlib item resolved to, or the built-in row of the language.
@@ -345,8 +345,8 @@ impl ExpressionTyping<'_, '_> {
             }
         };
         // `r.changed()` and `r.prev()` on a param (§5.3.1): the param's history, not a carrier's.
-        if matches!(name, "changed" | "prev") && self.param_receiver(*recv).is_some() {
-            return self.param_history(expr, name == "changed", *recv, args);
+        if matches!(name, "changed" | "prev") && self.modules().param_receiver(*recv).is_some() {
+            return self.modules().param_history(expr, name == "changed", *recv, args);
         }
         if builtin == Some(Builtin::Prev) {
             return self.prev_read(expr, *recv, args);
@@ -355,7 +355,7 @@ impl ExpressionTyping<'_, '_> {
             return self.edge_read(expr, edge, *recv, args);
         }
         // §7 rule 13: a function of a bundle, called on a bundle carrier or on a bundle handle (`bundle_handles.rs`)
-        if let Some(bundle) = self.bundle_named_type(*recv) {
+        if let Some(bundle) = self.modules().bundle_named_type(*recv) {
             self.state.result.exprs[recv.index()] = Some(bundle.clone());
             let Some(function) = self.method_of(&bundle, name) else {
                 let message = format!("no method `{name}` on `{}`", bundle.name(self.state.design));
@@ -365,7 +365,7 @@ impl ExpressionTyping<'_, '_> {
             return self.method_call_of(expr, *recv, &bundle, function, args);
         }
         // §3.1.7: a method of a carrier is the carrier's own (above), then the `impl`s of its nature, then the value's
-        if let Some(carrier @ Ty::Carrier { .. }) = self.carrier_named(*recv)
+        if let Some(carrier @ Ty::Carrier { .. }) = self.modules().carrier_named(*recv)
             && let Some(function) = self.method_of(&carrier, name)
         {
             self.infer(*recv)?;

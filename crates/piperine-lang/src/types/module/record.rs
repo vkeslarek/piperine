@@ -10,8 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Lit, Resolution};
 
-use super::check::{Checker, Context};
-use super::Ty;
+use crate::types::check::Context;
+use super::ModuleTyping;
+use crate::types::Ty;
 
 /// One `emit!` of the reachable set: where it is written, its stream and its typed fields.
 #[derive(Debug)]
@@ -54,9 +55,9 @@ fn is_reserved(stream: &str) -> bool {
     matches!(stream, "sim" | "checks")
 }
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// `emit!("stream", f = e, ..)`: an expression of type `()`.
-    pub(super) fn emit(&mut self, expr: ExprId, stream: &Lit, fields: &[FieldInit]) -> Option<Ty> {
+    pub(in crate::types) fn emit(&mut self, expr: ExprId, stream: &Lit, fields: &[FieldInit]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let name = stream.str_value().unwrap_or_default();
@@ -114,7 +115,7 @@ impl Checker<'_> {
     /// A call of `function`, which may reach `emit!`: from `analog` it writes neither `sim` nor `checks`
     /// (`E0603`). Where an emitting call may not stand at all, in a definition, a body `let` or a const
     /// context, it is `E0122` (`refuse_outside_class`); `E0601` is `emit!` written directly (§19 rule 10).
-    pub(super) fn emitting_call(&mut self, expr: ExprId, function: DeclId) {
+    pub(in crate::types) fn emitting_call(&mut self, expr: ExprId, function: DeclId) {
         let streams = self.function_streams(function);
         if streams.is_empty() {
             return;
@@ -171,7 +172,7 @@ impl Checker<'_> {
     /// One field has one type per stream in a module, the sites of the functions it calls
     /// included (`E0605`, §19 rule 12): the library's sites are read first, so the one that
     /// disagrees is the module's own.
-    pub(super) fn record_conflicts(&mut self) {
+    pub(in crate::types) fn record_conflicts(&mut self) {
         let modules: Vec<DeclId> = self.state.result.reached.iter().copied().filter(|d| matches!(self.state.design.decl_data(*d).kind, DeclKind::Module(_))).collect();
         for module in modules {
             let mut owners = Vec::new();

@@ -5,13 +5,13 @@
 
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, TypeId, TypeKind};
 
-use super::check::Checker;
-use super::Ty;
+use super::ModuleTyping;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// The type of the bundle a type written as `Stream<u8>` or `flip Stream` names: its `struct`, with the arguments it is
     /// written with; of an array of bundles the array of it. `None` after a diagnostic.
-    pub(super) fn bundle_type(&mut self, ty: TypeId) -> Option<Ty> {
+    pub(in crate::types) fn bundle_type(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.state.design.type_node(ty).clone();
         match node.kind {
             TypeKind::Flip(inner) => self.bundle_type(inner),
@@ -32,13 +32,13 @@ impl Checker<'_> {
     }
 
     /// Whether `ty` is the type of a bundle handle: the `struct` of a bundle.
-    pub(super) fn is_bundle_type(&self, ty: &Ty) -> bool {
+    pub(in crate::types) fn is_bundle_type(&self, ty: &Ty) -> bool {
         matches!(ty, Ty::Struct(nominal) if matches!(&self.state.design.decl_data(nominal.decl).kind, DeclKind::Struct(data) if data.bundle == Some(true)))
     }
 
     /// The bundle a name stands for, as a receiver or the base of a field: a bundle port or signal of the module, a handle `self`,
     /// a nested bundle field of either, an element of an array of bundles. `None` for any other expression.
-    pub(super) fn bundle_named_type(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn bundle_named_type(&mut self, expr: ExprId) -> Option<Ty> {
         match self.state.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.bundle_named_type(inner),
             ExprKind::Path(path) => {
@@ -75,7 +75,7 @@ impl Checker<'_> {
     /// The field `expr` (`self.valid`, `self.inner.x`) of a bundle handle, and its type: the carrier or node the field
     /// declares with the arguments of the handle's type substituted, or a bundle type for a nested bundle. `None` when `expr`
     /// is no field of a bundle handle, or after a diagnostic.
-    pub(super) fn bundle_handle_field(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
+    pub(in crate::types) fn bundle_handle_field(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
         let ExprKind::Field { expr: receiver, name, .. } = self.state.design.expr_node(expr).kind.clone() else { return None };
         let Some(Ty::Struct(nominal)) = self.bundle_named_type(receiver).filter(|ty| self.is_bundle_type(ty)) else { return None };
         let field = self.state.design.decl_data(nominal.decl).children.iter().copied().find(|child| self.state.design.decl_data(*child).name.as_ref().is_some_and(|n| n.text == name.text))?;
@@ -86,7 +86,7 @@ impl Checker<'_> {
     }
 
     /// The handle `self` a field chain `self.inner.x` starts at, when it starts at a bundle handle.
-    pub(super) fn bundle_handle_root(&self, expr: ExprId) -> Option<DeclId> {
+    pub(in crate::types) fn bundle_handle_root(&self, expr: ExprId) -> Option<DeclId> {
         match self.state.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.bundle_handle_root(inner),
             ExprKind::Field { expr: receiver, .. } => self.bundle_handle_root(receiver),

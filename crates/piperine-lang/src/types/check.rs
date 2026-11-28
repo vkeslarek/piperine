@@ -1,7 +1,7 @@
 //! The declaration worklist: from the top module, every module it places, every function it
 //! calls and every constant it reads is checked once, in first-reach order.
 
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeSet, VecDeque};
 
 use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
@@ -12,13 +12,14 @@ use super::continuity::Continuity;
 use super::definition::DriveBook;
 use super::value::flow::ExitFrame;
 use super::generics::tables::GenericsTables;
+use super::module::tables::ModuleTables;
 use super::value::tables::ValueTables;
 use super::value::ExpressionTyping;
+use super::module::ModuleTyping;
 use super::traits::TraitTyping;
 use super::generics::GenericsSolver;
 use super::pattern::PatternTyping;
 use super::nature_rules::NatureRules;
-use super::record::Records;
 use super::{ConstTerm, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
@@ -108,38 +109,6 @@ pub(super) struct Diagnostics {
     pub(super) reported_spans: BTreeSet<(FileId, usize, usize)>,
 }
 
-/// What checking module bodies (§8) is in the middle of: the `let`s being typed, the placements being connected, the
-/// reads through templates, the node choices left to judge, and the `emit!` sites.
-#[derive(Default)]
-pub(super) struct ModuleTables {
-    /// The bindings of the module-body `let`s whose values are being typed, each with its value (a
-    /// read of one is a feedback, `Checker::self_read`).
-    pub(super) lets_open: BTreeMap<DeclId, ExprId>,
-    /// The `let`s of module bodies already typed: a `let` is typed where it is first read, whatever its place in the body
-    /// (§8.2: the items of a body appear in any order), and once.
-    pub(super) lets_typed: BTreeSet<DeclId>,
-    /// The placements whose arguments are being typed, innermost last: the module, or `None` for
-    /// a core module.
-    pub(super) placing: Vec<Option<DeclId>>,
-    /// The reads of an item of a child only a folded template names (`reach/fields.rs`), typed as a node until a context wants a value
-    /// of them (`template_items.rs`).
-    pub(super) template_reads: BTreeSet<ExprId>,
-    /// The reads through a template made through an instance whose `let` was being typed, to that `let`: a node connection, and
-    /// a read of the `let` itself when a context wants a value of it (§8.2.16).
-    pub(super) open_template_reads: BTreeMap<ExprId, DeclId>,
-    /// The `let`s with no type bound to a read through a template, by binding: the first use that wants a value types them.
-    pub(super) template_locals: BTreeMap<DeclId, ExprId>,
-    /// The `if`s, `match`es and blocks refused for choosing a node (`E0133`, `handles.rs`): an operand that is one is no second
-    /// diagnostic.
-    pub(super) chosen_nodes: BTreeSet<ExprId>,
-    /// The `if`s and `match`es whose result is a node, judged once the whole design is typed (`judge_node_choices`).
-    pub(super) node_choices: Vec<ExprId>,
-    /// Whether a bundle `struct` is being named as the type of a handle (`bundle_handles.rs`), where it is no refusal.
-    pub(super) naming_bundle: bool,
-    /// The `emit!` sites seen so far.
-    pub(super) records: Records,
-}
-
 /// What checking analog behaviour (§14) keeps: which expressions are continuous, and how deep in a `ddx` the check is.
 pub(super) struct AnalogTables {
     /// What the check knows of continuity, filled as it goes (`continuity.rs`).
@@ -202,6 +171,11 @@ impl<'d> Checker<'d> {
         TraitTyping::new(self)
     }
 
+    /// The view that types module bodies.
+    pub(super) fn modules(&mut self) -> ModuleTyping<'_, 'd> {
+        ModuleTyping::new(self)
+    }
+
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
     pub(super) fn project_defines(&self, name: &str) -> bool {
         self.state.traits.defines_method(name, |decl| self.is_std(decl))
@@ -212,8 +186,8 @@ impl<'d> Checker<'d> {
         self.check_attributes();
         self.reach(top);
         self.drain();
-        self.report_unread_template_locals();
-        self.judge_node_choices();
+        self.modules().report_unread_template_locals();
+        self.modules().judge_node_choices();
         if !self.state.diagnostics.list.is_empty() {
             return Err(self.sorted_diagnostics());
         }
@@ -222,7 +196,7 @@ impl<'d> Checker<'d> {
             self.continuous(expr);
         }
         let continuous: BTreeSet<ExprId> = self.state.analog.continuity.continuous_set().collect();
-        let emits = self.state.modules.records.emitting();
+        let emits = self.state.modules.emitting();
         let mut result = self.state.result;
         result.continuous = continuous;
         result.emits = emits;
@@ -245,7 +219,7 @@ impl<'d> Checker<'d> {
         while let Some(decl) = self.worklist.queue.pop_front() {
             self.declaration(decl);
         }
-        self.record_conflicts();
+        self.modules().record_conflicts();
     }
 
     /// The diagnostics so far, in source order.
@@ -284,11 +258,12 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (book, lets_open, placing) = (std::mem::take(&mut self.state.carriers.book), std::mem::take(&mut self.state.modules.lets_open), std::mem::take(&mut self.state.modules.placing));
+        let (book, modules) = (std::mem::take(&mut self.state.carriers.book), self.state.modules.save());
         let saved = self.state.values.save();
         self.declaration(module);
         self.state.values.restore(saved);
-        (self.state.carriers.book, self.state.modules.lets_open, self.state.modules.placing) = (book, lets_open, placing);
+        self.state.carriers.book = book;
+        self.state.modules.restore(modules);
     }
 
     fn declaration(&mut self, decl: DeclId) {
@@ -330,6 +305,11 @@ impl<'d> Checker<'d> {
 
     /// Reports `diagnostic` whatever else is already reported at its span: a finding about a
     /// relation between constructs (a loop of definitions) is not the same finding as one about
+    /// A diagnostic of a rule of the specification that carries its own code.
+    pub(super) fn coded(&mut self, file: FileId, code: &'static str, span: Span, message: String, label: &str) {
+        self.report(file, Diagnostic::new(code, message, span, label));
+    }
+
     /// the construct at the span where it is shown.
     pub(super) fn report_distinct(&mut self, file: FileId, diagnostic: Diagnostic) {
         self.state.diagnostics.list.push(DesignDiagnostic { file, diagnostic });
@@ -376,7 +356,7 @@ impl<'d> Checker<'d> {
 
     /// A mismatch under the code of the rule that was broken.
     pub(super) fn mismatch_coded(&mut self, file: FileId, span: Span, code: &'static str, expected: &str, found: &str) {
-        if self.untyped_template_read(file, span, found) {
+        if self.modules().untyped_template_read(file, span, found) {
             return;
         }
         self.report(file, Diagnostic::new(code, format!("mismatched types: expected `{expected}`, found `{found}`"), span, format!("expected `{expected}`, found `{found}`")));
@@ -672,7 +652,7 @@ impl<'d> Checker<'d> {
                     self.state.values.poison(param);
                 }
                 Some(ty) => {
-                    self.note_handle(param, &ty);
+                    self.modules().note_handle(param, &ty);
                     self.state.result.locals.insert(param, ty);
                 }
                 None => {
@@ -681,8 +661,8 @@ impl<'d> Checker<'d> {
             }
         }
         // before the body: a handle kept is `E0133`, not the mismatch the same span would also report
-        self.check_handle_result(decl, parts.ret.as_ref());
-        self.check_handle_uses(decl);
+        self.modules().check_handle_result(decl, parts.ret.as_ref());
+        self.modules().check_handle_uses(decl);
         self.state.values.begin_function(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {
             (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
@@ -729,17 +709,17 @@ impl<'d> Checker<'d> {
             return;
         }
         match (&item.kind, phase) {
-            (DeclKind::Port(p), ItemPhase::Declarations) => self.port(child, &p.clone(), item.file),
-            (DeclKind::Param(p), ItemPhase::Declarations) => self.param(child, &p.clone()),
-            (DeclKind::Signal(s), ItemPhase::Declarations) => self.signal(child, &s.clone()),
-            (DeclKind::Let(_), ItemPhase::Lets) => self.type_module_let(child),
+            (DeclKind::Port(p), ItemPhase::Declarations) => self.modules().port(child, &p.clone(), item.file),
+            (DeclKind::Param(p), ItemPhase::Declarations) => self.modules().param(child, &p.clone()),
+            (DeclKind::Signal(s), ItemPhase::Declarations) => self.modules().signal(child, &s.clone()),
+            (DeclKind::Let(_), ItemPhase::Lets) => self.modules().type_module_let(child),
             (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
             (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
             (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
             // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
             // module that holds the closure, typed with it, not module items (design D9).
             (DeclKind::Binding(_), _) => {}
-            (DeclKind::Generation(_), _) => self.generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
+            (DeclKind::Generation(_), _) => self.modules().generation(child, phase == ItemPhase::Declarations, |this, inner| this.module_item(inner, phase)),
             (other, ItemPhase::Declarations) => self.refuse_with(item.file, item.span, ValueForm::InsideModule, [other.label().to_lowercase().to_string()]),
             (_, _) => {}
         }
@@ -780,7 +760,7 @@ impl<'d> Checker<'d> {
             }
         }
         self.definition_loops();
-        self.module_result(decl, m);
+        self.modules().module_result(decl, m);
         for behavior in m.behaviors.iter().copied() {
             let b = self.state.design.decl_data(behavior).clone();
             let DeclKind::Behavior(bd) = &b.kind else { continue };
@@ -802,10 +782,10 @@ impl<'d> Checker<'d> {
             }
         }
         // the carriers declared inside generation are the module's too, one array each (§8.2.23)
-        let carriers = self.generated_items(&items);
-        self.missing_initial_values(&carriers);
+        let carriers = self.modules().generated_items(&items);
+        self.modules().missing_initial_values(&carriers);
         self.initial_values_under_element_definitions(&carriers);
         self.defer_unfolded_overlaps();
-        self.handed_drives();
+        self.modules().handed_drives();
     }
 }

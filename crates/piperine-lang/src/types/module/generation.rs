@@ -6,13 +6,14 @@
 
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenerationData, PatKind, Resolution};
 
-use super::check::{Checker, Context};
-use super::{ConstTerm, Length, Ty};
+use crate::types::check::Context;
+use super::ModuleTyping;
+use crate::types::{ConstTerm, Length, Ty};
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// The items `items` of a body with the items written inside their generations in place of each generation, nested ones
     /// included, in source order.
-    pub(super) fn generated_items(&self, items: &[DeclId]) -> Vec<DeclId> {
+    pub(in crate::types) fn generated_items(&self, items: &[DeclId]) -> Vec<DeclId> {
         let mut found = Vec::new();
         for item in items.iter().copied() {
             match &self.state.design.decl_data(item).kind {
@@ -54,7 +55,7 @@ impl Checker<'_> {
     }
 
     /// `element` as the array a generation `for` around `decl` makes of it, nested once for each (§8.2.23).
-    pub(super) fn generated_type(&mut self, decl: DeclId, element: Ty) -> Ty {
+    pub(in crate::types) fn generated_type(&mut self, decl: DeclId, element: Ty) -> Ty {
         self.generation_loops(decl).into_iter().rev().fold(element, |inner, generation| Ty::Array(Box::new(inner), self.loop_length(generation)))
     }
 
@@ -80,13 +81,13 @@ impl Checker<'_> {
 
     /// The value `read` a reader `expr` gets from the generated carrier or node `decl`: the element, wrapped in the levels
     /// of the generation `for`s the reader is not inside.
-    pub(super) fn generated_read(&mut self, expr: ExprId, decl: DeclId, read: Ty) -> Ty {
+    pub(in crate::types) fn generated_read(&mut self, expr: ExprId, decl: DeclId, read: Ty) -> Ty {
         self.outside_loops(decl, expr).into_iter().rev().fold(read, |inner, generation| Ty::Array(Box::new(inner), self.loop_length(generation)))
     }
 
     /// The type a reader `expr` gets from the generated local `decl` (a `let`, an instance), whose table entry is the
     /// whole array: the levels of the generation `for`s the reader is inside are peeled.
-    pub(super) fn generated_local(&self, expr: ExprId, decl: DeclId, whole: Ty) -> Ty {
+    pub(in crate::types) fn generated_local(&self, expr: ExprId, decl: DeclId, whole: Ty) -> Ty {
         let around = self.generation_loops(decl);
         let inside = self.generation_loops_at(self.state.design.expr_node(expr).owner);
         let mut ty = whole;
@@ -103,7 +104,7 @@ impl Checker<'_> {
     }
 
     /// The generation `decl` of a module body in `phase`: its header in the declarations, then its items as the module's own.
-    pub(super) fn generation(&mut self, decl: DeclId, declarations: bool, mut item: impl FnMut(&mut Self, DeclId)) {
+    pub(in crate::types) fn generation(&mut self, decl: DeclId, declarations: bool, mut item: impl FnMut(&mut Self, DeclId)) {
         let data = self.state.design.decl_data(decl).clone();
         let DeclKind::Generation(generation) = &data.kind else { return };
         if declarations {
@@ -130,7 +131,7 @@ impl Checker<'_> {
         let file = self.state.design.decl_data(decl).file;
         match generation {
             GenerationData::For { pat, iter, .. } => {
-                let element = self.const_position(*iter, "a generation range").then(|| self.within(Context::Const, |this| this.generation_element(*iter))).flatten();
+                let element = self.const_position(*iter, "a generation range").then(|| self.within(Context::Const, |this| this.modules().generation_element(*iter))).flatten();
                 match element {
                     Some(element) => {
                         self.patterns().irrefutable_pattern(file, *pat, &element, "a generation `for`");
@@ -160,7 +161,7 @@ impl Checker<'_> {
     }
 
     /// What `expr` reads that only exists over time: a port or a signal by name, or a probe.
-    pub(super) fn runtime_read(&self, expr: ExprId) -> Option<String> {
+    pub(in crate::types) fn runtime_read(&self, expr: ExprId) -> Option<String> {
         let node = self.state.design.expr_node(expr);
         match &node.kind {
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {

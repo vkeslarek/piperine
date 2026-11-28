@@ -31,7 +31,7 @@ impl ExpressionTyping<'_, '_> {
             return;
         }
         if matches!(expected, Ty::Carrier { .. }) {
-            self.handle_argument(expr, expected);
+            self.modules().handle_argument(expr, expected);
             return;
         }
         self.check(expr, expected);
@@ -52,9 +52,9 @@ impl ExpressionTyping<'_, '_> {
                 return;
             }
             // An item read through a template takes the value type the context wants (§8.4.8, `template_items.rs`).
-            if self.template_read_of(expr).is_some() && expected.is_value() {
+            if self.modules().template_read_of(expr).is_some() && expected.is_value() {
                 self.infer(expr);
-                if self.fix_template_read(expr, expected) {
+                if self.modules().fix_template_read(expr, expected) {
                     self.state.result.exprs[expr.index()] = Some(expected.clone());
                     return;
                 }
@@ -90,8 +90,8 @@ impl ExpressionTyping<'_, '_> {
                 ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
                 // `Name { params }` where a module type is expected: a template value (PI-04); a module's bare name is
                 // `Name {}` (§8.4.1 amendment)
-                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.template_value(expr, *module, fields, Some(expected)),
-                ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.bare_module(expr) => self.template_value(expr, module, &[], Some(expected)),
+                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.modules().template_value(expr, *module, fields, Some(expected)),
+                ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.modules().bare_module(expr) => self.modules().template_value(expr, module, &[], Some(expected)),
                 // `None` and `Some(e)` where an `Option<T>` is expected.
                 ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
                 ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
@@ -195,7 +195,7 @@ impl ExpressionTyping<'_, '_> {
             if ty == Some(Ty::Event) && !in_event_position {
                 ty = Some(self.event_out_of_place(expr));
             }
-            self.record_node_choice(expr, ty.as_ref());
+            self.modules().record_node_choice(expr, ty.as_ref());
             self.state.result.exprs[expr.index()] = ty.clone();
             ty
         })
@@ -225,7 +225,7 @@ impl ExpressionTyping<'_, '_> {
                     Some(t) if t.is_integer() || t.is_other_float() => Some(t),
                     Some(Ty::F64) | None => Some(Ty::F64),
                     // `-c0.cs`: the minus of an item read through a template is an `f64`, as the M1 operators are
-                    Some(_) if self.template_read_of(*operand).is_some() => {
+                    Some(_) if self.modules().template_read_of(*operand).is_some() => {
                         self.check(*operand, &Ty::F64);
                         Some(Ty::F64)
                     }
@@ -267,7 +267,7 @@ impl ExpressionTyping<'_, '_> {
             ExprKind::Call { .. } => self.call(expr),
             ExprKind::Match { .. } => self.match_expr(expr, None),
             ExprKind::MethodCall { .. } => self.method_call(expr),
-            ExprKind::Field { .. } => self.field_read(expr),
+            ExprKind::Field { .. } => self.modules().field_read(expr),
             ExprKind::Tuple(items) => self.tuple_expression(items, None),
             ExprKind::Array(items) => self.array_expression(expr, items, None),
             ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, None),
@@ -275,11 +275,11 @@ impl ExpressionTyping<'_, '_> {
             ExprKind::Range { lo, hi, .. } => self.range_expr(file, node.span, *lo, *hi),
             ExprKind::Struct { path, fields, class: StructClass::StructLiteral } => self.struct_expression(expr, *path, fields),
             ExprKind::Closure { .. } => self.closure_value(expr),
-            ExprKind::Emit { stream, fields } => self.emit(expr, stream, fields),
+            ExprKind::Emit { stream, fields } => self.modules().emit(expr, stream, fields),
             ExprKind::IncludeStr(_) => self.include_str(expr),
             // a bundle literal is read only as a connection (`bundle.rs`), never as a value (§7 rules 8, 9)
-            ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.literal_outside_connection(expr),
-                        ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.template_value(expr, *module, fields, None),
+            ExprKind::Struct { class: StructClass::BundleLiteral, .. } => self.modules().literal_outside_connection(expr),
+                        ExprKind::Struct { class: StructClass::Template(module), fields, .. } => self.modules().template_value(expr, *module, fields, None),
             other => {
                 self.refuse(file, node.span, RefusedForm::expression(other));
                 None
@@ -405,7 +405,7 @@ impl ExpressionTyping<'_, '_> {
                 Some(t)
             }
             // both operands read through a template: the M1 operators are `f64`
-            _ if self.template_read_of(first).is_some() => {
+            _ if self.modules().template_read_of(first).is_some() => {
                 self.check(first, &Ty::F64);
                 self.check(second, &Ty::F64);
                 None
@@ -428,7 +428,7 @@ impl ExpressionTyping<'_, '_> {
     /// two operands of one type are typed.
     pub(super) fn literal_last(&mut self, lhs: ExprId, rhs: ExprId) -> (ExprId, ExprId) {
         // an item read through a template takes its type from the other operand, as a bare literal does (§8.4.8)
-        let (lhs_read, rhs_read) = (self.template_read_of(lhs).is_some(), self.template_read_of(rhs).is_some());
+        let (lhs_read, rhs_read) = (self.modules().template_read_of(lhs).is_some(), self.modules().template_read_of(rhs).is_some());
         if lhs_read != rhs_read {
             return if lhs_read { (rhs, lhs) } else { (lhs, rhs) };
         }
@@ -458,7 +458,7 @@ impl ExpressionTyping<'_, '_> {
         let target = self.lower_type(ty);
         // `c0.n as f64`: `as` gives its result a type, never its operand (§1.4.5), so an item read through a template there has
         // no type the checker can give (§8.4.8, `E0181`)
-        if self.untyped_template_operand(operand) {
+        if self.modules().untyped_template_operand(operand) {
             return target;
         }
         let source = self.infer(operand);
@@ -646,15 +646,15 @@ impl ExpressionTyping<'_, '_> {
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     // a bundle is no value (§7 rule 9)
-                    DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
+                    DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.modules().bundle_as_value(expr),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
-                    DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
+                    DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.modules().generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_read(expr, decl, file, node.span),
                     DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
                     // §8.4.1 amendment: a module's name is the template `Name {}`, every param at its default
-                    DeclKind::Module(_) => self.template_value(expr, decl, &[], None),
+                    DeclKind::Module(_) => self.modules().template_value(expr, decl, &[], None),
                     other => {
                         self.refuse_with(file, node.span, ValueForm::UsedAsValue, [RefusedForm::declaration_name(&other).to_string()]);
                         None
@@ -693,15 +693,15 @@ impl ExpressionTyping<'_, '_> {
     /// its assignment, a closure still to be typed, a feedback, a continuous `let` in a const context and a template.
     fn local_read(&mut self, expr: ExprId, decl: crate::pom::DeclId, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
         // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
-        let whole = self.binding_type(decl);
-        if let Some(read) = self.handle_read(decl) {
+        let whole = self.modules().binding_type(decl);
+        if let Some(read) = self.modules().handle_read(decl) {
             // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
-            if self.is_bundle_type(&read) && !self.state.design.is_method_receiver(expr) && !self.state.design.is_field_base(expr) {
-                return self.bundle_as_value(expr);
+            if self.modules().is_bundle_type(&read) && !self.state.design.is_method_receiver(expr) && !self.state.design.is_field_base(expr) {
+                return self.modules().bundle_as_value(expr);
             }
             return Some(read);
         }
-        let local = whole.map(|whole| self.generated_local(expr, decl, whole));
+        let local = whole.map(|whole| self.modules().generated_local(expr, decl, whole));
         // A read that requires no type gives the literal its default `i32` (§1.4.2).
         self.state.values.open_literals.remove(&decl);
         if self.read_before_assignment(file, span, decl) {
@@ -712,19 +712,19 @@ impl ExpressionTyping<'_, '_> {
             self.coded(file, "E0181", span, message, "parameter type unknown");
             return None;
         }
-        if local.is_none() && self.state.modules.lets_open.contains_key(&decl) {
-            return self.self_read(file, span, decl);
+        if local.is_none() && self.state.modules.is_open_let(decl) {
+            return self.modules().self_read(file, span, decl);
         }
         // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
-        if self.continuous_result_in_const(file, span, decl) {
+        if self.modules().continuous_result_in_const(file, span, decl) {
             return None;
         }
         // a `let` of a placement names an instance (§8.2.14); one of a template holds a value of the module's
         // type, read and placed as a `const` or a param template is (§8.4.1, §8.4.4)
         if let Some(Ty::Module(module)) = &local
-            && self.binds_an_instance(decl)
+            && self.modules().binds_an_instance(decl)
         {
-            return self.instance_as_value(file, span, decl, module.decl);
+            return self.modules().instance_as_value(file, span, decl, module.decl);
         }
         if local.is_none() && !self.state.values.poisoned.contains(&decl) {
             if self.state.values.fn_where {
@@ -847,7 +847,7 @@ impl ExpressionTyping<'_, '_> {
             Some(t) => {
                 if let (None, Some(init)) = (ty, init) {
                     self.wait_for_use(*binding, init);
-                    self.wait_for_template_use(*binding, init);
+                    self.modules().wait_for_template_use(*binding, init);
                 }
                 self.state.result.locals.insert(*binding, t);
             }

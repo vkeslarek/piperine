@@ -9,8 +9,6 @@
 
 mod analog;
 mod attributes;
-mod bundle;
-mod bundle_handles;
 mod carrier;
 mod catalogue;
 mod check;
@@ -19,27 +17,19 @@ mod coverage;
 mod definition;
 mod element_target;
 mod event;
-mod generation;
 mod generics;
-mod handles;
 mod model;
 mod module;
 mod nature;
 mod nature_rules;
-mod param_requirement;
 mod pattern;
-mod reach;
 mod reaction;
-mod record;
-mod result;
 mod table;
-mod template_items;
-mod templates;
 mod traits;
 mod ty;
 mod value;
 
 pub(crate) use self::coverage::ElementCoverage;
 pub use self::pattern::logic_pattern::{LogicPattern, PatternFault};
-pub use self::{nature::ResolveImpl, traits::impl_table::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, value::aggregate::FieldType, value::enums::EnumTag, value::intrinsic::Intrinsic, value::widths::FloatText, generics::obligations::Obligation, generics::substitution::Substitution, param_requirement::ParamRequirement};
+pub use self::{nature::ResolveImpl, traits::impl_table::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, value::aggregate::FieldType, value::enums::EnumTag, value::intrinsic::Intrinsic, value::widths::FloatText, generics::obligations::Obligation, generics::substitution::Substitution, module::param_requirement::ParamRequirement};
 pub use self::{generics::generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

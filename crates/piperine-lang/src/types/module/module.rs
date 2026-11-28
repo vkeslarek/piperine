@@ -8,22 +8,18 @@ use crate::refusal::forms::StructureForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId, LetData, ParamData, PatKind, PortData, Resolution, SignalData, StructClass, TypeId};
 
-use super::check::{Checker, Context};
-use super::coverage::ElementCoverage;
-use super::traits::derives::DerivedTrait;
-use super::nature_rules::NatureRules;
-use super::{Callee, Substitution, Ty};
+use crate::types::check::Context;
+use super::ModuleTyping;
+use crate::types::coverage::ElementCoverage;
+use crate::types::traits::derives::DerivedTrait;
+use crate::types::nature_rules::NatureRules;
+use crate::types::{Callee, Substitution, Ty};
 
-impl Checker<'_> {
-    /// A diagnostic of a rule of the specification that carries its own code.
-    pub(super) fn coded(&mut self, file: FileId, code: &'static str, span: Span, message: String, label: &str) {
-        self.report(file, Diagnostic::new(code, message, span, label));
-    }
-
+impl ModuleTyping<'_, '_> {
     /// `dir name: Nature;` — a node, or a carrier of `Bit<T>` that takes a direction (`E0310`).
     /// A default is the first commit of an `out` carrier (`E0210`); on any other port it is
     /// outside the subset.
-    pub(super) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
+    pub(in crate::types) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
         let ty = self.port_type(port.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             self.state.result.carriers.insert(decl, carrier.clone());
@@ -79,7 +75,7 @@ impl Checker<'_> {
 
     /// `name: T = default where cond;` — `T` is `f64`, `bool`, an integer, a unit enum, an `Option` (PI-01 to PI-03), a module (its value a template
     /// `Name { params }`, PI-04) or a struct, tuple or array of plain data (CV-18); `where` is `bool` (`E0318`).
-    pub(super) fn param(&mut self, decl: DeclId, param: &ParamData) {
+    pub(in crate::types) fn param(&mut self, decl: DeclId, param: &ParamData) {
         let ty = self.lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
             // an array of templates (`pair: [Cell; 2]`, §8.4.1): each element a template, the param structural as one template is
@@ -93,7 +89,7 @@ impl Checker<'_> {
             other => {
                 let node = self.state.design.type_node(param.ty).clone();
                 let file = self.state.design.decl_data(node.owner).file;
-                self.refuse_with(file, node.span, StructureForm::ParamOfType, [other.name(self.state.design).to_string()]);
+                self.checker.refuse_with(file, node.span, StructureForm::ParamOfType, [other.name(self.checker.state.design).to_string()]);
                 None
             }
         });
@@ -129,7 +125,7 @@ impl Checker<'_> {
     /// `signal name: Nature = init;` — a node whose initial value is an `f64`, or a carrier of
     /// `Bit<T>` whose initial value is a `T`; either is `E0210` when the type differs or the
     /// value reads a carrier or a probe (§5.1.5).
-    pub(super) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
+    pub(in crate::types) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
         let ty = self.port_type(signal.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             let held = self.generated_type(decl, carrier.clone());
@@ -161,18 +157,18 @@ impl Checker<'_> {
 
     /// Types the `let` item `decl` of a module body once: in the body's order, or earlier where a read of its name needs its
     /// type (§8.2: the items of a body appear in any order, and every name is visible in the whole body).
-    pub(super) fn type_module_let(&mut self, decl: DeclId) {
+    pub(in crate::types) fn type_module_let(&mut self, decl: DeclId) {
         if !self.state.modules.lets_typed.insert(decl) {
             return;
         }
         let DeclKind::Let(data) = self.state.design.decl_data(decl).kind.clone() else { return };
         // typed as the body types it, whatever position reads it first (a param default, a `where`)
-        self.within(super::check::Context::Module, |this| this.module_let(decl, &data));
+        self.within(crate::types::check::Context::Module, |this| this.modules().module_let(decl, &data));
     }
 
     /// The type of the local `binding`, the one entry every read of a local goes through: a module-body `let` read before its
     /// text position is typed here first (§8.2: the items of a body appear in any order), so no site depends on text order.
-    pub(super) fn binding_type(&mut self, binding: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn binding_type(&mut self, binding: DeclId) -> Option<Ty> {
         self.type_module_let_read(binding);
         self.state.result.locals.get(&binding).cloned()
     }
@@ -242,7 +238,7 @@ impl Checker<'_> {
     /// `Module { param: value }(nodes)` or `Module(nodes) { param: value }`: the module is
     /// reached; each node argument has the nature of its port, their count is the port count
     /// (`E0312`), each param value the type of its param.
-    pub(super) fn placement(&mut self, expr: ExprId, module: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn placement(&mut self, expr: ExprId, module: DeclId) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
@@ -338,7 +334,7 @@ impl Checker<'_> {
                 let (file, span) = (self.file_of_expr(arg.value), self.state.design.expr_node(arg.value).span);
                 // a placement is typed once per path that reaches it: it hands the carrier over once
                 if !self.state.carriers.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
-                    self.state.carriers.book.handed.push((decl, super::element_target::Element::Whole, span, file));
+                    self.state.carriers.book.handed.push((decl, crate::types::element_target::Element::Whole, span, file));
                 }
             }
         }
@@ -445,7 +441,7 @@ impl Checker<'_> {
     /// One node argument to the port `port` that `where_` names ("the node port `p`"): the nature of its port, or `gnd`
     /// (§8.1.10). A value (an expression that is not a node) at a continuous carrier port is `E0315` naming the port: only an
     /// `in` port takes an expression, and a node port is never one (§8.1.11).
-    pub(super) fn connect(&mut self, arg: ExprId, where_: &str, port: &Ty, found: &Ty) {
+    pub(in crate::types) fn connect(&mut self, arg: ExprId, where_: &str, port: &Ty, found: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
@@ -524,11 +520,11 @@ impl Checker<'_> {
         self.state.carriers.book.handed.push((decl, element, span, file));
     }
 
-    /// [`Checker::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
+    /// [`ModuleTyping::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
     /// (`s.valid`), or of an element of an array of bundles (`lanes[k]` hands the element `k` of the leaf `lanes.a`). `place` is
     /// the expression that names the bundle: one written inside generation reaches the carrier in the iterations elaboration
     /// takes only.
-    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: super::element_target::Element, place: ExprId, span: Span, file: FileId) {
+    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: crate::types::element_target::Element, place: ExprId, span: Span, file: FileId) {
         if matches!(&self.state.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
@@ -598,10 +594,10 @@ impl Checker<'_> {
     /// A carrier handed to an `out` port has one drive, the instance's: a second hand-over, or
     /// a definition or a commit of this module, is `E0220`. An initial value is the value of the elements no `out` port
     /// holds (§5.2.6, §8.2.21), so it is `E0223` only once every element is handed (`handed_initial_values`).
-    pub(super) fn handed_drives(&mut self) {
+    pub(in crate::types) fn handed_drives(&mut self) {
         let handed = std::mem::take(&mut self.state.carriers.book.handed);
-        let mut given: Vec<(DeclId, super::element_target::Element)> = Vec::new();
-        let mut clean: Vec<(DeclId, super::element_target::Element, Span, FileId)> = Vec::new();
+        let mut given: Vec<(DeclId, crate::types::element_target::Element)> = Vec::new();
+        let mut clean: Vec<(DeclId, crate::types::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             // the element as the source names it: `mem[2]`, `lanes[1].a` for a field of an array of bundles
             let name = self.state.design.element_naming(decl).name(&element.subscript());
@@ -612,7 +608,7 @@ impl Checker<'_> {
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
             // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
-            let whole_drive = element != super::element_target::Element::Unfolded && (self.state.carriers.book.defined.contains_key(&decl) || self.state.carriers.book.committed.contains_key(&decl));
+            let whole_drive = element != crate::types::element_target::Element::Unfolded && (self.state.carriers.book.defined.contains_key(&decl) || self.state.carriers.book.committed.contains_key(&decl));
             let driven_here = whole_drive || self.state.carriers.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
             let nature = match self.state.result.carriers.get(&decl).map(Ty::innermost) {
                 Some(Ty::Carrier { nature, .. }) => self.state.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
@@ -632,7 +628,7 @@ impl Checker<'_> {
     /// `E0223` for a carrier with an initial value that `out` ports hold every element of: the initial value would apply
     /// to no element, the instance holds the drive (§5.2.6). With an element no `out` port holds, the initial value is
     /// that element's. A length not known yet leaves the judgement to the elaborator of each instance.
-    fn handed_initial_values(&mut self, handed: &[(DeclId, super::element_target::Element, Span, FileId)]) {
+    fn handed_initial_values(&mut self, handed: &[(DeclId, crate::types::element_target::Element, Span, FileId)]) {
         let mut judged = BTreeSet::new();
         for (decl, _, span, file) in handed {
             // a leaf of a bundle starts at the default of its field, which the instance that holds the drive repeats: no second initial value
@@ -659,7 +655,7 @@ impl Checker<'_> {
     /// instead: an undelayed definition of the carrier, or an `out` port of a child instance it is handed to
     /// (§3.3.4, EU-04 AC 7); a delayed definition does not. An array of carriers is judged per element: the message
     /// names the elements no driver names (`coverage.rs`). An `in` port is driven by its caller.
-    pub(super) fn missing_initial_values(&mut self, children: &[DeclId]) {
+    pub(in crate::types) fn missing_initial_values(&mut self, children: &[DeclId]) {
         for decl in children.iter().copied() {
             let item = self.state.design.decl_data(decl).clone();
             let is_carrier = match &item.kind {
@@ -746,7 +742,7 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// A bound param value places no instance (§8.3.4, `E0352`): a result is not fixed during a
     /// solve.
     fn no_placement_in(&mut self, value: ExprId) {
@@ -762,10 +758,10 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// Brings every hand-written `impl Default` the default of `ty` reads into the check: the `default` function of a struct
     /// that writes one, and of the structs, tuples and arrays holding such a struct.
-    pub(super) fn reach_written_defaults(&mut self, ty: &Ty) {
+    pub(in crate::types) fn reach_written_defaults(&mut self, ty: &Ty) {
         match ty {
             Ty::Struct(nominal) => {
                 let table = std::rc::Rc::clone(&self.state.traits);

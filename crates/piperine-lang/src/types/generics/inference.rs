@@ -208,7 +208,7 @@ impl GenericsSolver<'_, '_> {
                 if open_literals && !self.mentions_open_parameter(declared, inference) {
                     continue;
                 }
-                let given = if self.is_nature_parameter(declared) { self.infer_carrier(arg.value) } else { self.expressions().infer(arg.value) };
+                let given = if self.modules().is_nature_parameter(declared) { self.modules().infer_carrier(arg.value) } else { self.expressions().infer(arg.value) };
                 if let Some(given) = given {
                     inference.unify(declared, &given);
                 }

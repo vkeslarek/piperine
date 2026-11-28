@@ -28,7 +28,7 @@ impl Checker<'_> {
         if self.reads_events() {
             self.event_read_as_bool(expr)
         } else {
-            if !self.event_result_out_of_place(expr) {
+            if !self.modules().event_result_out_of_place(expr) {
                 self.event_outside_a_position(expr);
             }
             Ty::Event
@@ -219,7 +219,7 @@ impl Checker<'_> {
         let item = self.state.design.decl_data(child).clone();
         match &item.kind {
             DeclKind::Reaction(r) => self.reaction(&r.clone(), item.file),
-            DeclKind::Generation(_) => self.generation(child, true, |this, inner| this.digital_item(inner)),
+            DeclKind::Generation(_) => self.modules().generation(child, true, |this, inner| this.digital_item(inner)),
             _ => {}
         }
     }

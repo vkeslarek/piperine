@@ -4,14 +4,14 @@
 //! literal is a carrier or a node of the field's nature (`E0263`), a bundle of another `struct` does not connect
 //! (`E0251`), and a bundle read as a value, or a literal written anywhere but a connection, is `E0264`.
 
-use super::check::Checker;
-use super::nature_rules::NatureRules;
-use super::Ty;
+use super::ModuleTyping;
+use crate::types::nature_rules::NatureRules;
+use crate::types::Ty;
 use crate::msl::ast::Dir;
 use crate::msl::Span;
 use crate::pom::{BundleLeaf, BundleView, BundlePlace, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Resolution, StructClass};
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// The argument `arg` of a placement at the bundle port `port`: a bundle carrier of the port's `struct`, or a literal.
     pub(super) fn connect_bundle(&mut self, arg: ExprId, port: DeclId) {
         let (file, span) = (self.file_of_expr(arg), self.state.design.expr_node(arg).span);
@@ -48,7 +48,7 @@ impl Checker<'_> {
     /// The argument `arg` of a placement through a template at a bundle input `ty` of its `Fn` bound (§8.4.5): a bundle carrier of
     /// that `struct` in the bound's view `view`, or a literal of it whose fields are carriers or nodes of the fields' natures; a field the
     /// template drives is handed over by the view, not by the direction the `struct` writes.
-    pub(super) fn connect_bundle_input(&mut self, arg: ExprId, ty: &Ty, view: BundleView, position: usize) {
+    pub(in crate::types) fn connect_bundle_input(&mut self, arg: ExprId, ty: &Ty, view: BundleView, position: usize) {
         let (file, span) = (self.file_of_expr(arg), self.state.design.expr_node(arg).span);
         let Ty::Struct(nominal) = ty else { return };
         let wanted = Some(nominal.decl);
@@ -68,7 +68,7 @@ impl Checker<'_> {
                 self.element_indexes(&source);
                 self.hand_over_fields(&source, nominal.decl, view, arg, file, span);
             }
-            Some(_) => self.coded(file, "E0251", span, format!("a bundle of another type or shape is connected to the input {} of `{}` (§7 rule 14)", position + 1, self.struct_name(wanted)), "bundle of another type"),
+            Some(_) => self.checker.coded(file, "E0251", span, format!("a bundle of another type or shape is connected to the input {} of `{}` (§7 rule 14)", position + 1, self.struct_name(wanted)), "bundle of another type"),
             None => self.coded(file, "E0264", span, "a bundle input takes a bundle carrier or a literal of the bundle (§7 rule 8)".to_string(), "not a bundle"),
         }
     }
@@ -158,7 +158,7 @@ impl Checker<'_> {
     /// The leaf a field of a bundle port or signal stands for and the type of what the chain names of it: the leaf's own
     /// carrier, node or array of them, or, at an element of an array of bundles (`rx[k].valid`), the element of the leaf's
     /// array (struct of arrays, design D12). The element indexes are typed as integers.
-    pub(super) fn bundle_field_type(&mut self, place: &BundlePlace) -> Option<(DeclId, Ty)> {
+    pub(in crate::types) fn bundle_field_type(&mut self, place: &BundlePlace) -> Option<(DeclId, Ty)> {
         let declared = self.leaf_type(place.decl)?;
         self.element_indexes(place);
         Some((place.decl, declared.element_at(place.elements.len())?))
@@ -280,7 +280,7 @@ impl Checker<'_> {
     }
 
     /// `E0264`: the bundle `what` is read as a value (§7 rule 9).
-    pub(super) fn bundle_as_value(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn bundle_as_value(&mut self, expr: ExprId) -> Option<Ty> {
         let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         let message = "a bundle is not a value: it is no operand, argument or result, and has no `Repr` (§7 rule 9)".to_string();
         self.coded(file, "E0264", span, message, "a bundle is not a value");
@@ -288,7 +288,7 @@ impl Checker<'_> {
     }
 
     /// `E0264`: a bundle literal written anywhere but a connection (§7 rule 8).
-    pub(super) fn literal_outside_connection(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn literal_outside_connection(&mut self, expr: ExprId) -> Option<Ty> {
         let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         let message = "a bundle literal is written only as a connection: it is no value (§7 rules 8 and 9)".to_string();
         self.coded(file, "E0264", span, message, "a literal outside a connection");

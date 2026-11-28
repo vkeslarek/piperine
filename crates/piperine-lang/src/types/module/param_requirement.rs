@@ -4,7 +4,7 @@
 
 use crate::pom::ParamData;
 
-use super::Ty;
+use crate::types::Ty;
 
 /// A param as the requirement rule reads it: its declaration and its type, once lowered.
 pub struct ParamRequirement<'a> {

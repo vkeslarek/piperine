@@ -5,14 +5,14 @@
 use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, Resolution};
 
-use super::check::Checker;
-use super::{Nominal, ParamRequirement, Ty};
+use super::ModuleTyping;
+use crate::types::{Nominal, ParamRequirement, Ty};
 
-impl Checker<'_> {
+impl ModuleTyping<'_, '_> {
     /// A template `Name { params }` (§8.4.1): the type is the module it names with the generic arguments it names or lets be
     /// inferred, `Name<G>` (§8.4.3), so a template of another module, or of the same module with other arguments, where a module
     /// type is expected is a mismatch (`E0180`) naming both. An argument left out is taken from the `expected` type first.
-    pub(super) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Ty>) -> Option<Ty> {
+    pub(in crate::types) fn template_value(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Ty>) -> Option<Ty> {
         self.param_block(fields, None);
         self.require_bound_params(expr, module, fields);
         self.require_const_params(fields);
@@ -36,7 +36,7 @@ impl Checker<'_> {
 
     /// The module a bare name `expr` names (`Cell`, read as the template `Cell {}`, §8.4.1 amendment), `None` for any other
     /// expression.
-    pub(super) fn bare_module(&self, expr: ExprId) -> Option<DeclId> {
+    pub(in crate::types) fn bare_module(&self, expr: ExprId) -> Option<DeclId> {
         let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return None };
         match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Module(_)) => Some(decl),

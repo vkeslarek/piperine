@@ -90,7 +90,7 @@ impl Checker<'_> {
                     return None;
                 }
                 // an operand refused already (`E0133` for a chosen node, or a `let` of one) is no second diagnostic
-                OperandAccess::NoNode if args.first().is_some_and(|arg| self.operand_refused(arg.value)) => return None,
+                OperandAccess::NoNode if args.first().is_some_and(|arg| self.modules().operand_refused(arg.value)) => return None,
                 OperandAccess::NoNode => {
                     self.refuse(file, node.span, AnalogForm::ProbeThroughAccessThatNamesSeveralNatures);
                     return None;
@@ -103,7 +103,7 @@ impl Checker<'_> {
         };
         // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
         let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
-        let through_handles = self.state.values.context() == Context::Function && self.probes_only_handles(&operands);
+        let through_handles = self.state.values.context() == Context::Function && self.modules().probes_only_handles(&operands);
         if matches!(self.state.values.context(), Context::Function | Context::Const) && !through_handles {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
@@ -117,7 +117,7 @@ impl Checker<'_> {
                 Some(Ty::Node(n)) => natures.push(n),
                 Some(Ty::AnyNode) => {}
                 // a handle generic over a nature: its nature is the instantiation's, known there
-                Some(generic) if self.is_nature_parameter(&generic) => {}
+                Some(generic) if self.modules().is_nature_parameter(&generic) => {}
                 Some(other) => {
                     let span = self.state.design.expr_node(arg.value).span;
                     self.mismatch_text(file, span, "a node", &other.name(self.state.design));
@@ -272,9 +272,9 @@ impl Checker<'_> {
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
         let names = Self::core_parameter_names(&name);
         let named: Vec<Option<usize>> = args.iter().map(|a| a.name.as_ref().and_then(|n| names.iter().position(|p| *p == n.text))).collect();
-        self.state.modules.placing.push(None);
+        self.state.modules.begin_placement(None);
         let bound = self.expressions().bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
-        self.state.modules.placing.pop();
+        self.state.modules.end_placement();
         bound?;
         self.event_arguments(&name, args);
         Some(sig.result.ty())
@@ -440,6 +440,6 @@ impl Checker<'_> {
             at = *inner;
         }
         // the read itself, or a `let` bound to it (`let y = c0.sn; v(y)`, `template_items.rs`)
-        self.template_read_of(at).is_some()
+        self.modules().template_read_of(at).is_some()
     }
 }

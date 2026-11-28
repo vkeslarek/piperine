@@ -107,7 +107,7 @@ impl Checker<'_> {
             _ => return None,
         };
         // a carrier declared inside generation is the array of its elements to a place outside its loops (§8.2.23)
-        let declared = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared))?;
+        let declared = self.port_type(port_ty).map(|declared| self.modules().generated_read(root, decl, declared))?;
         if !matches!(declared.innermost(), Ty::Carrier { .. }) {
             self.coded(file, "E0222", span, format!("the target of a {what} is a node, not a discrete carrier (§8.2.10)"), "a node, not a carrier");
             return None;
@@ -183,7 +183,7 @@ impl Checker<'_> {
             DeclKind::Signal(s) => s.ty,
             _ => return Element::Whole,
         };
-        let Some(declared) = self.port_type(port_ty).map(|declared| self.generated_read(root, decl, declared)) else { return Element::Whole };
+        let Some(declared) = self.port_type(port_ty).map(|declared| self.modules().generated_read(root, decl, declared)) else { return Element::Whole };
         self.element_reached(declared, &steps)
     }
 
@@ -247,7 +247,7 @@ impl Checker<'_> {
                 _ => None,
             };
             let (Some(at), Some(count)) = (self.expressions().fold_length(*index), count) else {
-                return if self.runtime_read(*index).is_none() { Element::Unfolded } else { Element::Any };
+                return if self.modules().runtime_read(*index).is_none() { Element::Unfolded } else { Element::Any };
             };
             flat = flat * count + at;
         }

@@ -141,7 +141,7 @@ impl Checker<'_> {
             carrier @ Ty::Carrier { .. } => Some(carrier),
             // a nature parameter of a generic module (`a: S`, `S: Nature`): a node of the nature the placement gives (GN-13)
             Ty::Param(param) if GenericSignature::resolve_bound(self.state.design, param).is_some() => self.resolved_parameter_carrier(param),
-            nature @ Ty::Param(_) if self.is_nature_parameter(&nature) => Some(nature),
+            nature @ Ty::Param(_) if self.modules().is_nature_parameter(&nature) => Some(nature),
             // an array of carriers, or of conservative nodes (CV-23)
             array @ Ty::Array(..) if array.is_carrier_element() => Some(array),
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
@@ -168,14 +168,14 @@ impl Checker<'_> {
     pub(super) fn read_type(&mut self, decl: DeclId, ty: TypeId) -> Option<Ty> {
         match self.port_type(ty)? {
             carrier @ Ty::Carrier { .. } => {
-                let held = self.generated_type(decl, carrier.clone());
+                let held = self.modules().generated_type(decl, carrier.clone());
                 self.state.result.carriers.insert(decl, held);
                 let Ty::Carrier { value, .. } = carrier else { return None };
                 Some(*value)
             }
             // an array of carriers reads as the array of their values; an array of nodes is the array itself
             array @ Ty::Array(..) if array.is_carrier_element() => {
-                let held = self.generated_type(decl, array.clone());
+                let held = self.modules().generated_type(decl, array.clone());
                 self.state.result.carriers.insert(decl, held);
                 Some(array.read_value())
             }
@@ -201,16 +201,16 @@ impl Checker<'_> {
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
                     // a handle is the carrier the caller passes (§3.1.5)
-                    DeclKind::FnParam(_) => return self.handle_type(decl).filter(|t| !self.is_bundle_type(t)).map(|t| (decl, t)),
+                    DeclKind::FnParam(_) => return self.modules().handle_type(decl).filter(|t| !self.modules().is_bundle_type(t)).map(|t| (decl, t)),
                     _ => return None,
                 };
                 self.port_type(ty).map(|t| (decl, t))
             }
             // a field of a bundle handle: the carrier or node the `struct` field declares (`bundle_handles.rs`)
-            ExprKind::Field { .. } if self.bundle_handle_root(expr).is_some() => self.bundle_handle_field(expr).filter(|(_, ty)| !self.is_bundle_type(ty)),
+            ExprKind::Field { .. } if self.modules().bundle_handle_root(expr).is_some() => self.modules().bundle_handle_field(expr).filter(|(_, ty)| !self.modules().is_bundle_type(ty)),
             // a field of a bundle port or signal: the carrier or node its leaf stands for (§7 rule 12), at an element of an array of
             // bundles the element of the leaf (`rx[k].valid`)
-            ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(expr).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => self.bundle_field_type(&place),
+            ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(expr).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => self.modules().bundle_field_type(&place),
             // `c.state`: a `pub` port or signal of a placed child (§8.2.8).
             ExprKind::Field { res: Resolution::Decl(decl), .. } => {
                 let ty = match &self.state.design.decl_data(*decl).kind {

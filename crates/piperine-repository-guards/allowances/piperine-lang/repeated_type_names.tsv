@@ -110,6 +110,6 @@ crates/piperine-lang/src/types/value/flow.rs::LoopFrame	1
 crates/piperine-lang/src/types/generics/generics.rs::Bound	1
 crates/piperine-lang/src/types/pattern/patterns.rs::Bound	1
 crates/piperine-lang/src/types/pattern/patterns.rs::Number	1
-crates/piperine-lang/src/types/record.rs::Site	1
+crates/piperine-lang/src/types/module/record.rs::Site	1
 crates/piperine-lang/src/types/table.rs::Continuity	1
 crates/piperine-lang/src/types/table.rs::Method	1

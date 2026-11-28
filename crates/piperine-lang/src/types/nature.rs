@@ -274,7 +274,7 @@ impl Checker<'_> {
         let Some(Ty::Carrier { nature, .. }) = self.state.result.carriers.get(&carrier).cloned() else { return };
         let Some(driven) = self.state.result.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
         // a hand-written `Default` is a function the elaborator folds
-        self.reach_written_defaults(&driven);
+        self.modules().reach_written_defaults(&driven);
         if self.trait_typing().implements(&driven, super::traits::derives::DerivedTrait::Default) {
             return;
         }
