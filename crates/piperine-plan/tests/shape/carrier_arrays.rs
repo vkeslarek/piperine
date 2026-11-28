@@ -59,16 +59,16 @@ impl ArrayDesign {
     fn memory() -> (Ir, BodyId) {
         let mut b = IrBuilder::new();
         let body = b.body(ArrayDesign::spec());
-        b.carrier(body, ArrayDesign::carrier("mem", ValueType::UInt(8), Some(Constant::Int(0x5a)), Some(8), 2));
+        b.carrier(body, ArrayDesign::carrier("mem", ValueType::UInt(8), Some(Constant::Int(0x5a)), Some(8), 2)).expect("a body this builder handed out");
         let every = b.aggregate(AggregateData {
             ty: ValueType::Array(Box::new(ValueType::Bool), 3),
             variant: None,
             parts: vec![Constant::Bool(true), Constant::Bool(false), Constant::Bool(true)],
         });
-        b.carrier(body, ArrayDesign::carrier("bits", ValueType::Bool, Some(Constant::Aggregate(every)), Some(3), 3));
-        b.carrier(body, ArrayDesign::carrier("en", ValueType::Bool, None, None, 4));
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: ArrayDesign::origin(5) });
-        b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: ArrayDesign::origin(6) });
+        b.carrier(body, ArrayDesign::carrier("bits", ValueType::Bool, Some(Constant::Aggregate(every)), Some(3), 3)).expect("a body this builder handed out");
+        b.carrier(body, ArrayDesign::carrier("en", ValueType::Bool, None, None, 4)).expect("a body this builder handed out");
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: ArrayDesign::origin(5) }).expect("a body this builder handed out");
+        b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: ArrayDesign::origin(6) }).expect("a body this builder handed out");
         let two = b.expr(Expr::Int(2), ValueType::UInt(8), ArrayDesign::origin(7));
         let one = b.expr(Expr::Int(1), ValueType::UInt(8), ArrayDesign::origin(7));
         let read = b.expr(Expr::CarrierElement { carrier: 0, index: two }, ValueType::UInt(8), ArrayDesign::origin(7));
@@ -80,7 +80,7 @@ impl ArrayDesign {
             piperine_ir::Local { name: "b".into(), ty: ValueType::UInt(8), mutable: false },
             piperine_ir::Local { name: "c".into(), ty: ValueType::Array(Box::new(ValueType::Bool), 3), mutable: false },
         ];
-        b.reaction(body, Reaction { on: vec![go], stmts, locals, origin: ArrayDesign::origin(7) });
+        b.reaction(body, Reaction { on: vec![go], stmts, locals, origin: ArrayDesign::origin(7) }).expect("a body this builder handed out");
         (ArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("bits", ValueType::Bool), ("en", ValueType::Bool)]), body)
     }
 
@@ -91,9 +91,9 @@ impl ArrayDesign {
         let body = b.body(ArrayDesign::spec());
         let word = ValueType::Tuple(vec![ValueType::Bool, ValueType::UInt(16)]);
         let pair = ValueType::Tuple(vec![ValueType::Bool, ValueType::UInt(16), ValueType::UInt(8)]);
-        b.carrier(body, ArrayDesign::carrier("words", word.clone(), None, Some(4), 2));
-        b.carrier(body, ArrayDesign::carrier("pair", pair, None, None, 3));
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: ArrayDesign::origin(4) });
+        b.carrier(body, ArrayDesign::carrier("words", word.clone(), None, Some(4), 2)).expect("a body this builder handed out");
+        b.carrier(body, ArrayDesign::carrier("pair", pair, None, None, 3)).expect("a body this builder handed out");
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: ArrayDesign::origin(4) }).expect("a body this builder handed out");
         let int = |b: &mut IrBuilder, n: i128, bits: u32| b.expr(Expr::Int(n), ValueType::UInt(bits), ArrayDesign::origin(5));
         let (two, one) = (int(&mut b, 2, 8), int(&mut b, 1, 8));
         let (seven, three, nine) = (int(&mut b, 7, 16), int(&mut b, 3, 8), int(&mut b, 9, 16));
@@ -104,7 +104,7 @@ impl ArrayDesign {
             b.stmt(Stmt::Commit { carrier: 1, value: three, after: None, target: Some(CommitTarget { element: None, path: vec![Projection::Field(2)] }) }),
             b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: Some(CommitTarget { element: Some(one), path: vec![] }) }),
         ];
-        b.reaction(body, Reaction { on: vec![go], stmts, locals: vec![], origin: ArrayDesign::origin(5) });
+        b.reaction(body, Reaction { on: vec![go], stmts, locals: vec![], origin: ArrayDesign::origin(5) }).expect("a body this builder handed out");
         let word = ValueType::Tuple(vec![ValueType::Bool, ValueType::UInt(16)]);
         let pair = ValueType::Tuple(vec![ValueType::Bool, ValueType::UInt(16), ValueType::UInt(8)]);
         (ArrayDesign::design(b, body, &[("words", word), ("pair", pair)]), body)

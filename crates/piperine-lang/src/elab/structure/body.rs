@@ -241,11 +241,13 @@ impl StructureLowering<'_, '_, '_> {
         });
         debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
         if let Some(instance) = &key.instance {
-            self.elaboration.state.builder.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
+            let built = self.elaboration.state.builder.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
+            self.built(built);
         }
         self.digital().finish_structure(body);
         for (plus, minus) in &merged {
-            self.state.builder.merge(body, Merge { plus: *plus, minus: *minus });
+            let built = self.state.builder.merge(body, Merge { plus: *plus, minus: *minus });
+            self.built(built);
         }
         self.state.structure.plans.insert(key, ModulePlan { body, nodes: node_plans, merges: merged, carriers, port_carriers, resolved, children: child_plans, reaches });
     }

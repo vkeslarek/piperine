@@ -269,10 +269,10 @@ fn a_reached_carrier_is_a_port_pin() {
     let mut b = IrBuilder::new();
     let spec = |name: &str, children| BodySpec { name: name.into(), origin: at(1), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children };
     let leaf = b.body(spec("Leaf", vec![]));
-    let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2), count: None });
+    let leaf_q = b.carrier(leaf, Carrier { name: "q".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: at(2), count: None }).expect("a body this builder handed out");
     let top_body = b.body(spec("Top", vec![Child { name: "leaf".into(), body: leaf, nodes: vec![], params: vec![], origin: at(5) }]));
-    let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4), count: None });
-    b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } });
+    let seen = b.carrier(top_body, Carrier { name: "seen".into(), ty: ValueType::Bool, role: CarrierRole::Reached, init: None, origin: at(4), count: None }).expect("a body this builder handed out");
+    b.reach(top_body, Reach { child: 0, item: ReachedItem::Carrier { carrier: seen, child_carrier: leaf_q } }).expect("a body this builder handed out");
     let top = b.next_instance_id();
     let top_net = b.net(NetSpec { path: "Top.seen".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: at(4) });
     let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: at(4) });

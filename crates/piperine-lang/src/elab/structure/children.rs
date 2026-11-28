@@ -67,7 +67,8 @@ impl StructureLowering<'_, '_, '_> {
             })
             .collect();
         for (body, child, nodes) in slots {
-            self.state.builder.set_child_nodes(body, child, nodes);
+            let built = self.state.builder.set_child_nodes(body, child, nodes);
+            self.built(built);
         }
     }
 

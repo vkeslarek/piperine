@@ -48,7 +48,7 @@ impl GateBody {
             analog: Some(vec![stmt]),
             ..Buck::spec("Gate", F, 1)
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(Constant::Bool(false)), origin: Buck::origin(F, 1, 50), count: None });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(Constant::Bool(false)), origin: Buck::origin(F, 1, 50), count: None }).expect("a body this builder handed out");
         body
     }
 

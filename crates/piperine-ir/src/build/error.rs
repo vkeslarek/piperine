@@ -2,12 +2,14 @@
 
 use std::fmt;
 
-use crate::ids::{InstanceId, NetId};
+use crate::ids::{BodyId, InstanceId, NetId};
 
 /// A builder call that named an id or a slot outside what the builder holds. The ids come from the
 /// builder itself, so this is a caller that mixed builders or kept a stale id, never a user's input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BuildError {
+    /// A body id past the end of the body arena.
+    BodyOutOfRange { body: BodyId, count: usize },
     /// A net id past the end of the net arena.
     NetOutOfRange { net: NetId, count: usize },
     /// An instance id past the end of the instance arena.
@@ -21,6 +23,7 @@ pub enum BuildError {
 impl fmt::Display for BuildError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            BuildError::BodyOutOfRange { body, count } => write!(f, "body id {} out of range ({count} bodies)", body.0),
             BuildError::NetOutOfRange { net, count } => write!(f, "net id {} out of range ({count} nets)", net.0),
             BuildError::InstanceOutOfRange { instance, count } => write!(f, "instance id {} out of range ({count} instances)", instance.0),
             BuildError::NodeSlotOutOfRange { instance, slot, count } => write!(f, "instance {instance}: node slot {slot} out of range ({count} nodes)"),

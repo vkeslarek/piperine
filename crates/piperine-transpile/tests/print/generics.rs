@@ -196,7 +196,7 @@ impl ModuleInstances {
             analog: Some(vec![stmt]),
             children: vec![],
         });
-        b.mark_body_instance(body, GenericInstance { item: item.into(), arguments: arguments.iter().map(|a| a.to_string()).collect() });
+        b.mark_body_instance(body, GenericInstance { item: item.into(), arguments: arguments.iter().map(|a| a.to_string()).collect() }).expect("a body this builder handed out");
         body
     }
 
@@ -237,7 +237,7 @@ impl RunTemperature {
         let file = "temperature.msl";
         let body = b.body(digital::Buck::spec("Reads", file, 1));
         for (i, name) in ["given", "kelvin"].into_iter().enumerate() {
-            b.carrier(body, digital::Buck::carrier(name, ValueType::F64, piperine_ir::CarrierRole::Out, None, file, 1, 20 + 10 * i as u32));
+            b.carrier(body, digital::Buck::carrier(name, ValueType::F64, piperine_ir::CarrierRole::Out, None, file, 1, 20 + 10 * i as u32)).expect("a body this builder handed out");
         }
         let at = digital::Buck::origin(file, 2, 1);
         let flag = b.expr(Expr::Env(piperine_ir::Env::TemperatureGiven), ValueType::Bool, at.clone());
@@ -245,7 +245,7 @@ impl RunTemperature {
         let given = b.expr(Expr::If { cond: flag, then: one, otherwise: zero }, ValueType::F64, at.clone());
         let kelvin = b.expr(Expr::Env(piperine_ir::Env::Temperature), ValueType::F64, at.clone());
         for (carrier, value) in [(0, given), (1, kelvin)] {
-            b.drive(body, piperine_ir::Drive { carrier, value, after: None, origin: at.clone(), element: None, path: vec![] });
+            b.drive(body, piperine_ir::Drive { carrier, value, after: None, origin: at.clone(), element: None, path: vec![] }).expect("a body this builder handed out");
         }
         body
     }

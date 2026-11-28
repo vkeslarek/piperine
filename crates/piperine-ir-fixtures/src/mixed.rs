@@ -104,7 +104,7 @@ impl TopDesign {
     /// input of a body under test.
     pub fn hold(&mut self, name: &str, ty: ValueType, init: Constant) -> BodyId {
         let body = self.b.body(crate::digital::Buck::spec(name, "top.msl", 1));
-        self.b.carrier(body, crate::digital::Buck::carrier("q", ty, piperine_ir::CarrierRole::Out, Some(init), "top.msl", 1, 20));
+        self.b.carrier(body, crate::digital::Buck::carrier("q", ty, piperine_ir::CarrierRole::Out, Some(init), "top.msl", 1, 20)).expect("a body this builder handed out");
         body
     }
 

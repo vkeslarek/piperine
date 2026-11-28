@@ -136,17 +136,17 @@ impl CircuitDesigns {
             ..Buck::spec("Top", "top.msl", 1)
         });
         let init = init.map(Constant::Bool);
-        b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: CircuitDesigns::at(), count: None });
+        b.carrier(top_body, Carrier { name: "clk".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init, origin: CircuitDesigns::at(), count: None }).expect("a body this builder handed out");
         // the ports of `Dff` are clk, d, q: clk and d on the signal, q on a net of the top
         let bindings = if bound { vec![Some(0), Some(0), None] } else { vec![None, None, None] };
-        b.bind_child_carriers(top_body, 0, bindings);
-        let changed = b.event(top_body, Event { source: EventSource::Changed(0), guard: None, origin: CircuitDesigns::at() });
+        b.bind_child_carriers(top_body, 0, bindings).expect("a body this builder handed out");
+        let changed = b.event(top_body, Event { source: EventSource::Changed(0), guard: None, origin: CircuitDesigns::at() }).expect("a body this builder handed out");
         let mut x = digital::Dx::new(&mut b, "top.msl", 6, 40);
         let clk = x.carrier(0, ValueType::Bool);
         let toggled = x.un(UnaryOp::Not, clk, ValueType::Bool);
         let half = x.real(2.5e-9);
         let commit = x.commit(0, toggled, Some(half));
-        b.reaction(top_body, Reaction { on: vec![changed], stmts: vec![commit], locals: vec![], origin: CircuitDesigns::at() });
+        b.reaction(top_body, Reaction { on: vec![changed], stmts: vec![commit], locals: vec![], origin: CircuitDesigns::at() }).expect("a body this builder handed out");
         let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body: top_body, parent: None, nodes: vec![], params: vec![], origin: CircuitDesigns::at() });
         let ff = b.instance(InstanceSpec { path: "Top.ff".into(), name: "ff".into(), body: dff, parent: Some(top), nodes: vec![], params: vec![], origin: CircuitDesigns::at() });
         let net = |b: &mut IrBuilder, path: &str, init: Option<Constant>| {

@@ -121,14 +121,14 @@ fn time_and_static_are_ambient_reads() {
             analog: Some(vec![contribution]),
             ..Buck::spec("Clocked", F, 1)
         });
-        b.carrier(body, Buck::carrier("t", ValueType::F64, CarrierRole::Out, None, F, 1, 30));
-        b.carrier(body, Buck::carrier("s", ValueType::Bool, CarrierRole::Out, None, F, 1, 45));
+        b.carrier(body, Buck::carrier("t", ValueType::F64, CarrierRole::Out, None, F, 1, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("s", ValueType::Bool, CarrierRole::Out, None, F, 1, 45)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 4, 30);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
         let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o);
         let crossed = x.bin(piperine_ir::BinaryOp::Sub, v, now, ValueType::F64);
-        let cross = b.event(body, Event { source: EventSource::Cross { e: crossed, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 4, 25) });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: crossed, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 4, 25) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 4, 60);
         let o = x.origin();
         let now = x.b.expr(Expr::Env(Env::Time), ValueType::F64, o.clone());
@@ -183,13 +183,13 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     let (ir, body) = Alone::design(|b| {
         let body = b.body(Buck::spec("Timer", F, 1));
         let init = |v: f64| Some(piperine_ir::Constant::Real(piperine_ir::Real::new(v)));
-        b.carrier(body, Buck::carrier("t0", ValueType::F64, CarrierRole::Signal, init(10e-9), F, 2, 5));
-        b.carrier(body, Buck::carrier("dt", ValueType::F64, CarrierRole::Signal, init(5e-9), F, 2, 30));
-        b.carrier(body, Buck::carrier("fired", ValueType::Bool, CarrierRole::Out, None, F, 1, 14));
+        b.carrier(body, Buck::carrier("t0", ValueType::F64, CarrierRole::Signal, init(10e-9), F, 2, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("dt", ValueType::F64, CarrierRole::Signal, init(5e-9), F, 2, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("fired", ValueType::Bool, CarrierRole::Out, None, F, 1, 14)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 11);
         let (t0, dt) = (x.carrier(0, ValueType::F64), x.carrier(1, ValueType::F64));
         let sum = x.bin(piperine_ir::BinaryOp::Add, t0, dt, ValueType::F64);
-        let at = b.event(body, Event { source: EventSource::At(sum), guard: None, origin: Buck::origin(F, 5, 8) });
+        let at = b.event(body, Event { source: EventSource::At(sum), guard: None, origin: Buck::origin(F, 5, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 22);
         let yes = x.boolean(true);
         let commit = x.commit(2, yes, None);
@@ -199,7 +199,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
         let dt_guard = x.carrier(1, ValueType::F64);
         let zero = x.real(0.0);
         let positive = x.bin(piperine_ir::BinaryOp::Gt, dt_guard, zero, ValueType::Bool);
-        let guarded = b.event(body, Event { source: EventSource::At(dt), guard: Some(positive), origin: Buck::origin(F, 6, 8) });
+        let guarded = b.event(body, Event { source: EventSource::At(dt), guard: Some(positive), origin: Buck::origin(F, 6, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 6, 40);
         let no = x.boolean(false);
         let commit = x.commit(2, no, None);
@@ -265,15 +265,15 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
     // ```
     let (ir, body) = Alone::design(|b| {
         let body = b.body(Buck::spec("Probe", F, 1));
-        b.carrier(body, Buck::carrier("go", ValueType::Bool, CarrierRole::In, None, F, 1, 14));
-        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::Out, None, F, 1, 26));
+        b.carrier(body, Buck::carrier("go", ValueType::Bool, CarrierRole::In, None, F, 1, 14)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::Out, None, F, 1, 26)).expect("a body this builder handed out");
         let fields = vec![
             StreamField { name: "code".into(), ty: ValueType::UInt(8) },
             StreamField { name: "level".into(), ty: ValueType::F64 },
             StreamField { name: "ok".into(), ty: ValueType::Bool },
         ];
-        let trace = b.stream(body, Stream { name: "trace".into(), fields });
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) });
+        let trace = b.stream(body, Stream { name: "trace".into(), fields }).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 4, 9);
         let (code, level) = (x.int(7, ValueType::UInt(8)), x.real(1.5));
         let first = x.b.stmt(Stmt::Emit {
@@ -377,7 +377,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
     let (ir, body) = Alone::design(|b| {
         let body = b.body(Buck::spec("Dff", F, 1));
         for (name, role, col) in [("clk", CarrierRole::In, 12), ("d", CarrierRole::In, 25), ("q", CarrierRole::Out, 36)] {
-            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 1, col));
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 1, col)).expect("a body this builder handed out");
         }
         let mut x = Dx::new(b, F, 3, 25);
         let o = x.origin();
@@ -385,12 +385,12 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         let not_was_high = x.un(piperine_ir::UnaryOp::Not, prev, ValueType::Bool);
         let clk = x.carrier(0, ValueType::Bool);
         let guard = x.bin(piperine_ir::BinaryOp::And, not_was_high, clk, ValueType::Bool);
-        let rise = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin(F, 3, 8) });
+        let rise = b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 90);
         let d = x.carrier(1, ValueType::Bool);
         let commit = x.commit(2, d, None);
         Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
-        let changed = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 4, 8) });
+        let changed = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 4, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 4, 30);
         let o = x.origin();
         let prev = x.b.expr(Expr::Previous(1), ValueType::Bool, o);
@@ -507,11 +507,11 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
             analog: Some(vec![cap]),
             ..Buck::spec("Step", F, 1)
         });
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 30));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 30)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 30);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let (tt, et) = (x.param(0, ValueType::F64), x.param(1, ValueType::F64));
-        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Buck::origin(F, 5, 25) });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: Some(tt), etol: Some(et) }, guard: None, origin: Buck::origin(F, 5, 25) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 60);
         let yes = x.boolean(true);
         let commit = x.commit(0, yes, None);
@@ -555,12 +555,12 @@ fn a_fired_read_names_the_event_pin() {
     let (ir, body) = Alone::design(|b| {
         let nodes = AmendedShapeProbe::ports(b);
         let body = b.body(BodySpec { nodes, ..Buck::spec("Which", F, 1) });
-        b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::In, None, F, 1, 30));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 45));
+        b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::In, None, F, 1, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 45)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 30);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
-        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 3, 25) });
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 3, 25) }).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 60);
         let fired = x.b.expr(Expr::Fired(0), ValueType::Bool, x.origin());
         let commit = x.commit(1, fired, None);

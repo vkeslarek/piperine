@@ -81,6 +81,18 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
     }
 
+    /// What the builder gave back, or `P0004` for a body id it never handed out (a bug of the elaborator, not of the model);
+    /// `None` after the diagnostic.
+    pub(in crate::elab) fn built<T>(&mut self, result: Result<T, piperine_ir::BuildError>) -> Option<T> {
+        match result {
+            Ok(value) => Some(value),
+            Err(error) => {
+                self.internal_error(&error.to_string());
+                None
+            }
+        }
+    }
+
     /// `P0004`: an invariant of the elaborator broken (a bug in it, not in the model), reported at the module of the body being
     /// lowered; the run then gives no `Ir`, as for an ill-formed one (`well_formed`).
     pub(in crate::elab) fn internal_error(&mut self, what: &str) {

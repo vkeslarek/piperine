@@ -612,7 +612,7 @@ mod tests {
             let k = b.expr(Expr::Real(Real::new(scale)), ValueType::F64, ScaleChain::origin());
             let p = b.expr(Expr::Param(0), ValueType::F64, ScaleChain::origin());
             let product = b.expr(Expr::Binary { op: BinaryOp::Mul, lhs: p, rhs: k }, ValueType::F64, ScaleChain::origin());
-            b.child_param(owner, 0, 0, ChildValue::Expr(product));
+            b.child_param(owner, 0, 0, ChildValue::Expr(product)).expect("a body this builder handed out");
         }
 
         /// `Top { t }` places `Mid { rr: t * 3.0 }`, which places `Leaf { r: rr * 2.0 }`; the

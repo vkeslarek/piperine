@@ -86,9 +86,9 @@ impl AmendedBodies {
     /// `module <name>(in clk: Bit, out <out>: <ty>)` with `on clk.changed() { <out> <- <value>; }`.
     fn on_clock(b: &mut IrBuilder, name: &str, out: &str, ty: ValueType, value: impl FnOnce(&mut Dx<'_>) -> ExprId) -> BodyId {
         let body = b.body(Buck::spec(name, F, 1));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier(out, ty, CarrierRole::Out, None, F, 1, 35));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) });
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier(out, ty, CarrierRole::Out, None, F, 1, 35)).expect("a body this builder handed out");
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 30);
         let v = value(&mut x);
         let commit = x.commit(1, v, None);
@@ -107,22 +107,22 @@ impl AmendedBodies {
     /// ```
     fn hoisted(b: &mut IrBuilder, name: &str, extra: Option<&str>) -> BodyId {
         let body = b.body(Buck::spec(name, F, 1));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier("gate.x", BIT, CarrierRole::Signal, None, F, 2, 5));
-        b.carrier(body, Buck::carrier("above$0.init$0.up", BIT, CarrierRole::Signal, None, F, 3, 5));
-        b.carrier(body, Buck::carrier("q", BIT, CarrierRole::Out, None, F, 1, 35));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("gate.x", BIT, CarrierRole::Signal, None, F, 2, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("above$0.init$0.up", BIT, CarrierRole::Signal, None, F, 3, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", BIT, CarrierRole::Out, None, F, 1, 35)).expect("a body this builder handed out");
         if let Some(extra) = extra {
-            b.carrier(body, Buck::carrier(extra, BIT, CarrierRole::Signal, None, F, 4, 5));
+            b.carrier(body, Buck::carrier(extra, BIT, CarrierRole::Signal, None, F, 4, 5)).expect("a body this builder handed out");
         }
         let mut x = Dx::new(b, F, 5, 14);
         let clk = x.carrier(0, BIT);
-        b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5), element: None, path: vec![] });
-        let gate = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 6, 8) });
+        b.drive(body, Drive { carrier: 1, value: clk, after: None, origin: Buck::origin(F, 5, 5), element: None, path: vec![] }).expect("a body this builder handed out");
+        let gate = b.event(body, Event { source: EventSource::Changed(1), guard: None, origin: Buck::origin(F, 6, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 6, 40);
         let level = x.carrier(1, BIT);
         let commit = x.commit(2, level, None);
         Buck::reaction(b, body, vec![gate], vec![commit], vec![], F, 6);
-        let up = b.event(body, Event { source: EventSource::Changed(2), guard: None, origin: Buck::origin(F, 7, 8) });
+        let up = b.event(body, Event { source: EventSource::Changed(2), guard: None, origin: Buck::origin(F, 7, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 7, 50);
         let level = x.carrier(2, BIT);
         let bind = x.let_(0, level);
@@ -144,13 +144,13 @@ impl AmendedBodies {
     fn timer(b: &mut IrBuilder, rearm: bool) -> BodyId {
         let u8 = ValueType::UInt(8);
         let body = b.body(Buck::spec("Timer", F, 1));
-        b.carrier(body, Buck::carrier("t0", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(10e-9))), F, 2, 5));
-        b.carrier(body, Buck::carrier("dt", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(5e-9))), F, 2, 30));
-        b.carrier(body, Buck::carrier("count", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 14));
+        b.carrier(body, Buck::carrier("t0", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(10e-9))), F, 2, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("dt", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(5e-9))), F, 2, 30)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("count", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 14)).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 11);
         let (t0, dt) = (x.carrier(0, REAL), x.carrier(1, REAL));
         let at = x.bin(piperine_ir::BinaryOp::Add, t0, dt, REAL);
-        let at = b.event(body, Event { source: EventSource::At(at), guard: None, origin: Buck::origin(F, 3, 8) });
+        let at = b.event(body, Event { source: EventSource::At(at), guard: None, origin: Buck::origin(F, 3, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 3, 30);
         let count = x.carrier(2, u8.clone());
         let one = x.int(1, u8.clone());
@@ -159,7 +159,7 @@ impl AmendedBodies {
         Buck::reaction(b, body, vec![at], vec![commit], vec![], F, 3);
         if rearm {
             let twelve = Dx::new(b, F, 4, 11).real(12e-9);
-            let at = b.event(body, Event { source: EventSource::At(twelve), guard: None, origin: Buck::origin(F, 4, 8) });
+            let at = b.event(body, Event { source: EventSource::At(twelve), guard: None, origin: Buck::origin(F, 4, 8) }).expect("a body this builder handed out");
             let mut x = Dx::new(b, F, 4, 25);
             let twenty = x.real(20e-9);
             let commit = x.commit(1, twenty, None);
@@ -177,9 +177,9 @@ impl AmendedBodies {
     /// ```
     fn late(b: &mut IrBuilder, name: &str, time: Time) -> BodyId {
         let body = b.body(Buck::spec(name, F, 1));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier("t", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(-1.0))), F, 2, 5));
-        b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, None, F, 1, 35));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("t", REAL, CarrierRole::Signal, Some(Constant::Real(Real::new(-1.0))), F, 2, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, None, F, 1, 35)).expect("a body this builder handed out");
         let value = match time {
             Time::Fixed(v) => Dx::new(b, F, 3, 25).real(v),
             Time::Now => AmendedBodies::env(&mut Dx::new(b, F, 3, 25), Env::Time),
@@ -188,7 +188,7 @@ impl AmendedBodies {
         let commit = Dx::new(b, F, 3, 20).commit(1, value, None);
         Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 3);
         let t = Dx::new(b, F, 4, 11).carrier(1, REAL);
-        let at = b.event(body, Event { source: EventSource::At(t), guard: None, origin: Buck::origin(F, 4, 8) });
+        let at = b.event(body, Event { source: EventSource::At(t), guard: None, origin: Buck::origin(F, 4, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 4, 20);
         let yes = x.boolean(true);
         let commit = x.commit(2, yes, None);
@@ -205,8 +205,8 @@ impl AmendedBodies {
     fn probe(b: &mut IrBuilder, emits: bool) -> BodyId {
         let u8 = ValueType::UInt(8);
         let body = b.body(Buck::spec("Probe", F, 1));
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 14));
-        b.carrier(body, Buck::carrier("n", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 26));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 14)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("n", u8.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 26)).expect("a body this builder handed out");
         let rise = Buck::rise(b, body, 0, F, 2, 8);
         let mut x = Dx::new(b, F, 2, 22);
         let n = x.carrier(1, u8.clone());
@@ -215,7 +215,7 @@ impl AmendedBodies {
         let mut stmts = vec![x.commit(1, next, None)];
         if emits {
             let fields = vec![StreamField { name: "code".into(), ty: u8.clone() }, StreamField { name: "level".into(), ty: REAL }];
-            let trace = b.stream(body, Stream { name: "trace".into(), fields });
+            let trace = b.stream(body, Stream { name: "trace".into(), fields }).expect("a body this builder handed out");
             let mut x = Dx::new(b, F, 2, 40);
             let code = x.int(7, u8);
             let note = EmitField::Text { name: "note".into(), text: "edge".into() };
@@ -256,12 +256,12 @@ impl AmendedBodies {
     fn sequence(b: &mut IrBuilder) -> BodyId {
         let u8 = ValueType::UInt(8);
         let body = b.body(Buck::spec("Seq", F, 1));
-        b.carrier(body, Buck::carrier("x", u8.clone(), CarrierRole::Out, None, F, 1, 12));
-        b.carrier(body, Buck::carrier("p", u8.clone(), CarrierRole::Out, Some(Constant::Int(9)), F, 1, 28));
-        b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 48));
+        b.carrier(body, Buck::carrier("x", u8.clone(), CarrierRole::Out, None, F, 1, 12)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("p", u8.clone(), CarrierRole::Out, Some(Constant::Int(9)), F, 1, 28)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 48)).expect("a body this builder handed out");
         for (line, at, value) in [(2, 1e-9, 3), (3, 2e-9, 5)] {
             let time = Dx::new(b, F, line, 11).real(at);
-            let event = b.event(body, Event { source: EventSource::At(time), guard: None, origin: Buck::origin(F, line, 8) });
+            let event = b.event(body, Event { source: EventSource::At(time), guard: None, origin: Buck::origin(F, line, 8) }).expect("a body this builder handed out");
             let mut x = Dx::new(b, F, line, 20);
             let v = x.int(value, u8.clone());
             let commit = x.commit(0, v, None);
@@ -272,7 +272,7 @@ impl AmendedBodies {
             let o = x.origin();
             x.b.expr(Expr::Previous(0), u8.clone(), o)
         };
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 4, 8) });
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(F, 4, 8) }).expect("a body this builder handed out");
         let prev = previous(b, 4, 30);
         let commit = Dx::new(b, F, 4, 25).commit(1, prev, None);
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 4);
@@ -280,7 +280,7 @@ impl AmendedBodies {
         let mut x = Dx::new(b, F, 5, 26);
         let two = x.int(2, u8.clone());
         let above = x.bin(piperine_ir::BinaryOp::Gt, prev, two, ValueType::Bool);
-        let guarded = b.event(body, Event { source: EventSource::Changed(0), guard: Some(above), origin: Buck::origin(F, 5, 8) });
+        let guarded = b.event(body, Event { source: EventSource::Changed(0), guard: Some(above), origin: Buck::origin(F, 5, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 5, 50);
         let yes = x.boolean(true);
         let commit = x.commit(2, yes, None);

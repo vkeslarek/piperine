@@ -40,7 +40,7 @@ impl ChainDesign {
         let k = b.expr(Expr::Real(Real::new(scale)), ValueType::F64, ChainDesign::origin());
         let p = b.expr(Expr::Param(0), ValueType::F64, ChainDesign::origin());
         let product = b.expr(Expr::Binary { op: BinaryOp::Mul, lhs: p, rhs: k }, ValueType::F64, ChainDesign::origin());
-        b.child_param(owner, child, index, ChildValue::Expr(product));
+        b.child_param(owner, child, index, ChildValue::Expr(product)).expect("a body this builder handed out");
     }
 
     /// The chain design, or the same bodies with no derived placement.

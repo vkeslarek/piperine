@@ -202,17 +202,22 @@ impl DigitalLowering<'_, '_, '_> {
         let spec = BodySpec { name: format!("{}$resolve~{count}{}", self.resolver_name(implementation), Self::reader_suffix(readers)), origin: origin.clone(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] };
         let body = self.state.builder.body(spec);
         for index in 0..count {
-            self.state.builder.carrier(body, Carrier { name: format!("d{index}"), ty: driven.clone(), role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
+            let built = self.state.builder.carrier(body, Carrier { name: format!("d{index}"), ty: driven.clone(), role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
+            self.built(built);
         }
         let out = |name: String, origin: &Origin| Carrier { name, ty: value.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None };
-        let combined = self.state.builder.carrier(body, out("v".to_string(), &origin));
+        let built = self.state.builder.carrier(body, out("v".to_string(), &origin));
+        let combined = self.built(built)?;
         let drives: Vec<u32> = (0..count as u32).collect();
         let all = self.emit(Expr::Resolve { by_count: by_count.clone(), drives: drives.clone(), except: None }, value.clone(), origin.clone());
-        self.state.builder.drive(body, Drive { carrier: combined, value: all, after: None, origin: origin.clone(), element: None, path: vec![] });
+        let built = self.state.builder.drive(body, Drive { carrier: combined, value: all, after: None, origin: origin.clone(), element: None, path: vec![] });
+        self.built(built);
         for reader in readers {
-            let carrier = self.state.builder.carrier(body, out(format!("o{reader}"), &origin));
+            let built = self.state.builder.carrier(body, out(format!("o{reader}"), &origin));
+            let carrier = self.built(built)?;
             let others = self.emit(Expr::Resolve { by_count: by_count.clone(), drives: drives.clone(), except: Some(*reader) }, value.clone(), origin.clone());
-            self.state.builder.drive(body, Drive { carrier, value: others, after: None, origin: origin.clone(), element: None, path: vec![] });
+            let built = self.state.builder.drive(body, Drive { carrier, value: others, after: None, origin: origin.clone(), element: None, path: vec![] });
+            self.built(built);
         }
         self.state.digital.resolvers.bodies.insert(key, body);
         Some(body)

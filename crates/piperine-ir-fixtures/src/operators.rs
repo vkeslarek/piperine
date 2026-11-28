@@ -74,30 +74,30 @@ impl Operators {
             children: vec![],
         });
         for site in delays {
-            b.delay(body, site);
+            b.delay(body, site).expect("a body this builder handed out");
         }
         for source in noise_sources {
-            b.noise_source(body, source);
+            b.noise_source(body, source).expect("a body this builder handed out");
         }
         for parameter in session_parameters {
-            b.session_parameter(body, parameter);
+            b.session_parameter(body, parameter).expect("a body this builder handed out");
         }
         for stream in streams {
-            b.stream(body, stream);
+            b.stream(body, stream).expect("a body this builder handed out");
         }
         for trace in traces {
-            b.trace(body, trace);
+            b.trace(body, trace).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let nets: Vec<_> = carriers.iter().map(|c| NetSpec { path: format!("Op.{}", c.name), ty: c.ty.clone(), declared_by: top, init: None, origin: origin.clone() }).collect();
         for carrier in carriers {
-            b.carrier(body, carrier);
+            b.carrier(body, carrier).expect("a body this builder handed out");
         }
         for event in events {
-            b.event(body, event);
+            b.event(body, event).expect("a body this builder handed out");
         }
         for reaction in reactions {
-            b.reaction(body, reaction);
+            b.reaction(body, reaction).expect("a body this builder handed out");
         }
         let nets: Vec<_> = nets.into_iter().map(|net| b.net(net)).collect();
         let params = vec![Constant::Real(Real::new(1e-9))];

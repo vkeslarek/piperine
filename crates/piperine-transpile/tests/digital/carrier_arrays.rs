@@ -36,11 +36,11 @@ impl MemoryBody {
     fn ram(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Ram", F, 1));
         let byte = ValueAliases::u(8);
-        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Carrier { count: Some(4), ..Buck::carrier("mem", byte.clone(), CarrierRole::Signal, Some(Constant::Int(5)), F, 2, 5) });
-        b.carrier(body, Buck::carrier("k", byte.clone(), CarrierRole::Signal, Some(Constant::Int(2)), F, 3, 5));
-        b.carrier(body, Buck::carrier("q", byte.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 34));
-        b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 52));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20)).expect("a body this builder handed out");
+        b.carrier(body, Carrier { count: Some(4), ..Buck::carrier("mem", byte.clone(), CarrierRole::Signal, Some(Constant::Int(5)), F, 2, 5) }).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("k", byte.clone(), CarrierRole::Signal, Some(Constant::Int(2)), F, 3, 5)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("q", byte.clone(), CarrierRole::Out, Some(Constant::Int(0)), F, 1, 34)).expect("a body this builder handed out");
+        b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 52)).expect("a body this builder handed out");
         let (clk, mem, k, q, hit) = (0, 1, 2, 3, 4);
         let rise = Buck::rise(b, body, clk, F, 5, 8);
         let mut x = Dx::new(b, F, 5, 20);
@@ -64,7 +64,7 @@ impl MemoryBody {
         let third = x.commit(hit, same, None);
         Buck::reaction(b, body, vec![rise], vec![first, second, third], vec![], F, 5);
         // on mem[2].changed() { q <- mem[2]; }
-        let changed = b.event(body, Event { source: EventSource::ElementChanged { carrier: mem, element: 2 }, guard: None, origin: Buck::origin(F, 6, 8) });
+        let changed = b.event(body, Event { source: EventSource::ElementChanged { carrier: mem, element: 2 }, guard: None, origin: Buck::origin(F, 6, 8) }).expect("a body this builder handed out");
         let mut x = Dx::new(b, F, 6, 30);
         let two = x.int(2, byte.clone());
         let value = x.b.expr(Expr::CarrierElement { carrier: mem, index: two }, byte.clone(), x.origin());

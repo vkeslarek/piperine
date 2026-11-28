@@ -110,9 +110,9 @@ impl Switching {
             analog: Some(analog),
             children: vec![],
         });
-        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None });
+        b.carrier(body, Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
         for site in derivatives {
-            b.derivative(body, site);
+            b.derivative(body, site).expect("a body this builder handed out");
         }
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Sw.en".into(), ty: ValueType::Bool, declared_by: top, init: None, origin: origin.clone() });
@@ -175,9 +175,9 @@ impl ParamEvents {
         let commit = b.stmt(Stmt::Commit { carrier: 0, value, after: None, target: None });
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
-        let event = b.event(body, Event { source: EventSource::ParamChanged(0), guard: None, origin: Self::at() });
-        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() });
+        b.carrier(body, Carrier { name: "seen".into(), ty: seen_ty.clone(), role: CarrierRole::Out, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
+        let event = b.event(body, Event { source: EventSource::ParamChanged(0), guard: None, origin: Self::at() }).expect("a body this builder handed out");
+        b.reaction(body, Reaction { on: vec![event], stmts: vec![commit], locals: vec![], origin: Self::at() }).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: seen_ty, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });
@@ -195,8 +195,8 @@ impl ParamEvents {
         let value = b.expr(Expr::ParamPrevious(0), ValueType::F64, Self::at());
         let tolerance = Param { name: "tol".into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1e-9))), check: None, structural: false, origin: origin.clone() };
         let body = b.body(BodySpec { name: "Lag".into(), origin: origin.clone(), params: vec![tolerance], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] });
-        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone(), count: None });
-        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at(), element: None, path: vec![] });
+        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::F64, role: CarrierRole::Out, init: None, origin: origin.clone(), count: None }).expect("a body this builder handed out");
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: Self::at(), element: None, path: vec![] }).expect("a body this builder handed out");
         let top = b.next_instance_id();
         let net = b.net(NetSpec { path: "Lag.seen".into(), ty: ValueType::F64, declared_by: top, init: None, origin: origin.clone() });
         let top = b.instance(InstanceSpec { path: "Lag".into(), name: "Lag".into(), body, parent: None, nodes: vec![], params: vec![Constant::Real(Real::new(1e-9))], origin });

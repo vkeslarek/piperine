@@ -119,21 +119,21 @@ fn a_new_scalar_inside_a_composite_is_one_leaf_with_its_count() {
     let body = b.body(NumberDesign::spec());
     // `signal wide: u200 = 0x1_0000_0000_0000_0003;` (limbs 3, 1, 0, 0)
     let wide_value = b.wide(WideData { limbs: vec![3, 1, 0, 0] });
-    b.carrier(body, NumberDesign::carrier("wide", ValueType::UInt(200), Some(Constant::Wide(wide_value)), None, 2));
+    b.carrier(body, NumberDesign::carrier("wide", ValueType::UInt(200), Some(Constant::Wide(wide_value)), None, 2)).expect("a body this builder handed out");
     // `signal minus: i70 = -1;` (two limbs of ones)
     let minus_one = b.wide(WideData { limbs: vec![u64::MAX, u64::MAX] });
-    b.carrier(body, NumberDesign::carrier("minus", ValueType::Int(70), Some(Constant::Wide(minus_one)), None, 3));
-    b.carrier(body, NumberDesign::carrier("single", ValueType::F32, Some(Constant::FloatBits(0x3f80_0000)), None, 4));
-    b.carrier(body, NumberDesign::carrier("half", ValueType::F16, None, None, 5));
-    b.carrier(body, NumberDesign::carrier("quad", ValueType::F128, Some(Constant::FloatBits(1)), None, 6));
+    b.carrier(body, NumberDesign::carrier("minus", ValueType::Int(70), Some(Constant::Wide(minus_one)), None, 3)).expect("a body this builder handed out");
+    b.carrier(body, NumberDesign::carrier("single", ValueType::F32, Some(Constant::FloatBits(0x3f80_0000)), None, 4)).expect("a body this builder handed out");
+    b.carrier(body, NumberDesign::carrier("half", ValueType::F16, None, None, 5)).expect("a body this builder handed out");
+    b.carrier(body, NumberDesign::carrier("quad", ValueType::F128, Some(Constant::FloatBits(1)), None, 6)).expect("a body this builder handed out");
     let pair_value = {
         let wide = b.wide(WideData { limbs: vec![9, 0] });
         b.aggregate(AggregateData { ty: pair.clone(), variant: None, parts: vec![Constant::FloatBits(0x3fff_0000_0000_0000_0000_0000_0000_0000), Constant::Wide(wide)] })
     };
-    b.carrier(body, NumberDesign::carrier("pair", pair.clone(), Some(Constant::Aggregate(pair_value)), None, 7));
-    b.carrier(body, NumberDesign::carrier("row", ValueType::F128, None, Some(3), 8));
+    b.carrier(body, NumberDesign::carrier("pair", pair.clone(), Some(Constant::Aggregate(pair_value)), None, 7)).expect("a body this builder handed out");
+    b.carrier(body, NumberDesign::carrier("row", ValueType::F128, None, Some(3), 8)).expect("a body this builder handed out");
     let triple = ValueType::Array(Box::new(ValueType::F16), 3);
-    b.carrier(body, NumberDesign::carrier("halves", triple.clone(), None, None, 9));
+    b.carrier(body, NumberDesign::carrier("halves", triple.clone(), None, None, 9)).expect("a body this builder handed out");
     let ir = NumberDesign::design(
         b,
         body,

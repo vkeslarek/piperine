@@ -53,7 +53,7 @@ impl ReactionBodies {
             ("b", ValueAliases::u(8), CarrierRole::Out, 40),
             ("c", ValueType::Bool, CarrierRole::Out, 50),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, F, 1, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, F, 1, col)).expect("a body this builder handed out");
         }
         let rise = Buck::rise(b, body, 0, F, 3, 8);
         let mut x = Dx::new(b, F, 4, 9);
@@ -97,7 +97,7 @@ impl ReactionBodies {
             ("cs", ValueAliases::i(8), CarrierRole::Out, 25),
             ("ex", ValueType::F64, CarrierRole::Out, 26),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, F, 60, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, F, 60, col)).expect("a body this builder handed out");
         }
         let rise = Buck::rise(b, body, 0, F, 61, 8);
         let mut x = Dx::new(b, F, 62, 9);
@@ -128,7 +128,7 @@ impl ReactionBodies {
             ("q", ValueType::Bool, CarrierRole::Out, 40),
             ("r", ValueAliases::u(8), CarrierRole::Out, 50),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, F, 10, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, F, 10, col)).expect("a body this builder handed out");
         }
         let rise = Buck::rise(b, body, 0, F, 11, 8);
         let mut x = Dx::new(b, F, 11, 20);
@@ -159,7 +159,7 @@ impl ReactionBodies {
             ("t", ValueType::F64, CarrierRole::In, 30),
             ("q", ValueType::Bool, CarrierRole::Out, 40),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, F, 20, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, F, 20, col)).expect("a body this builder handed out");
         }
         let rise = Buck::rise(b, body, 0, F, 21, 8);
         let mut x = Dx::new(b, F, 21, 20);
@@ -182,13 +182,13 @@ impl ReactionBodies {
             ("b", ValueAliases::u(8), CarrierRole::In, 30),
             ("q", ValueAliases::u(8), CarrierRole::Out, 40),
         ] {
-            b.carrier(body, Buck::carrier(name, ty, role, None, F, 40, col));
+            b.carrier(body, Buck::carrier(name, ty, role, None, F, 40, col)).expect("a body this builder handed out");
         }
         let mut x = Dx::new(b, F, 41, 9);
         let (a, c) = (x.carrier(0, ValueAliases::u(8)), x.carrier(1, ValueAliases::u(8)));
         let quotient = x.bin(BinaryOp::Div, a, c, ValueAliases::u(8));
         let origin = Origin { file: F.to_string(), line: 41, col: 5 };
-        b.drive(body, Drive { carrier: 2, value: quotient, after: None, origin, element: None, path: vec![] });
+        b.drive(body, Drive { carrier: 2, value: quotient, after: None, origin, element: None, path: vec![] }).expect("a body this builder handed out");
         body
     }
 
@@ -200,11 +200,11 @@ impl ReactionBodies {
     fn settling(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Settling", F, 50));
         for (name, role, col) in [("ready", CarrierRole::In, 20), ("q", CarrierRole::Out, 40)] {
-            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 50, col));
+            b.carrier(body, Buck::carrier(name, ValueType::Bool, role, None, F, 50, col)).expect("a body this builder handed out");
         }
         let mut x = Dx::new(b, F, 51, 20);
         let ready = x.carrier(0, ValueType::Bool);
-        let settle = b.event(body, Event { source: EventSource::Settle, guard: Some(ready), origin: Buck::origin(F, 51, 8) });
+        let settle = b.event(body, Event { source: EventSource::Settle, guard: Some(ready), origin: Buck::origin(F, 51, 8) }).expect("a body this builder handed out");
         let yes = Dx::new(b, F, 52, 9).boolean(true);
         let commit = Dx::new(b, F, 52, 9).commit(1, yes, None);
         Buck::reaction(b, body, vec![settle], vec![commit], vec![], F, 51);
@@ -432,13 +432,13 @@ fn reactions_and_drives_read_the_environment_as_analog_code_does() {
         ("s", ValueType::F64, CarrierRole::Out, 67),
         ("pos", ValueType::Bool, CarrierRole::Out, 84),
     ] {
-        b.carrier(body, Buck::carrier(name, ty, role, None, A, 1, col));
+        b.carrier(body, Buck::carrier(name, ty, role, None, A, 1, col)).expect("a body this builder handed out");
     }
     let gmin = b.expr(Expr::Env(Env::Gmin), ValueType::F64, Buck::origin(A, 3, 11));
     let zero = b.expr(Expr::Real(piperine_ir::Real::new(0.0)), ValueType::F64, Buck::origin(A, 3, 20));
     let positive = b.expr(Expr::Binary { op: BinaryOp::Gt, lhs: gmin, rhs: zero }, ValueType::Bool, Buck::origin(A, 3, 11));
-    b.drive(body, Drive { carrier: 4, value: positive, after: None, origin: Buck::origin(A, 3, 5), element: None, path: vec![] });
-    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) });
+    b.drive(body, Drive { carrier: 4, value: positive, after: None, origin: Buck::origin(A, 3, 5), element: None, path: vec![] }).expect("a body this builder handed out");
+    let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) }).expect("a body this builder handed out");
     let mut commits = Vec::new();
     for (carrier, env, col) in [(1, Env::Temperature, 29), (2, Env::Gmin, 50), (3, Env::SourceScale, 64)] {
         let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 4, col));

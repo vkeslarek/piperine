@@ -606,7 +606,7 @@ fn a_partial_derivative_is_recorded_printed_and_round_tripped() {
         analog: Some(analog),
         children: vec![],
     });
-    assert_eq!(b.partial_derivative(body, PartialDerivative { name: "v(a, gnd)".into(), origin: origin.clone() }), 0);
+    assert_eq!(b.partial_derivative(body, PartialDerivative { name: "v(a, gnd)".into(), origin: origin.clone() }).expect("a body this builder handed out"), 0);
     let top = b.instance(InstanceSpec { path: "Op".into(), name: "Op".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin });
     let ir = b.finish(top);
     assert_eq!(ir.check(), vec![], "{ir}");

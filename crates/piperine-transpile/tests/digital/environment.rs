@@ -39,13 +39,13 @@ impl AmbientBody {
         let body = b.body(Buck::spec("Ambient", A, 1));
         for (i, name) in ["clk", "t", "g", "s", "dt", "dg", "ds"].into_iter().enumerate() {
             let (ty, role) = if i == 0 { (ValueType::Bool, CarrierRole::In) } else { (ValueType::F64, CarrierRole::Out) };
-            b.carrier(body, Buck::carrier(name, ty, role, None, A, 1, 20 + 10 * i as u32));
+            b.carrier(body, Buck::carrier(name, ty, role, None, A, 1, 20 + 10 * i as u32)).expect("a body this builder handed out");
         }
         for (carrier, env, col) in [(4, Env::Temperature, 5), (5, Env::Gmin, 25), (6, Env::SourceScale, 40)] {
             let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 3, col));
-            b.drive(body, Drive { carrier, value, after: None, origin: Buck::origin(A, 3, col), element: None, path: vec![] });
+            b.drive(body, Drive { carrier, value, after: None, origin: Buck::origin(A, 3, col), element: None, path: vec![] }).expect("a body this builder handed out");
         }
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) });
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin(A, 4, 8) }).expect("a body this builder handed out");
         let mut commits = Vec::new();
         for (carrier, env, col) in [(1, Env::Temperature, 29), (2, Env::Gmin, 50), (3, Env::SourceScale, 64)] {
             let value = b.expr(Expr::Env(env), ValueType::F64, Buck::origin(A, 4, col));

@@ -409,63 +409,102 @@ impl DigitalLowering<'_, '_, '_> {
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.
     pub(in crate::elab) fn finish_structure(&mut self, body: BodyId) {
-        let structure = std::mem::take(&mut self.state.digital.structure);
-        for hoisted in structure.hoisted {
-            self.state.builder.hoisted(body, hoisted);
+        let mut structure = std::mem::take(&mut self.state.digital.structure);
+        self.finish_items(body, &mut structure);
+        self.finish_events(body, &mut structure);
+        self.finish_sites(body, &mut structure);
+        self.finish_child_bindings(body, &mut structure);
+    }
+
+    /// The items of the body `body` the gathering numbered first: hoisted modules, carriers, node arrays, drives.
+    fn finish_items(&mut self, body: BodyId, structure: &mut Structure) {
+        for hoisted in std::mem::take(&mut structure.hoisted) {
+            let built = self.state.builder.hoisted(body, hoisted);
+            self.built(built);
         }
-        for carrier in structure.carriers {
-            self.state.builder.carrier(body, carrier);
+        for carrier in std::mem::take(&mut structure.carriers) {
+            let built = self.state.builder.carrier(body, carrier);
+            self.built(built);
         }
-        for array in structure.node_arrays {
-            self.state.builder.node_array(body, array);
+        for array in std::mem::take(&mut structure.node_arrays) {
+            let built = self.state.builder.node_array(body, array);
+            self.built(built);
         }
-        for array in structure.empty_arrays {
-            self.state.builder.empty_array(body, array);
+        for array in std::mem::take(&mut structure.empty_arrays) {
+            let built = self.state.builder.empty_array(body, array);
+            self.built(built);
         }
-        for drive in structure.drives {
-            self.state.builder.drive(body, drive);
+        for drive in std::mem::take(&mut structure.drives) {
+            let built = self.state.builder.drive(body, drive);
+            self.built(built);
         }
-        for event in structure.events {
-            self.state.builder.event(body, event);
+    }
+
+    /// The events, reactions and record streams of the body `body`.
+    fn finish_events(&mut self, body: BodyId, structure: &mut Structure) {
+        for event in std::mem::take(&mut structure.events) {
+            let built = self.state.builder.event(body, event);
+            self.built(built);
         }
-        for reaction in structure.reactions {
-            self.state.builder.reaction(body, reaction);
+        for reaction in std::mem::take(&mut structure.reactions) {
+            let built = self.state.builder.reaction(body, reaction);
+            self.built(built);
         }
-        for stream in structure.streams {
-            self.state.builder.stream(body, stream);
+        for stream in std::mem::take(&mut structure.streams) {
+            let built = self.state.builder.stream(body, stream);
+            self.built(built);
         }
-        for derivative in structure.derivatives {
-            self.state.builder.derivative(body, derivative);
+    }
+
+    /// The sites of the body `body`: derivatives, delays, traces, session parameters, noise sources and partial derivatives.
+    fn finish_sites(&mut self, body: BodyId, structure: &mut Structure) {
+        for derivative in std::mem::take(&mut structure.derivatives) {
+            let built = self.state.builder.derivative(body, derivative);
+            self.built(built);
         }
-        for delay in structure.delays {
-            self.state.builder.delay(body, delay);
+        for delay in std::mem::take(&mut structure.delays) {
+            let built = self.state.builder.delay(body, delay);
+            self.built(built);
         }
-        for trace in structure.traces {
-            self.state.builder.trace(body, trace);
+        for trace in std::mem::take(&mut structure.traces) {
+            let built = self.state.builder.trace(body, trace);
+            self.built(built);
         }
-        for parameter in structure.session_parameters {
-            self.state.builder.session_parameter(body, parameter);
+        for parameter in std::mem::take(&mut structure.session_parameters) {
+            let built = self.state.builder.session_parameter(body, parameter);
+            self.built(built);
         }
-        for source in structure.noise_sources {
-            self.state.builder.noise_source(body, source);
+        for source in std::mem::take(&mut structure.noise_sources) {
+            let built = self.state.builder.noise_source(body, source);
+            self.built(built);
         }
-        for partial in structure.partial_derivatives {
-            self.state.builder.partial_derivative(body, partial);
+        for partial in std::mem::take(&mut structure.partial_derivatives) {
+            let built = self.state.builder.partial_derivative(body, partial);
+            self.built(built);
         }
-        for (child, carriers) in structure.child_carriers {
-            self.state.builder.bind_child_carriers(body, child, carriers);
+    }
+
+    /// What each child of the body `body` binds: its carriers, their windows and its params.
+    fn finish_child_bindings(&mut self, body: BodyId, structure: &mut Structure) {
+        for (child, carriers) in std::mem::take(&mut structure.child_carriers) {
+            let built = self.state.builder.bind_child_carriers(body, child, carriers);
+            self.built(built);
         }
-        for (child, windows) in structure.child_windows {
-            self.state.builder.bind_child_windows(body, child, windows);
+        for (child, windows) in std::mem::take(&mut structure.child_windows) {
+            let built = self.state.builder.bind_child_windows(body, child, windows);
+            self.built(built);
         }
-        for (child, param, value) in structure.child_params {
-            self.state.builder.child_param(body, child, param, value);
+        for (child, param, value) in std::mem::take(&mut structure.child_params) {
+            let built = self.state.builder.child_param(body, child, param, value);
+            self.built(built);
         }
-        for reach in structure.reaches {
-            self.state.builder.reach(body, reach);
+        for reach in std::mem::take(&mut structure.reaches) {
+            let built = self.state.builder.reach(body, reach);
+            self.built(built);
         }
-        for inflow in structure.inflows {
-            self.state.builder.inflow(body, inflow);
+        for inflow in std::mem::take(&mut structure.inflows) {
+            let built = self.state.builder.inflow(body, inflow);
+            self.built(built);
         }
     }
 }
