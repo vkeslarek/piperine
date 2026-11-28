@@ -229,7 +229,7 @@ mod tests {
     };
     use piperine_plan::{BodyPlan, Mode};
 
-    use crate::devices::{Devices, Ex};
+    use piperine_ir_fixtures::devices::{Devices, Ex};
     use crate::print::AnalogPrinter;
 
     fn printed(ir: &Ir, body: BodyId, mode: fn(Mode) -> bool) -> String {

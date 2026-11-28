@@ -17,11 +17,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run abinoise**: `cargo test -p piperine-solver --test abi_devices abi_noise::`
 **Run retake**: `cargo test -p piperine-solver --test transient jump_retake::`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine instant::`
-**Run irops**: `cargo test -p piperine-ir --test operators`
-**Run planops**: `cargo test -p piperine-plan --test operators_shape`
-**Run tops**: `cargo test -p piperine-transpile --test operators`
+**Run irops**: `cargo test -p piperine-ir --test model operators::`
+**Run planops**: `cargo test -p piperine-plan --test shape operators_shape::`
+**Run tops**: `cargo test -p piperine-transpile --test analog operators::`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`
 **Run elabops**: `cargo test -p piperine-lang --test elab_operators`
 **Run subset**: `cargo test -p piperine-lang --test types_subset`
@@ -38,13 +38,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run parnoise**: `cargo test -p piperine-parity --test parity_noise`
 **Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
 **Run contract**: `cargo test -p piperine-parity --lib contract`
-**Run apinoise**: `cargo test -p piperine-api --test noise`
-**Run apioptions**: `cargo test -p piperine-api --test options`
-**Run apisession**: `cargo test -p piperine-api --test session_parameters`
-**Run apinatures**: `cargo test -p piperine-api --test natures`
-**Run apitraces**: `cargo test -p piperine-api --test traces`
-**Run clianalyses**: `cargo test -p piperine-cli --test analyses`
-**Run clioptions**: `cargo test -p piperine-cli --test options`
+**Run apinoise**: `cargo test -p piperine-api --test params noise::`
+**Run apioptions**: `cargo test -p piperine-api --test params options::`
+**Run apisession**: `cargo test -p piperine-api --test params session_parameters::`
+**Run apinatures**: `cargo test -p piperine-api --test session natures::`
+**Run apitraces**: `cargo test -p piperine-api --test records traces::`
+**Run clianalyses**: `cargo test -p piperine-cli --test commands analyses::`
+**Run clioptions**: `cargo test -p piperine-cli --test commands options::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run inventory**: `cargo test -p piperine --test book_inventory`

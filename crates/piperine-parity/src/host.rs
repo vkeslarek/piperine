@@ -5,20 +5,14 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::OnceLock;
 
-use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
+use piperine_api::{Cell, Overrides, Project, Session, Table};
 use piperine_transpile::Settings;
 
 use crate::backend::Backend;
 use crate::bench::Bench;
-
-/// A sink that keeps nothing: a parity run reads the table.
-struct Ignore;
-
-impl RecordSink for Ignore {
-    fn record(&mut self, _: &Record) {}
-}
+use crate::compile_cache::CompileCache;
+use crate::sinks::Ignore;
 
 /// One run of a twin through a `Session`.
 pub struct HostRun {
@@ -49,12 +43,10 @@ impl HostRun {
         session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| fail("run", &f))
     }
 
-    /// The compiler settings of every run of this process: one temporary cache, so a test run
-    /// never writes the user's own cache.
+    /// The compiler settings of every run of this process: the run's one compile cache under the
+    /// target directory, so a test run never writes the user's own cache.
     pub fn settings() -> Settings {
-        static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-        let dir = CACHE.get_or_init(|| tempfile::tempdir().expect("a temporary cache"));
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
+        CompileCache::shared().settings()
     }
 
     /// The real number of `cell`; any other cell is a failure of the table's shape.

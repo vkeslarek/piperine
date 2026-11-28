@@ -23,12 +23,6 @@ fn node(ir: &piperine_ir::Ir, top: &str, name: &str) -> NodeIdentifier {
 }
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
-#[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 

@@ -242,11 +242,21 @@ impl Coverage {
 
     /// The test `covered_by` names: `piperine/<target>::<fn>` is a root target (the path its
     /// `[[test]]` table gives, else `tests/<target>.rs`), `<crate>/<target>::<fn>` is
-    /// `crates/<crate>/tests/<target>.rs`. An error says what is missing.
+    /// `crates/<crate>/tests/<target>.rs`, and `<crate>/<target>::<module>::<fn>` is
+    /// `crates/<crate>/tests/<target>/<module>.rs` when the target is a directory. An error says what
+    /// is missing.
     pub fn resolve(&self, covered_by: &str) -> Result<CoveringTest, String> {
         let (location, name) = covered_by.split_once("::").ok_or_else(|| format!("`{covered_by}` is not `<crate>/<target>::<fn>`"))?;
         let (package, target) = location.split_once('/').ok_or_else(|| format!("`{covered_by}` is not `<crate>/<target>::<fn>`"))?;
-        let path = if package == "piperine" { self.root.join(self.root_target_path(target)) } else { self.root.join("crates").join(package).join("tests").join(format!("{target}.rs")) };
+        let (path, name) = if package == "piperine" {
+            (self.root.join(self.root_target_path(target)), name)
+        } else {
+            let tests = self.root.join("crates").join(package).join("tests");
+            match name.rsplit_once("::") {
+                Some((module, function)) if tests.join(target).is_dir() => (tests.join(target).join(format!("{module}.rs")), function),
+                _ => (tests.join(format!("{target}.rs")), name),
+            }
+        };
         let text = std::fs::read_to_string(&path).map_err(|error| format!("`{covered_by}`: {} is unreadable: {error}", path.display()))?;
         let marker = format!("fn {name}(");
         let at = text.match_indices(&marker).map(|(at, _)| at).find(|at| *at == 0 || text[..*at].ends_with('\n')).ok_or_else(|| format!("`{covered_by}`: {} has no top-level `{marker}`", path.display()))?;

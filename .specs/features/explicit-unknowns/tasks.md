@@ -19,21 +19,21 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinv**: `cargo test -p piperine --test book_inventory`
 **Run types**: `cargo test -p piperine-lang --test types_explicit`
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
-**Run ir**: `cargo test -p piperine-ir --test digital`
+**Run ir**: `cargo test -p piperine-ir --test model digital::`
 **Run abi**: `cargo test -p piperine-abi --test contract layouts::`
-**Run plan**: `cargo test -p piperine-plan --test digital_shape`
-**Run cache**: `cargo test -p piperine-transpile --test cache`
+**Run plan**: `cargo test -p piperine-plan --test shape digital_shape::`
+**Run cache**: `cargo test -p piperine-transpile --test compile cache::`
 **Run abicontract**: `cargo test -p piperine-abi --test contract contract::`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
-**Run records**: `cargo test -p piperine-api --test records`
-**Run session**: `cargo test -p piperine-api --test session`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run records**: `cargo test -p piperine-api --test records records::`
+**Run session**: `cargo test -p piperine-api --test session session::`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
-**Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
+**Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

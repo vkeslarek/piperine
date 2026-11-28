@@ -1763,8 +1763,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate builds with `#![deny(missing_docs)]` and no free function; its bodies pass `Ir::check`
-- [ ] Gate check passes: Quick
+- [x] The crate builds with `#![deny(missing_docs)]` and no free function; its bodies pass `Ir::check`
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -1785,8 +1785,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 5 targets across the three crates; every test keeps its name
-- [ ] Plans lowered; Gate check passes: Ledger
+- [x] 5 targets across the three crates; every test keeps its name
+- [x] Plans lowered; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1807,8 +1807,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 5 targets; every test keeps its name; the goldens are untouched
-- [ ] Plan lowered to 5; Gate check passes: Ledger
+- [x] 5 targets; every test keeps its name; the goldens are untouched
+- [x] Plan lowered to 5; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger
@@ -1829,9 +1829,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `grep -r 'static CACHE' crates tests` finds nothing; a run leaves no directory in `TMPDIR`
-- [ ] `two_processes_share_one_cache` passes in `piperine-parity`'s `harness` tests
-- [ ] Gate check passes: Quick for parity, api, cli and the root's `integrated`
+- [x] `grep -r 'static CACHE' crates tests` finds nothing; a run leaves no directory in `TMPDIR`
+- [x] `two_processes_share_one_cache` passes in `piperine-parity`'s `harness` tests
+- [x] Gate check passes: Quick for parity, api, cli and the root's `integrated`
 
 **Tests**: integration
 **Gate**: quick
@@ -1852,8 +1852,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 5 targets (the buck one stays `test = false`); every test keeps its name
-- [ ] Plan lowered; Gate check passes: Ledger
+- [x] 5 targets (the buck one stays `test = false`); every test keeps its name
+  - Departure: 6 targets, `session`, `host`, `records`, `params`, `analyses` and `memory`. `memory` needs its own process because its counting `#[global_allocator]` measures the whole process: the two tests that measure take its turn (`Counting::alone`) and nothing else runs beside them. The shared sinks and settings are `piperine_parity::sinks::{Ignore, Kept}` and `CompileCache::settings`, not a support module of the crate. T67's commit subject says "five targets" for a commit that makes six.
+- [x] Plan lowered; Gate check passes: Ledger
+  - Departure: api went 26 to 6, not 5.
 
 **Tests**: integration
 **Gate**: ledger
@@ -1874,8 +1876,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 6 default targets across the three crates; every test keeps its name; `binary` and `shared_cache` exist once
-- [ ] Plans lowered; Gate check passes: Ledger
+- [x] 6 default targets across the three crates; every test keeps its name; `binary` and `shared_cache` exist once
+  - Departure: they exist no more. A call is `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` or `CompileCache::shared().path()` (T66's one cache), so no copy of either is left. The cli has 3 targets (`commands`, `book`, `twins`), numbers 2, project 1.
+- [x] Plans lowered; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

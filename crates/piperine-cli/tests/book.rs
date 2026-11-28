@@ -32,6 +32,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::OnceLock;
+use piperine_parity::compile_cache::CompileCache;
 
 fn repo() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -136,16 +137,6 @@ fn files_before(all: &[Block], upto: usize) -> BTreeMap<String, String> {
     files
 }
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
-/// One cache directory for every child of this target that does not ask for an empty one.
-fn shared_cache() -> &'static Path {
-    static CACHE: OnceLock<tempfile::TempDir> = OnceLock::new();
-    CACHE.get_or_init(|| tempfile::tempdir().expect("tmp")).path()
-}
-
 /// Copies the directory `from` into `to`, leaving out a `target` directory.
 fn copy_tree(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).expect("a directory");
@@ -217,14 +208,14 @@ fn produce(all: &[Block], block: &Block) -> Result<String, String> {
     }
     let (_tmp, dir) = workdir(all, block);
     let empty = tempfile::tempdir().expect("tmp");
-    let cache = if block.attr("data-cli-cache") == Some("empty") { empty.path() } else { shared_cache() };
-    let out: Output = Command::new(binary())
+    let cache = if block.attr("data-cli-cache") == Some("empty") { empty.path() } else { CompileCache::shared().path() };
+    let out: Output = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")))
         .args(&words[1..])
         .current_dir(&dir)
         .env("PIPERINE_CACHE_DIR", cache)
         .env_remove("PIPERINE_BACKEND")
         .output()
-        .unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()));
+        .unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()));
     let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
     let refused = block.attr("data-cli-stream") == Some("stderr");
     let exit: i32 = match block.attr("data-cli-exit") {
@@ -329,7 +320,7 @@ fn the_plot_in_the_chapter_is_the_file_the_binary_writes() {
     let tmp = tempfile::tempdir().expect("tmp");
     let dir = tmp.path().join("rc");
     copy_tree(&repo().join("examples/rc"), &dir);
-    let out = Command::new(binary()).args(["run", "step", "--plot", "step.svg"]).current_dir(&dir).env("PIPERINE_CACHE_DIR", shared_cache()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["run", "step", "--plot", "step.svg"]).current_dir(&dir).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     assert_eq!(out.status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
     let svg = std::fs::read_to_string(dir.join("step.svg")).expect("the plot was written");
     assert_eq!(&html[at..end], svg.trim_end_matches('\n'), "the embedded SVG is the file the binary wrote");
@@ -347,7 +338,7 @@ fn the_chapter_shows_fmt_and_says_comments_stay() {
     let text = plain(&html);
     assert!(text.split(". ").any(|s| s.contains("comment") && s.contains("kept")), "a sentence says comments are kept");
     // and the files the chapter shows are formatted: `fmt --check` passes on the RC project
-    let out = Command::new(binary()).args(["fmt", "--check"]).current_dir(repo().join("examples/rc")).output().expect("run piperine");
+    let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["fmt", "--check"]).current_dir(repo().join("examples/rc")).output().expect("run piperine");
     assert_eq!(out.status.code(), Some(0), "stdout:\n{}", String::from_utf8_lossy(&out.stdout));
 }
 
@@ -632,10 +623,10 @@ fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one(
     let dir = tempfile::tempdir().expect("tmp");
     let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
     write(dir.path(), "plot.msl", design);
-    let out = Command::new(binary())
+    let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")))
         .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])
         .current_dir(dir.path())
-        .env("PIPERINE_CACHE_DIR", shared_cache())
+        .env("PIPERINE_CACHE_DIR", CompileCache::shared().path())
         .env_remove("PIPERINE_BACKEND")
         .output()
         .expect("run piperine");

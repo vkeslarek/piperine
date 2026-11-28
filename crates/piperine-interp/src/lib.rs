@@ -19,11 +19,6 @@ mod rejected;
 mod widths;
 mod walk;
 
-#[cfg(test)]
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-
 pub use device::{BodyFactory, Interpreted};
 pub use dual::Dual;
 pub use piperine_plan::BodyPlan;

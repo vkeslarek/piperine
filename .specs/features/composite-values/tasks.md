@@ -12,12 +12,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run irctl**: `cargo test -p piperine-ir --test control`
-**Run iragg**: `cargo test -p piperine-ir --test aggregates`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
+**Run irctl**: `cargo test -p piperine-ir --test model control::`
+**Run iragg**: `cargo test -p piperine-ir --test model aggregates::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run rt**: `cargo test -p piperine-transpile --lib rt::`
-**Run tctl**: `cargo test -p piperine-transpile --test control`
-**Run tagg**: `cargo test -p piperine-transpile --test aggregates`
+**Run tctl**: `cargo test -p piperine-transpile --test print control::`
+**Run tagg**: `cargo test -p piperine-transpile --test print aggregates::`
 **Run typesctl**: `cargo test -p piperine-lang --test types_control`
 **Run typesagg**: `cargo test -p piperine-lang --test types_aggregates`
 **Run elabctl**: `cargo test -p piperine-lang --test elab_control`
@@ -29,9 +29,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typescmp**: `cargo test -p piperine-lang --test types_compound`
 **Run booktypes**: `cargo test -p piperine --test book_types`
 **Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
-**Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
-**Run apicomp**: `cargo test -p piperine-api --test composites`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
+**Run apicomp**: `cargo test -p piperine-api --test host composites::`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

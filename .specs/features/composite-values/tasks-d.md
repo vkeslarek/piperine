@@ -13,24 +13,24 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/composite-values/design-d.md`
 **Status**: Draft (awaiting the user's approval; QD1 to QD8 are defaults the user may overrule)
 **Build**: `cargo build -p piperine-numbers -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run purity**: `cargo test -p piperine-numbers --test purity`
-**Run integers**: `cargo test -p piperine-numbers --test integers`
-**Run formats**: `cargo test -p piperine-numbers --test formats`
-**Run half**: `cargo test -p piperine-numbers --test half`
-**Run quad**: `cargo test -p piperine-numbers --test quad`
-**Run conversions**: `cargo test -p piperine-numbers --test conversions`
-**Run precision**: `cargo test -p piperine-numbers --test precision`
-**Run transcendental**: `cargo test -p piperine-numbers --release --test transcendental`
-**Run irw**: `cargo test -p piperine-ir --test number_widths`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run planw**: `cargo test -p piperine-plan --test number_widths`
+**Run purity**: `cargo test -p piperine-numbers --test integers purity::`
+**Run integers**: `cargo test -p piperine-numbers --test integers integers::`
+**Run formats**: `cargo test -p piperine-numbers --test floats formats::`
+**Run half**: `cargo test -p piperine-numbers --test floats half::`
+**Run quad**: `cargo test -p piperine-numbers --test floats quad::`
+**Run conversions**: `cargo test -p piperine-numbers --test floats conversions::`
+**Run precision**: `cargo test -p piperine-numbers --test floats precision::`
+**Run transcendental**: `cargo test -p piperine-numbers --release --test floats transcendental::`
+**Run irw**: `cargo test -p piperine-ir --test model number_widths::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planw**: `cargo test -p piperine-plan --test shape number_widths::`
 **Run rtw**: `cargo test -p piperine-transpile --lib rt::widths`
-**Run tw**: `cargo test -p piperine-transpile --test number_widths`
+**Run tw**: `cargo test -p piperine-transpile --test print number_widths::`
 **Run typesw**: `cargo test -p piperine-lang --test types_number_widths`
 **Run elabw**: `cargo test -p piperine-lang --test elab_number_widths`
 **Run srcw**: `cargo test -p piperine-parity --release --test source_number_widths`
-**Run apiw**: `cargo test -p piperine-api --test number_widths`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run apiw**: `cargo test -p piperine-api --test host number_widths::`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine --test book_language --test book_inventory`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`

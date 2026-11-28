@@ -16,17 +16,17 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run dsarr**: `cargo test -p piperine-digital-solver --test plan array_nets::`
 **Run bind**: `cargo test -p piperine-solver --test transient array_windows::`
 **Run rt**: `cargo test -p piperine-transpile --lib rt::array`
-**Run irarr**: `cargo test -p piperine-ir --test carrier_arrays`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run planarr**: `cargo test -p piperine-plan --test carrier_arrays`
-**Run tarr**: `cargo test -p piperine-transpile --test carrier_arrays`
+**Run irarr**: `cargo test -p piperine-ir --test model carrier_arrays::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planarr**: `cargo test -p piperine-plan --test shape carrier_arrays::`
+**Run tarr**: `cargo test -p piperine-transpile --test digital carrier_arrays::`
 **Run typesarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
 **Run elabarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run srcarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
-**Run storage**: `cargo test -p piperine-api --test carrier_array_storage`
-**Run apiarr**: `cargo test -p piperine-api --test carrier_arrays`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run storage**: `cargo test -p piperine-api --test memory carrier_array_storage::`
+**Run apiarr**: `cargo test -p piperine-api --test host carrier_arrays::`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine --test book_natures --test book_modules --test book_inventory`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

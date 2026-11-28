@@ -15,12 +15,9 @@ use std::sync::OnceLock;
 use piperine_solver::prelude::{NodeIdentifier, Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::digital;
+use piperine_parity::mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
@@ -72,7 +69,7 @@ struct Kept {
     checks: Vec<(i64, Vec<u8>, Vec<(String, String)>)>,
 }
 
-struct Keep {
+struct SeenSink {
     ir: std::sync::Arc<piperine_ir::Ir>,
     kept: Rc<RefCell<Kept>>,
 }
@@ -81,7 +78,7 @@ fn ticks(seconds: f64) -> i64 {
     (seconds * 1e15).round() as i64
 }
 
-impl Sink for Keep {
+impl Sink for SeenSink {
     fn observe(&mut self, o: &Observation) {
         let mut kept = self.kept.borrow_mut();
         match &o.kind {
@@ -116,7 +113,7 @@ fn outcome() -> &'static Outcome {
         // only the last 20 periods are read as analog values: earlier steps are not kept (each
         // kept step holds every unknown; the whole run would hold hundreds of thousands)
         options.record_from = STOP - 20.0 * PERIOD;
-        let sink = Keep { ir: built.ir.clone(), kept: kept.clone() };
+        let sink = SeenSink { ir: built.ir.clone(), kept: kept.clone() };
         let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
         let start = std::time::Instant::now();
         let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("the closed loop does not run: {e}"));
@@ -191,7 +188,7 @@ fn no_shoot_through_during_the_start() {
     // last at 599.9975 us. Exactly one record at each, none elsewhere
     assert_eq!(o.checks.len(), 120_000, "one record per rising edge of 600 us of 200 MHz");
     let made: Vec<i64> = o.checks.iter().map(|(t, _, _)| *t).collect();
-    let edges: Vec<i64> = (1..=120_000).map(mixed::rise).collect();
+    let edges: Vec<i64> = (1..=120_000).map(TopDesign::rising_edge).collect();
     assert!(made == edges, "the records are made at the rising edges: first difference at {:?}", made.iter().zip(&edges).position(|(a, b)| a != b));
     let never = vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())];
     assert!(o.checks.iter().all(|(_, _, t)| *t == never), "every record is the `never` check");

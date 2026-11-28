@@ -10,17 +10,14 @@
 
 use std::sync::{Mutex, OnceLock};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::digital;
+use piperine_parity::mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen, rise};
+use mixed::{BuiltDesign, Seen};
 use support::{HIGH, LOW, build, transient, with_buck};
 
 /// One clock count (5 ns) in ticks.
@@ -46,7 +43,7 @@ fn the_oscillator_toggles_every_half_period() {
 const STOP: f64 = 17.99e-6;
 
 fn run_once() -> Seen {
-    static BUILT: OnceLock<Mutex<Built>> = OnceLock::new();
+    static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
     let built =
         BUILT.get_or_init(|| Mutex::new(build(&with_buck("bench.msl"), "DpwmBench"))).lock().expect("the design is not poisoned");
     built.run(STOP, 1e-8)
@@ -80,18 +77,18 @@ fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
     // `width + 4` to 396 (SPEC §5.3). The first period runs on the reset width, 0: no high side,
     // and the low side from `0 + 4` to 396 as for any width.
     let mut hs = Vec::new();
-    let mut ls = vec![(rise(DEAD), HIGH.to_vec()), (rise(RELEASE), LOW.to_vec())];
+    let mut ls = vec![(TopDesign::rising_edge(DEAD), HIGH.to_vec()), (TopDesign::rising_edge(RELEASE), LOW.to_vec())];
     let mut high_intervals = Vec::new();
     let mut low_intervals = Vec::new();
     for p in 1..=8 {
         let start = N * p;
         let w = widths[p as usize - 1];
-        hs.push((rise(start), HIGH.to_vec()));
-        hs.push((rise(start + w), LOW.to_vec()));
-        ls.push((rise(start + w + DEAD), HIGH.to_vec()));
-        ls.push((rise(start + RELEASE), LOW.to_vec()));
-        high_intervals.push((rise(start), rise(start + w)));
-        low_intervals.push((rise(start + w + DEAD), rise(start + RELEASE)));
+        hs.push((TopDesign::rising_edge(start), HIGH.to_vec()));
+        hs.push((TopDesign::rising_edge(start + w), LOW.to_vec()));
+        ls.push((TopDesign::rising_edge(start + w + DEAD), HIGH.to_vec()));
+        ls.push((TopDesign::rising_edge(start + RELEASE), LOW.to_vec()));
+        high_intervals.push((TopDesign::rising_edge(start), TopDesign::rising_edge(start + w)));
+        low_intervals.push((TopDesign::rising_edge(start + w + DEAD), TopDesign::rising_edge(start + RELEASE)));
     }
     assert_eq!(transient(&seen, "DpwmBench.hs"), hs, "the high side: on at the wrap, off after `width` counts");
     assert_eq!(transient(&seen, "DpwmBench.ls"), ls, "the low side: 4 counts after the high side, off at count 396");

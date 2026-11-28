@@ -185,16 +185,14 @@ crates/piperine-lang/src/msl/parser/msl.rs::signal_decl	1
 crates/piperine-lang/src/msl/parser/ty.rs::generic_args	1
 crates/piperine-lang/src/msl/parser/ty.rs::sigtype	1
 crates/piperine-lang/src/msl/print.rs::Kid	1
-crates/piperine-lang/src/msl/print/expressions.rs::args	1
 crates/piperine-lang/src/msl/print.rs::attr	1
+crates/piperine-lang/src/msl/print.rs::ident	1
+crates/piperine-lang/src/msl/print/expressions.rs::args	1
 crates/piperine-lang/src/msl/print/expressions.rs::attrs_only	1
 crates/piperine-lang/src/msl/print/expressions.rs::expr	1
 crates/piperine-lang/src/msl/print/expressions.rs::expr_inner	1
 crates/piperine-lang/src/msl/print/expressions.rs::exprs	1
 crates/piperine-lang/src/msl/print/expressions.rs::field_inits	1
-crates/piperine-lang/src/msl/print/items.rs::fn_decl	1
-crates/piperine-lang/src/msl/print/items.rs::generic_args	1
-crates/piperine-lang/src/msl/print.rs::ident	1
 crates/piperine-lang/src/msl/print/expressions.rs::lit	1
 crates/piperine-lang/src/msl/print/expressions.rs::pat	1
 crates/piperine-lang/src/msl/print/expressions.rs::pat1	1
@@ -202,6 +200,8 @@ crates/piperine-lang/src/msl/print/expressions.rs::pat1_alt	1
 crates/piperine-lang/src/msl/print/expressions.rs::stmt	1
 crates/piperine-lang/src/msl/print/expressions.rs::stmt_kind	1
 crates/piperine-lang/src/msl/print/expressions.rs::stmts	1
+crates/piperine-lang/src/msl/print/items.rs::fn_decl	1
+crates/piperine-lang/src/msl/print/items.rs::generic_args	1
 crates/piperine-lang/src/msl/print/items.rs::ty	1
 crates/piperine-lang/src/pom/body.rs::Arg	1
 crates/piperine-lang/src/pom/body.rs::Expr	1
@@ -677,7 +677,6 @@ crates/piperine-lang/tests/types_compound.rs::decl	1
 crates/piperine-lang/tests/types_compound.rs::match_is_typed_over_enums_bools_integers_and_options	1
 crates/piperine-lang/tests/types_compound.rs::unit_enums_and_their_variants_are_typed	1
 crates/piperine-lang/tests/types_events.rs::a_delay_that_is_not_f64_is_e0433	1
-crates/piperine-lang/tests/types_events.rs::dpwm	1
 crates/piperine-lang/tests/types_events.rs::exprs_reading	1
 crates/piperine-lang/tests/types_explicit.rs::an_undriven_carrier_without_default_is_e0187	1
 crates/piperine-lang/tests/types_explicit.rs::width_is_typed_u32_on_a_concrete_type	1

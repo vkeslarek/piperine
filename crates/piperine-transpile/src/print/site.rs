@@ -382,7 +382,7 @@ mod tests {
     };
     use piperine_plan::{BodyPlan, Mode};
 
-    use crate::devices::{Devices, Ex};
+    use piperine_ir_fixtures::devices::{Devices, Ex};
     use crate::print::AnalogPrinter;
 
     /// The text of the function of `body` whose mode `pick` selects.

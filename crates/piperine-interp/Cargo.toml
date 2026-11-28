@@ -9,3 +9,6 @@ piperine-ir = { path = "../piperine-ir" }
 piperine-abi = { path = "../piperine-abi" }
 piperine-plan = { path = "../piperine-plan" }
 piperine-solver = { path = "../piperine-solver" }
+
+[dev-dependencies]
+piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }

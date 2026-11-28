@@ -13,22 +13,22 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Amended**: 2026-11-16 - user: "O lang-server é o menos importante, vai ficar para bem depois." Phase 7 of the approved plan (T50 to T54, CLI-25) is removed.
 **Approved**: 2026-11-15 - user: "Esses + fmt agora", "Adoro a ideia de benches na propria linguagem", "Tabela + plots", "Ao vivo, todos os streams", "Rust por padrão", "Agora, pequeno", "LSP só de diagnósticos agora", "Projeto RC passa-baixa" (the answers to Q1–Q8)
 **Build**: `cargo build -p piperine-project -p piperine-lang -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-api/src/failure.rs || cargo build -p piperine-api -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -f crates/piperine-cli/src/cli.rs || cargo build -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
-**Run manifest**: `cargo test -p piperine-project --test manifest`
-**Run rcpkg**: `cargo test -p piperine-project --test project`
+**Run manifest**: `cargo test -p piperine-project --test project manifest::`
+**Run rcpkg**: `cargo test -p piperine-project --test project project::`
 **Run shape**: `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
 **Run apilib**: `cargo test -p piperine-api --lib`
-**Run project**: `cargo test -p piperine-api --test project`
-**Run session**: `cargo test -p piperine-api --test session`
-**Run probes**: `cargo test -p piperine-api --test probes`
-**Run analyses**: `cargo test -p piperine-api --test analyses`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run project**: `cargo test -p piperine-api --test session project::`
+**Run session**: `cargo test -p piperine-api --test session session::`
+**Run probes**: `cargo test -p piperine-api --test session probes::`
+**Run analyses**: `cargo test -p piperine-api --test analyses analyses::`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run clilib**: `cargo test -p piperine-cli --lib`
-**Run usage**: `cargo test -p piperine-cli --test usage`
-**Run run**: `cargo test -p piperine-cli --test run`
+**Run usage**: `cargo test -p piperine-cli --test commands usage::`
+**Run run**: `cargo test -p piperine-cli --test commands run::`
 **Run buck**: `cargo test -p piperine-cli --test buck`
-**Run options**: `cargo test -p piperine-cli --test options`
+**Run options**: `cargo test -p piperine-cli --test commands options::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run commands**: `cargo test -p piperine-cli --test commands`
+**Run commands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run book**: `cargo test -p piperine-lang --test book`
 **Run format**: `cargo test -p piperine-lang --test msl_format`

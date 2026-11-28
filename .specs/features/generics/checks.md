@@ -9,16 +9,16 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
 **Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
-**Run irgen**: `cargo test -p piperine-ir --test generics`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run tgen**: `cargo test -p piperine-transpile --test generics`
-**Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
+**Run irgen**: `cargo test -p piperine-ir --test model generics::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run tgen**: `cargo test -p piperine-transpile --test print generics::`
+**Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`
 **Run parityproject**: `cargo test -p piperine-parity --test project`
-**Run apiproject**: `cargo test -p piperine-api --test project`
-**Run apisession**: `cargo test -p piperine-api --test session`
-**Run clicommands**: `cargo test -p piperine-cli --test commands`
+**Run apiproject**: `cargo test -p piperine-api --test session project::`
+**Run apisession**: `cargo test -p piperine-api --test session session::`
+**Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
@@ -40,7 +40,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run elabcarrarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run dag**: `cargo test -p piperine-digital-solver --test plan dag::`
-**Run apicarrarr**: `cargo test -p piperine-api --test carrier_arrays`
+**Run apicarrarr**: `cargo test -p piperine-api --test host carrier_arrays::`
 **Run bookcompiler**: `cargo test -p piperine --test book_compiler`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_results`
@@ -48,7 +48,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run typesimplicit**: `cargo test -p piperine-lang --test types_implicit`
 **Run elabtempl**: `cargo test -p piperine-lang --test elab_templates`
 **Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
-**Run tcontrol**: `cargo test -p piperine-transpile --test control`
+**Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_params`

@@ -27,16 +27,16 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
 **Run msformat**: `cargo test -p piperine-lang --test msl_format`
 **Run stdgalleries**: `cargo test -p piperine-lang --test std_galleries`
-**Run irchecks**: `cargo test -p piperine-ir --test check`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run apisources**: `cargo test -p piperine-api --test host_sources`
-**Run apisession**: `cargo test -p piperine-api --test session`
+**Run irchecks**: `cargo test -p piperine-ir --test model check::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run apisources**: `cargo test -p piperine-api --test host host_sources::`
+**Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run runerrors**: `cargo test -p piperine-parity --test run_errors`
 **Run sourcehost**: `cargo test -p piperine-parity --test source_host`
 **Run sourceparams**: `cargo test -p piperine-parity --test source_params`
 **Run sourcetables**: `cargo test -p piperine-parity --test source_tables`
-**Run clirun**: `cargo test -p piperine-cli --test run`
-**Run clicommands**: `cargo test -p piperine-cli --test commands`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
+**Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run bookdigital**: `cargo test -p piperine --test book_digital`
 **Run bookcorestd**: `cargo test -p piperine --test book_core_std`

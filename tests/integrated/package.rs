@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use crate::mixed::Built;
+use piperine_parity::mixed::BuiltDesign;
 use piperine_parity::project::Project as ParityProject;
 
 use crate::suite::{IntegratedPackage, Suite};
@@ -22,14 +22,14 @@ impl Designs {
     }
 
     /// `top` of the package's root crate, elaborated and compiled once.
-    fn build(top: &str) -> Built {
+    fn build(top: &str) -> BuiltDesign {
         let root = IntegratedPackage::dir().join("src/lib.msl");
         let ir = ParityProject::new(&root).elaborate(top).unwrap_or_else(|rejection| panic!("{rejection}"));
-        Built::new(ir)
+        BuiltDesign::new(ir)
     }
 
     /// How many bodies of `built` run and have a shape `piperine_abi::validate` accepts; panics on one that is not.
-    fn valid_shapes(built: &Built) -> usize {
+    fn valid_shapes(built: &BuiltDesign) -> usize {
         let mut shapes = 0;
         for body in built.ir.bodies() {
             let runs = body.analog().is_some() || body.nodes().iter().any(|node| node.init.is_some()) || !body.carriers().is_empty();
@@ -56,7 +56,7 @@ fn the_package_declares_its_runs_and_checks_clean() {
 
 #[test]
 fn every_run_compiles_with_no_warning_and_valid_shapes() {
-    // IT-03 AC 2: `Built::new` compiles the generated source and asserts `rustc` printed no warning;
+    // IT-03 AC 2: `BuiltDesign::new` compiles the generated source and asserts `rustc` printed no warning;
     // every body that runs has a shape `piperine_abi::validate` accepts; the circuit binds
     for run in IntegratedPackage::RUNS {
         let built = Designs::build(&Designs::top_of(run));

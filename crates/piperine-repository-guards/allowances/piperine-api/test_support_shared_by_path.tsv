@@ -1,3 +1,1 @@
 crates/piperine-api/tests/buck_long.rs::heap	1
-crates/piperine-api/tests/carrier_array_storage.rs::heap	1
-crates/piperine-api/tests/memory.rs::heap	1

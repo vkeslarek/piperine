@@ -629,3 +629,35 @@ fn every_listing_that_does_not_run_names_its_gap() {
     assert!(offences.is_empty(), "{}", offences.join("\n  "));
 
 }
+
+/// Plants a crate's test target as a directory, `tests/<target>/main.rs` and `<module>.rs`.
+struct DirectoryTarget;
+
+impl DirectoryTarget {
+    /// A tree holding `crates/piperine-cli/tests/commands/run.rs` with one test function.
+    fn planted() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("a temporary tree");
+        let directory = root.path().join("crates/piperine-cli/tests/commands");
+        std::fs::create_dir_all(&directory).expect("a target directory");
+        std::fs::write(directory.join("main.rs"), "mod run;\n").expect("a planted main");
+        std::fs::write(directory.join("run.rs"), "#[test]\nfn prints_the_table() {\n    let x = 1;\n}\n").expect("a planted module");
+        root
+    }
+}
+
+#[test]
+fn a_test_of_a_directory_target_resolves_through_its_module() {
+    let tree = DirectoryTarget::planted();
+    let found = Coverage::at(tree.path()).resolve("piperine-cli/commands::run::prints_the_table").expect("the module's test resolves");
+    assert!(found.body().contains("let x = 1;"), "{}", found.body());
+}
+
+#[test]
+fn a_missing_module_or_function_of_a_directory_target_fails() {
+    let tree = DirectoryTarget::planted();
+    let coverage = Coverage::at(tree.path());
+    let module = coverage.resolve("piperine-cli/commands::absent::prints_the_table").err().expect("a missing module fails");
+    assert!(module.contains("unreadable"), "{module}");
+    let function = coverage.resolve("piperine-cli/commands::run::absent").err().expect("a missing function fails");
+    assert!(function.contains("no top-level"), "{function}");
+}

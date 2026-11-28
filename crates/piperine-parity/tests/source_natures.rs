@@ -17,17 +17,12 @@ use piperine_solver::prelude::{AcSweepAnalysisOptions, AnalogVariable, Context, 
 use piperine_solver::protocol::AnalysisKind;
 use piperine_transpile::Settings;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, Seen};
+use mixed::{BuiltDesign, Seen};
 use support::{build, transient};
 
 /// A sink that keeps nothing: a sweep reads its table.
@@ -51,7 +46,7 @@ impl Model {
     }
 
     /// `top` elaborated and compiled once.
-    fn built(&self, top: &str) -> Built {
+    fn built(&self, top: &str) -> BuiltDesign {
         build(&self.project, top)
     }
 
@@ -122,7 +117,7 @@ impl Model {
 
     /// The integer fields of every record of the stream `name` a run wrote, in order: the
     /// operating point's first, then the transient's.
-    fn records(built: &Built, seen: &Seen, name: &str) -> Vec<Vec<(String, i128)>> {
+    fn records(built: &BuiltDesign, seen: &Seen, name: &str) -> Vec<Vec<(String, i128)>> {
         let streams = Streams::of(built.ir.clone());
         seen.all()
             .iter()

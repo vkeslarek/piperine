@@ -793,7 +793,7 @@ mod tests {
     use piperine_plan::{BodyPlan, Mode};
 
     use super::AnalogPrinter;
-    use crate::devices::Devices;
+    use piperine_ir_fixtures::devices::Devices;
 
     /// The five M1 bodies in one `Ir`.
     fn library() -> (Ir, [BodyId; 5]) {

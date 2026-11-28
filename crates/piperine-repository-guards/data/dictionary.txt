@@ -347,6 +347,7 @@ caret
 cargo
 carried
 carrier
+carrierless
 carriers
 carries
 carry
@@ -2077,6 +2078,8 @@ probes
 probing
 problem
 procedure
+process
+processes
 produce
 producer
 producers
@@ -2458,6 +2461,7 @@ sentence
 sentences
 sequence
 sequences
+serialization
 serialize
 serialized
 serializes
@@ -2533,6 +2537,7 @@ single
 singular
 singularity
 sink
+sinks
 site
 sites
 sits
@@ -2853,11 +2858,11 @@ transition
 transitions
 transmission
 transparent
+transpiler
 transport
 transported
 transports
 transpose
-transpiler
 trapezoid
 trapezoidal
 travel
@@ -2879,6 +2884,7 @@ truncation
 truth
 try
 tuple
+turn
 turned
 turns
 twentieth

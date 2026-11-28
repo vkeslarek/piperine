@@ -10,12 +10,8 @@
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::digital;
+use piperine_parity::mixed;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;

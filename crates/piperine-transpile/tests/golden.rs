@@ -16,14 +16,10 @@ use piperine_ir::{
 };
 use piperine_transpile::{Settings, Transpiler};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/devices.rs"]
-mod devices;
-#[allow(dead_code)]
-#[path = "../../piperine-interp/tests/support/circuits.rs"]
-mod circuits;
+use piperine_ir_fixtures::devices;
+use piperine_ir_fixtures::circuits;
 
-use circuits::Circuits;
+use circuits::HandCircuits;
 use devices::{Devices, Ex};
 
 /// The five M1 bodies, each alone as its design, at the values the parity twins give them, with
@@ -144,7 +140,7 @@ fn each_function_is_a_generic_fn_and_each_body_a_device_mod() {
     assert!(text.contains("    pub struct Diode;\n") && text.contains("    impl Device for Diode {\n"), "{text}");
 
     // a design of several bodies: one mod each, in body order, each registered by its MSL name
-    let text = source(Circuits::diode());
+    let text = source(HandCircuits::diode());
     let mods: Vec<&str> = text.lines().filter(|l| l.starts_with("pub mod ") && l.ends_with('{')).collect();
     assert_eq!(mods, ["pub mod vsource {", "pub mod resistor {", "pub mod diode {"]);
     for (module, ty, abi) in [("vsource", "Vsource", "Vsource"), ("resistor", "Resistor", "Resistor"), ("diode", "Diode", "Diode")] {
@@ -256,7 +252,7 @@ fn a_design_with_nothing_to_run_has_no_module() {
 fn a_body_without_analog_prints_no_terms_function() {
     // `RcHeld` holds `out` at 0 V and has no `analog` block (edge case 2): it runs, with its
     // shape and no function
-    let text = source(Circuits::rc_held());
+    let text = source(HandCircuits::rc_held());
     let start = text.find("pub mod rc_held {").expect("RcHeld has a module");
     let held = &text[start..];
     let end = held.find("\n}\n").map_or(held.len(), |e| e + 3);

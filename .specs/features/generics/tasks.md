@@ -18,16 +18,16 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
 **Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
-**Run irgen**: `cargo test -p piperine-ir --test generics`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run tgen**: `cargo test -p piperine-transpile --test generics`
-**Run plancomp**: `cargo test -p piperine-plan --test composite_shape`
+**Run irgen**: `cargo test -p piperine-ir --test model generics::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run tgen**: `cargo test -p piperine-transpile --test print generics::`
+**Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run srcgen**: `cargo test -p piperine-parity --test source_generics`
 **Run srchandles**: `cargo test -p piperine-parity --test source_handles`
 **Run parityproject**: `cargo test -p piperine-parity --test project`
-**Run apiproject**: `cargo test -p piperine-api --test project`
-**Run apisession**: `cargo test -p piperine-api --test session`
-**Run clicommands**: `cargo test -p piperine-cli --test commands`
+**Run apiproject**: `cargo test -p piperine-api --test session project::`
+**Run apisession**: `cargo test -p piperine-api --test session session::`
+**Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

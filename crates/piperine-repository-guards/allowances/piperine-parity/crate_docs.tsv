@@ -3,7 +3,6 @@ crates/piperine-parity/src/lib.rs::module bench	1
 crates/piperine-parity/src/lib.rs::module corpus	1
 crates/piperine-parity/src/lib.rs::module deviation	1
 crates/piperine-parity/src/lib.rs::module golden	1
-crates/piperine-parity/src/lib.rs::module host	1
 crates/piperine-parity/src/lib.rs::module operating_point	1
 crates/piperine-parity/src/lib.rs::module project	1
 crates/piperine-parity/src/lib.rs::module scenario	1

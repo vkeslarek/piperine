@@ -1,5 +1,1 @@
-crates/piperine-plan/tests/amended_shape.rs::allow(dead_code)	1
-crates/piperine-plan/tests/digital_shape.rs::allow(dead_code)	1
-crates/piperine-plan/tests/operators_shape.rs::allow(dead_code)	1
-crates/piperine-plan/tests/shared.rs::allow(dead_code)	3
-crates/piperine-plan/tests/structure_shape.rs::allow(dead_code)	2
+crates/piperine-plan/tests/circuit/shared.rs::allow(dead_code)	1

@@ -8,12 +8,6 @@
 #![cfg(unix)]
 
 #[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
-#[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 #[allow(dead_code)]
@@ -23,28 +17,28 @@ mod run;
 #[path = "source/widths.rs"]
 mod widths;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact.rs"]
 mod exact;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_nearest.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_nearest.rs"]
 mod exact_nearest;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_algebra.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_algebra.rs"]
 mod exact_algebra;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_integers.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_integers.rs"]
 mod exact_integers;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_parts.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_parts.rs"]
 mod exact_parts;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_root.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_root.rs"]
 mod exact_root;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/exact_values.rs"]
+#[path = "../../piperine-numbers/tests/floats/exact_values.rs"]
 mod exact_values;
 #[allow(dead_code)]
-#[path = "../../piperine-numbers/tests/support/oracle.rs"]
+#[path = "../../piperine-numbers/tests/floats/oracle.rs"]
 mod oracle;
 
 use exact::ExactRational;

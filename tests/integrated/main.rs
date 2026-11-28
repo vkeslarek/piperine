@@ -8,12 +8,6 @@
 
 // The compile-and-run support of the mixed designs of `piperine-transpile`'s tests, with the digital
 // builders it names, included by path as the parity targets do.
-#[allow(dead_code)]
-#[path = "../../crates/piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../crates/piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
 mod clock;
 mod half_bridge;
 mod package;

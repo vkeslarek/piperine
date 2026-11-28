@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run whole**: `cargo test -p piperine-parity --test buck_whole`
 **Run harness**: `cargo test -p piperine-parity --lib scenario::`
 **Run integrated**: `cargo test -p piperine --test integrated`
-**Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
+**Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run clibookbuck**: `cargo test -p piperine-cli --test book_buck`
 **Run bookcli**: `cargo test -p piperine --test book_cli`

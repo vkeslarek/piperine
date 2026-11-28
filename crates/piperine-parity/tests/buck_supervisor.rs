@@ -12,17 +12,14 @@
 use piperine_parity::project::Project;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::digital;
+use piperine_parity::mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Seen, rise};
+use mixed::Seen;
 use support::{build, decode, series, value_at, with_buck};
 
 /// The samples: one per rising edge of the oscillator.
@@ -177,9 +174,9 @@ fn model() -> Vec<Shown> {
 }
 
 /// The bench compiled and run over 2400 rising edges at 5 ns.
-fn run() -> (mixed::Built, Seen) {
+fn run() -> (mixed::BuiltDesign, Seen) {
     let built = build(&project(), "SupervisorBench");
-    let seen = built.run(rise(SAMPLES) as f64 * 1e-15 + 1e-9, 1e-8);
+    let seen = built.run(TopDesign::rising_edge(SAMPLES) as f64 * 1e-15 + 1e-9, 1e-8);
     (built, seen)
 }
 
@@ -193,7 +190,7 @@ fn observed(seen: &Seen) -> Vec<Shown> {
     );
     (0..SAMPLES)
         .map(|s| {
-            let at = rise(s + 1);
+            let at = TopDesign::rising_edge(s + 1);
             Shown {
                 mode: decode(value_at(&mode, at), 1, false),
                 fault: decode(value_at(&fault, at), 1, false),
@@ -210,7 +207,7 @@ fn assert_inputs(seen: &Seen) {
     let (en, vin_ok, cut, meas, reference, at_target) =
         (read("en"), read("vin_ok"), read("cut"), read("meas"), read("reference"), read("at_target"));
     for s in 0..SAMPLES {
-        let at = rise(s + 1) - 1;
+        let at = TopDesign::rising_edge(s + 1) - 1;
         let got = Inputs {
             en: decode(value_at(&en, at), 1, false) != 0,
             vin_ok: decode(value_at(&vin_ok, at), 1, false) != 0,
@@ -243,7 +240,7 @@ fn the_supervisor_follows_its_state_table() {
     // the reaction and the statement the record carries give its site (`Ir::record_at`)
     let entries: Vec<i64> = (0..SAMPLES as usize)
         .filter(|&s| expected[s].mode == HICCUP && (s == 0 || expected[s - 1].mode != HICCUP))
-        .map(|s| rise(s as i64 + 1))
+        .map(|s| TopDesign::rising_edge(s as i64 + 1))
         .collect();
     assert_eq!(entries.len(), 2, "the script enters `Hiccup` twice");
     let all = seen.all();
@@ -287,7 +284,7 @@ fn power_good_asserts_after_64_and_drops_after_4() {
 
     let (_, seen) = run();
     let pgood = series(&seen, "SupervisorBench.pgood");
-    let at = |s: usize| decode(value_at(&pgood, rise(s as i64 + 1)), 1, false) != 0;
+    let at = |s: usize| decode(value_at(&pgood, TopDesign::rising_edge(s as i64 + 1)), 1, false) != 0;
     for s in [83, 84, 122, 132, 133, 196, 197, 256, 257] {
         assert_eq!(at(s), expected[s].pgood, "pgood at sample {s}");
     }

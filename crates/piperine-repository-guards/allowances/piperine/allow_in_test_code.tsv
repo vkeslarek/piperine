@@ -22,4 +22,3 @@ tests/book/structure.rs::allow(dead_code)	1
 tests/book/types.rs::allow(dead_code)	1
 tests/book/values.rs::allow(dead_code)	1
 tests/book/welcome.rs::allow(dead_code)	1
-tests/integrated/main.rs::allow(dead_code)	2

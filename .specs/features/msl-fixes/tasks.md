@@ -21,19 +21,19 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run evalues**: `cargo test -p piperine-lang --test elab_values`
 **Run eanalog**: `cargo test -p piperine-lang --test elab_analog`
 **Run edig**: `cargo test -p piperine-lang --test elab_digital`
-**Run iramend**: `cargo test -p piperine-ir --test amendments`
-**Run plan**: `cargo test -p piperine-plan --test amended_shape`
-**Run frozen**: `cargo test -p piperine-interp --test frozen`
+**Run iramend**: `cargo test -p piperine-ir --test model amendments::`
+**Run plan**: `cargo test -p piperine-plan --test shape amended_shape::`
+**Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tlib**: `cargo test -p piperine-transpile --lib`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run env**: `cargo test -p piperine-solver --test transient environment::`
 **Run sfix**: `cargo test -p piperine-parity --test source_fixes`
 **Run scat**: `cargo test -p piperine-parity --test source_catalogue`
 **Run senv**: `cargo test -p piperine-parity --test source_environment`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run apilib**: `cargo test -p piperine-api --lib`
-**Run clirun**: `cargo test -p piperine-cli --test run`
-**Run clicmd**: `cargo test -p piperine-cli --test commands`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
+**Run clicmd**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

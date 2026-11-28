@@ -1,0 +1,9 @@
+[package]
+name = "piperine-ir-fixtures"
+version.workspace = true
+edition.workspace = true
+description = "The hand-built IR bodies the test suites of the IR consumers share (dev-only)"
+publish = false
+
+[dependencies]
+piperine-ir = { path = "../piperine-ir" }

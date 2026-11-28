@@ -1083,9 +1083,9 @@ mod tests {
 
     use super::ExpressionPrinter;
     use crate::Error;
-    use crate::alone::Alone;
-    use crate::devices::Devices;
-    use crate::digital::{Buck, Dx, Ty};
+    use piperine_ir_fixtures::alone::Alone;
+    use piperine_ir_fixtures::devices::Devices;
+    use piperine_ir_fixtures::digital::{Buck, Dx, ValueAliases};
 
     /// The resistor, the voltage source and the diode (with `vt` and `pnjlim`) in one `Ir`.
     fn library() -> Ir {
@@ -1217,7 +1217,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         // method of its MSL name on the receiver; `powi` takes its `i32` exponent as a Rust `i32`;
         // `unwrap` and `expect` are `rt::Unwrap::of` of the flag and the payload.
         let f = ValueType::F64;
-        let (u8_, i8_, i32_, u32_) = (Ty::u(8), Ty::i(8), Ty::i(32), Ty::u(32));
+        let (u8_, i8_, i32_, u32_) = (ValueAliases::u(8), ValueAliases::i(8), ValueAliases::i(32), ValueAliases::u(32));
         // (row, receiver, other operands, result type, text)
         type Row = (Method, ValueType, Vec<ValueType>, ValueType, &'static str);
         let rows: Vec<Row> = vec![
@@ -1269,19 +1269,19 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         // A literal exponent prints as an `i32` literal (analog code has no `rt::Int`).
         defined(&mut b, "powi_literal", &[("x", f.clone())], f.clone(), |x| {
             let receiver = x.local(0, ValueType::F64);
-            let exponent = x.int(3, Ty::i(32));
+            let exponent = x.int(3, ValueAliases::i(32));
             x.method(Method::Powi, receiver, vec![exponent], ValueType::F64)
         });
         // `unwrap` and `expect` of the pair: `rt::Unwrap::of(is, value, message)`.
         defined(&mut b, "unwrapped", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
-            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(8)));
+            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, ValueAliases::u(8)));
             let o = x.origin();
-            x.b.expr(Expr::Unwrap { is, value: v, message: None }, Ty::u(8), o)
+            x.b.expr(Expr::Unwrap { is, value: v, message: None }, ValueAliases::u(8), o)
         });
         defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
-            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, Ty::u(8)));
+            let (is, v) = (x.local(0, ValueType::Bool), x.local(1, ValueAliases::u(8)));
             let o = x.origin();
-            x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, Ty::u(8), o)
+            x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, ValueAliases::u(8), o)
         });
         let ir = Alone::finish(b);
         for (k, (method, _, _, _, want)) in rows.iter().enumerate() {
@@ -1300,28 +1300,28 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         Buck::dithered_width(&mut b, rev3);
         // §1 rule 6: `-(a % b)` on `i16`; a cast from an integer; a real cast to an integer takes
         // the real's value; `min` and `clamp`
-        defined(&mut b, "negated_rem", &[("a", Ty::i(16)), ("b", Ty::i(16))], Ty::i(16), |x| {
-            let (a, c) = (x.local(0, Ty::i(16)), x.local(1, Ty::i(16)));
-            let rem = x.bin(BinaryOp::Rem, a, c, Ty::i(16));
-            x.un(UnaryOp::Neg, rem, Ty::i(16))
+        defined(&mut b, "negated_rem", &[("a", ValueAliases::i(16)), ("b", ValueAliases::i(16))], ValueAliases::i(16), |x| {
+            let (a, c) = (x.local(0, ValueAliases::i(16)), x.local(1, ValueAliases::i(16)));
+            let rem = x.bin(BinaryOp::Rem, a, c, ValueAliases::i(16));
+            x.un(UnaryOp::Neg, rem, ValueAliases::i(16))
         });
-        defined(&mut b, "widen", &[("x", Ty::u(10))], Ty::i(16), |x| {
-            let v = x.local(0, Ty::u(10));
-            x.cast(v, Ty::i(16), Ty::i(16))
+        defined(&mut b, "widen", &[("x", ValueAliases::u(10))], ValueAliases::i(16), |x| {
+            let v = x.local(0, ValueAliases::u(10));
+            x.cast(v, ValueAliases::i(16), ValueAliases::i(16))
         });
-        defined(&mut b, "truncated", &[("x", ValueType::F64)], Ty::u(10), |x| {
+        defined(&mut b, "truncated", &[("x", ValueType::F64)], ValueAliases::u(10), |x| {
             let v = x.local(0, ValueType::F64);
-            x.cast(v, Ty::u(10), Ty::u(10))
+            x.cast(v, ValueAliases::u(10), ValueAliases::u(10))
         });
-        defined(&mut b, "capped", &[("x", Ty::u(8))], Ty::u(8), |x| {
-            let v = x.local(0, Ty::u(8));
-            let cap = x.int(168, Ty::u(8));
-            x.method(Method::Min, v, vec![cap], Ty::u(8))
+        defined(&mut b, "capped", &[("x", ValueAliases::u(8))], ValueAliases::u(8), |x| {
+            let v = x.local(0, ValueAliases::u(8));
+            let cap = x.int(168, ValueAliases::u(8));
+            x.method(Method::Min, v, vec![cap], ValueAliases::u(8))
         });
-        defined(&mut b, "held", &[("x", Ty::i(32))], Ty::i(32), |x| {
-            let v = x.local(0, Ty::i(32));
-            let (lo, hi) = (x.int(0, Ty::i(32)), x.int(2880, Ty::i(32)));
-            x.method(Method::Clamp, v, vec![lo, hi], Ty::i(32))
+        defined(&mut b, "held", &[("x", ValueAliases::i(32))], ValueAliases::i(32), |x| {
+            let v = x.local(0, ValueAliases::i(32));
+            let (lo, hi) = (x.int(0, ValueAliases::i(32)), x.int(2880, ValueAliases::i(32)));
+            x.method(Method::Clamp, v, vec![lo, hi], ValueAliases::i(32))
         });
         let ir = Alone::finish(b);
 
@@ -1368,7 +1368,7 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
         // §1 rule 5: an integer width is any `N >= 1`; a width of 0 has no Rust type and is named. (RS-Q6's 1..=64 is
         // superseded by Q4 of the number widths: `UInt<65>` and wider print as `rt::WideUInt`, tests/number_widths.rs.)
         let at = Origin { file: "dpwm.msl".into(), line: 1, col: 1 };
-        for (ty, name) in [(Ty::u(0), "UInt<0>"), (Ty::i(0), "Int<0>")] {
+        for (ty, name) in [(ValueAliases::u(0), "UInt<0>"), (ValueAliases::i(0), "Int<0>")] {
             let mut b = IrBuilder::new();
             let f = defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
             let ir = Alone::finish_unchecked(b);
@@ -1384,7 +1384,7 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
         }
         // and `check()` refuses the same IR, so `Transpiler` never reaches a printer with it
         let mut b = IrBuilder::new();
-        defined(&mut b, "wide", &[("x", Ty::u(0))], ValueType::Bool, |x| x.boolean(true));
+        defined(&mut b, "wide", &[("x", ValueAliases::u(0))], ValueType::Bool, |x| x.boolean(true));
         assert!(!Alone::finish_unchecked(b).check().is_empty(), "check() names the type too");
     }
 }

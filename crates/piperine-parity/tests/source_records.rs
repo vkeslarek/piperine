@@ -19,17 +19,13 @@ use piperine_parity::project::Project;
 use piperine_solver::prelude::{Solver, TransientAnalysisOptions};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_parity::mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Built, rise};
+use mixed::BuiltDesign;
 use support::build;
 
 /// The fixture of this target: `tests/digital/records.msl` as a project of its own.
@@ -80,7 +76,7 @@ impl Sink for Decoder {
 }
 
 /// Runs a transient to `stop` and returns every record decoded.
-fn records(built: &Built, stop: f64) -> Vec<Decoded> {
+fn records(built: &BuiltDesign, stop: f64) -> Vec<Decoded> {
     let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
     let out = Rc::new(RefCell::new(Vec::new()));
     let mut options = TransientAnalysisOptions::new(stop, 1e-9);
@@ -103,7 +99,7 @@ fn never_reports_each_rising_edge() {
         assert_eq!(r.instance, "NeverBench.never");
         assert_eq!(r.stream, "checks");
         assert_eq!(r.texts, vec![("kind".to_string(), "require".to_string()), ("name".to_string(), "never".to_string())]);
-        assert_eq!(r.made, rise(k as i64 + 1), "made at rising edge {}", k + 1);
+        assert_eq!(r.made, TopDesign::rising_edge(k as i64 + 1), "made at rising edge {}", k + 1);
         // `pass` is the one value field, a `bool`: `{ v @0 }`
         assert_eq!(r.bytes.len(), 1, "pass is the whole record at edge {}: {:?}", k + 1, r.bytes);
     }
@@ -127,7 +123,7 @@ fn log_carries_its_severity_and_its_text() {
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())]);
         assert_eq!(r.bytes[0], severity, "severity of record {k}: {:?}", r.bytes);
         assert_eq!(r.bytes.len(), 1, "severity is the whole record: {:?}", r.bytes);
-        assert_eq!(r.made, rise(k as i64 / 2 + 1));
+        assert_eq!(r.made, TopDesign::rising_edge(k as i64 / 2 + 1));
     }
 }
 
@@ -147,7 +143,7 @@ fn records_of_two_reactions_are_told_apart() {
         assert_eq!(r.stream, "log");
         assert_eq!(r.texts, vec![("msg".to_string(), text.to_string())], "record {k}");
         assert_eq!(r.bytes, vec![severity], "severity of record {k}");
-        assert_eq!(r.made, rise(k as i64 / 2 + 1));
+        assert_eq!(r.made, TopDesign::rising_edge(k as i64 / 2 + 1));
     }
 }
 
@@ -179,7 +175,7 @@ fn records_of_two_reactions_at_different_statements_keep_their_texts() {
         let mut want = Vec::new();
         for edge in 1..=2 {
             for (severity, text) in texts.iter().enumerate() {
-                want.push((rise(edge), severity as u8, text.to_string()));
+                want.push((TopDesign::rising_edge(edge), severity as u8, text.to_string()));
             }
         }
         assert_eq!(logged(&all), want, "{bench}");

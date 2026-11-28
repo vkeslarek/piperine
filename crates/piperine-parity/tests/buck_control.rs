@@ -11,17 +11,14 @@
 
 use piperine_parity::project::Project;
 
-#[allow(dead_code)]
-#[path = "../../piperine-ir/tests/support/digital.rs"]
-mod digital;
-#[allow(dead_code)]
-#[path = "../../piperine-transpile/tests/support/mixed.rs"]
-mod mixed;
+use piperine_ir_fixtures::digital;
+use piperine_parity::mixed;
+use piperine_ir_fixtures::mixed::TopDesign;
 #[allow(dead_code)]
 #[path = "buck/support.rs"]
 mod support;
 
-use mixed::{Seen, rise};
+use mixed::Seen;
 use support::{build, decode, series, transient, value_at, with_buck};
 
 /// The samples: one per rising edge of the oscillator.
@@ -130,7 +127,7 @@ fn observed(seen: &Seen) -> Vec<State> {
     (0..SAMPLES)
         .map(|s| {
             // sample `s` is the rising edge `s + 1`; its commits apply at that instant
-            let at = rise(s + 1);
+            let at = TopDesign::rising_edge(s + 1);
             State {
                 reference: decode(value_at(&reference, at), 2, false),
                 duty: decode(value_at(&duty, at), 2, false),
@@ -161,7 +158,7 @@ fn the_ramp_and_the_pid_follow_their_difference_equations() {
     let (run, target, meas) =
         (series(&seen, "ControlBench.run"), series(&seen, "ControlBench.target"), series(&seen, "ControlBench.meas"));
     for s in 0..SAMPLES {
-        let at = rise(s + 1);
+        let at = TopDesign::rising_edge(s + 1);
         let (want_run, want_target, want_meas) = script(s);
         assert_eq!(decode(value_at(&run, at - 1), 1, false) != 0, want_run, "run at sample {s}");
         assert_eq!(decode(value_at(&target, at - 1), 2, false) as i64, want_target, "target at sample {s}");
@@ -185,7 +182,7 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     let code = transient(&seen, "SetpointBench.code");
     assert_eq!(
         code,
-        vec![(rise(2), vec![7]), (rise(5), vec![100]), (rise(8), vec![168])],
+        vec![(TopDesign::rising_edge(2), vec![7]), (TopDesign::rising_edge(5), vec![100]), (TopDesign::rising_edge(8), vec![168])],
         "the register's code changes at the three first writes and at no other time"
     );
     // the fourth write rose `wr` at the 11th edge and committed the held 168: `wr` rose there, and the

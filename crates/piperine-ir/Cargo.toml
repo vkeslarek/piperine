@@ -8,4 +8,5 @@ description = "The Piperine IR: the elaborated design as an object model (arenas
 serde.workspace = true
 
 [dev-dependencies]
+piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
 serde_json = "1"

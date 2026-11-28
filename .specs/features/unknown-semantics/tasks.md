@@ -16,17 +16,17 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabunknowns**: `cargo test -p piperine-lang --test elab_unknowns`
 **Run sourceunknowns**: `cargo test -p piperine-parity --test source_unknowns`
 **Run rt**: `cargo test -p piperine-transpile --lib rt::`
-**Run reaction**: `cargo test -p piperine-transpile --test reaction`
+**Run reaction**: `cargo test -p piperine-transpile --test digital reaction::`
 **Run abilayouts**: `cargo test -p piperine-abi --test contract layouts::`
 **Run abicaller**: `cargo test -p piperine-abi --test thunks caller::`
 **Run queue**: `cargo test -p piperine-digital-solver --test engine queue::`
 **Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`
-**Run irdigital**: `cargo test -p piperine-ir --test digital`
-**Run interp**: `cargo test -p piperine-interp --test frozen`
-**Run planshape**: `cargo test -p piperine-plan --test digital_shape`
-**Run records**: `cargo test -p piperine-api --test records`
+**Run irdigital**: `cargo test -p piperine-ir --test model digital::`
+**Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
+**Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
+**Run records**: `cargo test -p piperine-api --test records records::`
 **Run verdict**: `cargo test -p piperine-api --lib verdict`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine-cli --test book`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
