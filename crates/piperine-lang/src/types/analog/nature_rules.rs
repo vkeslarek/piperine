@@ -1,13 +1,13 @@
 //! The questions the checker asks of a nature's kind (part II §4): how many drives a carrier of
 //! it has, whether an `impl Resolve` combines them, and whether its branches carry a flow.
 
-use super::generics::generics::GenericSignature;
+use crate::types::generics::generics::GenericSignature;
 use crate::pom::{DeclId, DeclKind, Design, NatureKind, QuantityRole};
 
 /// What a nature's kind decides for the rules of `types/`: the one owner of "what kind of carrier
 /// or node is this", so no rule matches on [`NatureKind`] itself.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct NatureRules {
+pub(in crate::types) struct NatureRules {
     /// A carrier of the nature has one drive (§5.2.1): a discrete nature with no `impl Resolve`
     /// (`Bit<T>`, a project nature).
     pub one_driver: bool,
@@ -26,7 +26,7 @@ pub(super) struct NatureRules {
 impl NatureRules {
     /// The rules of `nature`; a declaration that is no nature (or an invalid one) has none of the
     /// three, so no rule that asks is satisfied by it.
-    pub(super) fn of(design: &Design, nature: DeclId) -> NatureRules {
+    pub(in crate::types) fn of(design: &Design, nature: DeclId) -> NatureRules {
         let kind = match &design.decl_data(nature).kind {
             DeclKind::Nature(data) => data.kind,
             // a nature parameter bound by `Resolve` stands for a resolved discrete nature (§22.3)
@@ -49,7 +49,7 @@ impl NatureRules {
     /// Whether two continuous natures are compatible and so connect (§4 rule 13): the same
     /// nature, or potential quantities of one name and, when both declare `flow`, flow
     /// quantities of one name. A signal-flow `VSignal` meets an `Electrical` port this way.
-    pub(super) fn compatible(design: &Design, left: DeclId, right: DeclId) -> bool {
+    pub(in crate::types) fn compatible(design: &Design, left: DeclId, right: DeclId) -> bool {
         if left == right {
             return true;
         }

@@ -769,7 +769,7 @@ impl ExpressionTyping<'_, '_> {
                     }
                 }
                 StmtKind::Empty => {}
-                StmtKind::Contribution { lhs, rhs } => self.contribution(file, node.span, *lhs, *rhs),
+                StmtKind::Contribution { lhs, rhs } => self.analog().contribution(file, node.span, *lhs, *rhs),
                 StmtKind::Commit { place, value, after } => self.commit(file, node.span, *place, *value, *after),
                 StmtKind::Item(_) | StmtKind::Signal(_) | StmtKind::Reaction(_) => {
                     self.refuse(file, node.span, RefusedForm::statement(&node.kind));

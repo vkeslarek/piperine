@@ -182,7 +182,7 @@ impl Checker<'_> {
         match name {
             "at" => {
                 let Some(arg) = args.first() else { return };
-                if self.continuous(arg.value) {
+                if self.analog().continuous(arg.value) {
                     let file = self.file_of_expr(arg.value);
                     let span = self.state.design.expr_node(arg.value).span;
                     let message = "the argument of `at` reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)`: it must be a discrete expression (§13 rule 11)".to_string();

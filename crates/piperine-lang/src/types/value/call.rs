@@ -63,14 +63,14 @@ impl ExpressionTyping<'_, '_> {
             }
             // any other head is a value called by its type: a function, else `E0180` (§1.5)
             CallClass::Instance { module: None, .. } => return self.value_call(expr, *callee, args),
-            CallClass::Probe => return self.probe(expr, false),
+            CallClass::Probe => return self.analog().probe(expr, false),
             CallClass::Unclassified => {
                 self.refuse(file, node.span, ValueForm::CallThatIsNotFunctionCall);
                 return None;
             }
         }
         match self.callee_resolution(*callee) {
-            Some(Resolution::Builtin(id)) => self.core_call(expr, id, args),
+            Some(Resolution::Builtin(id)) => self.analog().core_call(expr, id, args),
             Some(Resolution::Decl(decl)) => match &self.state.design.decl_data(decl).kind {
                 DeclKind::Fn(_) => self.function_call(expr, *callee, decl, args),
                 // A local that is no function and hides the function of its name is `E0180` (§3.5.4).
@@ -331,7 +331,7 @@ impl ExpressionTyping<'_, '_> {
             Resolution::Builtin(id) => match id.info().name {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
-                "inflow" => return self.inflow_read(expr, *recv, args),
+                "inflow" => return self.analog().inflow_read(expr, *recv, args),
                 "others" => return self.others_read(expr, *recv, args),
                 _ => {
                     self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);

@@ -11,7 +11,7 @@ use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
-use super::nature_rules::NatureRules;
+use super::analog::nature_rules::NatureRules;
 use super::check::Checker;
 use super::element_target::{DriveKind, DriveTarget, Element};
 use super::Ty;
@@ -157,7 +157,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(data.place);
         let target = self.drive_target(data.place, "definition");
         match &target {
-            Some(target) => self.check_drive_value(target, data.value, "E0337"),
+            Some(target) => self.analog().check_drive_value(target, data.value, "E0337"),
             None => {
                 self.expressions().infer(data.value);
             }
@@ -167,7 +167,7 @@ impl Checker<'_> {
         }
         for (expr, what) in [(Some(data.value), "a definition"), (data.after, "the delay of a definition")] {
             let Some(expr) = expr else { continue };
-            if self.continuous(expr) {
+            if self.analog().continuous(expr) {
                 let span = self.state.design.expr_node(expr).span;
                 let message = format!("{what} reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)`, directly or through a `let`, a function or a result: it must be a discrete expression (§8.2.5)");
                 self.coded(file, "E0336", span, message, "a continuous expression");
@@ -224,7 +224,7 @@ impl Checker<'_> {
             DeclKind::Definition(definition) => [Some(definition.value), definition.after].into_iter().flatten().any(|expr| self.modules().reads_decl(expr, input, &mut Vec::new())),
             _ => false,
         });
-        if !read_by_a_definition || !self.continuous(arg) {
+        if !read_by_a_definition || !self.analog().continuous(arg) {
             return;
         }
         let name = |decl: DeclId| self.state.design.decl_data(decl).name.as_ref().map_or(String::new(), |n| n.text.clone());
@@ -243,7 +243,7 @@ impl Checker<'_> {
     }
 
     /// The discrete carriers `expr` reads, directly or through a `let`.
-    pub(super) fn carrier_reads(&self, expr: ExprId, out: &mut BTreeSet<DeclId>, seen: &mut BTreeSet<ExprId>) {
+    pub(super) fn carrier_reads(&mut self, expr: ExprId, out: &mut BTreeSet<DeclId>, seen: &mut BTreeSet<ExprId>) {
         if !seen.insert(expr) {
             return;
         }
@@ -253,7 +253,7 @@ impl Checker<'_> {
         {
             if self.state.result.carriers.contains_key(&d) {
                 out.insert(d);
-            } else if let Some(init) = self.binding_init(d) {
+            } else if let Some(init) = self.analog().binding_init(d) {
                 self.carrier_reads(init, out, seen);
             }
         }

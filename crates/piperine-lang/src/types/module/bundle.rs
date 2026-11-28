@@ -5,7 +5,7 @@
 //! (`E0251`), and a bundle read as a value, or a literal written anywhere but a connection, is `E0264`.
 
 use super::ModuleTyping;
-use crate::types::nature_rules::NatureRules;
+use crate::types::analog::nature_rules::NatureRules;
 use crate::types::Ty;
 use crate::msl::ast::Dir;
 use crate::msl::Span;

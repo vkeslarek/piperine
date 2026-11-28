@@ -6,9 +6,10 @@
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
 
-use super::check::Checker;
-use super::generics::generics::GenericSignature;
-use super::{ConstTerm, ImplEntry, ImplTarget, Length, Ty};
+use crate::types::check::Checker;
+use super::AnalogTyping;
+use crate::types::generics::generics::GenericSignature;
+use crate::types::{ConstTerm, ImplEntry, ImplTarget, Length, Ty};
 
 /// The name of the built-in trait whose `impl`s make a nature resolved.
 const RESOLVE_TRAIT: &str = "Resolve";
@@ -27,19 +28,19 @@ pub struct ResolveImpl {
 
 /// The `impl Resolve`s of a design, read through the checker: the one owner of "which `impl`
 /// resolves this nature" and of the `E0203` shape rule.
-pub(super) struct ResolveImpls<'checker, 'design> {
+pub(in crate::types) struct ResolveImpls<'checker, 'design> {
     checker: &'checker mut Checker<'design>,
 }
 
 impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The `impl Resolve`s asked through `checker`.
-    pub(super) fn new(checker: &'checker mut Checker<'design>) -> Self {
+    pub(in crate::types) fn new(checker: &'checker mut Checker<'design>) -> Self {
         ResolveImpls { checker }
     }
 
     /// The `impl`s of `nature` whose arguments type, in declaration order. The one-argument form
     /// `impl Resolve<V>` has `X = V` (spec Q4).
-    pub(super) fn of(&mut self, nature: DeclId) -> Vec<ResolveImpl> {
+    pub(in crate::types) fn of(&mut self, nature: DeclId) -> Vec<ResolveImpl> {
         if matches!(self.checker.state.design.decl_data(nature).kind, DeclKind::GenericParam(_)) {
             return self.of_parameter(nature);
         }
@@ -114,7 +115,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     }
 
     /// The `impl Resolve` blocks written for `nature`, in declaration order.
-    pub(super) fn declarations(impls: &super::ImplTable<'_>, nature: DeclId) -> Vec<DeclId> {
+    pub(in crate::types) fn declarations(impls: &crate::types::ImplTable<'_>, nature: DeclId) -> Vec<DeclId> {
         impls.impls().iter().filter(|entry| entry.builtin_trait == Some(RESOLVE_TRAIT) && entry.target == ImplTarget::Declared(nature)).map(|entry| entry.decl).collect()
     }
 
@@ -132,7 +133,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// `E0203` at the `impl Resolve` `decl` when it is not `impl Resolve<X, V> for N` of a discrete
     /// nature `N` with `V` its `value`, holding one `resolve` with one const parameter `N: usize`,
     /// one parameter `[X; N]` and the result `V` (§4 rule 8).
-    pub(super) fn check(&mut self, decl: DeclId) {
+    pub(in crate::types) fn check(&mut self, decl: DeclId) {
         let design = self.checker.state.design;
         let DeclKind::Impl(data) = &design.decl_data(decl).kind else { return };
         let (file, span) = (design.decl_data(decl).file, design.decl_data(decl).span);
@@ -232,13 +233,13 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     }
 }
 
-impl Checker<'_> {
+impl AnalogTyping<'_, '_> {
     /// The value of a definition or a commit to `target`: a carrier of a resolved nature takes the
     /// type of the `impl Resolve` its value picks (`ResolveImpls::pick`), any other the type it
     /// holds, mismatching with `code`.
-    pub(super) fn check_drive_value(&mut self, target: &super::element_target::DriveTarget, value: ExprId, code: &'static str) {
+    pub(in crate::types) fn check_drive_value(&mut self, target: &crate::types::element_target::DriveTarget, value: ExprId, code: &'static str) {
         let resolved = match self.state.result.carriers.get(&target.carrier).map(Ty::innermost) {
-            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.state.design, *nature).resolved && target.element == super::element_target::Element::Whole => Some(*nature),
+            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.state.design, *nature).resolved && target.element == crate::types::element_target::Element::Whole => Some(*nature),
             _ => None,
         };
         match resolved {
@@ -252,11 +253,11 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl AnalogTyping<'_, '_> {
     /// The initial value `init` of the resolved carrier `carrier` is the module's first drive of it, at `(0, 0)`: it
     /// picks the `impl Resolve` its type names like any drive (§5.2.3, §5.2.15).
-    pub(super) fn resolved_initial(&mut self, carrier: DeclId, nature: DeclId, init: ExprId) {
-        self.within(super::check::Context::Const, |this| {
+    pub(in crate::types) fn resolved_initial(&mut self, carrier: DeclId, nature: DeclId, init: ExprId) {
+        self.within(crate::types::check::Context::Const, |this| {
             if let Some(picked) = ResolveImpls::new(this).pick(nature, init) {
                 this.state.result.carrier_drive_impls.entry(carrier).or_default().push(picked.implementation);
             }
@@ -265,7 +266,7 @@ impl Checker<'_> {
 
     /// `E0187` for a resolved carrier this module drives with no initial value whose driven type has no `Default`
     /// (§5.2.12): the drive has a value from `(0, 0)` on. An undelayed definition gives it one.
-    pub(super) fn missing_resolved_initial_value(&mut self, carrier: DeclId) {
+    pub(in crate::types) fn missing_resolved_initial_value(&mut self, carrier: DeclId) {
         let driven_here = self.state.carriers.book.defined.contains_key(&carrier) || self.state.carriers.book.committed.contains_key(&carrier);
         if !driven_here || self.has_initial(carrier) || self.state.carriers.book.undelayed.contains(&carrier) {
             return;
@@ -275,7 +276,7 @@ impl Checker<'_> {
         let Some(driven) = self.state.result.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
         // a hand-written `Default` is a function the elaborator folds
         self.modules().reach_written_defaults(&driven);
-        if self.trait_typing().implements(&driven, super::traits::derives::DerivedTrait::Default) {
+        if self.trait_typing().implements(&driven, crate::types::traits::derives::DerivedTrait::Default) {
             return;
         }
         let item = self.state.design.decl_data(carrier).clone();

@@ -11,7 +11,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode
 
 use super::check::Checker;
 use super::generics::generics::GenericSignature;
-use super::nature_rules::NatureRules;
+use super::analog::nature_rules::NatureRules;
 use super::{Builtin, Nominal, Ty};
 
 impl Checker<'_> {
@@ -61,7 +61,7 @@ impl Checker<'_> {
         };
         let value = self.carried_type(held)?;
         // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
-        for implementation in super::nature::ResolveImpls::declarations(&self.state.traits, nature) {
+        for implementation in super::analog::nature::ResolveImpls::declarations(&self.state.traits, nature) {
             self.reach(implementation);
             // the body of `resolve` is run by the net's resolver (`elab/resolvers.rs`): it is checked and typed with the model
             for item in self.state.design.decl_data(implementation).children.clone() {
@@ -71,7 +71,7 @@ impl Checker<'_> {
             }
         }
         if NatureRules::of(self.state.design, nature).resolved && !self.state.result.resolve_tables.contains_key(&nature) {
-            let table = super::nature::ResolveImpls::new(self).of(nature);
+            let table = super::analog::nature::ResolveImpls::new(self).of(nature);
             self.state.result.resolve_tables.insert(nature, table);
         }
         Some(Ty::Carrier { nature, value: Box::new(value) })
@@ -157,7 +157,7 @@ impl Checker<'_> {
     /// holds `V` (`X` when the bound is written `Resolve<X>`), resolved like the nature it becomes (§22.3). `None` for a
     /// bound whose types are refused.
     fn resolved_parameter_carrier(&mut self, param: DeclId) -> Option<Ty> {
-        let table = super::nature::ResolveImpls::new(self).of(param);
+        let table = super::analog::nature::ResolveImpls::new(self).of(param);
         let entry = table.first()?.clone();
         self.state.result.resolve_tables.entry(param).or_insert(table);
         Some(Ty::Carrier { nature: param, value: Box::new(entry.value) })

@@ -8,18 +8,19 @@ use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
-use super::continuity::Continuity;
 use super::definition::DriveBook;
 use super::value::flow::ExitFrame;
 use super::generics::tables::GenericsTables;
+use super::analog::tables::AnalogTables;
 use super::module::tables::ModuleTables;
 use super::value::tables::ValueTables;
 use super::value::ExpressionTyping;
+use super::analog::AnalogTyping;
 use super::module::ModuleTyping;
 use super::traits::TraitTyping;
 use super::generics::GenericsSolver;
 use super::pattern::PatternTyping;
-use super::nature_rules::NatureRules;
+use super::analog::nature_rules::NatureRules;
 use super::{ConstTerm, Ty, Types};
 
 /// Where the expression being checked is written: the §14 table allows a core primitive by it.
@@ -109,15 +110,6 @@ pub(super) struct Diagnostics {
     pub(super) reported_spans: BTreeSet<(FileId, usize, usize)>,
 }
 
-/// What checking analog behaviour (§14) keeps: which expressions are continuous, and how deep in a `ddx` the check is.
-pub(super) struct AnalogTables {
-    /// What the check knows of continuity, filled as it goes (`continuity.rs`).
-    pub(super) continuity: Continuity,
-    /// How many `ddx` values are being typed: a flow probe of a branch with no potential contribution may be read there,
-    /// where it is a leaf the derivative reads symbolically (§14.2.3), though it is no value elsewhere (`probe`).
-    pub(super) differentiated: u32,
-}
-
 /// What checking discrete carriers (§12, §13) keeps: what the module being checked drives, and how many definitions
 /// the check is inside.
 #[derive(Default)]
@@ -136,7 +128,7 @@ impl<'d> CheckState<'d> {
             diagnostics: Diagnostics::default(),
             values: ValueTables::default(),
             modules: ModuleTables::default(),
-            analog: AnalogTables { continuity: Continuity::new(design), differentiated: 0 },
+            analog: AnalogTables::new(design),
             carriers: CarrierTables::default(),
             generics: GenericsTables::default(),
             traits: std::rc::Rc::new(super::ImplTable::new(design)),
@@ -176,6 +168,11 @@ impl<'d> Checker<'d> {
         ModuleTyping::new(self)
     }
 
+    /// The view that types analog behaviour.
+    pub(super) fn analog(&mut self) -> AnalogTyping<'_, 'd> {
+        AnalogTyping::new(self)
+    }
+
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
     pub(super) fn project_defines(&self, name: &str) -> bool {
         self.state.traits.defines_method(name, |decl| self.is_std(decl))
@@ -193,9 +190,9 @@ impl<'d> Checker<'d> {
         }
         let typed: Vec<ExprId> = (0..self.state.result.exprs.len()).map(|i| ExprId(i as u32)).filter(|e| self.state.result.exprs[e.index()].is_some()).collect();
         for expr in typed {
-            self.continuous(expr);
+            self.analog().continuous(expr);
         }
-        let continuous: BTreeSet<ExprId> = self.state.analog.continuity.continuous_set().collect();
+        let continuous: BTreeSet<ExprId> = self.state.analog.continuous_set().collect();
         let emits = self.state.modules.emitting();
         let mut result = self.state.result;
         result.continuous = continuous;

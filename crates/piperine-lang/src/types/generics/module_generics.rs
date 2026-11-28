@@ -8,7 +8,7 @@ use crate::pom::{Arg, DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution, T
 
 use super::GenericsSolver;
 use super::inference::Inference;
-use crate::types::nature_rules::NatureRules;
+use crate::types::analog::nature_rules::NatureRules;
 use crate::types::{GenericSignature, GenericValue, Instantiation, Nominal, Substitution, Ty};
 
 impl GenericsSolver<'_, '_> {

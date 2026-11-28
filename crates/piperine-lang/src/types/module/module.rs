@@ -12,7 +12,7 @@ use crate::types::check::Context;
 use super::ModuleTyping;
 use crate::types::coverage::ElementCoverage;
 use crate::types::traits::derives::DerivedTrait;
-use crate::types::nature_rules::NatureRules;
+use crate::types::analog::nature_rules::NatureRules;
 use crate::types::{Callee, Substitution, Ty};
 
 impl ModuleTyping<'_, '_> {
@@ -53,7 +53,7 @@ impl ModuleTyping<'_, '_> {
             // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
             (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.state.design, *nature).resolved => {
                 self.initial_reads(default);
-                self.resolved_initial(decl, *nature, default);
+                self.analog().resolved_initial(decl, *nature, default);
             }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
                 let span = self.state.design.expr_node(default).span;
@@ -143,7 +143,7 @@ impl ModuleTyping<'_, '_> {
         if let Ty::Carrier { nature, .. } = &ty
             && NatureRules::of(self.state.design, *nature).resolved
         {
-            return self.resolved_initial(decl, *nature, init);
+            return self.analog().resolved_initial(decl, *nature, init);
         }
         let value = match &ty {
             Ty::Carrier { value, .. } => (**value).clone(),
@@ -498,7 +498,7 @@ impl ModuleTyping<'_, '_> {
             (None, _) => {
                 let Ty::Carrier { value, .. } = port else { return };
                 self.expressions().check_as(arg, value, "E0337");
-                if self.continuous(arg) {
+                if self.analog().continuous(arg) {
                     let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();
                     self.coded(file, "E0316", span, message, "a continuous expression at an `in` port");
                 }
@@ -672,7 +672,7 @@ impl ModuleTyping<'_, '_> {
                 continue;
             };
             if NatureRules::of(self.state.design, nature).resolved {
-                self.missing_resolved_initial_value(decl);
+                self.analog().missing_resolved_initial_value(decl);
                 continue;
             }
             // an array with no element holds nothing to start

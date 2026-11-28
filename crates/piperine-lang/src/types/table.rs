@@ -226,7 +226,7 @@ pub struct Types<'d> {
     /// The `impl Resolve`s the drives of each carrier of a resolved nature picked, in source order.
     pub(super) carrier_drive_impls: BTreeMap<DeclId, Vec<DeclId>>,
     /// The typed `impl Resolve`s of each resolved nature a carrier of which was typed.
-    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::nature::ResolveImpl>>,
+    pub(super) resolve_tables: BTreeMap<DeclId, Vec<super::analog::nature::ResolveImpl>>,
     /// The arguments of the trait bound each call through a bound names (`bounds.rs`).
     pub(super) bound_arguments: BTreeMap<ExprId, Vec<Ty>>,
     pub(super) instantiations: BTreeMap<ExprId, Instantiation>,
@@ -464,7 +464,7 @@ impl<'d> Types<'d> {
     /// definitions through it is an error, where one through resolved carriers only settles by relaxation (§8.2.3).
     pub fn is_one_driver(&self, decl: DeclId) -> bool {
         match self.carriers.get(&decl).map(Ty::innermost) {
-            Some(Ty::Carrier { nature, .. }) => super::nature_rules::NatureRules::of(self.design, *nature).one_driver,
+            Some(Ty::Carrier { nature, .. }) => super::analog::nature_rules::NatureRules::of(self.design, *nature).one_driver,
             _ => false,
         }
     }
@@ -530,7 +530,7 @@ impl<'d> Types<'d> {
 
     /// The `impl Resolve`s of the resolved nature `nature`, in declaration order; empty for a nature no
     /// carrier of which the check reached.
-    pub fn resolve_impls(&self, nature: DeclId) -> &[super::nature::ResolveImpl] {
+    pub fn resolve_impls(&self, nature: DeclId) -> &[super::analog::nature::ResolveImpl] {
         self.resolve_tables.get(&nature).map_or(&[], Vec::as_slice)
     }
 

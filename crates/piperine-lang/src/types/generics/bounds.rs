@@ -49,7 +49,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
                 let Some(wanted) = wanted else { return false };
                 let Some(driven) = wanted.first() else { return false };
-                crate::types::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
+                crate::types::analog::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
             }
             Bound::Trait { decl, arguments } => {
                 if matches!(ty, Ty::Param(param) if self.checker.generics().bounds_of(*param).contains(bound)) {

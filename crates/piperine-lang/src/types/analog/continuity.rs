@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 
 use crate::pom::{CallClass, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtKind};
 
-use super::check::Checker;
+use super::AnalogTyping;
 
 /// The `Resolution::Builtin` names whose read is continuous (§14.4, §8.2.5).
 const CONTINUOUS_BUILTINS: [&str; 5] = ["now", "freq", "gmin", "source_scale", "analysis"];
@@ -27,7 +27,7 @@ pub(super) struct Continuity {
 }
 
 impl Continuity {
-    pub(super) fn new(design: &Design) -> Self {
+    pub(in crate::types) fn new(design: &Design) -> Self {
         let mut inits = BTreeMap::new();
         for i in 0..design.decl_count() {
             if let DeclKind::Let(l) = &design.decl_data(DeclId(i as u32)).kind {
@@ -74,14 +74,14 @@ fn bind_pattern(design: &Design, pat: PatId, init: ExprId, out: &mut BTreeMap<De
     }
 }
 
-impl Checker<'_> {
+impl AnalogTyping<'_, '_> {
     /// The expression a `let` or a pattern binding stands for.
-    pub(super) fn binding_init(&self, binding: DeclId) -> Option<ExprId> {
+    pub(in crate::types) fn binding_init(&self, binding: DeclId) -> Option<ExprId> {
         self.state.analog.continuity.inits.get(&binding).copied()
     }
 
     /// Whether `expr` is a continuous expression.
-    pub(super) fn continuous(&mut self, expr: ExprId) -> bool {
+    pub(in crate::types) fn continuous(&mut self, expr: ExprId) -> bool {
         if let Some(known) = self.state.analog.continuity.expressions.get(&expr) {
             return *known;
         }

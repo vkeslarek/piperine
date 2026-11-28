@@ -4,15 +4,16 @@
 use crate::refusal::forms::{AnalogForm, ValueForm};
 use crate::pom::{Arg, BuiltinId, BuiltinKind, DeclId, DeclKind, DeferReason, ExprId, ExprKind, QuantityRole, Resolution};
 
-use super::catalogue::{Allowed, Core};
-use super::check::{Checker, Context};
+use crate::types::catalogue::{Allowed, Core};
+use crate::types::check::Context;
+use super::AnalogTyping;
 use super::nature_rules::NatureRules;
-use super::{Callee, Ty};
+use crate::types::{Callee, Ty};
 
-impl Checker<'_> {
+impl AnalogTyping<'_, '_> {
     /// The statement `lhs +> rhs;`: `lhs` is a probe of a branch (`E0410`), `rhs` is an `f64`
     /// (`E0417`).
-    pub(super) fn contribution(&mut self, file: crate::pom::FileId, span: crate::msl::Span, lhs: ExprId, rhs: ExprId) {
+    pub(in crate::types) fn contribution(&mut self, file: crate::pom::FileId, span: crate::msl::Span, lhs: ExprId, rhs: ExprId) {
         if self.state.values.context() != Context::Analog {
             self.refuse(file, span, AnalogForm::ContributionOutsideAnalogBlock);
             return;
@@ -31,7 +32,7 @@ impl Checker<'_> {
     /// `p.inflow()` (part III §6 rule 5): the flow entering the module at its port `p`, of a nature
     /// with `flow`, an `f64`. Anything else is `E0243`; it is a value, so on the left of `+>` it is
     /// `E0410` (`contribution`).
-    pub(super) fn inflow_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn inflow_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         if matches!(self.state.values.context(), Context::Function | Context::Const) {
@@ -49,58 +50,17 @@ impl Checker<'_> {
             return None;
         }
         self.expressions().infer(recv);
-        self.state.result.builtins.insert(expr, super::Builtin::Inflow);
+        self.state.result.builtins.insert(expr, crate::types::Builtin::Inflow);
         Some(Ty::F64)
     }
 
     /// A probe `v(a)`, `v(a, b)`, `potential(a, b)` or `flow(a, b)`: its nodes have one nature
     /// (`E0240`). Read as a value only a potential is in the subset; a flow probe is a target.
-    pub(super) fn probe(&mut self, expr: ExprId, target: bool) -> Option<Ty> {
+    pub(in crate::types) fn probe(&mut self, expr: ExprId, target: bool) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
-        let ExprKind::Path(path) = &self.state.design.expr_node(*callee).kind else { return None };
-        let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
-        let (role, nature) = match res {
-            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
-                DeclKind::Quantity(data) => (data.role, self.state.design.decl_data(q).parent),
-                _ => {
-                    self.refuse(file, node.span, AnalogForm::ProbeThroughThisName);
-                    return None;
-                }
-            },
-            Resolution::Builtin(id) if id.info().name == "flow" => (QuantityRole::Flow, None),
-            Resolution::Builtin(_) => (QuantityRole::Potential, None),
-            // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
-            // name is read as a potential probe until then
-            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.reads_a_template_potential(*callee, args) => {
-                self.state.result.access_roles.insert(*callee, QuantityRole::Potential);
-                (QuantityRole::Potential, None)
-            }
-            // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4); the role is
-            // recorded for the elaborator, which reads a probe and a contribution target alike through it
-            Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(*callee, args) {
-                OperandAccess::Found(role, nature) => {
-                    self.state.result.access_roles.insert(*callee, role);
-                    (role, Some(nature))
-                }
-                // `v(y)` with `let y = t;`, `t: Thermal`: what `v(t)` is at resolution (§6 rule 4, §6 rule 10, §11 rule 11)
-                OperandAccess::Missing(name) => {
-                    self.missing_access(file, *callee, &name, target);
-                    return None;
-                }
-                // an operand refused already (`E0133` for a chosen node, or a `let` of one) is no second diagnostic
-                OperandAccess::NoNode if args.first().is_some_and(|arg| self.modules().operand_refused(arg.value)) => return None,
-                OperandAccess::NoNode => {
-                    self.refuse(file, node.span, AnalogForm::ProbeThroughAccessThatNamesSeveralNatures);
-                    return None;
-                }
-            },
-            Resolution::Deferred(_) | Resolution::Unresolved => {
-                self.refuse(file, node.span, AnalogForm::ProbeThroughUnresolvedName);
-                return None;
-            }
-        };
+        let (role, nature) = self.probe_access(*callee, args, node.span, file, target)?;
         // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
         let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
         let through_handles = self.state.values.context() == Context::Function && self.modules().probes_only_handles(&operands);
@@ -120,7 +80,7 @@ impl Checker<'_> {
                 Some(generic) if self.modules().is_nature_parameter(&generic) => {}
                 Some(other) => {
                     let span = self.state.design.expr_node(arg.value).span;
-                    self.mismatch_text(file, span, "a node", &other.name(self.state.design));
+                    self.checker.mismatch_text(file, span, "a node", &other.name(self.checker.state.design));
                 }
                 None => {}
             }
@@ -158,6 +118,92 @@ impl Checker<'_> {
                 None
             }
         }
+    }
+
+    /// Judge the place the core primitive `name` is written in against `allowed`, which says where it may stand: a diagnostic
+    /// of the place (`E0323`, `E0350`, `E0352` or `E0450`) when it is not one of them.
+    fn judge_core_place(&mut self, name: &str, allowed: Allowed, file: crate::pom::FileId, span: crate::msl::Span) {
+        match (allowed, self.state.values.context()) {
+            (Allowed::Everywhere, Context::Const) => {
+                let message = format!("`{name}` is an environment function and is not allowed in a const context");
+                self.coded(file, "E0323", span, message, "environment function in a const context");
+            }
+            (Allowed::Everywhere, _) | (Allowed::Instances, Context::Analog | Context::Module) | (Allowed::Analog, Context::Analog) => {}
+            // §8.3: a core module placed in a reaction body is `E0350` as well.
+            (Allowed::Instances, Context::Reaction) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a reaction body");
+                self.coded(file, "E0350", span, message, "placement in a reaction body");
+            }
+            // §14 errors (§8.3) and §8.3.4: `ddt` and `limit` are core modules, so a placement in
+            // a `fn` or a closure is `E0350` and one in a const context is `E0352`.
+            (Allowed::Instances, Context::Function) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a `fn` or a closure");
+                self.coded(file, "E0350", span, message, "placement in a `fn` or a closure");
+            }
+            (Allowed::Instances, Context::Const) => {
+                let message = format!("`{name}` is a core module and cannot be placed in a const context");
+                self.coded(file, "E0352", span, message, "placement in a const context");
+            }
+            (_, context) => {
+                let place = match context {
+                    Context::Function => "a `fn` or a closure",
+                    Context::Reaction => "a reaction body",
+                    Context::Const => "a param default, a `where` or a `const`",
+                    Context::Module => "a module body",
+                    Context::Analog => "an `analog` block",
+                };
+                self.coded(file, "E0450", span, format!("`{name}` is not allowed in {place}"), "core primitive out of place");
+            }
+        }
+    }
+
+    /// The role (`potential` or `flow`) a probe `callee(args)` reads and the nature its name fixes, when the name fixes one:
+    /// read off the quantity the callee names, a built-in access function or, for a name no nature owns, the node it holds
+    /// (§6 rule 4). `None` once the probe was refused.
+    fn probe_access(&mut self, callee: ExprId, args: &[Arg], span: crate::msl::Span, file: crate::pom::FileId, target: bool) -> Option<(QuantityRole, Option<DeclId>)> {
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+        let result = match res {
+            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
+                DeclKind::Quantity(data) => (data.role, self.state.design.decl_data(q).parent),
+                _ => {
+                    self.refuse(file, span, AnalogForm::ProbeThroughThisName);
+                    return None;
+                }
+            },
+            Resolution::Builtin(id) if id.info().name == "flow" => (QuantityRole::Flow, None),
+            Resolution::Builtin(_) => (QuantityRole::Potential, None),
+            // `v(bank.c0.sn)`: the nature of the item is the concrete module's, known at elaboration; a potential access
+            // name is read as a potential probe until then
+            Resolution::Deferred(DeferReason::AmbiguousAccess) if self.reads_a_template_potential(callee, args) => {
+                self.state.result.access_roles.insert(callee, QuantityRole::Potential);
+                (QuantityRole::Potential, None)
+            }
+            // `v(y)` with `let y = x;`: the resolver names no nature for a local, the node it holds does (§6 rule 4); the role is
+            // recorded for the elaborator, which reads a probe and a contribution target alike through it
+            Resolution::Deferred(DeferReason::AmbiguousAccess) => match self.access_of_operand(callee, args) {
+                OperandAccess::Found(role, nature) => {
+                    self.state.result.access_roles.insert(callee, role);
+                    (role, Some(nature))
+                }
+                // `v(y)` with `let y = t;`, `t: Thermal`: what `v(t)` is at resolution (§6 rule 4, §6 rule 10, §11 rule 11)
+                OperandAccess::Missing(name) => {
+                    self.missing_access(file, callee, &name, target);
+                    return None;
+                }
+                // an operand refused already (`E0133` for a chosen node, or a `let` of one) is no second diagnostic
+                OperandAccess::NoNode if args.first().is_some_and(|arg| self.modules().operand_refused(arg.value)) => return None,
+                OperandAccess::NoNode => {
+                    self.refuse(file, span, AnalogForm::ProbeThroughAccessThatNamesSeveralNatures);
+                    return None;
+                }
+            },
+            Resolution::Deferred(_) | Resolution::Unresolved => {
+                self.refuse(file, span, AnalogForm::ProbeThroughUnresolvedName);
+                return None;
+            }
+        };
+        Some(result)
     }
 
     /// Whether an `analog` block of the module being checked contributes a potential to the branch
@@ -207,7 +253,7 @@ impl Checker<'_> {
     /// A primitive with no row is `P0001`; one the table does not allow where it is written is `E0450`, except the
     /// core modules `ddt` and `limit`, whose misplacement is `E0350` (`fn`, closure) or `E0352`
     /// (const context).
-    pub(super) fn core_call(&mut self, expr: ExprId, id: BuiltinId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn core_call(&mut self, expr: ExprId, id: BuiltinId, args: &[Arg]) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let Some(sig) = Core::signature(id) else {
@@ -220,38 +266,7 @@ impl Checker<'_> {
             self.core_event_out_of_place(expr, &name, args);
             return None;
         }
-        match (sig.allowed, self.state.values.context()) {
-            (Allowed::Everywhere, Context::Const) => {
-                let message = format!("`{name}` is an environment function and is not allowed in a const context");
-                self.coded(file, "E0323", node.span, message, "environment function in a const context");
-            }
-            (Allowed::Everywhere, _) | (Allowed::Instances, Context::Analog | Context::Module) | (Allowed::Analog, Context::Analog) => {}
-            // §8.3: a core module placed in a reaction body is `E0350` as well.
-            (Allowed::Instances, Context::Reaction) => {
-                let message = format!("`{name}` is a core module and cannot be placed in a reaction body");
-                self.coded(file, "E0350", node.span, message, "placement in a reaction body");
-            }
-            // §14 errors (§8.3) and §8.3.4: `ddt` and `limit` are core modules, so a placement in
-            // a `fn` or a closure is `E0350` and one in a const context is `E0352`.
-            (Allowed::Instances, Context::Function) => {
-                let message = format!("`{name}` is a core module and cannot be placed in a `fn` or a closure");
-                self.coded(file, "E0350", node.span, message, "placement in a `fn` or a closure");
-            }
-            (Allowed::Instances, Context::Const) => {
-                let message = format!("`{name}` is a core module and cannot be placed in a const context");
-                self.coded(file, "E0352", node.span, message, "placement in a const context");
-            }
-            (_, context) => {
-                let place = match context {
-                    Context::Function => "a `fn` or a closure",
-                    Context::Reaction => "a reaction body",
-                    Context::Const => "a param default, a `where` or a `const`",
-                    Context::Module => "a module body",
-                    Context::Analog => "an `analog` block",
-                };
-                self.coded(file, "E0450", node.span, format!("`{name}` is not allowed in {place}"), "core primitive out of place");
-            }
-        }
+        self.judge_core_place(&name, sig.allowed, file, node.span);
         self.state.result.callees.insert(expr, Callee::Core(id));
         if name == "analysis" {
             return self.analysis_call(expr, args);
@@ -348,7 +363,7 @@ enum OperandAccess {
     NoNode,
 }
 
-impl Checker<'_> {
+impl AnalogTyping<'_, '_> {
     /// The quantity an access name `callee` (`v`) names in the nature of the node its first operand holds: a `let` bound to a node
     /// keeps the node's nature, so `v(y)` reads the potential of `y`'s nature.
     fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> OperandAccess {

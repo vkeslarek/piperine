@@ -103,7 +103,7 @@ crates/piperine-lang/src/types/catalogue.rs::Lookup	1
 crates/piperine-lang/src/types/check.rs::Checker	1
 crates/piperine-lang/src/types/check.rs::Context	1
 crates/piperine-lang/src/types/traits/coherence.rs::Subject	1
-crates/piperine-lang/src/types/continuity.rs::Continuity	1
+crates/piperine-lang/src/types/analog/continuity.rs::Continuity	1
 crates/piperine-lang/src/types/element_target.rs::Step	1
 crates/piperine-lang/src/types/value/flow.rs::Flow	1
 crates/piperine-lang/src/types/value/flow.rs::LoopFrame	1

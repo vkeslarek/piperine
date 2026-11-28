@@ -424,8 +424,8 @@ crates/piperine-lang/src/types/check.rs::file_of_expr	1
 crates/piperine-lang/src/types/check.rs::ret	1
 crates/piperine-lang/src/types/value/closures.rs::closure_expr	1
 crates/piperine-lang/src/types/traits/coherence.rs::supertrait_rule	1
-crates/piperine-lang/src/types/continuity.rs::binding_init	1
-crates/piperine-lang/src/types/continuity.rs::inits	1
+crates/piperine-lang/src/types/analog/continuity.rs::binding_init	1
+crates/piperine-lang/src/types/analog/continuity.rs::inits	1
 crates/piperine-lang/src/types/value/control.rs::match_expr	1
 crates/piperine-lang/src/types/coverage.rs::undelayed_coverage	1
 crates/piperine-lang/src/types/definition.rs::undelayed	1
@@ -444,7 +444,7 @@ crates/piperine-lang/src/types/value/mod.rs::enums	1
 crates/piperine-lang/src/types/value/mod.rs::expr	1
 crates/piperine-lang/src/types/mod.rs::ty	1
 crates/piperine-lang/src/types/module/module.rs::untyped_module_let	1
-crates/piperine-lang/src/types/nature.rs::ResolveImpls	1
+crates/piperine-lang/src/types/analog/nature.rs::ResolveImpls	1
 crates/piperine-lang/src/types/module/param_requirement.rs::ty	1
 crates/piperine-lang/src/types/pattern/patterns.rs::Int	1
 crates/piperine-lang/src/types/pattern/patterns.rs::ty	1

@@ -179,7 +179,7 @@ impl ModuleTyping<'_, '_> {
             _ => return None,
         };
         let Some(Ty::Carrier { nature, .. }) = self.port_type(declared) else { return None };
-        if direction == Some(crate::msl::ast::Dir::In) || !crate::types::nature_rules::NatureRules::of(self.state.design, nature).resolved {
+        if direction == Some(crate::msl::ast::Dir::In) || !crate::types::analog::nature_rules::NatureRules::of(self.state.design, nature).resolved {
             return None;
         }
         let ExprKind::Field { expr: receiver, .. } = self.state.design.expr_node(place).kind.clone() else { return None };

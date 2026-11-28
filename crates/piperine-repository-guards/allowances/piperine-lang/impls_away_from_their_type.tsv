@@ -74,14 +74,11 @@ crates/piperine-lang/src/pom/reflect/index.rs::Signal	1
 crates/piperine-lang/src/pom/reflect/lookups.rs::Design	1
 crates/piperine-lang/src/pom/resolve/classify.rs::Design	1
 crates/piperine-lang/src/pom/to_ast.rs::SourceFile	1
-crates/piperine-lang/src/types/analog.rs::Checker	2
 crates/piperine-lang/src/types/attributes.rs::Checker	1
 crates/piperine-lang/src/types/carrier.rs::Checker	1
-crates/piperine-lang/src/types/continuity.rs::Checker	1
 crates/piperine-lang/src/types/coverage.rs::Checker	1
 crates/piperine-lang/src/types/definition.rs::Checker	1
 crates/piperine-lang/src/types/element_target.rs::Checker	1
 crates/piperine-lang/src/types/event.rs::Checker	1
-crates/piperine-lang/src/types/nature.rs::Checker	2
 crates/piperine-lang/src/types/reaction.rs::Checker	1
 crates/piperine-lang/src/types/traits/repr.rs::Types	1

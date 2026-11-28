@@ -127,7 +127,7 @@ impl TraitTyping<'_, '_> {
             return;
         }
         if self.state.traits.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait == Some("Resolve")) {
-            crate::types::nature::ResolveImpls::new(self).check(decl);
+            crate::types::analog::nature::ResolveImpls::new(self).check(decl);
             return;
         }
         if self.state.traits.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait.is_some()) {

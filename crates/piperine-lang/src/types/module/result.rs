@@ -77,8 +77,8 @@ impl ModuleTyping<'_, '_> {
         if self.state.values.context() != Context::Const {
             return false;
         }
-        let Some(init) = self.binding_init(binding) else { return false };
-        if !self.continuous(init) {
+        let Some(init) = self.analog().binding_init(binding) else { return false };
+        if !self.analog().continuous(init) {
             return false;
         }
         let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
@@ -111,7 +111,7 @@ impl ModuleTyping<'_, '_> {
     }
 
     /// Whether `expr` reads the declaration `target`, directly or through a `let`.
-    pub(in crate::types) fn reads_decl(&self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
+    pub(in crate::types) fn reads_decl(&mut self, expr: ExprId, target: DeclId, followed: &mut Vec<ExprId>) -> bool {
         let node = self.state.design.expr_node(expr);
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(d)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
@@ -119,7 +119,7 @@ impl ModuleTyping<'_, '_> {
             if d == target {
                 return true;
             }
-            if let Some(init) = self.binding_init(d)
+            if let Some(init) = self.analog().binding_init(d)
                 && !followed.contains(&init)
             {
                 followed.push(init);
@@ -135,7 +135,7 @@ impl ModuleTyping<'_, '_> {
 
     /// Whether the result of `module` reads one of its value inputs (rather than only its own
     /// carriers): a direct dependence (§8.3.5).
-    fn result_depends_directly(&self, module: DeclId) -> bool {
+    fn result_depends_directly(&mut self, module: DeclId) -> bool {
         let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return false };
         let Some(result) = m.result else { return false };
         self.value_inputs(module).into_iter().any(|input| self.reads_decl(result, input, &mut Vec::new()))
@@ -149,13 +149,13 @@ impl ModuleTyping<'_, '_> {
         let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         if self.state.modules.placing.is_empty() {
             self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name (§8.2.16)"), "a `let` that reads itself");
-        } else if self.state.modules.placing.iter().all(|p| p.is_none_or(|m| self.result_depends_directly(m))) {
+        } else if self.state.modules.placing.clone().iter().all(|p| p.is_none_or(|m| self.result_depends_directly(m))) {
             let cycle = self.cycle_names(&name);
             let message = format!("the `let` `{name}` reads itself through results that all depend directly on their input: the cycle {cycle} has no unknown in it (§8.3.5)");
             self.coded(file, "E0353", span, message, "a cycle with no unknown");
         } else if let Some(ty) = self.feedback_type(binding) {
             return Some(ty);
-        } else if self.state.modules.placing.iter().all(|placed| placed.is_some_and(|module| !self.has_result(module))) {
+        } else if self.state.modules.placing.clone().iter().all(|placed| placed.is_some_and(|module| !self.has_result(module))) {
             // through placements of modules with no result there is no instance value to feed back (§8.3.5): the `let`s read each
             // other's values (`let p = D(x) { k: q.k }; let q = D(x) { k: p.k };`); a node connection is no such read (`reach/fields.rs`)
             let cycle = self.cycle_names(&name);
