@@ -140,7 +140,7 @@ impl AnalogLowering<'_, '_, '_> {
         };
         match self.typed_local(binding) {
             Some(Ty::Str) => {
-                let text = self.text_of(scope, init)?;
+                let text = self.digital().text_of(scope, init)?;
                 scope.digital.texts.insert(binding, text);
             }
             Some(Ty::Option(_)) => {

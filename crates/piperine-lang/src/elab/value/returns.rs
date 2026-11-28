@@ -192,7 +192,7 @@ impl ValueLowering<'_, '_, '_> {
         // a generic function runs for the arguments the checker recorded at the call, one instance of each half (§3.8.10)
         let instance = if self.state.design.decl_data(function).generics_span.is_some() { Some(self.functions().concrete_instance(expr)?) } else { None };
         let arguments = instance.as_ref().map(|instance| instance.arguments.clone()).unwrap_or_default();
-        if self.is_inlined(function) {
+        if self.digital().is_inlined(function) {
             let Some(instance) = instance else { return self.lower_inlined_option_call(scope, expr, function) };
             let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
             let inlined = self.lower_inlined_option_call(scope, expr, function);
@@ -221,7 +221,7 @@ impl ValueLowering<'_, '_, '_> {
         let span = self.state.design.expr_node(expr).span;
         let ExprKind::Call { args, .. } = self.state.design.expr_node(expr).kind.clone() else { return None };
         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-        let (mut stmts, body) = self.bind_inlined_arguments(scope, function, &args)?;
+        let (mut stmts, body) = self.digital().bind_inlined_arguments(scope, function, &args)?;
         let tail = match body.stmts.last().map(|s| self.state.design.stmt_node(*s).kind.clone()) {
             Some(StmtKind::Expr { expr, semi: false }) => expr,
             _ => {
@@ -396,7 +396,7 @@ impl ValueLowering<'_, '_, '_> {
     /// receiver and the arguments are lowered once for each half. `None` after a diagnostic.
     pub(super) fn lower_option_instance_method(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId, receiver: ExprId, arguments: &[ExprId]) -> Option<Pair> {
         let span = self.state.design.expr_node(expr).span;
-        if self.is_inlined(function) {
+        if self.digital().is_inlined(function) {
             self.refuse(scope.values.file, span, ValueForm::MethodOnNatureThatReturnsOption);
             return None;
         }

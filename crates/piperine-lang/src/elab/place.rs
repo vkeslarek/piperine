@@ -15,7 +15,7 @@ use super::elaborator::Elaboration;
 use super::functions::instances::Instance;
 use super::structural::BodyKey;
 use super::analog::host_sources::{HostPort, HostSources};
-use super::resolvers::{DeclaredNet, ResolvedUse};
+use super::digital::resolvers::{DeclaredNet, ResolvedUse};
 use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};

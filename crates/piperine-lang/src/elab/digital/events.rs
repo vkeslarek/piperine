@@ -27,28 +27,28 @@
 //! branch flow, `time()`, `static()`, `gmin()` or `source_scale()`, directly or through an operand
 //! or a function), so a value input of a hoisted module is judged by what its caller gave.
 
+use super::DigitalLowering;
 use piperine_ir::{BinaryOp, Event, EventSource, Expr, ExprId as LoweredExpr, Origin, Reaction, Stmt, UnaryOp, ValueType};
 
-use super::elaborator::Elaboration;
 use super::elements::{ElementRef, Lookup};
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtId};
 use crate::types::{Builtin, Callee};
 
 /// One disjunct of a head: what fires it, and its guard split in two.
-pub(super) struct Disjunct {
-    pub(super) source: EventSource,
+pub(in crate::elab) struct Disjunct {
+    pub(in crate::elab) source: EventSource,
     /// The conjuncts the event holds.
-    pub(super) discrete: Vec<LoweredExpr>,
+    pub(in crate::elab) discrete: Vec<LoweredExpr>,
     /// The conjuncts that read a probe, `now()` or `analysis(Static)`: the `if` around the body.
-    pub(super) continuous: Vec<LoweredExpr>,
-    pub(super) origin: Origin,
+    pub(in crate::elab) continuous: Vec<LoweredExpr>,
+    pub(in crate::elab) origin: Origin,
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The `digital` blocks of `module`, read in `scope`: their reactions, in source order.
-    pub(super) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
+    pub(in crate::elab) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return };
         for block in data.behaviors.clone() {
             let decl = self.state.design.decl_data(block).clone();
@@ -80,7 +80,7 @@ impl Elaboration<'_, '_> {
         let data = self.state.design.decl_data(reaction).clone();
         let DeclKind::Reaction(r) = &data.kind else { return };
         let origin = self.state.locator.decl(reaction);
-        let mut head = Self::sub_scope(scope);
+        let mut head = Scope::sub_scope(scope);
         let Some(disjuncts) = self.disjuncts(&mut head, r.event) else { return };
         let split = disjuncts.len() > 1 && disjuncts.iter().any(|d| !d.continuous.is_empty());
         if !split {
@@ -113,7 +113,7 @@ impl Elaboration<'_, '_> {
             }
         }
         let guard = self.disjunction(&arms);
-        let mut body = Self::sub_scope(scope);
+        let mut body = Scope::sub_scope(scope);
         if let Some(stmts) = self.reaction_body_under(&mut body, &r.body.stmts, |_| guard) {
             self.state.digital.structure.reactions.push(Reaction { on, stmts, locals: body.values.locals, origin });
         }
@@ -127,7 +127,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `a && b && …` over lowered `bool`s, left to right. `None` for no operand.
-    pub(super) fn conjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn conjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
@@ -137,7 +137,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `a || b || …` over lowered `bool`s, left to right. `None` for no operand.
-    pub(super) fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn disjunction(&mut self, operands: &[LoweredExpr]) -> Option<LoweredExpr> {
         let mut iter = operands.iter().copied();
         let first = iter.next()?;
         Some(iter.fold(first, |acc, next| {
@@ -173,7 +173,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The disjuncts of the head `expr`. `None` after a diagnostic.
-    pub(super) fn disjuncts(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
+    pub(in crate::elab) fn disjuncts(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
         let node = self.state.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         match &node.kind {
@@ -312,7 +312,7 @@ impl Elaboration<'_, '_> {
     /// The lowered `bool` `conjunct` joins the guard of `d`: the continuous part when it reads a probe or a local, the
     /// discrete part otherwise. `locals` is how many locals the scope held before `conjunct` was lowered, and a `let`
     /// it added to the discrete part is refused. `None` after a diagnostic.
-    pub(super) fn add_conjunct(&mut self, scope: &mut Scope, conjunct: LoweredExpr, locals: usize, span: crate::msl::Span, d: &mut Disjunct) -> Option<()> {
+    pub(in crate::elab) fn add_conjunct(&mut self, scope: &mut Scope, conjunct: LoweredExpr, locals: usize, span: crate::msl::Span, d: &mut Disjunct) -> Option<()> {
         if self.continuous(conjunct) || self.reads_local(conjunct) {
             d.continuous.push(conjunct);
         } else if scope.values.locals.len() > locals {
@@ -361,7 +361,7 @@ impl Elaboration<'_, '_> {
     /// The optional argument `arg`, lowered as [`tolerance`](Self::tolerance) reads one: `Some(None)`
     /// for one left out or given `None`, `Some(Some(value))` for a constant or a param, `None` after a
     /// diagnostic naming `what` (`delay`'s `max` is read the same way, §14.6).
-    pub(super) fn optional_constant(&mut self, scope: &mut Scope, arg: Option<ExprId>, what: &str) -> Option<Option<LoweredExpr>> {
+    pub(in crate::elab) fn optional_constant(&mut self, scope: &mut Scope, arg: Option<ExprId>, what: &str) -> Option<Option<LoweredExpr>> {
         let Some(arg) = arg else { return Some(None) };
         let node = self.state.design.expr_node(arg).clone();
         match &node.kind {
@@ -370,7 +370,7 @@ impl Elaboration<'_, '_> {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.optional_constant(scope, Some(given), what)),
+                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.digital().optional_constant(scope, Some(given), what)),
                     None => {}
                 },
                 _ => {}
@@ -401,7 +401,7 @@ impl Elaboration<'_, '_> {
                 Some(Resolution::Builtin(_)) => true,
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => false,
-                    Some(Some(given)) => self.in_caller(scope, |this, scope| Some(this.constant_or_param(scope, given))).unwrap_or(false),
+                    Some(Some(given)) => self.in_caller(scope, |this, scope| Some(this.digital().constant_or_param(scope, given))).unwrap_or(false),
                     None => matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_) | DeclKind::Const(_)),
                 },
                 _ => false,
@@ -425,7 +425,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carrier_of(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
         let node = self.state.design.expr_node(self.peel_parens(expr)).clone();
         if let ExprKind::Field { .. } = &node.kind {
-            return self.reached_carrier(scope, self.peel_parens(expr));
+            return self.elaboration.reached_carrier(scope, self.peel_parens(expr));
         }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
@@ -516,7 +516,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// A read of carrier `c`: its value.
-    pub(super) fn carrier_read(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn carrier_read(&mut self, c: u32, origin: Origin) -> LoweredExpr {
         let carrier = &self.state.digital.structure.carriers[c as usize];
         // an array of carriers read whole is the array of its elements' values (CV-24 AC 1)
         let ty = match carrier.count {
@@ -527,14 +527,14 @@ impl Elaboration<'_, '_> {
     }
 
     /// `c.prev()`: the value of carrier `c` before its most recent change.
-    pub(super) fn previous(&mut self, c: u32, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn previous(&mut self, c: u32, origin: Origin) -> LoweredExpr {
         let ty = self.state.digital.structure.carriers[c as usize].ty.clone();
         self.emit(Expr::Previous(c), ty, origin)
     }
 
     /// The read a built-in method is as a value: `c.prev()` is the carrier's previous value and `p.inflow()`
     /// the flow entering at a port; an edge is an event (`events.rs`), never a value.
-    pub(super) fn lower_builtin_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_builtin_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(expr).span;
         match builtin {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),

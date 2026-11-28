@@ -3,43 +3,31 @@
 //! at an `in` carrier port of a placement is an anonymous definition: a signal carrier of the
 //! parent named `<instance>.<port>`, its drive, and the child's port bound to it (DIG-09 AC 3).
 
+use super::DigitalLowering;
 use piperine_ir::{Carrier, CarrierRole, Drive, ExprId as LoweredExpr, ValueType};
 
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::element_commits::PlaceTarget;
-use super::elaborator::Elaboration;
-use super::generation::Iteration;
-use super::elaborator::Scope;
+use crate::elab::generation::Iteration;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
-impl Elaboration<'_, '_> {
-    /// A scope for code of the body outside its `analog` block and its functions (a drive, a
-    /// reaction): the names of `scope` (params, frame), with no local of its own.
-    pub(super) fn sub_scope(scope: &Scope) -> Scope {
-        let mut sub = Scope::new(scope.values.file);
-        sub.values.params = scope.values.params.clone();
-        sub.values.keys = scope.values.keys.clone();
-        sub.values.frame = scope.values.frame;
-        sub.values.unrolled = scope.values.unrolled.clone();
-        sub.digital.ordinals = scope.digital.ordinals.clone();
-        sub
-    }
-
+impl DigitalLowering<'_, '_, '_> {
     /// The definitions of the module of the active frame, in source order, as drives of the body; read in `scope`. A definition written in
     /// generation is one drive per iteration that elaborates it, its loop variables the iteration's constants (§8.2.23).
-    pub(super) fn lower_definitions(&mut self, scope: &Scope) {
+    pub(in crate::elab) fn lower_definitions(&mut self, scope: &Scope) {
         let items: Vec<(DeclId, Iteration)> = self.state.structure.generated.unrolled().to_vec();
         for (child, iteration) in items {
             let data = self.state.design.decl_data(child).clone();
             let DeclKind::Definition(definition) = &data.kind else { continue };
-            let mut iteration_scope = Self::sub_scope(scope);
+            let mut iteration_scope = Scope::sub_scope(scope);
             for (variable, value) in &iteration.values {
                 iteration_scope.values.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
             }
             iteration_scope.digital.ordinals = iteration.ordinals.clone();
             let scope = &iteration_scope;
-            let mut place_scope = Self::sub_scope(scope);
+            let mut place_scope = Scope::sub_scope(scope);
             let Some(target) = self.place_target(&mut place_scope, definition.place) else { continue };
             // a definition names a constant element: each element is its own drive (`element_commits.rs`)
             if target.element.is_some() && target.constant.is_none() {
@@ -47,7 +35,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             if target.element.is_some() && definition.after.is_some() {
-                self.refuse(scope.values.file, self.state.design.expr_node(definition.place).span, DigitalForm::DelayedDefinitionOfElementOfArrayOf);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(definition.place).span, DigitalForm::DelayedDefinitionOfElementOfArrayOf);
                 continue;
             }
             let origin = self.state.locator.decl(child);
@@ -89,8 +77,8 @@ impl Elaboration<'_, '_> {
     /// The value and the delay of a drive, each lowered in a scope of its own: a drive has no
     /// local (the IR's `Drive` holds expressions only), so a `match` reads its scrutinee at each
     /// test and a `let` inside one is `P0001`.
-    pub(super) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>, wanted: Option<&ValueType>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
-        let mut sub = Self::sub_scope(scope);
+    pub(in crate::elab) fn lower_drive_value(&mut self, scope: &Scope, value: ExprId, after: Option<ExprId>, wanted: Option<&ValueType>) -> Option<(LoweredExpr, Option<LoweredExpr>)> {
+        let mut sub = Scope::sub_scope(scope);
         sub.digital.no_locals = true;
         let lowered = match wanted {
             Some(ty) => self.values().lower_stored(&mut sub, value, ty),
@@ -119,7 +107,7 @@ impl Elaboration<'_, '_> {
     /// An expression at the `in` carrier port `port` of the placement named `instance`: the
     /// signal carrier `<instance>.<port>` of the parent and its undelayed drive. The carrier's
     /// index, or `None` after a diagnostic.
-    pub(super) fn anonymous_definition(&mut self, scope: &Scope, instance: &str, port: DeclId, value: ExprId) -> Option<u32> {
+    pub(in crate::elab) fn anonymous_definition(&mut self, scope: &Scope, instance: &str, port: DeclId, value: ExprId) -> Option<u32> {
         let ty = self.carried_type(port)?;
         let port_name = self.state.design.decl_data(port).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let origin = self.expr_origin(value);

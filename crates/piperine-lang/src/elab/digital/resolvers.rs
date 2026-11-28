@@ -5,61 +5,61 @@
 //! per (nature, `impl`, count of drives, readers of `others()`) calls `resolve::<k>` for the `k` drives present
 //! (`Expr::Resolve`). The net records what it is made of in `NetData::resolution`.
 
+use super::DigitalLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{BodyId, BodySpec, Carrier, CarrierRole, Drive, Expr, FunctionId, Holder, InstanceId, InstanceSpec, NetId, NetSpec, Origin, Resolution, ValueType};
 
-use super::elaborator::Elaboration;
-use super::functions::instances::ConcreteValue;
-use super::functions::variants::Half;
+use crate::elab::functions::instances::ConcreteValue;
+use crate::elab::functions::variants::Half;
 use crate::msl::Diagnostic;
 use crate::pom::DeclId;
 use crate::types::ResolveImpl;
 
 /// What the body of a module says about one of its resolved carriers, which placement reads.
 #[derive(Debug, Clone)]
-pub(super) struct ResolvedPlan {
+pub(in crate::elab) struct ResolvedPlan {
     /// The carrier's index in the body.
-    pub(super) carrier: u32,
+    pub(in crate::elab) carrier: u32,
     /// The port or signal declaration.
-    pub(super) decl: DeclId,
+    pub(in crate::elab) decl: DeclId,
     /// The resolved nature of the carrier.
-    pub(super) nature: DeclId,
+    pub(in crate::elab) nature: DeclId,
     /// The `impl Resolve` the module's own drives picked (§5.2.15); `None` when the module drives nothing.
-    pub(super) implementation: Option<DeclId>,
+    pub(in crate::elab) implementation: Option<DeclId>,
     /// Whether the module defines or commits the carrier: it holds a drive of the net.
-    pub(super) drives: bool,
+    pub(in crate::elab) drives: bool,
     /// Whether the module reads `others()` of the carrier.
-    pub(super) reads_others: bool,
+    pub(in crate::elab) reads_others: bool,
 }
 
 /// One resolved carrier of one placed instance, bound to a net.
 #[derive(Debug, Clone)]
-pub(super) struct ResolvedUse {
-    pub(super) instance: InstanceId,
+pub(in crate::elab) struct ResolvedUse {
+    pub(in crate::elab) instance: InstanceId,
     /// The instance's path: its drive's place in the order of a net's drives.
-    pub(super) path: String,
-    pub(super) net: NetId,
-    pub(super) plan: ResolvedPlan,
+    pub(in crate::elab) path: String,
+    pub(in crate::elab) net: NetId,
+    pub(in crate::elab) plan: ResolvedPlan,
     /// The type `V` the carrier reads.
-    pub(super) value: ValueType,
+    pub(in crate::elab) value: ValueType,
     /// The type `X` the carrier is driven with.
-    pub(super) driven: ValueType,
+    pub(in crate::elab) driven: ValueType,
     /// Whether the carrier is a port of the top: the host holds a drive of its net.
-    pub(super) host_port: bool,
+    pub(in crate::elab) host_port: bool,
 }
 
 /// Where a resolved net was declared.
 #[derive(Debug, Clone)]
-pub(super) struct DeclaredNet {
-    pub(super) declared_by: InstanceId,
-    pub(super) path: String,
-    pub(super) origin: Origin,
+pub(in crate::elab) struct DeclaredNet {
+    pub(in crate::elab) declared_by: InstanceId,
+    pub(in crate::elab) path: String,
+    pub(in crate::elab) origin: Origin,
 }
 
 /// The resolved nets of a run so far: what placement saw, and the resolver bodies built from it.
 #[derive(Default)]
-pub(super) struct ResolverBodies {
+pub(in crate::elab) struct ResolverBodies {
     /// Every resolved carrier of every placed instance.
     uses: Vec<ResolvedUse>,
     /// The nets made for resolved carriers, by id.
@@ -70,12 +70,12 @@ pub(super) struct ResolverBodies {
 
 impl ResolverBodies {
     /// Remembers the resolved net `net`, made for a carrier of the instance `declared_by`.
-    pub(super) fn declare(&mut self, net: NetId, declared: DeclaredNet) {
+    pub(in crate::elab) fn declare(&mut self, net: NetId, declared: DeclaredNet) {
         self.declared.insert(net, declared);
     }
 
     /// Remembers a resolved carrier of a placed instance.
-    pub(super) fn record(&mut self, used: ResolvedUse) {
+    pub(in crate::elab) fn record(&mut self, used: ResolvedUse) {
         self.uses.push(used);
     }
 }
@@ -86,7 +86,7 @@ pub(super) struct DriveOrder;
 
 impl DriveOrder {
     /// The sort key of an instance path: each segment as its name and its array index, `a.cells[10]` after `a.cells[9]`.
-    pub(super) fn key(path: &str) -> Vec<(String, Option<u64>)> {
+    pub(in crate::elab) fn key(path: &str) -> Vec<(String, Option<u64>)> {
         path.split('.')
             .map(|segment| match segment.split_once('[') {
                 Some((name, rest)) => (name.to_string(), rest.trim_end_matches(']').parse().ok()),
@@ -96,9 +96,9 @@ impl DriveOrder {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// Builds the resolver of every resolved net the placed tree has. Nothing is built after a diagnostic.
-    pub(super) fn build_resolvers(&mut self) {
+    pub(in crate::elab) fn build_resolvers(&mut self) {
         if !self.state.diagnostics.is_empty() {
             return;
         }

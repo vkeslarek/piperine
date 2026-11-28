@@ -282,7 +282,7 @@ impl Elaboration<'_, '_> {
             }
             let (terminals, carriers, windows) = (&mut bound.terminals, &mut bound.carriers, &mut bound.windows);
             if self.state.types.node_array(*port).is_some() {
-                match self.node_array_terminals(scope, arg.value) {
+                match self.digital().node_array_terminals(scope, arg.value) {
                     Some(nodes) => terminals.extend(nodes),
                     None => ok = false,
                 }
@@ -298,8 +298,8 @@ impl Elaboration<'_, '_> {
                         if matches!(&self.state.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
                             self.state.digital.structure.handed.push((carrier, window));
                             let span = self.state.design.expr_node(arg.value).span;
-                            let reach = super::drive_overlaps::ElementReach::of_window(window);
-                            self.state.digital.structure.drive_sites.push(super::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::drive_overlaps::DriveWay::Handed, file: scope.values.file, span });
+                            let reach = super::digital::drive_overlaps::ElementReach::of_window(window);
+                            self.state.digital.structure.drive_sites.push(super::digital::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::digital::drive_overlaps::DriveWay::Handed, file: scope.values.file, span });
                         }
                         carriers.push(Some(carrier));
                         windows.push(window);
@@ -343,7 +343,7 @@ impl Elaboration<'_, '_> {
         };
         let mut shapes_agree = true;
         for (port, arg) in ports.iter().zip(args) {
-            shapes_agree &= self.check_array_argument(scope, *port, arg.value, &key_values);
+            shapes_agree &= self.digital().check_array_argument(scope, *port, arg.value, &key_values);
         }
         if !shapes_agree {
             return None;
@@ -370,7 +370,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_carrier_argument(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
         let node = self.state.design.expr_node(arg).clone();
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
-        let generated = !self.generated_carrier_levels(scope, arg).is_empty();
+        let generated = !self.digital().generated_carrier_levels(scope, arg).is_empty();
         // a field of a bundle of this module (`column.wl`) is a carrier of its own (`pom/bundles.rs`); a field of an element of an
         // array of bundles (`lanes[k].a`) is the window of that element of its leaf
         if let Some(place) = self.bundle_leaf(scope, arg)
@@ -379,7 +379,7 @@ impl Elaboration<'_, '_> {
             if place.elements.is_empty() {
                 return Some((index, None));
             }
-            return self.carrier_window(scope, arg).flatten();
+            return self.digital().carrier_window(scope, arg).flatten();
         }
         if !generated
             && let ExprKind::Path(path) = &node.kind
@@ -390,12 +390,12 @@ impl Elaboration<'_, '_> {
         }
         // an element `x[k]` or a sub-array `g[r]` of an array of carriers: the carrier and its window
         if (generated || matches!(node.kind, ExprKind::Index { .. }))
-            && let Some(found) = self.carrier_window(scope, arg)
+            && let Some(found) = self.digital().carrier_window(scope, arg)
         {
             return found;
         }
         match &self.state.design.decl_data(port).kind {
-            DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg).map(|carrier| (carrier, None)),
+            DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.digital().anonymous_definition(scope, instance, port, arg).map(|carrier| (carrier, None)),
             // The checker refuses an expression at an `out` port first (`E0314`).
             _ => {
                 self.refuse(scope.values.file, node.span, StructureForm::ExpressionAtOutCarrierPort);
@@ -445,7 +445,7 @@ impl Elaboration<'_, '_> {
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
                 // shows the expression, the instance table the constant of each instance.
                 Err(ConstFault::UnboundParam { .. }) => {
-                    let mut sub = Self::sub_scope(scope);
+                    let mut sub = Scope::sub_scope(scope);
                     match self.lower_param_expression(&mut sub, field.value) {
                         Some(value) if sub.values.locals.is_empty() => {
                             self.state.digital.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));

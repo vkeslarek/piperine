@@ -20,7 +20,7 @@ impl AnalogLowering<'_, '_, '_> {
     pub(super) fn lower_simparam(&mut self, scope: &mut Scope, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [name] = args else { return None };
         let span = self.state.design.expr_node(*name).span;
-        let Some(text) = self.text_of(scope, *name) else {
+        let Some(text) = self.digital().text_of(scope, *name) else {
             self.refuse(scope.values.file, span, ValueForm::SimparamNameThatIsNotTextLiteral);
             return None;
         };

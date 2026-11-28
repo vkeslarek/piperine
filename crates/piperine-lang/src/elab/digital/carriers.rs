@@ -7,71 +7,71 @@
 //! once the body exists. Names are read against a [`Frame`]: the module whose declarations an
 //! expression names. Frame 0 is the body's own module.
 
+use super::DigitalLowering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
-use super::body::NodePlan;
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
+use crate::elab::body::NodePlan;
+use crate::elab::consts::Bindings;
 use crate::refusal::forms::{DigitalForm, ValueForm};
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
 use crate::types::{Length, Nominal, Ty};
 
 /// What a body holds besides its analog block, in the order the IR numbers it.
 #[derive(Default)]
-pub(super) struct Structure {
+pub(in crate::elab) struct Structure {
     /// The nodes of the body in the order the IR numbers them: its own ports, then its own signals,
     /// then the signals of the hoisted frames (`hoist.rs`), each with the plan placement reads.
-    pub(super) nodes: Vec<(BodyNode, NodePlan)>,
+    pub(in crate::elab) nodes: Vec<(BodyNode, NodePlan)>,
     /// The windows of arrays of carriers each child binds: (child index, one entry per carrier port).
-    pub(super) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
+    pub(in crate::elab) child_windows: Vec<(u32, Vec<Option<piperine_ir::CarrierWindow>>)>,
     /// The arrays of nodes of the body, in declaration order (`carrier_arrays.rs`).
     pub(super) node_arrays: Vec<piperine_ir::NodeArray>,
     /// The arrays of no element the body declares (`carrier_arrays.rs`).
-    pub(super) empty_arrays: Vec<piperine_ir::EmptyArray>,
+    pub(in crate::elab) empty_arrays: Vec<piperine_ir::EmptyArray>,
     /// The hoisted frames that add a node or an `analog` statement to the body (`BodyData::hoisted`).
-    pub(super) hoisted: Vec<Hoisted>,
-    pub(super) carriers: Vec<Carrier>,
+    pub(in crate::elab) hoisted: Vec<Hoisted>,
+    pub(in crate::elab) carriers: Vec<Carrier>,
     /// How many of the leading `carriers` are ports of the body's own module (they come first): a resolved
     /// port binds the parent's net like an `in` or `out` one, a resolved signal makes its own.
-    pub(super) port_carriers: usize,
+    pub(in crate::elab) port_carriers: usize,
     /// The resolved carriers of the body, in carrier order: the index, the declaration and the nature (`resolvers.rs`).
-    pub(super) resolved_carriers: Vec<(u32, DeclId, DeclId)>,
+    pub(in crate::elab) resolved_carriers: Vec<(u32, DeclId, DeclId)>,
     /// The carriers some reaction of the body commits to.
-    pub(super) committed: BTreeSet<u32>,
+    pub(in crate::elab) committed: BTreeSet<u32>,
     /// The carriers whose `others()` the body reads.
-    pub(super) others_read: BTreeSet<u32>,
-    pub(super) drives: Vec<Drive>,
+    pub(in crate::elab) others_read: BTreeSet<u32>,
+    pub(in crate::elab) drives: Vec<Drive>,
     /// The carriers of the body (with the window of an array of them) that children hold at an `out` port: the part
     /// of each the instance drives (`element_coverage.rs`).
-    pub(super) handed: Vec<(u32, Option<piperine_ir::CarrierWindow>)>,
-    pub(super) events: Vec<Event>,
-    pub(super) reactions: Vec<Reaction>,
+    pub(in crate::elab) handed: Vec<(u32, Option<piperine_ir::CarrierWindow>)>,
+    pub(in crate::elab) events: Vec<Event>,
+    pub(in crate::elab) reactions: Vec<Reaction>,
     pub(super) streams: Vec<Stream>,
     /// The derivative sites of the body, in the order their `Expr::Derivative` reads number them.
-    pub(super) derivatives: Vec<Derivative>,
+    pub(in crate::elab) derivatives: Vec<Derivative>,
     /// The `ddx` calls of the body, in source order (`partial.rs`).
-    pub(super) partial_derivatives: Vec<piperine_ir::PartialDerivative>,
+    pub(in crate::elab) partial_derivatives: Vec<piperine_ir::PartialDerivative>,
     /// The delay sites of the body, in the order their `Expr::Delay` reads number them.
-    pub(super) delays: Vec<piperine_ir::DelaySite>,
+    pub(in crate::elab) delays: Vec<piperine_ir::DelaySite>,
     /// The noise sources of the body, in the order their `Expr::Noise` reads number them.
-    pub(super) noise_sources: Vec<piperine_ir::NoiseSource>,
+    pub(in crate::elab) noise_sources: Vec<piperine_ir::NoiseSource>,
     /// The session parameters the body reads, one per name, in the order they were first read.
-    pub(super) session_parameters: Vec<piperine_ir::SessionParameter>,
+    pub(in crate::elab) session_parameters: Vec<piperine_ir::SessionParameter>,
     /// The trace sites of the body (`emit!` in `analog`), in the order their `Stmt::Trace` numbers them.
     pub(super) traces: Vec<piperine_ir::TraceSite>,
     /// The carriers each child binds at its carrier ports: (child index, one entry per port).
-    pub(super) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
+    pub(in crate::elab) child_carriers: Vec<(u32, Vec<Option<u32>>)>,
     /// The param values of children that read the parent's params: (child, param, value).
-    pub(super) child_params: Vec<(u32, u32, ChildValue)>,
+    pub(in crate::elab) child_params: Vec<(u32, u32, ChildValue)>,
     /// The `pub` nodes and carriers of children the body reads (`reach/fields.rs`).
-    pub(super) reaches: Vec<Reach>,
+    pub(in crate::elab) reaches: Vec<Reach>,
     /// The `p.inflow()` ammeters of the body (`inflow.rs`).
-    pub(super) inflows: Vec<piperine_ir::Inflow>,
+    pub(in crate::elab) inflows: Vec<piperine_ir::Inflow>,
     /// Where each definition, commit and hand-over of a carrier of the body is written, for the overlaps judged per
     /// instance (`drive_overlaps.rs`); no part of the IR.
-    pub(super) drive_sites: Vec<super::drive_overlaps::DriveSite>,
+    pub(in crate::elab) drive_sites: Vec<super::drive_overlaps::DriveSite>,
     /// The scalar carrier mirroring each element of an array carrier the `analog` block reads, by (carrier, element)
     /// (`elements.rs`).
     pub(super) analog_mirrors: BTreeMap<(u32, u64), u32>,
@@ -80,82 +80,82 @@ pub(super) struct Structure {
 /// The module whose names an expression of the body reads, and what those names are in the body.
 /// Frame 0 is the body's own module; every other is a placement of a module with a result,
 /// hoisted into the body (`hoist.rs`).
-pub(super) struct Frame {
-    pub(super) module: DeclId,
+pub(in crate::elab) struct Frame {
+    pub(in crate::elab) module: DeclId,
     /// The frame of the placement's caller; `None` for the body's own module.
-    pub(super) parent: Option<usize>,
+    pub(in crate::elab) parent: Option<usize>,
     /// The placement (the call) that opened this frame; `None` for the body's own module and for
     /// a reach frame.
-    pub(super) call: Option<ExprId>,
+    pub(in crate::elab) call: Option<ExprId>,
     /// What the frame's carriers are named with in the body: empty for the body's own module,
     /// `gate.` for `let gate = transition(..)`.
-    pub(super) prefix: String,
+    pub(in crate::elab) prefix: String,
     /// The carrier of the body each discrete port or signal declaration of `module` is.
-    pub(super) carriers: BTreeMap<DeclId, u32>,
+    pub(in crate::elab) carriers: BTreeMap<DeclId, u32>,
     /// The terminal of the body each node port and node `signal` declaration of `module` is: frame
     /// 0's are the body's own nodes; a hoisted frame's node port is the caller's terminal for its
     /// argument, and its node `signal` a node the body gained (`hoist.rs`).
-    pub(super) nodes: BTreeMap<DeclId, Terminal>,
+    pub(in crate::elab) nodes: BTreeMap<DeclId, Terminal>,
     /// The shape of each array of nodes of `nodes`: its first terminal is element 0 (`carrier_arrays.rs`).
-    pub(super) node_shapes: BTreeMap<DeclId, super::carrier_arrays::ArrayShape>,
+    pub(in crate::elab) node_shapes: BTreeMap<DeclId, super::carrier_arrays::ArrayShape>,
     /// The arrays of carriers declared with length 0 (§1.2.3): no carrier of the body, since no element exists to hold
     /// (`carrier_arrays.rs`). Every element of one is out of range, and read whole it is the empty array.
-    pub(super) empty_arrays: BTreeSet<DeclId>,
+    pub(in crate::elab) empty_arrays: BTreeSet<DeclId>,
     /// The params of a hoisted module or of a reach frame's, bound to constants by the placement or their defaults
     /// (`reach/placement_params.rs`).
-    pub(super) params: BTreeMap<DeclId, Constant>,
+    pub(in crate::elab) params: BTreeMap<DeclId, Constant>,
     /// The params of a reach frame's module whose value does not fold (a value over a param of the reader that is not a key): the
     /// expression each is read as, where a `let` of the child reads it (`reach/placement_params.rs`).
-    pub(super) deferred_params: BTreeMap<DeclId, super::reach::placement_params::DeferredParam>,
+    pub(in crate::elab) deferred_params: BTreeMap<DeclId, crate::elab::reach::placement_params::DeferredParam>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
-    pub(super) inputs: BTreeMap<DeclId, Option<ExprId>>,
+    pub(in crate::elab) inputs: BTreeMap<DeclId, Option<ExprId>>,
     /// The frames of the placements of modules with a result that `module` writes, by call and generation iteration.
-    pub(super) placements: BTreeMap<super::hoist::PlacementKey, usize>,
+    pub(in crate::elab) placements: BTreeMap<crate::elab::hoist::PlacementKey, usize>,
     /// The placements whose hoisting failed, already reported.
-    pub(super) failed: BTreeSet<super::hoist::PlacementKey>,
+    pub(in crate::elab) failed: BTreeSet<crate::elab::hoist::PlacementKey>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
-    pub(super) derivatives: BTreeMap<ExprId, u32>,
+    pub(in crate::elab) derivatives: BTreeMap<ExprId, u32>,
     /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
-    pub(super) delays: BTreeMap<ExprId, u32>,
+    pub(in crate::elab) delays: BTreeMap<ExprId, u32>,
     /// The noise source of each `noise` call read in the frame (`noise.rs`): one call, one source.
-    pub(super) noise_sources: BTreeMap<ExprId, u32>,
+    pub(in crate::elab) noise_sources: BTreeMap<ExprId, u32>,
     /// For a reach frame (`reach/fields.rs`), the index of the child it stands for in the body's children.
-    pub(super) child: Option<u32>,
+    pub(in crate::elab) child: Option<u32>,
     /// For a reach frame below another (`reach/fields.rs`), the placement it stands for in the parent reach frame and the ordinals of its
     /// iteration there: a child of a child, reached through the chain of `parent`s up to the frame of a child of the body.
-    pub(super) placement: Option<(DeclId, Vec<u64>)>,
+    pub(in crate::elab) placement: Option<(DeclId, Vec<u64>)>,
     /// The loop variables of the unrolled analog loops the placement sat in when it was hoisted,
     /// each a constant: what the caller's expressions of its inputs read (`unroll.rs`).
-    pub(super) unrolled: Bindings,
+    pub(in crate::elab) unrolled: Bindings,
     /// What the generation of the frame's module unrolls into while the frame is not the one being lowered (parked by `enter_frame`;
     /// `Elaboration::generated` holds the active frame's, `hoist.rs`).
-    pub(super) generated: super::generation::GeneratedItems,
+    pub(in crate::elab) generated: crate::elab::generation::GeneratedItems,
     /// The iteration of the generation `for`s the placement sat in when it was hoisted: what the caller's expressions of
     /// its inputs read of the carriers and `let`s declared in those loops (§8.2.23).
-    pub(super) ordinals: Vec<(DeclId, u32)>,
+    pub(in crate::elab) ordinals: Vec<(DeclId, u32)>,
     /// What the generic parameters the frame's code names are replaced by: the arguments of the instance of a generic module
     /// the frame is, else those of the body it sits in (`generic_bodies.rs`).
-    pub(super) substitution: crate::types::Substitution,
+    pub(in crate::elab) substitution: crate::types::Substitution,
 }
 
 impl Frame {
     /// Whether the frame names a placed child (`reach/fields.rs`) rather than the body's own module or a hoisted placement: a child of the
     /// body, or a child of such a child.
-    pub(super) fn is_reached(&self) -> bool {
+    pub(in crate::elab) fn is_reached(&self) -> bool {
         self.child.is_some() || self.placement.is_some()
     }
 
     /// The frame of the body's own module.
-    pub(super) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), deferred_params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: super::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
+    pub(in crate::elab) fn root(module: DeclId) -> Frame {
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), deferred_params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: crate::elab::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The discrete ports, then the discrete signals, of `module`, as carriers of the frame
     /// `frame`: each added to the structure and named in the frame.
-    pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
+    pub(in crate::elab) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
         let mut children = self.state.design.decl_data(module).children.clone();
         // the carriers of the frame's module declared in generation are arrays, one element per iteration (`generation.rs`)
         children.extend(self.state.structure.generated.elaborated().filter(|item| matches!(self.state.design.decl_data(*item).kind, DeclKind::Signal(_))));
@@ -203,13 +203,13 @@ impl Elaboration<'_, '_> {
     }
 
     /// Append `carrier` to the body's carriers: its index.
-    pub(super) fn add_carrier(&mut self, carrier: Carrier) -> u32 {
+    pub(in crate::elab) fn add_carrier(&mut self, carrier: Carrier) -> u32 {
         self.state.digital.structure.carriers.push(carrier);
         self.state.digital.structure.carriers.len() as u32 - 1
     }
 
     /// The carried value type of a carrier declaration; `None` after a diagnostic.
-    pub(super) fn carried_type(&mut self, decl: DeclId) -> Option<ValueType> {
+    pub(in crate::elab) fn carried_type(&mut self, decl: DeclId) -> Option<ValueType> {
         let data = self.state.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let carried = match self.state.consts.typed_carrier(decl).as_ref() {
@@ -317,7 +317,7 @@ impl Elaboration<'_, '_> {
 
     /// The `impl Resolve` the resolved carrier `decl` of `nature` is driven by, and whether a drive picked it: the one the
     /// first drive picked (§5.2.15), else the nature's only one, else the one whose `X` is `V`.
-    pub(super) fn chosen_resolve_impl(&self, decl: DeclId, nature: DeclId) -> Option<(crate::types::ResolveImpl, bool)> {
+    pub(in crate::elab) fn chosen_resolve_impl(&self, decl: DeclId, nature: DeclId) -> Option<(crate::types::ResolveImpl, bool)> {
         let impls = self.state.types.resolve_impls(nature).to_vec();
         let picked = self.concrete_implementation(decl, nature);
         let chosen = match picked {
@@ -327,18 +327,6 @@ impl Elaboration<'_, '_> {
         }?
         .clone();
         Some((chosen, picked.is_some()))
-    }
-
-    /// The `impl Resolve` of `nature` the first drive of the resolved carrier `decl` picked. A carrier of a nature parameter
-    /// bound by `Resolve<X, V>` picked the bound (the checker saw no concrete nature): the instance's nature answers with its
-    /// `impl` whose drive type is `X`. `None` when no drive picked one.
-    pub(super) fn concrete_implementation(&self, decl: DeclId, nature: DeclId) -> Option<DeclId> {
-        let picked = self.state.types.carrier_drive_impls(decl).first().copied()?;
-        if !matches!(self.state.design.decl_data(picked).kind, DeclKind::GenericParam(_)) {
-            return Some(picked);
-        }
-        let driven = &self.state.types.resolve_impls(picked).first()?.driven;
-        self.state.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
@@ -375,7 +363,7 @@ impl Elaboration<'_, '_> {
     /// The constant `Default::default()` of the type `ty`, held as `stored`: `None` (the zero bytes)
     /// for an `Option`, the defaults of the parts of a tuple, an array or a struct that derives
     /// `Default` (H.8 rule 4). `None` for a type that has no default.
-    pub(super) fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
+    pub(in crate::elab) fn default_constant(&mut self, ty: &Ty, stored: &ValueType) -> Option<Constant> {
         let (variant, parts) = match (ty, stored) {
             (Ty::Option(_), ValueType::Option(_)) => (None, Vec::new()),
             (Ty::Tuple(items), ValueType::Tuple(held)) => (None, items.iter().zip(held).map(|(item, held)| self.default_constant(item, held)).collect::<Option<Vec<_>>>()?),
@@ -402,16 +390,16 @@ impl Elaboration<'_, '_> {
         let DeclKind::Fn(data) = &self.state.design.decl_data(function).kind else { return None };
         let body = data.body.clone()?;
         let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.state.design.stmt_node(*stmt).kind.clone()) else { return None };
-        let arguments: Vec<super::functions::instances::ConcreteValue> = nominal
+        let arguments: Vec<crate::elab::functions::instances::ConcreteValue> = nominal
             .arguments
             .iter()
             .map(|argument| match argument {
-                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(super::functions::instances::ConcreteValue::Const(*value)),
-                crate::types::GenericValue::Type(ty) => Some(super::functions::instances::ConcreteValue::Type(ty.clone())),
+                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(crate::elab::functions::instances::ConcreteValue::Const(*value)),
+                crate::types::GenericValue::Type(ty) => Some(crate::elab::functions::instances::ConcreteValue::Type(ty.clone())),
                 _ => None,
             })
             .collect::<Option<_>>()?;
-        let outer = self.state.consts.set_substitution(self.instance_substitution(function, &arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(function, &arguments));
         // a unit variant of an enum with no field is its tag, no composite
         let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.state.consts.value(expr, &Bindings::new()) };
         self.state.consts.set_substitution(outer);
@@ -420,7 +408,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.
-    pub(super) fn finish_structure(&mut self, body: BodyId) {
+    pub(in crate::elab) fn finish_structure(&mut self, body: BodyId) {
         let structure = std::mem::take(&mut self.state.digital.structure);
         for hoisted in structure.hoisted {
             self.state.builder.hoisted(body, hoisted);

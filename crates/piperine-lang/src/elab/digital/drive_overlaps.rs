@@ -5,15 +5,15 @@
 //! the iterations and arms elaboration takes only, §8.2.23, §8.2.24), is judged here, where every index is folded and
 //! every generation unrolled (`Types::defers_drive_overlaps`).
 
+use super::DigitalLowering;
 use piperine_ir::{CarrierWindow, Projection};
 
-use super::elaborator::Elaboration;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, FileId};
 
 /// The elements of an array carrier (or the one value of a scalar carrier) a drive reaches, flat and row-major.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ElementReach {
+pub(in crate::elab) enum ElementReach {
     /// Every element: the whole carrier.
     Whole,
     /// The elements `[first, end)`.
@@ -34,7 +34,7 @@ impl ElementReach {
     }
 
     /// The reach of the window an `out` port is given of a carrier (`None`: the whole carrier).
-    pub(super) fn of_window(window: Option<CarrierWindow>) -> ElementReach {
+    pub(in crate::elab) fn of_window(window: Option<CarrierWindow>) -> ElementReach {
         match window {
             None => ElementReach::Whole,
             Some(CarrierWindow { first, length: None }) => ElementReach::Run(first, first + 1),
@@ -54,7 +54,7 @@ impl ElementReach {
 
 /// How a drive reaches its carrier.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum DriveWay {
+pub(in crate::elab) enum DriveWay {
     /// `place = value;` of this module.
     Definition,
     /// `place <- value;` of a reaction of this module.
@@ -65,18 +65,18 @@ pub(super) enum DriveWay {
 
 /// One drive of a carrier of the body, where it is written.
 #[derive(Clone, Debug)]
-pub(super) struct DriveSite {
+pub(in crate::elab) struct DriveSite {
     /// The carrier of the body.
-    pub(super) carrier: u32,
+    pub(in crate::elab) carrier: u32,
     /// The elements it reaches.
-    pub(super) reach: ElementReach,
+    pub(in crate::elab) reach: ElementReach,
     /// The fields below the element it names, outermost first: two drives of different fields compose (§8.2.20).
-    pub(super) fields: Vec<u32>,
+    pub(in crate::elab) fields: Vec<u32>,
     /// How it drives.
-    pub(super) way: DriveWay,
+    pub(in crate::elab) way: DriveWay,
     /// The file and the span of its place.
-    pub(super) file: FileId,
-    pub(super) span: Span,
+    pub(in crate::elab) file: FileId,
+    pub(in crate::elab) span: Span,
 }
 
 impl DriveSite {
@@ -98,10 +98,10 @@ impl DriveSite {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `E0335`, `E0221` and `E0220` for the carriers of the body whose drives the checker left to each instance, as the
     /// instance `instance` elaborates them: each drive is judged against the drives before it, in the order lowered.
-    pub(super) fn judge_drive_overlaps(&mut self, instance: &str) {
+    pub(in crate::elab) fn judge_drive_overlaps(&mut self, instance: &str) {
         let mut deferred: Vec<(u32, DeclId)> = Vec::new();
         for frame in &self.state.structure.frames {
             for (decl, carrier) in &frame.carriers {

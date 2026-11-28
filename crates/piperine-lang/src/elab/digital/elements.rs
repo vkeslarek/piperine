@@ -5,29 +5,29 @@
 //! `r * C + c`. A constant index at or past the count is `E0104` naming it (§1 rule 11); an index in an event head that
 //! does not fold is `E0188` naming it (QC4: the user chose the const-expression code).
 
+use super::DigitalLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::carrier_arrays::ArrayShape;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::msl::Diagnostic;
 use crate::pom::{ExprId, ExprKind, Resolution};
 
 /// One element of an array carrier a source form names, lowered.
 #[derive(Clone, Copy, Debug)]
-pub(super) struct ElementRef {
+pub(in crate::elab) struct ElementRef {
     /// The array carrier of the body.
-    pub(super) carrier: u32,
+    pub(in crate::elab) carrier: u32,
     /// The element's index as an IR integer expression.
-    pub(super) index: LoweredExpr,
+    pub(in crate::elab) index: LoweredExpr,
     /// The element when the index folds to a constant.
-    pub(super) constant: Option<u64>,
+    pub(in crate::elab) constant: Option<u64>,
 }
 
 /// Which part of an element of an array of carriers a read takes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum ElementPart {
+pub(in crate::elab) enum ElementPart {
     /// `x[i]`.
     Value,
     /// `x[i].prev()`.
@@ -56,7 +56,7 @@ impl ElementPart {
 }
 
 /// What looking for an element in a source form found.
-pub(super) enum Lookup {
+pub(in crate::elab) enum Lookup {
     /// The form is no element of an array of carriers.
     No,
     /// A diagnostic was reported.
@@ -65,10 +65,10 @@ pub(super) enum Lookup {
     Found(ElementRef),
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The element `expr` names when it is `x[i]` (or `g[r][c]`) of an array of carriers of this module, or the handle
     /// bound to one.
-    pub(super) fn element_lookup(&mut self, scope: &mut Scope, expr: ExprId) -> Lookup {
+    pub(in crate::elab) fn element_lookup(&mut self, scope: &mut Scope, expr: ExprId) -> Lookup {
         let mut at = self.peel_parens(expr);
         let mut indexes = Vec::new();
         while let ExprKind::Index { expr: inner, index } = self.state.design.expr_node(at).kind.clone() {
@@ -132,7 +132,7 @@ impl Elaboration<'_, '_> {
     /// The levels of the carrier `root` names that the generation `for`s around the code being lowered fix: the ordinals of
     /// the iterations of the loops that declare it and that `scope` is inside, outermost first (§8.2.23). Empty for a
     /// carrier declared outside generation, or for code outside its loops.
-    pub(super) fn generated_carrier_levels(&self, scope: &Scope, root: ExprId) -> Vec<u64> {
+    pub(in crate::elab) fn generated_carrier_levels(&self, scope: &Scope, root: ExprId) -> Vec<u64> {
         let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return Vec::new() };
         let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { return Vec::new() };
         if self.state.structure.generated.of(decl).is_none() || !self.state.structure.frames[scope.values.frame].carriers.contains_key(&decl) {
@@ -204,7 +204,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `x[i]`: one element's value, typed as the carrier's value type.
-    pub(super) fn carrier_element_read(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn carrier_element_read(&mut self, scope: &Scope, element: ElementRef, origin: Origin) -> LoweredExpr {
         self.element_part(scope, element, ElementPart::Value, origin)
     }
 
@@ -255,7 +255,7 @@ impl Elaboration<'_, '_> {
 
     /// The array of `part` of every element of the array carrier `carrier`, each a constant element read: how code that
     /// becomes a function reads an array of carriers whole (abi.md §3).
-    pub(super) fn elements_of_array(&mut self, scope: &Scope, carrier: u32, part: ElementPart, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn elements_of_array(&mut self, scope: &Scope, carrier: u32, part: ElementPart, origin: Origin) -> LoweredExpr {
         let held = self.state.digital.structure.carriers[carrier as usize].clone();
         let count = held.count.unwrap_or(0);
         let ty = part.value_type(&held.ty);
@@ -295,21 +295,21 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `E0188` for a constant expected where `what` (the source text at `span`) does not fold at
     /// elaboration: it names the expression written.
-    pub(super) fn not_folded(&mut self, scope: &Scope, span: crate::msl::Span, what: &str) {
+    pub(in crate::elab) fn not_folded(&mut self, scope: &Scope, span: crate::msl::Span, what: &str) {
         let text = self.state.design.file_data(scope.values.file).text.get(span.start..span.end).unwrap_or("").to_string();
         let message = format!("not a const expression: {what} must fold at elaboration, and `{text}` does not");
         self.report(scope.values.file, Diagnostic::new("E0188", message, span, "not a const expression"));
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The run of flat elements the first `indexes.len()` levels of an array of `shape` name, `(first, length)`: each index
     /// folded over the frame's constants and the loop variables of `scope` (§8.2.23). `None` after a diagnostic: an index
     /// that does not fold is `E0188` naming it (QC4), one past the end `E0104` (§1 rule 11).
-    pub(super) fn element_run(&mut self, scope: &Scope, shape: &ArrayShape, indexes: &[ExprId]) -> Option<(u64, u64)> {
+    pub(in crate::elab) fn element_run(&mut self, scope: &Scope, shape: &ArrayShape, indexes: &[ExprId]) -> Option<(u64, u64)> {
         if indexes.len() > shape.dims.len() {
             return None;
         }
@@ -371,7 +371,7 @@ impl Elaboration<'_, '_> {
         let Some(shape) = self.state.structure.frames.get(frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
             // a node of an arm that was not elaborated (§8.2.24)
             if self.state.structure.generated.of(decl).is_some_and(Vec::is_empty) {
-                self.refer_outside_generation(scope.values.file, self.state.design.expr_node(arg).span, decl, None);
+                self.elaboration.refer_outside_generation(scope.values.file, self.state.design.expr_node(arg).span, decl, None);
                 return None;
             }
             return Some(None);
@@ -418,11 +418,11 @@ impl Elaboration<'_, '_> {
 
     /// The node `bl[k]` of an array of nodes names (`g[r][c]` of a nested one): its terminal. `Some(None)` when `arg` is no
     /// element of an array of nodes; `None` after a diagnostic (`node_run`).
-    pub(super) fn node_element(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<piperine_ir::Terminal>> {
+    pub(in crate::elab) fn node_element(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<piperine_ir::Terminal>> {
         match self.node_run(scope, arg)? {
             Some((first, _, true)) => Some(Some(piperine_ir::Terminal::Node(first))),
             Some(_) => {
-                self.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArrayOfNodesOrPartOfNested);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArrayOfNodesOrPartOfNested);
                 None
             }
             None => Some(None),
@@ -431,23 +431,23 @@ impl Elaboration<'_, '_> {
 
     /// The terminals an argument at an array port of nodes gives the child: the nodes of the whole array or of a
     /// sub-array, one terminal each. `None` after a diagnostic.
-    pub(super) fn node_array_terminals(&mut self, scope: &Scope, arg: ExprId) -> Option<Vec<piperine_ir::Terminal>> {
+    pub(in crate::elab) fn node_array_terminals(&mut self, scope: &Scope, arg: ExprId) -> Option<Vec<piperine_ir::Terminal>> {
         match self.node_run(scope, arg)? {
             Some((first, length, false)) => Some((0..length as u32).map(|k| piperine_ir::Terminal::Node(first + k)).collect()),
             _ => {
-                self.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArgumentAtArrayPortOfNodesThat);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArgumentAtArrayPortOfNodesThat);
                 None
             }
         }
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The array carrier an argument at a carrier port names through `x[k]` or a sub-array `g[r]`, and the window of it
     /// the child's port is given: one element (`length` `None`) or the run of a sub-array. The outer `None` when `arg`
     /// is no part of an array of carriers; `Some(None)` after a diagnostic (an index that does not fold is `E0188`
     /// naming it, a constant past the end `E0104`).
-    pub(super) fn carrier_window(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, Option<piperine_ir::CarrierWindow>)>> {
+    pub(in crate::elab) fn carrier_window(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, Option<piperine_ir::CarrierWindow>)>> {
         let mut at = self.peel_parens(arg);
         let mut indexes = Vec::new();
         while let ExprKind::Index { expr: inner, index } = self.state.design.expr_node(at).kind.clone() {
@@ -486,7 +486,7 @@ impl Elaboration<'_, '_> {
             return Some(Some((carrier, None)));
         }
         let prefix = ArrayShape { dims: shape.dims[..levels].to_vec() };
-        let mut inner_scope = Self::sub_scope(scope);
+        let mut inner_scope = Scope::sub_scope(scope);
         let Some(found) = self.flat_element(&mut inner_scope, carrier, &prefix, (&generated, &indexes), span) else { return Some(None) };
         let Some(first) = found.constant else {
             self.not_folded(scope, span, "the element of a connection");

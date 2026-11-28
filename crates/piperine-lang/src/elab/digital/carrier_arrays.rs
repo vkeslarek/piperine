@@ -6,11 +6,11 @@
 //! nodes `[Electrical; K]` is `K` nodes of the body named `bl[0]` to `bl[K-1]` (an MNA unknown each is inherent), kept
 //! under one name by a `NodeArray` (the host reads `Top.bl[2]` and `Top.bl`).
 
+use super::DigitalLowering;
 use piperine_ir::{AggregateData, Constant, NodeArray, ValueType};
 
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::consts::Bindings;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, ExprId, ExprKind};
 use crate::types::{Length, Ty};
@@ -26,19 +26,19 @@ pub(super) enum LengthFault {
 
 /// The shape of a declared array: its lengths from the outermost level in, and the number of elements they make.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(super) struct ArrayShape {
+pub(in crate::elab) struct ArrayShape {
     /// One length per nesting level, outermost first.
-    pub(super) dims: Vec<u64>,
+    pub(in crate::elab) dims: Vec<u64>,
 }
 
 impl ArrayShape {
     /// The number of elements: the product of the lengths.
-    pub(super) fn count(&self) -> u64 {
+    pub(in crate::elab) fn count(&self) -> u64 {
         self.dims.iter().product()
     }
 
     /// The text of element `flat`: `[1][0]` for element 2 of a `[2][2]` array.
-    pub(super) fn subscripts(&self, flat: u64) -> String {
+    pub(in crate::elab) fn subscripts(&self, flat: u64) -> String {
         let mut rest = flat;
         let mut parts = Vec::new();
         for (level, _) in self.dims.iter().enumerate() {
@@ -50,10 +50,10 @@ impl ArrayShape {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// Whether `decl` is an array of carriers of length 0 in `frame` (§1.2.3: the length is known and not negative, so
     /// zero is legal): it has no element, so the body gets no carrier for it.
-    pub(super) fn is_empty_array(&mut self, frame: usize, decl: DeclId) -> bool {
+    pub(in crate::elab) fn is_empty_array(&mut self, frame: usize, decl: DeclId) -> bool {
         let Some(array) = self.state.consts.typed_carrier_array(decl) else { return false };
         self.shape_in(&array, frame).is_some_and(|shape| shape.count() == 0)
     }
@@ -63,7 +63,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn record_empty_array(&mut self, frame: usize, decl: DeclId) {
         let declared = self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str());
         let name = format!("{}{declared}", self.state.structure.frames[frame].prefix);
-        self.state.digital.structure.empty_arrays.push(piperine_ir::EmptyArray { name, origin: self.state.locator.decl(decl) });
+        self.elaboration.state.digital.structure.empty_arrays.push(piperine_ir::EmptyArray { name, origin: self.state.locator.decl(decl) });
     }
 
     /// `E0104` for an element of the empty array `decl`: no index is in range of a length of 0 (§1 rule 11).
@@ -74,7 +74,7 @@ impl Elaboration<'_, '_> {
 
     /// The shape of the array type `ty` of a declaration of `frame`: a length that reads a param is folded over the
     /// frame's params (§8.1.2, QC2). `None` when a length does not fold.
-    pub(super) fn shape_in(&mut self, ty: &Ty, frame: usize) -> Option<ArrayShape> {
+    pub(in crate::elab) fn shape_in(&mut self, ty: &Ty, frame: usize) -> Option<ArrayShape> {
         let bindings = self.frame_bindings(frame);
         self.shape_over(ty, &bindings).ok()
     }
@@ -82,7 +82,7 @@ impl Elaboration<'_, '_> {
     /// The shape of the array type `ty` of the declaration `decl` in `frame`, or the diagnostic of why it has none:
     /// `E0104` for a length that folds to a negative number (§1.2.3 makes a length known and not negative, so a
     /// panic of the const expression the length is, §1 rule 11), `P0001` naming `what` for one that does not fold.
-    pub(super) fn declared_shape(&mut self, ty: &Ty, frame: usize, decl: DeclId, what: &str) -> Option<ArrayShape> {
+    pub(in crate::elab) fn declared_shape(&mut self, ty: &Ty, frame: usize, decl: DeclId, what: &str) -> Option<ArrayShape> {
         let bindings = self.frame_bindings(frame);
         let fault = match self.shape_over(ty, &bindings) {
             Ok(shape) => return Some(shape),
@@ -132,7 +132,7 @@ impl Elaboration<'_, '_> {
     /// `E0313` when the array `argument` handed to the array port `port` of a placement is not of the port's shape,
     /// the port's lengths folded over the placed module's params `keys` (CV-23 AC 3, §8.1.10). A shape that does not
     /// fold, or an argument that is no declared array, is left to the bind. Whether it reported.
-    pub(super) fn check_array_argument(&mut self, scope: &Scope, port: DeclId, argument: ExprId, keys: &Bindings) -> bool {
+    pub(in crate::elab) fn check_array_argument(&mut self, scope: &Scope, port: DeclId, argument: ExprId, keys: &Bindings) -> bool {
         let Some(wanted) = self.state.consts.typed_carrier_array(port).or_else(|| self.state.consts.typed_node_array(port)) else { return true };
         let Some(wanted_shape) = self.shape_over(&wanted, keys).ok() else { return true };
         let Some(found) = self.typed(argument).filter(|ty| matches!(ty, Ty::Array(..))) else { return true };
@@ -149,7 +149,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The shape and the innermost value type of the array of carriers `decl` declares; `None` after a diagnostic.
-    pub(super) fn carrier_array_shape(&mut self, decl: DeclId, frame: usize) -> Option<(ArrayShape, ValueType)> {
+    pub(in crate::elab) fn carrier_array_shape(&mut self, decl: DeclId, frame: usize) -> Option<(ArrayShape, ValueType)> {
         let data = self.state.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let Some(array) = self.state.consts.typed_carrier_array(decl) else { return None };
@@ -219,7 +219,7 @@ impl Elaboration<'_, '_> {
         }
         if inner.dims.len() > 1 {
             let span = self.state.design.expr_node(init).span;
-            self.refuse(self.state.design.decl_data(decl).file, span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
+            self.elaboration.refuse(self.state.design.decl_data(decl).file, span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
             return None;
         }
         match self.carrier_init_over(init, bindings)? {
@@ -231,7 +231,7 @@ impl Elaboration<'_, '_> {
     /// The nodes of the array `decl` of nodes in `role`, named `name[0]` to `name[K-1]` (row-major for a nested array):
     /// added to the body's nodes with the array's name, `K` consecutive terminals (the first is returned). `None` after
     /// a diagnostic.
-    pub(super) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
+    pub(in crate::elab) fn add_node_array(&mut self, decl: DeclId, role: piperine_ir::NodeRole, prefix: &str, frame: usize) -> Option<(crate::elab::digital::carrier_arrays::ArrayShape, piperine_ir::Terminal)> {
         let data = self.state.design.decl_data(decl).clone();
         let array = self.state.consts.typed_node_array(decl)?;
         let shape = self.declared_shape(&array, frame, decl, "nodes")?;
@@ -253,7 +253,7 @@ impl Elaboration<'_, '_> {
         if shape.count() == 0 {
             self.record_empty_array(frame, decl);
         } else {
-            self.state.digital.structure.node_arrays.push(NodeArray { name, first, count: shape.count() as u32, origin: self.state.locator.decl(decl) });
+            self.elaboration.state.digital.structure.node_arrays.push(NodeArray { name, first, count: shape.count() as u32, origin: self.state.locator.decl(decl) });
         }
         Some((shape, piperine_ir::Terminal::Node(first)))
     }
@@ -268,7 +268,7 @@ impl Elaboration<'_, '_> {
         let real = |this: &mut Self, expr: ExprId| match this.state.consts.value(expr, &bindings) {
             Ok(Constant::Real(value)) => Some(value),
             Ok(_) => {
-                this.refuse(file, this.state.design.expr_node(expr).span, DigitalForm::InitialValueOfArrayOfNodesThat);
+                this.elaboration.refuse(file, this.state.design.expr_node(expr).span, DigitalForm::InitialValueOfArrayOfNodesThat);
                 None
             }
             Err(fault) => {
@@ -283,7 +283,7 @@ impl Elaboration<'_, '_> {
             }
             ExprKind::Array(items) if items.len() == count => items.iter().map(|item| real(self, *item).map(Some)).collect(),
             _ => {
-                self.refuse(file, self.state.design.expr_node(init).span, DigitalForm::InitialValueOfArrayOfNodesOther);
+                self.elaboration.refuse(file, self.state.design.expr_node(init).span, DigitalForm::InitialValueOfArrayOfNodesOther);
                 None
             }
         }

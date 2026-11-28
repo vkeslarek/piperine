@@ -5,26 +5,26 @@
 //! below it. A definition names a constant element (`Drive.element`), so a generation or an unrolled loop gives each
 //! element its own drive; one that does not fold is `E0188` naming it (QC4).
 
+use super::DigitalLowering;
 use piperine_ir::{CommitTarget, ExprId as LoweredExpr, Projection, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::RefusedForm;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{ExprId, ExprKind};
 
 /// A place a commit or a definition writes, lowered.
-pub(super) struct PlaceTarget {
+pub(in crate::elab) struct PlaceTarget {
     /// The carrier of the body.
-    pub(super) carrier: u32,
+    pub(in crate::elab) carrier: u32,
     /// The flat element of an array carrier, as an expression.
-    pub(super) element: Option<LoweredExpr>,
+    pub(in crate::elab) element: Option<LoweredExpr>,
     /// The element when it folds to a constant.
-    pub(super) constant: Option<u64>,
+    pub(in crate::elab) constant: Option<u64>,
     /// The steps into the element's value.
-    pub(super) path: Vec<Projection>,
+    pub(in crate::elab) path: Vec<Projection>,
     /// The type of the levels the place names: what the written value has.
-    pub(super) ty: ValueType,
+    pub(in crate::elab) ty: ValueType,
 }
 
 impl PlaceTarget {
@@ -42,7 +42,7 @@ enum Step {
     Field { inner: ExprId, name: String },
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// The place `place` of a commit or a definition, lowered. `None` after a diagnostic.
     pub(super) fn place_target(&mut self, scope: &mut Scope, place: ExprId) -> Option<PlaceTarget> {
         if let Some(reached) = self.reached_place_target(scope, place) {
@@ -149,7 +149,7 @@ impl Elaboration<'_, '_> {
 
     /// The refusal of a place step that does not apply: `P0001` naming it, `None`.
     fn refuse_place(&mut self, scope: &Scope, place: ExprId, form: impl Into<RefusedForm>) -> Option<PlaceTarget> {
-        self.refuse(scope.values.file, self.state.design.expr_node(place).span, form);
+        self.elaboration.refuse(scope.values.file, self.state.design.expr_node(place).span, form);
         None
     }
 }

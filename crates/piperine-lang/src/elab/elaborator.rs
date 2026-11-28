@@ -2,6 +2,7 @@
 //! passes over what it reached, each writing through `IrBuilder`.
 
 use crate::elab::analog::AnalogLowering;
+use crate::elab::digital::DigitalLowering;
 use crate::elab::functions::FunctionLowering;
 use crate::elab::value::ValueLowering;
 use std::collections::BTreeMap;
@@ -10,10 +11,10 @@ use piperine_ir::{BodyId, Env, Expr, ExprId as LoweredExpr, Ir, IrBuilder, Origi
 
 use super::analog::state::{AnalogScope, AnalogSites};
 use super::consts::{Bindings, ConstEval};
-use super::digital_state::{DigitalScope, DigitalTables};
+use super::digital::state::{DigitalScope, DigitalTables};
 use super::functions::state::FunctionTables;
 use super::functions::instances::ConcreteValue;
-use super::loops::DriveLoops;
+use super::digital::loops::DriveLoops;
 use super::value::expressions::ValueTypes;
 use super::origin::Locator;
 use super::analog::signal_flow::SignalFlowCheck;
@@ -114,6 +115,18 @@ impl Scope {
         self.analog.hoisted_steps.append(&mut standalone.analog.hoisted_steps);
     }
 
+    /// A scope for code of the body outside its `analog` block and its functions (a drive, a
+    /// reaction): the names of `scope` (params, frame), with no local of its own.
+    pub(in crate::elab) fn sub_scope(scope: &Scope) -> Scope {
+        let mut sub = Scope::new(scope.values.file);
+        sub.values.params = scope.values.params.clone();
+        sub.values.keys = scope.values.keys.clone();
+        sub.values.frame = scope.values.frame;
+        sub.values.unrolled = scope.values.unrolled.clone();
+        sub.digital.ordinals = scope.digital.ordinals.clone();
+        sub
+    }
+
     /// The scope of code written in `file`: no param, no local, frame 0, outside every analog block, loop and function.
     pub(in crate::elab) fn new(file: FileId) -> Self {
         Scope { values: ValueScope::new(file), analog: AnalogScope::default(), digital: DigitalScope::default() }
@@ -179,6 +192,11 @@ impl<'d, 't> Elaboration<'d, 't> {
     /// The view that lowers functions.
     pub(super) fn functions(&mut self) -> FunctionLowering<'_, 'd, 't> {
         FunctionLowering::new(self)
+    }
+
+    /// The view that lowers discrete code.
+    pub(super) fn digital(&mut self) -> DigitalLowering<'_, 'd, 't> {
+        DigitalLowering::new(self)
     }
 
     /// The view that lowers analog code.
@@ -247,7 +265,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         let top_instance = self.place_top(top);
         // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
         self.pad_child_nodes();
-        self.build_resolvers();
+        self.digital().build_resolvers();
         let reprs = self.values().lower_hand_written_reprs();
         self.functions().add_functions();
         self.values().set_hand_written_reprs(reprs);
@@ -792,6 +810,18 @@ impl<'d, 't> Elaboration<'d, 't> {
             _ => Vec::new(),
         }
     }
+
+    /// The `impl Resolve` of `nature` the first drive of the resolved carrier `decl` picked. A carrier of a nature parameter
+    /// bound by `Resolve<X, V>` picked the bound (the checker saw no concrete nature): the instance's nature answers with its
+    /// `impl` whose drive type is `X`. `None` when no drive picked one.
+    pub(in crate::elab) fn concrete_implementation(&self, decl: DeclId, nature: DeclId) -> Option<DeclId> {
+        let picked = self.state.types.carrier_drive_impls(decl).first().copied()?;
+        if !matches!(self.state.design.decl_data(picked).kind, DeclKind::GenericParam(_)) {
+            return Some(picked);
+        }
+        let driven = &self.state.types.resolve_impls(picked).first()?.driven;
+        self.state.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
+    }
 }
 
 #[cfg(test)]
@@ -799,7 +829,7 @@ mod tests {
     use piperine_ir::{InstanceId, IrBuilder, ValueType};
 
     use super::*;
-    use crate::elab::carriers::Frame;
+    use crate::elab::digital::carriers::Frame;
 
     #[test]
     fn an_ill_formed_ir_becomes_an_internal_error_and_no_ir() {

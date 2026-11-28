@@ -15,7 +15,6 @@
 //! scrutinee read again at each test.
 
 use super::AnalogLowering;
-use crate::elab::elaborator::Elaboration;
 use std::collections::BTreeSet;
 
 use piperine_ir::{Derivative, Expr, ExprId as LoweredExpr, Origin, ValueType};
@@ -129,7 +128,7 @@ impl AnalogLowering<'_, '_, '_> {
     /// A scope that reads what `scope` names but holds no local (§14 rule 9): a block-local `let`
     /// is read as its source expression, a `match` scrutinee is read at each test.
     pub(in crate::elab) fn standalone_scope(scope: &Scope) -> Scope {
-        let mut standalone = Elaboration::sub_scope(scope);
+        let mut standalone = Scope::sub_scope(scope);
         standalone.digital.no_locals = true;
         standalone.analog.in_analog_code = scope.analog.in_analog_code;
         standalone.analog.at_solution = scope.analog.at_solution;

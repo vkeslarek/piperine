@@ -20,9 +20,9 @@ use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRol
 use crate::refusal::forms::ValueForm;
 use crate::elab::body::NodePlan;
 use crate::elab::consts::Bindings;
-use crate::elab::carriers::Frame;
+use crate::elab::digital::carriers::Frame;
 use crate::elab::hoist::PlacementKey;
-use crate::elab::element_commits::PlaceTarget;
+use crate::elab::digital::element_commits::PlaceTarget;
 use crate::elab::elaborator::Elaboration;
 use crate::elab::elaborator::Scope;
 use super::placement_params::{PlacementParams, PlacementSite};
@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
                 }
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match self.frame_carrier(frame, item) {
-                Some(index) => Some(self.carrier_read(index, origin)),
+                Some(index) => Some(self.digital().carrier_read(index, origin)),
                 None => {
                     self.refuse(scope.values.file, span, ValueForm::NodeOfChildReadAsValue);
                     None
@@ -341,7 +341,7 @@ impl Elaboration<'_, '_> {
         }
         let Some(child) = self.state.structure.frames[frame].child else { return false };
         let outer = self.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
-        let found = self.state.consts.typed_node_array(decl).map(|array| (self.declared_shape(&array, frame, decl, "nodes"), self.own_node_offset(frame, decl), array));
+        let found = self.state.consts.typed_node_array(decl).map(|array| (self.digital().declared_shape(&array, frame, decl, "nodes"), self.own_node_offset(frame, decl), array));
         self.state.consts.set_substitution(outer);
         let Some((Some(shape), Some(offset), array)) = found else { return false };
         let crate::types::Ty::Node(nature) = array.innermost().clone() else { return false };
@@ -378,7 +378,7 @@ impl Elaboration<'_, '_> {
                 return Some(offset);
             }
             offset += match self.state.consts.typed_node_array(earlier) {
-                Some(array) => self.shape_in(&array, frame)?.count() as u32,
+                Some(array) => self.digital().shape_in(&array, frame)?.count() as u32,
                 None => 1,
             };
         }
@@ -412,7 +412,7 @@ impl Elaboration<'_, '_> {
                 DeclKind::Port(_) | DeclKind::Signal(_) if self.state.types.carrier(child).is_none() => total += 1,
                 DeclKind::Port(_) | DeclKind::Signal(_) if self.state.types.node_array(child).is_some() => {
                     let array = self.state.consts.typed_node_array(child)?;
-                    total += self.shape_in(&array, frame)?.count() as u32;
+                    total += self.digital().shape_in(&array, frame)?.count() as u32;
                 }
                 _ => {}
             }
@@ -432,7 +432,7 @@ impl Elaboration<'_, '_> {
         let mut total = 0u32;
         for child in children {
             let carrier = matches!(self.state.design.decl_data(child).kind, DeclKind::Port(_) | DeclKind::Signal(_)) && self.state.types.carrier(child).is_some() && self.state.types.node_array(child).is_none();
-            if carrier && !self.is_empty_array(frame, child) {
+            if carrier && !self.digital().is_empty_array(frame, child) {
                 total += 1;
             }
         }
@@ -471,7 +471,8 @@ impl Elaboration<'_, '_> {
             match self.state.consts.value(index, &bindings) {
                 Ok(piperine_ir::Constant::Int(ordinal)) if ordinal >= 0 => key.iteration.push(ordinal as u64),
                 _ => {
-                    self.not_folded(scope, self.state.design.expr_node(index).span, "the index of a generated instance");
+                    let span = self.state.design.expr_node(index).span;
+                    self.digital().not_folded(scope, span, "the index of a generated instance");
                     return None;
                 }
             }
@@ -539,14 +540,14 @@ impl Elaboration<'_, '_> {
             return Some(*index);
         }
         self.state.types.carrier(decl)?;
-        let ty = self.carried_type(decl)?;
+        let ty = self.digital().carried_type(decl)?;
         let name = format!("{}{}", self.state.structure.frames[frame].prefix, self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()));
         let (child, child_carrier) = match self.state.structure.frames[frame].child {
             Some(child) => (child, self.own_carrier_slot(self.state.structure.frames[frame].module, decl)?),
             None => self.nested_slot(frame, decl, ReachedKind::Carrier)?,
         };
         let carrier = Carrier { name, ty, role: CarrierRole::Reached, init: None, origin: self.state.locator.decl(decl), count: None };
-        let index = self.add_carrier(carrier);
+        let index = self.digital().add_carrier(carrier);
         self.state.digital.structure.reaches.push(Reach { child, item: ReachedItem::Carrier { carrier: index, child_carrier } });
         self.state.structure.frames[frame].carriers.insert(decl, index);
         Some(index)
@@ -565,7 +566,7 @@ impl Elaboration<'_, '_> {
             self.refuse(data.file, data.span, ValueForm::DriveOfChildCarrierThatIsNot);
             return None;
         };
-        let (chosen, _) = self.chosen_resolve_impl(decl, nature)?;
+        let (chosen, _) = self.digital().chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.values().stored_type(&chosen.driven) else {
             self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;

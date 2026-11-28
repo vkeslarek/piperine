@@ -5,12 +5,12 @@
 //! body form a graph (a drive reaches the drives that read what it writes), and every cycle through a one-driver carrier
 //! is reported, once, at its first drive, naming each element (`b[1]`, `b[2]`) as the source writes it.
 
+use super::DigitalLowering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{Expr, ExprId as LoweredExpr};
 
 use super::drive_overlaps::ElementReach;
-use super::elaborator::Elaboration;
 use crate::msl::Diagnostic;
 use crate::pom::DeclId;
 
@@ -31,10 +31,10 @@ impl CarrierPart {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `E0339` for each loop of the undelayed drives of the body through a one-driver carrier, as the instance `instance`
     /// elaborates them. A loop whose drives the checker judged already (whole carriers only) never reaches here.
-    pub(super) fn judge_drive_loops(&mut self, instance: &str) {
+    pub(in crate::elab) fn judge_drive_loops(&mut self, instance: &str) {
         let drives: Vec<(usize, CarrierPart, BTreeSet<CarrierPart>)> = self
             .state.digital.structure
             .drives

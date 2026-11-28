@@ -21,7 +21,7 @@ use crate::elab::analog::AnalogLowering;
 use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
-use crate::elab::elements::Lookup;
+use crate::elab::digital::elements::Lookup;
 use super::patterns::Subject;
 use crate::elab::analog::selectors::ArmCondition;
 use crate::elab::elaborator::Scope;
@@ -320,9 +320,9 @@ impl ValueLowering<'_, '_, '_> {
         match &node.kind {
             ExprKind::Paren(inner) => self.lower_option(scope, *inner),
             // one element of an array of carriers that hold `Option`s: its two halves, each unpacked from the element read
-            ExprKind::Index { .. } if let Lookup::Found(element) = self.element_lookup(scope, expr) => {
+            ExprKind::Index { .. } if let Lookup::Found(element) = self.digital().element_lookup(scope, expr) => {
                 let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                    let packed = this.carrier_element_read(scope, element, origin.clone());
+                    let packed = this.digital().carrier_element_read(scope, element, origin.clone());
                     Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
                 };
                 let is = half(self, LevelPart::Is, ValueType::Bool)?;
@@ -380,7 +380,7 @@ impl ValueLowering<'_, '_, '_> {
                     }
                     (None, None) if let Some(carrier) = self.frame_carrier(scope.values.frame, decl) => {
                         let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                            let packed = this.carrier_read(carrier, origin.clone());
+                            let packed = this.digital().carrier_read(carrier, origin.clone());
                             Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
                         };
                         let is = half(self, LevelPart::Is, ValueType::Bool)?;

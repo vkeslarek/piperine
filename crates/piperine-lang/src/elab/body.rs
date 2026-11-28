@@ -4,7 +4,7 @@
 
 use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Merge, Param, Real, Terminal, ValueType};
 
-use super::carriers::{Frame, Structure};
+use super::digital::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
@@ -51,7 +51,7 @@ pub(super) struct ModulePlan {
     /// How many of the leading carriers are ports of the module itself.
     pub(super) port_carriers: usize,
     /// What the body says of each of its resolved carriers (`resolvers.rs`).
-    pub(super) resolved: Vec<super::resolvers::ResolvedPlan>,
+    pub(super) resolved: Vec<super::digital::resolvers::ResolvedPlan>,
     pub(super) children: Vec<ChildPlan>,
     /// The nodes and carriers of children the body reads: placement binds each once the child is placed.
     pub(super) reaches: Vec<piperine_ir::Reach>,
@@ -68,11 +68,11 @@ impl ModulePlan {
 impl Elaboration<'_, '_> {
     /// What the body being lowered says of each resolved carrier: its nature, the `impl` its drives picked, whether it
     /// holds a drive of the net and whether it reads `others()`.
-    fn resolved_plans(&self) -> Vec<super::resolvers::ResolvedPlan> {
+    fn resolved_plans(&self) -> Vec<super::digital::resolvers::ResolvedPlan> {
         self.state.digital.structure
             .resolved_carriers
             .iter()
-            .map(|(carrier, decl, nature)| super::resolvers::ResolvedPlan {
+            .map(|(carrier, decl, nature)| super::digital::resolvers::ResolvedPlan {
                 carrier: *carrier,
                 decl: *decl,
                 nature: *nature,
@@ -159,7 +159,7 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let stored = self.values().stored_type(&written)?;
-        self.default_constant(&written, &stored)
+        self.digital().default_constant(&written, &stored)
     }
 
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
@@ -202,9 +202,9 @@ impl Elaboration<'_, '_> {
         self.lower_nested_demands(&scope, module);
         let ammeters = self.analog().lower_ammeters(&mut scope, module);
         scope.analog.merged = self.merged_branches(&scope, module);
-        self.lower_carriers(0, module);
+        self.digital().lower_carriers(0, module);
         self.lower_nested_carrier_demands(&scope, module);
-        self.lower_definitions(&scope);
+        self.digital().lower_definitions(&scope);
         self.hoist_placements(&scope);
         scope.analog.addend_lets = self.analog().addend_only_ddt_lets(&scope, module);
         let mut analog = self.analog().lower_analog(&mut scope, module);
@@ -217,10 +217,10 @@ impl Elaboration<'_, '_> {
         self.analog().decide_branch_kinds(&mut scope);
         self.analog().check_selector_rule(&scope);
         let (children, child_plans): (Vec<Child>, Vec<ChildPlan>) = self.lower_children(&mut scope, module).into_iter().unzip();
-        self.lower_digital(&mut scope, module);
-        self.judge_element_coverage(module, &name);
-        self.judge_drive_overlaps(&name);
-        self.judge_drive_loops(&name);
+        self.digital().lower_digital(&mut scope, module);
+        self.digital().judge_element_coverage(module, &name);
+        self.digital().judge_drive_overlaps(&name);
+        self.digital().judge_drive_loops(&name);
         let carriers = self.state.digital.structure.carriers.clone();
         let port_carriers = self.state.digital.structure.port_carriers;
         let resolved = self.resolved_plans();
@@ -243,7 +243,7 @@ impl Elaboration<'_, '_> {
         if let Some(instance) = &key.instance {
             self.state.builder.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
         }
-        self.finish_structure(body);
+        self.digital().finish_structure(body);
         for (plus, minus) in &merged {
             self.state.builder.merge(body, Merge { plus: *plus, minus: *minus });
         }
@@ -345,7 +345,7 @@ impl Elaboration<'_, '_> {
         for (decl, role) in ports.map(|d| (d, NodeRole::Port)).chain(signals.map(|d| (d, NodeRole::Signal))).collect::<Vec<_>>() {
             if self.state.types.node_array(decl).is_some() {
                 self.generated_items_complete(decl);
-                if let Some((shape, first)) = self.add_node_array(decl, role, "", 0) {
+                if let Some((shape, first)) = self.digital().add_node_array(decl, role, "", 0) {
                     self.state.structure.frames[0].nodes.insert(decl, first);
                     self.state.structure.frames[0].node_shapes.insert(decl, shape);
                 }

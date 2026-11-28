@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::BodyId;
 
 use super::body::{ModulePlan, ParamPlan};
-use super::carriers::Frame;
+use super::digital::carriers::Frame;
 use super::consts::Bindings;
 use super::generation::GeneratedItems;
 use super::hoist::PlacementKey;

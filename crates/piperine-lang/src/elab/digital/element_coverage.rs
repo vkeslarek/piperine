@@ -5,18 +5,18 @@
 //! checker judged the rest itself and handed these over (`Types::defers_missing_initial_value`,
 //! `Types::defers_handed_initial_value`, `Types::defers_defined_initial_value`).
 
+use super::DigitalLowering;
 use piperine_ir::{CarrierWindow, Drive};
 
-use super::elaborator::Elaboration;
 use crate::msl::Diagnostic;
 use crate::pom::DeclId;
 use crate::types::{ElementCoverage, Ty};
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `E0187` and `E0223` for the arrays of carriers of `module`, as the instance `instance` of the body has them: an
     /// element no undelayed definition and no `out` port of a child names, with no initial value, is `E0187` naming
     /// it; an initial value over elements every `out` port holds is `E0223`.
-    pub(super) fn judge_element_coverage(&mut self, module: DeclId, instance: &str) {
+    pub(in crate::elab) fn judge_element_coverage(&mut self, module: DeclId, instance: &str) {
         // an item refused inside generation is the one diagnostic: it names elements the refusal dropped, no cascade
         if !self.state.structure.generated.refused.is_empty() {
             return;

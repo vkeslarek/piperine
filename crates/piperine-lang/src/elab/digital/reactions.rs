@@ -3,16 +3,16 @@
 //! each commit `place <- value [after d];` as a `Commit` of its carrier with its `after`. A
 //! commit inside an `if` is a statement of the `if`'s block.
 
+use super::DigitalLowering;
 use piperine_ir::{Stmt, StmtId as LoweredStmt};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::pom::ExprId;
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `place <- value [after delay];`, appended to `out`; `false` after a diagnostic. The
     /// checker allows a commit in a reaction body only.
-    pub(super) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
+    pub(in crate::elab) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
         let target = self.place_target(scope, place);
         if let Some(target) = &target {
             self.record_drive_site(target, super::drive_overlaps::DriveWay::Commit, scope.values.file, self.state.design.expr_node(place).span);

@@ -13,7 +13,7 @@
 //! in). A recursion unrolls through the same expansion stack as the one of `analog`.
 
 use super::FunctionLowering;
-use crate::elab::events::Disjunct;
+use crate::elab::digital::events::Disjunct;
 use crate::elab::analog::expansion::Environment;
 use super::instances::ConcreteValue;
 use crate::elab::elaborator::Scope;
@@ -210,7 +210,7 @@ impl FunctionLowering<'_, '_, '_> {
                 self.refuse(scope.values.file, node.span, EventFunctionForm::WhileLoopBreakContinueOrReturnWith);
                 None
             }
-            _ if value => Some(Flow::Done(self.disjuncts(scope, expr)?)),
+            _ if value => Some(Flow::Done(self.digital().disjuncts(scope, expr)?)),
             _ => {
                 self.refuse(scope.values.file, node.span, EventFunctionForm::StatementThatIsNoLetAssignmentIf);
                 None
@@ -270,7 +270,7 @@ impl FunctionLowering<'_, '_, '_> {
             lowered = self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: lowered }, ValueType::Bool, origin);
         }
         let span = self.state.design.expr_node(cond).span;
-        self.add_conjunct(scope, lowered, locals, span, disjunct)
+        self.digital().add_conjunct(scope, lowered, locals, span, disjunct)
     }
 
     /// `match scrutinee { arms }` that yields the event. A scrutinee that folds takes its arm. One decided at the instant
@@ -313,7 +313,7 @@ impl FunctionLowering<'_, '_, '_> {
                 let tests = self.values().standalone_arm_tests(scope, scrutinee, &earlier, (!last).then_some(arm.pat))?;
                 let span = self.state.design.expr_node(arm.body).span;
                 for test in tests {
-                    self.add_conjunct(scope, test, scope.values.locals.len(), span, &mut disjunct)?;
+                    self.digital().add_conjunct(scope, test, scope.values.locals.len(), span, &mut disjunct)?;
                 }
                 all.push(disjunct);
             }

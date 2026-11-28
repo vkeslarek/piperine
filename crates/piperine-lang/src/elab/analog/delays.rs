@@ -32,7 +32,7 @@ impl AnalogLowering<'_, '_, '_> {
         let input = self.values().lower_expr(&mut standalone, *input)?;
         let time_span = self.state.design.expr_node(*time).span;
         let time = self.values().lower_expr(&mut standalone, *time)?;
-        let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
+        let maximum = self.digital().optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
         scope.adopt_standalone(&mut standalone);
         if !standalone.values.locals.is_empty() {
             self.refuse(scope.values.file, span, AnalogForm::ClosureOrOptionBindingInsideDelayInput);

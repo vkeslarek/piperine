@@ -2529,9 +2529,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/digital/`
-- [ ] `IrBuilder::body_data` (`crates/piperine-ir/src/build.rs`) returns `Result<_, BuildError>` instead of panicking on an out-of-range body id, and the ~22 builder methods behind it and the elab callers (`carriers`, `resolvers`, `body`, `children`) propagate it as `Elaboration::internal_error`, the way T55 did for the other six sites (owner of T26's and T55's open box; coordinator decision, user AFK, pending review)
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_carriers`
+- [x] No `impl Elaboration` in `elab/digital/`
+  - Note: `concrete_implementation` (read by `resolved_plans` from `&self`) stays on `Elaboration`, and `sub_scope` (the copy of a `Scope`) is `Scope::sub_scope` in `elaborator.rs`.
+- [ ] (not done in T96, reported to the coordinator: the 22 builder methods return a `Result` only if every caller handles it, and those callers are about 280 call sites in the test and fixture code of `piperine-ir`, `piperine-plan`, `piperine-interp`, `piperine-transpile` and `piperine-parity` plus the 27 in `elab/`; the task forbids editing tests beyond call paths of moved items, so the decision between editing them and keeping the panic with its documented contract is the coordinator's) `IrBuilder::body_data` (`crates/piperine-ir/src/build.rs`) returns `Result<_, BuildError>` instead of panicking on an out-of-range body id, and the ~22 builder methods behind it and the elab callers (`carriers`, `resolvers`, `body`, `children`) propagate it as `Elaboration::internal_error`, the way T55 did for the other six sites (owner of T26's and T55's open box; coordinator decision, user AFK, pending review)
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_carriers`
+  - Note: no `source_carriers` target exists; `source_carrier_arrays`, `source_events`, `source_commits`, `source_logic`, `source_aggregates`, `source_handles` and `source_implicit` ran in its place.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

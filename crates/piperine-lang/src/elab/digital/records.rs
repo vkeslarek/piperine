@@ -8,19 +8,19 @@
 //! its `str` params bound to the texts the call gives and its other params to locals of the
 //! reaction holding the arguments. A `str` that is no text after inlining is `P0001`.
 
+use super::DigitalLowering;
 use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, TraceSite, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{BinOp, BlockNode, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// When `expr`, a statement of a block, is `emit!` or a call of a function that emits: its
     /// statements appended to `out`, and `Some(false)` after a diagnostic. `None` for any other
     /// expression.
-    pub(super) fn lower_record_statement(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
+    pub(in crate::elab) fn lower_record_statement(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
         let expr = self.peel_parens(expr);
         let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
@@ -39,7 +39,7 @@ impl Elaboration<'_, '_> {
     /// Whether a call of `function` is inlined where it stands: it reaches `emit!` (§19 rule 10), takes a
     /// `str`, a text that exists at elaboration only (§1.2.9), or reads a session parameter, which the IR keeps
     /// in the body that reads it and never in a function (`multiplicity()`, §8.5.2).
-    pub(super) fn is_inlined(&self, function: DeclId) -> bool {
+    pub(in crate::elab) fn is_inlined(&self, function: DeclId) -> bool {
         let takes_text = self.state.design.decl_data(function).children.iter().any(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
         let is_extern = matches!(&self.state.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
         // an `extern` function has no body to inline; its call is the call of a generic `extern` function, refused by name
@@ -127,7 +127,7 @@ impl Elaboration<'_, '_> {
             // `emit!` in the `analog` block is a trace (§19 rule 4): one `TRACE` watch per site,
             // written where the statement executes (`traces.rs`)
             let site = self.state.digital.structure.traces.len() as u32;
-            self.state.digital.structure.traces.push(TraceSite { stream: index as u32, origin: self.expr_origin(expr) });
+            self.elaboration.state.digital.structure.traces.push(TraceSite { stream: index as u32, origin: self.expr_origin(expr) });
             out.push(self.stmt(Stmt::Trace { site, fields: lowered }));
         } else if ok {
             out.push(self.stmt(Stmt::Emit { stream: index as u32, fields: lowered }));
@@ -138,7 +138,7 @@ impl Elaboration<'_, '_> {
     /// The text a `str` expression stands for after inlining: a string literal, a `const` of type
     /// `str` (its literal, or the file an `include_str!` reads, once, §20 rule 3), a `let` bound to a
     /// text, or a `str` param of an inlined function bound to one.
-    pub(super) fn text_of(&mut self, scope: &Scope, expr: ExprId) -> Option<String> {
+    pub(in crate::elab) fn text_of(&mut self, scope: &Scope, expr: ExprId) -> Option<String> {
         let design = self.state.design;
         match &design.expr_node(self.peel_parens(expr)).kind {
             ExprKind::Lit(lit) => lit.str_value(),
@@ -159,7 +159,7 @@ impl Elaboration<'_, '_> {
 
     /// `let name = text;` of type `str`: the name stands for the text, and no local holds it. `false`
     /// after a diagnostic.
-    pub(super) fn lower_text_let(&mut self, scope: &mut Scope, binding: DeclId, init: ExprId) -> bool {
+    pub(in crate::elab) fn lower_text_let(&mut self, scope: &mut Scope, binding: DeclId, init: ExprId) -> bool {
         match self.text_of(scope, init) {
             Some(text) => {
                 scope.digital.texts.insert(binding, text);
@@ -175,7 +175,7 @@ impl Elaboration<'_, '_> {
 
     /// `a == b` and `a != b` of two `str`: known at elaboration, the `bool` of whether the texts
     /// are the same. `None` after a diagnostic.
-    pub(super) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(left), Some(right)) = (self.text_of(scope, lhs), self.text_of(scope, rhs)) else {
             let span = self.state.design.expr_node(lhs).span;
             self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
@@ -200,7 +200,7 @@ impl Elaboration<'_, '_> {
     /// `u && noisy()`): inlined as a block whose statements are the call's, so the `emit!` runs
     /// in the reaction where the call stands (§19 rule 10), and whose value is the function's.
     /// `None` after a diagnostic.
-    pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         if self.takes_handle(function) && self.analog().reaches_recursion(function) {
             let span = self.state.design.decl_data(function).span;
             self.analog().unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
@@ -224,7 +224,7 @@ impl Elaboration<'_, '_> {
     /// The `let`s that bind the params of `function` for a call with `args` (each `str` param to its
     /// text, each other param to a local holding its argument), and the body to inline after them.
     /// `None` after a diagnostic.
-    pub(super) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
+    pub(in crate::elab) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
         let data = self.state.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let Some(body) = f.body.clone() else {

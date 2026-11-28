@@ -44,7 +44,7 @@ impl ValueLowering<'_, '_, '_> {
     /// that names no level or a length other than `levels` (§22.1.4 rule 2). `None` after a diagnostic.
     fn call_pattern(&mut self, scope: &Scope, pattern: ExprId, levels: u32) -> Option<LogicPattern> {
         let span = self.state.design.expr_node(pattern).span;
-        let Some(text) = self.text_of(scope, pattern) else {
+        let Some(text) = self.digital().text_of(scope, pattern) else {
             self.refuse(scope.values.file, span, AnalogForm::PatternThatIsNotTextKnownWhere);
             return None;
         };

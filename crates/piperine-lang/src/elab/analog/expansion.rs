@@ -196,7 +196,7 @@ impl AnalogLowering<'_, '_, '_> {
                     return None;
                 }
                 (_, Some(arg)) if self.state.types.handle(*param) => Argument::Handle { param: *param, target: self.functions().handle_argument_target(scope, arg) },
-                (Some(Ty::Str), Some(arg)) => match self.text_of(scope, arg) {
+                (Some(Ty::Str), Some(arg)) => match self.digital().text_of(scope, arg) {
                     Some(text) => Argument::Text { param: *param, text },
                     None => {
                         self.elaboration.refuse(scope.values.file, self.state.design.expr_node(arg).span, StructureForm::StrThatIsNotTextAfterExpansion);

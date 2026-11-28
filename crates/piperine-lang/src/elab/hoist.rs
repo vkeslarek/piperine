@@ -21,7 +21,7 @@
 
 use piperine_ir::{Constant, Drive, ExprId as LoweredExpr, Hoisted, NodeRole, StmtId as LoweredStmt};
 
-use super::carriers::Frame;
+use super::digital::carriers::Frame;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
@@ -139,7 +139,7 @@ impl Elaboration<'_, '_> {
                 None => vec![Iteration::default()],
             };
             for iteration in &iterations {
-                let mut inner = Self::sub_scope(scope);
+                let mut inner = Scope::sub_scope(scope);
                 for (variable, value) in &iteration.values {
                     inner.values.unrolled.bind(*variable, Constant::Int(*value));
                 }
@@ -376,7 +376,7 @@ impl Elaboration<'_, '_> {
         let caller = caller.clone();
         let gained = self.hoist_nodes(index, module);
         self.record_hoisted(index, module, name, call, gained);
-        self.lower_carriers(index, module);
+        self.digital().lower_carriers(index, module);
         // A discrete `in` value input: the hoisted carrier, driven by the caller's expression.
         for (position, port) in ports.iter().enumerate() {
             let Some(arg) = bound.at(position) else { continue };
@@ -389,18 +389,18 @@ impl Elaboration<'_, '_> {
             let wanted = self.state.digital.structure.carriers.get(carrier as usize).map(|c| c.ty.clone());
             // the caller's expression reads the caller's generic names, not the callee's
             let callee = self.state.consts.set_substitution(caller.clone());
-            let value = self.lower_drive_value(scope, arg.value, None, wanted.as_ref());
+            let value = self.digital().lower_drive_value(scope, arg.value, None, wanted.as_ref());
             self.state.consts.set_substitution(callee);
             if let Some((value, _)) = value {
                 self.state.digital.structure.drives.push(Drive { carrier, value, after: None, origin, element: None, path: vec![] });
             }
         }
-        let mut inner = Self::sub_scope(scope);
+        let mut inner = Scope::sub_scope(scope);
         inner.values.frame = index;
         let outer_params = self.state.consts.set_frame_params(self.frame_bindings(index));
-        self.lower_definitions(&inner);
+        self.digital().lower_definitions(&inner);
         self.hoist_placements(&inner);
-        self.lower_digital(&mut inner, module);
+        self.digital().lower_digital(&mut inner, module);
         self.state.consts.set_frame_params(outer_params);
         Some(index)
     }
@@ -417,7 +417,7 @@ impl Elaboration<'_, '_> {
         for signal in signals {
             if self.state.types.node_array(signal).is_some() {
                 // an array of nodes: one node of the body per element, its shape kept for `w[k]` (`carrier_arrays.rs`)
-                if let Some((shape, first)) = self.add_node_array(signal, NodeRole::Signal, &prefix, frame) {
+                if let Some((shape, first)) = self.digital().add_node_array(signal, NodeRole::Signal, &prefix, frame) {
                     self.state.structure.frames[frame].nodes.insert(signal, first);
                     self.state.structure.frames[frame].node_shapes.insert(signal, shape);
                     gained += 1;

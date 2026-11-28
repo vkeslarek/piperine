@@ -10,7 +10,7 @@ use crate::elab::analog::AnalogLowering;
 use super::ValueLowering;
 use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
-use crate::elab::elements::ElementPart;
+use crate::elab::digital::elements::ElementPart;
 use super::compound::EnumLayout;
 use crate::elab::functions::variants::Half;
 use crate::elab::consts::Bindings;
@@ -131,7 +131,7 @@ impl ValueLowering<'_, '_, '_> {
         };
         // An event read as a `bool` is `fired(k)` (§13 rules 2 and 9, `event_reads.rs`).
         if self.state.types.event_read(expr) {
-            return self.lower_event_read(scope, expr);
+            return self.digital().lower_event_read(scope, expr);
         }
         if let Some(folded) = self.lower_folded_expression(scope, expr, &ty, &origin) {
             return folded;
@@ -150,7 +150,7 @@ impl ValueLowering<'_, '_, '_> {
             ExprKind::Unary { expr: operand, .. } if let Some(Callee::Method(function)) = self.state.types.callee(expr) => self.lower_method_call(scope, expr, function, *operand, &[], origin),
             ExprKind::Binary { lhs, rhs, .. } if let Some(Callee::Method(function)) = self.state.types.callee(expr) => self.lower_method_call(scope, expr, function, *lhs, &[*rhs], origin),
             ExprKind::Unary { op, expr: operand } => self.lower_unary(scope, *op, *operand, ty, origin),
-            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
+            ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Str)) => self.digital().lower_text_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op, lhs, rhs } => self.lower_binary(scope, *op, *lhs, *rhs, ty, origin),
             ExprKind::If { cond, then, else_ } if matches!(self.state.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
@@ -353,7 +353,7 @@ impl ValueLowering<'_, '_, '_> {
         }
         if self.state.types.builtin(expr).is_some() {
             let builtin = self.state.types.builtin(expr)?;
-            return self.lower_builtin_read(scope, expr, builtin, recv, ty, origin);
+            return self.digital().lower_builtin_read(scope, expr, builtin, recv, ty, origin);
         }
         self.lower_numeric_method(scope, expr, recv, args, name, ty, origin)
     }
@@ -414,9 +414,9 @@ impl ValueLowering<'_, '_, '_> {
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
             let instance = self.functions().concrete_instance(expr)?;
             // a function generic over a nature takes handles: inlined for the nature it is instantiated at
-            if self.is_inlined(instance.item) {
+            if self.digital().is_inlined(instance.item) {
                 let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
-                let inlined = self.inline_emitting_value(scope, instance.item, args, origin);
+                let inlined = self.digital().inline_emitting_value(scope, instance.item, args, origin);
                 self.state.consts.set_substitution(outer);
                 return inlined;
             }
@@ -437,7 +437,7 @@ impl ValueLowering<'_, '_, '_> {
         match (class, self.state.types.callee(expr)) {
             (CallClass::Probe, _) => self.analog().lower_probe(scope, expr, ty, origin),
             // A function that emits is no IR function: its call is inlined where it stands (§19 rule 10).
-            (_, Some(Callee::Function(function))) if self.is_inlined(function) => self.inline_emitting_value(scope, function, args, origin),
+            (_, Some(Callee::Function(function))) if self.digital().is_inlined(function) => self.digital().inline_emitting_value(scope, function, args, origin),
             // A recursion reached from an `analog` block is expanded where it is called (§3 rule 12, `unroll.rs`).
             (_, Some(Callee::Function(function))) if scope.analog.in_analog_block && self.analog().reaches_recursion(function) => self.analog().lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
@@ -565,7 +565,7 @@ impl ValueLowering<'_, '_, '_> {
                 // A loop of an `analog` block that contributes or places is its unrolling (`unroll.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.analog().lower_analog_loop(scope, &mut out, *expr) => ok &= lowered,
                 // `emit!` and a call of a function that emits are statements (`records.rs`).
-                StmtKind::Expr { expr, .. } if let Some(lowered) = self.lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
+                StmtKind::Expr { expr, .. } if let Some(lowered) = self.digital().lower_record_statement(scope, &mut out, *expr) => ok &= lowered,
                 // `bound_step(dt);` is a statement of the analog block (`analog.rs`).
                 StmtKind::Expr { expr, .. } if let Some(lowered) = self.analog().lower_bound_step(scope, &mut out, *expr) => ok &= lowered,
                 StmtKind::Expr { expr, semi } => match self.lower_expr(scope, *expr) {
@@ -575,7 +575,7 @@ impl ValueLowering<'_, '_, '_> {
                 },
                 StmtKind::Empty => {}
                 StmtKind::Contribution { lhs, rhs } => ok &= self.analog().lower_contribution(scope, &mut out, *lhs, *rhs, node.span),
-                StmtKind::Commit { place, value, after } => ok &= self.lower_commit(scope, &mut out, *place, *value, *after),
+                StmtKind::Commit { place, value, after } => ok &= self.digital().lower_commit(scope, &mut out, *place, *value, *after),
                 _ => {
                     self.refuse(file, node.span, ValueForm::Statement);
                     ok = false;
@@ -602,7 +602,7 @@ impl ValueLowering<'_, '_, '_> {
     /// (one local per component). `false` after a diagnostic.
     fn lower_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: crate::pom::PatId, init: ExprId, file: FileId, span: Span) -> bool {
         match self.state.design.pat_node(pat).kind.clone() {
-            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Str)) => self.lower_text_let(scope, binding, init),
+            PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Str)) => self.digital().lower_text_let(scope, binding, init),
             PatKind::Ident { binding, sub: None, .. } if matches!(self.typed_local(binding), Some(Ty::Option(_))) => self.lower_option_let(scope, out, binding, init),
             // An iterator or a range holds no value: the name stands for the chain it was bound to (`iterators.rs`).
             PatKind::Ident { binding, sub: None, .. } if self.is_sequence_binding(binding) => {
@@ -761,13 +761,13 @@ impl ValueLowering<'_, '_, '_> {
                 }
             },
             // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
-            DeclKind::Signal(_) if !self.generated_carrier_levels(scope, expr).is_empty() => match self.element_lookup(scope, expr) {
-                crate::elab::elements::Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
+            DeclKind::Signal(_) if !self.digital().generated_carrier_levels(scope, expr).is_empty() => match self.digital().element_lookup(scope, expr) {
+                crate::elab::digital::elements::Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
                 _ => None,
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.values.frame, decl), self.input_of(scope, decl)) {
-                (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.elements_of_array(scope, index, ElementPart::Value, origin)),
-                (Some(index), _) => Some(self.carrier_read(index, origin)),
+                (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.digital().elements_of_array(scope, index, ElementPart::Value, origin)),
+                (Some(index), _) => Some(self.digital().carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
                 (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
                 (None, Some(None)) => {

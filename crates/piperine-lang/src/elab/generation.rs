@@ -260,7 +260,7 @@ impl Elaboration<'_, '_> {
         let loops = self.generation_loops(decl).len();
         let typed = self.state.consts.typed_carrier(decl).or_else(|| self.state.consts.typed_node_array(decl));
         let frame = self.state.structure.generated.frame;
-        let Some(shape) = typed.and_then(|ty| self.shape_in(&ty, frame)) else { return true };
+        let Some(shape) = typed.and_then(|ty| self.digital().shape_in(&ty, frame)) else { return true };
         let trips: u64 = shape.dims.iter().take(loops).product();
         if loops == 0 || elaborated as u64 == trips {
             return true;

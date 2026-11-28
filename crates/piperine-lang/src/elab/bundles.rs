@@ -6,8 +6,8 @@
 
 use piperine_ir::{CarrierWindow, ExprId as LoweredExpr, Origin, Terminal};
 
-use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
-use super::elements::Lookup;
+use super::digital::drive_overlaps::{DriveSite, DriveWay, ElementReach};
+use super::digital::elements::Lookup;
 use super::elaborator::Elaboration;
 use super::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
@@ -53,8 +53,8 @@ impl Elaboration<'_, '_> {
     /// The read of a field of an element of an array of bundles (`ps[k].b`): the element `k` of the leaf `ps.b`. `None` after a
     /// diagnostic.
     pub(super) fn lower_bundle_element(&mut self, scope: &mut Scope, expr: ExprId, origin: Origin) -> Option<LoweredExpr> {
-        match self.element_lookup(scope, expr) {
-            Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
+        match self.digital().element_lookup(scope, expr) {
+            Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
             Lookup::Failed => None,
             Lookup::No => {
                 self.refuse(scope.values.file, self.state.design.expr_node(expr).span, DigitalForm::FieldOfElementOfArrayOfBundles);
@@ -109,7 +109,7 @@ impl Elaboration<'_, '_> {
         let terminal = self.frame_node(scope.values.frame, from.decl)?;
         let Some(shape) = self.state.structure.frames.get(scope.values.frame).and_then(|frame| frame.node_shapes.get(&from.decl)).cloned() else { return Some(vec![terminal]) };
         let Terminal::Node(first) = terminal else { return None };
-        let (offset, length) = self.element_run(scope, &shape, &from.elements)?;
+        let (offset, length) = self.digital().element_run(scope, &shape, &from.elements)?;
         Some((0..length as u32).map(|k| Terminal::Node(first + offset as u32 + k)).collect())
     }
 
@@ -119,8 +119,8 @@ impl Elaboration<'_, '_> {
         if from.elements.is_empty() {
             return Some(None);
         }
-        let (shape, _) = self.carrier_array_shape(from.decl, scope.values.frame)?;
-        let (first, length) = self.element_run(scope, &shape, &from.elements)?;
+        let (shape, _) = self.digital().carrier_array_shape(from.decl, scope.values.frame)?;
+        let (first, length) = self.digital().element_run(scope, &shape, &from.elements)?;
         Some(Some(CarrierWindow { first, length: (from.elements.len() < shape.dims.len()).then_some(length) }))
     }
 
@@ -153,7 +153,7 @@ impl Elaboration<'_, '_> {
         // an array of nodes as a field: its nodes in order, from the carrier of the parent or the nodes a literal names
         if self.state.types.node_array(port).is_some() {
             let nodes = match &source {
-                LeafSource::Expression(expr) => self.node_array_terminals(scope, *expr),
+                LeafSource::Expression(expr) => self.digital().node_array_terminals(scope, *expr),
                 LeafSource::Leaf(from) => self.leaf_node_run(scope, from),
             };
             let Some(nodes) = nodes else { return false };

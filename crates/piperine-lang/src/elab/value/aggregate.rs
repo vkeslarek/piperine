@@ -14,7 +14,7 @@ use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
 
 use super::compound::EnumLayout;
-use crate::elab::elements::Lookup;
+use crate::elab::digital::elements::Lookup;
 use crate::elab::elaborator::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::refusal::forms::ValueForm;
@@ -289,8 +289,8 @@ impl ValueLowering<'_, '_, '_> {
     pub(super) fn lower_index(&mut self, scope: &mut Scope, expr: ExprId, base: ExprId, index: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(expr).span;
         // one element of an array of carriers is read through the element, never through the array (`elements.rs`)
-        match self.element_lookup(scope, expr) {
-            Lookup::Found(element) => return Some(self.carrier_element_read(scope, element, origin)),
+        match self.digital().element_lookup(scope, expr) {
+            Lookup::Found(element) => return Some(self.digital().carrier_element_read(scope, element, origin)),
             Lookup::Failed => return None,
             Lookup::No => {}
         }

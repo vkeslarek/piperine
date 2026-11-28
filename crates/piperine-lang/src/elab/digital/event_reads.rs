@@ -8,20 +8,20 @@
 //! A read whose event has a guard (`ev && g`, an edge's own `rise`/`fall` condition) appends its
 //! event: two equal guards are two pins that fire together, never two different values.
 
+use super::DigitalLowering;
 use piperine_ir::{Event, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
-use super::elaborator::Elaboration;
 use super::elements::Lookup;
 use super::events::Disjunct;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::pom::{ExprId, ExprKind};
 use crate::types::Builtin;
 
-impl Elaboration<'_, '_> {
+impl DigitalLowering<'_, '_, '_> {
     /// `expr`, an `Event` that the checker typed as a `bool` read (§13 rules 2 and 9): the
     /// disjunction, over the disjuncts of its event form, of `fired(k) && c` for each disjunct's
     /// event `k` and the continuous conjuncts `c` of its guard. `None` after a diagnostic.
-    pub(super) fn lower_event_read(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_event_read(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         // `x[i].changed()` at an index only run time knows is not an event: it reads the element's change (CV-24)
         if let ExprKind::MethodCall { recv, .. } = &self.state.design.expr_node(self.peel_parens(expr)).kind.clone()
             && self.state.types.builtin(self.peel_parens(expr)) == Some(Builtin::Changed)

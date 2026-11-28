@@ -311,7 +311,8 @@ impl Elaboration<'_, '_> {
             match self.state.consts.value(*index, &bindings) {
                 Ok(Constant::Int(ordinal)) if ordinal >= 0 => ordinals.push(ordinal as u64),
                 _ => {
-                    self.not_folded(scope, self.state.design.expr_node(*index).span, "the index of a generated instance");
+                    let span = self.state.design.expr_node(*index).span;
+                    self.digital().not_folded(scope, span, "the index of a generated instance");
                     return None;
                 }
             }

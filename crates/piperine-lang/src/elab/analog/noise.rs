@@ -62,7 +62,7 @@ impl AnalogLowering<'_, '_, '_> {
             ExprKind::Call { args, .. } if self.values().is_some_call(arg) => return self.noise_group(scope, args.first().map(|a| a.value)),
             _ => {}
         }
-        match self.text_of(scope, arg) {
+        match self.digital().text_of(scope, arg) {
             Some(text) => Some(Some(text)),
             None => {
                 self.refuse(scope.values.file, node.span, AnalogForm::NoiseNameThatIsNotTextLiteral);

@@ -364,7 +364,7 @@ impl AnalogLowering<'_, '_, '_> {
         if let ExprKind::Field { .. } = &node.kind {
             // a node field of an element of an array of bundles (`d[k].p`) is that node of its leaf (struct of arrays, `bundles.rs`)
             if self.bundle_leaf(scope, arg).is_some_and(|place| !place.elements.is_empty()) {
-                return self.node_element(scope, arg)?.or_else(|| {
+                return self.digital().node_element(scope, arg)?.or_else(|| {
                     self.refuse(file, node.span, AnalogForm::FieldOfElementOfArrayOfBundles);
                     None
                 });
@@ -373,7 +373,7 @@ impl AnalogLowering<'_, '_, '_> {
         }
         if let ExprKind::Index { .. } = &node.kind {
             // one node of an array of nodes: its index folds, per iteration of an unrolled loop (CV-26)
-            return self.node_element(scope, arg)?.or_else(|| {
+            return self.digital().node_element(scope, arg)?.or_else(|| {
                 self.refuse(file, node.span, AnalogForm::IndexOfValueThatIsNoArray);
                 None
             });
@@ -391,7 +391,7 @@ impl AnalogLowering<'_, '_, '_> {
                     self.refer_outside_generation(file, node.span, decl, None);
                     return None;
                 }
-                self.node_element(scope, arg)?.or_else(|| {
+                self.digital().node_element(scope, arg)?.or_else(|| {
                     self.refuse(file, node.span, AnalogForm::GeneratedNodeOutsideGenerationThatDeclaresIt);
                     None
                 })

@@ -10,13 +10,13 @@ use piperine_ir::{CarrierRole, Holder, Instance, Ir, NetId, Target};
 
 /// One loop of undelayed drives through a one-driver net: the paths of the instances that hold its drives and the carriers
 /// they write, in net order.
-pub(super) struct LoopFault {
+pub(in crate::elab) struct LoopFault {
     /// `Top.a.y`: the instance and the carrier of each drive of the loop.
-    pub(super) drives: Vec<String>,
+    pub(in crate::elab) drives: Vec<String>,
 }
 
 /// The drive graph of one elaborated design.
-pub(super) struct DriveLoops<'ir> {
+pub(in crate::elab) struct DriveLoops<'ir> {
     ir: &'ir Ir,
     /// For each net, the nets whose value its undelayed drives read, with a label for the drive that reads.
     reads: BTreeMap<NetId, Vec<(NetId, String)>>,
@@ -24,7 +24,7 @@ pub(super) struct DriveLoops<'ir> {
 
 impl<'ir> DriveLoops<'ir> {
     /// Every loop through a one-driver net of `ir`, in net order.
-    pub(super) fn run(ir: &'ir Ir) -> Vec<LoopFault> {
+    pub(in crate::elab) fn run(ir: &'ir Ir) -> Vec<LoopFault> {
         let mut graph = DriveLoops { ir, reads: BTreeMap::new() };
         graph.collect();
         graph.faults()
