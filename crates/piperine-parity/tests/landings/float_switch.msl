@@ -1,0 +1,59 @@
+//! A float switch on a slowly filling tank (docs/spec §17.3): the level `lvl` charges 1 mF at
+//! 25 uA, 0.025 V/s, while the pump is off, and falls at 0.055 V/s while it runs. The float
+//! closes above 0.9 V and opens below 0.88 V; it closes a contact that pulls `sw` low, and a latch
+//! on `sw` runs the pump. At the default 1 fs tick a step of a few ticks moves the level by less
+//! than half a unit in the last place of 0.9, so a landing whose solution sits exactly on the
+//! threshold does not cross, and the crossing is located again from there.
+
+/// A contact a `Bit` closes: 0.1 Ohm closed, 1 GOhm open.
+module Contact(a: Electrical, b: Electrical, in closed: Bit) {
+    let k = if closed { 1.0 } else { 0.0 };
+}
+
+analog for Contact {
+    i(a, b) +> v(a, b) * (k / 0.1 + (1.0 - k) / 1G);
+}
+
+/// The tank: filled at 25 uA, emptied at 80 uA while `pumping`; `full` is its float.
+module Tank(in pumping: Bit, out full: Bit = false) {
+    pub signal lvl: Electrical = 0.85;
+}
+
+analog for Tank {
+    i(lvl) +> ddt(1m * v(lvl)) - 25u + if pumping { 80u } else { 0.0 };
+}
+
+digital for Tank {
+    on above(v(lvl) - 0.9) {
+        full <- true;
+    }
+    on above(0.88 - v(lvl)) && now() > 0.0 {
+        full <- false;
+    }
+}
+
+/// Runs the pump while `sw` is pulled low, stops it once `sw` is back high.
+module Latch(sw: Electrical, out pumping: Bit = false) {}
+
+digital for Latch {
+    on above(6.0 - v(sw)) {
+        pumping <- true;
+    }
+    on above(v(sw) - 10.0) && now() > 0.0 {
+        pumping <- false;
+    }
+}
+
+module FloatSwitch() {
+    signal sw: Electrical;
+    signal full: Bit;
+    signal pumping: Bit;
+    pub let tank = Tank(pumping, full);
+    let latch = Latch(sw, pumping);
+    let float = Contact(sw, gnd, full);
+}
+
+analog for FloatSwitch {
+    // 12 V through 10 kOhm onto `sw`
+    i(sw) +> (v(sw) - 12.0) / 10k;
+}
