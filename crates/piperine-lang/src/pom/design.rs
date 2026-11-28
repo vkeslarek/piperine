@@ -10,6 +10,7 @@ use super::body::{ExprNode, PatNode, PathNode, StmtNode, TypeNode};
 use super::decl::{DeclData, DeclKind, NamespaceData, NamespaceOrigin};
 use super::crates::{CrateData, CrateGraph, DependencyData};
 use super::ids::{CrateId, DeclId, ExprId, FileId, PatId, PathId, StmtId, TypeId};
+use super::language_items::LanguageItems;
 use super::lower::Lowerer;
 use super::source::{DiskSources, MemorySources, SourceProvider};
 use crate::msl::Span;
@@ -93,6 +94,10 @@ pub struct Design {
     /// The by-name lookup tables, built on first use and never serialized.
     #[serde(skip)]
     names: NameTables,
+    /// The declarations of `std` the compiler gives a meaning to: found once when the design is resolved (or, for a
+    /// design read from JSON, on first use), never serialized.
+    #[serde(skip)]
+    language_items: LanguageItemCell,
 }
 
 /// The sorted by-name tables behind `Design::module` and `Module::signal`:
@@ -108,6 +113,23 @@ pub(super) struct Tables {
     /// Ports, params and signals, by the module they belong to (through
     /// generation) and their name.
     pub members: BTreeMap<(DeclId, String), Vec<DeclId>>,
+}
+
+/// The [`LanguageItems`] of a design, found once: not part of the serialized form or of equality, as they follow
+/// from the declarations.
+#[derive(Default, Clone)]
+struct LanguageItemCell(OnceLock<LanguageItems>);
+
+impl std::fmt::Debug for LanguageItemCell {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("LanguageItemCell")
+    }
+}
+
+impl PartialEq for LanguageItemCell {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl Clone for NameTables {
@@ -129,6 +151,11 @@ impl PartialEq for NameTables {
 }
 
 impl Design {
+    /// The declarations of `std` the compiler gives a meaning to, each found once by its `std` path.
+    pub fn language_items(&self) -> &LanguageItems {
+        self.language_items.0.get_or_init(|| LanguageItems::of(self))
+    }
+
     /// The by-name tables, built on first use.
     pub(super) fn tables(&self) -> &Tables {
         self.names.0.get_or_init(|| {
@@ -510,6 +537,7 @@ impl DesignBuilder {
             expr_stmt: Vec::new(),
             bundle_leaves: Default::default(),
             names: NameTables::default(),
+            language_items: LanguageItemCell::default(),
         };
         if !self.graph.crates().is_empty() {
             let mut memory = MemorySources::new();
@@ -545,6 +573,7 @@ impl DesignBuilder {
         }
         design.add_std(&self.std_sources);
         super::resolve::NameResolution::new(&mut design).run();
+        design.language_items();
         design
     }
 }

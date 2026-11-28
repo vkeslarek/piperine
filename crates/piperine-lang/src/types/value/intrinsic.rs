@@ -1,11 +1,12 @@
 //! The functions of §22.1, §22.2.15 and §22.6.4 that read the characters of a `str` or a file (`logic`, `matches_bits`, `parse_table`, `parse_hex`,
 //! `table_model`), typed by their normative contract at the concrete type; `cast` and `same` are ordinary generic
-//! functions of `std/values.msl` since `generics` T55. A call whose callee is the stdlib's own item never reaches
-//! `signature_parts`, which refuses a generic function and an `extern` one; a project's own
-//! function of the same name is an ordinary function (§22 rule 3).
+//! functions of `std/values.msl` since `generics` T55. Each is the stdlib's own declaration, found as a
+//! [`LanguageItem`] by its `std` path; a call of one never reaches `signature_parts`, which refuses a generic function
+//! and an `extern` one. A project's own function of the same name is another declaration, an ordinary function
+//! (§22 rule 3).
 
 use crate::refusal::forms::AnalogForm;
-use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind};
+use crate::pom::{Arg, DeclId, ExprId, ExprKind, LanguageItem};
 
 use super::ExpressionTyping;
 use crate::types::{Callee, ConstTerm, GenericValue, LogicPattern, Nominal, Ty};
@@ -28,29 +29,23 @@ pub enum Intrinsic {
 }
 
 impl Intrinsic {
-    /// The function called `name` in the std namespace `namespace` (`values`, `io`, `analog`), if it is one of them.
-    fn named(namespace: &str, name: &str) -> Option<Intrinsic> {
-        match (namespace, name) {
-            ("io", "parse_table") => Some(Intrinsic::ParseTable),
-            ("io", "parse_hex") => Some(Intrinsic::ParseHex),
-            ("analog", "table_model") => Some(Intrinsic::TableModel),
-            ("values", "logic") => Some(Intrinsic::Logic),
-            ("values", "matches_bits") => Some(Intrinsic::MatchesBits),
-            _ => None,
+    /// The function the language item `item` is, if it is one of them.
+    fn of_item(item: LanguageItem) -> Option<Intrinsic> {
+        match item {
+            LanguageItem::ParseTable => Some(Intrinsic::ParseTable),
+            LanguageItem::ParseHex => Some(Intrinsic::ParseHex),
+            LanguageItem::TableModel => Some(Intrinsic::TableModel),
+            LanguageItem::LogicFunction => Some(Intrinsic::Logic),
+            LanguageItem::MatchesBits => Some(Intrinsic::MatchesBits),
+            LanguageItem::Logic => None,
         }
     }
 }
 
 impl ExpressionTyping<'_, '_> {
-    /// Which §22.1 function `function` is, when it is the stdlib's own (`std/values.msl`).
+    /// Which §22.1 function `function` is, when it is the stdlib's own declaration of one.
     pub(super) fn intrinsic_of(&self, function: DeclId) -> Option<Intrinsic> {
-        let data = self.state.design.decl_data(function);
-        if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(function) {
-            return None;
-        }
-        let parent = data.parent.map(|p| self.state.design.decl_data(p))?;
-        let namespace = matches!(parent.kind, DeclKind::Namespace(_)).then(|| parent.name.as_ref().map(|n| n.text.as_str())).flatten()?;
-        Intrinsic::named(namespace, &data.name.as_ref()?.text)
+        self.state.design.language_items().item(function).and_then(Intrinsic::of_item)
     }
 
     /// A call of one of the two: its type from the arguments, the turbofish or the type the
@@ -123,11 +118,7 @@ impl ExpressionTyping<'_, '_> {
 impl ExpressionTyping<'_, '_> {
     /// The struct `Logic` of the standard library (`std/logic.msl`), when the design holds it.
     fn library_logic(&self) -> Option<DeclId> {
-        (0..self.state.design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| {
-            let data = self.state.design.decl_data(*decl);
-            let in_logic = data.parent.is_some_and(|parent| self.state.design.decl_data(parent).name.as_ref().is_some_and(|name| name.text == "logic"));
-            matches!(data.kind, DeclKind::Struct(_)) && data.name.as_ref().is_some_and(|name| name.text == "Logic") && in_logic && self.is_std(*decl)
-        })
+        self.state.design.language_items().declaration(LanguageItem::Logic)
     }
 
     /// The number of levels of a `Logic<N>` type, `None` for any other type.
@@ -177,7 +168,7 @@ impl ExpressionTyping<'_, '_> {
         let span = self.state.design.expr_node(expr).span;
         self.apply(expr, &[Ty::Str], args)?;
         let Some(logic) = self.library_logic() else {
-            self.refuse(file, span, AnalogForm::LogicWithoutStandardLibraryLogic);
+            self.missing_language_item(file, span, LanguageItem::Logic);
             return None;
         };
         let wanted = expected.as_ref().and_then(|ty| self.logic_width(ty));

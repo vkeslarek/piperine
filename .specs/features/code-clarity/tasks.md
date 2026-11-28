@@ -2677,8 +2677,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `a_shadowed_intrinsic_is_the_models_own_function` and `a_std_without_a_language_item_is_an_internal_error` pass in `std_declarations`
-- [ ] Gate check passes: Golden
+- [x] `a_shadowed_intrinsic_is_the_models_own_function` and `a_std_without_a_language_item_is_an_internal_error` pass in `std_declarations`
+  - Note: a third test, `every_language_item_is_found_in_the_embedded_std`, proves each item's `std` path finds its declaration in the embedded `std` (a renamed or moved item fails it). `StdCrate` gained `with_namespace(name, text)` (a `std` namespace file beside the prelude). Departure (design.md, "LanguageItems: departure of T101"): `LanguageItems::of` finds the items a `std` declares and does not fail; `P0004` is reported where the compiler needs an absent item (`Checker::missing_language_item`), because the test designs build a `std` of a prelude alone and must stay clean. The refusal row "`logic` without the standard library's `Logic`" (`AnalogForm::LogicWithoutStandardLibraryLogic`, P0001) is that `P0004` now and left the table.
+- [x] Gate check passes: Golden
 
 **Tests**: integration
 **Gate**: golden

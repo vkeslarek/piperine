@@ -501,7 +501,8 @@ impl LanguageItems {
 
 `crates/piperine-lang/src/pom/language_items.rs` holds the only table from a `std` path to a `LanguageItem`, and `IntrinsicBinding` (`elab/value/intrinsics.rs`) the only one from a `LanguageItem` to its lowering (`ir::Method`, an IR form). No new syntax: no `#[lang]` attribute. A model that shadows a prelude name declares another item with another `DeclId`, so the one shadowing rule of S16 falls out.
 
-New `std` files and what each replaces:
+**LanguageItems: departure of T101.** As built, `LanguageItems::of(design)` returns the items a `std` declares at their paths (a declaration of the wrong kind is not one), never an error, and `declaration(item)` is an `Option<DeclId>`; the `P0004` for an absent item is reported where the compiler needs it (`Checker::missing_language_item`, the text naming `std::<path>`). A `std` written for a test declares a prelude alone, and those designs (the `StdCrate` tests and about twenty others) must stay clean, so an absence is a defect only once it is used. The items are found once at the end of `DesignBuilder::build`, after name resolution, and held beside the design out of its serialized form and its equality (a design read from JSON finds them on first use). A later item is one `LanguageItem` variant with its arm in `LanguageItem::path` and `LanguageItem::is_declared_by` and its entry in `LanguageItem::ALL`; a caller reads `design.language_items().item(decl)` or `.declaration(item)`. The five intrinsics map to the checker's `Intrinsic` in `Intrinsic::of_item` (`types/value/intrinsic.rs`); `IntrinsicBinding` is not introduced by T101 (no lowering moved).
+
 
 | File | Declares | Replaces | Task |
 |---|---|---|---|

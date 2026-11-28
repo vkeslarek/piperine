@@ -1274,7 +1274,36 @@ The three reverse tables, each indexed by `DeclId`. Read them through `Reflect::
 | `writers` | `Vec<Vec<WriterId>>` | Per declaration: the definitions and commits whose place is rooted at it or ends in it as a member of an instance (`c.w`; the instance's own name is then not written), in source order. |
 | `instantiated_by` | `Vec<Vec<ExprId>>` | Per module: the instance calls that place it. |
 
-## The built-in table
+## Language items
+
+Some declarations of the standard library mean something to the compiler: the functions whose types it checks by their contract (`parse_table`, `logic`, ..) and the struct `Logic` whose width it reads. The compiler finds each of them once, by its path from the root of `std`, when the design is built, and from then on compares declaration ids, never names. A model's own item of the same name is another declaration, so a call of it is an ordinary call. Read them through `Design::language_items()`.
+
+### `LanguageItem`
+
+*enum* in `src/pom/language_items.rs`.
+
+A `std` item the compiler gives meaning to. `LanguageItem::ALL` lists them; `path()` gives the path of each from the root of `std`.
+
+| Variant | Payload | Meaning |
+| --- | --- | --- |
+| `ParseTable` | — | `std::io::parse_table`, the table reader of §22.6.4. |
+| `ParseHex` | — | `std::io::parse_hex`, the hex image reader of §22.6.4. |
+| `TableModel` | — | `std::analog::table_model`, the interpolated table of §22.2.15. |
+| `LogicFunction` | — | `std::values::logic`, which makes a `Logic<N>` from a pattern (§22.1.4). |
+| `MatchesBits` | — | `std::values::matches_bits`, the pattern test of §22.1.4. |
+| `Logic` | — | `std::logic::Logic`, the four-state struct of §22.1. |
+
+### `LanguageItems`
+
+*struct* in `src/pom/language_items.rs`.
+
+The declarations of the language items of one design, found once from `std`'s own files. A `std` written for a test may declare only some: an absent item is reported as `P0004` where the compiler needs it, never replaced by a fallback.
+
+| Method | Meaning |
+| --- | --- |
+| `declaration(item)` | The `DeclId` of `item`, `None` when `std` does not declare it. |
+| `item(declaration)` | The language item `declaration` is, `None` for any other declaration. |
+
 
 The closed table of names the language provides without a declaration.
 

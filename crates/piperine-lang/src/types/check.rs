@@ -5,7 +5,7 @@ use std::collections::{BTreeSet, VecDeque};
 
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, Reflect};
+use crate::pom::{Decl, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, LanguageItem, Reflect};
 
 use super::attributes::AttributeCatalogue;
 use super::generics::tables::GenericsTables;
@@ -294,6 +294,13 @@ impl<'d> Checker<'d> {
     /// `P0001` at `span`, naming `form` with `details`: [`Diagnostics::refuse_with`].
     pub(super) fn refuse_with(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>, details: impl IntoIterator<Item = String>) {
         self.state.diagnostics.refuse_with(file, span, form, details);
+    }
+
+    /// `P0004` at `span`: the compiler needs the language item `item` and the standard library does not declare it at
+    /// its path (a defect of that standard library, not of the model).
+    pub(super) fn missing_language_item(&mut self, file: FileId, span: Span, item: LanguageItem) {
+        let message = format!("internal error: the standard library declares no `std::{}`, which the compiler needs here", item.path());
+        self.coded(file, "P0004", span, message, "this is a bug in the standard library, not in the model");
     }
 
     /// `E0180`: a plain type mismatch at `span`, naming both types.

@@ -1109,8 +1109,6 @@ pub enum AnalogForm {
     LogicCallWhoseTypeIsNotLogic,
     /// `logic` of a pattern that is no literal where no `Logic<N>` is expected
     LogicOfPatternThatIsNoLiteral,
-    /// `logic` without the standard library's `Logic`
-    LogicWithoutStandardLibraryLogic,
     /// a `matches_bits` subject that is not a `Logic<N>` of known width
     MatchesBitsSubjectThatIsNotLogic,
     /// this method as an event
@@ -1209,7 +1207,6 @@ impl AnalogForm {
         AnalogForm::LevelCastToTypeThatHasNo,
         AnalogForm::LogicCallWhoseTypeIsNotLogic,
         AnalogForm::LogicOfPatternThatIsNoLiteral,
-        AnalogForm::LogicWithoutStandardLibraryLogic,
         AnalogForm::MatchesBitsSubjectThatIsNotLogic,
         AnalogForm::MethodAsEvent,
         AnalogForm::MethodOnBitItIsEdgeOf,
@@ -1284,7 +1281,6 @@ impl AnalogForm {
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LevelCastToTypeThatHasNo), text: "a level cast to a type that has no value type in the IR", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicCallWhoseTypeIsNotLogic), text: "a `logic` call whose type is not a `Logic<N>` of known width", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicOfPatternThatIsNoLiteral), text: "`logic` of a pattern that is no literal where no `Logic<N>` is expected", owner: RefusalOwner::Unswept },
-        RefusalRow { form: RefusedForm::Analog(AnalogForm::LogicWithoutStandardLibraryLogic), text: "`logic` without the standard library's `Logic`", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MatchesBitsSubjectThatIsNotLogic), text: "a `matches_bits` subject that is not a `Logic<N>` of known width", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodAsEvent), text: "this method as an event", owner: RefusalOwner::Unswept },
         RefusalRow { form: RefusedForm::Analog(AnalogForm::MethodOnBitItIsEdgeOf), text: "method `{}` on `Bit<{}>`: it is the edge of a `Bit` of `bool` or of a `Logic` of one level", owner: RefusalOwner::Unswept },

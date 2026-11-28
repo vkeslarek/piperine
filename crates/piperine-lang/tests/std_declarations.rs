@@ -2,9 +2,12 @@
 //! design.md "What `std` must be able to write"). Each test declares one form in a `std`-like crate (the prelude of a
 //! standard library written in the test, `StdCrate`) and either checks it clean or asserts today's refusal by its code;
 //! the refused forms are the ones a later task implements as a general form, named on each test. The last test records
-//! the field types of §19 rule 11 and checks each is a `Repr` type or `str`.
+//! the field types of §19 rule 11 and checks each is a `Repr` type or `str`. The last three are the language items of
+//! T101 (CC-11 AC 2): each found in the embedded `std` at its path, a model's own function shadowing one, and a `std`
+//! that lacks one the compiler needs (`P0004`).
 
 use piperine_lang::elab::Elaborator;
+use piperine_lang::pom::{Design, LanguageItem};
 use piperine_lang_fixtures::checked::CheckedSource;
 use piperine_lang_fixtures::std_crate::StdCrate;
 
@@ -47,7 +50,7 @@ fn an_extern_intrinsic_method_is_refused_p0001() {
 #[test]
 fn an_extern_intrinsic_function_declares_in_std_and_only_there_but_a_call_is_refused_p0001() {
     // checks today: the declaration, accepted in std and `E0125` elsewhere. missing: a call of one is `P0001` "`extern`
-    // function" (the real std's five are found by their spelling, which T101 replaces by `LanguageItems`; T105 declares
+    // function" (the real std's five are language items, found by their `std` path since T101; T105 declares
     // the functions of §14 and gives every intrinsic call its lowering).
     let declared = StdCrate::declaring("pub extern \"intrinsic\" fn root(x: f64) -> f64;", TOP);
     assert_eq!(declared.codes(), Vec::<String>::new());
@@ -182,4 +185,44 @@ fn section_19_rule_11_field_types_are_repr_types_or_str() {
         assert_eq!(kind.field_findings(), Vec::<String>::new(), "{} (`{}`) must be accepted as an `emit!` field", kind.name, kind.type_text);
     }
     assert_eq!(without_repr, ["str", "()"], "`str` is outside `Repr` by the spec, `()` by a gap");
+}
+
+#[test]
+fn every_language_item_is_found_in_the_embedded_std() {
+    // T101: each item the compiler gives meaning to is a declaration of the embedded `std`, at its path.
+    let design = Design::builder().source("top.msl", TOP).build();
+    for item in LanguageItem::ALL {
+        let declaration = design.language_items().declaration(item).unwrap_or_else(|| panic!("`std::{}` is not declared", item.path()));
+        assert_eq!(design.std_crate().find(item.path()).map(|found| found.id()), Some(declaration), "{item:?}");
+        assert_eq!(design.language_items().item(declaration), Some(item));
+    }
+}
+
+#[test]
+fn a_shadowed_intrinsic_is_the_models_own_function() {
+    // T101: the model's own `parse_hex` is another declaration than `std::io::parse_hex`, so a call of it is an
+    // ordinary call; the std one, called where no model item shadows it, is still the intrinsic (its contract refuses a
+    // result type that is not written).
+    let intrinsic = "pub const extern \"intrinsic\" fn parse_hex<T, const N: usize>(text: str) -> [T; N];\n";
+    let shadowed = StdCrate::declaring("pub use crate::io::*;\n", &format!("fn parse_hex(x: f64) -> f64 {{ x + x }}\n{TOP}analog for Top {{ let y = parse_hex(2.0); }}"))
+        .with_namespace("io", intrinsic);
+    assert_eq!(shadowed.findings(), Vec::<(String, String)>::new());
+    assert_eq!(StdElaboration::codes(&shadowed), Vec::<String>::new());
+    let design = shadowed.design();
+    let own = design.root_crate().find("parse_hex").expect("the model's own function").id();
+    assert_eq!(design.language_items().item(own), None);
+    assert_ne!(design.language_items().declaration(LanguageItem::ParseHex), Some(own));
+    let unshadowed = StdCrate::declaring("pub use crate::io::*;\n", &format!("{TOP}analog for Top {{ let y = parse_hex(\"0a\"); }}")).with_namespace("io", intrinsic);
+    assert_eq!(unshadowed.codes(), ["P0001"]);
+    assert!(unshadowed.findings()[0].1.contains("`parse_hex` whose result type is not written"), "{:?}", unshadowed.findings());
+}
+
+#[test]
+fn a_std_without_a_language_item_is_an_internal_error() {
+    // T101: a `std` that declares `values::logic` but no `logic::Logic` lacks a language item the call of `logic`
+    // needs: `P0004`, a defect of that standard library, never a fallback.
+    let values = "pub struct Logic<const N: usize> { pub value: UInt<N> }\npub extern \"intrinsic\" fn logic<const N: usize>(pattern: str) -> Logic<N>;\n";
+    let source = StdCrate::declaring("pub use crate::values::*;\n", &format!("{TOP}analog for Top {{ let x = logic(\"01\"); }}")).with_namespace("values", values);
+    assert_eq!(source.codes(), ["P0004"]);
+    assert!(source.findings()[0].1.contains("`std::logic::Logic`"), "{:?}", source.findings());
 }
