@@ -11,7 +11,7 @@ use crate::landing::{LandingCause, LandingTest};
 use crate::net::{NetId, NetKind};
 use crate::passing::PassingValues;
 use crate::queue::{Instant, Writer};
-use crate::run::{Phase, fire_net, fired_reactions, run_functions, run_reactions, write_element, write_net};
+use crate::run::{Ambient, Firing, FunctionRun, Phase, ReactionRun};
 use crate::tick::Tick;
 use crate::error::DigitalError;
 
@@ -46,6 +46,26 @@ struct Settled {
 }
 
 impl Digital {
+    /// The discrete functions of the engine as a run over its plan, store, dirty set and observations.
+    fn function_run(&mut self) -> FunctionRun<'_> {
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs)
+    }
+
+    /// The reactions of the engine's microstep `here`, reading `samples` and `ambient`.
+    fn reaction_run<'a>(&'a mut self, samples: &'a [f64], ambient: &'a Ambient, here: Instant) -> ReactionRun<'a> {
+        ReactionRun {
+            plan: &mut self.plan,
+            store: &self.store,
+            samples,
+            ambient,
+            at: here,
+            queue: &mut self.queue,
+            observer: &mut self.obs,
+            call: &mut self.call,
+            settle_commits: &mut self.settle_commits,
+        }
+    }
+
     /// Applies the commits due at `here`, in C2 order. A commit to an event net fires it. The
     /// commits to one discrete net settle over its value, the later one winning each byte, and
     /// the net is written once (§12.1.1, §12.1.2): `CHANGED`, `PREVIOUS` and the one `Change`
@@ -55,7 +75,7 @@ impl Digital {
         let mut settled: Vec<Settled> = Vec::new();
         for p in self.queue.take_due(here) {
             if self.plan.nets[p.net.0 as usize].kind == NetKind::Event {
-                fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, p.net, here);
+                self.function_run().fire_net(p.net, here);
                 continue;
             }
             let at = match settled.iter().position(|s| s.net == p.net && s.element == p.element) {
@@ -76,10 +96,8 @@ impl Digital {
         }
         for s in &mut settled {
             s.changed = match s.element {
-                Some(element) => {
-                    write_element(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, element, 0, &s.bytes, here)
-                }
-                None => write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, s.net, 0, &s.bytes, here),
+                Some(element) => self.function_run().write_element(s.net, element, 0, &s.bytes, here),
+                None => self.function_run().write_net(s.net, 0, &s.bytes, here),
             };
         }
         settled
@@ -147,7 +165,7 @@ impl Digital {
             ambient.is_static = mode.is_static;
             ambient.horizon = self.horizon(at, limit.stop);
             ambient.crossing_horizon = self.horizon(at, limit.crossing);
-            run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
+            self.function_run().run(here, &ambient)?;
             let mut analog_now = false;
             for (i, spec) in self.plan.nets.iter().enumerate() {
                 let id = NetId(i as u32);
@@ -164,24 +182,13 @@ impl Digital {
                 }
             }
             if lookahead {
-                let firing = fired_reactions(&self.plan.instances, Phase::Microstep, &self.store);
+                let firing = Firing::fired(&self.plan.instances, Phase::Microstep, &self.store);
                 let cause = LandingTest::new(self.rule, &self.plan, &self.waited).after_functions(&self.store, &firing, analog_now);
                 if let Some(cause) = cause {
                     return Ok(Stepped::Landing { cause });
                 }
             }
-            let ran = run_reactions(
-                &mut self.plan,
-                &self.store,
-                samples,
-                &ambient,
-                &mut self.queue,
-                &mut self.obs,
-                here,
-                &mut self.call,
-                &mut self.settle_commits,
-                Phase::Microstep,
-            )?;
+            let ran = self.reaction_run(samples, &ambient, here).run(Phase::Microstep)?;
             out.finish |= ran.finish;
             self.obs.flush();
             out.microsteps = n + 1;
@@ -254,13 +261,13 @@ impl Digital {
         self.call = 0;
         let mut phase = SettlePhase { finish: false, fired: BTreeSet::new(), boundary: BTreeSet::new() };
         for net in self.plan.analysis().settle_nets().to_vec() {
-            fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, net, here);
+            self.function_run().fire_net(net, here);
         }
         let mut ambient = self.ambient(at);
         ambient.is_static = mode.is_static;
         ambient.horizon = self.horizon(at, limit.stop);
         ambient.crossing_horizon = self.horizon(at, limit.crossing);
-        run_functions(&self.plan, &mut self.store, &mut self.dirty, here, &ambient, &mut self.obs)?;
+        self.function_run().run(here, &ambient)?;
         for (i, spec) in self.plan.nets.iter().enumerate() {
             let id = NetId(i as u32);
             if self.store.fired(id) {
@@ -270,7 +277,7 @@ impl Digital {
                 phase.boundary.insert(id);
             }
         }
-        let ran = run_reactions(&mut self.plan, &self.store, samples, &ambient, &mut self.queue, &mut self.obs, here, &mut self.call, &mut self.settle_commits, Phase::Settle)?;
+        let ran = self.reaction_run(samples, &ambient, here).run(Phase::Settle)?;
         phase.finish = ran.finish;
         // what the phase left for the instant, its records, applies as the instant exits, as at the
         // end of the loop: a record left queued would be a commit due at this tick forever

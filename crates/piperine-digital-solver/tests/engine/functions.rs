@@ -9,12 +9,12 @@ use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::observe::{Obs, Observation};
 use piperine_digital_solver::plan::DigitalPlan;
-use piperine_digital_solver::run::{Ambient, DirtySet, run_functions, write_net};
+use piperine_digital_solver::run::{Ambient, DirtySet, FunctionRun};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
 
-/// A plan with the state `run_functions` needs, standing for a few microsteps of one instant.
+/// A plan with the state `FunctionRun::run` needs, standing for a few microsteps of one instant.
 struct Env {
     plan: DigitalPlan,
     store: Store,
@@ -42,12 +42,12 @@ impl Env {
     /// The host writes `bytes` to the net called `name` in the current microstep.
     fn write(&mut self, name: &str, bytes: &[u8]) {
         let id = self.net(name);
-        write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, id, 0, bytes, (Tick(5), self.step));
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).write_net(id, 0, bytes, (Tick(5), self.step));
     }
 
     fn run(&mut self) -> Result<(), DigitalError> {
         let amb = Ambient::at(Tick(5), 1e-15);
-        run_functions(&self.plan, &mut self.store, &mut self.dirty, (Tick(5), self.step), &amb, &mut self.obs)?;
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).run((Tick(5), self.step), &amb)?;
         self.obs.flush();
         Ok(())
     }

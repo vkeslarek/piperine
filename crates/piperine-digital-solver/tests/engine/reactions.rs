@@ -12,7 +12,7 @@ use piperine_digital_solver::observe::{Obs, Observation};
 use piperine_digital_solver::plan::DigitalPlan;
 use piperine_digital_solver::queue::Queue;
 use piperine_digital_solver::settle::SettleCommits;
-use piperine_digital_solver::run::{Ambient, DirtySet, Fired, Phase, fire_net, run_reactions, write_net};
+use piperine_digital_solver::run::{Ambient, DirtySet, Fired, FunctionRun, Phase, ReactionRun};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::tick::{Resolution, Tick};
 use piperine_digital_solver::error::DigitalError;
@@ -43,17 +43,17 @@ impl Env {
 
     fn set(&mut self, name: &str, bytes: &[u8]) {
         let id = self.net(name);
-        write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, id, 0, bytes, AT);
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).write_net(id, 0, bytes, AT);
     }
 
     fn fire(&mut self, name: &str) {
         let id = self.net(name);
-        fire_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, id, AT);
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).fire_net(id, AT);
     }
 
     fn react(&mut self) -> Result<Fired, DigitalError> {
         let amb = Ambient::at(AT.0, 1e-15);
-        let r = run_reactions(&mut self.plan, &self.store, &[], &amb, &mut self.queue, &mut self.obs, AT, &mut self.calls, &mut SettleCommits::default(), Phase::Microstep);
+        let r = ReactionRun { plan: &mut self.plan, store: &self.store, samples: &[], ambient: &amb, at: AT, queue: &mut self.queue, observer: &mut self.obs, call: &mut self.calls, settle_commits: &mut SettleCommits::default() }.run(Phase::Microstep);
         self.obs.flush();
         r
     }
@@ -192,9 +192,9 @@ fn a_later_commit_below_its_bound_is_a_fault() {
     let (mut queue, mut obs, mut dirty, mut calls) = (Queue::new(), Obs::new(), DirtySet::none(&plan), 0);
     let mut plan = plan;
     let id = PlanBinding::net_named(&plan, "o.e0");
-    fire_net(&plan, &mut store, &mut dirty, &mut obs, id, AT);
+    FunctionRun::new(&plan, &mut store, &mut dirty, &mut obs).fire_net(id, AT);
     let amb = Ambient::at(AT.0, 1e-6);
-    run_reactions(&mut plan, &store, &[], &amb, &mut queue, &mut obs, AT, &mut calls, &mut SettleCommits::default(), Phase::Microstep).expect("no LATER, no bound");
+    ReactionRun { plan: &mut plan, store: &store, samples: &[], ambient: &amb, at: AT, queue: &mut queue, observer: &mut obs, call: &mut calls, settle_commits: &mut SettleCommits::default() }.run(Phase::Microstep).expect("no LATER, no bound");
 }
 
 #[test]

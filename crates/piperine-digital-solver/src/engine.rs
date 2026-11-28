@@ -9,7 +9,7 @@ use piperine_abi::raw::pin_flag;
 
 use crate::plan::{Binding, DigitalPlan, NetWriter};
 use crate::queue::{Pending, Queue, QueueMark, Writer};
-use crate::run::{Ambient, DirtySet, run_cone, write_net};
+use crate::run::{Ambient, DirtySet, FunctionRun};
 use crate::settle::SettleCommits;
 use crate::store::{Store, StoreMark};
 use crate::tick::Tick;
@@ -548,10 +548,10 @@ impl Digital {
         let mut dirty = self.dirty.clone();
         let mut obs = Obs::new();
         let here = (self.now, 0);
-        write_net(&self.plan, &mut store, &mut dirty, &mut obs, net, offset, bytes, here);
+        FunctionRun::new(&self.plan, &mut store, &mut dirty, &mut obs).write_net(net, offset, bytes, here);
         dirty.mark_net(&self.plan, net);
         let ambient = self.ambient(self.now);
-        if let Some(instance) = run_cone(&self.plan, &mut store, &mut dirty, here, &ambient, &mut obs)? {
+        if let Some(instance) = FunctionRun::new(&self.plan, &mut store, &mut dirty, &mut obs).run_cone(here, &ambient)? {
             return Ok(Shadow::Reshape { instance });
         }
         for inst in &self.plan.instances {

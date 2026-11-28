@@ -4,11 +4,6 @@ crates/piperine-api/src/probe.rs::Probe::resolve	-
 crates/piperine-digital-solver/src/dag.rs::Dag::build	-
 crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-
 crates/piperine-digital-solver/src/plan.rs::::analyze	-
-crates/piperine-digital-solver/src/run.rs::::call_function	-
-crates/piperine-digital-solver/src/run.rs::::call_reaction	-
-crates/piperine-digital-solver/src/run.rs::::closure	-
-crates/piperine-digital-solver/src/run.rs::::relax	-
-crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
 crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	kept: one arm per variant, every arm a one-line name

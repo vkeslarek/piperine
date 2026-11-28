@@ -20,7 +20,7 @@ use piperine_digital_solver::error::DigitalError;
 use piperine_digital_solver::net::NetId;
 use piperine_digital_solver::observe::Obs;
 use piperine_digital_solver::plan::DigitalPlan;
-use piperine_digital_solver::run::{Ambient, DirtySet, run_functions, write_net};
+use piperine_digital_solver::run::{Ambient, DirtySet, FunctionRun};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::tick::{Resolution, Tick};
 
@@ -325,13 +325,13 @@ impl Loop {
     /// The host writes `bytes` to the net called `name` in the current microstep.
     fn write(&mut self, name: &str, bytes: &[u8]) {
         let id = self.net(name);
-        write_net(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs, id, 0, bytes, (Tick(5), self.step));
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).write_net(id, 0, bytes, (Tick(5), self.step));
     }
 
     /// Runs the dirty functions of the current microstep.
     fn run(&mut self) -> Result<(), DigitalError> {
         let ambient = Ambient::at(Tick(5), 1e-15);
-        run_functions(&self.plan, &mut self.store, &mut self.dirty, (Tick(5), self.step), &ambient, &mut self.obs)?;
+        FunctionRun::new(&self.plan, &mut self.store, &mut self.dirty, &mut self.obs).run((Tick(5), self.step), &ambient)?;
         self.obs.flush();
         Ok(())
     }

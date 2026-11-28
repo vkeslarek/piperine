@@ -2169,8 +2169,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No free function and no `#[allow]` in the file; no function of it takes more than 5 parameters beyond `self`
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] No free function and no `#[allow]` in the file; no function of it takes more than 5 parameters beyond `self`
+  - Departure: two owners, not one. The D half (`write_net`, `write_element`, `fire_net`, `run_functions`, `run_cone`, `walk`, `call_function`, `apply`, `relax`) borrows the plan shared and the store mutably, the R half (`run_reactions`, `call_reaction`) the plan mutably and the store shared, and `Digital::shadow` has only `&self.plan`: one type holding both borrows cannot be built there. So `FunctionRun` (plan, store, dirty set, observer) owns D and `ReactionRun` (plan, snapshot, samples, ambient, instant, queue, observer, commit counter, settle commits) owns R. `fired_reactions` became `Firing::fired`, `cell_bytes` `CellReader::bytes` (with the `WHOLE`-read input loop the two calls duplicated, `CellReader::inputs`), `earliest_other` `LatestCalls::earliest_other`, `fault` `DigitalError::device_fault` (in `error.rs`). `call_reaction`'s commit closure became `CommitCheck` (`accept` → `plan_commit` → `statement` / `due` / `target`); `run_reactions` splits into `Job::list`, `call_all`, `cut_horizon`, `queue_commits`, `queue_commit`; `relax` into `RelaxGroup`, `relax_passes`, `hold_pass`.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
