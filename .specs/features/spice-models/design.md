@@ -328,7 +328,7 @@ The oracle is ngspice-47, run at test time by `piperine-parity` on a `.cir`; the
 | distortion | harmonics of a transient, both sides by Fourier analysis (`.four` in ngspice) | `TRAN_VOLTAGE` on the waveform; the harmonics by the host's measure under `AC_MAGNITUDE` |
 | temperature | each of the above at three temperatures | the same contracts |
 
-No contract is added and none is changed (SPM-28). A comparison that fails is a defect of the model or of the solver, or a deviation recorded with its cause (`piperine-parity/src/deviation.rs`) and approved by the user.
+No contract is added and none is changed (SPM-28). A comparison that fails is a defect of the model or of the solver, or a deviation recorded with its cause (`piperine-parity/src/deviation.rs`), of which the user is informed in the phase report (2026-11-28).
 
 ### 6.2 The matrix of a model
 

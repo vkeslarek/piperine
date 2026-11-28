@@ -68,7 +68,7 @@ This feature executes after `code-clarity` and after `device-abi-simplification`
 | Circuit-wide options (`.options tnom`, `defw`, `defl`, `defad`, `defas`, `scale`, `gmin`) | MSL has no circuit-wide model option. Each is a param with ngspice's built-in default; a design shares a value by binding a parent's param. `gmin` is `gmin()`. |
 | `uic` | MSL has none (§16 H6). A device's `ic` holds its branch at the transient's operating point (§16 H7). |
 | The RF port parameters of `vsrc` (`portnum`, `z0`, `pwr`, `freq`, `phase`), `external`, `snd` | Ports of an S-parameter analysis and host-driven sources belong to the host (§16.3, §23.1). Refused by name. |
-| ngspice's bugs | A deviation traced to an ngspice defect is recorded with its evidence and the user's approval; Piperine's value is asserted. |
+| ngspice's bugs | A deviation traced to an ngspice defect is recorded with its evidence and reported to the user (informed, not asked); Piperine's value is asserted. |
 | Solver performance work | Bypass, the predictor and the device-level convergence shortcuts of ngspice are not model behaviour. What a model needs from the solver is listed in `design.md` §8. |
 
 ---
@@ -272,7 +272,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 1. Each in-scope model SHALL have twins (`.cir` and `.msl`) for every cell of its parity matrix in `design.md` §6, and a guard SHALL fail when a cell has no twin and no recorded refusal (SPM-27)
 2. WHEN a twin is compared THEN the comparison SHALL use one of the existing `ToleranceContract` constants and no other bound (SPM-28)
-3. IF a model does not meet a contract THEN the model SHALL be corrected, or the difference SHALL be recorded in the deviation ledger with the ngspice source lines that cause it and the user's approval; no contract SHALL be widened (SPM-28)
+3. IF a model does not meet a contract THEN the model SHALL be corrected, or the difference SHALL be recorded in the deviation ledger with the ngspice source lines that cause it, and the user SHALL be informed of it in the phase report (decision of 2026-11-28: informed, not asked); no contract SHALL be widened (SPM-28)
 4. Each model's twins SHALL cover each operating region of the device, each polarity, and DC sweeps on each terminal pair that the device's characteristic curves use (SPM-29)
 5. Each model with charge storage SHALL have AC twins at three bias points at least, and transient twins that switch the device through its regions (SPM-30)
 6. Each model with a noise function SHALL have noise twins at a thermal-dominated and a flicker-dominated frequency, per source (SPM-31)

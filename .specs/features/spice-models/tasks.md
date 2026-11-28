@@ -36,7 +36,7 @@ Rules every task follows (repeated so a worker needs no other file):
 
 - **Environment.** Before any cargo command, in the same command: `CARGO_TARGET_DIR=/var/tmp/piperine-target-<lane> TMPDIR=/var/tmp/piperine-tmp-<lane> CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`. Commands run in the foreground; never `git stash`; never `cargo clean`; never `pkill` by pattern. If `df /` passes 90 %, stop and report.
 - **Gate policy (user, 2026-11-23).** Per task: the `**Build**` line, `cargo test -p <crate>` for each crate the task touched, and what its `Gate` names. The full suite runs once, in the final verification.
-- **No tolerance moves.** `crates/piperine-parity/src/contract.rs` is not edited. A twin that fails is a defect of the model or the solver, to fix; or a deviation written to the ledger with the ngspice source lines that cause it, approved by the user. A twin is never made to pass by a bound, a fitted constant or a narrower sweep.
+- **No tolerance moves.** `crates/piperine-parity/src/contract.rs` is not edited. A twin that fails is a defect of the model or the solver, to fix; or a deviation written to the ledger with the ngspice source lines that cause it, reported to the user in the phase report (informed, not asked). A twin is never made to pass by a bound, a fitted constant or a narrower sweep.
 - **The model is ngspice-47's.** A model task reads the C files its `What` names and restates their currents, charges, temperature update and noise, in ngspice's order, with `std::spice::constants`. It writes no derivative: the language differentiates. Where the C and ngspice's manual differ, the C is the reference.
 - **Fail loud.** A parameter, a selector value or a terminal list the model does not yet cover is refused with a diagnostic that names it and has a `GAPS.md` row; nothing is approximated or ignored silently.
 - **The interface rules are design §3.** Parameter names are ngspice's; everything else is full words; the rename table is closed. A family's page (`interface/<family>.md`) is written by the phase's planner, who decides what the rules leave open and records it there; **the user is informed in the phase's report and does not review the page** (user, 2026-11-27).
@@ -482,7 +482,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T22: Parity matrix: the resistors
 
-**What**: Fill the parity matrix of the resistors (design §6.2): value; geometry with `narrow` and `short`; `tc1`/`tc2` and `tce` at three temperatures; `tnom`; `m` and `scale`; `ac` in an AC sweep; thermal and flicker noise with and without geometry; `noisy` off. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the netlists `divider`, `temp_res`, `tnom_res`, `noise_rc` of `tests/e2e/twins/`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the resistors (design §6.2): value; geometry with `narrow` and `short`; `tc1`/`tc2` and `tce` at three temperatures; `tnom`; `m` and `scale`; `ac` in an AC sweep; thermal and flicker noise with and without geometry; `noisy` off. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the netlists `divider`, `temp_res`, `tnom_res`, `noise_rc` of `tests/e2e/twins/`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/passive/`, `crates/piperine-parity/tests/spice_passive.rs`
 **Depends on**: T21
 **Requirement**: SPM-27 to SPM-36
@@ -520,7 +520,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T24: Parity matrix: the capacitors
 
-**What**: Fill the parity matrix of the capacitors (design §6.2): value; geometry; `di`/`thick`; temperature; `m`, `scale`; `ic` (the `uic_rc` netlist); AC; a transient charge and discharge. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the capacitors (design §6.2): value; geometry; `di`/`thick`; temperature; `m`, `scale`; `ic` (the `uic_rc` netlist); AC; a transient charge and discharge. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/passive/`, `crates/piperine-parity/tests/spice_passive.rs`
 **Depends on**: T23
 **Requirement**: SPM-27 to SPM-36
@@ -577,7 +577,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T27: Parity matrix: the sources and controlled sources
 
-**What**: Fill the parity matrix of the sources and controlled sources (design §6.2): DC, AC magnitude and phase, both together; source stepping in a circuit that needs it (`homotopy_bias`, `homotopy_sink`); each controlled source in DC, AC and transfer function; gain signs; `m`. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the sources and controlled sources (design §6.2): DC, AC magnitude and phase, both together; source stepping in a circuit that needs it (`homotopy_bias`, `homotopy_sink`); each controlled source in DC, AC and transfer function; gain signs; `m`. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/source/`, `crates/piperine-parity/tests/spice_source.rs`
 **Depends on**: T26
 **Requirement**: SPM-27 to SPM-36
@@ -676,7 +676,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T32: Parity matrix: the inductors
 
-**What**: Fill the parity matrix of the inductors (design §6.2): value; geometry; temperature; `ic`; AC of an RL and an RLC; a transformer at `k` 0.1, 0.9 and 1 in AC and transient; three windings. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the inductors (design §6.2): value; geometry; temperature; `ic`; AC of an RL and an RLC; a transformer at `k` 0.1, 0.9 and 1 in AC and transient; three windings. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/passive/`, `crates/piperine-parity/tests/spice_passive.rs`
 **Depends on**: T31
 **Requirement**: SPM-27 to SPM-36
@@ -753,7 +753,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T36: Parity matrix: the waveforms
 
-**What**: Fill the parity matrix of the waveforms (design §6.2): each waveform with defaults and with every parameter set; corners between print points; a waveform on a current source; two waveforms added; the statistical comparison of the two random ones. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `tran_pwl_rc`, `tran_square_rc`, `tran_corner`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the waveforms (design §6.2): each waveform with defaults and with every parameter set; corners between print points; a waveform on a current source; two waveforms added; the statistical comparison of the two random ones. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `tran_pwl_rc`, `tran_square_rc`, `tran_corner`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/source/`, `crates/piperine-parity/tests/spice_source.rs`
 **Depends on**: T35
 **Requirement**: SPM-27 to SPM-36
@@ -791,7 +791,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T38: Parity matrix: the behavioural sources
 
-**What**: Fill the parity matrix of the behavioural sources (design §6.2): a product of two voltages; a nonlinear function; a current-dependent expression; temperature coefficients; AC around a bias; a polynomial source (the `POLY` translation). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the behavioural sources (design §6.2): a product of two voltages; a nonlinear function; a current-dependent expression; temperature coefficients; AC around a bias; a polynomial source (the `POLY` translation). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/source/`, `crates/piperine-parity/tests/spice_source.rs`
 **Depends on**: T37
 **Requirement**: SPM-27 to SPM-36
@@ -872,7 +872,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T42: Parity matrix: the switches
 
-**What**: Fill the parity matrix of the switches (design §6.2): on and off in DC; a sweep up and down through the hysteresis; `initial` each way; transient switching of a load; noise in each state (the `noise_switch`, `noise_switch_off`, `noise_csw` netlists). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the switches (design §6.2): on and off in DC; a sweep up and down through the hysteresis; `initial` each way; transient switching of a load; noise in each state (the `noise_switch`, `noise_switch_off`, `noise_csw` netlists). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/switch/`, `crates/piperine-parity/tests/spice_switch.rs`
 **Depends on**: T41
 **Requirement**: SPM-27 to SPM-36
@@ -911,7 +911,7 @@ The first delivery: eight modules, the twins every later phase builds on, and th
 
 ### T44: Parity matrix: the lossless line
 
-**What**: Fill the parity matrix of the lossless line (design §6.2): matched, open and shorted ends with a step and with a sine; `td` and `f`/`nl`; AC magnitude and phase; initial conditions (the `delay_tline` netlist). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the lossless line (design §6.2): matched, open and shorted ends with a step and with a sine; `td` and `f`/`nl`; AC magnitude and phase; initial conditions (the `delay_tline` netlist). Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/line/`, `crates/piperine-parity/tests/spice_line.rs`
 **Depends on**: T43
 **Requirement**: SPM-27 to SPM-36
@@ -1051,7 +1051,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T51: Parity matrix: the diodes
 
-**What**: Fill the parity matrix of the diodes (design §6.2): forward low injection, knee, resistance-limited; reverse leakage, breakdown, tunnelling, recombination; `area` and `pj`; sidewall; each `tlev`/`tlevc`; three temperatures; AC at four biases; reverse recovery with `tt` and `vp`; each noise source at two frequencies; self-heating in DC and transient; level 3 geometry. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the ten diode netlists of `tests/e2e/twins/` and move those twins to the library's `Diode`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the diodes (design §6.2): forward low injection, knee, resistance-limited; reverse leakage, breakdown, tunnelling, recombination; `area` and `pj`; sidewall; each `tlev`/`tlevc`; three temperatures; AC at four biases; reverse recovery with `tt` and `vp`; each noise source at two frequencies; self-heating in DC and transient; level 3 geometry. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the ten diode netlists of `tests/e2e/twins/` and move those twins to the library's `Diode`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/diode/`, `crates/piperine-parity/tests/spice_diode.rs`
 **Depends on**: T50
 **Requirement**: SPM-27 to SPM-36
@@ -1089,7 +1089,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T53: Parity matrix: the uniform RC line
 
-**What**: Fill the parity matrix of the uniform RC line (design §6.2): the six `urc_*` netlists of `tests/e2e/twins/`: lump counts 2, 5, 10, the count from `fmax`, a taper, the diode variant; AC and transient. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the uniform RC line (design §6.2): the six `urc_*` netlists of `tests/e2e/twins/`: lump counts 2, 5, 10, the count from `fmax`, a taper, the diode variant; AC and transient. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/line/`, `crates/piperine-parity/tests/spice_line.rs`
 **Depends on**: T52
 **Requirement**: SPM-27 to SPM-36
@@ -1205,7 +1205,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T59: Parity matrix: the JFETs
 
-**What**: Fill the parity matrix of the JFETs (design §6.2): transfer and output curves; pinch-off, ohmic, saturation, reverse; gate forward conduction; both polarities; AC capacitances; noise per `nlev`; three temperatures; ngspice's `tests/jfet` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `jfet_bias`, `jfet_id_vds`, `noise_jfet`, `noise_jfet_nlev3`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the JFETs (design §6.2): transfer and output curves; pinch-off, ohmic, saturation, reverse; gate forward conduction; both polarities; AC capacitances; noise per `nlev`; three temperatures; ngspice's `tests/jfet` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `jfet_bias`, `jfet_id_vds`, `noise_jfet`, `noise_jfet_nlev3`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/jfet/`, `crates/piperine-parity/tests/spice_jfet.rs`
 **Depends on**: T56, T57
 **Requirement**: SPM-27 to SPM-36
@@ -1224,7 +1224,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T60: Parity matrix: the MESFET
 
-**What**: Fill the parity matrix of the MESFET (design §6.2): transfer and output curves; both polarities; AC; noise; ngspice's `tests/mes` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the MESFET (design §6.2): transfer and output curves; both polarities; AC; noise; ngspice's `tests/mes` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/mesfet/`, `crates/piperine-parity/tests/spice_mesfet.rs`
 **Depends on**: T58
 **Requirement**: SPM-27 to SPM-36
@@ -1323,7 +1323,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T65: Parity matrix: the bipolar transistor
 
-**What**: Fill the parity matrix of the bipolar transistor (design §6.2): Gummel plot; output curves with Early effect; forward and reverse active, saturation, cut-off; quasi-saturation; both polarities; lateral and vertical; AC and `ft`; storage time; each noise source; three temperatures; each `tlev`. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `bjt_ce`, `bjt_mirror`, `temp_bjt`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the bipolar transistor (design §6.2): Gummel plot; output curves with Early effect; forward and reverse active, saturation, cut-off; quasi-saturation; both polarities; lateral and vertical; AC and `ft`; storage time; each noise source; three temperatures; each `tlev`. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse `bjt_ce`, `bjt_mirror`, `temp_bjt`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bipolar/`, `crates/piperine-parity/tests/spice_bipolar.rs`
 **Depends on**: T64
 **Requirement**: SPM-27 to SPM-36
@@ -1496,7 +1496,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T74: Parity matrix: `Mos1`, `Mos2`, `Mos3`
 
-**What**: Fill the parity matrix of `Mos1`, `Mos2`, `Mos3` (design §6.2): per model: `id`–`vgs` at low and high `vds`, `id`–`vds` at four `vgs`, each at three body biases; subthreshold, linear, saturation, reverse mode; both polarities; derived against given parameters; junction diodes; AC at five biases; an inverter and a ring oscillator; noise per `nlev`; three temperatures. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the fifteen `nmos*` and `noise_mos*` netlists and `uic_mos`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Mos1`, `Mos2`, `Mos3` (design §6.2): per model: `id`–`vgs` at low and high `vds`, `id`–`vds` at four `vgs`, each at three body biases; subthreshold, linear, saturation, reverse mode; both polarities; derived against given parameters; junction diodes; AC at five biases; an inverter and a ring oscillator; noise per `nlev`; three temperatures. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Reuse the fifteen `nmos*` and `noise_mos*` netlists and `uic_mos`. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/mosfet/`, `crates/piperine-parity/tests/spice_mosfet.rs`
 **Depends on**: T70, T71
 **Requirement**: SPM-27 to SPM-36
@@ -1515,7 +1515,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T75: Parity matrix: `Mos6`, `Mos9`
 
-**What**: Fill the parity matrix of `Mos6`, `Mos9` (design §6.2): the same rows, and ngspice's `tests/mos6` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Mos6`, `Mos9` (design §6.2): the same rows, and ngspice's `tests/mos6` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/mosfet/`, `crates/piperine-parity/tests/spice_mosfet.rs`
 **Depends on**: T72, T73
 **Requirement**: SPM-27 to SPM-36
@@ -1649,7 +1649,7 @@ The first nonlinear device, and the functions every junction of every later mode
 
 ### T82: Parity matrix: `Vdmos`, `Mesa`, `Hfet1`, `Hfet2`
 
-**What**: Fill the parity matrix of `Vdmos`, `Mesa`, `Hfet1`, `Hfet2` (design §6.2): per model: transfer and output curves, both polarities, AC, transient switching, temperature; VDMOS body diode and self-heating; each MESA level; ngspice's `tests/mesa` and `tests/hfet` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Vdmos`, `Mesa`, `Hfet1`, `Hfet2` (design §6.2): per model: transfer and output curves, both polarities, AC, transient switching, temperature; VDMOS body diode and self-heating; each MESA level; ngspice's `tests/mesa` and `tests/hfet` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/mesfet/`, `crates/piperine-parity/tests/spice_mesfet.rs`
 **Depends on**: T78, T79, T81
 **Requirement**: SPM-27 to SPM-36
@@ -1863,7 +1863,7 @@ Capability N3, created inside this feature (user, 2026-11-27): `convolve`, a cor
 
 ### T93: Parity matrix: the lossy and coupled lines
 
-**What**: Fill the parity matrix of the lossy and coupled lines (design §6.2): matched, open and shorted ends; three lengths; a step and a sine; each LTRA case; AC of each; a coupled pair's crosstalk; ngspice's `tests/transmission` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the lossy and coupled lines (design §6.2): matched, open and shorted ends; three lengths; a step and a sine; each LTRA case; AC of each; a coupled pair's crosstalk; ngspice's `tests/transmission` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/line/`, `crates/piperine-parity/tests/spice_line.rs`
 **Depends on**: T91, T92
 **Requirement**: SPM-27 to SPM-36
@@ -1962,7 +1962,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T98: Parity matrix: `Bsim1`, `Bsim2`
 
-**What**: Fill the parity matrix of `Bsim1`, `Bsim2` (design §6.2): the MOS rows of design §6.2 and a geometry grid (short, long, narrow, wide, four corners); ngspice's `tests/bsim1` and `tests/bsim2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Bsim1`, `Bsim2` (design §6.2): the MOS rows of design §6.2 and a geometry grid (short, long, narrow, wide, four corners); ngspice's `tests/bsim1` and `tests/bsim2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bsim/`, `crates/piperine-parity/tests/spice_bsim.rs`
 **Depends on**: T97
 **Requirement**: SPM-27 to SPM-36
@@ -2078,7 +2078,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T104: Parity matrix: `Bsim3`
 
-**What**: Fill the parity matrix of `Bsim3` (design §6.2): the MOS rows; the geometry grid; each selector at each value; NQS in AC and transient; a binned card; three temperatures; ngspice's `tests/bsim3` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Cards are generated from one table (T16). A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Bsim3` (design §6.2): the MOS rows; the geometry grid; each selector at each value; NQS in AC and transient; a binned card; three temperatures; ngspice's `tests/bsim3` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Cards are generated from one table (T16). A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bsim/`, `crates/piperine-parity/tests/spice_bsim.rs`
 **Depends on**: T103
 **Requirement**: SPM-27 to SPM-36
@@ -2133,7 +2133,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T107: Parity matrix: the earlier BSIM3 versions
 
-**What**: Fill the parity matrix of the earlier BSIM3 versions (design §6.2): the DC, AC and noise rows on the grid, per version, with a card of that version. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the earlier BSIM3 versions (design §6.2): the DC, AC and noise rows on the grid, per version, with a card of that version. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bsim/`, `crates/piperine-parity/tests/spice_bsim.rs`
 **Depends on**: T106
 **Requirement**: SPM-27 to SPM-36
@@ -2231,7 +2231,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T112: Parity matrix: `Vbic`
 
-**What**: Fill the parity matrix of `Vbic` (design §6.2): the bipolar rows; avalanche; self-heating in DC and transient; ngspice's `tests/vbic` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Vbic` (design §6.2): the bipolar rows; avalanche; self-heating in DC and transient; ngspice's `tests/vbic` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bipolar/`, `crates/piperine-parity/tests/spice_bipolar.rs`
 **Depends on**: T111
 **Requirement**: SPM-27 to SPM-36
@@ -2304,7 +2304,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T116: Parity matrix: `Hicum2`
 
-**What**: Fill the parity matrix of `Hicum2` (design §6.2): the bipolar rows; high-current fall-off; self-heating; ngspice's `tests/hicum2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Hicum2` (design §6.2): the bipolar rows; high-current fall-off; self-heating; ngspice's `tests/hicum2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bipolar/`, `crates/piperine-parity/tests/spice_bipolar.rs`
 **Depends on**: T115
 **Requirement**: SPM-27 to SPM-36
@@ -2440,7 +2440,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T123: Parity matrix: `Bsim4`
 
-**What**: Fill the parity matrix of `Bsim4` (design §6.2): the MOS rows; the geometry grid; each selector at each value; gate current; NQS; stress parameters; a binned card; three temperatures; ngspice's `tests/bsim4` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Cards are generated from one table (T16). A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Bsim4` (design §6.2): the MOS rows; the geometry grid; each selector at each value; gate current; NQS; stress parameters; a binned card; three temperatures; ngspice's `tests/bsim4` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. Cards are generated from one table (T16). A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bsim/`, `crates/piperine-parity/tests/spice_bsim.rs`
 **Depends on**: T122
 **Requirement**: SPM-27 to SPM-36
@@ -2495,7 +2495,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T126: Parity matrix: the earlier BSIM4 versions
 
-**What**: Fill the parity matrix of the earlier BSIM4 versions (design §6.2): the DC, AC and noise rows on the grid, per version, with a card of that version. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of the earlier BSIM4 versions (design §6.2): the DC, AC and noise rows on the grid, per version, with a card of that version. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/bsim/`, `crates/piperine-parity/tests/spice_bsim.rs`
 **Depends on**: T125
 **Requirement**: SPM-27 to SPM-36
@@ -2610,7 +2610,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T132: Parity matrix: `Soi3` and the BSIM3SOI models
 
-**What**: Fill the parity matrix of `Soi3` and the BSIM3SOI models (design §6.2): the MOS rows; floating body and body contact; the kink; self-heating; ngspice's `tests/bsim3soipd`, `bsim3soifd`, `bsim3soidd` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Soi3` and the BSIM3SOI models (design §6.2): the MOS rows; floating body and body contact; the kink; self-heating; ngspice's `tests/bsim3soipd`, `bsim3soifd`, `bsim3soidd` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/soi/`, `crates/piperine-parity/tests/spice_soi.rs`
 **Depends on**: T131
 **Requirement**: SPM-27 to SPM-36
@@ -2665,7 +2665,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T135: Parity matrix: `Bsim4Soi`
 
-**What**: Fill the parity matrix of `Bsim4Soi` (design §6.2): the MOS rows; each `soimod`; body contact; self-heating; ngspice's `tests/bsimsoi` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Bsim4Soi` (design §6.2): the MOS rows; each `soimod`; body contact; self-heating; ngspice's `tests/bsimsoi` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/soi/`, `crates/piperine-parity/tests/spice_soi.rs`
 **Depends on**: T134
 **Requirement**: SPM-27 to SPM-36
@@ -2762,7 +2762,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T140: Parity matrix: `Hisim2`
 
-**What**: Fill the parity matrix of `Hisim2` (design §6.2): the MOS rows; the geometry grid; the selectors; ngspice's `tests/hisim` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `Hisim2` (design §6.2): the MOS rows; the geometry grid; the selectors; ngspice's `tests/hisim` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/hisim/`, `crates/piperine-parity/tests/spice_hisim.rs`
 **Depends on**: T139
 **Requirement**: SPM-27 to SPM-36
@@ -2817,7 +2817,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 
 ### T143: Parity matrix: `HisimHv1`, `HisimHv2`
 
-**What**: Fill the parity matrix of `HisimHv1`, `HisimHv2` (design §6.2): the MOS rows at high voltage; the drift region; self-heating; ngspice's `tests/hisimhv1` and `tests/hisimhv2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and taken to the user for approval; no contract is edited.
+**What**: Fill the parity matrix of `HisimHv1`, `HisimHv2` (design §6.2): the MOS rows at high voltage; the drift region; self-heating; ngspice's `tests/hisimhv1` and `tests/hisimhv2` decks. Each cell a `.cir`/`.msl` twin and a row of `matrix.toml`, compared under an existing `ToleranceContract`, on both backends. A cell that fails is a defect to fix in the model, or a deviation written to the ledger with the ngspice source lines and reported to the user in the phase report (informed, not asked); no contract is edited.
 **Where**: `crates/piperine-parity/tests/spice/hisim/`, `crates/piperine-parity/tests/spice_hisim.rs`
 **Depends on**: T142
 **Requirement**: SPM-27 to SPM-36
