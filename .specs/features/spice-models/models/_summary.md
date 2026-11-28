@@ -22,7 +22,7 @@
 | VBIC | `vbic` | element Q; `.model … npn|pnp`, level 4 and 9 | `Vbic (+ VbicSelfHeating)` | 8 | 116 | 8325 |
 | hicum2 | `hicum2` | element Q; `.model … npn|pnp`, level 8 | `Hicum2 (+ Hicum2SelfHeating)` | 9 | 139 | 8889 |
 | JFET | `jfet` | element J; `.model … njf|pjf`, level 1 | `Jfet` | 8 | 23 | 3153 |
-| JFET2 | `jfet2` | element J; `.model … njf|pjf`, level 2 | `Jfet2` | 8 | 1 | 1765 |
+| JFET2 | `jfet2` | element J; `.model … njf|pjf`, level 2 | `Jfet2` | 8 | 39 | 1765 |
 | MES | `mes` | element Z; `.model … nmf|pmf`, level 1 | `Mesfet` | 4 | 14 | 3246 |
 | MESA | `mesa` | element Z; `.model … nmf|pmf`, levels 2, 3, 4 | `Mesa` | 8 | 61 | 2918 |
 | HFET1 | `hfet1` | element Z; `.model … nhfet|phfet`, level 5 | `Hfet1` | 7 | 64 | 2650 |
@@ -58,4 +58,4 @@
 | NUMOS | `numos` | `.model … numos` | `—` | 7 | 0 | 2367 |
 | NDEV | `ndev` | `.model … ndev` | `—` | 0 | 2 | 637 |
 
-In scope: instance 757, model 10232, total 10989
+In scope: instance 757, model 10270, total 11027

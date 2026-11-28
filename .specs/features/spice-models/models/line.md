@@ -95,7 +95,7 @@ Read-only quantities (2; each becomes an operating-point variable of the same na
 | ngspice device | `TransLine`, `src/spicelib/devices/txl/` (2098 lines of C) |
 | Netlist form | element Y; `.model … txl` |
 | MSL module | `SingleLossyTransmissionLine` in `spice::line` |
-| MSL ports | `p1, p2, reference` |
+| MSL ports | `p1, p2 (referred to ground, as in ngspice)` |
 | ngspice terminals | `Y+`, `Y-` |
 | ngspice entry points | DC, operating point, transient; AC |
 | Newton limiting | none |
@@ -130,7 +130,7 @@ Type keywords of the model card (they become the polarity param, or select the m
 | ngspice device | `CplLines`, `src/spicelib/devices/cpl/` (3320 lines of C) |
 | Netlist form | element P; `.model … cpl` |
 | MSL module | `CoupledTransmissionLines<const N: usize>` in `spice::line` |
-| MSL ports | `near: [Electrical; N], far: [Electrical; N], near_reference, far_reference` |
+| MSL ports | `near: [Electrical; N], far: [Electrical; N] (referred to ground, as in ngspice)` |
 | ngspice terminals | `P+`, `P-` |
 | ngspice entry points | DC, operating point, transient |
 | Newton limiting | none |

@@ -99,12 +99,52 @@ Read-only quantities (3; each becomes an operating-point variable of the same na
 
 Read-only quantities (22; each becomes an operating-point variable of the same name unless it is a node number): `drain-node`, `gate-node`, `source-node`, `drain-prime-node`, `source-prime-node`, `vgs`, `vgd`, `ig`, `id`, `is`, `igd`, `gm`, `gds`, `ggs`, `ggd`, `qgs`, `qgd`, `cqgs`, `cqgd`, `p`, `vtrap`, `vpave`.
 
-**Model parameters: 1 settable.**
+**Model parameters: 39 settable.**
 
 | MSL name | ngspice name | Type | Default in ngspice | Given-ness | Meaning |
 | --- | --- | --- | --- | --- | --- |
 | `tnom` | `tnom` | real | `<nominal temperature of the run>` | computed default | parameter measurement temperature |
+| `acgam` | `acgam` | real | `0` | default |  |
+| `af` | `af` | real | `1` | default | Flicker Noise Exponent |
+| `beta` | `beta` | real | `1e-4` | default | Transconductance parameter |
+| `cds` | `cds` | real | `0` | default | D-S junction capacitance |
+| `cgd` | `cgd` | real | `0` | default | G-D junction capacitance |
+| `cgs` | `cgs` | real | `0` | default | G-S junction capacitance |
+| `delta` | `delta` | real | `0` | default | coef of thermal current reduction |
+| `hfeta` | `hfeta` | real | `0` | default | drain feedback modulation |
+| `hfe1` | `hfe1` | real | `0` | default |  |
+| `hfe2` | `hfe2` | real | `0` | default |  |
+| `hfg1` | `hfg1` | real | `0` | default |  |
+| `hfg2` | `hfg2` | real | `0` | default |  |
+| `mvst` | `mvst` | real | `0` | default | modulation index for subtreshold current |
+| `mxi` | `mxi` | real | `0` | default | saturation potential modulation parameter |
+| `fc` | `fc` | real | `0.5` | default | Forward bias junction fit parm. |
+| `ibd` | `ibd` | real | `0` | default | Breakdown current of diode jnc |
+| `is` | `is` | real | `1e-14` | default | Gate junction saturation current |
+| `kf` | `kf` | real | `0` | default | Flicker Noise Coefficient |
+| `lambda` | `lambda` | real | `0` | default | Channel length modulation param. |
+| `lfgam` | `lfgam` | real | `0` | default | drain feedback parameter |
+| `lfg1` | `lfg1` | real | `0` | default |  |
+| `lfg2` | `lfg2` | real | `0` | default |  |
+| `n` | `n` | real | `1` | default | gate junction ideality factor |
+| `p` | `p` | real | `2` | default | Power law (triode region) |
+| `vbi` | `vbi` | real | `1` | default | Gate junction potential |
+| `q` | `q` | real | `2` | default | Power Law (Saturated region) |
+| `rd` | `rd` | real | `0` | default | Drain ohmic resistance |
+| `rs` | `rs` | real | `0` | default | Source ohmic resistance |
+| `taud` | `taud` | real | `0` | default | Thermal relaxation time |
+| `taug` | `taug` | real | `0` | default | Drain feedback relaxation time |
+| `vbd` | `vbd` | real | `1` | default | Breakdown potential of diode jnc |
+| `ver` | `ver` | real | `0` | default | version number of PS model |
+| `vst` | `vst` | real | `0` | default | Crit Poten subthreshold conductn |
+| `vt0` | `vt0` | real | `-2` | default | Threshold voltage |
+| `xc` | `xc` | real | `0` | default | amount of cap. red at pinch-off |
+| `xi` | `xi` | real | `1000` | default | velocity saturation index |
+| `z` | `z` | real | `1` | default | rate of velocity saturation |
+| `hfgam` | `hfgam` | real | `JFET2lfgam` | computed default | high freq drain feedback parm |
 
 Type keywords of the model card (they become the polarity param, or select the module): `njf`, `pjf`.
+
+Aliases ngspice accepts (not MSL names; listed in the Book's translation table): `pb`, `vto`.
 
 Read-only quantities (3; each becomes an operating-point variable of the same name unless it is a node number): `type`, `gd`, `gs`.

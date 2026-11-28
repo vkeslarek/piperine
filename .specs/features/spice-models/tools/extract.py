@@ -121,6 +121,16 @@ for dev in sorted(os.listdir(devroot)):
     others = {k: v for k, v in tabs.items() if not (mi and k == mi.group(1)) and not (mm and k == mm.group(1))}
     inst = tabs.get(mi.group(1), []) if mi else (inst[0][1] if inst else [])
     mod = tabs.get(mm.group(1), []) if mm and mm.group(1) != "NULL" else []
+    # jfet2 builds its model table from a header of PARAM(name, id, given, field, default, text) lines
+    macro_rows = []
+    for fn, t in files.items():
+        for m in re.finditer(r'^\s*(PARAM[AR]?)\s*\(\s*"([^"]+)"\s*,\s*([A-Za-z0-9_]+)\s*,\s*(\w+)\s*,\s*(\w+)\s*,\s*([^,]+?)\s*,\s*"([^"]*)"\s*\)', t, re.M):
+            macro, name, ident, given, field, default, desc = m.groups()
+            macro_rows.append({"name": name, "id": ident, "type": "real", "dir": "inout", "redundant": macro == "PARAMR",
+                               "macro": macro, "desc": desc, "field": field, "store": "", "default": default,
+                               "given": given, "given_reads": 1, "from_macro": True})
+    if macro_rows:
+        mod = mod + macro_rows
     init = "\n".join(t for fn, t in files.items() if "SPICEdev" in t and ".DEVpublic" in t)
     meta = info(init) if init else {}
     par_text = "\n".join(t for fn, t in files.items() if re.search(r"(par|mpar|param|mparam)\.c$", fn))
@@ -146,6 +156,8 @@ for dev in sorted(os.listdir(devroot)):
             row["store"] = f[1] if f else ""
             row["default"] = (idef.get(row["field"], "") or mdef.get(row["field"], "")) if f else ""
     for row in mod:
+        if row.get("from_macro"):
+            continue
         f = mmap.get(row["id"])
         row["field"] = f[0] if f else ""
         row["store"] = f[1] if f else ""

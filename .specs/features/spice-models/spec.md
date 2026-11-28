@@ -102,7 +102,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 | VBIC | `vbic` | element Q; levels 4 and 9 | `Vbic`, `VbicSelfHeating` | 8 | 116 | 8325 |
 | hicum2 | `hicum2` | element Q; level 8 | `Hicum2`, `Hicum2SelfHeating` | 9 | 139 | 8889 |
 | JFET | `jfet` | element J; `.model … njf\|pjf`, level 1 | `Jfet` | 8 | 23 | 3153 |
-| JFET2 | `jfet2` | element J; level 2 | `Jfet2` | 8 | 1 | 1765 |
+| JFET2 | `jfet2` | element J; level 2 | `Jfet2` | 8 | 39 | 1765 |
 | MES | `mes` | element Z; `.model … nmf\|pmf`, level 1 | `Mesfet` | 4 | 14 | 3246 |
 | MESA | `mesa` | element Z; levels 2, 3, 4 | `Mesa` | 8 | 61 | 2918 |
 | HFET1 | `hfet1` | element Z; `.model … nhfet\|phfet`, level 5 | `Hfet1` | 7 | 64 | 2650 |
@@ -134,7 +134,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 | NUMD, NUMD2, NBJT, NBJT2, NUMOS | `numd`, `numd2`, `nbjt`, `nbjt2`, `numos` | `.model … numd\|nbjt\|numos` | refused (D6) | 29 | 1 | 9566 |
 | NDEV | `ndev` | `.model … ndev` | refused | 0 | 2 | 637 |
 
-**Totals.** 58 device kinds in ngspice-47. In scope: 52, in 51 directories, with **757 instance parameters and 10,232 model parameters (10,989 settable parameters)** and about 400,000 lines of C behind them. Refused by name: 6. Beside the device library, ngspice-47 ships 81 XSPICE code models in seven libraries (`models/excluded.md`), which D7 leaves to a follow-up.
+**Totals.** 58 device kinds in ngspice-47. In scope: 52, in 51 directories, with **757 instance parameters and 10,270 model parameters (11,027 settable parameters)** and 376,000 lines of C behind them. Refused by name: 6. Beside the device library, ngspice-47 ships 81 XSPICE code models in seven libraries (`models/excluded.md`), which D7 leaves to a follow-up.
 
 **What each analysis needs of a model.** In ngspice a device has one C function per analysis. In MSL one `analog` block serves every analysis (§11.1), so a model that is right at DC and has its charges and its noise sources written is right in AC, in pole-zero, in transfer function, in sensitivity and in a periodic analysis without further code. The table of `design.md` §5 gives, per model, which ngspice entry points exist; a model for which ngspice has no noise function gets no noise source here.
 
