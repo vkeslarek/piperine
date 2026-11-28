@@ -1611,3 +1611,150 @@ All the probes were reverted, and `git status` is clean.
 - **R3-1.** `Counted` and `Failing` share one prototype, so the type-to-module tie cannot tell them apart.
 - No check is lost today.
 - Fix: give `Failing` its own static shape, or assert in `every_device_of_the_crate_is_in_the_list` that the rows' prototype pointers are distinct.
+
+## Phase 9 (B2b IR fixtures, one compile cache, more merges, T63 to T68)
+
+**Verdict**: FAIL (one High finding, one Medium, five Low, three notes)
+**Head**: 546ffcdc5 on `feature/code-clarity-p9`, cut from d68de6cd5
+**Verifier**: independent sub-agent (Opus; author != verifier). Every cargo command ran with `CARGO_TARGET_DIR=/var/tmp/piperine-target-t TMPDIR=/var/tmp/piperine-tmp-t CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`, one at a time, and the guard sources were touched before the guard run. Two other lanes were building on their own target directories the whole time (load average 11 to 22 on 12 cores), so the machine was never quiet.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line (`cargo build --workspace --all-targets`) | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (guards rebuilt) | 121 passed |
+| `piperine-ir-fixtures` | 2 passed |
+| `piperine-ir` | 162 passed |
+| `piperine-plan` | 68 passed |
+| `piperine-interp` | 72 passed |
+| `piperine-transpile` (golden included) | 172 passed |
+| `piperine-api` | 307 passed (plus 10 in `buck_long`, `test = false`, and 1 in the root's `host_ii`: 318, the same as the base) |
+| `piperine-cli` (twins included) | 144 passed |
+| `piperine-numbers` | 22 passed (`floats` 306 s under load) |
+| `piperine-project` | 53 passed |
+| `piperine-parity` | 649 passed |
+| `cargo test -p piperine --test integrated` | 42 passed |
+| `cargo test -p piperine --test book_inventory` | **FAILED**: 17 passed, 1 failed (`every_row_names_an_existing_test`, see P9-1) |
+
+### Judgements
+
+1. **No test was lost or weakened.**
+   - Test names per crate, collected statically from every `#[test]` at d68de6cd5 and at HEAD, are identical. The only additions are `piperine-ir-fixtures` (2) and `piperine-parity` (`two_processes_share_one_cache` and `a_process_that_writes_the_cache`).
+   - Test bodies were compared with whitespace removed: 158 of 4 341 differ. After the renames are mapped back (`Wire`→`TopDesign`, `Built`→`BuiltDesign`, `Written`→`SwitchingWrites`/`OperatorWrites`, `Circuits`→`HandCircuits`, `Ty`→`ValueAliases`, `rise`→`TopDesign::rising_edge`, `settings()`/`shared_cache()`→`CompileCache::shared()`, `binary()`→`PathBuf::from(env!("CARGO_BIN_EXE_piperine"))`), the residue is the following:
+     - The sinks became `Ignore`. The old api `Kept` in `bindings.rs`, `NoRecords` and `Discard` all had an empty `record`, so they are equivalent.
+     - `Kept::run_streams` became `StreamRun::run_streams`, with the same body.
+     - `SourceTree::files()` became `RustSources::files(env!("CARGO_MANIFEST_DIR"))`, which reads the same root.
+     - `let _turn = HEAP.alone();` was added to the two memory tests.
+     - Comment wording changed in one place.
+     - No assertion changed. `should_panic` (6) and `#[ignore]` (4) counts are unchanged. The only `#[cfg(...)]` attributes removed are the four `#[cfg(test)] #[path]` includes the tasks remove.
+   - All 105 `move` rows of `repoints/T64,T65,T67,T68.tsv` resolve to a `mod <name>;` in the new target's `main.rs`. The renamed modules are honest: `deps`→`dependencies` and `stim`→`stimulus` give full words, and `serde`→`serialization` avoids a module that shadows the `serde` crate.
+   - The goldens (`ir/tests/golden/**`, transpile's `golden.rs` expectations) are untouched. Only `golden.rs`'s imports changed.
+2. **T66: one compile cache, and it is safe across lanes.**
+   - `grep -r 'static CACHE' crates tests` finds nothing; the base had 32.
+   - The key is `<target>/piperine-compile-cache/<parent pid>`, and the target directory is derived from the test binary's own path. Two lanes on different target directories therefore have different bases and cannot collide.
+   - Two runs on one target directory get different pid directories. `remove_finished_runs` deletes only entries whose `/proc/<pid>` is absent.
+   - A probe confirmed this: I planted `1/keep`, `999999` and `notapid`, then ran the `harness` test. `1` (live) stayed, and `999999`, `notapid` and the previous run's directory were removed.
+   - PID reuse can only keep a stale directory alive; it never deletes a live one.
+   - A stale artefact cannot be read wrongly. The transpiler's cache key is a SHA-256 over the source, `rustc -vV` and the flags, and entries are staged and renamed (`transpile/src/cache.rs:177-200`).
+   - Every test that asserts `report().warnings == ""` builds into its own `tempdir` (`BuiltDesign::new`, `control.rs`, `reaction.rs`, `digital_circuit.rs`, `generics.rs`, `analog_if.rs`, `compile.rs`). So no warning check became vacuous through a cache hit from another target.
+   - `parity/tests/project.rs` uses a persistent `CARGO_TARGET_TMPDIR` cache. That predates this phase and is not changed here.
+3. **Scope.**
+   - The removal of the `#[cfg(test)] #[path]` includes in `interp/src/lib.rs` and `transpile/src/lib.rs`, the `use` lines in `walk.rs`/`print/*.rs`, and the new edges are inside design.md's row for `piperine-ir-fixtures` and lane T's paths. The `CLAUDE.md` row for the new crate is a one-line consequence.
+   - The run harness (`BuiltDesign`/`Seen`) going to `piperine_parity::mixed` instead of the fixtures crate is technically forced, because the fixtures crate depends on `piperine-ir` alone. It is recorded in the T65 commit but not in design.md (P9-7).
+   - No guard body was loosened beyond one line (P9-3). The allowance totals per kind were summed by item at the base and at HEAD, and no item's count grows in any kind:
+     - `allow_in_test_code` 352→155
+     - `test_support_shared_by_path` 401→174
+     - `test_helper_functions` 968→942
+     - `undeclared_words` 2103→2093
+     - the others are equal
+   - The six deleted allowance files (interp, ir, project, transpile and root) are emptied, not moved elsewhere. The new `piperine-ir-fixtures/undeclared_words.tsv` holds rows moved from ir.
+4. **The renames are honest full words.**
+   - `TopDesign`, `HandCircuits`, `SwitchingWrites`, `OperatorWrites`, `BuiltDesign` and `SeenSink` say what each type is.
+   - `ValueAliases` ("the value types of the MSL source, by their aliases") is acceptable. `IntegerTypes` would say more.
+   - The short names inside (`Dx`, `Ex`, `u`, `i`) are carried over from the base under moved `undeclared_words` rows.
+5. **Off-plan counts.**
+   - `data/target_plan.tsv` matches the tree: ir 2, plan 2, interp 1, transpile 5, api 6, cli 3, numbers 2, project 1, ir-fixtures 1.
+   - api's sixth target `memory` is justified. A `#[global_allocator]` counts the whole process, so a peak measured beside any other test would include that test's allocations (`api/tests/memory/main.rs`).
+   - The numbers profile (`[profile.dev.package.piperine-numbers]`) is unchanged.
+   - `binary` and `shared_cache` are gone from every cli target.
+6. **The path shares left behind are owned.**
+   - Four `test_support_shared_by_path` rows are re-keyed to new paths: `numbers/floats/main.rs::random`, `plan/circuit/shared.rs::models`, `transpile/{analog,digital}/main.rs::compiled`.
+   - T91's text ("close every remaining row of ... `no_test_support_is_shared_by_path` ...") owns every remaining row by kind, so none is silently kept.
+7. **Timing.** These were measured back to back on the same target directory, under the same foreign load, with each test binary already built and a cold compile cache for each run.
+
+   | Crate | d68de6cd5 | 546ffcdc5 |
+   | --- | --- | --- |
+   | `piperine-transpile` | 167 s (30 binaries) | 101 s (6 binaries) |
+   | `piperine-api` | 392 s (27 binaries) | 317 s (7 binaries) |
+   | `piperine-cli` | 183 s (11 binaries) | 197 s, rerun 189 s (4 binaries) |
+   | Sum | 742 s | 615 s (−17 %) |
+
+   - The cli time is dominated by `book` and `twins`, which this phase did not change. The difference there is within the load noise.
+   - Link steps for the three crates fall from 68 to 17.
+   - The machine was not quiet: load average 11 to 22, so the numbers carry about ±15 %. The direction for transpile and api holds well outside that.
+8. **The code rules on new code.**
+   - There is no new free function. The free `fn`s in the diff are pre-existing helpers whose signatures changed, and their allowance rows moved net-zero.
+   - There is no new `#[allow]` or `#[expect]` and no macro.
+   - `piperine-ir-fixtures` has `#![deny(missing_docs)]`. The new items of `compile_cache.rs`, `sinks.rs` and `parity/src/mixed.rs` carry `///`.
+
+### Findings
+
+#### P9-1 (High): `book_inventory` is red at HEAD. The Book inventory names 30 cli tests that its resolver cannot find.
+
+- T68 repointed `tests/book/inventory.tsv` rows from `piperine-cli/commands::<fn>` to `piperine-cli/commands::<module>::<fn>`, for example `commands::run::run_prints_header_records_blank_line_and_table`.
+- `Coverage::resolve` (`tests/book/support/inventory.rs:245-248`) maps `<crate>/<target>` to `crates/<crate>/tests/<target>.rs` only. It does not know a directory target (`tests/<target>/main.rs` plus `<module>.rs`), and it splits at the first `::`.
+- Every one of the 30 rows therefore fails with "`crates/piperine-cli/tests/commands.rs` is unreadable".
+- The gate named for this phase is red, and the Book's claim-to-test link is broken for those 30 claims.
+- Introduced by 546ffcdc5. The T68 commit says its Ledger gate passed, but `proof_ledger` does not read the inventory's `covered_by` through this resolver.
+- Repro: `cargo test -p piperine --test book_inventory` gives `every_row_names_an_existing_test ... FAILED`.
+- Fix: teach `Coverage::resolve` the directory form `<crate>/<target>::<module>::<fn>` → `crates/<crate>/tests/<target>/<module>.rs`. Root targets already resolve through `[[test]]` paths. Add a planted test for it beside the existing `Coverage::at` tests.
+
+#### P9-2 (Medium): two approved Done-when lines were rewritten instead of recording a deviation
+
+- `tasks.md` T67 ("5 targets") and T68 ("`binary` and `shared_cache` exist once") were replaced with new criterion text: "6 targets, not 5 ..." and "... exist no more ...".
+- The departures themselves are sound (judgement 5). The skill's rule is that an approved criterion is never edited: a departure is recorded beside it and goes to the user.
+- T67's commit subject still says "five targets" for a commit that makes six.
+- Fix: restore the approved text, and record both departures in a deviation note for the user (and in design.md's table of the target plan, which still says api 5).
+
+#### P9-3 (Low): the leaf dev-dependency guard now admits `piperine-ir-fixtures` for every leaf
+
+- `repository-guards/tests/boundaries/dependency_graph.rs:73` exempts `piperine-ir-fixtures` for all six crates it walks: abi, ir, numbers, both sub-solvers and the guards.
+- Only `piperine-ir` needs the exemption. The design names its consumers as ir, plan, interp and transpile.
+- As written, `piperine-abi` or a sub-solver could take an edge into the IR through its tests, and the guard would stay green.
+- Fix: exempt it for `piperine-ir` only.
+
+#### P9-4 (Low): the root dev-depends on `piperine-ir-fixtures` and uses nothing from it
+
+- `Cargo.toml:39` adds the edge.
+- `tests/integrated` now imports `piperine_parity::mixed`, and no root target names `piperine_ir_fixtures` (`grep -rn ir_fixtures tests/` is empty).
+- Fix: drop the edge.
+
+#### P9-5 (Low): the keying rule of `CompileCache` has no test
+
+- `two_processes_share_one_cache` proves that the transpiler's cache tolerates two writers in one explicit directory (the T66 precondition). It never calls `CompileCache::shared()`.
+- So no test holds the rules that actually changed:
+  - two targets of one `cargo test` resolve to one directory;
+  - a live run's directory survives another run's start;
+  - a finished run's directory is removed.
+- My probe (judgement 2) shows the behaviour is right today.
+- `a_process_that_writes_the_cache` is a test that asserts nothing in a normal run: it is the child's entry point, counted as a pass.
+- Fix: give `remove_finished_runs` a base directory parameter and plant the three cases, or run two child binaries and compare the paths they print.
+
+#### P9-6 (Low): two stale docs on the cache, each with a copy of `CompileCache::settings`
+
+- `parity/src/host.rs:46` still says "one temporary cache", and `tests/book/support/model.rs:165` says "shared by the target". Both are now one cache per run under the target directory.
+- Both functions rebuild `Settings { rustc: None, cache: ... }` by hand where `CompileCache::shared().settings()` exists.
+
+#### P9-7 (Low): the harness's move to parity is not recorded in the design
+
+- design.md's `piperine-ir-fixtures` row lists `transpile/tests/support/mixed.rs` among its sources (`Mixed`).
+- The run half went to `piperine_parity::mixed`, and `piperine-transpile` gained a dev-dependency on `piperine-parity`, which pulls `piperine-lang` and `piperine-api` into transpile's test build.
+- The choice is forced (the fixtures crate depends on ir alone), but only the T65 commit body says so.
+- Fix: add the row and the edge to design.md.
+
+### Notes (not blocking)
+
+- **N1.** T63's What reads "(`Buck::dpwm`, 173 lines, one method per block)". `Buck::dpwm` is still 173 lines (`ir-fixtures/src/digital.rs:550-722`), with one method per buck block as at the base. If the text meant splitting `dpwm` itself, that was not done. It is a fixture outside the product length worklist.
+- **N2.** `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` is spelled 18 times in the cli tests. `Command::new` takes the `&str` as is.
+- **N3.** `CompileCache` uses `std::os::unix::process::parent_id` and `/proc`, so `piperine-parity` no longer builds off Linux. The project is Linux-only today.
