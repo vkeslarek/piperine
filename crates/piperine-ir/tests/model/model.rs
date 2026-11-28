@@ -61,14 +61,14 @@ fn a_finished_ir_has_no_mutating_operation() {
     }
 }
 
-fn origin() -> Origin {
-    Origin { file: "t.msl".into(), line: 1, col: 1 }
-}
-
 /// One fixed sequence of builder calls.
 struct Sequence;
 
 impl Sequence {
+    fn origin() -> Origin {
+        Origin { file: "t.msl".into(), line: 1, col: 1 }
+    }
+
     fn build() -> Ir {
         let mut b = IrBuilder::new();
         let nature = b.nature(
@@ -78,7 +78,7 @@ impl Sequence {
         );
         let body = b.body(BodySpec {
             name: "Empty".into(),
-            origin: origin(),
+            origin: Self::origin(),
             params: vec![],
             nodes: vec![],
             branches: vec![],
@@ -95,9 +95,9 @@ impl Sequence {
             parent: None,
             nodes: vec![],
             params: vec![],
-            origin: origin(),
+            origin: Self::origin(),
         });
-        b.node(NodeSpec { path: "Empty.n".into(), nature, declared_by: top, init: None, origin: origin() });
+        b.node(NodeSpec { path: "Empty.n".into(), nature, declared_by: top, init: None, origin: Self::origin() });
         b.finish(top)
     }
 }

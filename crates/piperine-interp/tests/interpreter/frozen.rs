@@ -23,7 +23,8 @@ use piperine_ir_fixtures::operators;
 
 use devices::Devices;
 use digital::{Buck, Dx, ValueAliases};
-use models::{In, Models, View};
+use models::{In, Models};
+use piperine_device_fixtures::shapes::View;
 use operators::Operators;
 use structure::{ParamEvents, Switching, SwitchingWrites};
 

@@ -68,24 +68,52 @@ impl Find {
     }
 }
 
-/// A cell of a pin.
-fn pin(index: u32, part: u32) -> Cell {
-    Cell { kind: cell::PIN, index, part }
-}
+/// Pin and port readers of the amended shape.
+struct AmendedShapeProbe;
 
-/// An ambient cell (abi.md §4.2: no shape entry, named by its constant).
-fn ambient(index: u32) -> Cell {
-    Cell { kind: cell::AMBIENT, index, part: part::VALUE }
-}
+impl AmendedShapeProbe {
+    /// A cell of a pin.
+    fn pin(index: u32, part: u32) -> Cell {
+        Cell { kind: cell::PIN, index, part }
+    }
 
-/// Two `Electrical` ports `p`, `n` of a body declared at line 1.
-fn ports(b: &mut IrBuilder) -> Vec<BodyNode> {
-    let el = Buck::electrical(b);
-    ["p", "n"]
-        .iter()
-        .zip([10, 18])
-        .map(|(name, col)| BodyNode { name: (*name).into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) })
-        .collect()
+    /// An ambient cell (abi.md §4.2: no shape entry, named by its constant).
+    fn ambient(index: u32) -> Cell {
+        Cell { kind: cell::AMBIENT, index, part: part::VALUE }
+    }
+
+    /// Two `Electrical` ports `p`, `n` of a body declared at line 1.
+    fn ports(b: &mut IrBuilder) -> Vec<BodyNode> {
+        let el = Buck::electrical(b);
+        ["p", "n"]
+            .iter()
+            .zip([10, 18])
+            .map(|(name, col)| BodyNode { name: (*name).into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 1, col) })
+            .collect()
+    }
+
+    /// `module <name>(p, n) { <param>: f64 = 1.0; analog { v(p, n) +> <operator>(<param> * i(p, n)); } }`:
+    /// a potential branch whose one addend reads the branch's own flow.
+    fn reads_its_flow(b: &mut IrBuilder, name: &str, param: &str, operator: Operator) -> BodyId {
+        let nodes = AmendedShapeProbe::ports(b);
+        let mut x = Dx::new(b, F, 3, 30);
+        let k = x.param(0, ValueType::F64);
+        let o = x.origin();
+        let flow = x.b.expr(Expr::Flow { branch: 0 }, ValueType::F64, o);
+        let value = x.bin(piperine_ir::BinaryOp::Mul, k, flow, ValueType::F64);
+        let contribution = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Potential,
+            addends: vec![Addend { operator, negated: false, value }],
+        });
+        b.body(BodySpec {
+            params: vec![Buck::param(param, F, 2, Some(1.0), None)],
+            nodes,
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Potential }],
+            analog: Some(vec![contribution]),
+            ..Buck::spec(name, F, 1)
+        })
+    }
 }
 
 #[test]
@@ -97,7 +125,7 @@ fn time_and_static_are_ambient_reads() {
     // digital for Clocked { on cross(v(p, n) - now()) { t <- now(); s <- analysis(Static); } }
     // ```
     let (ir, body) = Alone::design(|b| {
-        let nodes = ports(b);
+        let nodes = AmendedShapeProbe::ports(b);
         let mut x = Dx::new(b, F, 2, 20);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
@@ -138,12 +166,12 @@ fn time_and_static_are_ambient_reads() {
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (p, n) = (Find::pin(shape, "p"), Find::pin(shape, "n"));
-    let (time, stat) = (ambient(ambient::TIME), ambient(ambient::STATIC));
+    let (time, stat) = (AmendedShapeProbe::ambient(ambient::TIME), AmendedShapeProbe::ambient(ambient::STATIC));
 
     // abi.md §4.2: `TIME` and `STATIC` are ambient inputs an analog function reads by constant;
     // they are no differentiable read, so `terms` declares its partials against p and n only
     let (reads, writes, partials) = Find::function(shape, "terms");
-    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), stat, time]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(p, part::VALUE), AmendedShapeProbe::pin(n, part::VALUE), stat, time]);
     assert_eq!(writes, [Cell { kind: cell::TERM, index: 0, part: part::VALUE }]);
     assert_eq!(partials, [(0, 0), (0, 1)], "no partial against TIME or STATIC");
     let terms = plan.functions().iter().find(|f| f.mode == Mode::Terms).expect("terms");
@@ -153,7 +181,7 @@ fn time_and_static_are_ambient_reads() {
     // the `cross:0` function is analog too: it reads TIME beside the pins, differentiated
     // against the pins only
     let (reads, writes, partials) = Find::function(shape, "cross:0");
-    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), time]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(p, part::VALUE), AmendedShapeProbe::pin(n, part::VALUE), time]);
     assert_eq!(writes, [Cell { kind: cell::WATCH, index: 0, part: part::VALUE }]);
     assert_eq!(partials, [(0, 0), (0, 1)]);
 
@@ -222,23 +250,23 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     // the `changed` event function of each carrier a time reads: CHANGED in (abi.md §4.1: only a
     // function that writes event pins only may read CHANGED), its event pin out
     for (name, carrier, out) in [("at:0.t0", t0, rearm_t0), ("at:0.dt", dt, rearm_dt), ("at:1.dt", dt, rearm1_dt)] {
-        assert_eq!(Find::function(shape, name), (vec![pin(carrier, part::CHANGED)], vec![pin(out, part::CHANGED)], vec![]), "{name}");
+        assert_eq!(Find::function(shape, name), (vec![AmendedShapeProbe::pin(carrier, part::CHANGED)], vec![AmendedShapeProbe::pin(out, part::CHANGED)], vec![]), "{name}");
     }
     // the guarded timer's event function: the guard's carrier and the timer pin's CHANGED
-    assert_eq!(Find::function(shape, "event:1"), (vec![pin(dt, part::VALUE), pin(timer1, part::CHANGED)], vec![pin(event1, part::CHANGED)], vec![]));
+    assert_eq!(Find::function(shape, "event:1"), (vec![AmendedShapeProbe::pin(dt, part::VALUE), AmendedShapeProbe::pin(timer1, part::CHANGED)], vec![AmendedShapeProbe::pin(event1, part::CHANGED)], vec![]));
     assert!(shape.functions.iter().all(|f| f.name.as_str() != "event:0"), "an unguarded timer fires its event pin itself");
     assert_eq!(plan.functions().iter().filter(|f| matches!(f.mode, Mode::Rearm { .. })).count(), 3);
 
     // the arming reactions: on START and the re-arming pins; they read what the time reads and
     // TIME (abi.md §4.1: a reaction reads TIME); one REPLACE statement on the pin the timer fires,
     // `len` 0 (C4: a statement on an event pin), no LATER bound (a delay of 0 is legal, C1)
-    let time = ambient(ambient::TIME);
+    let time = AmendedShapeProbe::ambient(ambient::TIME);
     let replace = statement_flag::REPLACE;
     assert_eq!(
         Find::reaction(shape, "at:0"),
-        (vec![start, rearm_t0, rearm_dt], vec![pin(t0, part::VALUE), pin(dt, part::VALUE), time], vec![(event0, 0, 0, replace, 0.0)])
+        (vec![start, rearm_t0, rearm_dt], vec![AmendedShapeProbe::pin(t0, part::VALUE), AmendedShapeProbe::pin(dt, part::VALUE), time], vec![(event0, 0, 0, replace, 0.0)])
     );
-    assert_eq!(Find::reaction(shape, "at:1"), (vec![start, rearm1_dt], vec![pin(dt, part::VALUE), time], vec![(timer1, 0, 0, replace, 0.0)]));
+    assert_eq!(Find::reaction(shape, "at:1"), (vec![start, rearm1_dt], vec![AmendedShapeProbe::pin(dt, part::VALUE), time], vec![(timer1, 0, 0, replace, 0.0)]));
     // the body's own reactions listen to the event pins and commit `fired`
     assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0], vec![], vec![(fired, 0, 1, 0, 0.0)]));
     assert_eq!(Find::reaction(shape, "reaction:1"), (vec![event1], vec![], vec![(fired, 0, 1, 0, 0.0)]));
@@ -319,33 +347,10 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
 
-/// `module <name>(p, n) { <param>: f64 = 1.0; analog { v(p, n) +> <operator>(<param> * i(p, n)); } }`:
-/// a potential branch whose one addend reads the branch's own flow.
-fn reads_its_flow(b: &mut IrBuilder, name: &str, param: &str, operator: Operator) -> BodyId {
-    let nodes = ports(b);
-    let mut x = Dx::new(b, F, 3, 30);
-    let k = x.param(0, ValueType::F64);
-    let o = x.origin();
-    let flow = x.b.expr(Expr::Flow { branch: 0 }, ValueType::F64, o);
-    let value = x.bin(piperine_ir::BinaryOp::Mul, k, flow, ValueType::F64);
-    let contribution = b.stmt(Stmt::Contribute {
-        branch: 0,
-        quantity: QuantityRole::Potential,
-        addends: vec![Addend { operator, negated: false, value }],
-    });
-    b.body(BodySpec {
-        params: vec![Buck::param(param, F, 2, Some(1.0), None)],
-        nodes,
-        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Potential }],
-        analog: Some(vec![contribution]),
-        ..Buck::spec(name, F, 1)
-    })
-}
-
 #[test]
 fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     // the inductor of the power stage: `v(p, n) +> ddt(l * i(p, n))`
-    let (ir, body) = Alone::design(|b| reads_its_flow(b, "Inductor", "l", Operator::Ddt));
+    let (ir, body) = Alone::design(|b| AmendedShapeProbe::reads_its_flow(b, "Inductor", "l", Operator::Ddt));
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (l, p, n, f) = (Find::pin(shape, "l"), Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "b0.flow"));
@@ -359,7 +364,7 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     // `i(p, n)` is a read of the flow pin, differentiable like a node (a tangent slot of its
     // own, after the nodes): `terms` reads p, n, f, then l
     let (reads, _, partials) = Find::function(shape, "terms");
-    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), pin(f, part::VALUE), pin(l, part::VALUE)]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(p, part::VALUE), AmendedShapeProbe::pin(n, part::VALUE), AmendedShapeProbe::pin(f, part::VALUE), AmendedShapeProbe::pin(l, part::VALUE)]);
     let terms_plan = plan.functions().iter().find(|x| x.mode == Mode::Terms).expect("terms");
     assert_eq!(terms_plan.reads, [Source::Node(0), Source::Node(1), Source::BranchFlow(0), Source::Param(0)]);
     assert_eq!(terms_plan.slots, 3);
@@ -372,7 +377,7 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
 
     // the same read in a direct addend (`v(p, n) +> r * i(p, n)`: a resistor written as a
     // potential): the row `v(p, n) - r·f` reads f, and stays affine in the pins
-    let (ir, body) = Alone::design(|b| reads_its_flow(b, "FlowResistor", "r", Operator::Direct));
+    let (ir, body) = Alone::design(|b| AmendedShapeProbe::reads_its_flow(b, "FlowResistor", "r", Operator::Direct));
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let (_, _, partials) = Find::function(shape, "terms");
@@ -424,8 +429,8 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
 
     // abi.md §11.4: fn "rise" reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED] and writes [rise]
     let (reads, writes, _) = Find::function(shape, "event:0");
-    assert_eq!(reads, [pin(clk, part::VALUE), pin(clk, part::PREVIOUS), pin(clk, part::CHANGED)]);
-    assert_eq!(writes, [pin(event, part::CHANGED)]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(clk, part::VALUE), AmendedShapeProbe::pin(clk, part::PREVIOUS), AmendedShapeProbe::pin(clk, part::CHANGED)]);
+    assert_eq!(writes, [AmendedShapeProbe::pin(event, part::CHANGED)]);
     assert_eq!(plan.functions().iter().find(|f| f.mode == Mode::Event(0)).map(|f| f.reads.clone()), Some(vec![
         Source::Carrier(0),
         Source::CarrierPrevious(0),
@@ -434,7 +439,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
     // abi.md §4.1: "PREVIOUS ... changes exactly when VALUE does, so any function or reaction may
     // read it": the reaction reads d's PREVIOUS (not its VALUE) and commits q
     let (_, reads, statements) = Find::reaction(shape, "reaction:1");
-    assert_eq!(reads, [pin(d, part::PREVIOUS)]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(d, part::PREVIOUS)]);
     assert_eq!(statements, [(q, 0, 1, 0, 0.0)]);
     // P7: a QUIET pin keeps no PREVIOUS, so a carrier whose previous value is read is not QUIET
     for p in [clk, d] {
@@ -452,7 +457,7 @@ fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
     // }
     // ```
     let (ir, body) = Alone::design(|b| {
-        let nodes = ports(b);
+        let nodes = AmendedShapeProbe::ports(b);
         let mut x = Dx::new(b, F, 2, 20);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let o = x.origin();
@@ -494,7 +499,7 @@ fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
     // abi.md §4.2: `FREQ` is an ambient, read by constant and never differentiated; a global
     // pins are read as any pin is, after the continuous reads and before the ambients.
     let (reads, _, partials) = Find::function(shape, "terms");
-    assert_eq!(reads, [pin(p, part::VALUE), pin(n, part::VALUE), ambient(ambient::FREQ), pin(dc, part::VALUE), pin(ac, part::VALUE)]);
+    assert_eq!(reads, [AmendedShapeProbe::pin(p, part::VALUE), AmendedShapeProbe::pin(n, part::VALUE), AmendedShapeProbe::ambient(ambient::FREQ), AmendedShapeProbe::pin(dc, part::VALUE), AmendedShapeProbe::pin(ac, part::VALUE)]);
     assert_eq!(partials, [(0, 0), (0, 1)], "no partial against FREQ or a global");
     let terms = plan.functions().iter().find(|f| f.mode == Mode::Terms).expect("terms");
     assert_eq!(
@@ -514,7 +519,7 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
     // digital for Step { on cross(v(p, n), tt, et) { q <- true; } }
     // ```
     let (ir, body) = Alone::design(|b| {
-        let nodes = ports(b);
+        let nodes = AmendedShapeProbe::ports(b);
         let mut x = Dx::new(b, F, 3, 20);
         let v = x.probe(Terminal::Node(0), Terminal::Node(1));
         let (one, base) = (x.real(1.0), x.real(1e-9));
@@ -556,9 +561,9 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
     // The tolerances are written by discrete functions reading the params they name; the cap by
     // an analog function reading the probe, writing the watch's `VALUE`.
     let value = |k: u32, index: u32| Cell { kind: k, index, part: part::VALUE };
-    assert_eq!(Find::function(shape, "ttol:0"), (vec![pin(tt, part::VALUE)], vec![pin(ttol, part::VALUE)], vec![]));
-    assert_eq!(Find::function(shape, "etol:0"), (vec![pin(et, part::VALUE)], vec![pin(etol, part::VALUE)], vec![]));
-    assert_eq!(Find::function(shape, "cap:0"), (vec![pin(p, part::VALUE), pin(n, part::VALUE)], vec![value(cell::WATCH, 1)], vec![]));
+    assert_eq!(Find::function(shape, "ttol:0"), (vec![AmendedShapeProbe::pin(tt, part::VALUE)], vec![AmendedShapeProbe::pin(ttol, part::VALUE)], vec![]));
+    assert_eq!(Find::function(shape, "etol:0"), (vec![AmendedShapeProbe::pin(et, part::VALUE)], vec![AmendedShapeProbe::pin(etol, part::VALUE)], vec![]));
+    assert_eq!(Find::function(shape, "cap:0"), (vec![AmendedShapeProbe::pin(p, part::VALUE), AmendedShapeProbe::pin(n, part::VALUE)], vec![value(cell::WATCH, 1)], vec![]));
     let modes: Vec<Mode> = plan.functions().iter().map(|f| f.mode).collect();
     assert!(modes.contains(&Mode::Cap(0)) && modes.contains(&Mode::Ttol(0)) && modes.contains(&Mode::Etol(0)), "{modes:?}");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
@@ -573,7 +578,7 @@ fn a_fired_read_names_the_event_pin() {
     // }
     // ```
     let (ir, body) = Alone::design(|b| {
-        let nodes = ports(b);
+        let nodes = AmendedShapeProbe::ports(b);
         let body = b.body(BodySpec { nodes, ..Buck::spec("Which", F, 1) });
         b.carrier(body, Buck::carrier("a", ValueType::Bool, CarrierRole::In, None, F, 1, 30));
         b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, F, 1, 45));
@@ -593,7 +598,7 @@ fn a_fired_read_names_the_event_pin() {
 
     // abi.md §4.1: a reaction reads the `CHANGED` byte of an event pin: here event 0's, and
     // nothing of event 1 (which the reaction only waits on).
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![pin(event0, part::CHANGED)], vec![(q, 0, 1, 0, 0.0)]));
+    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![AmendedShapeProbe::pin(event0, part::CHANGED)], vec![(q, 0, 1, 0, 0.0)]));
     assert_eq!(plan.reactions()[0].reads, [Source::Fired(0)]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }

@@ -7,7 +7,8 @@ use piperine_ir_fixtures::devices;
 use crate::models;
 
 use devices::{Devices, Ex};
-use models::{In, Models, View};
+use models::{In, Models};
+use piperine_device_fixtures::shapes::View;
 
 /// `Phased`: `i(p, n) +> ac_stim(mag, phase)` over real constants.
 struct Lab;

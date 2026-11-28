@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use piperine_abi::caller::{CallError, Handle};
-use piperine_abi::raw::{Cell, Module, Partial, Shape};
+use piperine_abi::raw::Module;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Ir, IrBuilder, Local, NodeRole, Operator, Origin,
@@ -22,14 +22,7 @@ pub struct Models {
 impl Models {
     /// `Resistor`, `Capacitor`, `Vsource`, `Isource`, `Diode`; the top is a resistor alone.
     pub fn all() -> Models {
-        let mut b = IrBuilder::new();
-        let r = Devices::resistor(&mut b);
-        Devices::capacitor(&mut b);
-        Devices::vsource(&mut b);
-        Devices::isource(&mut b);
-        Devices::diode(&mut b);
-        let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
-        Models::of(b.finish(top))
+        Models::of(Devices::design_of_every_device())
     }
 
     /// An `Interpreter` over `ir`, which must pass `check()`.
@@ -140,40 +133,5 @@ impl Models {
     /// The bytes of `eval`'s writes and partials, for bit-for-bit comparison.
     pub fn bits(out: &Out) -> (Vec<u64>, Vec<u64>) {
         (out.values.iter().map(|v| v.to_bits()).collect(), out.jac.iter().map(|v| v.to_bits()).collect())
-    }
-}
-
-/// A shape read as plain values.
-pub struct View<'s> {
-    pub shape: &'s Shape<'s>,
-}
-
-impl<'s> View<'s> {
-    pub fn pin_names(&self) -> Vec<&str> {
-        self.shape.pins.iter().map(|p| p.name.as_str()).collect()
-    }
-
-    pub fn pin_index(&self, name: &str) -> u32 {
-        self.shape.pins.iter().position(|p| p.name.as_str() == name).unwrap_or_else(|| panic!("no pin `{name}`")) as u32
-    }
-
-    /// `(name, op, plus, minus)` of each term, ends by pin name (`GROUND` as "GROUND").
-    pub fn terms(&self) -> Vec<(String, u32, String, String)> {
-        let end = |i: u32| self.shape.pins.get(i as usize).map_or("GROUND".to_string(), |p| p.name.as_str().to_string());
-        self.shape.terms.iter().map(|t| (t.name.as_str().to_string(), t.op, end(t.plus), end(t.minus))).collect()
-    }
-
-    /// `(name, kind)` of each input.
-    pub fn inputs(&self) -> Vec<(String, u32)> {
-        self.shape.inputs.iter().map(|x| (x.name.as_str().to_string(), x.kind)).collect()
-    }
-
-    pub fn function_names(&self) -> Vec<&str> {
-        self.shape.functions.iter().map(|f| f.name.as_str()).collect()
-    }
-
-    pub fn function(&self, name: &str) -> (Vec<Cell>, Vec<Cell>, Vec<Partial>) {
-        let f = self.shape.functions.iter().find(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
-        (f.reads.iter().copied().collect(), f.writes.iter().copied().collect(), f.partials.iter().copied().collect())
     }
 }

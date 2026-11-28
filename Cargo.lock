@@ -1247,6 +1247,7 @@ name = "piperine-interp"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
  "piperine-ir",
  "piperine-ir-fixtures",
  "piperine-plan",
@@ -1315,6 +1316,7 @@ name = "piperine-plan"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",

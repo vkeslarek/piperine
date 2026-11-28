@@ -11,5 +11,6 @@ piperine-solver = { path = "../piperine-solver" }
 
 [dev-dependencies]
 piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }
 piperine-interp = { path = "../piperine-interp" }
 piperine-digital-solver = { path = "../piperine-digital-solver" }
