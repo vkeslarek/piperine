@@ -61,7 +61,7 @@ Read-only quantities (7; each becomes an operating-point variable of the same na
 | `ttt2` | `ttt2` | real | `0.0` | default | Transit Time 2nd order temp. coeff. |
 | `cjo` | `cjo` | real | — | unresolved | Junction capacitance |
 | `vj` | `vj` | real | `1` | default | Junction potential |
-| `m` | `m` | real | `.5` | default | Grading coefficient |
+| `mj` | `m` | real | `.5` | default | Grading coefficient |
 | `tm1` | `tm1` | real | `0.0` | default | Grading coefficient 1st temp. coeff. |
 | `tm2` | `tm2` | real | `0.0` | default | Grading coefficient 2nd temp. coeff. |
 | `cjp` | `cjp` | real | `0` | default | Sidewall junction capacitance |

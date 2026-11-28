@@ -299,8 +299,8 @@ let k1 = MutualInductor(l1.link, l2.link) { k: 0.98 };              // K1 L1 L2 
 One module for a voltage source and one for a current source. The DC value and the small-signal stimulus are params; the time-domain waveform is the optional third connection.
 
 ```rust
-let vdd  = VoltageSource(vdd, gnd) { dc: 1.8 };
-let vin  = VoltageSource(inp, gnd) { dc: 0.9, acmag: 1.0 };          // V1 inp 0 DC 0.9 AC 1
+let vsupply = VoltageSource(vdd, gnd) { dc: 1.8 };
+let vin = VoltageSource(inp, gnd) { dc: 0.9, acmag: 1.0 };           // V1 inp 0 DC 0.9 AC 1
 let ibias = CurrentSource(vdd, bias) { dc: 10u };
 
 let step = pulse() { v1: 0.0, v2: 1.8, tr: 50p, tf: 50p, pw: 1n, per: 2n };
@@ -319,7 +319,7 @@ let vsig = VoltageSource(sig, gnd, tone) { acmag: 1.0 };
 | `acphase` | `acphase`, `ac` | `f64 = 0.0` | degrees | Small-signal phase. |
 | `m` | `m` (current source only) | `Option<f64>` | | Parallel multiplier. |
 
-The waveform is a value: any `f64` expression. The package gives ngspice's eight functions as modules with a result. Each has ngspice's parameter names.
+The waveform is a value: any `f64` expression. The package gives ngspice's eight functions as modules with a result. In ngspice their parameters are positions in a list; each param here has the name ngspice's sources and manual give that position.
 
 | Waveform | ngspice | Params (ngspice's order) |
 | --- | --- | --- |
@@ -327,7 +327,7 @@ The waveform is a value: any `f64` expression. The package gives ngspice's eight
 | `sine` | `SIN(VO VA FREQ TD THETA PHASE)` | `vo`, `va`, `freq` required; `td = 0.0`; `theta = 0.0` (1/s); `phase = 0.0` (degrees) |
 | `exponential` | `EXP(V1 V2 TD1 TAU1 TD2 TAU2)` | `v1`, `v2`, `tau1`, `td2`, `tau2` required; `td1 = 0.0` |
 | `piecewise_linear<const N: usize>` | `PWL(T1 V1 … ) r= td=` | `points: [(f64, f64); N]` required; `r: Option<f64>` (repeat from this time); `td = 0.0` |
-| `frequency_modulated` | `SFFM(VO VA FC MDI FS PHASEC PHASES)` | `vo`, `va`, `fc`, `fs` required; `mdi = 90.0`; `phasec`, `phases = 0.0` (degrees) |
+| `frequency_modulated` | `SFFM(VO VA FC MDI FM TD PHASEM PHASEC)` | `vo`, `va`, `fc`, `fm` required; `mdi = 90.0` (limited to `fc / fm`, as ngspice); `td = 0.0`; `phasem`, `phasec = 0.0` (degrees) |
 | `amplitude_modulated` | `AM(VO VMO VMA FM FC TD PHASEM PHASEC)` | `vo`, `vmo`, `fm`, `fc` required; `vma = 1.0`; `td`, `phasem`, `phasec = 0.0` |
 | `transient_noise` | `TRNOISE(NA NT NALPHA NAMP RTSAM RTSCAPT RTSEMT)` | `na`, `nt` required; `nalpha`, `namp`, `rtsam`, `rtscapt`, `rtsemt: Option<f64>`; `seed: u64 = 1` |
 | `transient_random` | `TRRANDOM(TYPE TS TD PARAM1 PARAM2)` | `kind: RandomKind` (`Uniform`, `Gaussian`, `Exponential`, `Poisson`), `ts` required; `td = 0.0`; `param1 = 1.0`, `param2 = 0.0`; `seed: u64 = 1` |
@@ -339,7 +339,7 @@ The waveform is a value: any `f64` expression. The package gives ngspice's eight
 **Choices made here.**
 
 - *One source module and separate waveforms*, in place of one module per waveform (`PulseVoltageSource`, `SineVoltageSource`, …). Ten modules in place of eighteen; a waveform is a value a user can add to another, scale, or write themselves; and the same `pulse` drives a voltage source, a current source or a behavioural expression.
-- *Waveform parameters are params of the waveform module* (`pulse() { v2: 1.8 }`), not positional arguments, so the host lists, sets and sweeps them by name (`top.step.v2`) and each has a `where`.
+- *Waveform parameters are params of the waveform module* (`pulse() { v1: 0.0, v2: 1.8, tr: 50p, tf: 50p }`), not positional arguments, so the host lists, sets and sweeps them by name (`top.step.v2`) and each has a `where`.
 
 ### 4.2 Behavioural sources
 

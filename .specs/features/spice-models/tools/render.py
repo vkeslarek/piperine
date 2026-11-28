@@ -96,7 +96,15 @@ SLOT_TEXT = [
 ]
 TYPE_FLAG = {"npn", "pnp", "nmos", "pmos", "njf", "pjf", "nmf", "pmf", "nhfet", "phfet", "d", "r", "c", "l", "sw", "csw", "ltra", "txl", "cpl", "urc", "vdmosn", "vdmosp", "vdmos", "nsoi", "psoi", "numd", "nbjt", "numos", "ndev"}
 
-def msl_name(name):
+# the closed rename table of design.md section 3.2: (device, table, ngspice name) -> MSL name
+RENAMES = {("dio", "model", "m"): "mj", ("vdmos", "model", "m"): "mj", ("mesa", "model", "m"): "m_knee",
+           ("hfet1", "model", "m"): "m_knee", ("hfet2", "model", "m"): "m_knee", ("mos6", "model", "ps"): "ps_sat",
+           ("jfet", "instance", "ic-vds"): "icvds", ("jfet", "instance", "ic-vgs"): "icvgs",
+           ("jfet2", "instance", "ic-vds"): "icvds", ("jfet2", "instance", "ic-vgs"): "icvgs"}
+
+def msl_name(name, dev="", key=""):
+    if (dev, key, name) in RENAMES:
+        return RENAMES[(dev, key, name)]
     n = name.lower().replace("-", "_").replace(".", "_").replace("/", "_per_")
     if n in KEYWORDS:
         n += "_"
@@ -146,10 +154,10 @@ def split_rows(rows):
             skip.append(r)
     return ins, alias, outs, skip, flags
 
-def param_table(rows):
+def param_table(rows, dev="", key=""):
     lines = ["| MSL name | ngspice name | Type | Default in ngspice | Given-ness | Meaning |", "| --- | --- | --- | --- | --- | --- |"]
     for r in rows:
-        lines.append(f"| `{msl_name(r['name'])}` | `{r['name']}` | {r['type']} | {default_cell(r)} | {kind_cell(r)} | {esc(r['desc'])} |")
+        lines.append(f"| `{msl_name(r['name'], dev, key)}` | `{r['name']}` | {r['type']} | {default_cell(r)} | {kind_cell(r)} | {esc(r['desc'])} |")
     return lines
 
 def device_section(dev, level="##"):
@@ -195,7 +203,7 @@ def device_section(dev, level="##"):
             if only:
                 L.append(f"Parameters `{dev}` has and `{base}` does not ({len(only)}):")
                 L.append("")
-                L += param_table(only)
+                L += param_table(only, dev, key)
                 L.append("")
             if missing:
                 L.append(f"Parameters of `{base}` that `{dev}` does not have ({len(missing)}): " + ", ".join(f"`{m}`" for m in missing) + ".")
@@ -203,13 +211,13 @@ def device_section(dev, level="##"):
             if changed:
                 L.append(f"Shared parameters whose extracted default differs ({len(changed)}):")
                 L.append("")
-                L += param_table(changed)
+                L += param_table(changed, dev, key)
                 L.append("")
         else:
             L.append(f"**{title}: {len(ins)} settable.**")
             L.append("")
             if ins:
-                L += param_table(ins)
+                L += param_table(ins, dev, key)
                 L.append("")
         if flags:
             L.append("Type keywords of the model card (they become the polarity param, or select the module): " + ", ".join(f"`{r['name']}`" for r in flags) + ".")

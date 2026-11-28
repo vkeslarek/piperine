@@ -112,7 +112,7 @@ Read-only quantities (22; each becomes an operating-point variable of the same n
 | `xchi` | `xchi` | real | `0.033` | default |  |
 | `n` | `n` | real | `1` | default | Emission coefficient |
 | `eta` | `eta` | real | `1.73` | default | Subthreshold ideality factor |
-| `m` | `m` | real | `2.5` | given-ness read | Knee shape parameter |
+| `m_knee` | `m` | real | `2.5` | given-ness read | Knee shape parameter |
 | `mc` | `mc` | real | `3.0` | default | Knee shape parameter |
 | `alpha` | `alpha` | real | `0.0` | default |  |
 | `sigma0` | `sigma0` | real | `0.081` | default | Threshold voltage coefficient |
@@ -205,7 +205,7 @@ Read-only quantities (21; each becomes an operating-point variable of the same n
 | `ri` | `ri` | real | `0` | default |  |
 | `rf` | `rf` | real | `0` | default |  |
 | `eta` | `eta` | real | — | unresolved | Subthreshold ideality factor |
-| `m` | `m` | real | `3.0` | given-ness read | Knee shape parameter |
+| `m_knee` | `m` | real | `3.0` | given-ness read | Knee shape parameter |
 | `mc` | `mc` | real | `3.0` | default | Knee shape parameter |
 | `gamma` | `gamma` | real | `3.0` | default | Knee shape parameter |
 | `sigma0` | `sigma0` | real | `0.057` | default | Threshold voltage coefficient |
@@ -316,7 +316,7 @@ Read-only quantities (21; each becomes an operating-point variable of the same n
 | `knmax` | `knmax` | real | — | unresolved |  |
 | `kvto` | `kvto` | real | — | unresolved |  |
 | `lambda` | `lambda` | real | — | unresolved | Output conductance parameter |
-| `m` | `m` | real | — | given-ness read | Knee shape parameter |
+| `m_knee` | `m` | real | — | given-ness read | Knee shape parameter |
 | `mc` | `mc` | real | — | unresolved | Knee shape parameter |
 | `mu` | `mu` | real | — | unresolved | Moblity |
 | `n` | `n` | real | — | unresolved |  |

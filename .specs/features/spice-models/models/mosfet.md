@@ -327,7 +327,7 @@ Read-only quantities (49; each becomes an operating-point variable of the same n
 | `kc` | `kc` | real | `5e-5` | given-ness read | Saturation current factor |
 | `nc` | `nc` | real | `1` | default | Saturation current coeff. |
 | `nvth` | `nvth` | real | `0.5` | default | Threshold voltage coeff. |
-| `ps` | `ps` | real | `0` | default | Sat. current modification par. |
+| `ps_sat` | `ps` | real | `0` | default | Sat. current modification par. |
 | `gamma` | `gamma` | real | `sqrt(2 * 11.70 * 8.854214871e-12 * CHARGE * MOS6substrateDoping* 1e6 )/ MOS6oxideCapFactor` | given-ness read | Bulk threshold parameter |
 | `gamma1` | `gamma1` | real | `0.0` | given-ness read | Bulk threshold parameter 1 |
 | `sigma` | `sigma` | real | `0` | default | Static feedback effect par. |
@@ -539,7 +539,7 @@ Read-only quantities (29; each becomes an operating-point variable of the same n
 | `vj` | `vj` | real | `.8` | default | Body diode junction potential |
 | `vp` | `vp` | real | `0.0` | given-ness read | Soft reverse recovery parameter |
 | `cjo` | `cjo` | real | `5e-10` | default | Zero-bias body diode junction capacitance |
-| `m` | `m` | real | `.5` | default | Body diode grading coefficient |
+| `mj` | `m` | real | `.5` | default | Body diode grading coefficient |
 | `fc` | `fc` | real | `.5` | default | Body diode coefficient for forward-bias depletion capacitance formula |
 | `cgdmin` | `cgdmin` | real | `2e-11` | default | Minimum non-linear G-D capacitance |
 | `cgdmax` | `cgdmax` | real | `2e-9` | default | Maximum non-linear G-D capacitance |
