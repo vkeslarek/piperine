@@ -1,4 +1,4 @@
-//! Scope: chapter 20 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
+//! Scope: chapter 21 of the Book, "From source to solver" (feature `root-e2e`, RE-02 and RE-03): the
 //! divider the chapter runs and the diode it can be swapped for, run through `piperine::`; the printed
 //! intermediate form, the generated Rust and the library the Rust backend loads; the three compiler
 //! codes a source can raise (`P0001` to `P0003`; `P0004` is an internal error no source raises); the
