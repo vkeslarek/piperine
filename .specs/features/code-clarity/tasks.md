@@ -22,6 +22,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run worklists**: `cargo test -p piperine-repository-guards --test worklists`
 **Run refusals**: `cargo test -p piperine-language --test refusals`
 **Run stddecl**: `cargo test -p piperine-language --test std_declarations`
+> Until T139 renames the crate, the run is `cargo test -p piperine-lang --test std_declarations` (T102 ran it so).
 **Run variadics**: `cargo test -p piperine-language --test named_variadics`
 **Run specstructure**: `cargo test -p piperine-language --test spec_structure`
 **Run srcio**: `cargo test -p piperine-parity --test source_io`
@@ -2700,8 +2701,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The four tests pass under `**Run stddecl**`; each fails on a new builtin row, a new string comparison or a stale allowance row
-- [ ] Gate check passes: Quick
+- [x] The four tests pass under `**Run stddecl**`; each fails on a new builtin row, a new string comparison or a stale allowance row
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -4042,6 +4043,8 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
 **Progress:** T1 to T8 done.
+
+**T102 guards** (`std_declarations`, allowances `allowances/piperine-lang/{builtins_not_declared_in_std,std_items_found_by_spelling,appendix_h_methods_not_declared_in_std}.tsv`): 51 builtin rows outside the closed set (S17's 12 primitives plus S10's `Fn` and `Nature`); 206 string comparisons in 61 files, measured on the tree after T101 (every `==`/`!=` with a literal, literal `match` arm and literal in `matches!` in a product file of `piperine-lang`, outside `pom/language_items.rs` and `#[cfg(test)]`; a test cannot tell a name from other text, so findings.md §2.1's "about 220 in 60 files" is the same measure made exact); 75 Appendix H rows (H.1 13, H.2 32, H.3 2, H.4 9, H.5 7, H.6 2, H.7 10), none declared in `std` yet. The kept reasons are `//!` lines `Kept S10:` to `Kept S20:` at the top of `std/lib.msl`. Departures: the guard types live in `std_declarations.rs` itself (a fixtures crate may not depend on the guards crate, `dependency_graph`); `lib.msl.pre` of the frozen preformat fixture carries the same doc lines as the shipped `lib.msl`; the glossary gained `h` (Appendix H, the integration step), so 19 `undeclared_words` rows of other crates that it clears left; five planted self-tests have `uncited_tests.tsv` rows. Departure: the builtin guard's closed set also holds `Fn` and `Nature` (design.md keeps them, S10), which T114 lists with the primitives.
 
 **T100 contract (what `std` can declare today)**, target `std_declarations` (`crates/piperine-lang/tests/std_declarations.rs`, the lang plan 15 to 16; fixture `StdCrate`, `piperine-lang-fixtures/src/std_crate.rs`):
 

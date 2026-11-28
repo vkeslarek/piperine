@@ -140,11 +140,9 @@ crates/piperine-parity/tests/source_structure/generics.rs::D	1
 crates/piperine-parity/tests/source_structure/generics.rs::Pt	1
 crates/piperine-parity/tests/source_structure/generics.rs::Rect	1
 crates/piperine-parity/tests/source_structure/generics.rs::Sq	1
-crates/piperine-parity/tests/source_structure/generics.rs::a_function_bounded_by_an_h8_trait_or_repr_runs_per_instance	1
 crates/piperine-parity/tests/source_structure/generics.rs::b	3
 crates/piperine-parity/tests/source_structure/generics.rs::c	1
 crates/piperine-parity/tests/source_structure/generics.rs::generic_structs_and_enums_instantiate_per_argument_list	1
-crates/piperine-parity/tests/source_structure/generics.rs::h	1
 crates/piperine-parity/tests/source_structure/generics.rs::hi	1
 crates/piperine-parity/tests/source_structure/generics.rs::lo	1
 crates/piperine-parity/tests/source_structure/generics.rs::n	1
@@ -171,7 +169,6 @@ crates/piperine-parity/tests/source_values/aggregates.rs::Rect	1
 crates/piperine-parity/tests/source_values/aggregates.rs::Tx	1
 crates/piperine-parity/tests/source_values/aggregates.rs::_x	1
 crates/piperine-parity/tests/source_values/aggregates.rs::b	2
-crates/piperine-parity/tests/source_values/aggregates.rs::every_row_of_h5_to_h7_gives_rusts_result	1
 crates/piperine-parity/tests/source_values/aggregates.rs::options_of_aggregates_behave_as_enums	1
 crates/piperine-parity/tests/source_values/aggregates.rs::the_zi_nd_reaction_value_code_runs_as_a_function	1
 crates/piperine-parity/tests/source_values/aggregates.rs::tuples_give_rusts_values	1

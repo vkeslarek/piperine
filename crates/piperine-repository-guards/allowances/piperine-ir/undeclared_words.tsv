@@ -101,7 +101,6 @@ crates/piperine-ir/src/print/expression.rs::stmt	1
 crates/piperine-ir/src/statements.rs::Expr	1
 crates/piperine-ir/src/statements.rs::Stmt	1
 crates/piperine-ir/tests/model/aggregates.rs::copyable	1
-crates/piperine-ir/tests/model/aggregates.rs::derives_imply_what_h8_says	1
 crates/piperine-ir/tests/model/aggregates.rs::e	1
 crates/piperine-ir/tests/model/aggregates.rs::tx	1
 crates/piperine-ir/tests/model/carrier_arrays.rs::expr	1

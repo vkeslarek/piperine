@@ -48,7 +48,6 @@ crates/piperine-solver/src/analyses/tf.rs::output_ref	2
 crates/piperine-solver/src/analyses/tf.rs::output_ref_node	1
 crates/piperine-solver/src/analyses/transient/attempt.rs::device_unaccept	1
 crates/piperine-solver/src/analyses/transient/attempt.rs::last_dt	2
-crates/piperine-solver/src/analyses/transient/attempt.rs::prev_h	1
 crates/piperine-solver/src/analyses/transient/attempt.rs::rebase	1
 crates/piperine-solver/src/analyses/transient/attempt.rs::spt	1
 crates/piperine-solver/src/analyses/transient/attempt.rs::st	2
@@ -68,9 +67,7 @@ crates/piperine-solver/src/analyses/transient/step_control.rs::dt_proposed	1
 crates/piperine-solver/src/analyses/transient/step_control.rs::execute_timestep	1
 crates/piperine-solver/src/analyses/transient/step_control.rs::propose_dt	1
 crates/piperine-solver/src/analyses/transient/step_control.rs::t_next	1
-crates/piperine-solver/src/analyses/transient/system.rs::h	1
 crates/piperine-solver/src/analyses/transient/system.rs::ic	1
-crates/piperine-solver/src/analyses/transient/system.rs::prev_h	1
 crates/piperine-solver/src/analyses/transient/system.rs::tfinal	1
 crates/piperine-solver/src/core/bind.rs::ArrayDecl	1
 crates/piperine-solver/src/core/bind.rs::Int	1
@@ -89,7 +86,6 @@ crates/piperine-solver/src/core/result.rs::integrated_sq	1
 crates/piperine-solver/src/core/result.rs::last_dt	2
 crates/piperine-solver/src/core/result.rs::n_ports	1
 crates/piperine-solver/src/core/result.rs::out_noise_sq	1
-crates/piperine-solver/src/core/result.rs::prev_h	2
 crates/piperine-solver/src/core/result.rs::s	1
 crates/piperine-solver/src/core/result.rs::solve_time_ns	1
 crates/piperine-solver/src/core/result.rs::stepper	2

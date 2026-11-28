@@ -1285,10 +1285,13 @@ dependencies = [
  "piperine-ir",
  "piperine-lang-fixtures",
  "piperine-numbers",
+ "piperine-repository-guards",
  "piperine-transpile",
+ "proc-macro2",
  "serde",
  "serde_json",
  "stacker",
+ "syn 2.0.118",
  "tempfile",
 ]
 

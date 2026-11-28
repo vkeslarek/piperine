@@ -10,13 +10,11 @@ crates/piperine-api/src/param_text.rs::an_integer_literal_is_read_in_its_radix_a
 crates/piperine-api/src/params.rs::ty	1
 crates/piperine-api/src/plot.rs::Rect	1
 crates/piperine-api/src/plot.rs::an_ac_plot_has_a_db_panel_over_a_degree_panel_and_a_log_axis	1
-crates/piperine-api/src/plot.rs::h	1
 crates/piperine-api/src/plot.rs::w	1
 crates/piperine-api/src/plot.rs::x	2
 crates/piperine-api/src/plot.rs::y	2
 crates/piperine-api/src/project.rs::dir	2
 crates/piperine-api/src/record.rs::Int	1
-crates/piperine-api/src/recorder.rs::h	1
 crates/piperine-api/src/recorder.rs::k	1
 crates/piperine-api/src/recorder.rs::kmax	1
 crates/piperine-api/src/recorder.rs::q	1

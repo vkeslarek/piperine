@@ -24,9 +24,7 @@ crates/piperine-analog-solver/src/device/assembly.rs::jac	1
 crates/piperine-analog-solver/src/device/assembly.rs::stim	1
 crates/piperine-analog-solver/src/device/assembly.rs::var	1
 crates/piperine-analog-solver/src/device/assembly.rs::x	1
-crates/piperine-analog-solver/src/device/ddt.rs::h	1
 crates/piperine-analog-solver/src/device/ddt.rs::i	1
-crates/piperine-analog-solver/src/device/ddt.rs::prev_h	1
 crates/piperine-analog-solver/src/device/ddt.rs::q	1
 crates/piperine-analog-solver/src/device/flow.rs::v	1
 crates/piperine-analog-solver/src/device/plan.rs::im	1

@@ -23,6 +23,10 @@ serde_json = "1"
 [dev-dependencies]
 tempfile.workspace = true
 piperine-lang-fixtures = { path = "../piperine-lang-fixtures" }
+# `std_declarations` judges the front end's own sources with the guards' ratchet type and syntax scan.
+piperine-repository-guards = { path = "../piperine-repository-guards" }
+syn = { version = "2", features = ["full", "visit"] }
+proc-macro2 = "1"
 # `elab_values` holds the integer folding of `ConstEval` against the compiled code's own integers
 # (`rt::{UInt, Int}`): one rule, two implementations, compared.
 piperine-transpile = { path = "../piperine-transpile" }

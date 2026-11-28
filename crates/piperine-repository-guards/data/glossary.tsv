@@ -118,3 +118,4 @@ refutable	a pattern that can fail to match a value (`let` without `else` needs a
 si	the International System of Units (the SI suffix letters of a number literal)
 dpwm	digital pulse-width modulator, the buck slice's duty-cycle generator
 pid	proportional-integral-derivative controller, the buck slice's regulator
+h	the letter of Appendix H of the specification (the library catalogue), and the step `h` of an integration

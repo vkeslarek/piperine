@@ -599,8 +599,6 @@ crates/piperine-lang/tests/pom/reflect.rs::sar_adc_instances_name_their_modules	
 crates/piperine-lang/tests/pom/reflect.rs::serde	1
 crates/piperine-lang/tests/pom/reflect.rs::types_list_their_impls_and_methods	1
 crates/piperine-lang/tests/pom/resolve.rs::an_unlinked_member_keeps_its_slot	1
-crates/piperine-lang/tests/pom/resolve.rs::appendix_h_names	1
-crates/piperine-lang/tests/pom/resolve.rs::builtin_table_matches_appendix_h	1
 crates/piperine-lang/tests/pom/resolve.rs::core_names_cannot_be_redeclared	1
 crates/piperine-lang/tests/pom/resolve.rs::decl	1
 crates/piperine-lang/tests/pom/resolve.rs::extern_c_fn_is_not_intrinsic	1
@@ -682,11 +680,8 @@ crates/piperine-lang/tests/types_modules/structure.rs::a_parent_may_drive_a_chil
 crates/piperine-lang/tests/types_modules/structure.rs::inst_name_of_an_item_that_is_not_pub_is_e0343	1
 crates/piperine-lang/tests/types_modules/structure.rs::inst_name_types_as_the_pub_item	1
 crates/piperine-lang/tests/types_modules/subset.rs::unreached_items_are_not_reported	1
-crates/piperine-lang/tests/types_patterns/aggregates.rs::a_method_outside_appendix_h_is_e0161	1
 crates/piperine-lang/tests/types_patterns/aggregates.rs::payload_enums_build_and_match	1
-crates/piperine-lang/tests/types_patterns/aggregates.rs::the_rows_of_h5_to_h7_type_check	1
 crates/piperine-lang/tests/types_patterns/aggregates.rs::tuples_and_tuple_patterns_type_check	1
-crates/piperine-lang/tests/types_patterns/compound.rs::a_method_outside_h3_h4_is_e0161	1
 crates/piperine-lang/tests/types_patterns/compound.rs::decl	1
 crates/piperine-lang/tests/types_patterns/compound.rs::match_is_typed_over_enums_bools_integers_and_options	1
 crates/piperine-lang/tests/types_patterns/compound.rs::unit_enums_and_their_variants_are_typed	1
@@ -695,12 +690,10 @@ crates/piperine-lang/tests/types_values/explicit.rs::width_is_typed_u32_on_a_con
 crates/piperine-lang/tests/types_values/integers.rs::a_literal_takes_the_expected_integer_type_else_i32	1
 crates/piperine-lang/tests/types_values/integers.rs::a_read_that_requires_no_type_closes_the_literal_at_i32	1
 crates/piperine-lang/tests/types_values/integers.rs::as_goes_between_integers_and_f64	1
-crates/piperine-lang/tests/types_values/integers.rs::every_h1_row_types_with_its_signature	1
 crates/piperine-lang/tests/types_values/number_widths.rs::an_f32_where_an_f64_is_required_is_a_mismatch	1
 crates/piperine-lang/tests/types_values/operators.rs::two_impls_for_one_type_and_one_rhs_are_e0187	1
 crates/piperine-lang/tests/types_values/values.rs::a_let_takes_its_initializer_type	1
 crates/piperine-lang/tests/types_values/values.rs::a_method_outside_h2_on_f64_is_e0161	1
 crates/piperine-lang/tests/types_values/values.rs::catalogue_methods_on_f64_are_f64	1
-crates/piperine-lang/tests/types_values/values.rs::every_h2_row_types_with_its_signature	1
 crates/piperine-lang/tests/types_values/values.rs::literals_are_f64_or_bool	1
 crates/piperine-lang/tests/types_values/values.rs::the_std_pnjlim_checks_clean	1

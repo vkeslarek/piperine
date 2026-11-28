@@ -3,6 +3,14 @@
 //! The root declares one `pub` namespace per section of Part VII: `constants`, `carriers`,
 //! `values`, `logic`, `analog`, `nets`, `convert`, `monitor` and `io`. `prelude` re-exports every `pub`
 //! item of the others: its items are visible in every file with no import.
+//!
+//! What the language keeps without a declaration here, each with the reason it stays (code-clarity design.md, CC-11):
+//!
+//! - Kept S10: `Fn(P1, .., Pn)` and `Nature` are bounds on kinds of item (callables and natures), not traits a model implements, and `Fn` takes a list of any length.
+//! - Kept S17: the primitive types (`bool`, `uN`, `iN`, `fN`, `usize`, `isize`, `UInt`, `Int`, `Float`, `str`, `Event`) and `gnd` are the leaves of the type grammar, so no declaration can name them.
+//! - Kept S18: the nature quantity keys `access`, `units` and `abstol` are the grammar of the `nature` declaration itself, where `access: v` declares a function named `v`.
+//! - Kept S19: `#[derive(..)]` takes a closed set of traits because the language has no macro system, so a user trait cannot derive.
+//! - Kept S20: `extern "intrinsic"` is accepted in this crate only (`E0125`), because it is the mechanism by which the compiler gives a declaration here its meaning.
 
 pub mod constants;
 
