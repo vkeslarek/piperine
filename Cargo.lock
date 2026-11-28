@@ -1281,12 +1281,21 @@ dependencies = [
  "logos",
  "miette",
  "piperine-ir",
+ "piperine-lang-fixtures",
  "piperine-numbers",
  "piperine-transpile",
  "serde",
  "serde_json",
  "stacker",
  "tempfile",
+]
+
+[[package]]
+name = "piperine-lang-fixtures"
+version = "0.2.0"
+dependencies = [
+ "piperine-ir",
+ "piperine-lang",
 ]
 
 [[package]]

@@ -3,12 +3,10 @@
 //! elaborates a design of `Top` and reads the type arena and the expressions of the IR it gives.
 //! Run-time values are proven from source in `piperine-parity`'s `source_values`.
 
-use crate::support;
-use crate::elab_forms;
 
 use piperine_ir::{Expr, TypeKind, ValueType};
-use elab_forms::{ElabSource, IrReading};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::elaboration_forms::{ElaborationForms, IrReading};
 
 #[test]
 fn every_reached_struct_and_enum_is_one_arena_type() {
@@ -22,7 +20,7 @@ fn every_reached_struct_and_enum_is_one_arena_type() {
                  fn active() -> Mode { Mode::Regulate }\n\
                  fn pair_x(p: Pair) -> f64 { 1.0 }\n\
                  fn is_hiccup(m: Mode) -> bool { match m { Mode::Hiccup => true, _ => false } }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["active()", "is_hiccup(Mode::Off)", "{ let f = pair_x; 0.0 }"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["active()", "is_hiccup(Mode::Off)", "{ let f = pair_x; 0.0 }"]), "Top");
 
     // exactly the types the design reaches: `Never` is declared and never reached
     let names: Vec<&str> = ir.types().iter().map(|t| t.name.as_str()).collect();
@@ -59,7 +57,7 @@ fn struct_fields_are_evaluated_in_written_order() {
     // with a part that is more than a read, each is bound to a local in written order first.
     let items = "struct P { x: f64, y: u8 }\nfn half(a: f64) -> f64 { a / 2.0 }\nfn one() -> u8 { 1 }\n\
                  fn ordered() -> P { P { x: half(1.0), y: one() } }\nfn shuffled() -> P { P { y: one(), x: half(1.0) } }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["ordered()", "shuffled()"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["ordered()", "shuffled()"]), "Top");
     let text = ir.print_structural();
     let function = |name: &str| {
         let start = text.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name}"));
@@ -113,7 +111,7 @@ fn aggregates_fold_in_const_contexts() {
                   swapped: f64 = swap(T).0 as f64; matched: f64 = pick(P) as f64; iterated: f64 = A.iter().map(|x| x * 2.0).fold(0.0, |acc, x| acc + x); \
                   first: f64 = head(A).unwrap_or(9.0); equal: bool = P == P && A != doubled(A); ranged: bool = (1..4).contains(3); \
                   sliced: f64 = A[1..3][0]; checked: f64 = 1.0 where A[0] < A[2] && P.n == 4;";
-    let values = IrReading::param_values(&ElabSource::with_params(items, params));
+    let values = IrReading::param_values(&ElaborationForms::with_params(items, params));
     let real = |v: f64| format!("{:?}", v);
     assert_eq!(
         values,
@@ -143,9 +141,9 @@ fn an_index_out_of_range_in_a_const_is_e0104() {
         ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst fn element(i: usize) -> f64 { A[i] }\nconst BAD: f64 = element(3);", "A[i]"),
         ("const A: [f64; 3] = [1.0, 2.0, 3.0];\nconst BAD: f64 = A[1..4][0];", "A[1..4]"),
     ] {
-        let src = ElabSource::with_params(items, "x: f64 = BAD;");
-        let err = Elab::run(&src, "Top").expect_err("the index is out of range");
-        assert_eq!(Elab::codes(&err), ["E0104"], "{items}");
+        let src = ElaborationForms::with_params(items, "x: f64 = BAD;");
+        let err = SourceElaboration::run(&src, "Top").expect_err("the index is out of range");
+        assert_eq!(SourceElaboration::codes(&err), ["E0104"], "{items}");
         let span = err[0].diagnostic.span();
         assert!(src[span.start..span.end].contains(at), "the error names the expression {at}: {:?}", &src[span.start..span.end]);
     }
@@ -174,7 +172,7 @@ fn the_stdlib_polynomial_helpers_fold() {
         function("poly_q"),
         function("den_q")
     );
-    let values = IrReading::param_values(&ElabSource::with_params(&items, "c1: f64 = C[1]; c2: f64 = C[2]; d0: f64 = D[0]; d1: f64 = D[1]; ok: bool = CLOSED; no: bool = OPEN;"));
+    let values = IrReading::param_values(&ElaborationForms::with_params(&items, "c1: f64 = C[1]; c2: f64 = C[2]; d0: f64 = D[0]; d1: f64 = D[1]; ok: bool = CLOSED; no: bool = OPEN;"));
     // the same product of `1 - rho * q` over the roots, in Rust
     let roots = [(0.5f64, 0.0f64), (0.25, 0.5)];
     let mut c = [(0.0f64, 0.0f64); 3];
@@ -197,7 +195,7 @@ fn a_folded_composite_becomes_an_aggregate_constant() {
     use piperine_ir::{Constant, Real};
     let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\n\
                  const fn doubled(xs: [f64; 3]) -> [f64; 3] { let r = xs; for k in 0..3 { r[k] = xs[k] * 2.0; } r }";
-    let ir = Elab::ir(&ElabSource::with_params(items, "table: [f64; 3] = doubled(A); p: Pair = P; t: (f64, bool) = (1.5, true); n: ((f64, f64), [bool; 2]) = ((0.5, 1.5), [true, false]);"), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::with_params(items, "table: [f64; 3] = doubled(A); p: Pair = P; t: (f64, bool) = (1.5, true); n: ((f64, f64), [bool; 2]) = ((0.5, 1.5), [true, false]);"), "Top");
     let params: Vec<Constant> = ir.instance_at("Top").expect("the top instance").params().iter().copied().collect();
     let parts = |value: &Constant| match value {
         Constant::Aggregate(id) => ir.aggregate(*id).parts.clone(),
@@ -217,7 +215,7 @@ fn a_composite_const_read_in_value_code_is_written_out() {
     // CV-36 (§1.5.25): a `const` of composite type read in a function or an `analog` block is the expression that
     // builds its value, so `A[2]` indexes an array of the constants and `P.a` reads a field of a struct of them.
     let items = "struct Pair { a: f64, n: u8 }\nconst A: [f64; 3] = [1.0, 2.0, 3.0];\nconst P: Pair = Pair { a: 0.5, n: 4 };\nfn pick(i: usize) -> f64 { A[i] + P.a }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["pick(1)", "A[2]"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["pick(1)", "A[2]"]), "Top");
     assert!(ir.expressions().any(|e| matches!(e, Expr::Array(parts) if parts.len() == 3)), "the array constant is written out");
     assert!(ir.expressions().any(|e| matches!(e, Expr::StructOf { fields, .. } if fields.len() == 2)), "the struct constant is written out");
 }
@@ -227,7 +225,7 @@ fn a_function_over_an_array_of_options_reads_each_element_as_a_pair() {
     // resolved-nets T28 (Appendix F.4.4: a `resolve` over `[Option<u8>; N]`): an array whose elements are `Option`s is an IR
     // array of packed options, and `d[k]` is the pair of its two halves, each unpacked from the element read
     let items = "fn first_or(d: [Option<u8>; 3], k: usize) -> u8 { match d[k] { Some(b) => b, None => 0 } }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["{ let f = first_or; 0.0 }"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["{ let f = first_or; 0.0 }"]), "Top");
     assert!(ir.expressions().any(|e| matches!(e, Expr::OptionPart { .. })), "the element is unpacked into its halves");
     assert!(ir.expressions().any(|e| matches!(e, Expr::Index { .. })), "the element is read from the array");
 }

@@ -5,7 +5,7 @@
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic};
 use piperine_lang::types::Types;
 
-use crate::support;
+use crate::pom::PomSource;
 
 /// MSL sources of the generics targets and the checks that read them.
 pub struct GenericSources;
@@ -25,8 +25,8 @@ impl GenericSources {
     /// The types of the bindings `names` of the `analog` block of `Top` after `items`, as `name = type`,
     /// or the codes and messages of the check.
     pub fn analog_types(items: &str, body: &str, names: &[&str]) -> Result<Vec<String>, Vec<(String, String)>> {
-        let design = support::build(&format!("{}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}", Self::HEAD));
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", support::codes(&design));
+        let design = PomSource::build(&format!("{}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}", Self::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", PomSource::codes(&design));
         match Types::check(&design, "Top") {
             Ok(types) => Ok(names.iter().map(|name| format!("{name} = {}", types.local(Self::binding(&design, name)).map_or_else(|| "?".to_string(), |ty| ty.name(&design)))).collect()),
             Err(found) => Err(found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()),
@@ -35,8 +35,8 @@ impl GenericSources {
 
     /// The diagnostics of the whole-model check of `src` after the natures, which must find some.
     pub fn model_errors(src: &str) -> Vec<DesignDiagnostic> {
-        let design = support::build(&format!("{}{src}", Self::HEAD));
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", support::codes(&design));
+        let design = PomSource::build(&format!("{}{src}", Self::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}", PomSource::codes(&design));
         Types::check_model(&design).expect_err("expected diagnostics")
     }
 

@@ -7,47 +7,71 @@
 use piperine_lang::msl::lexer::{Lexer, Punct, Token};
 use piperine_lang::msl::{Diagnostic, Span};
 
-fn tokens(src: &str) -> Vec<Token> {
-    let (toks, diags) = Lexer::lex(src);
-    assert!(diags.is_empty(), "unexpected diagnostics for {src:?}: {diags:?}");
-    toks.into_iter().map(|(t, _)| t).collect()
-}
+/// Associated test helpers of `lexer`, grouped on one fixture type.
+struct LexerFixture;
 
-fn one_token(src: &str) -> Token {
-    let mut t = tokens(src);
-    assert_eq!(t.len(), 1, "{src:?} should lex to one token, got {t:?}");
-    t.remove(0)
-}
+impl LexerFixture {
+    fn tokens(src: &str) -> Vec<Token> {
+        let (toks, diags) = Lexer::lex(src);
+        assert!(diags.is_empty(), "unexpected diagnostics for {src:?}: {diags:?}");
+        toks.into_iter().map(|(t, _)| t).collect()
+    }
 
-fn diagnostics(src: &str) -> Vec<Diagnostic> {
-    Lexer::lex(src).1
-}
+    fn one_token(src: &str) -> Token {
+        let mut t = LexerFixture::tokens(src);
+        assert_eq!(t.len(), 1, "{src:?} should lex to one token, got {t:?}");
+        t.remove(0)
+    }
 
-fn plain(text: &str) -> Token {
-    Token::Str { text: text.to_string(), raw_hashes: None }
-}
+    fn diagnostics(src: &str) -> Vec<Diagnostic> {
+        Lexer::lex(src).1
+    }
 
-fn raw(text: &str, hashes: u8) -> Token {
-    Token::Str { text: text.to_string(), raw_hashes: Some(hashes) }
-}
+    fn plain(text: &str) -> Token {
+        Token::Str { text: text.to_string(), raw_hashes: None }
+    }
 
-fn float(value: f64, raw: &str) -> Token {
-    Token::Float { value, raw: raw.to_string() }
+    fn raw(text: &str, hashes: u8) -> Token {
+        Token::Str { text: text.to_string(), raw_hashes: Some(hashes) }
+    }
+
+    fn float(value: f64, raw: &str) -> Token {
+        Token::Float { value, raw: raw.to_string() }
+    }
+
+    fn only_code(src: &str, code: &str, span: Span) {
+        let (toks, diags) = Lexer::lex(src);
+        assert_eq!(diags.len(), 1, "{src:?}: {diags:?}");
+        assert_eq!(diags[0].code, code, "{src:?}");
+        assert_eq!(diags[0].span(), span, "{src:?}");
+        // The token is still produced, so the parse goes on.
+        assert_eq!(toks.len(), 1, "{src:?}: {toks:?}");
+    }
+
+    fn literal(src: &str) -> piperine_lang::msl::ast::Lit {
+        use piperine_lang::msl::ast::ExprKind;
+        let (expr, diags) = piperine_lang::msl::parser::ExpressionGrammar::parse(src);
+        let _ = diags;
+        match expr.expect("an expression").kind {
+            ExprKind::Lit(l) => l,
+            other => panic!("{src}: not a literal: {other:?}"),
+        }
+    }
 }
 
 #[test]
 fn si_literal_scaled_value_and_raw_text() {
     // Appendix A.2 AC 1: one float token, scaled value, original text kept.
-    assert_eq!(one_token("50m"), float(0.05, "50m"));
-    assert_eq!(one_token("1p"), float(1e-12, "1p"));
+    assert_eq!(LexerFixture::one_token("50m"), LexerFixture::float(0.05, "50m"));
+    assert_eq!(LexerFixture::one_token("1p"), LexerFixture::float(1e-12, "1p"));
     // Rule 6: the nearest f64 to the exact decimal product, i.e. the
     // literal 2.2e-6, not the rounded product 2.2 * 1e-6.
-    assert_eq!(one_token("2.2u"), float(2.2e-6, "2.2u"));
+    assert_eq!(LexerFixture::one_token("2.2u"), LexerFixture::float(2.2e-6, "2.2u"));
     // Rule 1: integer-looking SI literals are f64 too.
-    assert_eq!(one_token("1k"), float(1000.0, "1k"));
+    assert_eq!(LexerFixture::one_token("1k"), LexerFixture::float(1000.0, "1k"));
     // Rule 2: case-sensitive, `m` milli vs `M` mega.
-    assert_eq!(one_token("1m"), float(1e-3, "1m"));
-    assert_eq!(one_token("1M"), float(1e6, "1M"));
+    assert_eq!(LexerFixture::one_token("1m"), LexerFixture::float(1e-3, "1m"));
+    assert_eq!(LexerFixture::one_token("1M"), LexerFixture::float(1e6, "1M"));
     // The whole multiplier table.
     for (suffix, mult) in [
         ("T", "e12"), ("G", "e9"), ("M", "e6"), ("k", "e3"), ("m", "e-3"),
@@ -55,40 +79,40 @@ fn si_literal_scaled_value_and_raw_text() {
     ] {
         let src = format!("2.5{suffix}");
         let expected: f64 = format!("2.5{mult}").parse().unwrap();
-        assert_eq!(one_token(&src), float(expected, &src), "suffix {suffix}");
+        assert_eq!(LexerFixture::one_token(&src), LexerFixture::float(expected, &src), "suffix {suffix}");
     }
     // Underscores are part of DEC_DIGITS.
-    assert_eq!(one_token("1_000k"), float(1e6, "1_000k"));
+    assert_eq!(LexerFixture::one_token("1_000k"), LexerFixture::float(1e6, "1_000k"));
     // Rule 3: a letter followed by identifier characters is a type suffix.
-    assert_eq!(one_token("1u8"), Token::Int("1u8".to_string()));
-    assert_eq!(one_token("1f64"), float(1.0, "1f64"));
-    assert_eq!(one_token("1u"), float(1e-6, "1u"));
+    assert_eq!(LexerFixture::one_token("1u8"), Token::Int("1u8".to_string()));
+    assert_eq!(LexerFixture::one_token("1f64"), LexerFixture::float(1.0, "1f64"));
+    assert_eq!(LexerFixture::one_token("1u"), LexerFixture::float(1e-6, "1u"));
     // Rule 7: a leading `-` is the negation operator.
-    assert_eq!(tokens("-1k"), vec![Token::Punct(Punct::Minus), float(1000.0, "1k")]);
+    assert_eq!(LexerFixture::tokens("-1k"), vec![Token::Punct(Punct::Minus), LexerFixture::float(1000.0, "1k")]);
     // Plain literals stay plain.
-    assert_eq!(one_token("42"), Token::Int("42".to_string()));
-    assert_eq!(one_token("1.5"), float(1.5, "1.5"));
-    assert_eq!(one_token("1e-3"), float(1e-3, "1e-3"));
+    assert_eq!(LexerFixture::one_token("42"), Token::Int("42".to_string()));
+    assert_eq!(LexerFixture::one_token("1.5"), LexerFixture::float(1.5, "1.5"));
+    assert_eq!(LexerFixture::one_token("1e-3"), LexerFixture::float(1e-3, "1e-3"));
     // A range and a method call on an integer are not floats.
     assert_eq!(
-        tokens("1..2"),
+        LexerFixture::tokens("1..2"),
         vec![Token::Int("1".into()), Token::Punct(Punct::DotDot), Token::Int("2".into())]
     );
     // An exponent with no digits is an invalid literal, as in Rust.
-    assert_eq!(diagnostics("1e+x")[0].code, "E0900");
+    assert_eq!(LexerFixture::diagnostics("1e+x")[0].code, "E0900");
 }
 
 #[test]
 fn malformed_si_literal_reports_e0902() {
     // Appendix A.2 rules 4-5: exponent, type suffix, non-decimal base.
     for src in ["1e3m", "5mf64", "0x10m", "1e3k", "1k_f32", "0b1a"] {
-        let d = diagnostics(src);
+        let d = LexerFixture::diagnostics(src);
         assert_eq!(d.len(), 1, "{src:?}: {d:?}");
         assert_eq!(d[0].code, "E0902", "{src:?}");
         assert_eq!(d[0].span(), Span::new(0, src.len()), "{src:?} span");
     }
     // Located at the literal, not at the start of the line.
-    let d = diagnostics("let x = 1e3m;");
+    let d = LexerFixture::diagnostics("let x = 1e3m;");
     assert_eq!(d.len(), 1);
     assert_eq!(d[0].code, "E0902");
     assert_eq!(d[0].span(), Span::new(8, 12));
@@ -98,7 +122,7 @@ fn malformed_si_literal_reports_e0902() {
 fn dropped_token_class_reports_e0905() {
     // Appendix A.1 resolution + A.6: char, byte, byte string, lifetime.
     for src in ["'a'", "b'a'", "b\"x\"", "'a", "'static"] {
-        let d = diagnostics(src);
+        let d = LexerFixture::diagnostics(src);
         assert_eq!(d.len(), 1, "{src:?}: {d:?}");
         assert_eq!(d[0].code, "E0905", "{src:?}");
         assert_eq!(d[0].span(), Span::new(0, src.len()), "{src:?} span");
@@ -113,15 +137,15 @@ fn dropped_token_class_reports_e0905() {
 #[test]
 fn contribution_and_commit_operators_are_single_tokens() {
     // Appendix A.5: longest match, one token each.
-    assert_eq!(one_token("+>"), Token::Punct(Punct::PlusGt));
-    assert_eq!(one_token("<-"), Token::Punct(Punct::LtMinus));
+    assert_eq!(LexerFixture::one_token("+>"), Token::Punct(Punct::PlusGt));
+    assert_eq!(LexerFixture::one_token("<-"), Token::Punct(Punct::LtMinus));
     // Rule 3: `a<-b` is a commit; `a < -b` is a comparison.
     assert_eq!(
-        tokens("a<-b"),
+        LexerFixture::tokens("a<-b"),
         vec![Token::Ident("a".into()), Token::Punct(Punct::LtMinus), Token::Ident("b".into())]
     );
     assert_eq!(
-        tokens("a < -b"),
+        LexerFixture::tokens("a < -b"),
         vec![
             Token::Ident("a".into()),
             Token::Punct(Punct::Lt),
@@ -131,14 +155,14 @@ fn contribution_and_commit_operators_are_single_tokens() {
     );
     // Rule 5: `a+>b` is `a`, `+>`, `b`.
     assert_eq!(
-        tokens("a+>b"),
+        LexerFixture::tokens("a+>b"),
         vec![Token::Ident("a".into()), Token::Punct(Punct::PlusGt), Token::Ident("b".into())]
     );
     // Neighbours keep their own longest match.
-    assert_eq!(one_token("+="), Token::Punct(Punct::PlusEq));
-    assert_eq!(one_token("->"), Token::Punct(Punct::Arrow));
-    assert_eq!(one_token("<="), Token::Punct(Punct::Le));
-    assert_eq!(one_token("<<="), Token::Punct(Punct::ShlEq));
+    assert_eq!(LexerFixture::one_token("+="), Token::Punct(Punct::PlusEq));
+    assert_eq!(LexerFixture::one_token("->"), Token::Punct(Punct::Arrow));
+    assert_eq!(LexerFixture::one_token("<="), Token::Punct(Punct::Le));
+    assert_eq!(LexerFixture::one_token("<<="), Token::Punct(Punct::ShlEq));
 }
 
 #[test]
@@ -156,7 +180,7 @@ fn keywords_reserved_vs_contextual() {
         "typeof", "unsized", "virtual", "yield", "try", "gen",
     ];
     for word in added.iter().chain(rust_2024.iter()) {
-        match one_token(word) {
+        match LexerFixture::one_token(word) {
             Token::Kw(k) => assert_eq!(k.as_str(), *word),
             other => panic!("{word:?} should be a reserved keyword, got {other:?}"),
         }
@@ -166,13 +190,13 @@ fn keywords_reserved_vs_contextual() {
         "analog", "digital", "potential", "flow", "value", "resolve", "gnd", "settle",
         "inf", "emit", "include_str", "macro_rules", "union", "u8", "str_", "outer",
     ] {
-        assert_eq!(one_token(word), Token::Ident(word.to_string()), "{word}");
+        assert_eq!(LexerFixture::one_token(word), Token::Ident(word.to_string()), "{word}");
     }
     // `Unknown` is no token (explicit-unknowns, EU-02): an identifier like any other; `_` is the wildcard.
-    assert_eq!(one_token("Unknown"), Token::Ident("Unknown".into()));
-    assert_eq!(one_token("unknown"), Token::Ident("unknown".into()));
-    assert_eq!(one_token("_"), Token::Punct(Punct::Underscore));
-    assert_eq!(one_token("_x"), Token::Ident("_x".into()));
+    assert_eq!(LexerFixture::one_token("Unknown"), Token::Ident("Unknown".into()));
+    assert_eq!(LexerFixture::one_token("unknown"), Token::Ident("unknown".into()));
+    assert_eq!(LexerFixture::one_token("_"), Token::Punct(Punct::Underscore));
+    assert_eq!(LexerFixture::one_token("_x"), Token::Ident("_x".into()));
 }
 
 #[test]
@@ -180,7 +204,7 @@ fn doc_comments_are_tokens() {
     // Appendix A.4: `///` and `//!` carry their text; `//` and `/* */` vanish.
     let src = "/// outer doc\n//! inner doc\n// plain\n/* block */ x";
     assert_eq!(
-        tokens(src),
+        LexerFixture::tokens(src),
         vec![
             Token::DocOuter(" outer doc".into()),
             Token::DocInner(" inner doc".into()),
@@ -188,13 +212,13 @@ fn doc_comments_are_tokens() {
         ]
     );
     // Rust rule: four slashes is an ordinary comment.
-    assert_eq!(tokens("//// not doc\ny"), vec![Token::Ident("y".into())]);
+    assert_eq!(LexerFixture::tokens("//// not doc\ny"), vec![Token::Ident("y".into())]);
     // Block comments nest, as in Rust.
-    assert_eq!(tokens("/* a /* b */ c */ z"), vec![Token::Ident("z".into())]);
+    assert_eq!(LexerFixture::tokens("/* a /* b */ c */ z"), vec![Token::Ident("z".into())]);
     // Block doc comments are doc tokens too, as in Rust: `/** */` outer,
     // `/*! */` inner; `/***`, `/**/` and `/* */` are plain comments.
     assert_eq!(
-        tokens("/** a */ /*! b */ /*** c */ /**/ /* d */ x"),
+        LexerFixture::tokens("/** a */ /*! b */ /*** c */ /**/ /* d */ x"),
         vec![
             Token::DocOuterBlock(" a ".into()),
             Token::DocInnerBlock(" b ".into()),
@@ -229,7 +253,7 @@ fn unterminated_comment_and_string_one_diagnostic() {
     assert_eq!(kinds, vec![&Token::Ident("x".into()), &Token::Punct(Punct::Eq), &Token::Error]);
 
     // A terminated string with an escaped quote is fine.
-    assert_eq!(tokens(r#""a\"b""#), vec![plain(r#"a\"b"#)]);
+    assert_eq!(LexerFixture::tokens(r#""a\"b""#), vec![LexerFixture::plain(r#"a\"b"#)]);
 }
 
 #[test]
@@ -252,24 +276,24 @@ fn inherited_lexical_forms_lex() {
     let (toks, diags) = Lexer::lex(r###"r"a\b" r#"q"q"# r##"x"#y"##"###);
     assert!(diags.is_empty(), "{diags:?}");
     assert_eq!(toks.iter().map(|(t, _)| t.clone()).collect::<Vec<_>>(), vec![
-        raw("a\\\\b", 0),
-        raw("q\\\"q", 1),
-        raw("x\\\"#y", 2),
+        LexerFixture::raw("a\\\\b", 0),
+        LexerFixture::raw("q\\\"q", 1),
+        LexerFixture::raw("x\\\"#y", 2),
     ]);
     assert_eq!(toks[0].1, Span::new(0, 6));
     // An unterminated raw string is one diagnostic at its opener.
-    let d = diagnostics("a r#\"never closed");
+    let d = LexerFixture::diagnostics("a r#\"never closed");
     assert_eq!(d.len(), 1, "{d:?}");
     assert_eq!((&*d[0].code, d[0].span()), ("E0900", Span::new(2, 5)));
     // A raw byte string is a dropped class.
-    assert_eq!(diagnostics("br\"x\"")[0].code, "E0905");
+    assert_eq!(LexerFixture::diagnostics("br\"x\"")[0].code, "E0905");
     // `1.` is one float token; the dot of `1..`, `1.f` and `1._` stays apart.
-    assert_eq!(one_token("1."), float(1.0, "1."));
-    assert_eq!(tokens("1..2").len(), 3);
-    assert_eq!(tokens("1.max").len(), 3);
+    assert_eq!(LexerFixture::one_token("1."), LexerFixture::float(1.0, "1."));
+    assert_eq!(LexerFixture::tokens("1..2").len(), 3);
+    assert_eq!(LexerFixture::tokens("1.max").len(), 3);
     // Non-ASCII identifiers, and a byte order mark that is not a token.
-    assert_eq!(one_token("café"), Token::Ident("café".into()));
-    assert_eq!(one_token("µ"), Token::Ident("µ".into()));
+    assert_eq!(LexerFixture::one_token("café"), Token::Ident("café".into()));
+    assert_eq!(LexerFixture::one_token("µ"), Token::Ident("µ".into()));
     let (toks, diags) = Lexer::lex("\u{FEFF}x");
     assert!(diags.is_empty());
     assert_eq!(toks, vec![(Token::Ident("x".into()), Span::new(3, 4))]);
@@ -288,19 +312,10 @@ fn raw_identifier_of_an_added_keyword_is_an_identifier() {
         assert_eq!(toks[0].1, Span::new(0, src.len()), "{src}");
     }
     // The raw-string openers keep lexing as strings.
-    assert_eq!(one_token("r#\"a\"#"), raw("a", 1));
-    assert_eq!(one_token("r\"a\""), raw("a", 0));
+    assert_eq!(LexerFixture::one_token("r#\"a\"#"), LexerFixture::raw("a", 1));
+    assert_eq!(LexerFixture::one_token("r\"a\""), LexerFixture::raw("a", 0));
     // A bare added keyword is still a keyword.
-    assert!(matches!(one_token("out"), Token::Kw(_)));
-}
-
-fn only_code(src: &str, code: &str, span: Span) {
-    let (toks, diags) = Lexer::lex(src);
-    assert_eq!(diags.len(), 1, "{src:?}: {diags:?}");
-    assert_eq!(diags[0].code, code, "{src:?}");
-    assert_eq!(diags[0].span(), span, "{src:?}");
-    // The token is still produced, so the parse goes on.
-    assert_eq!(toks.len(), 1, "{src:?}: {toks:?}");
+    assert!(matches!(LexerFixture::one_token("out"), Token::Kw(_)));
 }
 
 #[test]
@@ -311,24 +326,24 @@ fn float_literal_out_of_range_is_e0909() {
     assert!(diags.is_empty() && toks.len() == 1, "an unsuffixed float is no lexer error: {diags:?}");
     let big = "9".repeat(310);
     let src = format!("{big}T");
-    only_code(&src, "E0909", Span::new(0, src.len()));
+    LexerFixture::only_code(&src, "E0909", Span::new(0, src.len()));
     let src = format!("{big}.5T");
-    only_code(&src, "E0909", Span::new(0, src.len()));
-    assert_eq!(one_token("1.7976931348623157e308"), float(f64::MAX, "1.7976931348623157e308"));
-    assert!(matches!(one_token("5e-324"), Token::Float { .. }));
+    LexerFixture::only_code(&src, "E0909", Span::new(0, src.len()));
+    assert_eq!(LexerFixture::one_token("1.7976931348623157e308"), LexerFixture::float(f64::MAX, "1.7976931348623157e308"));
+    assert!(matches!(LexerFixture::one_token("5e-324"), Token::Float { .. }));
 }
 
 #[test]
 fn integer_literal_out_of_range_is_e0909() {
     // POL-13 AC 3: both sides of each boundary.
     for src in ["256u8", "2u1", "129i8", "65536u16", "340282366920938463463374607431768211456", "0x100u8"] {
-        only_code(src, "E0909", Span::new(0, src.len()));
+        LexerFixture::only_code(src, "E0909", Span::new(0, src.len()));
     }
     for src in [
         "255u8", "128i8", "1u1", "340282366920938463463374607431768211455", "0xffu8",
         "0xffffffffffffffffffffffffffffffff",
     ] {
-        assert!(matches!(one_token(src), Token::Int(_)), "{src}");
+        assert!(matches!(LexerFixture::one_token(src), Token::Int(_)), "{src}");
     }
 }
 
@@ -348,44 +363,34 @@ fn invalid_string_escape_is_e0900() {
     // Two bad escapes, two diagnostics; the defined ones are clean.
     assert_eq!(Lexer::lex(r#""\q\z""#).1.len(), 2);
     assert!(
-        diagnostics(r#""\n\r\t\\\0\'\"\x41\u{1F600}\u{41}""#).is_empty(),
+        LexerFixture::diagnostics(r#""\n\r\t\\\0\'\"\x41\u{1F600}\u{41}""#).is_empty(),
         "every Rust escape is defined"
     );
     // A raw string has no escapes.
-    assert!(diagnostics(r##"r#"\q \u{110000}"#"##).is_empty());
-}
-
-fn literal(src: &str) -> piperine_lang::msl::ast::Lit {
-    use piperine_lang::msl::ast::ExprKind;
-    let (expr, diags) = piperine_lang::msl::parser::ExpressionGrammar::parse(src);
-    let _ = diags;
-    match expr.expect("an expression").kind {
-        ExprKind::Lit(l) => l,
-        other => panic!("{src}: not a literal: {other:?}"),
-    }
+    assert!(LexerFixture::diagnostics(r##"r#"\q \u{110000}"#"##).is_empty());
 }
 
 #[test]
 fn literal_accessors_return_cooked_values() {
     // POL-13 AC 7.
-    assert_eq!(literal(r#""a\tb\n\u{41}\x42""#).str_value().as_deref(), Some("a\tb\nAB"));
-    assert_eq!(literal(r##"r#"a"b\c"#"##).str_value().as_deref(), Some(r#"a"b\c"#));
-    assert_eq!(literal("1").str_value(), None);
-    assert_eq!(literal("0xFF").int_value(), Some(255));
-    assert_eq!(literal("0b1010_1u8").int_value(), Some(0b10101));
-    assert_eq!(literal("0o17").int_value(), Some(15));
-    assert_eq!(literal("1_000_000i32").int_value(), Some(1_000_000));
-    assert_eq!(literal("340282366920938463463374607431768211455").int_value(), Some(u128::MAX));
-    assert_eq!(literal("1.5").int_value(), None);
+    assert_eq!(LexerFixture::literal(r#""a\tb\n\u{41}\x42""#).str_value().as_deref(), Some("a\tb\nAB"));
+    assert_eq!(LexerFixture::literal(r##"r#"a"b\c"#"##).str_value().as_deref(), Some(r#"a"b\c"#));
+    assert_eq!(LexerFixture::literal("1").str_value(), None);
+    assert_eq!(LexerFixture::literal("0xFF").int_value(), Some(255));
+    assert_eq!(LexerFixture::literal("0b1010_1u8").int_value(), Some(0b10101));
+    assert_eq!(LexerFixture::literal("0o17").int_value(), Some(15));
+    assert_eq!(LexerFixture::literal("1_000_000i32").int_value(), Some(1_000_000));
+    assert_eq!(LexerFixture::literal("340282366920938463463374607431768211455").int_value(), Some(u128::MAX));
+    assert_eq!(LexerFixture::literal("1.5").int_value(), None);
     // A literal E0909 rejects has no value.
-    assert_eq!(literal("256u8").int_value(), None);
-    assert_eq!(literal("340282366920938463463374607431768211456").int_value(), None);
-    assert_eq!(literal("128i8").int_value(), Some(128));
-    assert_eq!(literal("255u8").suffix(), Some("u8"));
-    assert_eq!(literal("0xffi64").suffix(), Some("i64"));
-    assert_eq!(literal("7").suffix(), None);
-    assert_eq!(literal("1.5f32").suffix(), Some("f32"));
-    assert_eq!(literal("2.2u").suffix(), Some("u"));
-    assert_eq!(literal("1e3").suffix(), None);
-    assert_eq!(literal(r#""s""#).suffix(), None);
+    assert_eq!(LexerFixture::literal("256u8").int_value(), None);
+    assert_eq!(LexerFixture::literal("340282366920938463463374607431768211456").int_value(), None);
+    assert_eq!(LexerFixture::literal("128i8").int_value(), Some(128));
+    assert_eq!(LexerFixture::literal("255u8").suffix(), Some("u8"));
+    assert_eq!(LexerFixture::literal("0xffi64").suffix(), Some("i64"));
+    assert_eq!(LexerFixture::literal("7").suffix(), None);
+    assert_eq!(LexerFixture::literal("1.5f32").suffix(), Some("f32"));
+    assert_eq!(LexerFixture::literal("2.2u").suffix(), Some("u"));
+    assert_eq!(LexerFixture::literal("1e3").suffix(), None);
+    assert_eq!(LexerFixture::literal(r#""s""#).suffix(), None);
 }

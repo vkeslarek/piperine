@@ -3,14 +3,12 @@
 //! reached from a top or not, and each error has the code it has when reached. `Types::check`
 //! keeps the reach of one top (`types_subset.rs::unreached_items_are_not_reported`).
 
-use crate::support;
 
-#[allow(dead_code)]
-use crate::generic_sources;
 
-use generic_sources::GenericSources;
 use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::generic_sources::GenericSources;
+use piperine_lang_fixtures::pom::PomSource;
 
 /// The natures every source below places in the open.
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
@@ -31,8 +29,8 @@ impl ModelSources {
     /// The diagnostics of the model check of `src` after `HEAD`, with `src`.
     fn errors(src: &str) -> (String, Vec<DesignDiagnostic>) {
         let src = format!("{HEAD}{src}");
-        let design = support::build(&src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+        let design = PomSource::build(&src);
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
         let found = Types::check_model(&design).expect_err("expected diagnostics");
         (src, found)
     }
@@ -58,7 +56,7 @@ fn every_item_kind_of_every_crate_is_checked_unreached() {
     let app = format!("{HEAD}{ONE_ERROR_PER_KIND}");
     let util = "pub fn from_a_dependency(x: f64) -> bool { x }\n";
     let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("app/lib.msl", app.as_str()).source("util/lib.msl", util).crates(graph).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let found = Types::check_model(&design).expect_err("expected diagnostics");
     assert_eq!(found.len(), 6, "five in the root crate, one in the dependency: {found:?}");
     let in_root: Vec<&DesignDiagnostic> = found.iter().filter(|d| d.file == found[0].file).collect();
@@ -92,7 +90,7 @@ fn an_unreached_item_has_the_code_it_has_when_reached() {
     let function = "fn broken(x: f64) -> bool { x + 1.0 }\n";
     let (src, unreached) = ModelSources::errors(&format!("{function}module Top() {{ }}"));
     let reached_src = format!("{HEAD}{function}module Top() {{ }}\nanalog for Top {{ let b = broken(1.0); }}");
-    let design = support::build(&reached_src);
+    let design = PomSource::build(&reached_src);
     let reached = Types::check(&design, "Top").expect_err("reached, it fails");
     assert_eq!(ModelSources::codes(&unreached), ModelSources::codes(&reached));
     assert_eq!(ModelSources::snippets(&src, &unreached), ModelSources::snippets(&reached_src, &reached));
@@ -102,13 +100,13 @@ fn an_unreached_item_has_the_code_it_has_when_reached() {
 fn the_standard_library_is_checked_whole_with_no_instantiation() {
     // GN-27 AC 3: every item of `std` (the embedded library, nothing placed) type-checks with no error
     let design = Design::builder().source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let found = Types::check_model(&design).err().unwrap_or_default();
     assert!(found.is_empty(), "{:?}", ModelSources::codes(&found));
     // and an error in a `std` item that nothing reaches is reported like the same error in the project (D2 retired)
     let std_error = "pub fn broken(x: f64) -> bool { x + 1.0 }\n";
     let design = Design::builder().std_source("lib.msl", format!("pub mod prelude;\n{std_error}")).std_source("prelude.msl", "").source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let in_std = Types::check_model(&design).expect_err("an unreached `std` error is now found");
     let (_, in_project) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
     assert_eq!(ModelSources::codes(&in_std), ModelSources::codes(&in_project));

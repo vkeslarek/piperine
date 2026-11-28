@@ -4,24 +4,33 @@
 //! each form `analog` takes one in. Each expected value is written from the rule it cites, one
 //! source expression per row.
 
-use crate::support;
 
 use piperine_ir::Constant;
 use piperine_lang::elab::{ConstEval, ConstFault};
 use piperine_lang::pom::{Design, Reflect};
 use piperine_lang::types::Types;
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// What a row of the table expects: a known value.
 #[derive(Debug, Clone, Copy)]
 struct Expect(Constant);
 
-fn int(v: i128) -> Expect {
-    Expect(Constant::Int(v))
-}
+/// Associated test helpers of `explicit`, grouped on one fixture type.
+struct ExplicitFixture;
 
-fn boolean(v: bool) -> Expect {
-    Expect(Constant::Bool(v))
+impl ExplicitFixture {
+    fn int(v: i128) -> Expect {
+        Expect(Constant::Int(v))
+    }
+
+    fn boolean(v: bool) -> Expect {
+        Expect(Constant::Bool(v))
+    }
+
+    /// One `analog` statement of `Amp` over a known real, and `Top` placing it.
+    fn analog_source(statement: &str) -> String {
+        format!("module Amp(p: Electrical) {{ }}\nanalog for Amp {{ {statement} }}\nmodule Top() {{ signal s: Electrical; let a = Amp(s); }}")
+    }
 }
 
 /// A design of `Top` whose carriers read the rows as `const`s `R0`, `R1`, .. (an integer is no
@@ -39,8 +48,8 @@ impl Table {
         let consts: Vec<String> = rows.iter().enumerate().map(|(i, (ty, expr))| format!("const R{i}: {ty} = {expr};")).collect();
         let signals: Vec<String> = rows.iter().enumerate().map(|(i, (ty, _))| format!("signal s{i}: Bit<{ty}> = R{i};")).collect();
         let source = format!("{}{}\nmodule Top() {{ {} }}\n", Self::ITEMS, consts.join("\n"), signals.join(" "));
-        let design = Elab::design(&source);
-        assert!(design.diagnostics().is_empty(), "{:?}\n{source}", Elab::codes(design.diagnostics()));
+        let design = SourceElaboration::design(&source);
+        assert!(design.diagnostics().is_empty(), "{:?}\n{source}", SourceElaboration::codes(design.diagnostics()));
         Table { design }
     }
 
@@ -68,18 +77,18 @@ impl Table {
 fn known_values_fold_by_the_level_rules() {
     Table::check(&[
         // §3.3.2: arithmetic and comparison over known operands
-        ("u8", "1u8 + 2u8", int(3)),
-        ("bool", "3u8 == 3u8", boolean(true)),
-        ("u8", "5u8 & 3u8", int(1)),
-        ("u8", "5u8 | 2u8", int(7)),
-        ("u8", "1u8 << 3u32", int(8)),
+        ("u8", "1u8 + 2u8", ExplicitFixture::int(3)),
+        ("bool", "3u8 == 3u8", ExplicitFixture::boolean(true)),
+        ("u8", "5u8 & 3u8", ExplicitFixture::int(1)),
+        ("u8", "5u8 | 2u8", ExplicitFixture::int(7)),
+        ("u8", "1u8 << 3u32", ExplicitFixture::int(8)),
         // §3.3.12: `&&` and `||` over known operands
-        ("bool", "true && false", boolean(false)),
-        ("bool", "false || true", boolean(true)),
+        ("bool", "true && false", ExplicitFixture::boolean(false)),
+        ("bool", "false || true", ExplicitFixture::boolean(true)),
         // §3.3.3: an `if` on a known condition takes one arm
-        ("u8", "if true { 5u8 } else { 6u8 }", int(5)),
+        ("u8", "if true { 5u8 } else { 6u8 }", ExplicitFixture::int(5)),
         // a method of the catalogue over a known value folds
-        ("u8", "4u8.max(3u8)", int(4)),
+        ("u8", "4u8.max(3u8)", ExplicitFixture::int(4)),
     ]);
 }
 
@@ -88,13 +97,13 @@ fn width_is_the_level_count_of_each_repr_type() {
     // §2: 1 for `bool`, `N` for `uN` and `iN`, 64 for `f64`, the tag width `ceil(log2 V)` of an
     // enum of `V` unit variants (rule 5); a const `u32`
     Table::check(&[
-        ("u32", "bool::WIDTH", int(1)),
-        ("u32", "u12::WIDTH", int(12)),
-        ("u32", "i7::WIDTH", int(7)),
-        ("u32", "u64::WIDTH", int(64)),
-        ("u32", "f64::WIDTH", int(64)),
-        ("u32", "Mode::WIDTH", int(2)),
-        ("u32", "u8::WIDTH + 1u32", int(9)),
+        ("u32", "bool::WIDTH", ExplicitFixture::int(1)),
+        ("u32", "u12::WIDTH", ExplicitFixture::int(12)),
+        ("u32", "i7::WIDTH", ExplicitFixture::int(7)),
+        ("u32", "u64::WIDTH", ExplicitFixture::int(64)),
+        ("u32", "f64::WIDTH", ExplicitFixture::int(64)),
+        ("u32", "Mode::WIDTH", ExplicitFixture::int(2)),
+        ("u32", "u8::WIDTH + 1u32", ExplicitFixture::int(9)),
     ]);
 }
 
@@ -106,29 +115,24 @@ fn unknown_decides_no_structure_because_it_is_no_value() {
         ("module Leaf() { r: f64 where Unknown; }\nmodule Top() { let r1 = Leaf { r: 1.0 }(); }", "Unknown"),
         ("module Top() { r: f64 = Unknown; }", "Unknown"),
     ] {
-        let design = Elab::design(src);
-        assert_eq!(Elab::codes(design.diagnostics()), ["E0161"], "{src}");
+        let design = SourceElaboration::design(src);
+        assert_eq!(SourceElaboration::codes(design.diagnostics()), ["E0161"], "{src}");
         let span = design.diagnostics()[0].diagnostic.span();
         assert_eq!(&src[span.start..span.end], decision);
     }
-}
-
-/// One `analog` statement of `Amp` over a known real, and `Top` placing it.
-fn analog_source(statement: &str) -> String {
-    format!("module Amp(p: Electrical) {{ }}\nanalog for Amp {{ {statement} }}\nmodule Top() {{ signal s: Electrical; let a = Amp(s); }}")
 }
 
 #[test]
 fn a_known_real_goes_through_each_analog_form() {
     // US-06 AC 3: a real through a contribution, a math function, `ddt`, `ac_stim` and `limit` elaborates
     for statement in ["v(p) +> 1.0;", "v(p) +> 2.0.sqrt();", "i(p) +> ddt(1.0);", "v(p) +> ac_stim(1.0);", "v(p) +> limit(1.0, |n, o| n);"] {
-        Elab::ir(&analog_source(statement), "Top");
+        SourceElaboration::ir(&ExplicitFixture::analog_source(statement), "Top");
     }
 }
 
 #[test]
 fn analog_has_no_refusal_of_a_flag() {
     // EU-02 AC 4 (C7): no source in `analog` is `E0150` or `P0001` for being unknown
-    let design = Elab::design(&analog_source("v(p) +> Unknown;"));
-    assert_eq!(Elab::codes(design.diagnostics()), ["E0161"]);
+    let design = SourceElaboration::design(&ExplicitFixture::analog_source("v(p) +> Unknown;"));
+    assert_eq!(SourceElaboration::codes(design.diagnostics()), ["E0161"]);
 }

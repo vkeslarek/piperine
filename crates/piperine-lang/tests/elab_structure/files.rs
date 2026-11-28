@@ -4,7 +4,6 @@
 //! resolved path, a file that is not UTF-8 is `E0613` with the byte offset of the first invalid
 //! sequence; a file that changes later changes nothing until the design is elaborated again.
 
-use crate::support;
 
 use std::path::{Path, PathBuf};
 
@@ -12,7 +11,7 @@ use piperine_ir::{Constant, Real};
 use piperine_lang::elab::{CompositeKind, ConstEval, ConstFault, ConstTree, Elaborator, FileFault};
 use piperine_lang::pom::{DeclId, DeclKind, Design, Reflect};
 use piperine_lang::types::Types;
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// The package of fixtures (`data.txt` (two lines), `latin.bin` (invalid UTF-8) and one root file
 /// per case) and the source text of the cases that need a root file of their own.
@@ -27,7 +26,7 @@ impl Fixture {
     /// The design of the root file at `path`, read from disk; it must hold no diagnostic of its own.
     fn design(path: &Path) -> Design {
         let design = Design::builder().root_file(path).build();
-        assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+        assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
         design
     }
 
@@ -55,7 +54,7 @@ fn include_str_reads_the_file_beside_the_source() {
     let text = eval.text(Fixture::constant(&design, "T")).expect("the file is readable");
     assert_eq!(&*text, "first line\nsecond line\n");
     let ir = Elaborator::new(&design).run("Top");
-    assert!(ir.is_ok(), "elaboration reads the file without a diagnostic: {:?}", ir.err().map(|d| Elab::codes(&d)));
+    assert!(ir.is_ok(), "elaboration reads the file without a diagnostic: {:?}", ir.err().map(|d| SourceElaboration::codes(&d)));
 }
 
 #[test]
@@ -64,12 +63,12 @@ fn an_unreadable_file_is_e0612_naming_the_path() {
     let path = Fixture::path("unreadable.msl");
     let design = Fixture::design(&path);
     let err = Elaborator::new(&design).run("Top").expect_err("the file is absent");
-    assert_eq!(Elab::codes(&err), ["E0612"]);
+    assert_eq!(SourceElaboration::codes(&err), ["E0612"]);
     let resolved = Fixture::path("missing.txt");
     assert!(err[0].diagnostic.message.contains(&resolved.display().to_string()), "{}", err[0].diagnostic.message);
     // D14: a source with no directory (an in-memory one) resolves a relative path against nothing.
-    let in_memory = Elab::run(&Fixture::reading("T", "data.txt"), "Top").expect_err("no directory");
-    assert_eq!(Elab::codes(&in_memory), ["E0612"]);
+    let in_memory = SourceElaboration::run(&Fixture::reading("T", "data.txt"), "Top").expect_err("no directory");
+    assert_eq!(SourceElaboration::codes(&in_memory), ["E0612"]);
     assert!(in_memory[0].diagnostic.message.contains("no directory"), "{}", in_memory[0].diagnostic.message);
 }
 
@@ -80,7 +79,7 @@ fn a_file_that_is_not_utf8_is_e0613_with_the_offset() {
     let path = Fixture::path("not_utf8.msl");
     let design = Fixture::design(&path);
     let err = Elaborator::new(&design).run("Top").expect_err("the file is not UTF-8");
-    assert_eq!(Elab::codes(&err), ["E0613"]);
+    assert_eq!(SourceElaboration::codes(&err), ["E0613"]);
     let message = &err[0].diagnostic.message;
     assert!(message.contains(&Fixture::path("latin.bin").display().to_string()) && message.contains("at byte 6"), "{message}");
     let types = Types::check(&design, "Top").expect("the source is in the subset");
@@ -181,7 +180,7 @@ impl Parsed {
 
     /// The codes and messages of elaborating `source` with `Top` as the top.
     pub fn refusals(source: &str) -> Vec<(String, String)> {
-        Elab::run(source, "Top").expect_err("the table model is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
+        SourceElaboration::run(source, "Top").expect_err("the table model is refused").iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect()
     }
 
 
@@ -337,7 +336,7 @@ fn a_bad_control_string_is_e0703() {
     // every form of the table in §22.2.15 is accepted
     for control in ["D", "1", "2C", "3", "1LE", "3EC", "DCC"] {
         let samples = "(0.0, 0.0), (1.0, 1.0), (2.0, 4.0), (3.0, 9.0)";
-        Elab::run(&Parsed::table_model_source(samples, 4, control), "Top").unwrap_or_else(|d| panic!("`{control}`: {:?}", Elab::codes(&d)));
+        SourceElaboration::run(&Parsed::table_model_source(samples, 4, control), "Top").unwrap_or_else(|d| panic!("`{control}`: {:?}", SourceElaboration::codes(&d)));
     }
 }
 

@@ -2,13 +2,11 @@
 //! per-kind requirements): which declaration sits under which, in source
 //! order, with its kind, name, span and visibility.
 
-use crate::support;
-use crate::lowering;
 
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::{DeclKind, NamespaceOrigin, Reflect};
-use lowering::lowering_codes;
-use support::build;
+use piperine_lang_fixtures::lowering::LoweringCodes;
+use piperine_lang_fixtures::pom::PomSource;
 
 #[test]
 fn root_children_mirror_items_in_source_order() {
@@ -27,8 +25,8 @@ analog for R { }
 ";
     let ast = SourceParser::parse(text).file;
     assert!(SourceParser::parse(text).diagnostics.is_empty(), "fixture must parse cleanly");
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty());
     let root = design.root();
     let children = root.children();
     assert_eq!(children.len(), ast.items.len());
@@ -57,7 +55,7 @@ analog for R { }
 
 #[test]
 fn inline_mod_is_a_namespace() {
-    let design = build("mod a { module M() {} }");
+    let design = PomSource::build("mod a { module M() {} }");
     let a = design.find("a").expect("namespace a");
     assert!(matches!(a.kind(), DeclKind::Namespace(n) if n.origin == NamespaceOrigin::Inline));
     let m = design.find("a::M").expect("module M in a");
@@ -70,7 +68,7 @@ fn inline_mod_is_a_namespace() {
 #[test]
 fn const_type_and_value() {
     use piperine_lang::pom::{ExprKind, LitKind, TypeKind};
-    let design = build("const N: u32 = 8;\nfn f() {}");
+    let design = PomSource::build("const N: u32 = 8;\nfn f() {}");
     assert!(design.diagnostics().is_empty());
     let n = design.find("N").and_then(|d| d.as_const()).expect("constant N");
     assert_eq!(n.name(), Some("N"));
@@ -90,8 +88,8 @@ fn fn_abi_params_ret_body() {
 #[derivative(f_dx)] extern \"C\" fn f(x: f64) -> f64;
 const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
 
     let f = design.find("f").and_then(|d| d.as_function()).expect("function f");
     assert_eq!(f.abi(), Some("C"));
@@ -131,8 +129,8 @@ const fn g<T: Repr, const N: u32 = 4>(self, a: T, b: f64) -> T where N >= 1 { a 
 
 #[test]
 fn item_in_fn_body_is_declared_in_the_fn() {
-    let design = build("fn f() { const K: u32 = 1; { fn inner() {} } }\nfn g() {}");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("fn f() { const K: u32 = 1; { fn inner() {} } }\nfn g() {}");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let f = design.find("f").expect("function f");
     let k = design.find("f::K").expect("K is found through f");
     assert_eq!(k.declared_in(), Some(f));
@@ -181,8 +179,8 @@ module Md(
     t: f64 = 2.0;
 }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let texts = |d: piperine_lang::pom::Decl<'_>| d.docs().iter().map(|x| x.text.clone()).collect::<Vec<_>>();
     assert_eq!(texts(design.root()), [" File line 1", " File line 2"]);
     let a = design.find("a").unwrap();
@@ -221,8 +219,8 @@ fn attribute_arguments_are_exposed() {
 const N: u32 = 1;
 const M: u32 = 2;
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let n = design.find("N").unwrap();
     assert_eq!(n.attrs().len(), 3);
 
@@ -255,8 +253,8 @@ struct P(u8, u16);
 struct U;
 enum E { A, Data(u8) = 3, Named { x: u8, y: u16 } }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
 
     let s = design.find("S").and_then(|d| d.as_struct()).expect("struct S");
     assert_eq!(s.form(), FieldsForm::Named);
@@ -302,9 +300,9 @@ impl<T> Stream<T> { const K: u32 = 1; fn get(self) -> T { self.v } }
 impl Tr for S { fn f(self); }
 trait Tr: Base + Other { const C: u32; fn f(self); }
 ";
-    let design = build(text);
+    let design = PomSource::build(text);
     // `impl Tr for S { fn f(self); }`: a bodiless function outside a trait is E0125 (D11).
-    assert_eq!(lowering_codes(&design), ["E0125"], "{:?}", design.diagnostics());
+    assert_eq!(LoweringCodes::of(&design), ["E0125"], "{:?}", design.diagnostics());
     let items = design.root().children();
     assert_eq!(items.iter().map(|d| d.kind().label()).collect::<Vec<_>>(), ["Struct", "Impl", "Impl", "Trait"]);
 
@@ -337,8 +335,8 @@ trait Tr: Base + Other { const C: u32; fn f(self); }
 #[test]
 fn use_tree_flattens_to_imports() {
     let text = "use a::{b, c as d, e::*};\nuse x::y;\nuse z::*;\n";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let uses = design.root().children();
     assert_eq!(uses.len(), 3);
     assert!(uses.iter().all(|u| u.name().is_none() && u.kind().label() == "Use"));
@@ -383,9 +381,9 @@ nature Twice { potential: A { access: a }, potential: B { access: b } }
 nature Mixed { potential: A { access: a }, value: f64 }
 nature Empty { flow: F { access: f } }
 ";
-    let design = build(text);
+    let design = PomSource::build(text);
     // The three invalid natures below are `E0201` (D11), one each.
-    assert_eq!(lowering_codes(&design), ["E0201"; 3], "{:?}", design.diagnostics());
+    assert_eq!(LoweringCodes::of(&design), ["E0201"; 3], "{:?}", design.diagnostics());
     let kind = |n: &str| design.nature(n).unwrap_or_else(|| panic!("nature {n}")).kind();
     assert_eq!(kind("Electrical"), NatureKind::Conservative);
     assert_eq!(kind("Signalf"), NatureKind::SignalFlow);
@@ -419,8 +417,8 @@ nature Empty { flow: F { access: f } }
 #[test]
 fn ports_in_order_with_direction_type_default() {
     use piperine_lang::pom::Dir;
-    let design = build("module M(in a: Bit, out b: Bit<u8>, c: Electrical, d: f64 = 2.0) {}");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module M(in a: Bit, out b: Bit<u8>, c: Electrical, d: f64 = 2.0) {}");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").expect("module M");
     let ports = m.ports();
     assert_eq!(ports.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("a"), Some("b"), Some("c"), Some("d")]);
@@ -440,8 +438,8 @@ fn extern_module_abi() {
 extern \"osdi\" module Bsim4(d: Electrical) { l: f64 = 1u; }
 module Plain() {}
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.module("Bsim4").unwrap();
     assert!(b.is_extern());
     assert_eq!(b.abi(), Some("osdi"));
@@ -453,8 +451,8 @@ module Plain() {}
 
 #[test]
 fn module_result_and_result_type() {
-    let design = build("module Mx(a: f64) -> f64 { a * 2.0 }\nmodule Nx(a: f64) {}");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module Mx(a: f64) -> f64 { a * 2.0 }\nmodule Nx(a: f64) {}");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("Mx").unwrap();
     assert_eq!(m.result_type().map(|t| t.text()), Some("f64"));
     assert_eq!(m.result().map(|e| e.text()), Some("a * 2.0"));
@@ -464,8 +462,8 @@ fn module_result_and_result_type() {
 
 #[test]
 fn module_generics_and_where() {
-    let design = build("module G<T: Repr, const A: u32>(p: T) where A >= 1 {}");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module G<T: Repr, const A: u32>(p: T) where A >= 1 {}");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let g = design.module("G").unwrap();
     let generics = g.generics();
     assert_eq!(generics.iter().map(|x| x.name()).collect::<Vec<_>>(), [Some("T"), Some("A")]);
@@ -481,8 +479,8 @@ fn module_generics_and_where() {
 
 #[test]
 fn signal_is_declared_in_its_module_only() {
-    let design = build("module abc() { signal w: Bit; }\nmodule other() { signal z: Bit; }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module abc() { signal w: Bit; }\nmodule other() { signal z: Bit; }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let abc = design.module("abc").unwrap();
     let w = abc.signal("w").expect("signal w");
     assert_eq!(w.declared_in(), Some(abc.decl()));
@@ -496,8 +494,8 @@ fn signal_is_declared_in_its_module_only() {
 
 #[test]
 fn params_type_default_where_required() {
-    let design = build("module P() { r: f64 where r > 0.0; tc1: f64 = 0.0; o: Option<f64>; }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module P() { r: f64 where r > 0.0; tc1: f64 = 0.0; o: Option<f64>; }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("P").unwrap();
     let params = m.params();
     assert_eq!(params.iter().map(|p| p.name()).collect::<Vec<_>>(), [Some("r"), Some("tc1"), Some("o")]);
@@ -517,8 +515,8 @@ fn params_type_default_where_required() {
 
 #[test]
 fn signal_pub_type_init() {
-    let design = build("module S() { pub signal sn: Electrical = 0.0; signal hid: Bit; }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module S() { pub signal sn: Electrical = 0.0; signal hid: Bit; }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("S").unwrap();
     let sn = m.signal("sn").unwrap();
     assert!(sn.is_pub());
@@ -531,8 +529,8 @@ fn signal_pub_type_init() {
 #[test]
 fn body_let_pattern_names_each_component() {
     use piperine_lang::pom::BindingOrigin;
-    let design = build("module L(a: f64, b: f64) { let (r, f) = (a, b); }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module L(a: f64, b: f64) { let (r, f) = (a, b); }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("L").unwrap();
     let lets = m.lets();
     assert_eq!(lets.len(), 1);
@@ -549,8 +547,8 @@ fn body_let_pattern_names_each_component() {
 
 #[test]
 fn definition_place_value_after() {
-    let design = build("module D() { signal q: Bit; signal qn: Bit; q = !(r | qn) after tpd; }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module D() { signal q: Bit; signal qn: Bit; q = !(r | qn) after tpd; }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("D").unwrap();
     let defs = m.definitions();
     assert_eq!(defs.len(), 1);
@@ -565,8 +563,8 @@ fn definition_place_value_after() {
 #[test]
 fn generation_for_holds_its_signal_once() {
     use piperine_lang::pom::BindingOrigin;
-    let design = build("module G() { for k in 0..4 { signal s: Bit; } }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module G() { for k in 0..4 { signal s: Bit; } }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("G").unwrap();
     let signals = m.signals();
     assert_eq!(signals.len(), 1, "nothing is unrolled");
@@ -592,8 +590,8 @@ fn generation_for_holds_its_signal_once() {
 
 #[test]
 fn generation_if_chain_exposes_three_arms() {
-    let design = build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; } else { signal z: Bit; } }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; } else { signal z: Bit; } }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let m = design.module("G").unwrap();
     let gens = m.generations();
     assert_eq!(gens.len(), 1);
@@ -613,7 +611,7 @@ fn generation_if_chain_exposes_three_arms() {
 #[test]
 fn analog_block_is_a_file_item() {
     use piperine_lang::pom::BehaviorKind;
-    let design = build("module M(p: Electrical) {}\nanalog for M { }\nanalog for M { }");
+    let design = PomSource::build("module M(p: Electrical) {}\nanalog for M { }\nanalog for M { }");
     let root = design.root();
     let kids = root.children();
     assert_eq!(kids.iter().map(|k| k.kind().label()).collect::<Vec<_>>(), ["Module", "Behavior", "Behavior"]);
@@ -635,8 +633,8 @@ analog for R {
     for k in 0..2 { match k { 0 => { v(p) +> i(n); } _ => {} } }
 }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let cs = b.contributions();
     assert_eq!(cs.len(), 3);
@@ -650,7 +648,7 @@ analog for R {
 
 #[test]
 fn behavior_generic_names() {
-    let design = build("module Short<N: u32>() {}\nanalog<N> for Short<N> { }\nanalog<A, B> for Two<A, B> { }");
+    let design = PomSource::build("module Short<N: u32>() {}\nanalog<N> for Short<N> { }\nanalog<A, B> for Two<A, B> { }");
     let b = design.root().children()[1].as_behavior().unwrap();
     assert_eq!(b.names(), ["N"]);
     assert_eq!(b.target().text(), "Short<N>");
@@ -668,8 +666,8 @@ digital for Q {
     on rst { a <- false; }
 }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let rs = b.reactions();
     assert_eq!(rs.len(), 2);
@@ -696,8 +694,8 @@ digital for Q {
     for k in 0..3 { on clk { s <- false; } }
 }
 ";
-    let design = build(text);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(text);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let b = design.root().children()[1].as_behavior().unwrap();
     let rs = b.reactions();
     assert_eq!(rs.iter().map(|r| r.event().text()).collect::<Vec<_>>(), ["a", "clk"], "deep, in source order");
@@ -712,7 +710,7 @@ digital for Q {
 #[test]
 fn analog_block_is_file_item_linked_to_module() {
     use piperine_lang::pom::BehaviorKind;
-    let design = build("module M(p: Electrical) {}\nmodule N() {}\nanalog for M { }\ndigital for N { }\nanalog for M { }");
+    let design = PomSource::build("module M(p: Electrical) {}\nmodule N() {}\nanalog for M { }\ndigital for N { }\nanalog for M { }");
     let root = design.root();
     let m = design.module("M").expect("module M");
     let blocks: Vec<_> = root.children().into_iter().filter_map(|c| c.as_behavior()).collect();
@@ -738,7 +736,7 @@ analog for M { v(p, n) +> i(p, n); }
 digital for M { on p.changed() { } }
 analog for M { 0.0 +> i(p); }
 ";
-    let design = build(src);
+    let design = PomSource::build(src);
     let m = design.module("M").unwrap();
     let all = m.behaviors();
     assert_eq!(all.len(), 3);
@@ -784,7 +782,7 @@ fn f() -> f64 {
     x
 }
 ";
-    let design = build(text);
+    let design = PomSource::build(text);
     let docs = |d: &[piperine_lang::pom::Doc]| d.iter().map(|x| x.text.clone()).collect::<Vec<_>>();
     let volt = design.nature("Volt").unwrap();
     let quantities = volt.quantities();
@@ -804,23 +802,29 @@ fn f() -> f64 {
     assert!(stmts[2].docs().is_empty());
 }
 
-#[test]
-fn generation_if_items_cover_every_arm() {
-    let design = build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; signal w: Bit; } else { signal z: Bit; } }");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
-    let m = design.module("G").unwrap();
-    let g = m.generations()[0];
+/// Fixtures of the test `generation_if_items_cover_every_arm`, hoisted out of its body.
+struct GenerationIfItemsFixture;
+
+impl GenerationIfItemsFixture {
     fn names<'a>(v: Vec<piperine_lang::pom::Decl<'a>>) -> Vec<Option<&'a str>> {
         v.iter().map(|d| d.name()).collect()
     }
+}
+
+#[test]
+fn generation_if_items_cover_every_arm() {
+    let design = PomSource::build("module G() { if a { signal x: Bit; } else if b { signal y: Bit; signal w: Bit; } else { signal z: Bit; } }");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
+    let m = design.module("G").unwrap();
+    let g = m.generations()[0];
     // Every arm's items in source order: the `else if` arm's items are listed, not the nested generation.
     let items = g.items();
     let named: Vec<_> = items.iter().map(|d| (d.kind().label(), d.name())).collect();
     assert_eq!(named, [("Signal", Some("x")), ("Signal", Some("y")), ("Signal", Some("w")), ("Signal", Some("z"))]);
     // `arms()` is unchanged: three arms.
     assert_eq!(g.arms().len(), 3);
-    assert_eq!(names(g.arms()[1].items()), [Some("y"), Some("w")]);
+    assert_eq!(GenerationIfItemsFixture::names(g.arms()[1].items()), [Some("y"), Some("w")]);
     // A `for` lists its body.
-    let design = build("module G() { for i in 0..2 { signal a: Bit; signal b: Bit; } }");
-    assert_eq!(names(design.module("G").unwrap().generations()[0].items()), [Some("a"), Some("b")]);
+    let design = PomSource::build("module G() { for i in 0..2 { signal a: Bit; signal b: Bit; } }");
+    assert_eq!(GenerationIfItemsFixture::names(design.module("G").unwrap().generations()[0].items()), [Some("a"), Some("b")]);
 }

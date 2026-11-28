@@ -8,9 +8,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
+use piperine_lang_fixtures::spec_tables::SpecTables;
 
-use crate::spec_tables;
-use spec_tables::table_rows;
 
 /// The repository the guard reads: its specification pages and its crates' sources.
 struct Repository;
@@ -50,7 +49,7 @@ impl CodeTable {
         let mut codes = BTreeSet::new();
         for page in Repository::files_under(&Repository::root().join("docs/spec"), "md") {
             let text = std::fs::read_to_string(&page).unwrap_or_else(|error| panic!("{}: {error}", page.display()));
-            for row in table_rows(&text) {
+            for row in SpecTables::table_rows(&text) {
                 if let Some(code) = row.first().and_then(|cell| Self::code_of_cell(cell)) {
                     codes.insert(code);
                 }

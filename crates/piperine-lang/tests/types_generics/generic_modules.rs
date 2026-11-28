@@ -2,12 +2,10 @@
 //! definition with its type, nature and const parameters opaque, the inference of a placement's arguments, the
 //! behavior blocks bound to the module's generic names and const expressions in written types.
 
-use crate::support;
-#[allow(dead_code)]
-use crate::generic_sources;
 
-use generic_sources::GenericSources;
 use piperine_lang::pom::Design;
+use piperine_lang_fixtures::generic_sources::GenericSources;
+use piperine_lang_fixtures::pom::PomSource;
 
 /// The whole-model check of sources that write generic modules.
 struct GenericModuleCheck;
@@ -154,7 +152,7 @@ fn behavior_names_that_differ_are_e0403_naming_both_lists() {
         let src = format!("module Short<S: Nature>(a: S, b: S) {{ }}\nmodule Pair<A: Nature, B: Nature>(a: A, b: B) {{ }}\n{block}\n");
         let design = Design::builder().source("top.msl", format!("{}{src}", GenericSources::HEAD)).build();
         let found: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0403").collect();
-        assert_eq!(found.len(), 1, "{block}: {:?}", support::codes(&design));
+        assert_eq!(found.len(), 1, "{block}: {:?}", PomSource::codes(&design));
         let message = &found[0].diagnostic.message;
         assert!(message.contains(&format!("`{written}`")) && message.contains(&format!("`{declared}`")), "{block}: {message}");
     }

@@ -1,7 +1,5 @@
 //! The MSL front end of text: the lexer against the lexical appendix, the grammar parser and its error codes, the printer and the formatter, and the corpus of every spec fence, standard-library file and example through lex, parse, print and format. Each former target is a module of this one.
 
-#[path = "../support/spec_corpus.rs"]
-mod spec_corpus;
 
 mod corpus;
 mod errors;

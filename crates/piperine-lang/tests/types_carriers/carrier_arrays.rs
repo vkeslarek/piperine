@@ -3,13 +3,11 @@
 //! the reads of an element and its history, the targets of commits and definitions, and connection to ports. Each
 //! test states the rule it proves; every source is a design of `Top` over the embedded standard library.
 
-#[allow(dead_code)]
-use crate::checked;
 
 use piperine_lang::pom::{DeclKind, Reflect};
 use piperine_lang::types::{Length, Ty, Types};
+use piperine_lang_fixtures::checked::CheckedSource;
 
-use checked::CheckedSource;
 
 /// A module `Top` checked over the standard library, whatever it says.
 struct Source;

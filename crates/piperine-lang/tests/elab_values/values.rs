@@ -3,11 +3,10 @@
 //! folded at elaboration by the rules the compiled code follows (§1 rule 6, ROADMAP G4 and G5),
 //! compared with the compiled code's own integers (`piperine_transpile::rt`).
 
-use crate::support;
 
 use piperine_ir::{BinaryOp, Expr, ExprId, Ir, Method, ValueType};
 use piperine_transpile::rt::int::{Int, UInt};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// Reading the elaborated IR of a test.
 struct Read<'a> {
@@ -59,11 +58,47 @@ impl<'a> Read<'a> {
     }
 }
 
-/// A design whose `Top` calls each function of `functions` from its `analog` block, so that the
-/// top reaches it.
-fn reaching(items: &str, calls: &[&str]) -> String {
-    let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
-    format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {} }}", lets.join(" "))
+/// Associated test helpers of `values`, grouped on one fixture type.
+struct ValuesFixture;
+
+impl ValuesFixture {
+    /// A design whose `Top` calls each function of `functions` from its `analog` block, so that the
+    /// top reaches it.
+    fn reaching(items: &str, calls: &[&str]) -> String {
+        let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
+        format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {} }}", lets.join(" "))
+    }
+
+    /// The `local` lines of the structural print of an owner: `name: type` for each.
+    fn locals_in(text: &str) -> Vec<String> {
+        text.lines().filter_map(|l| l.trim().strip_prefix("local ")).map(str::to_string).collect()
+    }
+
+    /// The item of `examples/buck/src/<file>` that starts with `head`, through its closing brace.
+    fn buck_item(file: &str, head: &str) -> String {
+        let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
+        let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
+        let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n")).unwrap_or(at);
+        let mut depth = 0usize;
+        for (i, c) in text[at..].char_indices() {
+            match c {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return text[start..at + i + 1].to_string();
+                    }
+                }
+                _ => {}
+            }
+        }
+        panic!("`{head}` does not close")
+    }
+
+    /// A module of `examples/buck/src/<file>` with its `digital` block, as written.
+    fn buck_module(file: &str, name: &str) -> String {
+        format!("{}\n{}", ValuesFixture::buck_item(file, &format!("pub module {name}(")), ValuesFixture::buck_item(file, &format!("digital for {name} ")))
+    }
 }
 
 #[test]
@@ -76,8 +111,8 @@ fn integers_lower_to_typed_ir() {
                  fn bounded(x: i16) -> i16 { x.clamp(-256, 255).min(x).max(-1) }\n\
                  fn down(x: f64) -> u8 { x.floor() as u8 }\n\
                  fn up(x: u8) -> f64 { x as f64 }";
-    let src = reaching(items, &["dithered_width(4095, 7)", "ops(1, 2)", "bounded(3)", "down(2.5)", "up(4)"]);
-    let ir = Elab::ir(&src, "Top");
+    let src = ValuesFixture::reaching(items, &["dithered_width(4095, 7)", "ops(1, 2)", "bounded(3)", "down(2.5)", "up(4)"]);
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
 
     // The printed forms of the `ir-rust` T29 fixtures (crates/piperine-ir/tests/golden/buck/dpwm.txt),
@@ -137,8 +172,8 @@ fn integer_constants_fold() {
                  fn tail(next: u9, off_at: u9) -> bool { next >= off_at + DEAD_COUNTS && next < N_PERIOD - DEAD_COUNTS }\n\
                  fn floor_e() -> i16 { E_MIN }\n\
                  fn widened() -> i32 { (N_PERIOD as i32) * 2 }";
-    let src = reaching(items, &["last()", "wrap(3)", "tail(1, 2)", "floor_e()", "widened()"]);
-    let ir = Elab::ir(&src, "Top");
+    let src = ValuesFixture::reaching(items, &["last()", "wrap(3)", "tail(1, 2)", "floor_e()", "widened()"]);
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let folded = |name: &str| {
         let body = read.body_of(name);
@@ -196,8 +231,8 @@ fn folded_casts_shifts_and_sums_wrap_as_compiled_code_does() {
     ];
     let items: Vec<&str> = cases.iter().map(|c| c.function).collect();
     let calls: Vec<String> = (0..cases.len()).map(|k| format!("f{k}()")).collect();
-    let src = reaching(&items.join("\n"), &calls.iter().map(String::as_str).collect::<Vec<_>>());
-    let ir = Elab::ir(&src, "Top");
+    let src = ValuesFixture::reaching(&items.join("\n"), &calls.iter().map(String::as_str).collect::<Vec<_>>());
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     for (k, case) in cases.iter().enumerate() {
         assert_eq!(case.spec, case.compiled, "{}: the compiled code's integers disagree with the specification", case.function);
@@ -215,19 +250,14 @@ fn a_constant_division_by_zero_is_e0104() {
         ("const Z: i8 = 0;\nfn f() -> i8 { 5i8 / Z }", "5i8 / Z"),
         ("fn f() -> i16 { 3i16.clamp(2, 1) }", "3i16.clamp(2, 1)"),
     ] {
-        let src = reaching(src, &["f()"]);
-        let err = Elab::run(&src, "Top").expect_err(at);
-        assert_eq!(Elab::codes(&err), ["E0104"], "{at}");
+        let src = ValuesFixture::reaching(src, &["f()"]);
+        let err = SourceElaboration::run(&src, "Top").expect_err(at);
+        assert_eq!(SourceElaboration::codes(&err), ["E0104"], "{at}");
         let span = err[0].diagnostic.span();
         assert_eq!(&src[span.start..span.end], at);
     }
     // A division whose divisor is not a constant is left to the run (§1 rule 11).
-    Elab::ir(&reaching("fn f(d: u8) -> u8 { 7 / d }", &["f(0)"]), "Top");
-}
-
-/// The `local` lines of the structural print of an owner: `name: type` for each.
-fn locals_in(text: &str) -> Vec<String> {
-    text.lines().filter_map(|l| l.trim().strip_prefix("local ")).map(str::to_string).collect()
+    SourceElaboration::ir(&ValuesFixture::reaching("fn f(d: u8) -> u8 { 7 / d }", &["f(0)"]), "Top");
 }
 
 #[test]
@@ -248,7 +278,7 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
                  fn severe(f: Fault) -> Severity { match f { Fault::Clear => Severity::Info, _ => Severity::Error } }\n\
                  fn once(f: Fault) -> u8 { match severe(f) { Severity::Info => 0, Severity::Warning => 1, Severity::Error => 2 } }";
     let calls = ["hiccup()", "clear()", "warning(Severity::Warning)", "next(Mode::Off, true)", "once(Fault::Clear)"];
-    let ir = Elab::ir(&reaching(items, &calls), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(items, &calls), "Top");
     let read = Read { ir: &ir };
     let function = |name: &str| ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no {name}"));
 
@@ -279,8 +309,8 @@ fn an_enum_is_its_tag_and_a_match_is_an_if_chain() {
     assert!(once.contains("if matches!(match$0, Severity::Info) { 0u8 } else { if matches!(match$0, Severity::Warning) { 1u8 } else { 2u8 } }"), "{once}");
     // An enum of one variant has a tag of no level and is an IR enum all the same: its value is the
     // variant (composite-values T48; it cannot be carried, the checker says so by name).
-    let src = reaching("#[derive(Repr, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
-    let ir = Elab::ir(&src, "Top");
+    let src = ValuesFixture::reaching("#[derive(Repr, PartialEq)]\npub enum One { Only }\nfn only() -> One { One::Only }", &["only()"]);
+    let ir = SourceElaboration::ir(&src, "Top");
     assert!(ir.expressions().any(|e| matches!(e, Expr::VariantOf { variant: 0, fields, .. } if fields.is_empty())));
 }
 
@@ -304,13 +334,13 @@ fn an_option_is_a_flag_and_a_payload() {
                  }\n\
                  fn literal() -> u8 { Some(3u8).unwrap_or(9) }\n\
                  fn pick(o: Option<u8>) -> u8 { o.unwrap_or(5) }";
-    let ir = Elab::ir(&reaching(items, &["supervise(0, 0)", "literal()", "pick(Some(2))"]), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(items, &["supervise(0, 0)", "literal()", "pick(Some(2))"]), "Top");
     let text = ir.print_structural();
     let read = Read { ir: &ir };
 
     // A `let` of an `Option` binds its flag and its payload; `Some`/`None` give each.
     let supervise = read.function_text("supervise");
-    let locals = locals_in(&supervise);
+    let locals = ValuesFixture::locals_in(&supervise);
     // `Fault` is an IR enum: the payload local holds the enum, not its tag.
     let fault = format!("t{}", ir.types().iter().position(|t| t.name == "Fault").expect("Fault is in the arena"));
     for local in ["fault_now.is: bool".to_string(), format!("fault_now.val: {fault}"), format!("f: {fault}"), format!("latched: {fault}"), "quiet: bool".to_string(), "tripped: bool".to_string(), format!("cause: {fault}"), "match$0.is: bool".to_string(), format!("match$0.val: {fault}")] {
@@ -344,44 +374,18 @@ fn an_option_is_a_flag_and_a_payload() {
     let spec = std::fs::read_to_string(format!("{}/../../examples/buck/src/spec.msl", env!("CARGO_MANIFEST_DIR"))).expect("spec.msl");
     let src = format!(
         "{spec}\n{}\n{}\n{}\n{}\n{}",
-        buck_item("supervisor.msl", "pub enum Mode"),
-        buck_item("supervisor.msl", "pub enum Fault"),
-        buck_item("supervisor.msl", "pub fn in_window"),
-        buck_item("supervisor.msl", "pub fn ovp_threshold"),
-        buck_module("supervisor.msl", "Supervisor")
+        ValuesFixture::buck_item("supervisor.msl", "pub enum Mode"),
+        ValuesFixture::buck_item("supervisor.msl", "pub enum Fault"),
+        ValuesFixture::buck_item("supervisor.msl", "pub fn in_window"),
+        ValuesFixture::buck_item("supervisor.msl", "pub fn ovp_threshold"),
+        ValuesFixture::buck_module("supervisor.msl", "Supervisor")
     );
-    let ir = Elab::ir(&src, "Supervisor");
+    let ir = SourceElaboration::ir(&src, "Supervisor");
     let text = ir.print_structural();
-    let locals = locals_in(&text);
+    let locals = ValuesFixture::locals_in(&text);
     let (mode, fault) = (ir.types().iter().position(|t| t.name == "Mode").expect("Mode"), ir.types().iter().position(|t| t.name == "Fault").expect("Fault"));
     assert!(locals.contains(&"fault_now.is: bool".to_string()) && locals.contains(&format!("fault_now.val: t{fault}")), "{text}");
     assert!(text.contains(&format!("if fault_now.is {{ let f = fault_now.val; mode <- (Mode::Hiccup() : t{mode}); fault <- f;")), "{text}");
-}
-
-/// The item of `examples/buck/src/<file>` that starts with `head`, through its closing brace.
-fn buck_item(file: &str, head: &str) -> String {
-    let text = std::fs::read_to_string(format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"))).expect("a buck source");
-    let at = text.find(head).unwrap_or_else(|| panic!("no `{head}`"));
-    let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n")).unwrap_or(at);
-    let mut depth = 0usize;
-    for (i, c) in text[at..].char_indices() {
-        match c {
-            '{' => depth += 1,
-            '}' => {
-                depth -= 1;
-                if depth == 0 {
-                    return text[start..at + i + 1].to_string();
-                }
-            }
-            _ => {}
-        }
-    }
-    panic!("`{head}` does not close")
-}
-
-/// A module of `examples/buck/src/<file>` with its `digital` block, as written.
-fn buck_module(file: &str, name: &str) -> String {
-    format!("{}\n{}", buck_item(file, &format!("pub module {name}(")), buck_item(file, &format!("digital for {name} ")))
 }
 
 #[test]
@@ -394,14 +398,14 @@ fn a_tuple_let_is_one_local_per_component() {
                    m + half >= r && m <= r + half\n\
                  }\n\
                  fn mixed(u: u8) -> u8 { let (a, b) = (u, 1u8); a + b }";
-    let ir = Elab::ir(&reaching(items, &["in_window(1, 2)", "mixed(3)"]), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(items, &["in_window(1, 2)", "mixed(3)"]), "Top");
     let read = Read { ir: &ir };
     let window = read.function_text("in_window");
     assert!(window.contains("let m = (meas as u11)\n  let r = (reference as u11)"), "{window}");
-    let locals = locals_in(&window);
+    let locals = ValuesFixture::locals_in(&window);
     assert!(locals.contains(&"m: u11".to_string()) && locals.contains(&"r: u11".to_string()), "{window}");
     let mixed = read.function_text("mixed");
-    let locals = locals_in(&mixed);
+    let locals = ValuesFixture::locals_in(&mixed);
     assert!(locals.contains(&"a: u8".to_string()) && locals.contains(&"b: u8".to_string()), "each component has its own type:\n{mixed}");
 }
 
@@ -425,7 +429,7 @@ fn numeric_rows_lower_to_methods_and_checked_ops_to_pairs() {
                    a + (b as i8)\n\
                  }\n\
                  fn checked(a: u8, b: u8) -> u8 { let s = a.checked_add(b); let d = a.checked_sub(b); let m = a.checked_mul(b); s.unwrap_or(0) + d.unwrap_or(1) + m.unwrap_or(2) }";
-    let ir = Elab::ir(&reaching(items, &["real(1.0, 2.0)", "whole(1, 2)", "checked(1, 2)"]), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(items, &["real(1.0, 2.0)", "whole(1, 2)", "checked(1, 2)"]), "Top");
     let text = ir.print_structural();
     assert!(!text.contains("Option"), "no IR type is an `Option`:\n{text}");
     let read = Read { ir: &ir };
@@ -476,15 +480,15 @@ fn numeric_rows_lower_to_methods_and_checked_ops_to_pairs() {
     // 3, 6): `pow` and `abs` wrap, `saturating_*` clamp, `signum` and `rem_euclid` follow Rust.
     let folded = "fn k0() -> u8 { 2u8.pow(9) }\nfn k1() -> u8 { 250u8.saturating_add(10) }\nfn k2() -> i8 { (-100i8).saturating_sub(100) }\n\
                   fn k3() -> i8 { (-128i8).abs() }\nfn k4() -> i8 { (-5i8).signum() }\nfn k5() -> i8 { (-7i8).rem_euclid(3) }\nfn k6() -> u8 { 16u8.saturating_mul(16) }";
-    let ir = Elab::ir(&reaching(folded, &["k0()", "k1()", "k2()", "k3()", "k4()", "k5()", "k6()"]), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(folded, &["k0()", "k1()", "k2()", "k3()", "k4()", "k5()", "k6()"]), "Top");
     let read = Read { ir: &ir };
     for (k, want, ty) in [(0, 0, ValueType::UInt(8)), (1, 255, ValueType::UInt(8)), (2, -128, ValueType::Int(8)), (3, -128, ValueType::Int(8)), (4, -1, ValueType::Int(8)), (5, 2, ValueType::Int(8)), (6, 255, ValueType::UInt(8))] {
         let body = read.body_of(&format!("k{k}"));
         assert_eq!((ir.expr(body).clone(), ir.expr_type(body).clone()), (Expr::Int(want), ty), "k{k}");
     }
     // A constant `rem_euclid` by zero is a panic while a const expression is evaluated (`E0104`).
-    let err = Elab::run(&reaching("fn f() -> u8 { 7u8.rem_euclid(0) }", &["f()"]), "Top").expect_err("rem_euclid by zero");
-    assert_eq!(Elab::codes(&err), ["E0104"]);
+    let err = SourceElaboration::run(&ValuesFixture::reaching("fn f() -> u8 { 7u8.rem_euclid(0) }", &["f()"]), "Top").expect_err("rem_euclid by zero");
+    assert_eq!(SourceElaboration::codes(&err), ["E0104"]);
 }
 
 #[test]
@@ -504,7 +508,7 @@ fn option_rows_lower_on_the_pair() {
          fn orr(c: u8, x: u8) -> u8 {{ {some} let p = if c > 5 {{ Some(x) }} else {{ None }}; let m = o.or(p); m.unwrap_or(0) }}\n\
          fn th(c: u8) -> u8 {{ let t = (c > 1).then(|| 7u8); let s = (c > 2).then_some(5u8); t.unwrap_or(0) + s.unwrap_or(0) }}"
     );
-    let ir = Elab::ir(&reaching(&items, &["unw(2, 1)", "els(2, 1)", "mp(2, 1)", "chain(2, 1)", "orr(2, 1)", "th(2)"]), "Top");
+    let ir = SourceElaboration::ir(&ValuesFixture::reaching(&items, &["unw(2, 1)", "els(2, 1)", "mp(2, 1)", "chain(2, 1)", "orr(2, 1)", "th(2)"]), "Top");
     let text = ir.print_structural();
     assert!(!text.contains("Option") && !text.contains("|"), "no `Option` and no closure in the IR:\n{text}");
     let read = Read { ir: &ir };
@@ -544,16 +548,16 @@ fn a_const_reading_a_run_value_is_e0188() {
     // `E0122` at the checker, naming the function and its class (`types_values`), and the evaluator is not reached.
     // (`temperature()` is constant during an analysis, so a function that reads only it is pure: generics D13 amended,
     // the §3 table; a `const` over it is the evaluator's `E0188`, as before)
-    let pure = reaching("fn h() -> f64 { temperature().unwrap_or(1.0) }\nconst K: f64 = h();", &["K"]);
-    let err = Elab::run(&pure, "Top").expect_err("a const reading the environment");
-    assert_eq!(Elab::codes(&err), ["E0188"], "{pure}");
-    let src = reaching("fn h() -> f64 { now() }\nconst K: f64 = h();", &["K"]);
-    let err = Elab::run(&src, "Top").expect_err("a const calling a solve-reading function");
-    assert_eq!(Elab::codes(&err), ["E0122"], "{src}");
+    let pure = ValuesFixture::reaching("fn h() -> f64 { temperature().unwrap_or(1.0) }\nconst K: f64 = h();", &["K"]);
+    let err = SourceElaboration::run(&pure, "Top").expect_err("a const reading the environment");
+    assert_eq!(SourceElaboration::codes(&err), ["E0188"], "{pure}");
+    let src = ValuesFixture::reaching("fn h() -> f64 { now() }\nconst K: f64 = h();", &["K"]);
+    let err = SourceElaboration::run(&src, "Top").expect_err("a const calling a solve-reading function");
+    assert_eq!(SourceElaboration::codes(&err), ["E0122"], "{src}");
     assert!(err[0].diagnostic.message.contains("`h`") && err[0].diagnostic.message.contains("solve-reading"), "{}", err[0].diagnostic.message);
-    let src = reaching("const K: u8;", &["K"]);
-    let err = Elab::run(&src, "Top").expect_err("has no value");
-    assert_eq!(Elab::codes(&err), ["E0188"], "{src}");
+    let src = ValuesFixture::reaching("const K: u8;", &["K"]);
+    let err = SourceElaboration::run(&src, "Top").expect_err("has no value");
+    assert_eq!(SourceElaboration::codes(&err), ["E0188"], "{src}");
     assert!(err[0].diagnostic.message.contains("`K`") && err[0].diagnostic.message.contains("has no value"), "{}", err[0].diagnostic.message);
 }
 
@@ -561,9 +565,9 @@ fn a_const_reading_a_run_value_is_e0188() {
 fn a_const_that_depends_on_itself_is_e0188() {
     // §3.9.2: a constant that depends on itself, directly or through another `const`, is `E0188`.
     for src in ["const K: u8 = K + 1;\nfn f() -> u8 { K }", "const A: u8 = B;\nconst B: u8 = A;\nfn f() -> u8 { A }"] {
-        let src = reaching(src, &["f()"]);
-        let err = Elab::run(&src, "Top").expect_err("a cycle");
-        assert_eq!(Elab::codes(&err), ["E0188"], "{src}");
+        let src = ValuesFixture::reaching(src, &["f()"]);
+        let err = SourceElaboration::run(&src, "Top").expect_err("a cycle");
+        assert_eq!(SourceElaboration::codes(&err), ["E0188"], "{src}");
         assert!(err[0].diagnostic.message.contains("depends on itself"), "{}", err[0].diagnostic.message);
     }
 }

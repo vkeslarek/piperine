@@ -3,11 +3,10 @@
 //! an array of nodes as consecutive nodes under one name, element reads, history and events, node arrays in `analog`,
 //! element and field commits and drives, and connections by window. Each test states the rule it proves.
 
-use crate::support;
 
 use piperine_ir::{Constant, Ir, ValueType};
 use piperine_lang::pom::{DeclKind, Reflect};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// What a test reads of an elaborated body.
 struct Read<'a> {
@@ -17,7 +16,7 @@ struct Read<'a> {
 impl Read<'_> {
     /// The structural text of body `Top` of `src`, which elaborates and checks.
     fn structure_of(src: &str) -> String {
-        Elab::ir(src, "Top").print_structural()
+        SourceElaboration::ir(src, "Top").print_structural()
     }
 
     /// The `(name, count, element type, initial value)` of each carrier of body `name`.
@@ -44,7 +43,7 @@ fn arrays_of_carriers_and_nodes_declare_one_carrier_and_k_nodes() {
                signal flags: [Bit; 4] = [false; 4];\n\
                signal grid: [[Bit; 2]; 3] = [[true; 2]; 3];\n\
                signal bl: [Electrical; 4];\n}";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let carriers = read.carriers("Top");
     let by = |name: &str| carriers.iter().find(|c| c.0 == name).unwrap_or_else(|| panic!("no carrier `{name}`: {carriers:?}")).clone();
@@ -65,11 +64,11 @@ fn an_array_of_nodes_is_one_node_per_element() {
     // CV-23 AC 1 (UNBREAKABLE RULE, the POM mirrors the source): `signal bl: [Electrical; 4]` is four nodes `bl[0]` to
     // `bl[3]` in the IR, while the POM keeps the one declaration `bl` as written
     let src = "module Top() { signal bl: [Electrical; 4]; }";
-    let design = Elab::design(src);
+    let design = SourceElaboration::design(src);
     let declared: Vec<_> = design.decls().into_iter().filter(|d| d.name() == Some("bl")).collect();
     assert_eq!(declared.len(), 1, "one declaration in the POM, not one per element");
     assert!(declared.iter().all(|d| matches!(d.kind(), DeclKind::Signal(_))));
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let (nodes, arrays) = Read { ir: &ir }.nodes("Top");
     assert_eq!(nodes, ["bl[0]", "bl[1]", "bl[2]", "bl[3]"], "four nodes in the IR");
     assert_eq!(arrays, [("bl".to_string(), 0, 4)]);
@@ -81,38 +80,38 @@ fn an_array_of_length_zero_is_an_empty_array() {
     // holds no element, reads whole as the empty array, and every element of it is out of range (E0104)
     let src = "module Top(in clk: Bit) { signal none: [Bit<u8>; 0]; signal one: [Bit<u8>; 1] = [3; 1]; }\n\
                digital for Top { on clk.rise() { let all = none; let kept = one[0]; } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let carriers = Read { ir: &ir }.carriers("Top");
     assert_eq!(carriers.iter().map(|c| (c.0.as_str(), c.1)).collect::<Vec<_>>(), [("clk", None), ("one", Some(1))], "no carrier for an array of no element");
     for (body, form) in [("let a = none[0];", "a constant element"), ("let a = none[clk as u8];", "a run-time element"), ("none[0] <- 1;", "an element commit"), ("let a = none[0].prev();", "a history read")] {
         let src = format!("module Top(in clk: Bit) {{ signal none: [Bit<u8>; 0]; }}\ndigital for Top {{ on clk.rise() {{ {body} }} }}");
-        let found = Elab::run(&src, "Top").expect_err(form);
+        let found = SourceElaboration::run(&src, "Top").expect_err(form);
         assert!(found.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains("array of 0 carriers")), "{form}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     }
     // an empty array connects to an empty array port, in either direction, and an array of no node names no node
     for port in ["in", "out"] {
         let src = format!("module Leaf({port} d: [Bit; 0], in c: Bit) {{ }}\nmodule Top() {{ signal none: [Bit; 0]; signal c: Bit = false; let l = Leaf(none, c); }}");
-        Elab::ir(&src, "Top");
+        SourceElaboration::ir(&src, "Top");
     }
-    let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; }", "Top");
+    let ir = SourceElaboration::ir("module Top() { signal bl: [Electrical; 0]; }", "Top");
     assert_eq!(Read { ir: &ir }.nodes("Top"), (Vec::new(), Vec::new()), "no node and no node array");
     // the body keeps only the name of an array of no element, for the host that names it (CV-28)
-    let ir = Elab::ir("module Top() { signal bl: [Electrical; 0]; signal none: [Bit<u8>; 0]; }", "Top");
+    let ir = SourceElaboration::ir("module Top() { signal bl: [Electrical; 0]; signal none: [Bit<u8>; 0]; }", "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(body.empty_arrays().iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["bl", "none"], "each empty array by name, nodes first");
     // an empty array of a hoisted placement is recorded under the placement's prefix (finding 20)
-    let ir = Elab::ir("module Hoist() -> f64 { signal e: [Bit<u8>; 0]; 1.0 }\nmodule Top() { let p = Hoist(); }", "Top");
+    let ir = SourceElaboration::ir("module Hoist() -> f64 { signal e: [Bit<u8>; 0]; 1.0 }\nmodule Top() { let p = Hoist(); }", "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(body.empty_arrays().iter().map(|a| a.name.as_str()).collect::<Vec<_>>(), ["p.e"], "the hoisted array under its placement");
-    let found = Elab::run("module Top() { signal bl: [Electrical; 0]; }\nanalog for Top { let x = v(bl[0]); }", "Top").expect_err("no node");
-    assert!(found.iter().any(|d| d.diagnostic.code == "E0104"), "{:?}", Elab::codes(&found));
+    let found = SourceElaboration::run("module Top() { signal bl: [Electrical; 0]; }\nanalog for Top { let x = v(bl[0]); }", "Top").expect_err("no node");
+    assert!(found.iter().any(|d| d.diagnostic.code == "E0104"), "{:?}", SourceElaboration::codes(&found));
 }
 
 #[test]
 fn a_logic_literal_is_a_carriers_initial_value() {
     // §22.1.4 rule 2, §5.1.5: `signal bus: Bit<Logic<4>> = logic("10xx")` starts at the two planes the pattern names, the
     // way `logic` reads in a reaction; an array of them starts every element at it
-    let ir = Elab::ir("module Top() { signal bus: Bit<Logic<4>> = logic(\"10xx\"); signal each: [Bit<Logic<2>>; 3] = [logic(\"1z\"); 3]; }", "Top");
+    let ir = SourceElaboration::ir("module Top() { signal bus: Bit<Logic<4>> = logic(\"10xx\"); signal each: [Bit<Logic<2>>; 3] = [logic(\"1z\"); 3]; }", "Top");
     let carriers = Read { ir: &ir }.carriers("Top");
     let planes = |name: &str| match carriers.iter().find(|c| c.0 == name).and_then(|c| c.3) {
         Some(Constant::Aggregate(id)) => ir.aggregate(id).parts.clone(),
@@ -142,7 +141,7 @@ fn element_reads_and_events_lower_per_element() {
     for needle in ["mem[", ".prev", "lines["] {
         assert!(text.contains(needle), "the structure names `{needle}`:\n{text}");
     }
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     // the events are the elements' own: `lines[2]` (a rise) and `mem[3]`, never the whole carriers
     let events: Vec<_> = body.events().iter().map(|e| e.source.clone()).collect();
@@ -153,10 +152,10 @@ fn element_reads_and_events_lower_per_element() {
     let rise = body.events().iter().find(|e| e.source == piperine_ir::EventSource::ElementChanged { carrier: lines, element: 2 }).expect("the rise event");
     assert!(rise.guard.is_some(), "a rise carries its edge guard (!prev && now)");
     // §1 rule 11: a constant element past the end is E0104 naming it; an event head that does not fold is E0188 naming it
-    let past = Elab::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
-    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", support::Elab::codes(&past));
-    let folding = Elab::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
-    assert!(folding.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`l[at]`")), "{:?}", support::Elab::codes(&folding));
+    let past = SourceElaboration::run("module Top() { signal m: [Bit<u8>; 4] = [0; 4]; }\ndigital for Top { on m[0].changed() { let a = m[4]; } }", "Top").expect_err("past the end");
+    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", SourceElaboration::codes(&past));
+    let folding = SourceElaboration::run("module Top(in at: Bit<u2>) { signal l: [Bit; 4] = [false; 4]; }\ndigital for Top { on l[at].rise() { } }", "Top").expect_err("no fold");
+    assert!(folding.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`l[at]`")), "{:?}", SourceElaboration::codes(&folding));
 }
 
 #[test]
@@ -165,7 +164,7 @@ fn an_array_length_read_from_a_param_makes_it_structural() {
     // length of its own `n`, and `n` is structural (a host `set` of it during a run is `E0803`)
     let src = "module Wide(in d: [Bit; 2]) { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; signal bl: [Electrical; n + 1]; }\n\
                module Top() { signal d: [Bit; 2] = [false; 2]; let w = Wide { n: 5 }(d); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let variant = ir.bodies().find(|b| b.name().starts_with("Wide~n=")).expect("a body of the variant");
     assert!(variant.params().iter().find(|p| p.name == "n").expect("param n").structural, "`n` is structural");
@@ -173,7 +172,7 @@ fn an_array_length_read_from_a_param_makes_it_structural() {
     assert_eq!(carriers.iter().find(|c| c.0 == "s").expect("s").1, Some(5), "the array is as long as the param says");
     assert_eq!(variant.node_arrays().iter().map(|a| (a.name.as_str(), a.count)).collect::<Vec<_>>(), [("bl", 6)], "`n + 1` nodes");
     // the default is another variant: its own length
-    let ir = Elab::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; }\nmodule Top() { let w = Wide(); }", "Top");
+    let ir = SourceElaboration::ir("module Wide() { n: u32 = 3; signal s: [Bit<u8>; n] = [0; n]; }\nmodule Top() { let w = Wide(); }", "Top");
     let read = Read { ir: &ir };
     let name = ir.bodies().find(|b| b.name().starts_with("Wide")).expect("Wide").name().to_string();
     assert_eq!(read.carriers(&name).iter().find(|c| c.0 == "s").expect("s").1, Some(3));
@@ -188,7 +187,7 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
                digital for Wide { on clk.rise() { let w = d; let ones: [u8; n] = [1; n]; q <- w[0] + ones[1]; } }\n\
                analog for Wide { let zeros: [f64; n] = [1.0; n]; let first = zeros[0]; }\n\
                module Top() { signal d: [Bit<u8>; 5] = [0; 5]; signal clk: Bit = false; signal q: Bit<u8>; signal d3: [Bit<u8>; 3] = [0; 3]; signal q3: Bit<u8>; let w = Wide { n: 5 }(d, clk, q); let v = Wide(d3, clk, q3); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(ir.bodies().any(|b| b.name().starts_with("Wide~n=")), "the variant of n = 5 is a body");
     assert_eq!(ir.bodies().filter(|b| b.name().starts_with("Wide")).count(), 2, "the default n = 3 is a body of its own");
     // each variant reads its own folded length, by value: the node array `bl`, and the whole read of the port `d`
@@ -199,8 +198,8 @@ fn an_array_whose_length_reads_a_param_reads_and_writes_whole() {
         assert_eq!(arrays.iter().find(|a| a.0 == "bl").map(|a| a.2), Some(length), "the node array `bl` of {body}");
         assert!(printed.contains(&format!("local w: [u8; {length}]")) && printed.contains(&format!("local ones: [u8; {length}]")), "the locals of {body} have length {length}:\n{printed}");
     }
-    let found = Elab::run(&src.replace("[1; n]", "[1; q]"), "Top").expect_err("a length that reads no param");
-    assert_eq!(Elab::codes(&found), ["E0180"], "a repeat count that reads nothing is refused by its code");
+    let found = SourceElaboration::run(&src.replace("[1; n]", "[1; q]"), "Top").expect_err("a length that reads no param");
+    assert_eq!(SourceElaboration::codes(&found), ["E0180"], "a repeat count that reads nothing is refused by its code");
 }
 
 #[test]
@@ -209,14 +208,14 @@ fn an_argument_of_another_length_than_a_param_length_is_e0313_at_elaboration() {
     // the design elaborates, not an error of the bind; the same for an array of nodes; a matching length elaborates
     let child = "module Child(in d: [Bit<u8>; n], e: [Electrical; n + 1]) { n: u32 = 3; }\n";
     let top = |given: u32, nodes: u32| format!("{child}module Top() {{ signal s: [Bit<u8>; {given}] = [0; {given}]; signal bl: [Electrical; {nodes}]; let c = Child(s, bl); }}");
-    Elab::ir(&top(3, 4), "Top");
+    SourceElaboration::ir(&top(3, 4), "Top");
     for (given, nodes, found_length, wanted_length) in [(4, 4, "[4]", "[3]"), (3, 5, "[5]", "[4]")] {
-        let found = Elab::run(&top(given, nodes), "Top").expect_err("a length that is not the port's");
-        let mismatch = found.iter().find(|d| d.diagnostic.code == "E0313").unwrap_or_else(|| panic!("E0313 expected: {:?}", Elab::codes(&found)));
+        let found = SourceElaboration::run(&top(given, nodes), "Top").expect_err("a length that is not the port's");
+        let mismatch = found.iter().find(|d| d.diagnostic.code == "E0313").unwrap_or_else(|| panic!("E0313 expected: {:?}", SourceElaboration::codes(&found)));
         assert!(mismatch.diagnostic.message.contains(found_length) && mismatch.diagnostic.message.contains(wanted_length), "both lengths are named: {}", mismatch.diagnostic.message);
     }
     // the port's length follows the placement's own `n`
-    Elab::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5] = [0; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
+    SourceElaboration::ir(&format!("{child}module Top() {{ signal s: [Bit<u8>; 5] = [0; 5]; signal bl: [Electrical; 6]; let c = Child {{ n: 5 }}(s, bl); }}"), "Top");
 }
 
 #[test]
@@ -225,10 +224,10 @@ fn a_negative_array_length_from_a_param_is_e0104_naming_it() {
     // (§1 rule 11, §3.9.7), naming the length - not P0001, which would call it a missing feature
     for (declared, what) in [("signal s: [Bit; n] = [false; n];", "carriers"), ("signal s: [Electrical; n];", "nodes")] {
         let src = format!("module Top() {{ n: i32 = -1; {declared} }}");
-        let found = Elab::run(&src, "Top").expect_err("a negative length");
-        let negative = found.iter().find(|d| d.diagnostic.code == "E0104").unwrap_or_else(|| panic!("E0104 expected: {:?}", Elab::codes(&found)));
+        let found = SourceElaboration::run(&src, "Top").expect_err("a negative length");
+        let negative = found.iter().find(|d| d.diagnostic.code == "E0104").unwrap_or_else(|| panic!("E0104 expected: {:?}", SourceElaboration::codes(&found)));
         assert!(negative.diagnostic.message.contains("-1") && negative.diagnostic.message.contains(what), "{}", negative.diagnostic.message);
-        assert!(found.iter().all(|d| d.diagnostic.code != "P0001"), "no missing-feature refusal: {:?}", Elab::codes(&found));
+        assert!(found.iter().all(|d| d.diagnostic.code != "P0001"), "no missing-feature refusal: {:?}", SourceElaboration::codes(&found));
     }
 }
 
@@ -250,7 +249,7 @@ fn node_array_contributions_unroll_to_their_nodes() {
     let src = "module Top() {\n\
                signal bl: [Electrical; 4];\n}\n\
                analog for Top { for k in 0..3 { i(bl[k], bl[k + 1]) +> v(bl[k], bl[k + 1]) / 1000.0; } let tap = v(bl[2]); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(body.nodes().iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["bl[0]", "bl[1]", "bl[2]", "bl[3]"]);
     let branches: Vec<(piperine_ir::Terminal, piperine_ir::Terminal)> = body.branches().iter().map(|b| (b.plus, b.minus)).collect();
@@ -262,10 +261,10 @@ fn node_array_contributions_unroll_to_their_nodes() {
 fn an_analog_node_index_that_does_not_fold_is_refused_naming_it() {
     // CV-26 AC 2, QC4: an index of a node array in `analog` that does not fold after unrolling is refused naming it; a
     // constant past the end is E0104
-    let found = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let k = 2; let x = v(bl[k]); }", "Top").expect_err("no fold");
+    let found = SourceElaboration::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let k = 2; let x = v(bl[k]); }", "Top").expect_err("no fold");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("`k`")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-    let past = Elab::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let x = v(bl[4]); }", "Top").expect_err("past the end");
-    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", Elab::codes(&past));
+    let past = SourceElaboration::run("module Top() { signal bl: [Electrical; 4]; }\nanalog for Top { let x = v(bl[4]); }", "Top").expect_err("past the end");
+    assert!(past.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains('4')), "{:?}", SourceElaboration::codes(&past));
 }
 
 /// The carriers, the commits and the drives of body `Top`, as the targets they name.
@@ -277,7 +276,7 @@ struct Writes {
 impl Writes {
     /// What the reactions and drives of `Top` in `src` write.
     fn of(src: &str) -> Writes {
-        let ir = Elab::ir(src, "Top");
+        let ir = SourceElaboration::ir(src, "Top");
         let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
         let mut commits = Vec::new();
         for index in 0..body.reactions().len() as u32 {
@@ -304,7 +303,7 @@ fn element_and_field_commits_lower_to_their_targets() {
                signal mem: [Bit<S>; 4] = [S { n: 0, ok: false }; 4];\n}\n\
                digital for Top { on clk.rise() { bits[3] <- true; bits[at] <- false; word[2] <- true; st.n <- 3; mem[at].n <- 5; } }";
     let writes = Writes::of(src);
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let at = |name: &str| body.carriers().iter().position(|c| c.name == name).expect(name) as u32;
     assert_eq!(writes.commits.len(), 5, "{:?}", writes.commits);
@@ -322,7 +321,7 @@ fn an_element_definition_is_one_drive() {
     // element folds, else E0188 names it
     let writes = Writes::of("module Top(in a: Bit) { signal bits: [Bit; 2]; bits[0] = a; bits[1] = !a; }");
     assert_eq!(writes.drives, vec![(1, Some(0), vec![]), (1, Some(1), vec![])], "one drive per element, of carrier 1 (`a` is carrier 0)");
-    let found = Elab::run("module Top(in a: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[at] = a; }", "Top").expect_err("no fold");
+    let found = SourceElaboration::run("module Top(in a: Bit, in at: Bit<u2>) { signal bits: [Bit; 4]; bits[at] = a; }", "Top").expect_err("no fold");
     assert!(found.iter().any(|d| d.diagnostic.code == "E0188" && d.diagnostic.message.contains("bits[at]")), "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }
 
@@ -346,7 +345,7 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
                let rungs = Ladder(bl);\n\
                let row_rest = Reg(g[0], h[1]);\n\
                let zero = Cell(x[0], z[0]);\n}";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let windows: Vec<Vec<Option<piperine_ir::CarrierWindow>>> = (0..top.children().len()).map(|k| top.child_windows(k).to_vec()).collect();
     let win = |first: u64, length: Option<u64>| Some(piperine_ir::CarrierWindow { first, length });
@@ -367,7 +366,7 @@ struct Refusals;
 impl Refusals {
     /// What elaborating `Top` of `src` refuses; empty when it elaborates.
     fn of(src: &str) -> Vec<(String, String)> {
-        match Elab::run(src, "Top") {
+        match SourceElaboration::run(src, "Top") {
             Ok(_) => Vec::new(),
             Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
         }
@@ -395,14 +394,19 @@ fn a_generic_length_array_is_judged_per_element_at_each_instance() {
     Refusals::assert_one(&format!("{}{top}", module("b[0] = clk;")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
     // the same module at a length one drive covers is clean, and a length of two names the one element left
     Refusals::assert_one(&format!("{}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}", module("b[0] = clk;")), "E0187", &["`b[1]`", "`M::<2>`"]);
-    elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
+    CarrierArraysFixture::elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
     // an element handed to an `out` port of a child names its element too
     Refusals::assert_one(&format!("{CELL}{}{top}", module("let c = Cell(clk, b[0]);")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
 }
 
-/// Elaborates `src` and asserts it holds no diagnostic.
-fn elaborates(src: &str) {
-    Elab::ir(src, "Top");
+/// Associated test helpers of `carrier_arrays`, grouped on one fixture type.
+struct CarrierArraysFixture;
+
+impl CarrierArraysFixture {
+    /// Elaborates `src` and asserts it holds no diagnostic.
+    fn elaborates(src: &str) {
+        SourceElaboration::ir(src, "Top");
+    }
 }
 
 #[test]
@@ -410,7 +414,7 @@ fn a_param_length_array_is_judged_per_element_at_each_variant() {
     // §3.3.4, §8.1.2: `[Bit; n]` folds per body variant, so `Wide~n=4` with only `b[0]` driven is E0187 naming `b[1..4]`
     let module = "module Wide(in clk: Bit) { n: u32 = 2; signal b: [Bit; n]; b[0] = clk; }\n";
     Refusals::assert_one(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 4 }}(clk); }}"), "E0187", &["`b[1..4]`", "`Wide~n=4`"]);
-    elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
+    CarrierArraysFixture::elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
 }
 
 #[test]
@@ -419,15 +423,15 @@ fn a_generation_index_names_the_elements_it_reaches() {
     // over every element is clean
     let top = |range: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in {range} {{ let c = Cell(clk, y[k]); }} }}");
     Refusals::assert_one(&top("0..2"), "E0187", &["`y[2..4]`"]);
-    elaborates(&top("0..4"));
+    CarrierArraysFixture::elaborates(&top("0..4"));
     // a definition inside generation drives the elements its iterations name: E0187 names the two it leaves (the refusal it
     // was is gone, generics finding 14), and a loop over every element is clean
     Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "E0187", &["`y[2..4]`", "`Top`"]);
-    elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
+    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
     // and in a generic module, at its length
     let generic = "module M<const N: usize>(in clk: Bit) { signal y: [Bit; N]; for k in 0..2 { let c = Cell(clk, y[k]); } }\n";
     Refusals::assert_one(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<4>(clk); }}"), "E0187", &["`y[2..4]`", "`M::<4>`"]);
-    elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
+    CarrierArraysFixture::elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
 }
 
 #[test]
@@ -436,7 +440,7 @@ fn an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_elem
     // only once every element is handed; a generic length is judged at each instance
     let module = |handed: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal y: [Bit; N] = [false; N]; {handed} }}\n");
     let top = |length: u32| format!("module Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
-    elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
+    CarrierArraysFixture::elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
     Refusals::assert_one(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(1)), "E0223", &["`y`", "`M::<1>`"]);
 }
 
@@ -446,7 +450,7 @@ fn an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance
     // E0338 only at the instance whose elements the definitions all name
     let src = |length: u32| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N] = [false; N]; b[0] = clk; b[1] = !clk; }}\nmodule Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
     Refusals::assert_one(&src(2), "E0338", &["`b`", "`M::<2>`"]);
-    elaborates(&src(4));
+    CarrierArraysFixture::elaborates(&src(4));
 }
 
 #[test]
@@ -455,11 +459,11 @@ fn a_nested_array_with_a_generic_inner_length_judges_shared_elements_per_instanc
     // clean at `M::<2>`; a second definition of `g[1][1]` is E0335 naming the element and the instance
     let module = |extra: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; g[1][0] = clk; g[0][1] = clk; g[0][0] = clk; g[1][1] = clk; {extra} }}\n");
     let top = "module Top(in clk: Bit) { let m = M::<2>(clk); }";
-    elaborates(&format!("{}{top}", module("")));
+    CarrierArraysFixture::elaborates(&format!("{}{top}", module("")));
     Refusals::assert_one(&format!("{}{top}", module("g[1][1] = !clk;")), "E0335", &["`g[1][1]`", "`M::<2>`"]);
     // §5.2, §8.2.20: a definition and a commit of different elements compose; of one element they are E0221 at the instance
     let committed = |element: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2] = [[false; N]; 2]; g[1][0] = clk; }}\ndigital<N> for M<N> {{ on clk.rise() {{ {element} <- true; }} }}\n{top}");
-    elaborates(&committed("g[0][1]"));
+    CarrierArraysFixture::elaborates(&committed("g[0][1]"));
     Refusals::assert_one(&committed("g[1][0]"), "E0221", &["`g[1][0]`", "`M::<2>`"]);
     // §5.2.6: an element handed to an `out` port and defined here is E0220 at the instance; a different element is clean
     let handed = |element: &str| format!("{CELL}module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; let c = Cell(clk, g[1][0]); g[0][0] = clk; g[0][1] = clk; g[1][1] = clk; {element} = !clk; }}\n{top}");
@@ -471,24 +475,24 @@ fn drives_written_in_generation_are_judged_where_generation_is_unrolled() {
     // §8.2.20, §8.2.23: `for k in 0..2 { b[k] = a; }` defines `b[0]` and `b[1]`, so `b[2]` and `b[3]` defined beside it are
     // clean, and `b[1]` defined again is E0335 naming it
     let fixed = |extra: &str| format!("module Top(in clk: Bit) {{ signal b: [Bit; 4]; for k in 0..2 {{ b[k] = clk; }} b[3] = !clk; b[2] = clk; {extra} }}");
-    elaborates(&fixed(""));
+    CarrierArraysFixture::elaborates(&fixed(""));
     Refusals::assert_one(&fixed("b[1] = !clk;"), "E0335", &["`b[1]`", "`Top`"]);
     // §8.2.24: two definitions in exclusive arms of an `if` are one drive; one in every iteration of a loop is two
-    elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
-    elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
+    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
+    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
     Refusals::assert_one("module Top(in clk: Bit) { signal y: Bit; for k in 0..2 { y = clk; } }", "E0335", &["`y`", "`Top`"]);
     // §5.2.6: placements in a loop hand `y[0]` and `y[1]`; `y[2]` and `y[3]` defined here are clean, `y[1]` is E0220
     let handed = |extra: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} y[3] = clk; y[2] = clk; {extra} }}");
-    elaborates(&handed(""));
+    CarrierArraysFixture::elaborates(&handed(""));
     Refusals::assert_one(&handed("y[1] = clk;"), "E0220", &["`y[1]`", "`Top`"]);
     // §5.2: a definition in a loop and a commit of another element compose; of the same element they are E0221
     let committed = |element: &str| format!("module Top(in clk: Bit) {{ signal y: [Bit; 2] = [false; 2]; for k in 0..1 {{ y[k] = clk; }} }}\ndigital for Top {{ on clk.rise() {{ {element} <- true; }} }}");
-    elaborates(&committed("y[1]"));
+    CarrierArraysFixture::elaborates(&committed("y[1]"));
     Refusals::assert_one(&committed("y[0]"), "E0221", &["`y[0]`", "`Top`"]);
     // §8.2.21, §8.2.24: an initial value beside a definition in an arm not taken stays the carrier's value (clean); in the
     // taken arm it is E0338 at the instance, and with no initial value an untaken definition leaves `y` undriven (E0187)
     let arm = |mode: u32, init: &str| format!("module Top(in clk: Bit) {{ mode: usize = {mode}; signal y: Bit{init}; if mode > 1 {{ y = clk; }} }}");
-    elaborates(&arm(0, " = false"));
+    CarrierArraysFixture::elaborates(&arm(0, " = false"));
     Refusals::assert_one(&arm(2, " = false"), "E0338", &["`y`", "`Top~mode=2`"]);
     Refusals::assert_one(&arm(0, ""), "E0187", &["`y`", "`Top~mode=0`"]);
 }
@@ -500,7 +504,7 @@ fn a_run_time_element_read_in_a_definition_is_one_read_of_the_array() {
     // second for any length
     let src = "module Top(in at: Bit<u16>) { signal mem: [Bit<u8>; 65536] = [7; 65536]; signal q: Bit<u8>; q = mem[at]; }";
     let started = std::time::Instant::now();
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(started.elapsed() < std::time::Duration::from_secs(5), "elaborated in {:?}", started.elapsed());
     let printed = ir.print_structural();
     let drive = printed.lines().find(|line| line.trim_start().starts_with("drive q")).expect("the drive of q");
@@ -519,7 +523,7 @@ fn a_loop_of_definitions_through_elements_is_e0339_naming_the_elements() {
     Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 2]; signal c: [Bit<u8>; 2]; b[0] = clk; b[1] = c[1]; c[0] = clk; c[1] = b[1] + 1; }", "E0339", &["`b[1]`, `c[1]`"]);
     Refusals::assert_one("module Top(in clk: Bit<u8>) { signal y: Bit<u8>; for k in 0..1 { y = y + clk; } }", "E0339", &["`y`", "`Top`"]);
     // a chain through elements is no loop
-    elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
+    CarrierArraysFixture::elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
 }
 
 #[test]
@@ -528,7 +532,7 @@ fn an_analog_function_reads_the_carrier_an_element_of_an_array_is_given_to() {
     // gate is a read of the cell's pin, which the placement binds to element 1 of the one carrier `gates` (no diagnostic, one
     // carrier of four elements, the cell's analog function reading it)
     let src = "module Cell(in gate: Bit, p: Electrical) { }\nanalog for Cell { i(p, gnd) +> v(p) / (if gate { 1k } else { 2k }) - 1m; }\nmodule Top() { signal gates: [Bit; 4] = [false, true, false, true]; signal a: Electrical; let c = Cell(gates[1], a); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let carriers = read.carriers("Top");
     assert_eq!(carriers.iter().filter(|(name, count, _, _)| name == "gates" && *count == Some(4)).count(), 1, "one carrier of four elements: {carriers:?}");

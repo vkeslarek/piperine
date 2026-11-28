@@ -4,12 +4,11 @@
 //! invariants of elaboration over the buck. Expected values are read off the `.msl` and
 //! `docs/spec/` (part II §5, part IV §12 and §13), never off the elaborator.
 
-use crate::support;
 
-use crate::buck;
 
 use piperine_ir::{Body, CarrierRole, Constant, Ir, ValueType};
-use support::Elab;
+use piperine_lang_fixtures::buck::BuckSource;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// Reading the elaborated IR of a test.
 struct Read<'a> {
@@ -37,17 +36,102 @@ impl<'a> Read<'a> {
     }
 }
 
-/// The declaration of the buck module `name` of `file`: its ports and its body items as written (a port that no
-/// body item drives would need an initial value of its own, §3.3.4).
-fn ports_of(file: &str, name: &str) -> String {
-    buck::item(file, &format!("pub module {name}("))
+/// Associated test helpers of `digital`, grouped on one fixture type.
+struct DigitalFixture;
+
+impl DigitalFixture {
+    /// The declaration of the buck module `name` of `file`: its ports and its body items as written (a port that no
+    /// body item drives would need an initial value of its own, §3.3.4).
+    fn ports_of(file: &str, name: &str) -> String {
+        BuckSource::item(file, &format!("pub module {name}("))
+    }
+
+    /// The structural print of `body` alone: its header and the lines under it.
+    fn body_text(ir: &Ir, body: &str) -> String {
+        let text = ir.print_structural();
+        let head = format!("body {body}\n");
+        let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
+        let rest = &text[start..];
+        let end = rest[1..].find("\nbody ").or_else(|| rest[1..].find("\nfn ")).or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 2);
+        rest[..end].to_string()
+    }
+
+    /// The buck's `Controller` (examples/buck/src/top.msl) as written, over the buck's own constants,
+    /// enums and `target_codes`, its children declared with the buck's ports and no body.
+    fn controller() -> String {
+        let children = [("control.msl", "SetpointReg"), ("control.msl", "RefRamp"), ("control.msl", "Pid"), ("supervisor.msl", "Supervisor"), ("dpwm.msl", "Dpwm")].map(|(file, name)| DigitalFixture::ports_of(file, name));
+        format!(
+            "{}\n{}\n{}\n{}\n{}\n{}",
+            BuckSource::spec(),
+            BuckSource::item("supervisor.msl", "pub enum Mode"),
+            BuckSource::item("supervisor.msl", "pub enum Fault"),
+            BuckSource::item("control.msl", "pub fn target_codes"),
+            children.join("\n"),
+            BuckSource::item("top.msl", "pub module Controller("),
+        )
+    }
+
+    /// A known or unknown `bool`: `None` is unknown (§3.3).
+    /// The value of a lowered event guard over the previous and the present value of the carrier
+    /// `c` it reads. Any other form is a failure of the test, never a guess.
+    fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
+        use piperine_ir::{BinaryOp, Expr, UnaryOp};
+        let value = |e| DigitalFixture::guard_value(ir, e, c, prev, cur);
+        match ir.expr(e) {
+            Expr::Bool(b) => *b,
+            Expr::Carrier(k) if *k == c => cur,
+            Expr::Previous(k) if *k == c => prev,
+            Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
+            Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
+            Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
+            other => panic!("a form an edge guard does not hold: {other:?}"),
+        }
+    }
+
+    /// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
+    /// `digital` block.
+    fn edges(digital: &str) -> String {
+        format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit = false) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit = false; signal d: Bit<u8> = 0; signal q: Bit; let m = M(n, c, d, q); }}")
+    }
+
+    /// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
+    /// slice transcribed by hand from the buck's `.msl`, without the flag the explicit model removed.
+    fn golden(name: &str) -> String {
+        BuckSource::golden(name)
+    }
+
+    /// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
+    fn reaction_text(body: &str, k: usize) -> String {
+        let head = format!("  reaction R{k} on");
+        let start = body.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{body}"));
+        let rest = &body[start..];
+        let end = rest[1..].find("\n  reaction ").or_else(|| rest[1..].find("\nbody ")).map_or(rest.len(), |at| at + 2);
+        rest[..end].trim_end().to_string()
+    }
+
+    /// `examples/buck` as a one-crate graph over the embedded standard library, as
+    /// `tests/types_buck.rs` loads it.
+    fn buck_design() -> piperine_lang::pom::Design {
+        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+        let mut graph = piperine_lang::pom::CrateGraph::new();
+        graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
+        piperine_lang::pom::Design::load_crates(graph)
+    }
+
+    /// Every design and top of the invariants: the buck's tops over one loaded package, then the
+    /// stdlib's.
+    fn invariant_cases() -> Vec<(String, piperine_lang::pom::Design, String)> {
+        let mut cases: Vec<(String, piperine_lang::pom::Design, String)> = BUCK_TOPS.iter().map(|t| (format!("buck {t}"), DigitalFixture::buck_design(), t.to_string())).collect();
+        cases.extend(STD_TOPS.iter().map(|(name, src)| (format!("std {name}"), SourceElaboration::design(src), "Top".to_string())));
+        cases
+    }
 }
 
 #[test]
 fn carriers_follow_ports_then_signals() {
     // DIG-09 AC 1, C75: `RefRamp` (examples/buck/src/control.msl) as written, its ports in
     // declaration order, `reference` with its initial value 0.
-    let ir = Elab::ir(&ports_of("control.msl", "RefRamp"), "RefRamp");
+    let ir = SourceElaboration::ir(&DigitalFixture::ports_of("control.msl", "RefRamp"), "RefRamp");
     let read = Read { ir: &ir };
     use CarrierRole::{In, Out, Signal};
     assert_eq!(
@@ -62,7 +146,7 @@ fn carriers_follow_ports_then_signals() {
     );
     // `Pid` whole: its five ports, then its three signals, each folded initial value of the
     // carried type (`integ: Bit<i32> = 0`, `e_prev: Bit<i16> = 0`).
-    let ir = Elab::ir(&buck::item("control.msl", "pub module Pid("), "Pid");
+    let ir = SourceElaboration::ir(&BuckSource::item("control.msl", "pub module Pid("), "Pid");
     let read = Read { ir: &ir };
     assert_eq!(
         read.carriers("Pid"),
@@ -79,8 +163,8 @@ fn carriers_follow_ports_then_signals() {
     );
     // A node port among carrier ports stays a node: `Adc(ain: Electrical, in sample: Bit, ..)`
     // has one node and three carriers; a carrier is never a node and a node never a carrier.
-    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", ports_of("sense.msl", "Adc"));
-    let ir = Elab::ir(&src, "Top");
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", DigitalFixture::ports_of("sense.msl", "Adc"));
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let adc = read.body("Adc");
     assert_eq!(adc.nodes().iter().map(|n| n.name.as_str()).collect::<Vec<_>>(), ["ain"]);
@@ -90,7 +174,7 @@ fn carriers_follow_ports_then_signals() {
     // An initial value is folded (§5.2.3): over `const`s and operators, an enum variant as a composite
     // constant of the variant (the enum is an IR enum since composite-values T48, `Mode::Hold` is variant 2).
     let src = "const K: u8 = 2 + 3;\n#[derive(Repr, PartialEq)]\nenum Mode { Off, On, Hold }\nmodule Top() { signal k: Bit<u8> = K * 2; signal m: Bit<Mode> = Mode::Hold; signal x: Bit<f64> = 0.5 * 3.0; }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let carriers = read.carriers("Top");
     assert_eq!(carriers.iter().map(|c| c.2.clone()).collect::<Vec<_>>(), [ValueType::UInt(8), ValueType::Enum(piperine_ir::TypeId(0)), ValueType::F64]);
@@ -99,7 +183,7 @@ fn carriers_follow_ports_then_signals() {
     assert_eq!(carriers[2].3, Some(Constant::Real(piperine_ir::Real::new(1.5))));
     // One that reads a param is folded per body variant (AS-15 AC 1; it was `P0001` before `analog-structure`
     // T34): the param is structural and the variant `Top~r=1.0` holds the value of `r`.
-    let ir = Elab::ir("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top");
+    let ir = SourceElaboration::ir("module Top() { r: f64 = 1.0; signal x: Bit<f64> = r; }", "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Top~r=1.0").iter().map(|c| c.3).collect::<Vec<_>>(), [Some(Constant::Real(piperine_ir::Real::new(1.0)))], "x starts at the value of r");
 }
@@ -110,7 +194,7 @@ fn every_signal_carrier_is_a_design_net() {
     // port is no net of its own, it is bound to the parent's net it is connected to.
     let src = "module Leaf(in i: Bit, out o: Bit<u8> = 0) { signal own: Bit = true; }\n\
                module Top() { signal a: Bit = false; signal b1: Bit<u8>; signal b2: Bit<u8>; let x = Leaf(a, b1); let y = Leaf(a, b2); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.a", "Top.b1", "Top.b2", "Top.x.own", "Top.y.own"]);
     assert_eq!(read.nets_of("Top"), ["Top.a", "Top.b1", "Top.b2"]);
@@ -123,7 +207,7 @@ fn every_signal_carrier_is_a_design_net() {
     }
     // Two levels: a carrier handed down twice stays one net.
     let src = "module Leaf(in i: Bit) { }\nmodule Mid(in m: Bit) { let l = Leaf(m); }\nmodule Top() { signal a: Bit = false; let k = Mid(a); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.a"]);
     assert_eq!(read.nets_of("Top.k.l"), ["Top.a"]);
@@ -132,15 +216,15 @@ fn every_signal_carrier_is_a_design_net() {
 #[test]
 fn a_top_with_discrete_ports_gets_one_net_per_port() {
     // DIG-09 AC 5, C79: the host drives a top-level port (§5.2.3); each is a net `<Top>.<port>`.
-    let ir = Elab::ir("module Top(in en: Bit, out pgood: Bit = false) { signal s: Bit = false; }", "Top");
+    let ir = SourceElaboration::ir("module Top(in en: Bit, out pgood: Bit = false) { signal s: Bit = false; }", "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.net_paths(), ["Top.en", "Top.pgood", "Top.s"]);
     assert_eq!(read.nets_of("Top"), ["Top.en", "Top.pgood", "Top.s"]);
     assert!(ir.nets().all(|n| n.declared_by().path() == "Top"));
     // A value input on the top has no host source: `E0811` at its name (§23.1 rule 1).
     let src = "module Top(in en: Bit, p: f64) { }";
-    let err = Elab::run(src, "Top").expect_err("a value input on the top");
-    assert_eq!(Elab::codes(&err), ["E0811"]);
+    let err = SourceElaboration::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(SourceElaboration::codes(&err), ["E0811"]);
     assert!(err[0].diagnostic.message.contains("`p`"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "p");
@@ -150,7 +234,7 @@ fn a_top_with_discrete_ports_gets_one_net_per_port() {
 fn a_carrier_with_no_value_and_no_drive_is_kept() {
     // Edge case 2, C164: `signal en: Bit = false;` with no drive is allowed and holds its initial value in every
     // analysis (§5.2.8): one carrier and one net, both with that value.
-    let ir = Elab::ir("module Top() { signal en: Bit = false; }", "Top");
+    let ir = SourceElaboration::ir("module Top() { signal en: Bit = false; }", "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Top"), vec![("en".to_string(), CarrierRole::Signal, ValueType::Bool, Some(Constant::Bool(false)))]);
     assert!(read.body("Top").drives().is_empty());
@@ -164,7 +248,7 @@ fn a_placement_records_its_carrier_bindings() {
     // child's body, in port order: the parent's carriers (nodes stay terminals).
     let src = "module Leaf(p: Electrical, in i: Bit, out o: Bit<u8> = 0) { }\nmodule Plain(p: Electrical) { }\n\
                module Top() { signal n: Electrical; signal a: Bit = false; signal b: Bit<u8>; let x = Leaf(n, a, b); let q = Plain(n); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let top = read.body("Top");
     let (a, b) = (top.carriers().iter().position(|c| c.name == "a"), top.carriers().iter().position(|c| c.name == "b"));
@@ -181,7 +265,7 @@ fn a_net_takes_the_init_of_its_declaring_carrier() {
     // net one: the child's own carrier holds it (§5.2.6).
     let src = "module Leaf(out o: Bit = true) { }\n\
                module Top(out q: Bit<u4> = 3) { signal x: Bit = false; signal y: Bit<u8> = 0; signal s: Bit; let l = Leaf(s); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let init = |path: &str| ir.net_at(path).unwrap_or_else(|| panic!("no net `{path}`")).init();
     assert_eq!(init("Top.q"), Some(Constant::Int(3)));
     assert_eq!(init("Top.x"), Some(Constant::Bool(false)));
@@ -191,21 +275,11 @@ fn a_net_takes_the_init_of_its_declaring_carrier() {
     assert_eq!(read.carriers("Leaf")[0].3, Some(Constant::Bool(true)), "the driver's carrier keeps its own initial value");
 }
 
-/// The structural print of `body` alone: its header and the lines under it.
-fn body_text(ir: &Ir, body: &str) -> String {
-    let text = ir.print_structural();
-    let head = format!("body {body}\n");
-    let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
-    let rest = &text[start..];
-    let end = rest[1..].find("\nbody ").or_else(|| rest[1..].find("\nfn ")).or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 2);
-    rest[..end].to_string()
-}
-
 #[test]
 fn a_definition_is_a_drive() {
     // DIG-09 AC 2, C76: `GateDriver` (examples/buck/src/power.msl): `hs_gate = (hs_cmd & !ls_cmd)
     // after tpd;` is one drive of `hs_gate` with its `after`, and so is `ls_gate`, in source order.
-    let ir = Elab::ir(&buck::item("power.msl", "pub module GateDriver("), "GateDriver");
+    let ir = SourceElaboration::ir(&BuckSource::item("power.msl", "pub module GateDriver("), "GateDriver");
     let read = Read { ir: &ir };
     let body = read.body("GateDriver");
     let carrier = |name: &str| body.carriers().iter().position(|c| c.name == name).map(|i| i as u32);
@@ -216,32 +290,17 @@ fn a_definition_is_a_drive() {
         let after = drive.after.expect("each definition has its `after`");
         assert_eq!(ir.expr(after), &piperine_ir::Expr::Param(0), "`after tpd` reads the param `tpd`");
     }
-    let text = body_text(&ir, "GateDriver");
+    let text = DigitalFixture::body_text(&ir, "GateDriver");
     assert!(text.contains("  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd\n  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd\n"), "{text}");
     // An undelayed definition has no `after`: `RefRamp`'s `at_target = reference == target;`, a
     // comparison of two carrier reads.
-    let ir = Elab::ir(&buck::item("control.msl", "pub module RefRamp("), "RefRamp");
+    let ir = SourceElaboration::ir(&BuckSource::item("control.msl", "pub module RefRamp("), "RefRamp");
     let read = Read { ir: &ir };
     let body = read.body("RefRamp");
     assert_eq!(body.drives().len(), 1);
     assert_eq!(body.drives()[0].after, None);
     assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Bool);
-    assert!(body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
-}
-
-/// The buck's `Controller` (examples/buck/src/top.msl) as written, over the buck's own constants,
-/// enums and `target_codes`, its children declared with the buck's ports and no body.
-fn controller() -> String {
-    let children = [("control.msl", "SetpointReg"), ("control.msl", "RefRamp"), ("control.msl", "Pid"), ("supervisor.msl", "Supervisor"), ("dpwm.msl", "Dpwm")].map(|(file, name)| ports_of(file, name));
-    format!(
-        "{}\n{}\n{}\n{}\n{}\n{}",
-        buck::spec(),
-        buck::item("supervisor.msl", "pub enum Mode"),
-        buck::item("supervisor.msl", "pub enum Fault"),
-        buck::item("control.msl", "pub fn target_codes"),
-        children.join("\n"),
-        buck::item("top.msl", "pub module Controller("),
-    )
+    assert!(DigitalFixture::body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
 }
 
 #[test]
@@ -249,7 +308,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint), ..)` in
     // `Controller` adds the signal carrier `ramp.target` to `Controller` with its drive, and binds
     // the child's port `target` to it (§8.2.9).
-    let ir = Elab::ir(&controller(), "Controller");
+    let ir = SourceElaboration::ir(&DigitalFixture::controller(), "Controller");
     let read = Read { ir: &ir };
     let body = read.body("Controller");
     let at = body.carriers().iter().position(|c| c.name == "ramp.target").expect("the carrier `ramp.target`");
@@ -258,7 +317,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);
-    assert!(body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", body_text(&ir, "Controller"));
+    assert!(DigitalFixture::body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", DigitalFixture::body_text(&ir, "Controller"));
     let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
     let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
     let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
@@ -271,37 +330,14 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     assert_eq!(body.carriers().iter().filter(|c| c.name.contains('.')).count(), 1);
 }
 
-/// A known or unknown `bool`: `None` is unknown (§3.3).
-/// The value of a lowered event guard over the previous and the present value of the carrier
-/// `c` it reads. Any other form is a failure of the test, never a guess.
-fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
-    use piperine_ir::{BinaryOp, Expr, UnaryOp};
-    let value = |e| guard_value(ir, e, c, prev, cur);
-    match ir.expr(e) {
-        Expr::Bool(b) => *b,
-        Expr::Carrier(k) if *k == c => cur,
-        Expr::Previous(k) if *k == c => prev,
-        Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
-        Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
-        Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
-        other => panic!("a form an edge guard does not hold: {other:?}"),
-    }
-}
-
-/// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
-/// `digital` block.
-fn edges(digital: &str) -> String {
-    format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit = false) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit = false; signal d: Bit<u8> = 0; signal q: Bit; let m = M(n, c, d, q); }}")
-}
-
 #[test]
 fn changed_rise_fall_and_cross_lower_to_events() {
     // DIG-09 AC 6, C80. The stdlib's own text (§22.1) is what `rise` and `fall` mean.
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
     assert!(values.contains("self.changed() && !self.prev() && self"), "the stdlib `rise` is the oracle");
     assert!(values.contains("self.changed() && self.prev() && !self"), "the stdlib `fall` is the oracle");
-    let src = edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
-    let ir = Elab::ir(&src, "Top");
+    let src = DigitalFixture::edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let c = m.carriers().iter().position(|k| k.name == "c").expect("c") as u32;
@@ -323,8 +359,8 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     // §22.1 (D9): rise on false to true, fall on true to false; neither on any other change.
     let (lo, hi) = (false, true);
     for (prev, cur, rises, falls) in [(lo, hi, true, false), (hi, lo, false, true), (lo, lo, false, false), (hi, hi, false, false)] {
-        assert_eq!(guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
-        assert_eq!(guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
+        assert_eq!(DigitalFixture::guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
+        assert_eq!(DigitalFixture::guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
     }
     // `cross(e)` watches `e`.
     let EventSource::Cross { e: watched, .. } = events[3].source else { panic!("a cross: {:?}", events[3].source) };
@@ -346,7 +382,7 @@ fn a_guard_splits_into_its_discrete_and_continuous_parts() {
                  on x.changed() && en { q <- true; }\n\
                }\n\
                module Top() { signal n: Electrical; signal x: Bit = false; signal en: Bit = false; signal q: Bit; let m = M(n, x, en, q); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let en = m.carriers().iter().position(|k| k.name == "en").expect("en") as u32;
@@ -384,7 +420,7 @@ fn an_or_head_is_one_reaction_or_one_per_disjunct() {
                  on cross(v(a)) || (x.changed() && v(a) > 0.0) { q <- false; }\n\
                }\n\
                module Top() { signal n: Electrical; signal x: Bit = false; signal y: Bit = false; signal q: Bit; let m = M(n, x, y, q); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let (x, y) = (m.carriers().iter().position(|k| k.name == "x").expect("x") as u32, m.carriers().iter().position(|k| k.name == "y").expect("y") as u32);
@@ -410,7 +446,7 @@ fn a_split_head_over_an_emitting_body_is_one_reaction() {
     let src = "module M(a: Electrical, in x: Bit, out q: Bit = false) { }\n\
                digital for M { on cross(v(a)) || (x.changed() && v(a) > 0.0) { emit!(\"log\", n = 1.0); } }\n\
                module Top() { signal n: Electrical; signal x: Bit = false; signal q: Bit; let m = M(n, x, q); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let m = Read { ir: &ir }.body("M");
     assert_eq!(m.reactions().len(), 1, "one reaction for the whole head");
     assert_eq!(m.reactions()[0].on, [0, 1], "on both events");
@@ -424,7 +460,7 @@ fn settle_lowers_to_the_settle_event_source() {
     // alone, guarded (`settle && g`) and in a disjunction (`settle || ev`, one reaction on both).
     use piperine_ir::EventSource;
     let src = "module M(in x: Bit, in en: Bit, out q: Bit = false) { }\ndigital for M {\n on settle { q <- true; }\n on settle && en { q <- false; }\n on settle || x.changed() { q <- true; }\n}";
-    let ir = Elab::ir(src, "M");
+    let ir = SourceElaboration::ir(src, "M");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let events = m.events();
@@ -446,7 +482,7 @@ fn an_event_read_as_a_bool_in_a_body_lowers_to_fired() {
     // `a_head_the_ir_cannot_hold_is_p0001`, which pinned the `P0001` this read used to meet.
     use piperine_ir::{EventSource, Expr, Stmt};
     let src = "module M(in x: Bit, out q: Bit = false) { }\ndigital for M { on x.changed() { if x.rise() { q <- true; } if x.changed() { q <- false; } } }";
-    let ir = Elab::ir(src, "M");
+    let ir = SourceElaboration::ir(src, "M");
     let read = Read { ir: &ir };
     let m = read.body("M");
     let events = m.events();
@@ -471,27 +507,12 @@ fn an_event_read_as_a_bool_in_a_body_lowers_to_fired() {
     assert_eq!(fired, [1, 0], "`if x.rise()` reads event 1, `if x.changed()` reuses the head's event 0");
 }
 
-/// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
-/// slice transcribed by hand from the buck's `.msl`, without the flag the explicit model removed.
-fn golden(name: &str) -> String {
-    buck::golden(name)
-}
-
-/// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
-fn reaction_text(body: &str, k: usize) -> String {
-    let head = format!("  reaction R{k} on");
-    let start = body.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{body}"));
-    let rest = &body[start..];
-    let end = rest[1..].find("\n  reaction ").or_else(|| rest[1..].find("\nbody ")).map_or(rest.len(), |at| at + 2);
-    rest[..end].trim_end().to_string()
-}
-
 #[test]
 fn a_reaction_body_lowers_in_source_order() {
     // DIG-09 AC 10, C84: `Adc`'s reaction (examples/buck/src/sense.msl) is one `let` holding a
     // probe of `ain`, then three commits each with its `after`, in source order.
-    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", buck::module_with_digital("sense.msl", "Adc"));
-    let ir = Elab::ir(&src, "Top");
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", BuckSource::module_with_digital("sense.msl", "Adc"));
+    let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let adc = read.body("Adc");
     use piperine_ir::{Expr, Stmt};
@@ -519,51 +540,51 @@ fn a_reaction_body_lowers_in_source_order() {
         other => panic!("a commit: {other:?}"),
     }).collect();
     assert_eq!(commits, [(carrier("code"), true), (carrier("done"), true), (carrier("done"), true)], "code, then done twice, each `after`");
-    assert!(reaction_text(&body_text(&ir, "Adc"), 0).ends_with("    code <- q after tconv\n    done <- true after tconv\n    done <- false after (tconv + tstrobe)"));
+    assert!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Adc"), 0).ends_with("    code <- q after tconv\n    done <- true after tconv\n    done <- false after (tconv + tstrobe)"));
 
     // `Pid` (control.msl), statement by statement: the hand transcription of `ir-rust` T29 with
     // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
-    let src = format!("{}\n{}", buck::spec(), buck::module_with_digital("control.msl", "Pid"));
-    let ir = Elab::ir(&src, "Pid");
+    let src = format!("{}\n{}", BuckSource::spec(), BuckSource::module_with_digital("control.msl", "Pid"));
+    let ir = SourceElaboration::ir(&src, "Pid");
     // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24, T31): the fixture, the earlier
     // transcription, is read without its flag (`golden`) and joins `windup` with `&&` and `||`
-    let expected = reaction_text(&golden("pid"), 0)
+    let expected = DigitalFixture::reaction_text(&DigitalFixture::golden("pid"), 0)
         .replace("(2880u12 as i32)", "2880i32")
         .replace("(((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16)))", "(((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16)))");
-    assert_eq!(reaction_text(&body_text(&ir, "Pid"), 0), expected);
+    assert_eq!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Pid"), 0), expected);
 
     // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
     // `Never` monitor beside it is a placement, not part of the reaction (its `require` is
     // inlined from T34 on), so it is left out here.
-    let text = buck::module_with_digital("dpwm.msl", "Dpwm");
+    let text = BuckSource::module_with_digital("dpwm.msl", "Dpwm");
     let lines: Vec<&str> = text.lines().collect();
     let at = lines.iter().position(|l| l.contains("let no_shoot_through")).expect("the `Never` placement of `Dpwm`");
     // The placement and the doc comment above it.
     let dpwm: String = lines.iter().enumerate().filter(|(k, _)| *k != at && !(*k + 1 == at && lines[*k].trim_start().starts_with("///"))).map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
-    let src = format!("{}\n{}\n{}\n{dpwm}", buck::spec(), buck::item("dpwm.msl", "fn rev3"), buck::item("dpwm.msl", "fn dithered_width"));
-    let ir = Elab::ir(&src, "Dpwm");
+    let src = format!("{}\n{}\n{}\n{dpwm}", BuckSource::spec(), BuckSource::item("dpwm.msl", "fn rev3"), BuckSource::item("dpwm.msl", "fn dithered_width"));
+    let ir = SourceElaboration::ir(&src, "Dpwm");
     // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24, T31): the fixture is read without
     // its flag, and its `&` and `|` over values that may be unknown are `&&` and `||` over plain ones
-    let expected = reaction_text(&golden("dpwm"), 0)
+    let expected = DigitalFixture::reaction_text(&DigitalFixture::golden("dpwm"), 0)
         .replace("\"dithered_width~01\"(duty, (frame + 1u3))", "dithered_width(duty, (frame + 1u3))")
         .replace("((!wrap) & (hs_cut | (hs & oc)))", "((!wrap) && (hs_cut || (hs && oc)))")
         .replace("((!wrap) & (ls_cut | (ls & sink_oc)))", "((!wrap) && (ls_cut || (ls && sink_oc)))")
         .replace("((enabled & (!hs_trip)) & (next < w))", "((enabled && (!hs_trip)) && (next < w))")
         .replace("(hs & (!hs_next))", "(hs && (!hs_next))")
         .replace("((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))", "((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))");
-    assert_eq!(reaction_text(&body_text(&ir, "Dpwm"), 0), expected);
+    assert_eq!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Dpwm"), 0), expected);
 }
 
 #[test]
 fn a_module_with_only_a_digital_block_has_no_analog_statements() {
     // Edge case 1, C163: `Osc` (dpwm.msl) has a `digital` block and no `analog` block.
-    let ir = Elab::ir(&buck::module_with_digital("dpwm.msl", "Osc"), "Osc");
+    let ir = SourceElaboration::ir(&BuckSource::module_with_digital("dpwm.msl", "Osc"), "Osc");
     let read = Read { ir: &ir };
     let osc = read.body("Osc");
     assert!(osc.analog().is_none(), "no analog statements");
     assert!(osc.branches().is_empty() && osc.nodes().is_empty());
     assert_eq!(osc.reactions().len(), 1);
-    assert!(!body_text(&ir, "Osc").contains("analog"));
+    assert!(!DigitalFixture::body_text(&ir, "Osc").contains("analog"));
 }
 
 #[test]
@@ -573,10 +594,10 @@ fn a_child_param_reads_the_parents_value() {
     // constant of each instance in the flat table.
     let src = format!(
         "{}\n{}\nmodule Top() {{ signal a: Electrical; signal b: Electrical; signal c: Electrical; let d1 = Divider(a, b) {{ r_top: 30k, r_bot: 10k }}; let d2 = Divider(a, c) {{ r_top: 90k, r_bot: 20k }}; }}",
-        buck::item("power.msl", "pub module Resistor("),
-        buck::item("sense.msl", "pub module Divider(")
+        BuckSource::item("power.msl", "pub module Resistor("),
+        BuckSource::item("sense.msl", "pub module Divider(")
     );
-    let ir = Elab::ir(&src, "Top");
+    let ir = SourceElaboration::ir(&src, "Top");
     let r = |path: &str| ir.instance_at(path).unwrap_or_else(|| panic!("no `{path}`")).param(0).copied();
     use piperine_ir::{ChildValue, Expr, Real};
     assert_eq!(r("Top.d1.upper"), Some(Constant::Real(Real::new(30e3))));
@@ -593,17 +614,17 @@ fn a_child_param_reads_the_parents_value() {
     // A false `where` of the child is `E0317` at the placement in the parent, naming the instance.
     let src = format!(
         "{}\nmodule Shifted(top: Electrical, mid: Electrical) {{ r_top: f64 where r_top > 0.0; let upper = Resistor(top, mid) {{ r: r_top - 1.0 }}; }}\nmodule Top() {{ signal a: Electrical; signal b: Electrical; let ok = Shifted(a, b) {{ r_top: 2.0 }}; let bad = Shifted(a, b) {{ r_top: 0.5 }}; }}",
-        buck::item("power.msl", "pub module Resistor(")
+        BuckSource::item("power.msl", "pub module Resistor(")
     );
-    let err = Elab::run(&src, "Top").expect_err("`r = -0.5` breaks the `where` of `Resistor`");
-    assert_eq!(Elab::codes(&err), ["E0317"]);
+    let err = SourceElaboration::run(&src, "Top").expect_err("`r = -0.5` breaks the `where` of `Resistor`");
+    assert_eq!(SourceElaboration::codes(&err), ["E0317"]);
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "r_top - 1.0");
     assert!(err[0].diagnostic.message.contains("Top.bad.upper"), "{}", err[0].diagnostic.message);
     // The field-init shorthand of `Buck`'s `PowerStage { l, dcr, .. }` is `{ l: l, dcr: dcr }`.
     let src = "module Ind(p: Electrical, n: Electrical) { l: f64 where l > 0.0; dcr: f64 = 0.0; }\n\
                module Top() { l: f64 = 4.7u; dcr: f64 = 15m; signal a: Electrical; let ind = Ind(a, gnd) { l, dcr }; }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let ind = ir.instance_at("Top.ind").expect("Top.ind");
     assert_eq!(ind.params(), [Constant::Real(Real::new(4.7e-6)), Constant::Real(Real::new(15e-3))]);
     let read = Read { ir: &ir };
@@ -613,15 +634,6 @@ fn a_child_param_reads_the_parents_value() {
         ChildValue::Const(c) => panic!("a constant {c}"),
     }).collect();
     assert_eq!(given, [(0, &Expr::Param(0)), (1, &Expr::Param(1))]);
-}
-
-/// `examples/buck` as a one-crate graph over the embedded standard library, as
-/// `tests/types_buck.rs` loads it.
-fn buck_design() -> piperine_lang::pom::Design {
-    let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-    let mut graph = piperine_lang::pom::CrateGraph::new();
-    graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
-    piperine_lang::pom::Design::load_crates(graph)
 }
 
 /// The modules of `examples/buck/src` that may be a top (their ports are discrete), each one top
@@ -636,26 +648,18 @@ const STD_TOPS: &[(&str, &str)] = &[
     ("Never", "module Top() { signal c: Bit = false; signal b: Bit = false; let x = Never(c, b); }"),
 ];
 
-/// Every design and top of the invariants: the buck's tops over one loaded package, then the
-/// stdlib's.
-fn invariant_cases() -> Vec<(String, piperine_lang::pom::Design, String)> {
-    let mut cases: Vec<(String, piperine_lang::pom::Design, String)> = BUCK_TOPS.iter().map(|t| (format!("buck {t}"), buck_design(), t.to_string())).collect();
-    cases.extend(STD_TOPS.iter().map(|(name, src)| (format!("std {name}"), Elab::design(src), "Top".to_string())));
-    cases
-}
-
 #[test]
 fn elaborating_twice_gives_the_same_print() {
     // DIG-09 AC 12, C87: two elaborations of one design, and of the design loaded twice, print
     // equal, origins included.
-    for (case, design, top) in invariant_cases() {
-        let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+    for (case, design, top) in DigitalFixture::invariant_cases() {
+        let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
         let (first, second) = (run(&design), run(&design));
         assert_eq!(first.print_structural(), second.print_structural(), "{case}");
         assert_eq!(first.to_string(), second.to_string(), "{case}");
     }
-    let (a, b) = (buck_design(), buck_design());
-    let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run("Buck").unwrap_or_else(|e| panic!("{:?}", Elab::codes(&e)));
+    let (a, b) = (DigitalFixture::buck_design(), DigitalFixture::buck_design());
+    let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run("Buck").unwrap_or_else(|e| panic!("{:?}", SourceElaboration::codes(&e)));
     assert_eq!(run(&a).to_string(), run(&b).to_string(), "the buck loaded twice");
 }
 
@@ -663,10 +667,10 @@ fn elaborating_twice_gives_the_same_print() {
 fn the_design_is_not_written() {
     // DIG-09 AC 13, C88: `Design::dump()` is equal before and after elaboration, the POM's
     // placements of hoisted modules (`let gate = transition(..)`) included.
-    for (case, design, top) in invariant_cases() {
+    for (case, design, top) in DigitalFixture::invariant_cases() {
         let before = design.dump();
         let diagnostics = design.diagnostics().to_vec();
-        piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+        piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
         assert_eq!(design.dump(), before, "{case}");
         assert_eq!(design.diagnostics(), diagnostics.as_slice(), "{case}");
     }
@@ -675,8 +679,8 @@ fn the_design_is_not_written() {
 #[test]
 fn every_ir_passes_check() {
     // DIG-09 AC 14, C89: every `Ir` returned has an empty `check()`.
-    for (case, design, top) in invariant_cases() {
-        let ir = piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", Elab::codes(&e)));
+    for (case, design, top) in DigitalFixture::invariant_cases() {
+        let ir = piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
         assert!(ir.check().is_empty(), "{case}: {:?}", ir.check());
     }
 }
@@ -695,7 +699,7 @@ fn the_m1_goldens_are_unchanged() {
         piperine_lang::pom::Design::builder().root_file(path).build()
     };
     for (file, top) in twins {
-        let ir = piperine_lang::elab::Elaborator::new(&twin(file)).run(top).unwrap_or_else(|e| panic!("{file}: {:?}", Elab::codes(&e)));
+        let ir = piperine_lang::elab::Elaborator::new(&twin(file)).run(top).unwrap_or_else(|e| panic!("{file}: {:?}", SourceElaboration::codes(&e)));
         let golden = std::fs::read_to_string(format!("{}/tests/fixtures/elab/{file}.txt", env!("CARGO_MANIFEST_DIR"))).expect("the fixture");
         assert_eq!(ir.print_structural(), golden, "{file}");
         assert!(ir.check().is_empty(), "{file}");
@@ -715,7 +719,7 @@ fn cross_tolerances_lower_to_the_event() {
                  on cross(v(a) - 0.5, tt, None) { q <- true; }\n\
                }\n\
                module Top() { signal n: Electrical; signal q: Bit; let m = M(n, q); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let m = Read { ir: &ir }.body("M");
     use piperine_ir::{EventSource, Expr, Real};
     let tolerances: Vec<(Option<&Expr>, Option<&Expr>)> = m
@@ -743,8 +747,8 @@ fn a_cross_tolerance_that_is_not_constant_is_p0001() {
              digital for M {{ on cross(v(a) - 0.5, {tolerance}) {{ q <- true; }} }}\n\
              module Top() {{ signal n: Electrical; signal c: Bit<f64> = 0.0; signal q: Bit; let m = M(n, c, q); }}"
         );
-        let err = Elab::run(&src, "Top").expect_err(tolerance);
-        assert_eq!(Elab::codes(&err), ["P0001"], "{tolerance}");
+        let err = SourceElaboration::run(&src, "Top").expect_err(tolerance);
+        assert_eq!(SourceElaboration::codes(&err), ["P0001"], "{tolerance}");
         assert!(err[0].diagnostic.message.contains("a `cross` tolerance that is not a constant or a param"), "{tolerance}: {}", err[0].diagnostic.message);
     }
 }
@@ -756,28 +760,28 @@ fn an_event_function_call_lowers_to_its_body_event() {
     // module result and a nested function it is the same event, and an `||` of two calls is two events of one reaction
     let function = "fn handshake(req: Bit, ack: Bit) -> Event { req.rise() && ack }\n";
     let module = "module M(in req: Bit, in ack: Bit, out q: Bit = false) { }\n";
-    let by_function = Elab::ir(&format!("{function}{module}digital for M {{ on handshake(req, ack) {{ q <- true; }} }}"), "M");
-    let by_hand = Elab::ir(&format!("{module}digital for M {{ on req.rise() && ack {{ q <- true; }} }}"), "M");
+    let by_function = SourceElaboration::ir(&format!("{function}{module}digital for M {{ on handshake(req, ack) {{ q <- true; }} }}"), "M");
+    let by_hand = SourceElaboration::ir(&format!("{module}digital for M {{ on req.rise() && ack {{ q <- true; }} }}"), "M");
     assert_eq!(Read { ir: &by_function }.body("M").events().len(), 1, "one event: the body's");
     assert_eq!(by_function.print_structural(), by_hand.print_structural(), "the call is the event its body writes");
     // the function's parameters are the call's arguments, not the names of the function: swapped arguments swap the event
-    let swapped = Elab::ir(&format!("{function}{module}digital for M {{ on handshake(ack, req) {{ q <- true; }} }}"), "M");
-    let swapped_by_hand = Elab::ir(&format!("{module}digital for M {{ on ack.rise() && req {{ q <- true; }} }}"), "M");
+    let swapped = SourceElaboration::ir(&format!("{function}{module}digital for M {{ on handshake(ack, req) {{ q <- true; }} }}"), "M");
+    let swapped_by_hand = SourceElaboration::ir(&format!("{module}digital for M {{ on ack.rise() && req {{ q <- true; }} }}"), "M");
     assert_eq!(swapped.print_structural(), swapped_by_hand.print_structural(), "ack rises with req high");
     // a function that calls another: the outer guard applies to the inner event
     let nested = format!("{function}fn gated(req: Bit, ack: Bit, en: Bit) -> Event {{ handshake(req, ack) && en }}\nmodule N(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\n");
-    let by_nesting = Elab::ir(&format!("{nested}digital for N {{ on gated(req, ack, en) {{ q <- true; }} }}"), "N");
-    let nested_by_hand = Elab::ir(&format!("module N(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for N {{ on req.rise() && ack && en {{ q <- true; }} }}"), "N");
+    let by_nesting = SourceElaboration::ir(&format!("{nested}digital for N {{ on gated(req, ack, en) {{ q <- true; }} }}"), "N");
+    let nested_by_hand = SourceElaboration::ir(&format!("module N(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for N {{ on req.rise() && ack && en {{ q <- true; }} }}"), "N");
     assert_eq!(by_nesting.print_structural(), nested_by_hand.print_structural(), "the nested call is its body's event under the outer guard");
     // a module-body `let`: the same event where it is named
-    let named = Elab::ir(&format!("{function}module L(in req: Bit, in ack: Bit, out q: Bit = false) {{ let ready = handshake(req, ack); }}\ndigital for L {{ on ready {{ q <- true; }} }}"), "L");
-    let named_by_hand = Elab::ir("module L(in req: Bit, in ack: Bit, out q: Bit = false) { }\ndigital for L { on req.rise() && ack { q <- true; } }", "L");
+    let named = SourceElaboration::ir(&format!("{function}module L(in req: Bit, in ack: Bit, out q: Bit = false) {{ let ready = handshake(req, ack); }}\ndigital for L {{ on ready {{ q <- true; }} }}"), "L");
+    let named_by_hand = SourceElaboration::ir("module L(in req: Bit, in ack: Bit, out q: Bit = false) { }\ndigital for L { on req.rise() && ack { q <- true; } }", "L");
     assert_eq!(named.print_structural(), named_by_hand.print_structural(), "a body let of the call is the call's event");
     // read in a guard and in a body: the event its body writes, read as a `bool` there (§13 rules 2 and 9)
-    let guarded = Elab::ir(&format!("{function}module G(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for G {{ on en.rise() && handshake(req, ack) {{ q <- true; }} }}"), "G");
+    let guarded = SourceElaboration::ir(&format!("{function}module G(in req: Bit, in ack: Bit, in en: Bit, out q: Bit = false) {{ }}\ndigital for G {{ on en.rise() && handshake(req, ack) {{ q <- true; }} }}"), "G");
     // `en.rise()` heads it and the call's event (`req` rising, guarded by `ack`) is appended for the guard to read as `fired`
     assert_eq!(Read { ir: &guarded }.body("G").events().len(), 2, "a guard that reads the call appends its event");
-    let read = Elab::ir(&format!("{function}module R(in req: Bit, in ack: Bit, out q: Bit = false) {{ }}\ndigital for R {{ on req.rise() || ack.rise() {{ q <- handshake(req, ack); }} }}"), "R");
+    let read = SourceElaboration::ir(&format!("{function}module R(in req: Bit, in ack: Bit, out q: Bit = false) {{ }}\ndigital for R {{ on req.rise() || ack.rise() {{ q <- handshake(req, ack); }} }}"), "R");
     // the head's two events and the one the body's read appends (the call's event, guarded by `ack`): `fired` of the third
     assert_eq!(Read { ir: &read }.body("R").events().len(), 3, "a body that reads the call appends its event");
 }
@@ -796,12 +800,12 @@ impl Head {
 
     /// The elaborated IR of `module M` reacting on `head`, with `functions` written before it.
     fn reaction(functions: &str, head: &str) -> String {
-        Elab::ir(&Head::source(functions, head), "M").print_structural()
+        SourceElaboration::ir(&Head::source(functions, head), "M").print_structural()
     }
 
     /// The diagnostics the elaboration of `module M` reacting on `head` is refused with.
     fn refusal(functions: &str, head: &str) -> Vec<piperine_lang::pom::DesignDiagnostic> {
-        Elab::run(&Head::source(functions, head), "M").expect_err("the event function is refused")
+        SourceElaboration::run(&Head::source(functions, head), "M").expect_err("the event function is refused")
     }
 }
 
@@ -839,8 +843,8 @@ fn an_event_function_may_recurse_while_its_decisions_fold() {
     let function = "fn any(c: Bit, n: i32) -> Event { if n <= 0 { c.rise() } else { c.rise() || any(c, n - 1) } }\n";
     assert_eq!(Head::reaction(function, "any(clk, 2)"), Head::reaction("", "clk.rise() || clk.rise() || clk.rise()"));
     let endless = format!("fn any(c: Bit) -> Event {{ c.rise() || any(c) }}\nmodule M(in clk: Bit, out q: Bit = false) {{ }}\ndigital for M {{ on any(clk) {{ q <- true; }} }}");
-    let refused = Elab::run(&endless, "M").expect_err("a recursion that never ends");
-    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    let refused = SourceElaboration::run(&endless, "M").expect_err("a recursion that never ends");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`any`"), "{}", refused[0].diagnostic.message);
 }
 
@@ -864,7 +868,7 @@ fn a_generic_event_function_runs_for_the_nature_it_is_called_at() {
     let design = |head: &str| {
         let module = "module M(a: Electrical, t: Thermal, out q: Bit = false) { }\n";
         let top = "module Top() { signal n: Electrical; signal h: Thermal; signal q: Bit; let m = M(n, h, q); }";
-        Elab::ir(&format!("{function}{module}digital for M {{ on {head} {{ q <- true; }} }}\n{top}"), "Top").print_structural()
+        SourceElaboration::ir(&format!("{function}{module}digital for M {{ on {head} {{ q <- true; }} }}\n{top}"), "Top").print_structural()
     };
     assert_eq!(design("crossed(a)"), design("cross(v(a))"), "an electrical node");
     assert_eq!(design("crossed(t)"), design("cross(temp(t))"), "a thermal node");
@@ -892,10 +896,10 @@ fn an_event_function_chooses_between_events_by_a_value_decided_at_the_instant() 
     let chain = "fn tier(c: Bit, a: Bit, b: Bit) -> Event { if a { c.rise() } else if b { c.fall() } else { c.changed() } }\n";
     assert_eq!(Head::reaction(chain, "tier(clk, en, en)"), Head::reaction("", "(clk.rise() && en) || ((clk.fall() && en) && !en) || (clk.changed() && !en && !en)"), "an `else if` nests the choice");
     let counted = "fn counted(c: Bit, s: Bit) -> Event { let n = 0; for i in 0..3 { n += 1; } if s && n == 3 { c.rise() } else { c.fall() } }\n";
-    let found = Elab::ir(&Head::source(counted, "counted(clk, en)"), "M");
+    let found = SourceElaboration::ir(&Head::source(counted, "counted(clk, en)"), "M");
     assert_eq!(Read { ir: &found }.body("M").events().len(), 2, "a `let` built by a `for` and read by the choice: both branches are events");
     let matched = "fn chosen(c: Bit, s: Bit) -> Event { match s { true => c.rise(), false => c.fall() } }\n";
-    let found = Elab::ir(&Head::source(matched, "chosen(clk, en)"), "M");
+    let found = SourceElaboration::ir(&Head::source(matched, "chosen(clk, en)"), "M");
     assert_eq!(Read { ir: &found }.body("M").events().len(), 2, "one event per arm of a `match` over a carrier");
 }
 
@@ -904,11 +908,11 @@ fn an_event_function_with_an_arm_it_cannot_guard_is_refused_by_name() {
     // an arm with a guard of its own, or a name bound by its pattern, has no disjunct of this form (GAPS §4 L76)
     let guarded = "fn g(c: Bit, s: Bit) -> Event { match s { true if c => c.rise(), _ => c.fall() } }\n";
     let refused = Head::refusal(guarded, "g(clk, en)");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert_eq!(SourceElaboration::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("a `match` arm with a guard in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
     let binding = "fn b(c: Bit, s: Bit) -> Event { match s { x => c.rise() } }\n";
     let refused = Head::refusal(binding, "b(clk, en)");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert_eq!(SourceElaboration::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("a `match` arm whose pattern binds a name, in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
 }
 
@@ -919,14 +923,14 @@ fn an_event_function_that_emits_or_loops_without_end_is_refused_by_name() {
     // of where a `fn` is callable); a `while` has no finite reading at elaboration
     let emitting = "fn noisy(c: Bit) -> Event { emit!(\"x\", a = 1); c.rise() }\n";
     let refused = Head::refusal(emitting, "noisy(clk)");
-    assert_eq!(Elab::codes(&refused), ["E0122"], "{refused:?}");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0122"], "{refused:?}");
     let looping = "fn spin(c: Bit) -> Event { while false { } c.rise() }\n";
     let refused = Head::refusal(looping, "spin(clk)");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert_eq!(SourceElaboration::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("a `while`, `loop`, `break`, `continue` or `return` with no value in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
     let option = "fn some(c: Bit, o: Option<bool>) -> Event { if let Some(x) = o { c.rise() } else { c.fall() } }\n";
     let refused = Head::refusal(option, "some(clk)");
-    assert_eq!(Elab::codes(&refused), ["P0001"]);
+    assert_eq!(SourceElaboration::codes(&refused), ["P0001"]);
     assert!(refused[0].diagnostic.message.contains("an `if let` in a function that returns an `Event`"), "{}", refused[0].diagnostic.message);
     let pattern = "fn pair(c: Bit) -> Event { let (a, b) = (1, 2); c.rise() }\n";
     let refused = Head::refusal(pattern, "pair(clk)");

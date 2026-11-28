@@ -2,10 +2,9 @@
 //! the two environment reads of the `Option` pair (whether the run set it, and the run's kelvin) and nothing scales or
 //! offsets a model; the stdlib `multiplicity()` lowers to the session parameter `multiplicity`.
 
-use crate::support;
 
-use support::Elab;
 
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
 /// The resistor of this target, `r` its own param, and a top placing it with `block` as the param block.
@@ -23,14 +22,14 @@ fn the_temperature_call_lowers_to_the_run_read_and_nothing_is_scaled() {
     // GN-24 AC 1, GN-25 AC 1 (§8.5.2, §8.5.3): `temperature().unwrap_or(x)` reads the run's two environment cells and
     // nothing else; the contribution `i(p, n) +> v(p, n) / r` carries no factor of any multiplicity or offset, whether
     // or not the module has a param named `m`
-    let ir = Elab::ir(&Resistors::source("let t = temperature().unwrap_or(1.0); i(p, n) +> v(p, n) / r;", "r: 1k, m: Some(4.0)"), "Top");
+    let ir = SourceElaboration::ir(&Resistors::source("let t = temperature().unwrap_or(1.0); i(p, n) +> v(p, n) / r;", "r: 1k, m: Some(4.0)"), "Top");
     let text = ir.print_structural();
     assert!(text.contains("temperature_given()") && text.contains("temperature()"), "the pair of environment reads: {text}");
     // the ambient fallback (§8.5.3) is no special case: `unwrap_or` is the ordinary `Option` method, so the given flag
     // is read and selects between the temperature and the constant
-    let ambient = Elab::ir(&Resistors::source("let t = temperature().unwrap_or(AMBIENT_TEMPERATURE); i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
+    let ambient = SourceElaboration::ir(&Resistors::source("let t = temperature().unwrap_or(AMBIENT_TEMPERATURE); i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
     assert!(ambient.contains("temperature_given()") && ambient.contains("300.15"), "{ambient}");
-    let plain = Elab::ir(&Resistors::source("i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
+    let plain = SourceElaboration::ir(&Resistors::source("i(p, n) +> v(p, n) / r;", "r: 1k"), "Top").print_structural();
     let scaled = |text: &str| text.lines().filter(|l| l.contains("probe(p, n)")).map(str::to_string).collect::<Vec<_>>();
     assert_eq!(scaled(&text), scaled(&plain), "a bound `m` scales nothing: {text}");
 }
@@ -41,7 +40,7 @@ fn multiplicity_lowers_to_the_session_parameter() {
     // does (`Expr::SessionParameter`), one per body; `m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY)` reads
     // the module's own `m` first and the run's second
     let body = "let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY); i(p, n) +> count * v(p, n) / r;";
-    let ir = Elab::ir(&Resistors::source(body, "r: 1k, m: Some(4.0)"), "Top");
+    let ir = SourceElaboration::ir(&Resistors::source(body, "r: 1k, m: Some(4.0)"), "Top");
     let parameters: Vec<String> = ir.bodies().find(|b| b.name() == "Resistor").expect("the resistor body").session_parameters().iter().map(|p| p.name.to_string()).collect();
     assert_eq!(parameters, ["multiplicity"], "one session parameter, the run's");
 }
@@ -53,7 +52,7 @@ fn a_function_that_reaches_the_session_parameter_at_any_depth_reads_it_in_the_bo
     let helpers = "fn count() -> f64 { multiplicity().unwrap_or(DEFAULT_MULTIPLICITY) }\nfn twice() -> f64 { count() * 2.0 }\n";
     for call in ["count()", "twice()"] {
         let body = format!("i(p, n) +> {call} * v(p, n) / r;");
-        let ir = Elab::ir(&format!("{}\n{helpers}", Resistors::source(&body, "r: 1k")), "Top");
+        let ir = SourceElaboration::ir(&format!("{}\n{helpers}", Resistors::source(&body, "r: 1k")), "Top");
         let parameters: Vec<String> = ir.bodies().find(|b| b.name() == "Resistor").expect("the resistor body").session_parameters().iter().map(|p| p.name.to_string()).collect();
         assert_eq!(parameters, ["multiplicity"], "{call}");
     }

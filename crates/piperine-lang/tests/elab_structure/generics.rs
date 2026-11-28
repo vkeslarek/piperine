@@ -5,13 +5,11 @@
 //! POM keeps the generic item as written.
 
 use std::path::{Path, PathBuf};
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::elaboration_forms::IrReading;
 
-use crate::support;
 
-use crate::elab_forms;
 
-use elab_forms::IrReading;
-use support::Elab;
 
 /// The source files of `piperine_lang::elab`.
 struct ElabSources;
@@ -67,7 +65,7 @@ impl GenericCall {
     /// The `(code, message)` of each diagnostic of elaborating `Top`, whose `analog` runs `statement`, after `items`.
     fn found(items: &str, statement: &str) -> Vec<(String, String)> {
         let src = format!("{items}\nmodule Top() {{ signal o: Electrical; }}\nanalog for Top {{ {statement} }}\n");
-        match Elab::run(&src, "Top") {
+        match SourceElaboration::run(&src, "Top") {
             Ok(_) => Vec::new(),
             Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
         }
@@ -102,7 +100,7 @@ struct IrFunctions;
 impl IrFunctions {
     /// The elaborated `Top` of `src`, which must pass `Ir::check`.
     fn of(items: &str, statements: &str) -> piperine_ir::Ir {
-        Elab::ir(&format!("{items}\nmodule Top() {{ signal o: Electrical; }}\nanalog for Top {{ {statements} }}\n"), "Top")
+        SourceElaboration::ir(&format!("{items}\nmodule Top() {{ signal o: Electrical; }}\nanalog for Top {{ {statements} }}\n"), "Top")
     }
 
     /// The names of the functions, in id order.
@@ -169,8 +167,8 @@ fn the_pom_keeps_the_generic_function_as_written() {
     // instantiating it at `f64` and at `u8`, and no declaration is named for an instance (`pick::<f64>`); the instances
     // are IR functions
     let src = "fn pick<T>(a: T, b: T) -> T { a }\nmodule Top() { signal o: Electrical; }\nanalog for Top { let x = pick(1.0, 2.0); let y = pick(3u8, 4u8); v(o) +> x; }\n";
-    let design = Elab::design(src);
-    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    let design = SourceElaboration::design(src);
+    assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
     let before = Declarations::written_generic(&design, "pick");
     let ir = piperine_lang::elab::Elaborator::new(&design).run("Top").unwrap_or_else(|found| panic!("{found:?}"));
     assert_eq!(before, [true], "one `pick`, written with its list");
@@ -196,7 +194,7 @@ struct ExternCalls;
 impl ExternCalls {
     /// The `(code, message)` of each diagnostic of elaborating `src`'s `Top`; empty when it elaborates.
     fn found(src: &str) -> Vec<(String, String)> {
-        match Elab::run(src, "Top") {
+        match SourceElaboration::run(src, "Top") {
             Ok(_) => Vec::new(),
             Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
         }
@@ -278,7 +276,7 @@ fn encode_and_decode_of_every_layout_lower_through_the_level_cast() {
     // of the levels to `T`; the IR checks, and no `P0001` names either call
     for (name, value, levels) in LayoutCases::ALL {
         for function in ["first", "back"] {
-            let ir = Elab::ir(&LayoutCases::source(function, value), "Top");
+            let ir = SourceElaboration::ir(&LayoutCases::source(function, value), "Top");
             let text = ir.to_string();
             assert!(text.contains("level_cast"), "{name} through `{function}` holds a level cast:\n{text}");
             assert!(text.contains(&format!("[bool; {levels}]")), "{name} through `{function}` names `[bool; {levels}]`:\n{text}");
@@ -312,7 +310,7 @@ impl HandWrittenPair {
 fn each_instance_of_a_generic_hand_written_repr_has_its_own_codec() {
     // GN-32 AC 1 (§2 rule 2, §3.8.10): `Pair<u8>` and `Pair<bool>` are two arena entries, each `ReprForm::HandWritten` with the
     // folded `WIDTH` (`2 * T::WIDTH`: 16 and 2) and its own `encode` and `decode` named for the instance
-    let ir = Elab::ir(HandWrittenPair::SOURCE, "Top");
+    let ir = SourceElaboration::ir(HandWrittenPair::SOURCE, "Top");
     let mut found: Vec<(String, u32)> = Vec::new();
     for ty in ir.types() {
         if let piperine_ir::ReprForm::HandWritten { width, encode, decode } = &ty.repr {
@@ -339,7 +337,7 @@ fn a_const_fn_and_a_generic_repeat_fold_in_a_const_context() {
             z: f64 = zeros::<3>()[3] + 7.0;\n\
             t: f64 = tail_sum([4.0, 5.0]);\n\
         }\n";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let real = |name: &str| match IrReading::default_of(&ir, name) {
         piperine_ir::Constant::Real(value) => value.get(),
         other => panic!("{name} is {other:?}"),
@@ -359,6 +357,6 @@ fn a_struct_that_holds_a_generic_instance_has_the_instances_entry() {
         #[derive(Repr)]\n\
         struct H { g: G<1> }\n\
         module Top() { signal h: Bit<H> = H { g: G { x: 1 } }; }\n";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(ir.check().is_empty(), "the IR with a nested generic instance checks");
 }

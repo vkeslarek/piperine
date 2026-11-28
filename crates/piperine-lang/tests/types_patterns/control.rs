@@ -2,14 +2,12 @@
 //! `composite-values`, CV-01 to CV-07; docs/spec Part I §1.5 to §1.8, §3). Each test states the
 //! rule it proves; every source is a design of `Top` over an empty standard library.
 
-use crate::support;
-#[allow(dead_code)]
-use crate::checked;
 
-use checked::CheckedSource;
 
 use piperine_lang::pom::Design;
 use piperine_lang::types::{Ty, Types};
+use piperine_lang_fixtures::checked::CheckedSource;
+use piperine_lang_fixtures::pom::PomSource;
 
 // ---- T11: places, `let mut` and assignment -------------------------------------------------
 
@@ -47,7 +45,7 @@ fn assigning_a_non_place_is_e0183_naming_the_target() {
     // a carrier, written in a reaction body (`Bit` is in the standard library)
     let carrier = "module Top(in clk: Bit, out q: Bit<bool> = false) { }\ndigital for Top { on clk.rise() { q = true; } }";
     let design = Design::builder().source("top.msl", carrier).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let found = Types::check(&design, "Top").err().unwrap_or_default();
     assert!(found.iter().any(|d| d.diagnostic.code == "E0183" && d.diagnostic.message.contains("`q`") && d.diagnostic.message.contains("a carrier")), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }
@@ -286,8 +284,8 @@ fn a_closure_called_outside_its_class_is_e0122() {
 fn a_closure_with_an_excluded_form_in_a_fn_is_e0121() {
     // §3 rule 6: a closure inside a function follows the function's rule; the parser reports it as
     // `E0121`, never `E0404`.
-    let design = support::build("fn f() -> f64 { let g = || { q <- 1.0; }; 1.0 }");
-    let codes = support::codes(&design);
+    let design = PomSource::build("fn f() -> f64 { let g = || { q <- 1.0; }; 1.0 }");
+    let codes = PomSource::codes(&design);
     assert!(codes.contains(&"E0121".to_string()), "{codes:?}");
     assert!(!codes.contains(&"E0404".to_string()), "{codes:?}");
 }
@@ -336,7 +334,7 @@ fn a_function_value_is_not_carried_e0112() {
     assert!(found.iter().any(|d| d.diagnostic.code == "E0112"), "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     let committed = "fn id(x: f64) -> f64 { x }\nmodule Top(in clk: Bit, out q: Bit<f64> = 0.0) { }\ndigital for Top { on clk.rise() { q <- id; let f = |x: f64| x; q <- f; } }";
     let design = Design::builder().source("top.msl", committed).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let found = Types::check(&design, "Top").err().unwrap_or_default();
     assert_eq!(found.iter().filter(|d| d.diagnostic.code == "E0112").count(), 2, "{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
 }

@@ -2,11 +2,10 @@
 //! `self` of an `impl` on a nature, is read, probed, passed on and has carrier methods called on it; a probe of
 //! anything else in a function keeps `E0450`.
 
-#[allow(dead_code)]
-use crate::generic_sources;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, ExprId};
 use piperine_lang::types::{GenericValue, Types};
+use piperine_lang_fixtures::generic_sources::GenericSources;
 
 /// MSL sources over the standard library, checked from `Top`.
 struct HandleSources;
@@ -117,7 +116,7 @@ fn a_carrier_method_call_follows_the_lookup_order() {
     clean("module Top() { signal s: Bit<f64> = 1.0; signal d: Bit<f64> = 1.0; }\ndigital for Top { on s.changed() { d <- s.abs(); } }\n");
     // the carrier's own method is not shadowed: a project `prev` on a nature is `E0131`
     let own = "impl Bit { fn prev(self) -> bool { true } }\nmodule Top() { signal c: Bit = false; }\n";
-    assert!(generic_sources::GenericSources::standard_codes(own).iter().any(|code| code == "E0131"), "{:?}", generic_sources::GenericSources::standard_codes(own));
+    assert!(GenericSources::standard_codes(own).iter().any(|code| code == "E0131"), "{:?}", GenericSources::standard_codes(own));
 }
 
 #[test]

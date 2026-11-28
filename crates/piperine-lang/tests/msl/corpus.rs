@@ -7,31 +7,35 @@
 //! as a file or as the body of a block. A `rust,*` info string of any other
 //! class fails the suite, so a new class cannot slip in unchecked.
 
-use crate::spec_corpus;
 
 use piperine_lang::msl::parser::SourceParser;
-use spec_corpus::{Block, Class, corpus, extract, fragment_diagnostics};
+use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecBlock, SpecCorpus};
 
-fn count(blocks: &[Block], class: Class) -> usize {
-    blocks.iter().filter(|b| b.class == class).count()
+/// Associated test helpers of `corpus`, grouped on one fixture type.
+struct CorpusFixture;
+
+impl CorpusFixture {
+    fn count(blocks: &[SpecBlock], class: BlockClass) -> usize {
+        blocks.iter().filter(|b| b.class == class).count()
+    }
 }
 
 #[test]
 fn every_valid_spec_block_parses_clean() {
-    let blocks = corpus();
+    let blocks = SpecCorpus::corpus();
     println!(
         "corpus: {} rust, {} rust,compile_fail, {} rust,fragment",
-        count(&blocks, Class::Valid),
-        count(&blocks, Class::CompileFail),
-        count(&blocks, Class::Fragment)
+        CorpusFixture::count(&blocks, BlockClass::Valid),
+        CorpusFixture::count(&blocks, BlockClass::CompileFail),
+        CorpusFixture::count(&blocks, BlockClass::Fragment)
     );
-    assert!(count(&blocks, Class::Valid) > 0, "the corpus is not empty");
+    assert!(CorpusFixture::count(&blocks, BlockClass::Valid) > 0, "the corpus is not empty");
     let mut failures = Vec::new();
     for b in &blocks {
         let diags: Vec<String> = match b.class {
-            Class::Valid => SourceParser::parse(&b.text).diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect(),
-            Class::Fragment => fragment_diagnostics(&b.text),
-            Class::CompileFail => continue,
+            BlockClass::Valid => SourceParser::parse(&b.text).diagnostics.iter().map(|d| format!("{}: {}", d.code, d.message)).collect(),
+            BlockClass::Fragment => SpecCorpus::fragment_diagnostics(&b.text),
+            BlockClass::CompileFail => continue,
         };
         if !diags.is_empty() {
             failures.push(format!("{}:{} ({:?}): {}", b.file, b.line, b.class, diags.join("; ")));
@@ -42,8 +46,8 @@ fn every_valid_spec_block_parses_clean() {
 
 #[test]
 fn every_compile_fail_block_diagnoses() {
-    let blocks = corpus();
-    let fails: Vec<&Block> = blocks.iter().filter(|b| b.class == Class::CompileFail).collect();
+    let blocks = SpecCorpus::corpus();
+    let fails: Vec<&SpecBlock> = blocks.iter().filter(|b| b.class == BlockClass::CompileFail).collect();
     println!("compile_fail blocks in docs/spec: {}", fails.len());
     // Every `rust,compile_fail` fence illustrates an error: the file parse
     // alone must report it (no context that would accept it).
@@ -58,10 +62,10 @@ fn every_compile_fail_block_diagnoses() {
     // can be empty: a control fence runs the same classification and check, so
     // the test still fails if `rust,compile_fail` stopped being recognized or
     // a clean source were accepted as an error example.
-    let control = extract("control.md", "```rust,compile_fail\nfn f( { }\n```\n```rust\nfn f() {}\n```\n");
+    let control = SpecCorpus::extract("control.md", "```rust,compile_fail\nfn f( { }\n```\n```rust\nfn f() {}\n```\n");
     assert_eq!(control.len(), 2);
-    assert_eq!(control[0].class, Class::CompileFail);
+    assert_eq!(control[0].class, BlockClass::CompileFail);
     assert!(!SourceParser::parse(&control[0].text).diagnostics.is_empty(), "a broken source diagnoses");
-    assert_eq!(control[1].class, Class::Valid);
+    assert_eq!(control[1].class, BlockClass::Valid);
     assert!(SourceParser::parse(&control[1].text).diagnostics.is_empty());
 }

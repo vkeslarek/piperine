@@ -4,12 +4,10 @@
 //! control refuse a four-state value (`E0180`). The operator mechanics use `Quad`, a four-state struct written in the test; the
 //! refusals of control, `analog`, arithmetic and `derive` are asked of `Quad` and of the library's own `Logic<4>`.
 
-#[allow(dead_code)]
-use crate::checked;
 
-use checked::CheckedSource;
 use piperine_lang::pom::{BUILTINS, DeclKind, Reflect};
 use piperine_lang::types::{Ty, Types};
+use piperine_lang_fixtures::checked::CheckedSource;
 
 /// A four-state value of four levels as two planes, with the operators of H.10 written as the library writes
 /// them: `&` of two `Quad`, `&` of a `Quad` and a `u4`, `!`, `<<`, and `==` that gives a `Quad`.

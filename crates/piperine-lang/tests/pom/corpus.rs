@@ -2,27 +2,52 @@
 //! POM-06 AC 1 and POM-14 AC 1): every fence rebuilds to the syntax tree the
 //! parser returned, and every fence builds without breaking an invariant.
 
-use crate::spec_corpus;
 
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::Design;
 use serde_json::{Value, json};
-use spec_corpus::{Class, corpus};
+use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
 
-/// The first line where two trees differ, spans included, with a little context.
-fn first_difference(a: &impl std::fmt::Debug, b: &impl std::fmt::Debug) -> Option<String> {
-    let (a, b) = (format!("{a:#?}"), format!("{b:#?}"));
-    let (a, b): (Vec<_>, Vec<_>) = (a.lines().collect(), b.lines().collect());
-    let at = (0..a.len().max(b.len())).find(|&i| a.get(i) != b.get(i))?;
-    let around = |v: &[&str]| v[at.saturating_sub(6)..(at + 3).min(v.len())].join("\n");
-    Some(format!("line {at}:\n--- rebuilt\n{}\n--- parsed\n{}", around(&a), around(&b)))
-}
+/// Associated test helpers of `corpus`, grouped on one fixture type.
+struct CorpusFixture;
 
-/// Rebuild the first file of `design` and demand the parsed tree, spans included.
-fn assert_lossless(design: &Design, parsed: &piperine_lang::msl::ast::File, at: &str) {
-    let rebuilt = design.files()[0].to_ast();
-    if let Some(diff) = first_difference(&rebuilt, parsed) {
-        panic!("{at}: the rebuilt tree differs from the parsed one at {diff}");
+impl CorpusFixture {
+    /// The first line where two trees differ, spans included, with a little context.
+    fn first_difference(a: &impl std::fmt::Debug, b: &impl std::fmt::Debug) -> Option<String> {
+        let (a, b) = (format!("{a:#?}"), format!("{b:#?}"));
+        let (a, b): (Vec<_>, Vec<_>) = (a.lines().collect(), b.lines().collect());
+        let at = (0..a.len().max(b.len())).find(|&i| a.get(i) != b.get(i))?;
+        let around = |v: &[&str]| v[at.saturating_sub(6)..(at + 3).min(v.len())].join("\n");
+        Some(format!("line {at}:\n--- rebuilt\n{}\n--- parsed\n{}", around(&a), around(&b)))
+    }
+
+    /// Rebuild the first file of `design` and demand the parsed tree, spans included.
+    fn assert_lossless(design: &Design, parsed: &piperine_lang::msl::ast::File, at: &str) {
+        let rebuilt = design.files()[0].to_ast();
+        if let Some(diff) = CorpusFixture::first_difference(&rebuilt, parsed) {
+            panic!("{at}: the rebuilt tree differs from the parsed one at {diff}");
+        }
+    }
+
+    /// A well-formed design with a path, an expression, a statement item and a
+    /// resolution slot, as JSON, to corrupt one link at a time.
+    fn design_json() -> Value {
+        let src = "const X: u32 = { fn g() { } a };";
+        let design = Design::builder().source("top.msl", src).build();
+        assert!(design.check().is_empty(), "{:?}", design.check());
+        serde_json::to_value(&design).expect("a design serializes")
+    }
+
+    /// Corrupt the design with `edit` and return what `check()` reports.
+    fn corrupted(edit: impl FnOnce(&mut Value)) -> Vec<String> {
+        let mut json = CorpusFixture::design_json();
+        edit(&mut json);
+        let design: Design = serde_json::from_value(json).expect("a corrupted design still deserializes");
+        design.check()
+    }
+
+    fn reports(problems: &[String], word: &str) -> bool {
+        problems.iter().any(|p| p.contains(word))
     }
 }
 
@@ -30,19 +55,19 @@ fn assert_lossless(design: &Design, parsed: &piperine_lang::msl::ast::File, at: 
 fn every_spec_block_round_trips_to_its_ast() {
     let mut compared = 0;
     let mut skipped = 0;
-    for block in corpus() {
+    for block in SpecCorpus::corpus() {
         let parsed = SourceParser::parse(&block.text);
         match block.class {
-            Class::Valid => {}
+            BlockClass::Valid => {}
             // A fragment is in the corpus only when the parser takes it as a file.
-            Class::Fragment if parsed.diagnostics.is_empty() => {}
-            Class::Fragment | Class::CompileFail => {
+            BlockClass::Fragment if parsed.diagnostics.is_empty() => {}
+            BlockClass::Fragment | BlockClass::CompileFail => {
                 skipped += 1;
                 continue;
             }
         }
         let design = Design::builder().source("block.msl", block.text.as_str()).build();
-        assert_lossless(&design, &parsed.file, &format!("{}:{}", block.file, block.line));
+        CorpusFixture::assert_lossless(&design, &parsed.file, &format!("{}:{}", block.file, block.line));
         compared += 1;
     }
     println!("compared {compared} fences ({skipped} not file-parsable or compile_fail)");
@@ -61,7 +86,7 @@ fn a_loaded_file_rebuilds_to_its_own_tree() {
     for file in files {
         let parsed = SourceParser::parse(file.text()).file;
         let rebuilt = file.to_ast();
-        if let Some(diff) = first_difference(&rebuilt, &parsed) {
+        if let Some(diff) = CorpusFixture::first_difference(&rebuilt, &parsed) {
             panic!("{}: differs at {diff}", file.name());
         }
     }
@@ -108,14 +133,14 @@ struct ;
     let parsed = SourceParser::parse(src);
     assert!(!parsed.diagnostics.is_empty());
     let design = Design::builder().source("top.msl", src).build();
-    assert_lossless(&design, &parsed.file, "the hand-written source");
+    CorpusFixture::assert_lossless(&design, &parsed.file, "the hand-written source");
 }
 
 #[test]
 fn every_spec_block_builds_with_consistent_invariants() {
     let mut built = 0;
     let mut failures = Vec::new();
-    for block in corpus() {
+    for block in SpecCorpus::corpus() {
         let at = format!("{}:{}", block.file, block.line);
         let result = std::panic::catch_unwind(|| {
             let design = Design::builder().source("block.msl", block.text.as_str()).build();
@@ -132,63 +157,42 @@ fn every_spec_block_builds_with_consistent_invariants() {
     assert!(built > 0, "no fence was built: the corpus is empty");
 }
 
-/// A well-formed design with a path, an expression, a statement item and a
-/// resolution slot, as JSON, to corrupt one link at a time.
-fn design_json() -> Value {
-    let src = "const X: u32 = { fn g() { } a };";
-    let design = Design::builder().source("top.msl", src).build();
-    assert!(design.check().is_empty(), "{:?}", design.check());
-    serde_json::to_value(&design).expect("a design serializes")
-}
-
-/// Corrupt the design with `edit` and return what `check()` reports.
-fn corrupted(edit: impl FnOnce(&mut Value)) -> Vec<String> {
-    let mut json = design_json();
-    edit(&mut json);
-    let design: Design = serde_json::from_value(json).expect("a corrupted design still deserializes");
-    design.check()
-}
-
-fn reports(problems: &[String], word: &str) -> bool {
-    problems.iter().any(|p| p.contains(word))
-}
-
 #[test]
 fn check_reports_every_kind_of_broken_link() {
     // An id past the end of its arena.
-    let p = corrupted(|j| j["exprs"][0]["kind"] = json!({ "Path": 9999 }));
-    assert!(reports(&p, "path 9999"), "{p:?}");
-    let p = corrupted(|j| j["stmts"][0]["kind"] = json!({ "Item": 9999 }));
-    assert!(reports(&p, "decl 9999"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Path": 9999 }));
+    assert!(CorpusFixture::reports(&p, "path 9999"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["stmts"][0]["kind"] = json!({ "Item": 9999 }));
+    assert!(CorpusFixture::reports(&p, "decl 9999"), "{p:?}");
     // An owner that does not exist.
-    let p = corrupted(|j| j["exprs"][0]["owner"] = json!(9999));
-    assert!(reports(&p, "owner"), "{p:?}");
-    let p = corrupted(|j| j["types"][0]["owner"] = json!(9999));
-    assert!(reports(&p, "owner"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["owner"] = json!(9999));
+    assert!(CorpusFixture::reports(&p, "owner"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["types"][0]["owner"] = json!(9999));
+    assert!(CorpusFixture::reports(&p, "owner"), "{p:?}");
     // A resolved link that points at no declaration.
-    let p = corrupted(|j| j["paths"][0]["segments"][0]["res"] = json!({ "Decl": 9999 }));
-    assert!(reports(&p, "resolution"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["paths"][0]["segments"][0]["res"] = json!({ "Decl": 9999 }));
+    assert!(CorpusFixture::reports(&p, "resolution"), "{p:?}");
     // A declaration listed under two parents, or twice under one.
-    let p = corrupted(|j| {
+    let p = CorpusFixture::corrupted(|j| {
         let child = j["decls"][0]["children"][0].clone();
         j["decls"][0]["children"].as_array_mut().unwrap().push(child);
     });
-    assert!(reports(&p, "twice"), "{p:?}");
+    assert!(CorpusFixture::reports(&p, "twice"), "{p:?}");
     // Parent and child disagree.
-    let p = corrupted(|j| j["decls"][1]["parent"] = json!(2));
+    let p = CorpusFixture::corrupted(|j| j["decls"][1]["parent"] = json!(2));
     assert!(!p.is_empty());
     // Two declarations that are each other's parent: no root reaches them.
-    let p = corrupted(|j| {
+    let p = CorpusFixture::corrupted(|j| {
         j["decls"][0]["children"] = json!([]);
         j["decls"][1]["parent"] = json!(2);
         j["decls"][1]["children"] = json!([2]);
         j["decls"][2]["parent"] = json!(1);
         j["decls"][2]["children"] = json!([1]);
     });
-    assert!(reports(&p, "not reachable from any root"), "{p:?}");
+    assert!(CorpusFixture::reports(&p, "not reachable from any root"), "{p:?}");
     // A child expression past the end of the arena.
-    let p = corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
-    assert!(reports(&p, "expression 9999"), "{p:?}");
+    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
+    assert!(CorpusFixture::reports(&p, "expression 9999"), "{p:?}");
 }
 
 #[test]
@@ -244,5 +248,5 @@ digital for M {
     let parsed = SourceParser::parse(src);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let design = Design::builder().source("top.msl", src).build();
-    assert_lossless(&design, &parsed.file, "docs at every position");
+    CorpusFixture::assert_lossless(&design, &parsed.file, "docs at every position");
 }

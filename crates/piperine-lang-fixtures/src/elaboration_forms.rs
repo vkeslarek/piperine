@@ -1,15 +1,15 @@
-//! What the `elab_aggregates` and `elab_control` targets share besides `support/elab.rs`
-//! (`#[path]`-included, never a target itself): the source of a design of `Top` that calls, reacts
+//! What the `elab_aggregates` and `elab_control` targets share besides `elaboration.rs`
+//! : the source of a design of `Top` that calls, reacts
 //! or holds params, and what is read back from the IR it elaborates to.
 
 use piperine_ir::{Constant, Ir, TypeData};
 
-use crate::support::Elab;
+use crate::elaboration::SourceElaboration;
 
 /// The source text of a design of `Top` with some item exercised.
-pub struct ElabSource;
+pub struct ElaborationForms;
 
-impl ElabSource {
+impl ElaborationForms {
     /// A design of `Top` with `items` before it, calling each of `calls` from its `analog` block.
     pub fn reaching(items: &str, calls: &[&str]) -> String {
         let lets: Vec<String> = calls.iter().enumerate().map(|(k, call)| format!("let x{k} = {call};")).collect();
@@ -60,7 +60,7 @@ impl IrReading {
 
     /// The values of the params of `Top` of `src`, printed.
     pub fn param_values(src: &str) -> Vec<String> {
-        let ir = Elab::ir(src, "Top");
+        let ir = SourceElaboration::ir(src, "Top");
         ir.instance_at("Top").expect("the top instance").params().iter().map(|c| c.to_string()).collect()
     }
 }

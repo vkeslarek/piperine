@@ -7,7 +7,7 @@ use piperine_repository_guards::SourceTree;
 /// Each crate and the in-tree crates its `[dependencies]` table names. The leaves (`piperine-abi`,
 /// `piperine-ir`, `piperine-numbers`) name none; the sub-solvers name only `piperine-abi`; the owner
 /// names both sub-solvers; the guards crate names nothing and nothing names it.
-const DOCUMENTED_ARROWS: [(&str, &[&str]); 18] = [
+const DOCUMENTED_ARROWS: [(&str, &[&str]); 19] = [
     ("piperine", &["piperine-api"]),
     ("piperine-abi", &[]),
     ("piperine-analog-solver", &["piperine-abi"]),
@@ -18,6 +18,7 @@ const DOCUMENTED_ARROWS: [(&str, &[&str]); 18] = [
     ("piperine-interp", &["piperine-abi", "piperine-ir", "piperine-plan", "piperine-solver"]),
     ("piperine-ir", &[]),
     ("piperine-ir-fixtures", &["piperine-ir"]),
+    ("piperine-lang-fixtures", &["piperine-ir", "piperine-lang"]),
     ("piperine-lang", &["piperine-ir", "piperine-numbers"]),
     ("piperine-numbers", &[]),
     ("piperine-parity", &["piperine-abi", "piperine-api", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-plan", "piperine-solver", "piperine-transpile"]),

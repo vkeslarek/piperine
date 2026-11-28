@@ -2,12 +2,12 @@
 //! with `E0451` and `E0450`, and the rows of `delay`, `noise` and `simparam` (T23). Every source
 //! is `Top` with two `E` nodes and an `analog` block under test.
 
-use crate::support;
 
-use crate::elaborated;
 
 use piperine_lang::pom::{Design, DesignDiagnostic};
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::pom::PomSource;
 
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
@@ -22,8 +22,8 @@ impl Sources {
 
     /// The design of `src`, which must parse and resolve.
     fn design_of(src: &str) -> Design {
-        let design = support::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+        let design = PomSource::build(src);
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
         design
     }
 
@@ -149,12 +149,12 @@ fn a_site_reached_from_analog_writing_sim_or_checks_is_e0603() {
         (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ emit!(\"sim\", finish = true); }}"), "emit!(\"sim\", finish = true)"),
         (format!("module Top(p: Electrical) {{ }}\nanalog for Top {{ emit!(\"checks\", pass = true); }}"), "emit!(\"checks\", pass = true)"),
     ] {
-        let design = elaborated::Elab::design(&src);
+        let design = SourceElaboration::design(&src);
         let d = Types::check(&design, "Top").expect_err(&src);
         assert_eq!(Sources::codes_of(&d), ["E0603"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(Sources::snippet(&src, &d[0]), at, "{src}");
     }
     let trace = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); }";
-    let design = elaborated::Elab::design(trace);
+    let design = SourceElaboration::design(trace);
     assert!(Types::check(&design, "Top").is_ok(), "a trace on another stream types (T37 lowers it)");
 }

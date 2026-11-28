@@ -1,4 +1,4 @@
-//! The models of the nested-reach targets (`#[path]`-included, never a target itself): a cell with every kind of item a parent
+//! The models of the nested-reach targets : a cell with every kind of item a parent
 //! may read (a param, a `let` over the params, a node, a `let` over the solve, a carrier), and the wrappers that put it three and
 //! four levels below the reader, by name, through a template and in generation.
 

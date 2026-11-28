@@ -2,14 +2,12 @@
 //! parameter as a type, a generic item's parameter list, substitution, and the check of a generic
 //! body once at its definition against its bounds (Q1 (c)).
 
-use crate::support;
-#[allow(dead_code)]
-use crate::generic_sources;
 
-use generic_sources::GenericSources;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, TypeId};
 use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, Instantiation, Nominal, Obligation, ParameterDefault, ParameterKind, Substitution, Ty, Types};
+use piperine_lang_fixtures::generic_sources::GenericSources;
+use piperine_lang_fixtures::pom::PomSource;
 
 /// The natures every source below places in the open.
 const HEAD: &str = GenericSources::HEAD;
@@ -43,7 +41,7 @@ impl Declarations<'_> {
 fn a_type_parameter_prints_its_name() {
     // §3.8: a type parameter is a type of the generic body, named as its author wrote it; `Ty` is
     // ordered so an instantiation can key a map
-    let design = support::build("fn first<T, U>(a: T, b: U) -> T { a }\n");
+    let design = PomSource::build("fn first<T, U>(a: T, b: U) -> T { a }\n");
     let declarations = Declarations { design: &design };
     let (t, u) = (Ty::Param(declarations.parameter("T")), Ty::Param(declarations.parameter("U")));
     assert_eq!(t.name(&design), "T");
@@ -57,7 +55,7 @@ fn a_type_parameter_prints_its_name() {
 #[test]
 fn an_array_length_may_name_a_const_parameter() {
     // D14: a generic length is legal inside a generic item, prints as the parameter, and is no number
-    let design = support::build("fn first<T, const N: usize>(a: [T; N]) -> T { a[0] }\n");
+    let design = PomSource::build("fn first<T, const N: usize>(a: [T; N]) -> T { a[0] }\n");
     let declarations = Declarations { design: &design };
     let (t, n) = (declarations.parameter("T"), declarations.parameter("N"));
     let generic = Ty::Array(Box::new(Ty::Param(t)), Length::Generic(ConstTerm::Param(n)));
@@ -71,7 +69,7 @@ fn an_array_length_may_name_a_const_parameter() {
 fn generic_parameter_lists_are_read_with_their_bounds_and_defaults() {
     // §3.8.1 to §3.8.4, §3.8.6: type, nature and const parameters, the bounds of each in order
     // (a library trait, `Repr`, a project trait, `Fn(A) -> R`), and the defaults
-    let design = support::build(
+    let design = PomSource::build(
         "trait Shape { fn area(self) -> f64; }\n\
          fn f<T: PartialEq + Repr, G: Shape, F: Fn(T, T) -> bool, N: Nature, const K: u32, U = bool, const B: bool = true>(a: T) -> T { a }\n",
     );
@@ -106,7 +104,7 @@ fn a_wrong_number_of_generic_arguments_is_e0187() {
     assert_eq!(GenericSources::codes_of(&found), ["E0187", "E0187"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("`Pair` takes 1 to 2 generic arguments, found 3"), "{:?}", found[0]);
     assert!(found[1].diagnostic.message.contains("found 0"), "{:?}", found[1]);
-    let right = support::build(&format!("{HEAD}struct Pair<T, U = T> {{ a: T, b: U }}\nfn ok(p: Pair<f64>) -> f64 {{ 1.0 }}\nfn also(p: Pair<f64, u8>) -> f64 {{ 1.0 }}\n"));
+    let right = PomSource::build(&format!("{HEAD}struct Pair<T, U = T> {{ a: T, b: U }}\nfn ok(p: Pair<f64>) -> f64 {{ 1.0 }}\nfn also(p: Pair<f64, u8>) -> f64 {{ 1.0 }}\n"));
     assert_eq!(Types::check_model(&right), Ok(()), "a default may be left out");
 }
 
@@ -149,7 +147,7 @@ fn written_generic_types_lower_with_their_arguments() {
 fn a_substitution_replaces_parameters_through_every_part_of_a_type() {
     // §3.8.9: a parameter is replaced in an argument, a tuple, an option, a function type and an
     // array length; composing applies the second substitution to what the first gave
-    let design = support::build("struct Pair<T, U = T> { a: T, b: U }\nfn f<T, U, const N: usize>(x: T) -> T { x }\n");
+    let design = PomSource::build("struct Pair<T, U = T> { a: T, b: U }\nfn f<T, U, const N: usize>(x: T) -> T { x }\n");
     let declarations = Declarations { design: &design };
     let (t, u, n) = (declarations.parameter("T"), declarations.parameter("U"), declarations.parameter("N"));
     let pair = declarations.item("Pair");
@@ -178,7 +176,7 @@ fn a_written_use_is_recorded_as_an_instantiation() {
     // GN-06: `Types::written_instantiation` gives the generic item and its arguments for a type node
     // that writes a use of it, and nothing for any other
     let src = "struct Pair<T, U = T> { a: T, b: U }\nmodule Top() { }\nanalog for Top { let p: Pair<u8>; let q: f64; }";
-    let design = support::build(src);
+    let design = PomSource::build(src);
     let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     let declared: Vec<_> = (0..design.decl_count()).map(|i| DeclId(i as u32)).filter(|d| matches!(design.decl_data(*d).kind, DeclKind::Binding(_))).collect();
     assert_eq!(declared.len(), 2, "two bindings");
@@ -195,13 +193,13 @@ fn a_generic_body_is_checked_once_at_its_definition() {
     // Q1 (c), GN-07 AC 1: a generic function nothing calls is typed against its own parameters, each an
     // opaque type, so a body that returns what it is given is clean and one that returns it as another
     // type is refused at the definition, once, naming the parameter
-    let clean = support::build(&format!("{HEAD}fn id<T>(x: T) -> T {{ x }}\nfn first<T, const N: usize>(a: [T; N]) -> T {{ a[0] }}\nfn pick<T>(c: bool, a: T, b: T) -> T {{ if c {{ a }} else {{ b }} }}\n"));
+    let clean = PomSource::build(&format!("{HEAD}fn id<T>(x: T) -> T {{ x }}\nfn first<T, const N: usize>(a: [T; N]) -> T {{ a[0] }}\nfn pick<T>(c: bool, a: T, b: T) -> T {{ if c {{ a }} else {{ b }} }}\n"));
     assert_eq!(Types::check_model(&clean), Ok(()), "a generic body that fits its signature checks");
     let found = GenericSources::model_errors("fn wrong<T>(x: T) -> f64 { x }\nfn twice<T>(x: T) -> T { let y: bool = x; x }\n");
     assert_eq!(GenericSources::codes_of(&found), ["E0180", "E0180"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("expected `f64`, found `T`"), "{:?}", found[0]);
     // the `where` ranges over the const parameters and is a `bool` (§3 rule 8)
-    let guarded = support::build(&format!("{HEAD}fn wide<const N: usize>(x: f64) -> f64 where N > 2 {{ x }}\nfn flagged<const B: bool>(x: f64) -> f64 where B {{ x }}\n"));
+    let guarded = PomSource::build(&format!("{HEAD}fn wide<const N: usize>(x: f64) -> f64 where N > 2 {{ x }}\nfn flagged<const B: bool>(x: f64) -> f64 where B {{ x }}\n"));
     assert_eq!(Types::check_model(&guarded), Ok(()), "a const parameter is a const expression of its type");
     let unguarded = GenericSources::model_errors("fn bad<const N: usize>(x: f64) -> f64 where 1.0 { x }\n");
     assert_eq!(GenericSources::codes_of(&unguarded), ["E0180"], "{unguarded:?}");
@@ -215,7 +213,7 @@ fn a_generic_argument_that_does_not_satisfy_its_bound_is_e0187() {
     assert_eq!(GenericSources::codes_of(&found), ["E0187", "E0187"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("`str` does not satisfy the bound `Repr` of `T` in `Held`"), "{:?}", found[0]);
     assert!(found[1].diagnostic.message.contains("`f64` does not satisfy the bound `Ord` of `T` in `Sorted`"), "{:?}", found[1]);
-    let met = support::build(&format!("{HEAD}{items}fn g(a: Held<u8>, b: Sorted<u8>, c: Held<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
+    let met = PomSource::build(&format!("{HEAD}{items}fn g(a: Held<u8>, b: Sorted<u8>, c: Held<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
     assert_eq!(Types::check_model(&met), Ok(()), "a bound that holds");
 }
 
@@ -224,7 +222,7 @@ fn bounds_give_operators_width_and_codecs() {
     // §3 rule 9, §2: `T: PartialEq` gives `==`, `T: PartialOrd` gives `<`, `T: Repr` gives `T::WIDTH`,
     // `encode` and `decode`, `T: Default` gives `T::default()`, `F: Fn(A) -> R` gives a call; each is
     // checked at the definition with nothing instantiating it
-    let design = support::build(&format!(
+    let design = PomSource::build(&format!(
         "{HEAD}fn same<T: PartialEq>(a: T, b: T) -> bool {{ a == b }}\n\
          fn less<T: Ord>(a: T, b: T) -> bool {{ a < b }}\n\
          fn width<T: Repr>(a: T) -> u32 {{ T::WIDTH }}\n\
@@ -255,14 +253,14 @@ fn a_member_no_bound_gives_is_refused_at_the_definition() {
     assert!(messages[3].contains("no method `sqrt` on `T`") && messages[3].contains("the bounds Repr of `T`"), "{}", messages[3]);
     assert!(messages[4].contains("every value is copied"), "{}", messages[4]);
     // `T::WIDTH` with no `Repr` bound does not resolve: the POM refuses it before the check
-    assert_eq!(support::codes(&support::build(&format!("{HEAD}fn no_width<T>(a: T) -> u32 {{ T::WIDTH }}\n"))), ["E0161"]);
+    assert_eq!(PomSource::codes(&PomSource::build(&format!("{HEAD}fn no_width<T>(a: T) -> u32 {{ T::WIDTH }}\n"))), ["E0161"]);
 }
 
 #[test]
 fn a_length_over_const_parameters_fits_until_the_item_is_instantiated() {
     // §3.8.9, Q1 (c): `[f64; N + 1]` built in a body is the declared `[f64; N + 1]` at the definition (the
     // two lengths are compared by value at each instantiation), but `N` is not another parameter `M`
-    let clean = support::build(&format!(
+    let clean = PomSource::build(&format!(
         "{HEAD}fn widened<const N: usize>(xs: [f64; N]) -> [f64; N + 1] {{\n    let wide = [0.0; N + 1];\n    for k in 0..N {{ wide[k] = xs[k]; }}\n    wide\n}}\n\
          fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 {{ let sum = 0.0; for k in 0..N {{ sum += a[k] * b[k]; }} sum }}\n\
          fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 {{ let sum = 0.0; for x in xs {{ sum += x; }} sum / N as f64 }}\n"
@@ -322,8 +320,8 @@ fn each_generic_call_records_its_instantiation() {
     // §3.8.10: `Types::instantiation(call)` is the function and the argument of each parameter, in order,
     // defaults filled in; a call of a plain function has none
     let src = "fn pick<T, U = bool>(a: T, b: Option<U>) -> T { a }\nfn plain(x: f64) -> f64 { x }\nmodule Top() { }\nanalog for Top { let a = pick(1.5, Some(2u8)); let b = pick::<u8, f64>(1, Some(2.0)); let c = plain(1.0); }";
-    let design = support::build(&format!("{HEAD}{src}"));
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(&format!("{HEAD}{src}"));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     let declarations = Declarations { design: &design };
     let pick = declarations.item("pick");
@@ -342,8 +340,8 @@ fn fn_bounds_take_closures_and_function_names() {
                  fn halve(v: f64) -> f64 { v * 0.5 }\n\
                  fn apply<T, U, F: Fn(T) -> U>(f: F, x: T) -> U { f(x) }\n";
     let src = format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ let k = 3.0; let a = twice(|v| v * 2.0, 1.0); let b = twice(|v| v + k, 1.0); let c = twice(halve, 4.0); let d = apply(|n: u8| n > 1, 3u8); }}");
-    let design = support::build(&format!("{HEAD}{src}"));
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(&format!("{HEAD}{src}"));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     let declarations = Declarations { design: &design };
     assert_eq!(types.local(GenericSources::binding(&design, "a")), Some(&Ty::F64));
@@ -375,8 +373,8 @@ fn array_lengths_and_where_are_deferred_to_the_instantiation() {
                  fn mean_of<const N: usize>(xs: [f64; N]) -> f64 where N >= 1 { 1.0 }\n\
                  fn dot<const N: usize>(a: [f64; N], b: [f64; N]) -> f64 { 1.0 }\n";
     let src = format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ let a = widened([1.0, 2.0]); let m = mean_of([1.0]); let d = dot([1.0, 2.0], [3.0, 4.0]); }}");
-    let design = support::build(&src);
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     let declarations = Declarations { design: &design };
     assert_eq!(types.local(GenericSources::binding(&design, "a")), Some(&Ty::array(Ty::F64, 3)), "N = 2 from the argument folds N + 1");
@@ -421,7 +419,7 @@ fn a_generic_repr_type_over_an_argument_without_repr_is_e0110() {
     let found = GenericSources::model_errors(&format!("{items}fn f(c: Cell<str>) -> f64 {{ 1.0 }}\n"));
     assert_eq!(GenericSources::codes_of(&found), ["E0110"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("`Cell` derives `Repr`, and its argument `str` has no `Repr`"), "{:?}", found[0]);
-    let design = support::build(&format!("{HEAD}{items}fn g(c: Cell<u8>) -> f64 {{ 1.0 }}\nfn h(c: Cell<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
+    let design = PomSource::build(&format!("{HEAD}{items}fn g(c: Cell<u8>) -> f64 {{ 1.0 }}\nfn h(c: Cell<(f64, bool)>) -> f64 {{ 1.0 }}\n"));
     assert_eq!(Types::check_model(&design), Ok(()), "u8 and a tuple of a float and a bool have layouts");
 }
 
@@ -513,7 +511,7 @@ impl StdCalls {
     /// The name of the function each call of `src` resolves to when it is a function of the project or the standard library.
     fn function_names(src: &str) -> Vec<String> {
         let design = Design::builder().source("top.msl", src).build();
-        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
         let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>()));
         (0..design.expr_count())
             .filter_map(|index| match types.callee(piperine_lang::pom::ExprId(index as u32)) {

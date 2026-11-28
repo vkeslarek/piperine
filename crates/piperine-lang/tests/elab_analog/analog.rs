@@ -2,11 +2,10 @@
 //! to the IR node of the same form (each function once), probes and environment reads, sites
 //! numbered in source order, and, with T7, branches and the split of a contribution.
 
-use crate::support;
 
 use std::path::PathBuf;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
-use support::Elab;
 
 /// One function block of a golden text of `piperine-ir`: the `fn` line and its indented lines.
 struct Golden;
@@ -36,7 +35,7 @@ analog for A { let y = pnjlim(1.0, 0.5, 0.026, 0.6); }
 module B() { k: f64 = 2.0; }
 analog for B { let z = pnjlim(k, 0.5, 0.026, 0.6) + 1.0; let w = if z > 1.0 { z } else { -z }; }
 module Top() { let a = A { }(); let b = B { }(); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert_eq!(ir.functions().filter(|f| f.name() == "pnjlim").count(), 1, "pnjlim is one FunctionId");
     assert_eq!(ir.functions().count(), 1);
 
@@ -55,7 +54,7 @@ module Top() { let a = A { }(); let b = B { }(); }";
 #[test]
 fn a_lowered_expression_carries_its_type_and_the_origin_of_its_construct() {
     let src = "module A() { }\nanalog for A { let y = pnjlim(1.0, 0.5, 0.026, 0.6); }\nmodule Top() { let a = A { }(); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "A").expect("body A");
     let first = body.analog().expect("an analog block")[0];
     let piperine_ir::Stmt::Let { init, .. } = ir.stmt(first) else { panic!("a `let`") };
@@ -77,7 +76,7 @@ module Top() { signal s: Electrical; let m = M { }(s, gnd); }";
 
 #[test]
 fn probes_and_environment_lower_to_their_nodes() {
-    let ir = Elab::ir(PROBE_MODULE, "Top");
+    let ir = SourceElaboration::ir(PROBE_MODULE, "Top");
     let text = ir.print_structural();
     assert!(text.contains("let x = probe(a, gnd)"), "`v(a)` is a probe to ground: {text}");
     assert!(text.contains("let y = probe(a, k)"), "`v(a, k)` is between two body nodes: {text}");
@@ -108,7 +107,7 @@ analog for D {
     let u = ac_stim(2.0, 0.5);
 }
 module Top() { let d = D { }(gnd, gnd); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     // The sites, in source order: the `let` names a `limit`; the first `ac_stim` is the analysis `ac`, a later one is numbered (`ac1`), so no two sites print alike.
     assert!(text.contains("  limit L0 \"vd\"\n  limit L1 \"w\"\n  limit L2 \"limit2\"\n  stim S0 \"ac\"\n  stim S1 \"ac1\"\n"), "{text}");
@@ -124,7 +123,7 @@ fn a_site_under_an_if_is_refused_not_mis_lowered() {
     // the `enabled` of its condition, never as an unconditional site. Kept under its name; it
     // asserts the lowering.
     let src = "module D(a: Electrical) { }\nanalog for D { let x = if v(a) > 0.0 { limit(v(a), |n, o| n) } else { 0.0 }; }\nmodule Top() { let d = D { }(gnd); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "D").expect("body D");
     assert!(body.limits()[0].enabled.is_some(), "a guarded site carries its condition");
 }
@@ -170,7 +169,7 @@ analog for M {
     i(gnd, a) +> 5.0;
 }
 module Top() { signal s: Electrical; signal t: Electrical; let m = M { }(s, gnd, t); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert_eq!(Block::branches(&text, "M"), ["branch b0 (a, k) flow", "branch b1 (b, k) potential", "branch b2 (a, gnd) flow"], "{text}");
     assert_eq!(
@@ -204,7 +203,7 @@ analog for S {
     i(r, s) +> a - (b + x) + ddt(y);
 }
 module Top() { signal n1: Electrical; signal n2: Electrical; signal n3: Electrical; let d = D { }(n1, gnd); let s = S { }(n1, n2, n3, gnd); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert_eq!(Block::contributions(&text, "D"), ["b0.flow +> direct (id + (gmin() * vd)), ddt (cj0 * vd)"], "{text}");
     assert_eq!(
@@ -238,7 +237,7 @@ analog for R {
     i(n, p) +> -ddt(x);
 }
 module Top() { signal s: Electrical; let r = R { }(s, gnd); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert_eq!(Block::branches(&text, "R"), ["branch b0 (p, n) flow"], "{text}");
     assert_eq!(
@@ -251,14 +250,14 @@ module Top() { signal s: Electrical; let r = R { }(s, gnd); }";
 #[test]
 fn a_branch_from_a_node_to_itself_is_e0241() {
     let src = "module M(a: Electrical) { }\nanalog for M { i(a, a) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s); }";
-    let err = Elab::run(src, "Top").expect_err("a branch (a, a)");
-    assert_eq!(Elab::codes(&err), ["E0241"]);
+    let err = SourceElaboration::run(src, "Top").expect_err("a branch (a, a)");
+    assert_eq!(SourceElaboration::codes(&err), ["E0241"]);
     let span = err[0].diagnostic.primary.0;
     assert_eq!(&src[span.start..span.end], "i(a, a)", "at the branch the contribution names");
 
     let src = "module M() { }\nanalog for M { potential(gnd, gnd) +> 1.0; }\nmodule Top() { let m = M { }(); }";
-    let err = Elab::run(src, "Top").expect_err("a branch (gnd, gnd)");
-    assert_eq!(Elab::codes(&err), ["E0241"]);
+    let err = SourceElaboration::run(src, "Top").expect_err("a branch (gnd, gnd)");
+    assert_eq!(SourceElaboration::codes(&err), ["E0241"]);
     let span = err[0].diagnostic.primary.0;
     assert_eq!(&src[span.start..span.end], "potential(gnd, gnd)");
 }
@@ -266,8 +265,8 @@ fn a_branch_from_a_node_to_itself_is_e0241() {
 #[test]
 fn potential_and_flow_on_one_branch_is_e0415() {
     let src = "module M(a: Electrical, k: Electrical) { }\nanalog for M { i(a, k) +> 1.0; v(k, a) +> 2.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
-    let err = Elab::run(src, "Top").expect_err("potential and flow on (a, k)");
-    assert_eq!(Elab::codes(&err), ["E0415"]);
+    let err = SourceElaboration::run(src, "Top").expect_err("potential and flow on (a, k)");
+    assert_eq!(SourceElaboration::codes(&err), ["E0415"]);
     let span = err[0].diagnostic.primary.0;
     assert!(src[span.start..span.end].starts_with("v(k, a) +> 2.0"), "at the second contribution: {:?}", &src[span.start..span.end]);
 }
@@ -278,7 +277,7 @@ fn a_single_addend_is_one_direct_addend() {
 module M(p: Electrical, n: Electrical) { r: f64 = 1.0; }
 analog for M { i(p, n) +> v(p, n) / r; }
 module Top() { signal s: Electrical; let m = M { }(s, gnd); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert_eq!(Block::contributions(&text, "M"), ["b0.flow +> direct (probe(p, n) / r)"], "{text}");
 }
@@ -291,7 +290,7 @@ fn the_device_bodies_equal_the_structural_goldens() {
     let devices = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let top = "mod devices;\nuse devices::*;\nmodule Top() {\n    signal a: Electrical;\n    let r = Resistor { r: 1k }(a, gnd);\n    let c = Capacitor { c: 1e-12 }(a, gnd);\n    let v = Vsource { dc: 1.0 }(a, gnd);\n    let i = Isource { }(a, gnd);\n    let d = Diode { }(a, gnd);\n}\n";
     let design = piperine_lang::pom::Design::builder().source("top.msl", top).source("devices.msl", devices).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
     let ir = piperine_lang::elab::Elaborator::new(&design).run("Top").unwrap_or_else(|d| panic!("{d:?}"));
     assert!(ir.check().is_empty(), "{:?}", ir.check());
     let text = ir.print_structural();
@@ -322,7 +321,7 @@ fn a_ddt_off_the_top_of_a_flow_contribution_is_refused() {
         "i(p, n) +> ddt(v(p), 1e-6);",
     ] {
         let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(m.derivatives().len(), 1, "{body}");
     }
@@ -333,7 +332,7 @@ fn two_analog_blocks_keep_their_locals_apart() {
     // FIX-08 AC 2 (§10 rule 7): two `analog` blocks of one module are one body in source order,
     // and the `x` of each is its own local.
     let src = "module A() { k: f64 = 2.0; }\nanalog for A { let x = k + 1.0; }\nanalog for A { let x = k * 3.0; }\nmodule Top() { let a = A { }(); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let body = ir.bodies().find(|b| b.name() == "A").expect("body A");
     let stmts = body.analog().expect("an analog block");
     assert_eq!(stmts.len(), 2, "both blocks are in the one body");
@@ -358,7 +357,7 @@ fn freq_analysis_and_bound_step_lower() {
     let src = "module A() { }\nanalog for A { let f = freq(); let d = analysis(Dc); let t = analysis(Transient); let a = analysis(Ac); let n = analysis(Noise); let s = analysis(Static); bound_step(1.0e-9); bound_step(f + 2.0e-9); }\n\
 module R(out q: Bit<f64> = 0.0) { }\ndigital for R { on at(1.0e-9) { q <- freq(); } }\n\
 module Top() { signal q: Bit<f64>; let a = A { }(); let r = R { }(q); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert!(text.contains("let f = freq()"), "{text}");
     assert!(text.contains("let d = analysis(Dc)"), "{text}");
@@ -384,7 +383,7 @@ fn bound_step_under_an_if_is_p0001() {
     // under its name; it asserts the lowering.
     for (body, guarded) in [("if v(a) > 0.0 { bound_step(1.0e-9); }", true), ("match v(a) > 0.0 { true => { bound_step(1.0e-9); } false => {} }", true), ("{ bound_step(1.0e-9); }", false)] {
         let src = format!("module D(a: Electrical) {{ }}\nanalog for D {{ {body} }}\nmodule Top() {{ let d = D {{ }}(gnd); }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let d = ir.bodies().find(|b| b.name() == "D").expect("body D");
         let steps: Vec<Option<piperine_ir::ExprId>> = d.analog().expect("a block").iter().filter_map(|s| match ir.stmt(*s) {
             piperine_ir::Stmt::BoundStep { when, .. } => Some(*when),
@@ -416,8 +415,8 @@ fn a_quantity_attribute_outside_the_three_is_e0204() {
         ("access: joules, units: 2.0", "access: pwr", "`units`"),
         ("access: joules, abstol: true", "access: pwr", "`abstol`"),
     ] {
-        let err = Elab::run(&HeatNature::source(potential, flow), "Top").expect_err(wanted);
-        assert_eq!(Elab::codes(&err), ["E0204"], "{potential}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        let err = SourceElaboration::run(&HeatNature::source(potential, flow), "Top").expect_err(wanted);
+        assert_eq!(SourceElaboration::codes(&err), ["E0204"], "{potential}: {:?}", err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert!(err[0].diagnostic.message.contains(wanted), "{}", err[0].diagnostic.message);
     }
 }
@@ -426,8 +425,8 @@ fn a_quantity_attribute_outside_the_three_is_e0204() {
 fn a_non_positive_abstol_is_e0204() {
     // Part II §4 rule 9: an `abstol` is `> 0`; zero and a negative value are `E0204`.
     for abstol in ["0.0", "-1.0"] {
-        let err = Elab::run(&HeatNature::source(&format!("access: joules, abstol: {abstol}"), "access: pwr"), "Top").expect_err(abstol);
-        assert_eq!(Elab::codes(&err), ["E0204"], "{abstol}");
+        let err = SourceElaboration::run(&HeatNature::source(&format!("access: joules, abstol: {abstol}"), "access: pwr"), "Top").expect_err(abstol);
+        assert_eq!(SourceElaboration::codes(&err), ["E0204"], "{abstol}");
         assert!(err[0].diagnostic.message.contains("`abstol`") && err[0].diagnostic.message.contains("greater than zero"), "{}", err[0].diagnostic.message);
     }
 }
@@ -435,7 +434,7 @@ fn a_non_positive_abstol_is_e0204() {
 #[test]
 fn equal_access_names_are_e0205() {
     // Part II §4 rule 10: the two `access` names of one nature differ.
-    let err = Elab::run(&HeatNature::source("access: same", "access: same"), "Top").expect_err("equal access names");
-    assert_eq!(Elab::codes(&err), ["E0205"]);
+    let err = SourceElaboration::run(&HeatNature::source("access: same", "access: same"), "Top").expect_err("equal access names");
+    assert_eq!(SourceElaboration::codes(&err), ["E0205"]);
     assert!(err[0].diagnostic.message.contains("`same`") && err[0].diagnostic.message.contains("`Heat`"), "{}", err[0].diagnostic.message);
 }

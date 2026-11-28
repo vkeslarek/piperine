@@ -5,13 +5,12 @@
 //! `tests/fixtures/elab/*.txt`; elaboration is deterministic, leaves the design unchanged, and
 //! every diagnostic carries a code, a span inside its source and, about an instance, its path.
 
-use crate::support;
 
 use std::path::PathBuf;
 
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::Design;
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// The six twins of `tests/e2e/twins/` and the module each places.
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
@@ -34,21 +33,21 @@ impl Disk {
 #[test]
 fn front_end_diagnostics_are_returned_without_an_ir() {
     // The design itself holds a diagnostic (a malformed param): handed back as it is.
-    let design = Elab::design("module Top() { x: f64 = ; }");
+    let design = SourceElaboration::design("module Top() { x: f64 = ; }");
     assert!(!design.diagnostics().is_empty(), "the source must hold a diagnostic");
     let err = Elaborator::new(&design).run("Top").expect_err("no Ir for a design with diagnostics");
     assert_eq!(err, design.diagnostics().to_vec());
 
     // The design is clean, the type check is not: its diagnostic comes back, and no Ir.
-    let design = Elab::design("module Top() { x: f64 = true; }");
-    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    let design = SourceElaboration::design("module Top() { x: f64 = true; }");
+    assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
     let err = Elaborator::new(&design).run("Top").expect_err("a bool default of an f64 param");
-    assert_eq!(Elab::codes(&err), ["E0180"]);
+    assert_eq!(SourceElaboration::codes(&err), ["E0180"]);
 }
 
 #[test]
 fn an_unknown_top_is_one_diagnostic() {
-    let design = Elab::design("module Top() { }");
+    let design = SourceElaboration::design("module Top() { }");
     let err = Elaborator::new(&design).run("Missing").expect_err("no such module");
     assert_eq!(err.len(), 1);
     assert!(err[0].diagnostic.message.contains("Missing"), "{}", err[0].diagnostic.message);
@@ -56,7 +55,7 @@ fn an_unknown_top_is_one_diagnostic() {
 
 #[test]
 fn an_empty_top_is_one_body_and_one_instance() {
-    let ir = Elab::ir("module Top() { }", "Top");
+    let ir = SourceElaboration::ir("module Top() { }", "Top");
     assert_eq!(ir.bodies().count(), 1);
     assert_eq!(ir.instances().count(), 1);
     assert_eq!(ir.top().path(), "Top");
@@ -66,7 +65,7 @@ fn an_empty_top_is_one_body_and_one_instance() {
 fn the_twins_elaborate_without_diagnostics() {
     for (file, top) in TWINS {
         let design = Disk::twin(file);
-        assert!(design.diagnostics().is_empty(), "{file}: {:?}", Elab::codes(design.diagnostics()));
+        assert!(design.diagnostics().is_empty(), "{file}: {:?}", SourceElaboration::codes(design.diagnostics()));
         let ir = Elaborator::new(&design).run(top).unwrap_or_else(|d| panic!("{file}: {d:?}"));
         assert_eq!(ir.top().path(), *top, "{file}");
     }
@@ -117,7 +116,7 @@ fn device_bodies_match_the_ir_goldens() {
     let devices = Disk::read(&["..", "..", "tests", "e2e", "twins", "devices.msl"]);
     let top = "mod devices;\nuse devices::*;\nmodule Top() {\n    signal a: Electrical;\n    let r = Resistor { r: 1k }(a, gnd);\n    let c = Capacitor { c: 1e-12 }(a, gnd);\n    let v = Vsource { dc: 1.0 }(a, gnd);\n    let i = Isource { }(a, gnd);\n    let d = Diode { }(a, gnd);\n}\n";
     let design = Design::builder().source("top.msl", top).source("devices.msl", devices).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+    assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
     let ir = Elaborator::new(&design).run("Top").unwrap_or_else(|d| panic!("{d:?}"));
     assert!(ir.check().is_empty(), "{:?}", ir.check());
     let text = ir.print_structural();
@@ -164,8 +163,8 @@ fn every_diagnostic_has_code_span_and_path() {
         ("E0415", "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 1.0; v(p, n) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }".to_string(), None),
     ];
     for (code, src, path) in &cases {
-        let err = Elab::run(src, "Top").expect_err(code);
-        assert!(err.iter().any(|d| d.diagnostic.code == *code), "{code}: {:?}", Elab::codes(&err));
+        let err = SourceElaboration::run(src, "Top").expect_err(code);
+        assert!(err.iter().any(|d| d.diagnostic.code == *code), "{code}: {:?}", SourceElaboration::codes(&err));
         for d in &err {
             let span = d.diagnostic.span();
             assert!(span.start < span.end && span.end <= src.len(), "{code}: a span inside the source, got {span:?}");
@@ -189,7 +188,7 @@ impl RcTop {
     fn design() -> Design {
         let devices = Disk::read(&["..", "..", "tests", "e2e", "twins", "devices.msl"]);
         let design = Design::builder().source("top.msl", Self::SOURCE).source("devices.msl", devices).build();
-        assert!(design.diagnostics().is_empty(), "{:?}", Elab::codes(design.diagnostics()));
+        assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
         design
     }
 }
@@ -214,7 +213,7 @@ fn a_top_node_port_gets_one_host_source_instance() {
     assert_eq!(source.body().contributions().len(), 1, "the potential across the port and gnd");
     assert_eq!(ir.top().node(0).map(|n| n.path()), Some("Top.vin"), "the top's port is a node of the design");
     // a top with no node port gets none
-    let plain = Elab::ir("module Top() { }", "Top");
+    let plain = SourceElaboration::ir("module Top() { }", "Top");
     assert!(plain.instances().all(|i| i.body().name() != "HostSource"));
 }
 
@@ -222,8 +221,8 @@ fn a_top_node_port_gets_one_host_source_instance() {
 fn a_top_value_input_is_e0811() {
     // PI-07 AC 6, §23.1 rule 1: a value input has no host source; E0811 names it, at its name
     let src = "module Top(x: f64) { }";
-    let err = Elab::run(src, "Top").expect_err("a value input on the top");
-    assert_eq!(Elab::codes(&err), ["E0811"]);
+    let err = SourceElaboration::run(src, "Top").expect_err("a value input on the top");
+    assert_eq!(SourceElaboration::codes(&err), ["E0811"]);
     assert!(err[0].diagnostic.message.contains("`x`"), "{}", err[0].diagnostic.message);
     let span = err[0].diagnostic.span();
     assert_eq!(&src[span.start..span.end], "x");

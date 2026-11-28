@@ -2,10 +2,9 @@
 //! lower (ELAB-06): each is `P0001` naming the form, at the span of the form, with no `Ir`.
 //! One negative source per row of the table in `elab/unlowered.rs`.
 
-use crate::support;
 
 use piperine_lang::elab::Elaborator;
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// One negative source: the form's name as the message must say it, and the text the span covers.
 struct Row {
@@ -17,8 +16,8 @@ struct Row {
 
 impl Row {
     fn check(&self) {
-        let err = Elab::run(self.src, "Top").expect_err(self.form);
-        assert_eq!(Elab::codes(&err), ["P0001"], "{}: {:?}", self.form, err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        let err = SourceElaboration::run(self.src, "Top").expect_err(self.form);
+        assert_eq!(SourceElaboration::codes(&err), ["P0001"], "{}: {:?}", self.form, err.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         let message = &err[0].diagnostic.message;
         assert!(message.contains(self.names), "{}: `{message}` does not name `{}`", self.form, self.names);
         let span = err[0].diagnostic.primary.0;
@@ -41,7 +40,7 @@ fn a_site_or_contribution_under_if_is_p0001() {
         ("ac_stim right of ||", "let c = v(p) > 0.0 || ac_stim(1.0) > 0.0;", false),
     ] {
         let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let m = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(m.limits().iter().all(|site| site.enabled.is_some()) && !m.limits().is_empty(), enabled, "{form}");
         assert_eq!(m.limits().len() + m.stims().len(), 1, "{form}: one site");
@@ -59,7 +58,7 @@ fn ddt_off_the_top_of_a_flow_contribution_is_p0001() {
         ("ddt bound to a name", "let q = ddt(v(p)); i(p, n) +> q;"),
         ("ddt with a tolerance", "i(p, n) +> ddt(v(p), 1e-6);"),
     ] {
-        let ir = Elab::ir(DdtSource::of(body), "Top");
+        let ir = SourceElaboration::ir(DdtSource::of(body), "Top");
         let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(body.derivatives().len(), 1, "{form}: one site");
     }
@@ -80,9 +79,9 @@ fn m_or_dtemp_at_a_placement_is_e0320() {
     // ELAB-06 AC 3: `m` and `dtemp` in a placement are `E0320` at the field.
     for field in ["m: 2.0", "dtemp: 5.0"] {
         let src = format!("module R(p: Electrical, n: Electrical) {{ r: f64 = 1.0; }}\nmodule Top() {{ signal s: Electrical; let r = R {{ r: 1.0, {field} }}(s, gnd); }}");
-        let design = Elab::design(&src);
+        let design = SourceElaboration::design(&src);
         let err = Elaborator::new(&design).run("Top").expect_err(field);
-        assert_eq!(Elab::codes(&err), ["E0320"], "{field}");
+        assert_eq!(SourceElaboration::codes(&err), ["E0320"], "{field}");
         let span = err[0].diagnostic.primary.0;
         assert_eq!(&src[span.start..span.end], field.split(':').next().unwrap_or(field), "{field}");
     }
@@ -105,7 +104,7 @@ fn a_for_loop_in_a_digital_block_lowers() {
     // Replaces `a_for_loop_in_a_digital_block_is_p0001` (composite-values T20, CV-02 AC 1): a
     // `for` over a range lowers in a reaction, as the IR's own `for`.
     let src = "module Top(in clk: Bit, out q: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { let s = 0u8; for k in 0..3u8 { s += k; } q <- s; } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(ir.print_structural().contains("for k in 0u8..3u8"), "{}", ir.print_structural());
 }
 
@@ -114,9 +113,9 @@ fn a_diagnostic_means_no_ir() {
     // Two refusals in one design: still `Err`, every diagnostic a `P0001`, never a partial `Ir`.
     // two generic functions named as values (still refused by name; a bundle runs since resolved-nets-bundles)
     let src = "fn g<T>(x: T) -> T { x }\nfn k<T>(x: T) -> T { x }\nmodule Top() { }\nanalog for Top { let h = g; let j = k; }";
-    let err = Elab::run(src, "Top").expect_err("refused");
-    assert!(err.len() >= 2, "{:?}", Elab::codes(&err));
-    assert!(Elab::codes(&err).iter().all(|c| c == "P0001"));
+    let err = SourceElaboration::run(src, "Top").expect_err("refused");
+    assert!(err.len() >= 2, "{:?}", SourceElaboration::codes(&err));
+    assert!(SourceElaboration::codes(&err).iter().all(|c| c == "P0001"));
 }
 
 #[test]
@@ -124,7 +123,7 @@ fn a_site_on_the_left_of_a_short_circuit_still_lowers() {
     // The left operand always runs, so a site there is unconditional (ELAB-06, AC 1).
     for op in ["&&", "||"] {
         let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ let c = limit(v(p), |a, b| a) > 0.0 {op} v(p) > 0.0; let d = ac_stim(1.0) > 0.0 {op} v(p) > 0.0; }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let text = ir.to_string();
         assert!(text.contains("limit L0") && text.contains("stim"), "{op}: {text}");
     }
@@ -133,7 +132,7 @@ fn a_site_on_the_left_of_a_short_circuit_still_lowers() {
 #[test]
 fn a_contribution_in_the_analog_blocks_own_list_still_lowers() {
     let src = "module M(p: Electrical, n: Electrical) { }\nanalog for M { i(p, n) +> 1.0; }\nmodule Top() { signal s: Electrical; let m = M { }(s, gnd); }";
-    Elab::run(src, "Top").expect("a top-level contribution lowers");
+    SourceElaboration::run(src, "Top").expect("a top-level contribution lowers");
 }
 
 #[test]
@@ -142,7 +141,7 @@ fn a_value_input_of_a_module_without_a_result_lowers_hoisted() {
     // module with a value input is hoisted like one with a result. `Amp` has no body of its own; its
     // `analog` block joins `Top`'s under the placement's name, and the body records it (`hoisted`).
     let src = "module Amp(x: f64, p: Electrical) { }\nanalog for Amp { v(p) +> x; }\nmodule Top() { signal s: Electrical; let a = Amp(1.0, s); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(ir.bodies().all(|b| b.name() != "Amp"), "a hoisted module gets no body");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("the body Top");
     assert_eq!(top.contributions().len(), 1, "the callee's contribution joins the caller's body");
@@ -160,7 +159,7 @@ fn a_contribution_under_control_flow_lowers_where_it_was_written() {
         ("contribution in a let block", "let x = { i(p, n) +> 1.0; 2.0 };"),
     ] {
         let src = format!("module M(p: Electrical, n: Electrical) {{ }}\nanalog for M {{ {body} }}\nmodule Top() {{ signal s: Electrical; let m = M {{ }}(s, gnd); }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let body = ir.bodies().find(|b| b.name() == "M").expect("the body M");
         assert_eq!(body.contributions().len(), 1, "{form}");
     }
@@ -172,7 +171,7 @@ fn a_match_arm_guard_lowers() {
     // (composite-values T22, CV-04 AC 1): the arm is taken when its pattern matches and its guard
     // holds, so the guard is part of the arm's test.
     let src = "module Top(in clk: Bit, out q: Bit<u8> = 0) { }\ndigital for Top { on clk.rise() { let n = 3u8; q <- match n { 3 if n > 2 => 1u8, _ => 0u8 }; } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert!(ir.print_structural().contains("n > 2"), "{}", ir.print_structural());
 }
 
@@ -181,7 +180,7 @@ fn an_option_arm_with_a_block_body_is_refused_once() {
     // CV round 2 (a): an arm of a `match` over an `Option` that yields an `Option` and whose body is a block of more
     // than its value is lowered in two halves, `is` and `val`; the refusal is one finding, reported once.
     let src = "fn f(o: Option<u8>) -> Option<u8> { match o { Some(v) => { let w = v + 1; Some(w) } None => None } }\nmodule Top() { signal clk: Bit = false; signal y: Bit<u8> = 0; }\ndigital for Top { on clk.rise() { y <- match f(Some(1u8)) { Some(v) => v, None => 0 }; } }";
-    let found = Elab::run(src, "Top").expect_err("the arm is refused");
+    let found = SourceElaboration::run(src, "Top").expect_err("the arm is refused");
     let refusals: Vec<&str> = found.iter().map(|d| d.diagnostic.message.as_str()).filter(|m| m.contains("this form of an `Option` value")).collect();
     assert_eq!(refusals.len(), 1, "{:?}", found.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
 }

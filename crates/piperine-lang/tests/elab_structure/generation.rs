@@ -4,12 +4,11 @@
 //! `if` keeps the arm its condition selects, an empty range makes an empty array, and a reference into an arm that was not
 //! elaborated or past a generated array is `E0342`. Each test states the rule it proves.
 
-use crate::support;
 
 use piperine_ir::Ir;
 use piperine_lang::elab::Elaborator;
 use piperine_lang::pom::DesignDiagnostic;
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// Sources elaborated with generation in a body.
 struct GenerationSources;
@@ -20,8 +19,8 @@ impl GenerationSources {
 
     /// `src` after the parts, elaborated from `Top`.
     fn run(src: &str) -> Result<Ir, Vec<DesignDiagnostic>> {
-        let design = Elab::design(&format!("{}{src}", Self::HEAD));
-        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        let design = SourceElaboration::design(&format!("{}{src}", Self::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", SourceElaboration::codes(design.diagnostics()));
         Elaborator::new(&design).run("Top")
     }
 
@@ -131,8 +130,8 @@ struct AdmittedDigital;
 impl AdmittedDigital {
     /// The IR of `src` after the natures, which elaborates and checks.
     fn ir(src: &str) -> Ir {
-        let design = Elab::design(&format!("{}{src}", GenerationSources::HEAD));
-        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", Elab::codes(design.diagnostics()));
+        let design = SourceElaboration::design(&format!("{}{src}", GenerationSources::HEAD));
+        assert!(design.diagnostics().is_empty(), "the source must be clean: {:?}", SourceElaboration::codes(design.diagnostics()));
         let ir = Elaborator::new(&design).run("Top").unwrap_or_else(|found| panic!("elaboration refused: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
         assert!(ir.check().is_empty(), "{:?}", ir.check());
         ir

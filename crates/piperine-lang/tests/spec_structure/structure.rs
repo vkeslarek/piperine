@@ -8,12 +8,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
-use crate::spec_tables;
-use spec_tables::{section, table_rows};
 
-use crate::spec_corpus;
 
 use piperine_lang::msl::lexer::{Kw, Lexer, Punct, Token};
+use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
+use piperine_lang_fixtures::spec_tables::SpecTables;
 
 /// The pages of the specification and what the guards below read from them.
 struct Specification;
@@ -55,7 +54,7 @@ impl Specification {
 
     /// Appendix B's section B.3.6, the table of removed forms.
     fn removed_forms_section() -> String {
-        section(&Self::page("appendix_b_grammar.md"), "### B.3.6")
+        SpecTables::section(&Self::page("appendix_b_grammar.md"), "### B.3.6")
     }
 
     /// The value library page, Appendix H.
@@ -88,7 +87,7 @@ impl Specification {
     fn defining_rows() -> BTreeMap<String, Vec<String>> {
         let mut defs: BTreeMap<String, Vec<String>> = BTreeMap::new();
         for (name, text) in Specification::every_page() {
-            for row in table_rows(&text) {
+            for row in SpecTables::table_rows(&text) {
                 let first = row[0].trim_matches('`');
                 if Specification::codes_in(first) == [first.to_string()] && first.len() == 5 {
                     defs.entry(first.to_string()).or_default().push(name.clone());
@@ -103,7 +102,7 @@ impl Specification {
     fn fence_names() -> (BTreeMap<String, String>, BTreeSet<String>) {
         let (mut called, mut declared) = (BTreeMap::new(), BTreeSet::new());
         // A `compile_fail` fence shows what is rejected; it catalogues nothing.
-        for block in spec_corpus::corpus().into_iter().filter(|b| b.class != spec_corpus::Class::CompileFail) {
+        for block in SpecCorpus::corpus().into_iter().filter(|b| b.class != BlockClass::CompileFail) {
             let (tokens, _) = Lexer::lex(&block.text);
             for w in tokens.windows(3) {
                 if let (Token::Punct(Punct::Dot), Token::Ident(n), Token::Punct(Punct::LParen)) = (&w[0].0, &w[1].0, &w[2].0) {
@@ -120,7 +119,7 @@ impl Specification {
     /// The names in the first cell of every table row of `section`, without
     /// backticks and without a trailing parameter list.
     fn first_cell_names(section: &str) -> BTreeSet<String> {
-        table_rows(section)
+        SpecTables::table_rows(section)
             .into_iter()
             .map(|r| r[0].trim_matches('`').split(['<', '(']).next().unwrap().to_string())
             .collect()
@@ -157,13 +156,13 @@ fn b1_counts_60_constructs() {
     // POL-08 AC 8, amended by explicit-unknowns (replaces `b1_still_counts_65_constructs`): the
     // literal `Unknown`, the contextual keyword `resolve` and the method `level` leave, so the
     // count and the rows agree at 62 (60 since generics phase D: `m` and `dtemp` left), and the B.1.1 kinds add up to it.
-    let sec = section(&Specification::page("appendix_b_grammar.md"), "## B.1 ");
+    let sec = SpecTables::section(&Specification::page("appendix_b_grammar.md"), "## B.1 ");
     assert!(sec.contains("**60**"), "B.1 states 60");
-    let rows = table_rows(&section(&sec, "### B.1.2"));
+    let rows = SpecTables::table_rows(&SpecTables::section(&sec, "### B.1.2"));
     assert_eq!(rows.len(), 60, "B.1.2 holds 60 rows");
     let last: usize = rows.last().unwrap()[0].parse().expect("row numbers are integers");
     assert_eq!(last, 60);
-    let kinds: usize = table_rows(&section(&sec, "### B.1.1")).iter().filter_map(|r| r[2].parse::<usize>().ok()).sum();
+    let kinds: usize = SpecTables::table_rows(&SpecTables::section(&sec, "### B.1.1")).iter().filter_map(|r| r[2].parse::<usize>().ok()).sum();
     assert_eq!(kinds, 60, "the kinds of B.1.1 sum to the count");
     for gone in ["Unknown", "`resolve`", "`level`"] {
         assert!(!rows.iter().any(|r| r[1] == gone), "B.1.2 still lists {gone}");
@@ -178,10 +177,10 @@ fn every_method_called_in_a_spec_fence_is_catalogued() {
     let h = Specification::library_page();
     let mut known = BTreeSet::new();
     for group in ["## H.1", "## H.2", "## H.3", "## H.4", "## H.5", "## H.6", "## H.7"] {
-        known.extend(Specification::first_cell_names(&section(&h, group)));
+        known.extend(Specification::first_cell_names(&SpecTables::section(&h, group)));
     }
-    let b1 = section(&Specification::page("appendix_b_grammar.md"), "### B.1.2");
-    for row in table_rows(&b1) {
+    let b1 = SpecTables::section(&Specification::page("appendix_b_grammar.md"), "### B.1.2");
+    for row in SpecTables::table_rows(&b1) {
         if row[2].contains("method") {
             known.insert(row[1].trim_matches('`').to_string());
         }
@@ -194,7 +193,7 @@ fn every_method_called_in_a_spec_fence_is_catalogued() {
 #[test]
 fn appendix_h_is_in_the_file_map_and_nav() {
     // POL-02 AC 4.
-    let map = section(&Specification::page("index.md"), "### 0.8");
+    let map = SpecTables::section(&Specification::page("index.md"), "### 0.8");
     assert!(map.contains("appendix_h_library.md"), "§0.8 lists the file");
     let nav = std::fs::read_to_string(Specification::root().join("mkdocs.yml")).expect("mkdocs.yml");
     let line = nav.lines().find(|l| l.contains("spec/appendix_h_library.md")).expect("nav entry");
@@ -206,7 +205,7 @@ fn b36_rows_carry_a_code_and_a_replacement() {
     // POL-01 AC 3: the code sits in the second cell, the replacement in the
     // third, and no first cell is a code (the parse-phase fixture guard of
     // `msl_errors` scrapes first cells).
-    let rows = table_rows(&Specification::removed_forms_section());
+    let rows = SpecTables::table_rows(&Specification::removed_forms_section());
     assert_eq!(rows.len(), 21);
     for row in rows {
         assert_eq!(row.len(), 3, "Removed | Reported as | Write instead: {row:?}");

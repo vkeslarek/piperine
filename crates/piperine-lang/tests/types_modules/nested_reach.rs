@@ -3,20 +3,24 @@
 //! type, by name, through templates and in generation; an item that is not `pub` is refused at any depth; and a cycle of node
 //! connections through such a reach types as hardware.
 
-use crate::nested;
 
-use nested::{MIXED_LETS, MODELS, READS};
 use piperine_lang::pom::Design;
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::nested_reach::{MIXED_LETS, MODELS, READS};
 
-/// The `(code, message)` pairs of the design and of the check of `Top` of `src`.
-fn found(src: &str) -> Vec<(String, String)> {
-    let design = Design::builder().source("top.msl", src).build();
-    let mut found: Vec<(String, String)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
-    if let Err(refused) = Types::check(&design, "Top") {
-        found.extend(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())));
+/// Associated test helpers of `nested_reach`, grouped on one fixture type.
+struct NestedReachFixture;
+
+impl NestedReachFixture {
+    /// The `(code, message)` pairs of the design and of the check of `Top` of `src`.
+    fn found(src: &str) -> Vec<(String, String)> {
+        let design = Design::builder().source("top.msl", src).build();
+        let mut found: Vec<(String, String)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
+        if let Err(refused) = Types::check(&design, "Top") {
+            found.extend(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())));
+        }
+        found
     }
-    found
 }
 
 #[test]
@@ -25,7 +29,7 @@ fn every_kind_of_item_types_three_and_four_levels_below_the_reader() {
     // (a carrier) of the cell `R` names, placed by name, through templates and in generation, type with no diagnostic
     for (placement, reach, form) in READS {
         let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> v({reach}.sn) + {reach}.k + {reach}.twice + {reach}.vs + {reach}.q; }}");
-        assert_eq!(found(&format!("{MODELS}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
+        assert_eq!(NestedReachFixture::found(&format!("{MODELS}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
     }
 }
 
@@ -36,7 +40,7 @@ fn a_let_over_a_param_and_the_solve_types_one_three_and_four_levels_below_the_re
     let models = MODELS.replace("pub let vs = v(sn);", MIXED_LETS);
     for (placement, reach, form) in READS.iter().copied().chain([("let p = Cell(a) { k: 2.0, g: 3.0 };", "p", "1 by name")]) {
         let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> {reach}.deep + {reach}.gated + {reach}.gi; }}");
-        assert_eq!(found(&format!("{models}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
+        assert_eq!(NestedReachFixture::found(&format!("{models}{top}")), Vec::<(String, String)>::new(), "{form}: {reach}");
     }
 }
 
@@ -45,7 +49,7 @@ fn an_item_that_is_not_pub_is_refused_three_and_four_levels_below_the_reader() {
     // §8.2.8: `hidden` is no `pub` item of the cell, so no read of it types, whatever the depth
     for (placement, reach, form) in READS {
         let top = format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ v(o) +> {reach}.hidden; }}");
-        let codes: Vec<String> = found(&format!("{MODELS}{top}")).into_iter().map(|(code, _)| code).collect();
+        let codes: Vec<String> = NestedReachFixture::found(&format!("{MODELS}{top}")).into_iter().map(|(code, _)| code).collect();
         if form.contains("generic") {
             // a type parameter names no module to the checker: the refusal is the elaborator's (`elab_nested_reach.rs`, C15)
             assert!(codes.is_empty(), "{form}: the checker defers a read through a type parameter: {codes:?}");
@@ -71,6 +75,6 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_types_as_hardware() {
         ("let p = GBlock::<_>(q.bank.c0.sn) { cell: Cell { } }; let q = GBlock::<_>(p.bank.c0.sn) { cell: Cell { } };", "3 generic template pair"),
         ("let p = GPlane::<_>(p.grid.row.cells[1].sn) { cell: Cell { } };", "4 generic generation own"),
     ] {
-        assert_eq!(found(&format!("{MODELS}module Top() {{ {placement} }}")), Vec::<(String, String)>::new(), "{form}");
+        assert_eq!(NestedReachFixture::found(&format!("{MODELS}module Top() {{ {placement} }}")), Vec::<(String, String)>::new(), "{form}");
     }
 }

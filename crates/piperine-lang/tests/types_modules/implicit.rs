@@ -2,10 +2,10 @@
 //! `Option<f64>`, `m` and `dtemp` are ordinary names (no implicit param exists), and a placement that binds a name
 //! its module does not declare is `E0320` whatever the name.
 
-use crate::support;
 
 use piperine_lang::pom::{DeclKind, Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::{Ty, Types};
+use piperine_lang_fixtures::pom::PomSource;
 
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
@@ -15,8 +15,8 @@ struct RunSources;
 impl RunSources {
     /// The design of `items`, which must parse and resolve.
     fn design(items: &str) -> Design {
-        let design = support::build(&format!("{HEAD}{items}"));
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{items}", support::codes(&design));
+        let design = PomSource::build(&format!("{HEAD}{items}"));
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{items}", PomSource::codes(&design));
         design
     }
 
@@ -58,8 +58,8 @@ fn m_and_dtemp_are_ordinary_names() {
     let own = "module Resistor(a: E, b: E) { r: f64 = 1k; m: Option<f64>; dtemp: f64 = 0.0; let count = m.unwrap_or(1.0); }\n\
                module Top() { signal a: E; let r1 = Resistor(a, gnd) { r: 1k, m: Some(4.0), dtemp: 5.0 }; }";
     assert_eq!(RunSources::codes(own), Vec::<String>::new());
-    let none = support::build(&format!("{HEAD}module Resistor(a: E, b: E) {{ r: f64 = 1k; }}\nmodule Top() {{ signal a: E; let r1 = Resistor(a, gnd) {{ r: 1k, m: Some(4.0) }}; }}"));
-    assert_eq!(support::codes(&none), ["E0320"], "no implicit param exists");
+    let none = PomSource::build(&format!("{HEAD}module Resistor(a: E, b: E) {{ r: f64 = 1k; }}\nmodule Top() {{ signal a: E; let r1 = Resistor(a, gnd) {{ r: 1k, m: Some(4.0) }}; }}"));
+    assert_eq!(PomSource::codes(&none), ["E0320"], "no implicit param exists");
 }
 
 /// Sources over the real standard library (`multiplicity()` and the constants live there).
@@ -69,7 +69,7 @@ impl StdSources {
     /// The type of the binding `name` of `Top` in a clean check of the module `items` over the real `std`.
     fn local(items: &str, name: &str) -> Ty {
         let design = Design::builder().source("top.msl", &format!("{HEAD}{items}")).build();
-        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
         let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{items}", RunSources::messages(&d)));
         let decl = design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Binding(_))).unwrap_or_else(|| panic!("no binding `{name}`")).id();
         types.local(decl).unwrap_or_else(|| panic!("no type for `{name}`")).clone()

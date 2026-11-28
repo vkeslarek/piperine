@@ -2,8 +2,6 @@
 //! pattern and type form of the language becomes one node of the matching
 //! kind, reachable from the declaration that owns it.
 
-use crate::support;
-use crate::lowering;
 
 use std::collections::BTreeSet;
 
@@ -11,87 +9,102 @@ use piperine_lang::pom::{
     BindingOrigin, DeclId, DeclKind, Design, ExprId, ExprKind, FnParamData, PatId, PatKind, PathId, Reflect, StmtId,
     StmtKind, TypeId, TypeKind,
 };
-use lowering::lowering_codes;
-use support::{build, codes};
+use piperine_lang_fixtures::lowering::LoweringCodes;
+use piperine_lang_fixtures::pom::PomSource;
 
-fn expr_kind_name(k: &ExprKind) -> &'static str {
-    match k {
-        ExprKind::Lit(_) => "Lit",
-        ExprKind::Path(_) => "Path",
-        ExprKind::Unary { .. } => "Unary",
-        ExprKind::Binary { .. } => "Binary",
-        ExprKind::Assign { .. } => "Assign",
-        ExprKind::Cast { .. } => "Cast",
-        ExprKind::Call { .. } => "Call",
-        ExprKind::MethodCall { .. } => "MethodCall",
-        ExprKind::Field { .. } => "Field",
-        ExprKind::Index { .. } => "Index",
-        ExprKind::Range { .. } => "Range",
-        ExprKind::Paren(_) => "Paren",
-        ExprKind::Tuple(_) => "Tuple",
-        ExprKind::Array(_) => "Array",
-        ExprKind::ArrayRepeat { .. } => "ArrayRepeat",
-        ExprKind::Struct { .. } => "Struct",
-        ExprKind::Block(_) => "Block",
-        ExprKind::If { .. } => "If",
-        ExprKind::Let { .. } => "Let",
-        ExprKind::Match { .. } => "Match",
-        ExprKind::While { .. } => "While",
-        ExprKind::Loop { .. } => "Loop",
-        ExprKind::For { .. } => "For",
-        ExprKind::Break(_) => "Break",
-        ExprKind::Continue => "Continue",
-        ExprKind::Return(_) => "Return",
-        ExprKind::Closure { .. } => "Closure",
-        ExprKind::Try(_) => "Try",
-        ExprKind::Emit { .. } => "Emit",
-        ExprKind::IncludeStr(_) => "IncludeStr",
-        ExprKind::Error => "Error",
+/// Associated test helpers of `body`, grouped on one fixture type.
+struct BodyFixture;
+
+impl BodyFixture {
+    fn expr_kind_name(k: &ExprKind) -> &'static str {
+        match k {
+            ExprKind::Lit(_) => "Lit",
+            ExprKind::Path(_) => "Path",
+            ExprKind::Unary { .. } => "Unary",
+            ExprKind::Binary { .. } => "Binary",
+            ExprKind::Assign { .. } => "Assign",
+            ExprKind::Cast { .. } => "Cast",
+            ExprKind::Call { .. } => "Call",
+            ExprKind::MethodCall { .. } => "MethodCall",
+            ExprKind::Field { .. } => "Field",
+            ExprKind::Index { .. } => "Index",
+            ExprKind::Range { .. } => "Range",
+            ExprKind::Paren(_) => "Paren",
+            ExprKind::Tuple(_) => "Tuple",
+            ExprKind::Array(_) => "Array",
+            ExprKind::ArrayRepeat { .. } => "ArrayRepeat",
+            ExprKind::Struct { .. } => "Struct",
+            ExprKind::Block(_) => "Block",
+            ExprKind::If { .. } => "If",
+            ExprKind::Let { .. } => "Let",
+            ExprKind::Match { .. } => "Match",
+            ExprKind::While { .. } => "While",
+            ExprKind::Loop { .. } => "Loop",
+            ExprKind::For { .. } => "For",
+            ExprKind::Break(_) => "Break",
+            ExprKind::Continue => "Continue",
+            ExprKind::Return(_) => "Return",
+            ExprKind::Closure { .. } => "Closure",
+            ExprKind::Try(_) => "Try",
+            ExprKind::Emit { .. } => "Emit",
+            ExprKind::IncludeStr(_) => "IncludeStr",
+            ExprKind::Error => "Error",
+        }
     }
-}
 
-fn pat_kind_name(k: &PatKind) -> &'static str {
-    match k {
-        PatKind::Wild => "Wild",
-        PatKind::Rest => "Rest",
-        PatKind::Ident { .. } => "Ident",
-        PatKind::Lit(_) => "Lit",
-        PatKind::Path(_) => "Path",
-        PatKind::Tuple(_) => "Tuple",
-        PatKind::TupleStruct { .. } => "TupleStruct",
-        PatKind::Struct { .. } => "Struct",
-        PatKind::Or(_) => "Or",
-        PatKind::Range { .. } => "Range",
-        PatKind::Array(_) => "Array",
+    fn pat_kind_name(k: &PatKind) -> &'static str {
+        match k {
+            PatKind::Wild => "Wild",
+            PatKind::Rest => "Rest",
+            PatKind::Ident { .. } => "Ident",
+            PatKind::Lit(_) => "Lit",
+            PatKind::Path(_) => "Path",
+            PatKind::Tuple(_) => "Tuple",
+            PatKind::TupleStruct { .. } => "TupleStruct",
+            PatKind::Struct { .. } => "Struct",
+            PatKind::Or(_) => "Or",
+            PatKind::Range { .. } => "Range",
+            PatKind::Array(_) => "Array",
+        }
     }
-}
 
-fn type_kind_name(k: &TypeKind) -> &'static str {
-    match k {
-        TypeKind::Path(_) => "Path",
-        TypeKind::Array { .. } => "Array",
-        TypeKind::Tuple(_) => "Tuple",
-        TypeKind::Flip(_) => "Flip",
-        TypeKind::FnPtr { .. } => "FnPtr",
-        TypeKind::Infer => "Infer",
+    fn type_kind_name(k: &TypeKind) -> &'static str {
+        match k {
+            TypeKind::Path(_) => "Path",
+            TypeKind::Array { .. } => "Array",
+            TypeKind::Tuple(_) => "Tuple",
+            TypeKind::Flip(_) => "Flip",
+            TypeKind::FnPtr { .. } => "FnPtr",
+            TypeKind::Infer => "Infer",
+        }
     }
-}
 
-fn stmt_kind_name(k: &StmtKind) -> &'static str {
-    match k {
-        StmtKind::Let { .. } => "Let",
-        StmtKind::Expr { .. } => "Expr",
-        StmtKind::Item(_) => "Item",
-        StmtKind::Contribution { .. } => "Contribution",
-        StmtKind::Commit { .. } => "Commit",
-        StmtKind::Empty => "Empty",
-        StmtKind::Signal(_) => "Signal",
-        StmtKind::Reaction(_) => "Reaction",
+    fn stmt_kind_name(k: &StmtKind) -> &'static str {
+        match k {
+            StmtKind::Let { .. } => "Let",
+            StmtKind::Expr { .. } => "Expr",
+            StmtKind::Item(_) => "Item",
+            StmtKind::Contribution { .. } => "Contribution",
+            StmtKind::Commit { .. } => "Commit",
+            StmtKind::Empty => "Empty",
+            StmtKind::Signal(_) => "Signal",
+            StmtKind::Reaction(_) => "Reaction",
+        }
     }
-}
 
-fn expr_kinds(d: &Design) -> BTreeSet<&'static str> {
-    (0..d.expr_count()).map(|i| expr_kind_name(&d.expr_node(ExprId(i as u32)).kind)).collect()
+    fn expr_kinds(d: &Design) -> BTreeSet<&'static str> {
+        (0..d.expr_count()).map(|i| BodyFixture::expr_kind_name(&d.expr_node(ExprId(i as u32)).kind)).collect()
+    }
+
+    /// Parse `src`, build it, rebuild the tree from the arenas and demand the same
+    /// tree, spans included (`Loc` equality ignores spans, `Debug` prints them).
+    fn assert_round_trips(src: &str) {
+        let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
+        let design = PomSource::build(src);
+        let rebuilt = design.files()[0].to_ast();
+        assert_eq!(rebuilt, parsed, "structure differs for:\n{src}");
+        assert_eq!(format!("{rebuilt:?}"), format!("{parsed:?}"), "spans differ for:\n{src}");
+    }
 }
 
 #[test]
@@ -130,26 +143,26 @@ fn every_expression_form_has_its_kind() {
     ];
     let mut seen = BTreeSet::new();
     for (expected, snippet) in forms {
-        let design = build(&format!("const X: u32 = {snippet};"));
-        assert!(lowering_codes(&design).is_empty(), "`{snippet}` must parse cleanly: {:?}", design.diagnostics());
-        let kinds = expr_kinds(&design);
+        let design = PomSource::build(&format!("const X: u32 = {snippet};"));
+        assert!(LoweringCodes::of(&design).is_empty(), "`{snippet}` must parse cleanly: {:?}", design.diagnostics());
+        let kinds = BodyFixture::expr_kinds(&design);
         assert!(kinds.contains(expected), "`{snippet}` yields no {expected} node, only {kinds:?}");
         assert!(!kinds.contains("Error"), "`{snippet}` must not yield an Error node");
         seen.insert(expected);
     }
     assert_eq!(seen.len(), 30);
     // The outermost node of a whole-value form is the form itself.
-    let design = build("const X: u32 = a + b;");
+    let design = PomSource::build("const X: u32 = a + b;");
     let value = design.find("X").and_then(|d| d.as_const()).and_then(|c| c.value()).unwrap();
-    assert_eq!(expr_kind_name(value.kind()), "Binary");
+    assert_eq!(BodyFixture::expr_kind_name(value.kind()), "Binary");
     assert_eq!(value.text(), "a + b");
 }
 
 #[test]
 fn error_expressions_become_error_nodes() {
-    let design = build("const X: u32 = emit!(1);");
+    let design = PomSource::build("const X: u32 = emit!(1);");
     assert!(!design.diagnostics().is_empty());
-    assert!(expr_kinds(&design).contains("Error"));
+    assert!(BodyFixture::expr_kinds(&design).contains("Error"));
 }
 
 #[test]
@@ -179,20 +192,20 @@ const X: u32 = {
     let t6: _ = x;
     a + 1
 };";
-    let design = build(src);
+    let design = PomSource::build(src);
     let stmts: BTreeSet<_> =
-        (0..design.stmt_count()).map(|i| stmt_kind_name(&design.stmt_node(StmtId(i as u32)).kind)).collect();
+        (0..design.stmt_count()).map(|i| BodyFixture::stmt_kind_name(&design.stmt_node(StmtId(i as u32)).kind)).collect();
     assert_eq!(
         stmts.into_iter().collect::<Vec<_>>(),
         ["Commit", "Contribution", "Empty", "Expr", "Item", "Let", "Reaction", "Signal"]
     );
-    let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
+    let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| BodyFixture::pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
     assert_eq!(
         pats.into_iter().collect::<Vec<_>>(),
         ["Array", "Ident", "Lit", "Or", "Path", "Range", "Rest", "Struct", "Tuple", "TupleStruct", "Wild"]
     );
     let types: BTreeSet<_> =
-        (0..design.type_count()).map(|i| type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();
+        (0..design.type_count()).map(|i| BodyFixture::type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();
     assert_eq!(types.into_iter().collect::<Vec<_>>(), ["Array", "Flip", "Infer", "Path", "Tuple"]);
 
     // One Binding per bound identifier, owned by the const, in source order.
@@ -239,8 +252,8 @@ digital for M {
 #[test]
 fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
     // Specific, independently written expectations.
-    let design = build("const X: u32 = { let a = 1; a + 1 };");
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build("const X: u32 = { let a = 1; a + 1 };");
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let x = design.find("X").unwrap();
     let value = x.as_const().and_then(|c| c.value()).unwrap();
     assert_eq!(value.text(), "{ let a = 1; a + 1 }");
@@ -255,7 +268,7 @@ fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
     assert_eq!(ty_texts, ["u32"]);
 
     // A body inside a function is enclosed by the function, not the file.
-    let design = build("fn f(x: u32) -> u32 { x + 1 }");
+    let design = PomSource::build("fn f(x: u32) -> u32 { x + 1 }");
     let f = design.find("f").unwrap();
     let body_expr = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == "x + 1").unwrap();
     assert_eq!(body_expr.enclosing(), f);
@@ -265,8 +278,8 @@ fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
     assert!(ty.is_some(), "the parameter type is enclosed by the parameter");
 
     // The audit: every node of every arena, nearest declaration that contains it.
-    let design = build(AUDIT_SRC);
-    assert!(lowering_codes(&design).is_empty(), "{:?}", design.diagnostics());
+    let design = PomSource::build(AUDIT_SRC);
+    assert!(LoweringCodes::of(&design).is_empty(), "{:?}", design.diagnostics());
     let text = design.files().into_iter().filter(|f| !f.krate().is_std()).last().unwrap().text();
     let decls: Vec<_> = (0..design.decl_count()).map(|i| (DeclId(i as u32), design.decl_data(DeclId(i as u32)))).filter(|(id, _)| !design.decl(*id).file().krate().is_std()).collect();
     let nearest = |span: piperine_lang::msl::Span, owner: DeclId| {
@@ -318,7 +331,7 @@ fn node_text_is_authored_text_and_enclosing_is_nearest_decl() {
 fn error_nodes_are_kept() {
     // Item.
     let src = "struct ;";
-    let design = build(src);
+    let design = PomSource::build(src);
     assert!(!design.diagnostics().is_empty());
     let kids = design.root().children();
     let err = kids.iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error item");
@@ -326,8 +339,8 @@ fn error_nodes_are_kept() {
 
     // Module item.
     let src = "module M() { module N() {} }";
-    let design = build(src);
-    assert!(codes(&design).contains(&"E0303".to_string()));
+    let design = PomSource::build(src);
+    assert!(PomSource::codes(&design).contains(&"E0303".to_string()));
     let m = design.find("M").unwrap();
     let err = m.children().into_iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error module item");
     assert_eq!(err.text(), "module N() {}");
@@ -335,16 +348,16 @@ fn error_nodes_are_kept() {
 
     // Digital item.
     let src = "digital for M { q <- 1; }";
-    let design = build(src);
-    assert!(codes(&design).contains(&"E0434".to_string()));
+    let design = PomSource::build(src);
+    assert!(PomSource::codes(&design).contains(&"E0434".to_string()));
     let beh = design.root().children().into_iter().find(|k| matches!(k.kind(), DeclKind::Behavior(_))).expect("behavior");
     let err = beh.children().into_iter().find(|k| matches!(k.kind(), DeclKind::Error)).expect("an Error digital item");
     assert_eq!(err.text(), "q <- 1;");
 
     // Function parameter.
     let src = "fn f(a: u32, ...) { }";
-    let design = build(src);
-    assert!(codes(&design).contains(&"E0143".to_string()));
+    let design = PomSource::build(src);
+    assert!(PomSource::codes(&design).contains(&"E0143".to_string()));
     let f = design.find("f").unwrap();
     let err = f
         .children()
@@ -354,7 +367,7 @@ fn error_nodes_are_kept() {
     assert_eq!(err.text(), "...");
 
     // Expression.
-    let design = build("const X: u32 = emit!(1);");
+    let design = PomSource::build("const X: u32 = emit!(1);");
     let e = (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
         .find(|e| matches!(e.kind(), ExprKind::Error))
@@ -370,24 +383,14 @@ fn depth_256_builds_on_default_stack() {
     for open_close in [("(", ")"), ("{ ", " }"), ("-", ""), ("[", "]")] {
         let (open, close) = open_close;
         let src = format!("const X: u32 = {}1{};", open.repeat(256), close.repeat(256));
-        let design = build(&src);
+        let design = PomSource::build(&src);
         assert!(design.expr_count() >= 256, "`{open}` x256: {} expression nodes", design.expr_count());
         assert!(design.check().is_empty(), "{:?}", design.check());
     }
     // One past the limit is reported, not a crash.
     let src = format!("const X: u32 = {}1{};", "(".repeat(300), ")".repeat(300));
-    let design = build(&src);
+    let design = PomSource::build(&src);
     assert!(!design.diagnostics().is_empty());
-}
-
-/// Parse `src`, build it, rebuild the tree from the arenas and demand the same
-/// tree, spans included (`Loc` equality ignores spans, `Debug` prints them).
-fn assert_round_trips(src: &str) {
-    let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
-    let design = build(src);
-    let rebuilt = design.files()[0].to_ast();
-    assert_eq!(rebuilt, parsed, "structure differs for:\n{src}");
-    assert_eq!(format!("{rebuilt:?}"), format!("{parsed:?}"), "spans differ for:\n{src}");
 }
 
 #[test]
@@ -405,10 +408,10 @@ fn value_bodies_round_trip() {
         "m(1) { w: 2 }", "a::b::<T>::c", "self::a", "super::a", "crate::a",
     ];
     for form in forms {
-        assert_round_trips(&format!("const X: u32 = {form};"));
+        BodyFixture::assert_round_trips(&format!("const X: u32 = {form};"));
     }
     // Statements, patterns and types.
-    assert_round_trips(
+    BodyFixture::assert_round_trips(
         "\
 const X: u32 = {
     let a = 1;
@@ -467,7 +470,7 @@ fn fns_consts_metas_and_generics_round_trip() {
         "",
         "  // a comment\n",
     ] {
-        assert_round_trips(src);
+        BodyFixture::assert_round_trips(src);
     }
 }
 
@@ -476,9 +479,9 @@ fn function_pointer_type_round_trips() {
     // POL-09 AC 4: a function-pointer type lowers to `TypeKind::FnPtr`
     // (params and return as type nodes) and converts back to the parsed tree.
     let src = "fn apply(f: fn(f64) -> f64, g: fn(), h: fn([u8; 2]) -> u8) {}\nstruct S { r: fn(f64) -> f64 }";
-    assert_round_trips(src);
-    let design = build(src);
-    assert!(codes(&design).is_empty(), "{:?}", codes(&design));
+    BodyFixture::assert_round_trips(src);
+    let design = PomSource::build(src);
+    assert!(PomSource::codes(&design).is_empty(), "{:?}", PomSource::codes(&design));
     let ptrs: Vec<_> = (0..design.type_count())
         .filter_map(|i| match &design.type_node(TypeId(i as u32)).kind {
             TypeKind::FnPtr { params, ret } => Some((params.len(), ret.is_some())),
@@ -509,7 +512,7 @@ const WALK_SOURCES: [&str; 12] = [
 fn expr_children_and_parent_are_inverse() {
     let mut with_children = 0;
     for src in WALK_SOURCES {
-        let design = build(src);
+        let design = PomSource::build(src);
         let mut parented = 0;
         for i in 0..design.expr_count() {
             let e = design.expr(ExprId(i as u32));
@@ -530,7 +533,7 @@ fn expr_children_and_parent_are_inverse() {
     assert!(with_children > 30);
 
     // Direct sub-expressions, in source order, for the forms with a known shape.
-    let design = build("const X: f64 = f(a + b, c: d) { p: e };");
+    let design = PomSource::build("const X: f64 = f(a + b, c: d) { p: e };");
     let call = design.find("X").and_then(|d| d.as_const()).and_then(|c| c.value()).unwrap();
     let texts: Vec<_> = call.children().iter().map(|c| c.text()).collect();
     assert_eq!(texts, ["f", "a + b", "d", "e"]);
@@ -541,7 +544,7 @@ fn expr_children_and_parent_are_inverse() {
     assert!(sum.children()[0].children().is_empty());
 
     // A block form lists the expressions of its statements; the condition comes first, `else` last.
-    let design = build("fn f(a: f64) -> f64 { if a > 0.0 { a; 1.0 } else { 2.0 } }");
+    let design = PomSource::build("fn f(a: f64) -> f64 { if a > 0.0 { a; 1.0 } else { 2.0 } }");
     let body = design.function("f").unwrap().exprs();
     let iff = body[0];
     assert_eq!(iff.children().iter().map(|c| c.text()).collect::<Vec<_>>(), ["a > 0.0", "a", "1.0", "{ 2.0 }"]);
@@ -558,7 +561,7 @@ fn f(x: f64) -> f64 {
     if y > 0.0 { h(y) } else { 0.0 }
 }
 ";
-    let design = build(src);
+    let design = PomSource::build(src);
     let texts = |d: &Design, name: &str| d.function(name).unwrap().exprs().iter().map(|e| e.text().to_string()).collect::<Vec<_>>();
     assert_eq!(
         texts(&design, "f"),
@@ -575,19 +578,19 @@ fn f(x: f64) -> f64 {
     }
 
     // A module, a behavior block and a reaction list their own expressions.
-    let design = build("module M(a: Bit) { let k = 1.0 + 2.0; s = a; signal s: Bit = 4.0; }\nanalog for M { let z = 5.0; }\n");
+    let design = PomSource::build("module M(a: Bit) { let k = 1.0 + 2.0; s = a; signal s: Bit = 4.0; }\nanalog for M { let z = 5.0; }\n");
     let m = design.module("M").unwrap();
     assert_eq!(m.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["1.0 + 2.0", "1.0", "2.0", "s", "a", "4.0"]);
     let block = m.behaviors()[0];
     assert_eq!(block.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["5.0"]);
-    let design = build("module M(a: Bit) {}\ndigital for M { on a.rise() { let q = 1.0 + 2.0; } }\n");
+    let design = PomSource::build("module M(a: Bit) {}\ndigital for M { on a.rise() { let q = 1.0 + 2.0; } }\n");
     let reaction = design.module("M").unwrap().behaviors()[0].reactions()[0];
     assert_eq!(reaction.exprs().iter().map(|e| e.text()).collect::<Vec<_>>(), ["a.rise()", "a", "1.0 + 2.0", "1.0", "2.0"]);
 }
 
 #[test]
 fn check_reports_a_broken_parent_table() {
-    let design = build("const X: f64 = a + b;");
+    let design = PomSource::build("const X: f64 = a + b;");
     assert!(design.check().is_empty());
     let mut json: serde_json::Value = serde_json::to_value(&design).unwrap();
     let table = json["expr_parent"].as_array_mut().expect("the parent table serializes with the design");
@@ -602,7 +605,7 @@ fn check_reports_a_broken_parent_table() {
 #[test]
 fn block_and_stmt_handles_walk_a_body() {
     let src = "fn f(a: f64) -> f64 { let b = g(a); if a > 0.0 { h(b); } b + 1.0 }\nfn e() { 1.0; }\nfn n() {}\nfn g(x: f64) -> f64 { x }\nfn h(x: f64) {}";
-    let design = build(src);
+    let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     // POL-20 AC 6: the handle is `pom::Block`; its storage type is `BlockNode`.
     let body: piperine_lang::pom::Block<'_> = design.function("f").unwrap().body().unwrap();
@@ -642,7 +645,7 @@ fn block_and_stmt_handles_walk_a_body() {
     assert_eq!(cond.stmt(), Some(stmts[1]));
 
     // A reaction's body is a handle too.
-    let design = build("module M(a: Bit) {}\ndigital for M { on a.rise() { a <- 1.0 after 2.0; } }");
+    let design = PomSource::build("module M(a: Bit) {}\ndigital for M { on a.rise() { a <- 1.0 after 2.0; } }");
     let reaction = design.module("M").unwrap().behaviors()[0].reactions()[0];
     let stmts = reaction.body().stmts();
     assert_eq!(stmts.len(), 1);

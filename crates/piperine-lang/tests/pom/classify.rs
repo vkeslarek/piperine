@@ -5,50 +5,90 @@
 //! call or a `Name { .. }` expression is: instance, template, literal; and what
 //! a member (`inst.name`, `bundle.field`, `carrier.method()`) resolves to.
 
-use crate::support;
 
 use piperine_lang::pom::{CallClass, Design, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
-use support::build;
+use piperine_lang_fixtures::pom::PomSource;
 
-/// A design of `src` over the embedded standard library.
-fn with_prelude(src: &str) -> Design {
-    Design::builder().source("top.msl", src).build()
-}
+/// Associated test helpers of `classify`, grouped on one fixture type.
+struct ClassifyFixture;
 
-fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
-    design.diagnostics().iter().filter(|d| d.diagnostic.code == code).collect()
-}
+impl ClassifyFixture {
+    /// A design of `src` over the embedded standard library.
+    fn with_prelude(src: &str) -> Design {
+        Design::builder().source("top.msl", src).build()
+    }
 
-/// The authored text of the primary span of a diagnostic.
-fn primary_text<'a>(design: &'a Design, d: &DesignDiagnostic) -> &'a str {
-    let file = &design.files()[d.file.index()];
-    &file.text()[d.diagnostic.span().range()]
+    fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
+        design.diagnostics().iter().filter(|d| d.diagnostic.code == code).collect()
+    }
+
+    /// The authored text of the primary span of a diagnostic.
+    fn primary_text<'a>(design: &'a Design, d: &DesignDiagnostic) -> &'a str {
+        let file = &design.files()[d.file.index()];
+        &file.text()[d.diagnostic.span().range()]
+    }
+
+    /// The class of every call of the root file, with the call's text, in source order.
+    fn call_classes(design: &Design) -> Vec<(String, CallClass)> {
+        (0..design.expr_count())
+            .map(|i| design.expr(ExprId(i as u32)))
+            .filter(|e| !e.enclosing().file().krate().is_std())
+            .filter_map(|e| match e.kind() {
+                ExprKind::Call { class, .. } => Some((e.text().to_string(), *class)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The class of every `Name { .. }` expression of the root file, with its text.
+    fn struct_classes(design: &Design) -> Vec<(String, StructClass)> {
+        (0..design.expr_count())
+            .map(|i| design.expr(ExprId(i as u32)))
+            .filter(|e| !e.enclosing().file().krate().is_std())
+            .filter_map(|e| match e.kind() {
+                ExprKind::Struct { class, .. } => Some((e.text().to_string(), *class)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// What the member expression with this text resolves to (a field access or a method call).
+    fn member_res(design: &Design, text: &str) -> Resolution {
+        let e = (0..design.expr_count())
+            .map(|i| design.expr(ExprId(i as u32)))
+            .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
+            .unwrap_or_else(|| panic!("member expression `{text}`"));
+        match e.kind() {
+            ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
+            _ => unreachable!(),
+        }
+    }
 }
 
 #[test]
 fn behavior_without_module_is_e0401() {
     let src = "struct NotAModule {}\nanalog for Nope { }\nanalog for NotAModule { }\ndigital for b::C { }\n";
-    let design = build(src);
-    let errors = with_code(&design, "E0401");
-    let at: Vec<_> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    let design = PomSource::build(src);
+    let errors = ClassifyFixture::with_code(&design, "E0401");
+    let at: Vec<_> = errors.iter().map(|d| ClassifyFixture::primary_text(&design, d)).collect();
     assert_eq!(at, ["Nope", "NotAModule", "b::C"]);
     // The blocks stay in the tree with no module, and each is one error, not two.
     let blocks: Vec<_> = design.root().children().into_iter().filter_map(|c| c.as_behavior()).collect();
     assert_eq!(blocks.len(), 3);
     assert!(blocks.iter().all(|b| b.module().is_none()));
-    assert_eq!(support::codes(&design).iter().filter(|c| c.as_str() == "E0161").count(), 0, "{:?}", design.diagnostics());
+    assert_eq!(PomSource::codes(&design).iter().filter(|c| c.as_str() == "E0161").count(), 0, "{:?}", design.diagnostics());
 }
 
 #[test]
 fn behavior_for_extern_module_is_e0402() {
-    let design = build("extern \"osdi\" module Bsim4(d: Electrical) { l: f64 = 1u; }\nanalog for Bsim4 { }\n");
-    let errors = with_code(&design, "E0402");
+    let design = PomSource::build("extern \"osdi\" module Bsim4(d: Electrical) { l: f64 = 1u; }\nanalog for Bsim4 { }\n");
+    let errors = ClassifyFixture::with_code(&design, "E0402");
     assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(primary_text(&design, errors[0]), "Bsim4");
+    assert_eq!(ClassifyFixture::primary_text(&design, errors[0]), "Bsim4");
     // The block is still linked: the module exists, it is just not allowed to have one.
     let block = design.root().children().into_iter().find_map(|c| c.as_behavior()).unwrap();
     assert_eq!(block.module(), design.module("Bsim4"));
-    assert!(with_code(&design, "E0401").is_empty());
+    assert!(ClassifyFixture::with_code(&design, "E0401").is_empty());
 }
 
 #[test]
@@ -64,21 +104,21 @@ analog for Short { }
 analog for Plain { }
 analog<N> for Plain<N> { }
 ";
-    let design = build(src);
-    let errors = with_code(&design, "E0403");
-    let heads: Vec<_> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    let design = PomSource::build(src);
+    let errors = ClassifyFixture::with_code(&design, "E0403");
+    let heads: Vec<_> = errors.iter().map(|d| ClassifyFixture::primary_text(&design, d)).collect();
     assert_eq!(heads, ["analog<A> for Short<N>", "analog<N, M> for Short<N, M>", "analog<N> for Short<A>", "analog for Short", "analog<N> for Plain<N>"]);
     // The first block and the one for a module without generics are fine.
     assert_eq!(errors.len(), 5);
-    assert!(with_code(&design, "E0401").is_empty() && with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(ClassifyFixture::with_code(&design, "E0401").is_empty() && ClassifyFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
 }
 
 #[test]
 fn behavior_for_module_in_other_source_is_e0401() {
     let top = "mod b;\nuse b::M;\nanalog for M { }\nanalog for b::M { }\n";
     let design = Design::builder().source("top.msl", top).source("b.msl", "pub module M() {}\n").build();
-    let errors = with_code(&design, "E0401");
-    let at: Vec<_> = errors.iter().map(|d| primary_text(&design, d)).collect();
+    let errors = ClassifyFixture::with_code(&design, "E0401");
+    let at: Vec<_> = errors.iter().map(|d| ClassifyFixture::primary_text(&design, d)).collect();
     assert_eq!(at, ["M", "b::M"]);
     // The module is found; it is in the wrong file, so no block is linked.
     let m = design.find("b::M").and_then(|d| d.as_module()).expect("module M in b.msl");
@@ -86,7 +126,7 @@ fn behavior_for_module_in_other_source_is_e0401() {
     assert!(design.root().children().into_iter().filter_map(|c| c.as_behavior()).all(|b| b.module().is_none()));
     // Beside its module, in its own file, a block is fine.
     let own = Design::builder().source("top.msl", "mod b;\n").source("b.msl", "pub module M() {}\nanalog for M { }\n").build();
-    assert!(with_code(&own, "E0401").is_empty(), "{:?}", own.diagnostics());
+    assert!(ClassifyFixture::with_code(&own, "E0401").is_empty(), "{:?}", own.diagnostics());
     assert_eq!(own.find("b::M").and_then(|d| d.as_module()).unwrap().behaviors().len(), 1);
 }
 
@@ -101,7 +141,7 @@ module M<N: Nature, T: Repr>(
     f: f64, o: Option<f64>, v: Val, m: Mode, g: N, ga: [N; 2], h: T, z: Nope,
 ) {}
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let m = design.module("M").unwrap();
     let kinds: Vec<(&str, PortKind)> = m.ports().iter().map(|p| (p.name().unwrap(), p.kind())).collect();
     let expected = [
@@ -137,7 +177,7 @@ struct Empty {}
 struct Generic<N: Nature> { a: N }
 struct Dangling { q: Nope }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let bundle = |name: &str| design.find(name).and_then(|d| d.as_struct()).unwrap_or_else(|| panic!("struct {name}: {:?}", design.diagnostics())).is_bundle();
     for yes in ["Cell", "Arr", "Nested", "Deep", "Generic"] {
         assert!(bundle(yes), "`{yes}` is a bundle");
@@ -157,36 +197,12 @@ struct C { d: D }
 struct D { c: C, wire: Electrical }
 struct E { c: C }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let bundle = |name: &str| design.find(name).and_then(|d| d.as_struct()).unwrap().is_bundle();
     // A cycle with no carrier in it is no bundle.
     assert!(!bundle("Me") && !bundle("A") && !bundle("B"));
     // A cycle with a carrier on it is a bundle all around, whichever member is met first.
     assert!(bundle("C") && bundle("D") && bundle("E"));
-}
-
-/// The class of every call of the root file, with the call's text, in source order.
-fn call_classes(design: &Design) -> Vec<(String, CallClass)> {
-    (0..design.expr_count())
-        .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| !e.enclosing().file().krate().is_std())
-        .filter_map(|e| match e.kind() {
-            ExprKind::Call { class, .. } => Some((e.text().to_string(), *class)),
-            _ => None,
-        })
-        .collect()
-}
-
-/// The class of every `Name { .. }` expression of the root file, with its text.
-fn struct_classes(design: &Design) -> Vec<(String, StructClass)> {
-    (0..design.expr_count())
-        .map(|i| design.expr(ExprId(i as u32)))
-        .filter(|e| !e.enclosing().file().krate().is_std())
-        .filter_map(|e| match e.kind() {
-            ExprKind::Struct { class, .. } => Some((e.text().to_string(), *class)),
-            _ => None,
-        })
-        .collect()
 }
 
 #[test]
@@ -200,7 +216,7 @@ module Top() {
     let r2 = Resistor(a, b, tc: 0.5);
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let top = design.module("Top").unwrap();
     let resistor = design.module("Resistor").unwrap();
@@ -241,7 +257,7 @@ analog for Integ {
     let w = windup(1.0);
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let integ = design.module("Integ").unwrap();
     let instances = integ.instances();
     assert_eq!(instances.len(), 1, "`windup` is a function, not an instance");
@@ -249,13 +265,13 @@ analog for Integ {
     assert!(idt.is_anonymous() && idt.name().is_none());
     assert_eq!(idt.module(), design.module("idt"));
     assert_eq!(idt.declared_in(), integ.analog_blocks()[0].decl());
-    let classes = call_classes(&design);
+    let classes = ClassifyFixture::call_classes(&design);
     let class_of = |text: &str| classes.iter().find(|(t, _)| t == text).unwrap_or_else(|| panic!("call `{text}` in {classes:?}")).1;
     assert_eq!(class_of("windup(1.0)"), CallClass::Function);
     assert!(matches!(class_of("idt(1.0, 0.0)"), CallClass::Instance { module: Some(_), via: None }));
     // A built-in module is an instance of no declared module.
-    let builtin = with_prelude("module T() {}\nanalog for T { let d = ddt(1.0); }\n");
-    assert_eq!(call_classes(&builtin), [("ddt(1.0)".to_string(), CallClass::Instance { module: None, via: None })]);
+    let builtin = ClassifyFixture::with_prelude("module T() {}\nanalog for T { let d = ddt(1.0); }\n");
+    assert_eq!(ClassifyFixture::call_classes(&builtin), [("ddt(1.0)".to_string(), CallClass::Instance { module: None, via: None })]);
     let anonymous = builtin.module("T").unwrap().instances();
     assert_eq!(anonymous.len(), 1);
     assert!(anonymous[0].module().is_none());
@@ -277,10 +293,10 @@ module Top() {
     let u = Nope { z: 1 };
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let r = design.module("R").unwrap();
     let id_of = |name: &str| design.find(name).unwrap().id();
-    let classes = struct_classes(&design);
+    let classes = ClassifyFixture::struct_classes(&design);
     let class_of = |text: &str| classes.iter().find(|(t, _)| t == text).unwrap_or_else(|| panic!("`{text}` in {classes:?}")).1;
     assert_eq!(class_of("R { r: 2.0 }"), StructClass::Template(id_of("R")));
     assert_eq!(class_of("Pair { a: s, b: s }"), StructClass::BundleLiteral);
@@ -288,7 +304,7 @@ module Top() {
     assert_eq!(class_of("E::V { k: 1 }"), StructClass::StructLiteral);
     // A name that resolves to nothing is classified as nothing (and `E0161` was reported once).
     assert_eq!(class_of("Nope { z: 1 }"), StructClass::Unclassified);
-    assert_eq!(with_code(&design, "E0161").len(), 1);
+    assert_eq!(ClassifyFixture::with_code(&design, "E0161").len(), 1);
     // The names of a template's fields are its module's params, a literal's are the struct's fields.
     let field_res = |text: &str| -> Vec<Resolution> {
         let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == text && !e.enclosing().file().krate().is_std()).unwrap();
@@ -322,7 +338,7 @@ module Top(tpl: Cell, a: Electrical) {
     let by_let = tl(a);
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let cell = design.module("Cell");
     let top = design.module("Top").unwrap();
@@ -341,15 +357,15 @@ module Top(tpl: Cell, a: Electrical) {
     let x = bank.instance("x").unwrap();
     assert_eq!((x.via_template(), x.via().and_then(|v| v.name().map(str::to_string)), x.module()), (true, Some("cell".into()), None));
     // The call that picks the template is a plain call.
-    let classes = call_classes(&design);
+    let classes = ClassifyFixture::call_classes(&design);
     assert!(classes.iter().any(|(t, c)| t == "pick(true)" && *c == CallClass::Function), "{classes:?}");
 }
 
 #[test]
 fn impl_on_module_is_no_classifier_error() {
     // §3.1.4 (generics phase D): a module type takes `impl`s, so the classifier reports nothing for one (`E0130` left the spec)
-    let design = with_prelude("module M() {}\nstruct S {}\nimpl M { pub fn f(self) {} }\nimpl S { pub fn g(self) {} }\n");
-    assert!(with_code(&design, "E0130").is_empty(), "{:?}", design.diagnostics());
+    let design = ClassifyFixture::with_prelude("module M() {}\nstruct S {}\nimpl M { pub fn f(self) {} }\nimpl S { pub fn g(self) {} }\n");
+    assert!(ClassifyFixture::with_code(&design, "E0130").is_empty(), "{:?}", design.diagnostics());
 }
 
 #[test]
@@ -360,7 +376,7 @@ module T() {
     for k in 0..1000 { signal s: Bit; let u = Cell(s); }
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let t = design.module("T").unwrap();
     assert_eq!(t.signals().len(), 1);
     let instances = t.instances();
@@ -374,7 +390,7 @@ module T() {
 #[test]
 fn self_placement_under_generation_if() {
     let src = "module M(a: Electrical) {\n    if false { let sub = M(a); }\n}\n";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").unwrap();
     let instances = m.instances();
@@ -385,10 +401,10 @@ fn self_placement_under_generation_if() {
 
 #[test]
 fn unresolved_callee_is_plain_call() {
-    let design = with_prelude("module T() { let a = nothere(1); }\n");
-    assert_eq!(call_classes(&design), [("nothere(1)".to_string(), CallClass::Function)]);
+    let design = ClassifyFixture::with_prelude("module T() { let a = nothere(1); }\n");
+    assert_eq!(ClassifyFixture::call_classes(&design), [("nothere(1)".to_string(), CallClass::Function)]);
     // The missing name is reported once, by name resolution; classification adds nothing.
-    assert_eq!(support::codes(&design), ["E0161"]);
+    assert_eq!(PomSource::codes(&design), ["E0161"]);
     assert!(design.module("T").unwrap().instances().is_empty());
 }
 
@@ -409,7 +425,7 @@ analog for M {
     let n = nothing(a);
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let callee_res = |call: &str| -> Resolution {
         let e = (0..design.expr_count()).map(|i| design.expr(ExprId(i as u32))).find(|e| e.text() == call && !e.enclosing().file().krate().is_std()).unwrap_or_else(|| panic!("call `{call}`"));
         let ExprKind::Call { callee, .. } = e.kind() else { panic!("a call") };
@@ -429,30 +445,18 @@ analog for M {
     // The first argument has no declared type and two natures declare `v`.
     assert_eq!(callee_res("v(q)"), Resolution::Deferred(piperine_lang::pom::DeferReason::AmbiguousAccess));
     // Every one of them is a probe; so is the built-in `potential`.
-    let classes = call_classes(&design);
+    let classes = ClassifyFixture::call_classes(&design);
     for call in ["v(a)", "v(b)", "temp(t)", "i(a)", "v(q)", "potential(o)"] {
         assert_eq!(classes.iter().find(|(t, _)| t == call).unwrap().1, CallClass::Probe, "{call}");
     }
     // A name that is no alias is still reported once; an alias is not.
-    assert_eq!(support::codes(&design), ["E0161"]);
-    assert_eq!(primary_text(&design, &design.diagnostics()[0]), "nothing");
+    assert_eq!(PomSource::codes(&design), ["E0161"]);
+    assert_eq!(ClassifyFixture::primary_text(&design, &design.diagnostics()[0]), "nothing");
     assert_eq!(classes.iter().find(|(t, _)| t == "nothing(a)").unwrap().1, CallClass::Function);
     // A declaration in scope wins over the alias.
-    let shadowed = with_prelude("fn v(x: f64) -> f64 { x }\nmodule M(a: Electrical) { let y = v(1.0); }\n");
+    let shadowed = ClassifyFixture::with_prelude("fn v(x: f64) -> f64 { x }\nmodule M(a: Electrical) { let y = v(1.0); }\n");
     assert!(shadowed.diagnostics().is_empty(), "{:?}", shadowed.diagnostics());
-    assert_eq!(call_classes(&shadowed), [("v(1.0)".to_string(), CallClass::Function)]);
-}
-
-/// What the member expression with this text resolves to (a field access or a method call).
-fn member_res(design: &Design, text: &str) -> Resolution {
-    let e = (0..design.expr_count())
-        .map(|i| design.expr(ExprId(i as u32)))
-        .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
-        .unwrap_or_else(|| panic!("member expression `{text}`"));
-    match e.kind() {
-        ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
-        _ => unreachable!(),
-    }
+    assert_eq!(ClassifyFixture::call_classes(&shadowed), [("v(1.0)".to_string(), CallClass::Function)]);
 }
 
 #[test]
@@ -471,15 +475,15 @@ module Top(a: Electrical) {
     let p = c.a;
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let cell = design.module("Cell").unwrap();
     let decl = |d: piperine_lang::pom::Decl| Resolution::Decl(d.id());
-    assert_eq!(member_res(&design, "c.sn"), decl(cell.signal("sn").unwrap().decl()));
-    assert_eq!(member_res(&design, "c.k"), decl(cell.param("k").unwrap().decl()));
-    assert_eq!(member_res(&design, "c.q"), decl(cell.named("q").unwrap().decl()));
+    assert_eq!(ClassifyFixture::member_res(&design, "c.sn"), decl(cell.signal("sn").unwrap().decl()));
+    assert_eq!(ClassifyFixture::member_res(&design, "c.k"), decl(cell.param("k").unwrap().decl()));
+    assert_eq!(ClassifyFixture::member_res(&design, "c.q"), decl(cell.named("q").unwrap().decl()));
     // A port is the module's interface: always readable by its parent.
-    assert_eq!(member_res(&design, "c.a"), decl(cell.port("a").unwrap().decl()));
+    assert_eq!(ClassifyFixture::member_res(&design, "c.a"), decl(cell.port("a").unwrap().decl()));
 }
 
 #[test]
@@ -495,14 +499,14 @@ module Top(a: Electrical) {
     let y = c.open;
 }
 ";
-    let design = with_prelude(src);
-    let errors = with_code(&design, "E0343");
+    let design = ClassifyFixture::with_prelude(src);
+    let errors = ClassifyFixture::with_code(&design, "E0343");
     assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
     // At the member name, and the member is still linked.
-    assert_eq!(primary_text(&design, errors[0]), "hid");
+    assert_eq!(ClassifyFixture::primary_text(&design, errors[0]), "hid");
     let cell = design.module("Cell").unwrap();
-    assert_eq!(member_res(&design, "c.hid"), Resolution::Decl(cell.signal("hid").unwrap().decl().id()));
-    assert_eq!(support::codes(&design), ["E0343"]);
+    assert_eq!(ClassifyFixture::member_res(&design, "c.hid"), Resolution::Decl(cell.signal("hid").unwrap().decl().id()));
+    assert_eq!(PomSource::codes(&design), ["E0343"]);
 }
 
 #[test]
@@ -520,23 +524,23 @@ module Tx(tx: Stream, rx: flip Stream, o: Outer, arr: [Stream; 2]) {
     let e = arr[1].valid;
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let stream = design.find("Stream").and_then(|d| d.as_struct()).unwrap();
     let field = |s: &piperine_lang::pom::Struct, name: &str| Resolution::Decl(s.fields().into_iter().find(|f| f.name() == Some(name)).unwrap().decl().id());
     let valid = field(&stream, "valid");
     let ready = field(&stream, "ready");
-    assert_eq!(member_res(&design, "tx.valid"), valid);
-    assert_eq!(member_res(&design, "rx.ready"), ready);
-    assert_eq!(member_res(&design, "bus.ready"), ready);
-    assert_eq!(member_res(&design, "o.s.valid"), valid);
-    assert_eq!(member_res(&design, "arr[1].valid"), valid);
+    assert_eq!(ClassifyFixture::member_res(&design, "tx.valid"), valid);
+    assert_eq!(ClassifyFixture::member_res(&design, "rx.ready"), ready);
+    assert_eq!(ClassifyFixture::member_res(&design, "bus.ready"), ready);
+    assert_eq!(ClassifyFixture::member_res(&design, "o.s.valid"), valid);
+    assert_eq!(ClassifyFixture::member_res(&design, "arr[1].valid"), valid);
     // A nested field is a field of the outer struct first.
     let outer = design.find("Outer").and_then(|d| d.as_struct()).unwrap();
-    assert_eq!(member_res(&design, "o.s"), field(&outer, "s"));
+    assert_eq!(ClassifyFixture::member_res(&design, "o.s"), field(&outer, "s"));
     // A function parameter and an annotated local have declared types too.
-    assert_eq!(member_res(&design, "h.valid"), valid);
-    assert_eq!(member_res(&design, "t.ready"), ready);
+    assert_eq!(ClassifyFixture::member_res(&design, "h.valid"), valid);
+    assert_eq!(ClassifyFixture::member_res(&design, "t.ready"), ready);
 }
 
 #[test]
@@ -551,10 +555,10 @@ module M<T>(a: f64, g: T) {
     let u = g.field;
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     let deferred = Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown);
     for text in ["q.thing", "f().bar", "a.other", "g.field"] {
-        assert_eq!(member_res(&design, text), deferred, "`{text}`");
+        assert_eq!(ClassifyFixture::member_res(&design, text), deferred, "`{text}`");
     }
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
@@ -586,7 +590,7 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     let tail = pr.a.changed();
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let impl_fn = |owner: &str, name: &str| {
         let items = design.root().children().into_iter().filter_map(|c| c.as_impl()).filter(|i| i.self_ty().text() == owner).flat_map(|i| i.items());
@@ -596,21 +600,21 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
     // `rise` is declared by the prelude's `impl Bit`.
     let rise = design.nature("Bit").unwrap().impls().into_iter().flat_map(|i| i.items()).find(|f| f.name() == Some("rise")).unwrap();
     let prelude_rise = Resolution::Decl(rise.id());
-    assert_eq!(member_res(&design, "clk.rise()"), prelude_rise);
+    assert_eq!(ClassifyFixture::member_res(&design, "clk.rise()"), prelude_rise);
     // The carrier built-ins come first: a user `impl Bit` cannot take `prev` or `changed`.
-    assert_eq!(member_res(&design, "s.changed()"), builtin("changed"));
-    assert_eq!(member_res(&design, "s.prev()"), builtin("prev"));
-    assert_eq!(member_res(&design, "s.others()"), builtin("others"));
-    assert_eq!(member_res(&design, "p.inflow()"), builtin("inflow"));
+    assert_eq!(ClassifyFixture::member_res(&design, "s.changed()"), builtin("changed"));
+    assert_eq!(ClassifyFixture::member_res(&design, "s.prev()"), builtin("prev"));
+    assert_eq!(ClassifyFixture::member_res(&design, "s.others()"), builtin("others"));
+    assert_eq!(ClassifyFixture::member_res(&design, "p.inflow()"), builtin("inflow"));
     // Then the `impl`s of the nature or bundle, then those of the value type.
-    assert_eq!(member_res(&design, "p.big()"), impl_fn("Electrical", "big"));
-    assert_eq!(member_res(&design, "pr.vd()"), impl_fn("Pair", "vd"));
-    assert_eq!(member_res(&design, "w.lowest()"), impl_fn("Level", "lowest"));
+    assert_eq!(ClassifyFixture::member_res(&design, "p.big()"), impl_fn("Electrical", "big"));
+    assert_eq!(ClassifyFixture::member_res(&design, "pr.vd()"), impl_fn("Pair", "vd"));
+    assert_eq!(ClassifyFixture::member_res(&design, "w.lowest()"), impl_fn("Level", "lowest"));
     // A carrier field is a carrier: `pr.a.changed()` is the built-in too.
-    assert_eq!(member_res(&design, "pr.a.changed()"), builtin("changed"));
+    assert_eq!(ClassifyFixture::member_res(&design, "pr.a.changed()"), builtin("changed"));
     // A known receiver with no such method names nothing; an unknown receiver defers.
-    assert_eq!(member_res(&design, "clk.nothere()"), Resolution::Unresolved);
-    assert_eq!(member_res(&design, "a.rise()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+    assert_eq!(ClassifyFixture::member_res(&design, "clk.nothere()"), Resolution::Unresolved);
+    assert_eq!(ClassifyFixture::member_res(&design, "a.rise()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
 }
 
 /// POM-09 AC 1: a generic is a carrier because its bound resolves to the
@@ -620,14 +624,14 @@ module M(in clk: Bit, p: Electrical, w: Wire, pr: Pair, a: f64) {
 fn generic_carrier_follows_the_resolved_bound() {
     let src = "module M<N: Nope>(g: N) {}";
     // No declaration of `Nope` anywhere: the bound is unresolved, nothing is guessed.
-    let none = build(src);
+    let none = PomSource::build(src);
     assert_eq!(none.module("M").unwrap().port("g").unwrap().kind(), PortKind::Unknown);
     assert!(none.diagnostics().iter().any(|d| d.diagnostic.code == "E0161"));
     // A user `trait Nature` outside the prelude is not the carrier bound.
-    let user = with_prelude("mod x { pub trait Nature {} }\nmodule M<N: x::Nature>(g: N) {}");
+    let user = ClassifyFixture::with_prelude("mod x { pub trait Nature {} }\nmodule M<N: x::Nature>(g: N) {}");
     assert_eq!(user.module("M").unwrap().port("g").unwrap().kind(), PortKind::ValueInput);
     // The core `Nature` makes a carrier, through arrays too.
-    let real = with_prelude("module M<N: Nature>(g: N, ga: [N; 2]) {}");
+    let real = ClassifyFixture::with_prelude("module M<N: Nature>(g: N, ga: [N; 2]) {}");
     let kinds: Vec<_> = real.module("M").unwrap().ports().iter().map(|p| p.kind()).collect();
     assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
 }
@@ -651,8 +655,8 @@ module Top() {
     let v = f(b: 1.0);
 }
 ";
-    let design = with_prelude(src);
-    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(found, [("E0140", "q"), ("E0320", "nope"), ("E0186", "y"), ("E0320", "zz"), ("E0140", "b")], "{:?}", design.diagnostics());
     assert!(design.diagnostics().iter().all(|d| d.diagnostic.message.contains("no ")), "{:?}", design.diagnostics());
     // The names that do exist link, the ones that do not stay unresolved.
@@ -682,8 +686,8 @@ module Top() {
     let u = R { r: 1.0, r: 2.0 };
 }
 ";
-    let design = with_prelude(src);
-    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(found, [("E0320", "zz"), ("E0320", "r"), ("E0320", "zz"), ("E0320", "r")], "{:?}", design.diagnostics());
     // A repeated name is reported at its second occurrence.
     let second = src.find("r: 1.0, r: 2.0").unwrap() + "r: 1.0, ".len();
@@ -716,8 +720,8 @@ module Top() {
     let e6 = R(a, b, p: a);
 }
 ";
-    let design = with_prelude(src);
-    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     let want = [("E0140", "d"), ("E0140", "a"), ("E0140", "b"), ("E0140", "c"), ("E0140", "q"), ("E0140", "p")];
     assert_eq!(found, want, "{:?}", design.diagnostics());
     let args_of = |text: &str| {
@@ -746,8 +750,8 @@ module Top() {
     let y = Port2 { hi: a, hi: b, lo: b };
 }
 ";
-    let design = with_prelude(src);
-    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(found, [("E0263", "zz"), ("E0263", "hi")], "{:?}", design.diagnostics());
     let second = src.find("hi: a, hi: b").unwrap() + "hi: a, ".len();
     assert_eq!(design.diagnostics()[1].diagnostic.span().range().start, second);
@@ -772,8 +776,8 @@ fn h(s: S) -> f64 {
     }
 }
 ";
-    let design = with_prelude(src);
-    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let found: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(found, [("E0186", "c"), ("E0186", "q")], "{:?}", design.diagnostics());
     let decl_s = design.find("S").expect("struct S");
     let field = |name: &str| Resolution::Decl(decl_s.children().into_iter().find(|f| f.name().as_deref() == Some(name)).unwrap().id());
@@ -797,13 +801,13 @@ module Top(a: Electrical) {
     let z = c.nope;
 }
 ";
-    let design = with_prelude(src);
-    let errors = with_code(&design, "E0343");
+    let design = ClassifyFixture::with_prelude(src);
+    let errors = ClassifyFixture::with_code(&design, "E0343");
     assert_eq!(errors.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(primary_text(&design, errors[0]), "nope");
+    assert_eq!(ClassifyFixture::primary_text(&design, errors[0]), "nope");
     assert!(errors[0].diagnostic.message.contains("Cell"), "{:?}", errors[0]);
-    assert_eq!(member_res(&design, "c.nope"), Resolution::Unresolved);
-    assert_eq!(support::codes(&design), ["E0343"]);
+    assert_eq!(ClassifyFixture::member_res(&design, "c.nope"), Resolution::Unresolved);
+    assert_eq!(PomSource::codes(&design), ["E0343"]);
 }
 
 #[test]
@@ -819,7 +823,7 @@ module Top() {
     let x = R(a, b) { r };
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let top = design.module("Top").unwrap();
     let inst = &top.instances()[0];
@@ -839,7 +843,7 @@ module Top() {
 /// carrier with no prelude registered and no diagnostic.
 #[test]
 fn nature_bound_is_builtin_and_classifies_the_port() {
-    let design = build("module M<N: Nature>(g: N, ga: [N; 2]) {}");
+    let design = PomSource::build("module M<N: Nature>(g: N, ga: [N; 2]) {}");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let kinds: Vec<_> = design.module("M").unwrap().ports().iter().map(|p| p.kind()).collect();
     assert_eq!(kinds, [PortKind::Carrier, PortKind::Carrier]);
@@ -858,8 +862,8 @@ fn mismatched_behavior_names_bind_by_name() {
 module M<T: Repr, const N: u32>() {}
 digital<N, T> for M<N, T> { on at(1.0) { let a = N; let b = T::WIDTH; let c = Other; } }
 ";
-    let design = build(src);
-    assert_eq!(with_code(&design, "E0403").len(), 1, "{:?}", design.diagnostics());
+    let design = PomSource::build(src);
+    assert_eq!(ClassifyFixture::with_code(&design, "E0403").len(), 1, "{:?}", design.diagnostics());
     let generic = |name: &str| {
         let m = design.module("M").unwrap().decl();
         m.children().into_iter().find(|c| c.name() == Some(name)).unwrap_or_else(|| panic!("generic {name}")).id()
@@ -879,7 +883,7 @@ digital<N, T> for M<N, T> { on at(1.0) { let a = N; let b = T::WIDTH; let c = Ot
     assert!(!read("T").contains(&Resolution::Decl(generic("N"))), "{:?}", read("T"));
     // A name the module has no generic of stays unresolved, and E0403 already said why.
     assert_eq!(read("Other"), [Resolution::Unresolved]);
-    assert!(with_code(&design, "E0161").is_empty());
+    assert!(ClassifyFixture::with_code(&design, "E0161").is_empty());
 }
 
 /// POL-05 AC 4 (D13): a block binds to its module from any namespace of the
@@ -891,7 +895,7 @@ mod a { pub module M() {} }
 analog for a::M { }
 mod b { analog for super::a::M { } }
 ";
-    let design = build(src);
+    let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let m = design.find("a::M").and_then(|d| d.as_module()).unwrap();
     assert_eq!(m.behaviors().len(), 2);
@@ -911,8 +915,8 @@ extern \"cosim\" module Bad(in a: f64, p: Electrical) -> f64 {
 }
 module Plain(in a: f64, p: Electrical) -> f64 { signal s: Electrical; }
 ";
-    let design = with_prelude(src);
-    let at: Vec<(&str, &str)> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0370").map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0370").map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     let texts: Vec<&str> = at.iter().map(|(_, t)| *t).collect();
     assert_eq!(texts.len(), 4, "{:?}", design.diagnostics());
     // In source order: the value input, the result type, then each body item.
@@ -923,7 +927,7 @@ module Plain(in a: f64, p: Electrical) -> f64 { signal s: Electrical; }
     // The result type is the one after `->`.
     assert_eq!(design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0370").nth(1).unwrap().diagnostic.span().range().start, src.find("-> f64").unwrap() + 3);
     // Nothing else is reported: a plain module may have all of it.
-    assert_eq!(support::codes(&design), ["E0370"; 4], "{:?}", design.diagnostics());
+    assert_eq!(PomSource::codes(&design), ["E0370"; 4], "{:?}", design.diagnostics());
 }
 
 /// POL-18 AC 6: an `extern "C" fn` with a body, or a function that is neither
@@ -939,8 +943,8 @@ trait Tr { fn in_trait(self) -> f64; }
 struct S { a: f64 }
 impl Tr for S { fn in_impl(self) -> f64; }
 ";
-    let design = with_prelude(src);
-    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(at, [("E0125", "with_body"), ("E0125", "without_body"), ("E0125", "in_impl")], "{:?}", design.diagnostics());
     // The message states the fault, not the rule read backwards.
     let messages: Vec<&str> = design.diagnostics().iter().map(|d| d.diagnostic.message.as_ref()).collect();
@@ -963,8 +967,8 @@ nature Mix { potential: P4 { access: v4, units: \"V\", abstol: 1u }, value: f64 
 nature Nil { flow: F5 { access: i5, units: \"A\", abstol: 1p } }
 nature Disc { value: f64 }
 ";
-    let design = build(src);
-    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = PomSource::build(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(at, [("E0201", "Rep"), ("E0201", "Mix"), ("E0201", "Nil")], "{:?}", design.diagnostics());
     let kind = |n: &str| design.nature(n).unwrap().kind();
     assert_eq!(kind("Good"), NatureKind::Conservative);
@@ -990,8 +994,8 @@ analog for M {
     let w = pwr(t);
 }
 ";
-    let design = build(src);
-    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = PomSource::build(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(at, [("E0206", "i")], "{:?}", design.diagnostics());
     assert_eq!(design.diagnostics()[0].diagnostic.span().range().start, src.find("i(t)").unwrap());
     let callee_res = |call: &str| -> Resolution {
@@ -1023,18 +1027,18 @@ module M(arr: [Bit; 2], one: Bit, grid: [[Bit; 2]; 2]) {
     let g = arr.changed();
 }
 ";
-    let design = with_prelude(src);
-    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), primary_text(&design, d))).collect();
+    let design = ClassifyFixture::with_prelude(src);
+    let at: Vec<(&str, &str)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.as_ref(), ClassifyFixture::primary_text(&design, d))).collect();
     assert_eq!(at, [("E0211", "rise"), ("E0211", "rise"), ("E0211", "changed")], "{:?}", design.diagnostics());
     let starts: Vec<usize> = design.diagnostics().iter().map(|d| d.diagnostic.span().range().start).collect();
     assert_eq!(starts, [src.find("arr.rise").unwrap() + 4, src.find("grid[1].rise").unwrap() + 8, src.find("arr.changed").unwrap() + 4]);
-    assert_eq!(member_res(&design, "arr.rise()"), Resolution::Unresolved);
-    assert_eq!(member_res(&design, "grid[1].rise()"), Resolution::Unresolved);
-    assert_eq!(member_res(&design, "arr.len()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+    assert_eq!(ClassifyFixture::member_res(&design, "arr.rise()"), Resolution::Unresolved);
+    assert_eq!(ClassifyFixture::member_res(&design, "grid[1].rise()"), Resolution::Unresolved);
+    assert_eq!(ClassifyFixture::member_res(&design, "arr.len()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
     for call in ["arr[0].rise()", "grid[1][0].rise()", "one.rise()"] {
-        assert!(matches!(member_res(&design, call), Resolution::Decl(_)), "{call}");
+        assert!(matches!(ClassifyFixture::member_res(&design, call), Resolution::Decl(_)), "{call}");
     }
-    assert!(matches!(member_res(&design, "arr[0].rise()"), Resolution::Decl(d) if design.decl_data(d).name.as_ref().unwrap().text == "rise"));
+    assert!(matches!(ClassifyFixture::member_res(&design, "arr[0].rise()"), Resolution::Decl(d) if design.decl_data(d).name.as_ref().unwrap().text == "rise"));
 }
 
 #[test]
@@ -1051,7 +1055,7 @@ module Top() {
     let p = P { x: 1.0, y: 2.0 };
 }
 ";
-    let design = with_prelude(src);
+    let design = ClassifyFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let top = design.module("Top").unwrap();
     let resistor = design.module("Resistor").unwrap();
@@ -1088,14 +1092,14 @@ module Top() {
     assert!(lit.args().is_empty());
     assert!(r1.callee().args().is_empty() && r1.callee().fields().is_empty());
     // A name the callee does not declare targets nothing.
-    let design = with_prelude("module R(p: Electrical) {}\nmodule T() { signal a: Electrical; let x = R(a, zz: a); }\n");
+    let design = ClassifyFixture::with_prelude("module R(p: Electrical) {}\nmodule T() { signal a: Electrical; let x = R(a, zz: a); }\n");
     let x = design.module("T").unwrap().instance("x").unwrap();
     assert_eq!(x.expr().args()[1].target(), None);
 }
 
 #[test]
 fn builtin_instance_names_its_primitive() {
-    let design = with_prelude("module T() { let c = cross(1.0); let d = ddt(1.0); }\nmodule U() { signal a: Electrical; }\nmodule V() { let u = U(); }\n");
+    let design = ClassifyFixture::with_prelude("module T() { let c = cross(1.0); let d = ddt(1.0); }\nmodule U() { signal a: Electrical; }\nmodule V() { let u = U(); }\n");
     let top = design.module("T").unwrap();
     let c = top.instance("c").unwrap();
     assert_eq!(c.builtin().map(|b| b.info().name), Some("cross"));

@@ -5,7 +5,7 @@
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
 use piperine_lang::types::{Ty, Types};
 
-use crate::support;
+use crate::pom::PomSource;
 
 /// A source text whose module `Top` the type checker checks.
 pub struct CheckedSource;
@@ -18,8 +18,8 @@ impl CheckedSource {
 
     /// The design of `src` over an empty standard library, which must parse and resolve.
     pub fn design_of(src: &str) -> Design {
-        let design = support::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+        let design = PomSource::build(src);
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
         design
     }
 
@@ -94,7 +94,7 @@ impl CheckedSource {
     }
 
     /// The struct or enum declaration named `name`.
-    pub fn type_decl(src: &str, name: &str) -> DeclId {
+    pub fn type_declaration(src: &str, name: &str) -> DeclId {
         Self::declaration(&Self::design_of(src), name, |k| matches!(k, DeclKind::Struct(_) | DeclKind::Enum(_)))
     }
 

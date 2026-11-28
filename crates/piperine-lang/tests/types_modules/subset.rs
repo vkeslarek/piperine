@@ -3,10 +3,10 @@
 //! such a construct that the top does not reach raises nothing. Each row is one source whose
 //! `Top` reaches the construct; the fragment is what the diagnostic must name.
 
-use crate::support;
 
 use piperine_lang::pom::{Design, DesignDiagnostic};
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::pom::PomSource;
 
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n\
 module Resistor(p: E, n: E) { r: f64; }\n";
@@ -40,20 +40,25 @@ const ROWS: &[Row] = &[
     // `trait` left this table when generics T25 typed a trait's methods (`types_traits::methods_associated_functions_and_constants_type_check`).
 ];
 
-fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
-    let src = format!("{HEAD}{}", row.source);
-    let design = support::build(&src);
-    assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, support::codes(&design));
-    match Types::check(&design, "Top") {
-        Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", row.construct),
-        Err(d) => (src, d),
+/// Associated test helpers of `subset`, grouped on one fixture type.
+struct SubsetFixture;
+
+impl SubsetFixture {
+    fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
+        let src = format!("{HEAD}{}", row.source);
+        let design = PomSource::build(&src);
+        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, PomSource::codes(&design));
+        match Types::check(&design, "Top") {
+            Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", row.construct),
+            Err(d) => (src, d),
+        }
     }
 }
 
 #[test]
 fn a_construct_outside_the_subset_is_p0001() {
     for row in ROWS {
-        let (src, d) = check(row);
+        let (src, d) = SubsetFixture::check(row);
         assert_eq!(d.len(), 1, "{}: one diagnostic per construct, got {:?}\n{src}", row.construct, d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         assert_eq!(d[0].diagnostic.code, "P0001", "{}: {}", row.construct, d[0].diagnostic.message);
         let span = d[0].diagnostic.span();
@@ -64,7 +69,7 @@ fn a_construct_outside_the_subset_is_p0001() {
 #[test]
 fn p0001_names_the_construct() {
     for row in ROWS {
-        let (_, d) = check(row);
+        let (_, d) = SubsetFixture::check(row);
         let message = &d[0].diagnostic.message;
         assert!(message.contains(row.names), "{}: `{message}` does not name `{}`", row.construct, row.names);
     }
@@ -84,14 +89,14 @@ fn unreached_items_are_not_reported() {
          digital for Digital {{ }}\n\
          module Top(a: E) {{ let r = Resistor {{ r: 1.0 }}(a, gnd); }}"
     );
-    let design = support::build(&src);
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(&src);
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     assert_eq!(types.reached().len(), 2, "only Top and Resistor are reached");
 
     // The same names, reached, are refused.
     let reached = format!("{HEAD}fn loops(x: f64) -> f64 {{ let s = include_str!(\"a.txt\"); x }}\nmodule Top() {{ }}\nanalog for Top {{ let x = loops(1.0); }}");
-    let design: Design = support::build(&reached);
+    let design: Design = PomSource::build(&reached);
     assert!(Types::check(&design, "Top").is_err());
 }
 
@@ -109,7 +114,7 @@ fn std_types_outside_the_subset_are_p0001() {
     for row in STD_ROWS {
         let src = format!("{HEAD}{}", row.source);
         let design = Design::builder().source("top.msl", &src).build();
-        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, support::codes(&design));
+        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, PomSource::codes(&design));
         let d = Types::check(&design, "Top").expect_err(row.construct);
         assert_eq!(d.len(), 1, "{}: {:?}", row.construct, d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
         assert_eq!(d[0].diagnostic.code, "P0001", "{}: {}", row.construct, d[0].diagnostic.message);

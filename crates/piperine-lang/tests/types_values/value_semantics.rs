@@ -2,14 +2,12 @@
 //! §1.5.12, §1.6.9, §1.7.5, §1.7.7, §3.1.10). Each test states the rule it proves; every source is
 //! a design of `Top` over an empty standard library.
 
-use crate::support;
-#[allow(dead_code)]
-use crate::checked;
 
-use checked::CheckedSource;
 
 use piperine_lang::pom::Design;
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::checked::CheckedSource;
+use piperine_lang_fixtures::pom::PomSource;
 
 #[test]
 fn a_let_without_mut_is_assigned_with_every_operator() {
@@ -126,9 +124,9 @@ fn clone_and_copy_are_e0161_with_a_help() {
         "fn f<T: Clone>(x: T) -> T { x }\nmodule Top() { }",
         "fn f<T: Copy>(x: T) -> T { x }\nmodule Top() { }",
     ] {
-        let design: Design = support::build(src);
+        let design: Design = PomSource::build(src);
         let found: Vec<_> = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").collect();
-        assert_eq!(found.len(), 1, "{src}: {:?}", support::codes(&design));
+        assert_eq!(found.len(), 1, "{src}: {:?}", PomSource::codes(&design));
         let name = if src.contains("Clone") { "Clone" } else { "Copy" };
         assert!(found[0].diagnostic.message.contains(name), "{src}: {}", found[0].diagnostic.message);
         assert_eq!(found[0].diagnostic.help.as_deref(), Some("every value is copied; delete the name"), "{src}");
@@ -145,7 +143,7 @@ fn clone_as_a_method_is_e0161() {
         ("", "let a = [1.0, 2.0]; let b = a.clone();", "[f64; 2]"),
     ] {
         let src = CheckedSource::source(items, body);
-        let design: Design = support::build(&src);
+        let design: Design = PomSource::build(&src);
         let found = Types::check(&design, "Top").expect_err(&src);
         let found: Vec<_> = found.iter().filter(|d| d.diagnostic.code == "E0161").collect();
         assert_eq!(found.len(), 1, "{src}");

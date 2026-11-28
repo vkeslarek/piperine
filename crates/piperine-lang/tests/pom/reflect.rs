@@ -2,15 +2,91 @@
 //! and casts, the carrier nature of a port or signal, the instance views and
 //! the reverse queries.
 
-use crate::spec_corpus;
 
 use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
 use serde::{Serialize, de::DeserializeOwned};
-use spec_corpus::{Class, corpus};
+use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
 
-/// A design of `src` over the embedded standard library.
-fn with_prelude(src: &str) -> Design {
-    Design::builder().source("top.msl", src).build()
+/// Associated test helpers of `reflect`, grouped on one fixture type.
+struct ReflectFixture;
+
+impl ReflectFixture {
+    /// A design of `src` over the embedded standard library.
+    fn with_prelude(src: &str) -> Design {
+        Design::builder().source("top.msl", src).build()
+    }
+
+    /// Every parse-clean ```` ```rust ```` fence of Appendices D, E and F, with its origin.
+    fn gallery() -> Vec<(String, String)> {
+        SpecCorpus::corpus()
+            .into_iter()
+            .filter(|b| b.class == BlockClass::Valid)
+            .filter(|b| ["appendix_d", "appendix_e", "appendix_f"].iter().any(|a| b.file.starts_with(a)))
+            .map(|b| (format!("{}:{}", b.file, b.line), b.text))
+            .collect()
+    }
+
+    /// What a file of a design holds: the number of each node kind owned by its declarations,
+    /// and the kinds of its declarations, in arena order.
+    fn shape(design: &Design, file: &str) -> (usize, usize, usize, usize, Vec<&'static str>) {
+        let in_file = |owner: piperine_lang::pom::DeclId| design.decl_data(owner).file == design.files().iter().find(|f| f.name() == file).unwrap().id();
+        let exprs = (0..design.expr_count()).filter(|i| in_file(design.expr_node(ExprId(*i as u32)).owner)).count();
+        let stmts = (0..design.stmt_count()).filter(|i| in_file(design.stmt_node(StmtId(*i as u32)).owner)).count();
+        let pats = (0..design.pat_count()).filter(|i| in_file(design.pat_node(PatId(*i as u32)).owner)).count();
+        let types = (0..design.type_count()).filter(|i| in_file(design.type_node(TypeId(*i as u32)).owner)).count();
+        let decls = design.decls().into_iter().filter(|d| in_file(d.id())).map(|d| d.kind().label()).collect();
+        (exprs, stmts, pats, types, decls)
+    }
+
+    /// The F.1 design with the models it takes from other sections, built with the fixture prelude.
+    fn sar_adc() -> Design {
+        let fence = |needle: &str| SpecCorpus::corpus().into_iter().find(|b| b.text.contains(needle)).unwrap().text;
+        ReflectFixture::with_prelude(&[fence("module SarAdc"), fence("module SampleHold"), fence("module Comparator")].join("\n"))
+    }
+
+    fn shadowed() -> Design {
+        Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", SHADOW_PROJECT).build()
+    }
+
+    fn number_leaves(v: &serde_json::Value, path: Vec<String>, out: &mut Vec<Vec<String>>) {
+        match v {
+            serde_json::Value::Number(_) => out.push(path),
+            serde_json::Value::Array(a) => {
+                for (i, x) in a.iter().enumerate() {
+                    ReflectFixture::number_leaves(x, [path.clone(), vec![i.to_string()]].concat(), out);
+                }
+            }
+            serde_json::Value::Object(o) => {
+                for (k, x) in o {
+                    ReflectFixture::number_leaves(x, [path.clone(), vec![k.clone()]].concat(), out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Every read a host makes over a design that `from_json` returned.
+    fn exercise(d: &Design) {
+        use piperine_lang::pom::{DeclId, ExprId};
+        let _ = d.dump();
+        for i in 0..d.decl_count() {
+            let decl = d.decl(DeclId(i as u32));
+            let _ = (decl.children(), decl.qualified_name(), decl.text(), decl.references(), decl.exprs());
+        }
+        for i in 0..d.expr_count() {
+            let e = d.expr(ExprId(i as u32));
+            let _ = (e.children(), e.parent(), e.stmt(), e.text());
+        }
+        for m in d.modules() {
+            let _ = m.instances();
+            for s in m.signals() {
+                let _ = s.writers();
+            }
+        }
+        for f in d.files() {
+            let _ = f.to_ast();
+        }
+    }
 }
 
 #[test]
@@ -22,7 +98,7 @@ module M(a: Electrical, b: [Bit; 4], c: flip Electrical, d: [flip Bit; 2], e: f6
     signal u: u8;
 }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let m = design.module("M").unwrap();
     let nature = |name: &str| design.nature(name).unwrap();
     let port = |name: &str| m.port(name).unwrap().nature();
@@ -40,7 +116,7 @@ module M(a: Electrical, b: [Bit; 4], c: flip Electrical, d: [flip Bit; 2], e: f6
 #[test]
 fn nature_impls_lists_its_impl_blocks() {
     let src = "impl Electrical { pub fn one(self) -> f64 { 1.0 } }\nimpl Electrical { pub fn two(self) -> f64 { 2.0 } }\nnature Line { value: Driven }\nimpl Resolve<Driven> for Line { fn resolve<const N: usize>(d: [Driven; N]) -> Driven { Driven::strongest(d) } }\n";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     assert_eq!(design.nature("Electrical").unwrap().impls().len(), 2);
     // `std` writes two `impl Bit`: the edges of a `Bit` of `bool` and of a `Bit<Logic>` (§22.1.5)
     assert_eq!(design.nature("Bit").unwrap().impls().len(), 2);
@@ -65,7 +141,7 @@ struct Q { y: f64 }
 
 #[test]
 fn lookups_by_name_and_path() {
-    let design = with_prelude(NAMES);
+    let design = ReflectFixture::with_prelude(NAMES);
     assert_eq!(design.module("M").unwrap().name(), Some("M"));
     assert_eq!(design.module("Top").unwrap().name(), Some("Top"));
     assert!(design.module("Nope").is_none());
@@ -90,15 +166,15 @@ fn lookups_by_name_and_path() {
 #[test]
 fn module_lookup_prefers_authored_files() {
     // The prelude declares `idt`; a design module of that name wins, else the prelude's is found.
-    let design = with_prelude("module idt() {}\n");
+    let design = ReflectFixture::with_prelude("module idt() {}\n");
     assert!(!design.module("idt").unwrap().file().krate().is_std());
-    let design = with_prelude("module Top() {}\n");
+    let design = ReflectFixture::with_prelude("module Top() {}\n");
     assert!(design.module("idt").unwrap().file().krate().is_std());
 }
 
 #[test]
 fn qualified_names() {
-    let design = with_prelude(NAMES);
+    let design = ReflectFixture::with_prelude(NAMES);
     let q = |d: Decl<'_>| d.qualified_name();
     assert_eq!(q(design.module("M").unwrap().decl()), "a::M");
     assert_eq!(q(design.module("M").unwrap().signal("w").unwrap().decl()), "a::M.w");
@@ -117,7 +193,7 @@ fn qualified_names() {
 
 #[test]
 fn casts_match_kind_only() {
-    let design = with_prelude(NAMES);
+    let design = ReflectFixture::with_prelude(NAMES);
     let count = |d: Decl<'_>| {
         [
             d.as_namespace().is_some(),
@@ -172,7 +248,7 @@ module Top() {
     let r3 = Unknown(a, b);
 }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let res = design.module("Resistor").unwrap();
     let top = design.module("Top").unwrap();
     let (p, n) = (res.port("p").unwrap(), res.port("n").unwrap());
@@ -193,8 +269,8 @@ module Top() {
 
 #[test]
 fn handle_equality() {
-    let a = with_prelude(NAMES);
-    let b = with_prelude(NAMES);
+    let a = ReflectFixture::with_prelude(NAMES);
+    let b = ReflectFixture::with_prelude(NAMES);
     assert_eq!(a.module("M").unwrap(), a.module("M").unwrap());
     assert_ne!(a.module("M").unwrap(), b.module("M").unwrap(), "same node of another design");
     assert_ne!(a.module("M").unwrap().decl(), a.module("Top").unwrap().decl());
@@ -220,7 +296,7 @@ digital for Top {
 
 #[test]
 fn references_in_source_order() {
-    let design = with_prelude(REVERSE);
+    let design = ReflectFixture::with_prelude(REVERSE);
     let top = design.module("Top").unwrap();
     let s = top.signal("s").unwrap();
     let refs = s.references();
@@ -254,7 +330,7 @@ module Top() {
     t = c.q;
 }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let q = design.module("Cell").unwrap().signal("q").unwrap();
     let refs = q.references();
     assert_eq!(refs.len(), 1);
@@ -263,7 +339,7 @@ module Top() {
 
 #[test]
 fn writers_are_definitions_and_commits() {
-    let design = with_prelude(REVERSE);
+    let design = ReflectFixture::with_prelude(REVERSE);
     let top = design.module("Top").unwrap();
     let s = top.signal("s").unwrap();
     let t = top.signal("t").unwrap();
@@ -290,7 +366,7 @@ module M(o: Bit, bus: Bus) {
     bus.valid = false;
 }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let m = design.module("M").unwrap();
     assert_eq!(m.port("o").unwrap().writers().len(), 1);
     assert_eq!(m.port("bus").unwrap().writers().len(), 1, "a field place is rooted at its carrier");
@@ -309,7 +385,7 @@ digital for P {
     on a.rise() { c.w <- false; }
 }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let child = design.module("C").unwrap();
     let writers = child.signal("w").unwrap().writers();
     assert_eq!(writers.len(), 2, "{writers:?}");
@@ -327,7 +403,7 @@ module A() { signal s: Bit; let u = Cell(s); }
 module B() { signal s: Bit; let v = Cell(s); let w = Cell(s); }
 module C() { signal s: Bit; }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let cell = design.module("Cell").unwrap();
     let by: Vec<_> = cell.instantiated_by().iter().map(|i| (i.name().unwrap().to_string(), i.module())).collect();
     assert_eq!(by.iter().map(|b| b.0.as_str()).collect::<Vec<_>>(), ["u", "v", "w"]);
@@ -336,37 +412,15 @@ module C() { signal s: Bit; }
     assert_eq!(cell.instantiated_by()[0].declared_in().module(), design.module("A"));
 }
 
-/// Every parse-clean ```` ```rust ```` fence of Appendices D, E and F, with its origin.
-fn gallery() -> Vec<(String, String)> {
-    corpus()
-        .into_iter()
-        .filter(|b| b.class == Class::Valid)
-        .filter(|b| ["appendix_d", "appendix_e", "appendix_f"].iter().any(|a| b.file.starts_with(a)))
-        .map(|b| (format!("{}:{}", b.file, b.line), b.text))
-        .collect()
-}
-
-/// What a file of a design holds: the number of each node kind owned by its declarations,
-/// and the kinds of its declarations, in arena order.
-fn shape(design: &Design, file: &str) -> (usize, usize, usize, usize, Vec<&'static str>) {
-    let in_file = |owner: piperine_lang::pom::DeclId| design.decl_data(owner).file == design.files().iter().find(|f| f.name() == file).unwrap().id();
-    let exprs = (0..design.expr_count()).filter(|i| in_file(design.expr_node(ExprId(*i as u32)).owner)).count();
-    let stmts = (0..design.stmt_count()).filter(|i| in_file(design.stmt_node(StmtId(*i as u32)).owner)).count();
-    let pats = (0..design.pat_count()).filter(|i| in_file(design.pat_node(PatId(*i as u32)).owner)).count();
-    let types = (0..design.type_count()).filter(|i| in_file(design.type_node(TypeId(*i as u32)).owner)).count();
-    let decls = design.decls().into_iter().filter(|d| in_file(d.id())).map(|d| d.kind().label()).collect();
-    (exprs, stmts, pats, types, decls)
-}
-
 #[test]
 fn resolution_creates_no_node() {
     let mut sources = vec![("local".to_string(), REVERSE.to_string()), ("names".to_string(), NAMES.to_string())];
-    sources.extend(gallery());
+    sources.extend(ReflectFixture::gallery());
     assert!(sources.len() > 10);
     for (at, text) in sources {
         let without = Design::builder().source("top.msl", text.clone()).build();
-        let with = with_prelude(&text);
-        assert_eq!(shape(&with, "top.msl"), shape(&without, "top.msl"), "{at}: resolving against a prelude changed the node set");
+        let with = ReflectFixture::with_prelude(&text);
+        assert_eq!(ReflectFixture::shape(&with, "top.msl"), ReflectFixture::shape(&without, "top.msl"), "{at}: resolving against a prelude changed the node set");
         let (a, b) = (with.files().into_iter().find(|f| f.name() == "top.msl").unwrap(), without.files().into_iter().find(|f| f.name() == "top.msl").unwrap());
         assert_eq!(a.to_ast(), b.to_ast(), "{at}: the rebuilt tree depends on resolution");
     }
@@ -375,8 +429,8 @@ fn resolution_creates_no_node() {
 #[test]
 fn gallery_signals_are_declared_in_their_module() {
     let mut signals = 0;
-    for (at, text) in gallery() {
-        let design = with_prelude(&text);
+    for (at, text) in ReflectFixture::gallery() {
+        let design = ReflectFixture::with_prelude(&text);
         for m in design.modules().into_iter().filter(|m| !m.file().krate().is_std()) {
             for s in m.signals() {
                 signals += 1;
@@ -403,9 +457,9 @@ fn gallery_signals_are_declared_in_their_module() {
 #[test]
 fn sar_adc_instances_name_their_modules() {
     // F.1 with the two models it takes from other sections (§12.1, §13), as one source.
-    let fence = |needle: &str| corpus().into_iter().find(|b| b.text.contains(needle)).unwrap_or_else(|| panic!("a fence holds `{needle}`")).text;
+    let fence = |needle: &str| SpecCorpus::corpus().into_iter().find(|b| b.text.contains(needle)).unwrap_or_else(|| panic!("a fence holds `{needle}`")).text;
     let text = [fence("module SarAdc"), fence("module SampleHold"), fence("module Comparator")].join("\n");
-    let design = with_prelude(&text);
+    let design = ReflectFixture::with_prelude(&text);
     let adc = design.module("SarAdc").unwrap();
     let placed: Vec<_> = adc.instances().iter().filter_map(|i| Some((i.name()?.to_string(), i.module()?.name()?.to_string()))).collect();
     assert_eq!(
@@ -420,34 +474,34 @@ fn sar_adc_instances_name_their_modules() {
     assert_eq!(adc.instance("dac").unwrap().connection(code).unwrap().text(), "code");
 }
 
+/// Fixtures of the test `design_and_storage_types_implement_serde`, hoisted out of its body.
+struct DesignStorageTypesFixture;
+
+impl DesignStorageTypesFixture {
+    fn serde<T: Serialize + DeserializeOwned>() {}
+}
+
 #[test]
 fn design_and_storage_types_implement_serde() {
     use piperine_lang::pom::*;
-    fn serde<T: Serialize + DeserializeOwned>() {}
-    serde::<Design>();
-    serde::<DesignDiagnostic>();
-    serde::<SourceFileData>();
-    serde::<SourceFileRepr>();
-    serde::<(DeclId, ExprId, StmtId, PatId, TypeId, PathId, FileId)>();
-    serde::<(DeclData, DeclKind, NamespaceData, NamespaceOrigin, UseData, UseTreeNode, UseTreeKind, ConstData, FnData, FnParamData)>();
-    serde::<(StructData, FieldData, EnumData, VariantData, TraitData, ImplData, GenericParamData, FieldsForm)>();
-    serde::<(NatureData, QuantityData, NatureFieldNode, ModuleData, PortData, ParamData, SignalData, LetData)>();
-    serde::<(BindingData, BindingOrigin, DefinitionData, GenerationData, GenElseNode, BehaviorData, ReactionData)>();
-    serde::<(ExprNode, ExprKind, StmtNode, StmtKind, PatNode, PatKind, TypeNode, TypeKind, PathNode, PathSegment)>();
-    serde::<(Arg, Arm, BlockNode, ClosureParam, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, Lit, LitKind)>();
-    serde::<(Resolution, DeferReason, CallClass, StructClass, PortKind, NatureKind, BuiltinId)>();
-    serde::<(Meta, Doc, AttrNode, AttrInputNode, AttrArgNode, Import, Index, ReferenceId, WriterId)>();
-}
-
-/// The F.1 design with the models it takes from other sections, built with the fixture prelude.
-fn sar_adc() -> Design {
-    let fence = |needle: &str| corpus().into_iter().find(|b| b.text.contains(needle)).unwrap().text;
-    with_prelude(&[fence("module SarAdc"), fence("module SampleHold"), fence("module Comparator")].join("\n"))
+    DesignStorageTypesFixture::serde::<Design>();
+    DesignStorageTypesFixture::serde::<DesignDiagnostic>();
+    DesignStorageTypesFixture::serde::<SourceFileData>();
+    DesignStorageTypesFixture::serde::<SourceFileRepr>();
+    DesignStorageTypesFixture::serde::<(DeclId, ExprId, StmtId, PatId, TypeId, PathId, FileId)>();
+    DesignStorageTypesFixture::serde::<(DeclData, DeclKind, NamespaceData, NamespaceOrigin, UseData, UseTreeNode, UseTreeKind, ConstData, FnData, FnParamData)>();
+    DesignStorageTypesFixture::serde::<(StructData, FieldData, EnumData, VariantData, TraitData, ImplData, GenericParamData, FieldsForm)>();
+    DesignStorageTypesFixture::serde::<(NatureData, QuantityData, NatureFieldNode, ModuleData, PortData, ParamData, SignalData, LetData)>();
+    DesignStorageTypesFixture::serde::<(BindingData, BindingOrigin, DefinitionData, GenerationData, GenElseNode, BehaviorData, ReactionData)>();
+    DesignStorageTypesFixture::serde::<(ExprNode, ExprKind, StmtNode, StmtKind, PatNode, PatKind, TypeNode, TypeKind, PathNode, PathSegment)>();
+    DesignStorageTypesFixture::serde::<(Arg, Arm, BlockNode, ClosureParam, FieldInit, FieldPatNode, GenericArgNode, GenericArgsNode, Lit, LitKind)>();
+    DesignStorageTypesFixture::serde::<(Resolution, DeferReason, CallClass, StructClass, PortKind, NatureKind, BuiltinId)>();
+    DesignStorageTypesFixture::serde::<(Meta, Doc, AttrNode, AttrInputNode, AttrArgNode, Import, Index, ReferenceId, WriterId)>();
 }
 
 #[test]
 fn gallery_design_round_trips_through_json() {
-    let design = sar_adc();
+    let design = ReflectFixture::sar_adc();
     assert!(!design.diagnostics().is_empty() || design.decl_count() > 50);
     let json = serde_json::to_string(&design).unwrap();
     let back: Design = serde_json::from_str(&json).unwrap();
@@ -463,23 +517,29 @@ fn gallery_design_round_trips_through_json() {
     assert_eq!(back.module("Dac8").unwrap().instantiated_by().len(), 1);
 }
 
-#[test]
-fn json_is_deterministic() {
-    let design = sar_adc();
-    let first = serde_json::to_string(&design).unwrap();
-    assert_eq!(first, serde_json::to_string(&design).unwrap());
-    // A second build of the same sources serializes to the same bytes.
-    assert_eq!(first, serde_json::to_string(&sar_adc()).unwrap());
-    // The retained syntax tree is not part of the serialized form.
-    let value: serde_json::Value = serde_json::from_str(&first).unwrap();
+/// Fixtures of the test `json_is_deterministic`, hoisted out of its body.
+struct JsonDeterministicFixture;
+
+impl JsonDeterministicFixture {
     fn has_key(v: &serde_json::Value, key: &str) -> bool {
         match v {
-            serde_json::Value::Object(m) => m.contains_key(key) || m.values().any(|v| has_key(v, key)),
-            serde_json::Value::Array(a) => a.iter().any(|v| has_key(v, key)),
+            serde_json::Value::Object(m) => m.contains_key(key) || m.values().any(|v| JsonDeterministicFixture::has_key(v, key)),
+            serde_json::Value::Array(a) => a.iter().any(|v| JsonDeterministicFixture::has_key(v, key)),
             _ => false,
         }
     }
-    assert!(!has_key(&value, "ast"), "no `ast` key in the JSON");
+}
+
+#[test]
+fn json_is_deterministic() {
+    let design = ReflectFixture::sar_adc();
+    let first = serde_json::to_string(&design).unwrap();
+    assert_eq!(first, serde_json::to_string(&design).unwrap());
+    // A second build of the same sources serializes to the same bytes.
+    assert_eq!(first, serde_json::to_string(&ReflectFixture::sar_adc()).unwrap());
+    // The retained syntax tree is not part of the serialized form.
+    let value: serde_json::Value = serde_json::from_str(&first).unwrap();
+    assert!(!JsonDeterministicFixture::has_key(&value, "ast"), "no `ast` key in the JSON");
 }
 
 /// POM-08 story: from a reference, a reader reaches the declaration handle
@@ -493,7 +553,7 @@ fn pick(h: Stream) -> Bit { h.valid }
 module M(a: Bit, out q: Bit, h: Stream) { signal s: Bit; s = a; let v = h.valid; let n = 1; }
 digital for M { on a { q <- s; } }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").unwrap();
     let s = m.signal("s").unwrap();
@@ -549,7 +609,7 @@ mod a { pub enum E { A } pub module M() {} }
 module Z(p: Electrical) { signal q: Electrical; }
 analog for Z { signal z: Electrical; }
 ";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     let names: Vec<String> = design.decls().into_iter().filter(|d| !d.file().krate().is_std()).map(|d| d.qualified_name()).collect();
     for expected in ["impl S.X", "impl Tr for S.X", "impl Tr for S.run", "a::E.A", "Z.q", "analog for Z.z"] {
         assert!(names.iter().any(|n| n == expected), "`{expected}` in {names:?}");
@@ -588,14 +648,10 @@ const K: f64 = 2.0;
 impl S { fn m(self) -> f64 { 1.0 } }
 ";
 
-fn shadowed() -> Design {
-    Design::builder().std_source("lib.msl", format!("pub mod prelude {{\n{SHADOW_PRELUDE}\n}}\n")).source("top.msl", SHADOW_PROJECT).build()
-}
-
 /// The root crate's declarations win every by-name lookup.
 #[test]
 fn by_name_lookups_prefer_project_files() {
-    let design = shadowed();
+    let design = ReflectFixture::shadowed();
     let project = |d: Decl<'_>| !d.file().krate().is_std();
     assert!(project(design.nature("Bit").unwrap().decl()));
     assert!(project(design.module("Buf").unwrap().decl()));
@@ -613,7 +669,7 @@ fn by_name_lookups_prefer_project_files() {
 
 #[test]
 fn collections_list_project_files_only() {
-    let design = shadowed();
+    let design = ReflectFixture::shadowed();
     let all_project = |v: Vec<Decl<'_>>| v.iter().all(|d| !d.file().krate().is_std());
     assert!(all_project(design.modules().iter().map(|x| x.decl()).collect()));
     assert!(all_project(design.natures().iter().map(|x| x.decl()).collect()));
@@ -636,7 +692,7 @@ fn collections_list_project_files_only() {
 
 #[test]
 fn design_has_a_collection_and_lookup_per_item_kind() {
-    let design = shadowed();
+    let design = ReflectFixture::shadowed();
     assert_eq!(design.enums().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("E")]);
     assert_eq!(design.traits().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("Tr")]);
     assert_eq!(design.consts().iter().map(|e| e.name()).collect::<Vec<_>>(), [Some("K")]);
@@ -727,7 +783,7 @@ fn float_literal_is_serialized_from_its_text() {
 
 #[test]
 fn from_json_reads_back_a_valid_design() {
-    for design in [sar_adc(), Design::builder().source("top.msl", FLOATS).build()] {
+    for design in [ReflectFixture::sar_adc(), Design::builder().source("top.msl", FLOATS).build()] {
         let json = serde_json::to_string(&design).unwrap();
         let back = Design::from_json(&json).expect("a valid design reads back");
         assert_eq!(back.dump(), design.dump());
@@ -773,43 +829,26 @@ fn from_json_rejects_a_corrupted_design() {
     assert!(unchecked.check().is_empty());
 }
 
-fn number_leaves(v: &serde_json::Value, path: Vec<String>, out: &mut Vec<Vec<String>>) {
-    match v {
-        serde_json::Value::Number(_) => out.push(path),
-        serde_json::Value::Array(a) => {
-            for (i, x) in a.iter().enumerate() {
-                number_leaves(x, [path.clone(), vec![i.to_string()]].concat(), out);
-            }
-        }
-        serde_json::Value::Object(o) => {
-            for (k, x) in o {
-                number_leaves(x, [path.clone(), vec![k.clone()]].concat(), out);
-            }
-        }
-        _ => {}
-    }
-}
+/// Fixtures of the test `a_nature_field_that_names_no_quantity_is_an_err_not_a_panic`, hoisted out of its body.
+struct NatureFieldNamesFixture;
 
-/// Every read a host makes over a design that `from_json` returned.
-fn exercise(d: &Design) {
-    use piperine_lang::pom::{DeclId, ExprId};
-    let _ = d.dump();
-    for i in 0..d.decl_count() {
-        let decl = d.decl(DeclId(i as u32));
-        let _ = (decl.children(), decl.qualified_name(), decl.text(), decl.references(), decl.exprs());
-    }
-    for i in 0..d.expr_count() {
-        let e = d.expr(ExprId(i as u32));
-        let _ = (e.children(), e.parent(), e.stmt(), e.text());
-    }
-    for m in d.modules() {
-        let _ = m.instances();
-        for s in m.signals() {
-            let _ = s.writers();
+impl NatureFieldNamesFixture {
+    fn point_quantities_at_root(v: &mut serde_json::Value, found: &mut bool) {
+        match v {
+            serde_json::Value::Object(map) => {
+                if let Some(q) = map.get_mut("Quantity") {
+                    if q.is_number() {
+                        *q = serde_json::json!(0);
+                        *found = true;
+                    }
+                }
+                for (_, c) in map.iter_mut() {
+                    NatureFieldNamesFixture::point_quantities_at_root(c, found);
+                }
+            }
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|c| NatureFieldNamesFixture::point_quantities_at_root(c, found)),
+            _ => {}
         }
-    }
-    for f in d.files() {
-        let _ = f.to_ast();
     }
 }
 
@@ -821,24 +860,7 @@ fn a_nature_field_that_names_no_quantity_is_an_err_not_a_panic() {
     let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "pub nature N { potential: P { access: v, units: \"V\", abstol: 1u } }\n").source("top.msl", "").build();
     let mut json = serde_json::to_value(&design).unwrap();
     let mut found = false;
-    fn point_quantities_at_root(v: &mut serde_json::Value, found: &mut bool) {
-        match v {
-            serde_json::Value::Object(map) => {
-                if let Some(q) = map.get_mut("Quantity") {
-                    if q.is_number() {
-                        *q = serde_json::json!(0);
-                        *found = true;
-                    }
-                }
-                for (_, c) in map.iter_mut() {
-                    point_quantities_at_root(c, found);
-                }
-            }
-            serde_json::Value::Array(a) => a.iter_mut().for_each(|c| point_quantities_at_root(c, found)),
-            _ => {}
-        }
-    }
-    point_quantities_at_root(&mut json, &mut found);
+    NatureFieldNamesFixture::point_quantities_at_root(&mut json, &mut found);
     assert!(found, "the serialized design has a nature field that names a quantity");
     let text = json.to_string();
     let result = std::panic::catch_unwind(|| Design::from_json(&text));
@@ -858,7 +880,7 @@ fn from_json_never_panics_on_a_corrupted_field() {
             let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("top.msl", src).build();
             let good = serde_json::to_value(&design).unwrap();
             let mut leaves = Vec::new();
-            number_leaves(&good, Vec::new(), &mut leaves);
+            ReflectFixture::number_leaves(&good, Vec::new(), &mut leaves);
             assert!(leaves.len() > 300, "{}", leaves.len());
             let mut panics = Vec::new();
             for leaf in &leaves {
@@ -877,7 +899,7 @@ fn from_json_never_panics_on_a_corrupted_field() {
                         Err(_) => panics.push(format!("from_json: {}={value}", leaf.join("."))),
                         Ok(Err(problems)) => assert!(!problems.is_empty()),
                         Ok(Ok(d)) => {
-                            if std::panic::catch_unwind(|| exercise(&d)).is_err() {
+                            if std::panic::catch_unwind(|| ReflectFixture::exercise(&d)).is_err() {
                                 panics.push(format!("use: {}={value}", leaf.join(".")));
                             }
                         }
@@ -897,7 +919,7 @@ fn a_bundle_port_reflects_its_type_and_view() {
     // BN-07 AC 2, §7 rule 14: the POM mirrors the source: a bundle port is one port with its bundle type and its view, and
     // the fields it stands for are no ports of the module (nor declarations of the design)
     let src = "struct Stream { out valid: Bit, in ready: Bit }\nmodule M(tx: Stream, rx: flip Stream, in obs: Stream, k: f64) { signal s: Stream; }\n";
-    let design = with_prelude(src);
+    let design = ReflectFixture::with_prelude(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let module = design.module("M").expect("M");
     let ports = module.ports();

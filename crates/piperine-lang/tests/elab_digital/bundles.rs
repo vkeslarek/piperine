@@ -2,10 +2,9 @@
 //! or signal lowers to one carrier or node per leaf field named by its dotted path, a connection of a bundle joins each
 //! field to the field of the same name, and the one-driver rule is judged field by field after the views.
 
-use crate::support;
 
 use piperine_ir::{CarrierRole, Ir};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
 
 /// What a test reads of an elaborated design.
 struct Read<'a> {
@@ -36,7 +35,7 @@ fn a_bundle_port_lowers_to_one_carrier_per_leaf_field_by_path() {
                    signal go: Bit = false;\n\
                    tx.valid = go; tx.data = 1; rx.ready = go; l.up = go;\n\
                }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let carriers = read.carriers("Top");
     let names: Vec<&str> = carriers.iter().map(|c| c.0.as_str()).collect();
@@ -57,7 +56,7 @@ fn a_bundle_signal_declares_every_carrier_and_drives_none_it_does_not_write() {
     let src = "struct Stream { out valid: Bit<Logic>, in ready: Bit<Logic> }\n\
                struct Bus { out v: Bit<Logic>, w: Electrical }\n\
                module Top(in clk: Bit) { signal a: Stream; signal b: Bus; }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let carriers = read.carriers("Top");
     assert_eq!(carriers.iter().map(|c| c.0.as_str()).collect::<Vec<_>>(), ["clk", "a.valid", "a.ready", "b.v"]);
@@ -77,7 +76,7 @@ fn a_bundle_connection_binds_each_field_by_name() {
                module Cons(rx: flip Stream) { rx.ready = true; signal v: Bit; v = rx.valid; }\n\
                module Amp(d: Diff) { }\n\
                module Top() { signal s: Stream; signal pair: Diff; let p = Prod(s); let c = Cons(s); let a = Amp(pair); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(read.carriers("Top").iter().map(|c| c.0.as_str()).collect::<Vec<_>>(), ["s.valid", "s.ready", "s.data"]);
@@ -93,7 +92,7 @@ fn a_literal_binds_each_named_field_to_its_carrier() {
     let src = "struct Cell { in wl: Bit, bl: Electrical, in sel: Bit }\n\
                module Leaf(c: Cell) { }\n\
                module Top(in w: Bit, in x: Bit, b: Electrical) { let l = Leaf(Cell { sel: x, bl: b, wl: w }); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let at = |name: &str| top.carriers().iter().position(|c| c.name == name).map(|i| i as u32);
     assert_eq!(top.child_carriers(0), [at("w"), at("x")], "the child's `c.wl` and `c.sel` are the carriers the literal names, whatever its order");
@@ -108,15 +107,15 @@ fn two_producers_of_one_field_is_e0220_naming_its_path() {
                module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; }\n\
                module Cons(rx: flip Stream) { rx.ready = true; }\n\
                module Top() { signal s: Stream; let a = Prod(s); let b = Prod(s); let c = Cons(s); }";
-    let found = Elab::run(src, "Top").expect_err("two producers of `s.valid`");
-    assert_eq!(Elab::codes(&found), ["E0220"], "{found:?}");
+    let found = SourceElaboration::run(src, "Top").expect_err("two producers of `s.valid`");
+    assert_eq!(SourceElaboration::codes(&found), ["E0220"], "{found:?}");
     assert!(found[0].diagnostic.message.contains("s.valid"), "names the field's path: {}", found[0].diagnostic.message);
     // a producer and a consumer of the opposite views drive different fields: no overlap
     let ok = "struct Stream { out valid: Bit, in ready: Bit }\n\
               module Prod(tx: Stream) { signal go: Bit = false; tx.valid = go; }\n\
               module Cons(rx: flip Stream) { rx.ready = true; }\n\
               module Top() { signal s: Stream; let a = Prod(s); let c = Cons(s); }";
-    Elab::ir(ok, "Top");
+    SourceElaboration::ir(ok, "Top");
 }
 
 #[test]
@@ -127,7 +126,7 @@ fn an_observer_view_adds_no_drive() {
                module Cons(rx: flip Stream) { rx.ready = true; }\n\
                module Watch(in s: Stream) { signal seen: Bit; seen = s.valid; }\n\
                module Top() { signal s: Stream; let a = Prod(s); let c = Cons(s); let w = Watch(s); let w2 = Watch(s); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     assert_eq!(top.child_carriers(2), [Some(0), Some(1)], "the observer is joined to both fields");
 }
@@ -141,7 +140,7 @@ fn a_loop_variable_index_folds_to_the_element_of_each_iteration() {
                module Raise(tx: Lane) { tx.a = true; }\n\
                module Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Top() { signal lanes: [Lane; 3]; for k in 0..3 { let r = Raise(lanes[k]); let e = Echo(lanes[k]); } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let carriers: Vec<(&str, Option<u64>)> = top.carriers().iter().map(|c| (c.name.as_str(), c.count)).collect();
     assert_eq!(carriers, [("lanes.a", Some(3)), ("lanes.b", Some(3))]);
@@ -164,8 +163,8 @@ fn a_loop_that_gives_one_element_twice_is_e0220_naming_it() {
                module Raise(tx: Lane) { tx.a = true; }\n\
                module Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Top() { signal lanes: [Lane; 2]; let e = Echo(lanes[0]); let f = Echo(lanes[1]); for k in 0..2 { let r = Raise(lanes[1]); } let q = Raise(lanes[0]); }";
-    let found = Elab::run(src, "Top").expect_err("two producers of `lanes[1].a`");
-    assert!(Elab::codes(&found).contains(&"E0220".to_string()), "{found:?}");
+    let found = SourceElaboration::run(src, "Top").expect_err("two producers of `lanes[1].a`");
+    assert!(SourceElaboration::codes(&found).contains(&"E0220".to_string()), "{found:?}");
     assert!(found.iter().any(|d| d.diagnostic.message.contains("lanes[1].a")), "names the element: {found:?}");
 }
 
@@ -177,7 +176,7 @@ fn an_array_field_of_carriers_binds_whole_and_is_written_by_element() {
                module Fill(w: Word) { w.d[0] = true; w.d[1] = false; }\n\
                module Relay(w: Word) { let f = Fill(w); }\n\
                module Top() { signal word: Word; let r = Relay(word); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.carriers("Top").iter().map(|c| c.0.as_str()).collect::<Vec<_>>(), ["word.d"]);
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
@@ -192,7 +191,7 @@ fn a_constant_parameter_in_an_array_length_of_a_field_is_the_argument_of_each_po
     // §7 rule 11, §1.2: `Word<2>` and `Word<3>` are two bundles, each field written again with the parameter replaced: the carrier
     // of `bits` holds as many elements as the port's argument says, whether it is written (`Word<3>`) or a parameter of the module
     let words = |name: &str, src: &str| {
-        let ir = Elab::ir(src, "Top");
+        let ir = SourceElaboration::ir(src, "Top");
         let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
         top.carriers().iter().filter(|c| c.name == name).map(|c| c.count).collect::<Vec<_>>()
     };
@@ -211,7 +210,7 @@ fn an_array_of_bundles_of_a_generic_length_has_the_length_of_each_instance() {
                 module Bank<const N: usize>(ts: [Lane; N]) { for k in 0..N { let r = Raise(ts[k]); } }\n";
     for length in [2u64, 3] {
         let src = format!("{lane}module Top() {{ signal lanes: [Lane; {length}]; let b = Bank::<{length}>(lanes); for k in 0..{length} {{ let e = Echo(lanes[k]); }} }}");
-        let ir = Elab::ir(&src, "Top");
+        let ir = SourceElaboration::ir(&src, "Top");
         let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
         let carriers: Vec<(&str, Option<u64>)> = top.carriers().iter().map(|c| (c.name.as_str(), c.count)).collect();
         assert_eq!(carriers, [("lanes.a", Some(length)), ("lanes.b", Some(length))], "N = {length}");
@@ -232,7 +231,7 @@ fn a_computed_length_of_an_array_of_bundles_is_folded_per_instance() {
     let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Wide<const N: usize>(ws: [Lane; N + 1]) { for k in 0..N + 1 { let r = Raise(ws[k]); } }\n\
                module Top() { signal lanes: [Lane; 3]; let w = Wide::<2>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let wide = ir.bodies().find(|b| b.carriers().iter().any(|c| c.name == "ws.a")).expect("the body of `Wide`");
     assert_eq!(wide.carriers().iter().map(|c| c.count).collect::<Vec<_>>(), [Some(3), Some(3)]);
     assert_eq!(wide.children().len(), 3);
@@ -245,8 +244,8 @@ fn a_second_producer_of_one_element_in_a_generic_instance_is_e0220_naming_it() {
     let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Bank<const N: usize>(tx: [Lane; N]) { for k in 0..N { let r = Raise(tx[k]); } let again = Raise(tx[1]); }\n\
                module Top() { signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
-    let found = Elab::run(src, "Top").expect_err("two producers of `tx[1].a`");
-    assert!(Elab::codes(&found).contains(&"E0220".to_string()), "{found:?}");
+    let found = SourceElaboration::run(src, "Top").expect_err("two producers of `tx[1].a`");
+    assert!(SourceElaboration::codes(&found).contains(&"E0220".to_string()), "{found:?}");
     assert!(found.iter().any(|d| d.diagnostic.message.contains("`tx[1].a`")), "names the element: {found:?}");
     assert!(!found.iter().any(|d| d.diagnostic.message.contains("tx[0]") || d.diagnostic.message.contains("tx[2]")), "only element 1 has two: {found:?}");
 }
@@ -258,7 +257,7 @@ fn an_element_no_iteration_drives_in_a_generic_instance_is_e0187_naming_it() {
     let src = "struct Lane { out a: Bit, in b: Bit }\nmodule Raise(tx: Lane) { tx.a = true; }\nmodule Echo(rx: flip Lane) { rx.b = rx.a; }\n\
                module Bank<const N: usize>(tx: [Lane; N]) { for k in 0..N - 1 { let r = Raise(tx[k]); } }\n\
                module Top() { signal lanes: [Lane; 3]; let b = Bank::<3>(lanes); for k in 0..3 { let e = Echo(lanes[k]); } }";
-    let found = Elab::run(src, "Top").expect_err("the last element has no producer");
+    let found = SourceElaboration::run(src, "Top").expect_err("the last element has no producer");
     let missing: Vec<&str> = found.iter().filter(|d| d.diagnostic.code == "E0187").map(|d| d.diagnostic.message.as_str()).collect();
     assert_eq!(missing.len(), 1, "{found:?}");
     assert!(missing[0].starts_with("`tx[2].a` in `"), "{missing:?}");
@@ -271,7 +270,7 @@ fn a_node_field_of_an_array_of_bundles_is_one_array_of_nodes() {
     let src = "struct Diff { p: Electrical, n: Electrical }\n\
                module Load(d: Diff) { }\nanalog for Load { i(d.p, d.n) +> v(d.p, d.n) / 1000.0; }\n\
                module Top() { signal d: [Diff; 2]; for k in 0..2 { let l = Load(d[k]); } }\nanalog for Top { v(d[0].p, d[0].n) +> 1.0; v(d[1].p, d[1].n) +> 2.0; }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     assert_eq!(read.nodes("Top"), ["d.p[0]", "d.p[1]", "d.n[0]", "d.n[1]"]);
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
@@ -288,7 +287,7 @@ fn a_template_placed_through_a_bound_has_the_bundle_in_the_bounds_view() {
                module Up<C: Fn(Pipe)>() { cell: C; signal s: Bit<u8>; signal r: Bit<u8> = 0; let one = cell(Pipe { q: s, d: r }); }\n\
                module Down<C: Fn(flip Pipe)>() { cell: C; signal s: Bit<u8> = 1; signal r: Bit<u8>; let one = cell(Pipe { q: s, d: r }); }\n\
                module Top() { let up = Up { cell: Drv {} }(); let down = Down { cell: Snk {} }(); }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let read = Read { ir: &ir };
     let roles = |body: &str| read.carriers(body).into_iter().filter(|c| c.0.starts_with("p.")).collect::<Vec<_>>();
     assert_eq!(roles("Drv"), [("p.q".to_string(), CarrierRole::Out), ("p.d".to_string(), CarrierRole::In)]);
@@ -301,10 +300,10 @@ fn a_field_default_is_the_initial_value_of_the_leaf_a_view_makes_out() {
     // (`flip` makes it an input, which the parent drives); a field with none starts at its `Default`
     let pipe = "struct Pipe { out q: Bit<u8> = 9, in d: Bit<Logic>, out r: Bit<Logic> }\nmodule Snk(p: flip Pipe) { }\n";
     let init = |ir: &Ir, body: &str, name: &str| ir.bodies().find(|b| b.name() == body).expect("a body").carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no carrier `{name}`")).init;
-    let ir = Elab::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
+    let ir = SourceElaboration::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
     assert_eq!(init(&ir, "Top", "tx.q"), Some(piperine_ir::Constant::Int(9)), "the producer's port leaf starts at the field's value");
     assert_eq!(init(&ir, "Top", "tx.r").map(|c| c != piperine_ir::Constant::Int(9)), Some(true), "no default: the `Default` of the type");
-    let ir = Elab::ir(&format!("{pipe}module Top() {{ signal s: Pipe; signal t: Bit<Logic>; let k = Snk(s); }}"), "Top");
+    let ir = SourceElaboration::ir(&format!("{pipe}module Top() {{ signal s: Pipe; signal t: Bit<Logic>; let k = Snk(s); }}"), "Top");
     assert_eq!(init(&ir, "Top", "s.q"), Some(piperine_ir::Constant::Int(9)), "a signal of the bundle starts there too");
     assert_eq!(init(&ir, "Snk", "p.q"), None, "an input leaf takes no initial value: its parent gives it");
 }
@@ -315,10 +314,10 @@ fn an_in_field_default_is_the_initial_value_of_the_consumers_leaf() {
     // of the bundle; a producer's `d` is an input its parent drives, so it takes none
     let pipe = "struct Pipe { out q: Bit<u8> = 9, in d: Bit<u8> = 4 }\nmodule Snk(p: flip Pipe) { }\n";
     let init = |ir: &Ir, body: &str, name: &str| ir.bodies().find(|b| b.name() == body).expect("a body").carriers().iter().find(|c| c.name == name).unwrap_or_else(|| panic!("no carrier `{name}`")).init;
-    let ir = Elab::ir(&format!("{pipe}module Top() {{ signal s: Pipe; let k = Snk(s); }}"), "Top");
+    let ir = SourceElaboration::ir(&format!("{pipe}module Top() {{ signal s: Pipe; let k = Snk(s); }}"), "Top");
     assert_eq!(init(&ir, "Snk", "p.d"), Some(piperine_ir::Constant::Int(4)), "the consumer's leaf starts at the `in` field's value");
     assert_eq!(init(&ir, "Snk", "p.q"), None, "the consumer's `q` is an input");
     assert_eq!(init(&ir, "Top", "s.d"), Some(piperine_ir::Constant::Int(4)), "a signal of the bundle starts there too");
-    let ir = Elab::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
+    let ir = SourceElaboration::ir(&format!("{pipe}module Top(tx: Pipe) {{ }}"), "Top");
     assert_eq!(init(&ir, "Top", "tx.d"), None, "the producer's `d` is an input");
 }

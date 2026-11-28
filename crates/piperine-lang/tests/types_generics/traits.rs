@@ -2,12 +2,10 @@
 //! table that answers the inherent item, the trait item visible on a type, the implementation of a
 //! trait item and whether a type implements a trait.
 
-use crate::support;
-#[allow(dead_code)]
-use crate::generic_sources;
 
-use generic_sources::GenericSources;
 
+use piperine_lang_fixtures::generic_sources::GenericSources;
+use piperine_lang_fixtures::pom::PomSource;
 /// The natures every source places in the open.
 const HEAD: &str = GenericSources::HEAD;
 
@@ -63,8 +61,8 @@ fn the_impl_table_answers_inherent_visible_and_implementation() {
     // §3.1.7, §3.7.4, §3.7.5, §3.7.8: the inherent item of a type, the trait item visible on it (the
     // `impl`'s own, else the trait's default), the implementation of a trait item for a type, and
     // whether a type implements a trait, a blanket `impl` included where its bound holds
-    let design = support::build(SOURCE);
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(SOURCE);
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let items = Items { design: &design };
     let table = ImplTable::new(&design);
     let sq = items.structure("Sq");
@@ -123,7 +121,7 @@ fn methods_associated_functions_and_constants_type_check() {
 #[test]
 fn self_outside_an_impl_or_not_first_is_e0187() {
     // §3.7: `self` is the first parameter of a function in an `impl` or a trait
-    let design = support::build(&format!("{HEAD}fn loose(self) -> f64 {{ 1.0 }}\nstruct S {{ a: f64 }}\nimpl S {{ fn late(k: f64, self) -> f64 {{ 1.0 }} }}\n"));
+    let design = PomSource::build(&format!("{HEAD}fn loose(self) -> f64 {{ 1.0 }}\nstruct S {{ a: f64 }}\nimpl S {{ fn late(k: f64, self) -> f64 {{ 1.0 }} }}\n"));
     let found = piperine_lang::types::Types::check_model(&design).expect_err("both are refused");
     let codes: Vec<String> = found.iter().map(|d| d.diagnostic.code.to_string()).collect();
     assert_eq!(codes, ["E0187", "E0187"], "{found:?}");
@@ -207,7 +205,7 @@ fn an_impl_is_written_in_the_crate_of_the_trait_or_of_the_type() {
     let foreign = "use util::Tr;\nimpl Tr for f64 { fn f(self) -> f64 { 1.0 } }\n";
     for (src, expected) in [(own_type, 0), (foreign, 1)] {
         let design = Design::builder().std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", "").source("app/lib.msl", src).source("util/lib.msl", lib).crates(graph.clone()).build();
-        assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+        assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
         let found = piperine_lang::types::Types::check_model(&design).err().unwrap_or_default();
         assert_eq!(found.len(), expected, "{src}: {found:?}");
         assert!(found.iter().all(|d| d.diagnostic.message.contains("declares neither the trait nor the type")), "{found:?}");
@@ -225,7 +223,7 @@ fn trait_methods_resolve_on_values_through_bounds_and_by_path() {
     let body = "let s = Sq { a: 2.0 }; let a = s.area(); let b = s.doubled(); let c = Shape::area(s); let d = through(s);";
     let found = GenericSources::analog_types(items, body, &["a", "b", "c", "d"]).unwrap_or_else(|errors| panic!("{errors:?}"));
     assert_eq!(found, ["a = f64", "b = f64", "c = f64", "d = f64"]);
-    let design = support::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
+    let design = PomSource::build(&format!("{HEAD}{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}"));
     let types = piperine_lang::types::Types::check(&design, "Top").expect("the source checks");
     let table = Items { design: &design };
     let (area, doubled) = (table.trait_fn("Shape", "area"), table.trait_fn("Shape", "doubled"));
@@ -260,7 +258,7 @@ fn a_blanket_impl_applies_to_every_type_its_bound_admits() {
     // a struct with no layout is not admitted
     let refused = GenericSources::analog_types(items, "let p = Plain { a: 1.0 }; let e = p.known();", &["e"]).expect_err("a struct without Repr");
     assert_eq!(refused[0].0, "E0161", "{refused:?}");
-    let design = support::build(&format!("{HEAD}{items}"));
+    let design = PomSource::build(&format!("{HEAD}{items}"));
     let table = piperine_lang::types::ImplTable::new(&design);
     let known = Items { design: &design }.trait_("Known");
     let all = &mut |_: &Ty, _: &piperine_lang::types::Bound| true;
@@ -294,7 +292,7 @@ fn a_hand_written_repr_type_checks_and_is_carried() {
     // (E0112 for the same enum without one), `OneHot::WIDTH` reads 4 and `x.encode()` is `[bool; 4]`
     let items = format!("{ONE_HOT}{ENCODE} {DECODE} }}\nfn width() -> u32 {{ OneHot::WIDTH }}\nfn levels(x: OneHot) -> [bool; 4] {{ x.encode() }}\nmodule Top() {{ signal s: Bit<OneHot> = OneHot::A; }}\n");
     let design = Design::builder().source("top.msl", format!("{HEAD}{items}")).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let types = piperine_lang::types::Types::check(&design, "Top").unwrap_or_else(|found| panic!("{:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     assert!(!types.reached().is_empty());
     assert_eq!(GenericSources::standard_codes(&items), Vec::<String>::new(), "the whole model checks too");
@@ -329,7 +327,7 @@ fn a_hand_written_repr_on_a_generic_type_is_typed_per_argument() {
     let carriers = "module Top() { signal s: Bit<Pair<u8>> = Pair { a: 1u8, b: 2u8 }; signal t: Bit<Pair<bool>> = Pair { a: true, b: false }; signal u: Bit<Pair<f64>> = Pair { a: 1.0, b: 2.0 }; }\n";
     let items = format!("{GENERIC_PAIR}{carriers}");
     let design = Design::builder().source("top.msl", format!("{HEAD}{items}")).build();
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let checked = piperine_lang::types::Types::check(&design, "Top");
     assert!(checked.is_ok(), "{:?}", checked.err().map(|found| found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>()));
     assert_eq!(GenericSources::standard_codes(&items), Vec::<String>::new(), "the whole model checks too");

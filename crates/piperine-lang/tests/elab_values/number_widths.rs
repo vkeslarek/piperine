@@ -7,10 +7,7 @@
 //! it is the evaluator's). Run-time values are proven from source in `piperine-parity`'s
 //! `source_number_widths`.
 
-use crate::support;
-use crate::elab_forms;
 
-use elab_forms::{ElabSource, IrReading};
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 use piperine_ir::{Constant, Expr, Ir, ValueType};
@@ -20,7 +17,8 @@ use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::half::Float16;
 use piperine_numbers::quad::Float128;
 use piperine_numbers::wide::{WideInt, WideUInt};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::elaboration_forms::{ElaborationForms, IrReading};
 
 /// What the tests ask of an elaborated design.
 struct Reading;
@@ -44,7 +42,7 @@ fn number_widths_lower_to_their_ir_types_and_constants() {
     // the nearest binary128 to 0.1 is 0x3ffb999999999999999999999999999a (a round-up of the
     // repeating 1001 pattern), and neither is the rounding of the `f64` 0.1 (double rounding).
     let items = "fn single() -> f32 { 0.1f32 }\nfn half() -> f16 { 0.1 }\nfn quad() -> f128 { 0.1 }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["single()", "half()", "quad()"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["single()", "half()", "quad()"]), "Top");
     let literals = Reading::float_literals(&ir);
     assert!(literals.contains(&(ValueType::F32, u128::from(0.1f32.to_bits()))), "{literals:?}");
     assert!(literals.contains(&(ValueType::F16, 0x2e66)), "{literals:?}");
@@ -56,20 +54,20 @@ fn number_widths_lower_to_their_ir_types_and_constants() {
 
     // a double-rounding literal: 1 + 2^-11 + 2^-40 is above the f16 midpoint between 1 and 1 + 2^-10; rounding it through the f64
     // first loses nothing here, but 1 + 2^-11 exactly (a tie) rounds to even (1.0) and one more digit makes it round up
-    let tie = Elab::ir(&ElabSource::reaching("fn tie() -> f16 { 1.00048828125 }\nfn above() -> f16 { 1.000488281250000000001 }", &["tie()", "above()"]), "Top");
+    let tie = SourceElaboration::ir(&ElaborationForms::reaching("fn tie() -> f16 { 1.00048828125 }\nfn above() -> f16 { 1.000488281250000000001 }", &["tie()", "above()"]), "Top");
     let bits = Reading::float_literals(&tie);
     assert!(bits.contains(&(ValueType::F16, 0x3c00)), "the exact midpoint rounds to even: {bits:?}");
     assert!(bits.contains(&(ValueType::F16, 0x3c01)), "a digit past the midpoint, which an f64 cannot hold, rounds up: {bits:?}");
 
     // an `f128` literal above `f64::MAX` is read from its text in its own format, never through the `f64` (infinite there):
     // the nearest binary128 to 1e400, and the largest finite binary128 written as a literal (both from an independent exact-decimal computation)
-    let beyond = Elab::ir(&ElabSource::reaching("fn huge() -> f128 { 1e400 }\nfn largest() -> f128 { 1.18973149535723176508575932662800702e4932 }", &["huge()", "largest()"]), "Top");
+    let beyond = SourceElaboration::ir(&ElaborationForms::reaching("fn huge() -> f128 { 1e400 }\nfn largest() -> f128 { 1.18973149535723176508575932662800702e4932 }", &["huge()", "largest()"]), "Top");
     let literals = Reading::float_literals(&beyond);
     assert!(literals.contains(&(ValueType::F128, 0x452f_b4ec_7f91_973f_f3cb_1ccf_26fb_c178)), "{literals:?}");
     assert!(literals.contains(&(ValueType::F128, 0x7ffe_ffff_ffff_ffff_ffff_ffff_ffff_ffff)), "{literals:?}");
 
     // CV-32: an integer wider than 64 bits is a wide constant of the type's limbs, and the types are the IR's
-    let wide = Elab::ir(&ElabSource::reaching("fn big() -> UInt<200> { 0x1_0000_0000_0000_0000_0000 }\nfn minus() -> Int<100> { -5 }", &["big()", "minus()"]), "Top");
+    let wide = SourceElaboration::ir(&ElaborationForms::reaching("fn big() -> UInt<200> { 0x1_0000_0000_0000_0000_0000 }\nfn minus() -> Int<100> { -5 }", &["big()", "minus()"]), "Top");
     assert!(Reading::wide_limbs(&wide).contains(&vec![0, 0x1_0000, 0, 0]), "{:?}", Reading::wide_limbs(&wide));
     let big = wide.functions().find(|f| f.name() == "big").expect("big");
     assert_eq!(*big.ret(), ValueType::UInt(200));
@@ -78,7 +76,7 @@ fn number_widths_lower_to_their_ir_types_and_constants() {
     assert!(Reading::wide_limbs(&wide).contains(&vec![u64::MAX - 4, u64::MAX]), "-5 as i100 is sign-extended to its limbs: {:?}", Reading::wide_limbs(&wide));
 
     // a param of a new type holds its default as the IR's constant of that type
-    let params = Elab::ir(&ElabSource::with_params("", "a: f32 = 1.5; b: UInt<70> = 3;"), "Top");
+    let params = SourceElaboration::ir(&ElaborationForms::with_params("", "a: f32 = 1.5; b: UInt<70> = 3;"), "Top");
     assert_eq!(IrReading::default_of(&params, "a"), Constant::FloatBits(u128::from(1.5f32.to_bits())));
     assert!(matches!(IrReading::default_of(&params, "b"), Constant::Wide(_)), "{:?}", IrReading::default_of(&params, "b"));
 }
@@ -221,12 +219,12 @@ impl Folds {
     fn source(&self, ty: &str) -> String {
         let consts = format!("const A: {ty} = 2.5; const B: {ty} = 0.1; const C: {ty} = -3.75;");
         let params: String = self.params.join(" ").replace(" as T", &format!(" as {ty}"));
-        ElabSource::with_params(&consts, &params)
+        ElaborationForms::with_params(&consts, &params)
     }
 
     /// Elaborates the source and compares each param's folded default with the expectation.
     fn check(&self, ty: &str) {
-        let ir = Elab::ir(&self.source(ty), "Top");
+        let ir = SourceElaboration::ir(&self.source(ty), "Top");
         let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
         for (index, (expected, limbs)) in self.expected.iter().zip(&self.wide).enumerate() {
             let param = top.params().iter().find(|p| p.name == format!("p{index}")).expect("a param");
@@ -284,7 +282,7 @@ fn const_contexts_compute_every_width_as_the_run_does() {
     wide.expect("f32", "WA as f32", Constant::FloatBits(NumberConversion::unsigned_to_float(a, BinaryFormat::SINGLE)));
     // a literal is at most 128 bits (A.2 rule 8), so the typed consts are the operands
     let items = format!("const WA: UInt<200> = 0x{:032x}; const WB: UInt<200> = 7; const SP: Int<100> = -123456789012345678901234567; const SQ: Int<100> = 98765432109876543;", a.low_u128());
-    let ir = Elab::ir(&ElabSource::with_params(&items, &wide.params.join(" ")), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::with_params(&items, &wide.params.join(" ")), "Top");
     let top = ir.bodies().find(|body| body.name() == "Top").expect("Top");
     for (index, (expected, limbs)) in wide.expected.iter().zip(&wide.wide).enumerate() {
         let got = top.params().iter().find(|param| param.name == format!("p{index}")).and_then(|param| param.default).expect("a default");
@@ -301,7 +299,7 @@ fn a_const_fn_and_an_array_length_fold_over_the_new_widths() {
     // CV-36 AC 1: a `const fn` over `f16` and over `UInt<100>` runs at elaboration with the run-time arithmetic, and an array
     // length is a wide const read as a count
     let items = "const fn twice(x: f16) -> f16 { x * 2.0 }\nconst fn square(x: UInt<100>) -> UInt<100> { x * x }\nconst H: f16 = 1.5;\nconst W: UInt<100> = 0x1_0000_0000;\nconst LEN: UInt<70> = 3;";
-    let ir = Elab::ir(&ElabSource::with_params(items, "a: f16 = twice(H); b: UInt<100> = square(W); c: [f32; LEN as u64] = [1.0, 2.0, 3.0];"), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::with_params(items, "a: f16 = twice(H); b: UInt<100> = square(W); c: [f32; LEN as u64] = [1.0, 2.0, 3.0];"), "Top");
     assert_eq!(IrReading::default_of(&ir, "a"), Constant::FloatBits(u128::from((<Float16 as Sample>::decimal("1.5") + <Float16 as Sample>::decimal("1.5")).to_bits())));
     let Constant::Wide(id) = IrReading::default_of(&ir, "b") else { panic!("a wide default") };
     assert_eq!(ir.wide(id).limbs, vec![0, 1], "2^32 squared is 2^64");
@@ -326,8 +324,8 @@ fn a_const_panic_of_a_new_width_names_the_expression() {
     ] {
         let ty = if params.contains("f32") { "f32" } else if params.contains("f16") { "f16" } else { "f128" };
         let items = if params.contains("ONE") { format!("const ONE: {ty} = 1.0; const TWO: {ty} = 2.0;") } else { String::new() };
-        let src = ElabSource::with_params(&items, params);
-        let found = Elab::run(&src, "Top").expect_err(params);
+        let src = ElaborationForms::with_params(&items, params);
+        let found = SourceElaboration::run(&src, "Top").expect_err(params);
         assert!(found.iter().any(|d| d.diagnostic.code == "E0104" && d.diagnostic.message.contains(named)), "{params}: {:?}", found.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     }
 }

@@ -4,18 +4,16 @@
 //! codes of what is refused. Run-time values are proven from source in `piperine-parity`'s
 //! `source_control`.
 
-use crate::support;
-use crate::elab_forms;
 
-use elab_forms::{ElabSource, IrReading};
-use support::Elab;
 
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::elaboration_forms::{ElaborationForms, IrReading};
 #[test]
 fn let_mut_lowers_to_mutable_locals_and_assignments() {
     // §1.5.12: `let mut` is a mutable local, `x = e` and `x op= e` assign it; a plain `let` and a
     // parameter stay immutable. The IR passes its own check.
     let items = "fn work(a: f64) -> f64 { let x = a; x = x + 1.0; x += 2.0; x *= 3.0; let y = x; y }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["work(1.0)"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["work(1.0)"]), "Top");
     let function = ir.functions().find(|f| f.name() == "work").expect("work");
     let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
     assert_eq!(flags, vec![("a".to_string(), false), ("x".to_string(), true), ("y".to_string(), false)]);
@@ -27,7 +25,7 @@ fn let_mut_lowers_to_mutable_locals_and_assignments() {
     // §1.7.5: `let x;` is a local first assigned later; it is assignable in the IR though the
     // source wrote no `mut`.
     let items = "fn pick(c: bool) -> u8 { let r: u8; if c { r = 1; } else { r = 2; } r }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["pick(true)"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["pick(true)"]), "Top");
     let function = ir.functions().find(|f| f.name() == "pick").expect("pick");
     let flags: Vec<(String, bool)> = function.locals().iter().map(|l| (l.name.clone(), l.mutable)).collect();
     assert_eq!(flags, vec![("c".to_string(), false), ("r".to_string(), true)]);
@@ -46,7 +44,7 @@ fn loops_lower_to_the_loops_of_the_ir() {
                  for k in 0..n { if k == 2 { continue; } s += k; }\n\
                  for k in 1..=n { s += k; }\n\
                  first + s }";
-    let ir = Elab::ir(&ElabSource::reaching(items, &["work(5)"]), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reaching(items, &["work(5)"]), "Top");
     let text = IrReading::function_text(&ir, "work");
     for printed in ["while (i < n)", "loop {", "break s", "continue", "for k in 0u8..n", "for k in 1u8..=n"] {
         assert!(text.contains(printed), "`{printed}` in:\n{text}");
@@ -55,7 +53,7 @@ fn loops_lower_to_the_loops_of_the_ir() {
     // In a reaction a `for` that leaves early is the IR's own `for` as well: no value may be unknown (§3.3), so
     // there is no counting `while` to merge.
     let body = "let hit = 0u8; for k in 0..9u8 { if k > 3 { hit = k; break; } } q <- hit;";
-    let ir = Elab::ir(&ElabSource::reacting("", body), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::reacting("", body), "Top");
     let text = ir.print_structural();
     assert!(text.contains("for k in") && !text.contains("while"), "{text}");
 }
@@ -65,8 +63,8 @@ fn a_function_returning_an_option_is_two_ir_functions() {
     // MD-67 item 2 (CV-03): an `Option` is the pair `(is, val)`; a function that returns one is
     // the IR function of each half, and a call reads both.
     let items = "fn halved(x: Option<u8>) -> Option<u8> { let v = x?; Some(v / 2) }";
-    let src = ElabSource::reacting(items, "q <- halved(Some(8)).unwrap_or(99);");
-    let ir = Elab::ir(&src, "Top");
+    let src = ElaborationForms::reacting(items, "q <- halved(Some(8)).unwrap_or(99);");
+    let ir = SourceElaboration::ir(&src, "Top");
     let names: Vec<String> = ir.functions().map(|f| f.name().to_string()).collect();
     assert_eq!(names, vec!["halved.is".to_string(), "halved.val".to_string()]);
 }
@@ -79,7 +77,7 @@ fn an_analog_loop_that_contributes_or_places_is_unrolled() {
     // §11 rule 12 (CV-02 AC 2): a loop that contributes, with a constant trip count, is its unrolling;
     // the loop variable is its constant in each iteration. The IR holds no loop.
     let src = "module Top() { signal o: Electrical; signal a: Electrical; }\nanalog for Top { for k in 0..3u8 { i(o) +> (k as f64) * v(a); } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     let text = ir.print_structural();
     assert_eq!(text.matches(" +> ").count(), 3, "{text}");
     assert!(!text.contains("for k in"), "{text}");
@@ -90,7 +88,7 @@ fn an_analog_loop_that_contributes_or_places_is_unrolled() {
     // §8.3.4 (CV-02 AC 2): each iteration's placement is a distinct instance, named by the hoisting
     // rule in unrolled order, and its argument reads that iteration's loop variable.
     let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..3u8 {{ i(o) +> Lag(v(a) * (k as f64)); }} }}");
-    let ir = Elab::ir(&src, "Top");
+    let ir = SourceElaboration::ir(&src, "Top");
     let top = ir.bodies().find(|b| b.name() == "Top").expect("Top");
     let names: Vec<&str> = top.nodes().iter().map(|n| n.name.as_str()).collect();
     assert_eq!(names, ["a", "o", "Lag$0.y", "Lag$1.y", "Lag$2.y"], "one node per iteration");
@@ -102,31 +100,31 @@ fn an_analog_loop_that_contributes_or_places_is_unrolled() {
 
     // A nested loop: the inner trip count reads the outer variable; 0 + 1 + 2 iterations.
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { for j in 0..3u8 { for k in 0..j { i(o) +> 1.0; } } }";
-    let ir = Elab::ir(src, "Top");
+    let ir = SourceElaboration::ir(src, "Top");
     assert_eq!(ir.print_structural().matches(" +> ").count(), 3);
 
     // An empty range contributes nothing (edge case).
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { for k in 2..2u8 { i(o) +> 1.0; } i(o) +> 2.0; }";
-    assert_eq!(Elab::ir(src, "Top").print_structural().matches(" +> ").count(), 1);
+    assert_eq!(SourceElaboration::ir(src, "Top").print_structural().matches(" +> ").count(), 1);
 }
 
 #[test]
 fn a_contributing_analog_loop_without_a_constant_trip_count_is_e0416() {
     // §11 rule 12 (CV-02 AC 3): a trip count that reads a probe, and a `while`, are not constants.
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { for k in 0..(v(o) as u8) { i(o) +> 1.0; } }";
-    let refused = Elab::run(src, "Top").expect_err("a probe is no trip count");
-    assert_eq!(Elab::codes(&refused), ["E0416"]);
+    let refused = SourceElaboration::run(src, "Top").expect_err("a probe is no trip count");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0416"]);
     let src = "module Top() { signal o: Electrical; }\nanalog for Top { let n = 0u8; while n < 3 { i(o) +> 1.0; n += 1; } }";
-    let refused = Elab::run(src, "Top").expect_err("a while has no trip count");
-    assert_eq!(Elab::codes(&refused), ["E0416"]);
+    let refused = SourceElaboration::run(src, "Top").expect_err("a while has no trip count");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0416"]);
 
     // §8.3.4: the same for a placement is E0351.
     let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..(v(a) as u8) {{ i(o) +> Lag(v(a)); }} }}");
-    let refused = Elab::run(&src, "Top").expect_err("a placement in a loop over a probe");
-    assert_eq!(Elab::codes(&refused), ["E0416"], "a contribution in the body is named first");
+    let refused = SourceElaboration::run(&src, "Top").expect_err("a placement in a loop over a probe");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0416"], "a contribution in the body is named first");
     let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ for k in 0..(v(a) as u8) {{ let y = Lag(v(a)); }} }}");
-    let refused = Elab::run(&src, "Top").expect_err("a placement in a loop over a probe");
-    assert_eq!(Elab::codes(&refused), ["E0351"]);
+    let refused = SourceElaboration::run(&src, "Top").expect_err("a placement in a loop over a probe");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0351"]);
 }
 
 #[test]
@@ -134,7 +132,7 @@ fn a_recursion_reached_from_analog_is_unrolled() {
     // §3 rule 12 (CV-07 AC 2): the depth is decided by constants, so the recursion is expanded where
     // it is called; the IR holds no function that calls itself (its own check passes).
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let ir = Elab::ir(&ElabSource::analog_calling(items, "tri(3, v(a))"), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::analog_calling(items, "tri(3, v(a))"), "Top");
     let text = ir.print_structural();
     assert!(ir.functions().all(|f| f.name() != "tri"), "{text}");
     // `tri(3)` expands `tri(3)`, `tri(2)`, `tri(1)` and `tri(0)`, whose `n == 0` folds to the base case.
@@ -143,13 +141,13 @@ fn a_recursion_reached_from_analog_is_unrolled() {
 
     // Through a function that is not itself recursive.
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }\nfn twice(x: f64) -> f64 { tri(2, x) + tri(2, x) }";
-    let ir = Elab::ir(&ElabSource::analog_calling(items, "twice(v(a))"), "Top");
+    let ir = SourceElaboration::ir(&ElaborationForms::analog_calling(items, "twice(v(a))"), "Top");
     assert!(ir.functions().all(|f| f.name() != "tri" && f.name() != "twice"), "{}", ir.print_structural());
 
     // A recursion no analog block reaches stays a recursion of the IR (D12).
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
     let src = format!("{items}\nmodule Top(in clk: Bit, out q: Bit<u8> = 0) {{ }}\ndigital for Top {{ on clk.rise() {{ q <- tri(3, 1.0) as u8; }} }}");
-    let ir = Elab::ir(&src, "Top");
+    let ir = SourceElaboration::ir(&src, "Top");
     assert!(ir.functions().any(|f| f.name() == "tri"));
 }
 
@@ -158,14 +156,14 @@ fn an_unfoldable_recursion_from_analog_is_e0126() {
     // §3 rule 12 (CV-07 AC 3): the depth reads a probe, so the decision does not fold; the error names
     // the function.
     let items = "fn tri(n: u8, x: f64) -> f64 { if n == 0 { 0.0 } else { x + tri(n - 1, x) } }";
-    let refused = Elab::run(&ElabSource::analog_calling(items, "tri(v(a) as u8, v(a))"), "Top").expect_err("a depth from a probe");
-    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    let refused = SourceElaboration::run(&ElaborationForms::analog_calling(items, "tri(v(a) as u8, v(a))"), "Top").expect_err("a depth from a probe");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`tri`"), "{:?}", refused[0].diagnostic.message);
 
     // A recursion with no decision at all runs past 1 024 calls.
     let items = "fn forever(x: f64) -> f64 { forever(x) }";
-    let refused = Elab::run(&ElabSource::analog_calling(items, "forever(v(a))"), "Top").expect_err("no end");
-    assert_eq!(Elab::codes(&refused), ["E0126"]);
+    let refused = SourceElaboration::run(&ElaborationForms::analog_calling(items, "forever(v(a))"), "Top").expect_err("no end");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0126"]);
     assert!(refused[0].diagnostic.message.contains("`forever`"), "{:?}", refused[0].diagnostic.message);
 }
 
@@ -201,7 +199,7 @@ fn phase_a_forms_fold_in_const_contexts() {
             h: f64 = (pick(1) + pick(3) + pick(7)) as f64;\n\
         }}\nmodule Unused() {{ }}"
     );
-    let ir = Elab::ir(&src, "Top");
+    let ir = SourceElaboration::ir(&src, "Top");
     let real = |name: &str| match IrReading::default_of(&ir, name) {
         piperine_ir::Constant::Real(r) => r.get(),
         other => panic!("{name} is {other:?}"),
@@ -223,10 +221,10 @@ fn phase_a_forms_fold_in_const_contexts() {
 
     // The `where` of a param folds the same forms: a condition over a `const fn` that loops.
     let src = format!("{items}module Top() {{ g: f64 = 1.0 where gcd(12, 18) == 6 && fact(4) == 24; }}");
-    Elab::ir(&src, "Top");
+    SourceElaboration::ir(&src, "Top");
     let src = format!("{items}module Top() {{ g: f64 = 1.0 where gcd(12, 18) == 7; }}");
-    let refused = Elab::run(&src, "Top").expect_err("the `where` is false");
-    assert_eq!(Elab::codes(&refused), ["E0317"]);
+    let refused = SourceElaboration::run(&src, "Top").expect_err("the `where` is false");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0317"]);
 }
 
 #[test]
@@ -234,23 +232,23 @@ fn a_panic_in_a_const_evaluation_names_the_expression() {
     // §1 rule 11 and Q5 (CV-36 AC 2): a division by zero reached through a loop, a loop past 2^24
     // iterations and a call nested past 1 024 are elaboration errors, `E0104`, at the expression.
     let division = "const fn bad() -> u32 { let s = 0u32; loop { s += 1; if s > 3 { break; } } 10 / (s - 4) }\nconst X: u32 = bad();\nmodule Top() { a: f64 = X as f64; }";
-    let refused = Elab::run(division, "Top").expect_err("a division by zero");
-    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    let refused = SourceElaboration::run(division, "Top").expect_err("a division by zero");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0104"]);
     let message = &refused[0].diagnostic.message;
     assert!(message.contains("division by zero"), "{message}");
     let span = refused[0].diagnostic.span();
     assert_eq!(&division[span.start..span.end], "10 / (s - 4)", "the diagnostic sits on the expression that panics");
 
     let endless = "const fn spin() -> u32 { let s = 0u32; loop { s += 1; } }\nconst X: u32 = spin();\nmodule Top() { a: f64 = X as f64; }";
-    let refused = Elab::run(endless, "Top").expect_err("a loop with no end");
-    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    let refused = SourceElaboration::run(endless, "Top").expect_err("a loop with no end");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0104"]);
     assert!(refused[0].diagnostic.message.contains("2^24"), "{:?}", refused[0].diagnostic.message);
 
     let deep = "const fn down(n: u32) -> u32 { if n == 0 { 0 } else { down(n - 1) } }\nconst X: u32 = down(2000);\nmodule Top() { a: f64 = X as f64; }";
-    let refused = Elab::run(deep, "Top").expect_err("a call nested too deep");
-    assert_eq!(Elab::codes(&refused), ["E0104"]);
+    let refused = SourceElaboration::run(deep, "Top").expect_err("a call nested too deep");
+    assert_eq!(SourceElaboration::codes(&refused), ["E0104"]);
     assert!(refused[0].diagnostic.message.contains("1 024"), "{:?}", refused[0].diagnostic.message);
     // the same recursion within the bound is the value
     let within = "const fn down(n: u32) -> u32 { if n == 0 { 7 } else { down(n - 1) } }\nconst X: u32 = down(1000);\nmodule Top() { a: f64 = X as f64; }";
-    assert_eq!(IrReading::default_of(&Elab::ir(within, "Top"), "a"), piperine_ir::Constant::Real(piperine_ir::Real::new(7.0)));
+    assert_eq!(IrReading::default_of(&SourceElaboration::ir(within, "Top"), "a"), piperine_ir::Constant::Real(piperine_ir::Real::new(7.0)));
 }

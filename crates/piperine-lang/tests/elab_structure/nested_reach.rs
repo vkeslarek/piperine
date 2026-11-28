@@ -2,17 +2,20 @@
 //! the node, the carrier and the `let` over the solve of a cell three and four levels below the reader are reached by name, through
 //! templates and in generation, in any text order, and a cycle of node connections through such a reach binds each port.
 
-use crate::support;
-use crate::nested;
 
-use nested::{MIXED_LETS, MODELS, READS};
 use piperine_ir::Ir;
 use piperine_lang::elab::{Elaborator, Overrides};
-use support::Elab;
+use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::nested_reach::{MIXED_LETS, MODELS, READS};
 
-/// The top that reads `reach` below the placement `placement`, with `reads` as its `analog` block.
-fn top(placement: &str, reads: &str) -> String {
-    format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; {reads} }}\n")
+/// Associated test helpers of `nested_reach`, grouped on one fixture type.
+struct NestedReachFixture;
+
+impl NestedReachFixture {
+    /// The top that reads `reach` below the placement `placement`, with `reads` as its `analog` block.
+    fn top(placement: &str, reads: &str) -> String {
+        format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; {reads} }}\n")
+    }
 }
 
 #[test]
@@ -20,7 +23,7 @@ fn a_node_is_reached_three_and_four_levels_below_the_reader() {
     // §8.2.8: `R.sn` names the storage node of the cell `R` places, whatever the depth of the chain: the reader's reached node
     // takes the name of the path and is the cell's own node, one node with every reached node on the way
     for (placement, reach, form) in READS {
-        let ir = Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> v({reach}.sn);"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> v({reach}.sn);"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().nodes().iter().position(|node| node.name == format!("{reach}.sn")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.sn`"));
         assert_eq!(reader.node(at).expect("a bound node").path(), format!("Top.{reach}.sn"), "{form}");
@@ -42,7 +45,7 @@ fn a_param_and_a_let_over_the_params_read_the_value_the_placement_gives_three_an
         ("let p = Tower(a);", "p.rows.cells[1]", 2.0, "3 by name in generation, `1.0 + j`"),
         ("let p = Tall(a);", "p.tower.rows.cells[1]", 2.0, "4 by name in generation, `1.0 + j`"),
     ] {
-        let printed = |item: &str| Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))), "Top").print_structural();
+        let printed = |item: &str| SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))), "Top").print_structural();
         // the top's own drive `potential(a) +> 1.0` prints `direct 1.0` once: the read adds one more only at `k = 1.0`
         let own = usize::from(k == 1.0);
         assert_eq!(printed("k").matches(&format!("direct {k:?}")).count(), own + 1, "{form}: `{reach}.k` lowers to {k:?}: {}", printed("k"));
@@ -55,7 +58,7 @@ fn a_let_over_the_solve_reaches_the_node_it_reads_three_and_four_levels_below_th
     // §8.2.8, §8.2.25 (GAPS L81): `R.vs` is `v(sn)` evaluated in the reader's context, so the reader reaches the cell's `sn`
     // though it names only `vs`
     for (placement, reach, form) in READS {
-        let ir = Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.vs;"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.vs;"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().nodes().iter().position(|node| node.name == format!("{reach}.sn")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.sn` for `vs`"));
         assert_eq!(reader.node(at).expect("a bound node").path(), format!("Top.{reach}.sn"), "{form}");
@@ -66,7 +69,7 @@ fn a_let_over_the_solve_reaches_the_node_it_reads_three_and_four_levels_below_th
 fn a_carrier_is_reached_three_and_four_levels_below_the_reader() {
     // §8.2.8 (GAPS L81): `R.q` names the carrier of the cell `R` places: the reader's reached carrier is bound to the cell's net
     for (placement, reach, form) in READS {
-        let ir = Elab::ir(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.q;"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.q;"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().carriers().iter().position(|carrier| carrier.name == format!("{reach}.q")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.q`"));
         assert_eq!(reader.net(at).expect("a bound net").path(), format!("Top.{reach}.q"), "{form}");
@@ -78,8 +81,8 @@ fn a_reach_is_the_same_wherever_the_models_and_the_top_are_written() {
     // §8.2: the items of a design appear in any order: the top written before the models it places binds the same nodes and nets
     for (placement, reach, form) in READS {
         let reads = format!("potential(o) +> v({reach}.sn) + {reach}.vs + {reach}.q + {reach}.twice;");
-        let forward = Elab::ir(&format!("{MODELS}{}", top(placement, &reads)), "Top");
-        let reverse = Elab::ir(&format!("{}{MODELS}", top(placement, &reads)), "Top");
+        let forward = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &reads)), "Top");
+        let reverse = SourceElaboration::ir(&format!("{}{MODELS}", NestedReachFixture::top(placement, &reads)), "Top");
         let names = |ir: &Ir| {
             let reader = ir.instance_at("Top").expect("the top");
             let nodes: Vec<String> = reader.body().nodes().iter().enumerate().map(|(at, node)| format!("{}={}", node.name, reader.node(at).map_or_else(String::new, |n| n.path().to_string()))).collect();
@@ -106,12 +109,12 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_binds_each_port() {
         ("let p = Plane { cell: Cell { } }(q.grid.row.cells[1].sn); let q = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);", "let p = Plane { cell: Cell { } }(p.grid.row.cells[1].sn);", "grid.row.cells[1]", "grid.row.cells[1].sn"),
     ] {
         for text in [format!("{MODELS}module Top() {{ {pair} }}"), format!("module Top() {{ {pair} }}{MODELS}")] {
-            let ir = Elab::ir(&text, "Top");
-            assert_eq!(Elab::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.q.{reach}"), format!("Top.p.{reach}")], "{pair}");
-            assert_eq!(Elab::node_paths(&ir, &format!("Top.q.{path}")), [format!("Top.p.{reach}"), format!("Top.q.{reach}")], "{pair}");
+            let ir = SourceElaboration::ir(&text, "Top");
+            assert_eq!(SourceElaboration::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.q.{reach}"), format!("Top.p.{reach}")], "{pair}");
+            assert_eq!(SourceElaboration::node_paths(&ir, &format!("Top.q.{path}")), [format!("Top.p.{reach}"), format!("Top.q.{reach}")], "{pair}");
         }
-        let ir = Elab::ir(&format!("{MODELS}module Top() {{ {own} }}"), "Top");
-        assert_eq!(Elab::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.p.{reach}"), format!("Top.p.{reach}")], "{own}");
+        let ir = SourceElaboration::ir(&format!("{MODELS}module Top() {{ {own} }}"), "Top");
+        assert_eq!(SourceElaboration::node_paths(&ir, &format!("Top.p.{path}")), [format!("Top.p.{reach}"), format!("Top.p.{reach}")], "{own}");
     }
 }
 
@@ -121,11 +124,11 @@ fn a_missing_or_private_item_is_e0343_three_and_four_levels_below_the_reader() {
     // at elaboration where a template does, never a silent reach
     for (placement, reach, form) in READS {
         for item in ["missing", "hidden"] {
-            let src = format!("{MODELS}{}", top(placement, &format!("potential(o) +> {reach}.{item};")));
-            let design = Elab::design(&src);
+            let src = format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};")));
+            let design = SourceElaboration::design(&src);
             let mut codes: Vec<String> = design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect();
             if codes.is_empty() {
-                codes = Elab::codes(&Elab::run(&src, "Top").expect_err("out of reach"));
+                codes = SourceElaboration::codes(&SourceElaboration::run(&src, "Top").expect_err("out of reach"));
             }
             assert!(codes.iter().all(|code| code == "E0343") && !codes.is_empty(), "{form}: {item}: {codes:?}");
         }
@@ -139,7 +142,7 @@ fn a_drive_of_a_resolved_carrier_of_a_cell_three_levels_down_is_held_beside_the_
     let src = "nature AndWire { value: bool }\nimpl Resolve<bool> for AndWire { fn resolve<const N: usize>(d: [bool; N]) -> bool { d.iter().fold(true, |acc, x| acc && x) } }\n\
                module Pin() { pub signal line: AndWire; line = true; }\nmodule Level2() { pub let c0 = Pin(); }\nmodule Level3() { pub let mid = Level2(); }\n\
                module Top() { let p = Level3(); p.mid.c0.line = false; }";
-    let printed = Elab::ir(src, "Top").print_structural();
+    let printed = SourceElaboration::ir(src, "Top").print_structural();
     let net = printed.lines().find(|line| line.starts_with("net Top.p.mid.c0.line:")).expect("the cell's net");
     assert!(net.contains("resolved by Top.p.mid.c0.line$resolve of bool drives (Top.p.mid.c0.line$drive0, Top.p.mid.c0.line$drive1)"), "{net}");
     assert!(net.contains("held by (Top#0, Top.p.mid.c0#0)"), "{net}");
@@ -151,19 +154,19 @@ fn a_reach_refused_for_its_cause_reports_that_cause_once() {
     // is one `P0001` naming the cause, with no second diagnostic after it
     for (src, cause) in [
         (
-            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n{}", top("let p = GenNode(a);", "potential(o) +> v(p.mid.c0.sn);")),
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n{}", NestedReachFixture::top("let p = GenNode(a);", "potential(o) +> v(p.mid.c0.sn);")),
             "a node declared in generation of a module a parent reads through",
         ),
         (
-            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let c0 = Cell(a); }}\n{}", top("let p = GenNode(a);", "potential(o) +> v(p.c0.sn);")),
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let c0 = Cell(a); }}\n{}", NestedReachFixture::top("let p = GenNode(a);", "potential(o) +> v(p.c0.sn);")),
             "a node declared in generation of a module a parent reads through",
         ),
         (
-            format!("{MODELS}module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n{}", top("let h = HW(1.0);", "potential(o) +> v(h.w.c0.sn);")),
+            format!("{MODELS}module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n{}", NestedReachFixture::top("let h = HW(1.0);", "potential(o) +> v(h.w.c0.sn);")),
             "a hoisted module that holds a placement of a module that is not hoisted",
         ),
     ] {
-        let found = Elab::run(&src, "Top").expect_err("the read is refused");
+        let found = SourceElaboration::run(&src, "Top").expect_err("the read is refused");
         let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
         assert_eq!(messages.len(), 1, "{messages:?}");
         assert!(messages[0].starts_with("P0001") && messages[0].contains(cause), "{messages:?}");
@@ -179,7 +182,7 @@ fn a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_
     let models = MODELS.replace("pub let vs = v(sn);", "pub let vs = v(sn); pub let vs2 = vs + v(a);");
     for (placement, reach, form) in READS.iter().filter(|(placement, _, _)| !placement.contains("::<_>")) {
         for item in ["vs", "vs2"] {
-            let design = support::Elab::design(&format!("{models}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let design = SourceElaboration::design(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))));
             let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
             let ir = result.unwrap_or_else(|d| panic!("{form}: {item}: {d:?}"));
             let reader = ir.instance_at("Top").expect("the top");
@@ -198,7 +201,7 @@ fn every_read_whose_hops_the_text_names_is_elaborated_in_one_pass() {
     // (`GBank<C>`'s `cell(a)`), whose module the text does not name, so the names that `let` reads are found by running, one pass
     // for each level below the reader
     let elaborate = |src: &str| {
-        let design = support::Elab::design(src);
+        let design = SourceElaboration::design(src);
         let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
         assert!(result.is_ok(), "{src}: {:?}", result.err());
         statistics.passes
@@ -208,7 +211,7 @@ fn every_read_whose_hops_the_text_names_is_elaborated_in_one_pass() {
         let depth = if form.starts_with('4') { 4 } else { 3 };
         for (item, read) in [("sn", format!("v({reach}.sn)")), ("vs", format!("{reach}.vs")), ("q", format!("{reach}.q")), ("k", format!("{reach}.k")), ("twice", format!("{reach}.twice"))] {
             let expected = if through_type_parameter && item == "vs" { depth } else { 1 };
-            let passes = elaborate(&format!("{MODELS}{}", top(placement, &format!("potential(o) +> {read};"))));
+            let passes = elaborate(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {read};"))));
             assert_eq!(passes, expected, "{form}: `{read}`");
         }
     }
@@ -241,7 +244,7 @@ fn a_refusal_of_another_cause_hides_no_refusal_of_a_read() {
         ("let g = GenNode(a); let r = TopH(a);", "v(g.mid.c0.sn) + v(r.m.h.n)", "a node declared in generation of a module a parent reads through"),
         ("let h = HW(1.0); let r = MidH(a);", "v(h.w.c0.sn) + v(r.h.n)", "a hoisted module that holds a placement of a module that is not hoisted"),
     ] {
-        let found = Elab::run(&format!("{models}{}", top(placement, &format!("potential(o) +> {reads};"))), "Top").expect_err("both reads are refused");
+        let found = SourceElaboration::run(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reads};"))), "Top").expect_err("both reads are refused");
         let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
         assert_eq!(messages.len(), 2, "{reads}: {messages:?}");
         assert!(messages[0].starts_with("P0001") && messages[0].contains(earlier), "{reads}: the earlier cause first: {messages:?}");
@@ -269,7 +272,7 @@ fn a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_thre
         ("let p = GPlane::<_>(a) { cell: Cell { k: 7.0, g: 1.5 } };", "p.grid.row.cells[1]", 7.0, 1.5, 4),
     ] {
         for (item, lowered) in [("deep", format!("({k:?} * probe(")), ("gated", format!("if ({k:?} > 0.5) {{ probe(")), ("gi", format!("({g:?} * probe("))] {
-            let design = support::Elab::design(&format!("{models}{}", top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let design = SourceElaboration::design(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))));
             let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
             let printed = result.unwrap_or_else(|d| panic!("{reach}.{item}: {d:?}")).print_structural();
             let read = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{reach}.{item}: the read of `o`: {printed}"));
@@ -297,7 +300,7 @@ fn a_given_value_over_a_param_of_the_reader_is_read_in_place_one_and_three_level
     ] {
         for (read, lowered) in [(format!("v({reach}.sn)"), "probe(".to_string()), (format!("{reach}.vs"), "probe(".to_string()), (format!("{reach}.deep"), format!("({k} * probe("))] {
             let src = format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
-            let design = support::Elab::design(&src);
+            let design = SourceElaboration::design(&src);
             let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
             let printed = result.unwrap_or_else(|d| panic!("`{read}` under `{placement}`: {d:?}")).print_structural();
             let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
@@ -321,8 +324,8 @@ fn a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_
         ("let p = WR(a);", "v(p.sn)", "E0319"),
         ("let p = WRL3(a);", "v(p.mid.c0.sn)", "E0319"),
     ] {
-        let found = Elab::run(&format!("{models}{}", top(placement, &format!("potential(o) +> {read};"))), "Top").expect_err("the placement is refused");
-        assert_eq!(Elab::codes(&found), [code], "`{read}` under `{placement}`: {:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
+        let found = SourceElaboration::run(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {read};"))), "Top").expect_err("the placement is refused");
+        assert_eq!(SourceElaboration::codes(&found), [code], "`{read}` under `{placement}`: {:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     }
 }
 
@@ -338,13 +341,13 @@ fn a_placement_in_generation_reads_a_param_of_its_module_and_the_loop_variable()
         MODELS.replace("pub let vs = v(sn);", MIXED_LETS)
     );
     let top = |read: &str| format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; let p = GTower(a) {{ m4: m }}; }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
-    let ir = Elab::ir(&top("1.0"), "Top");
+    let ir = SourceElaboration::ir(&top("1.0"), "Top");
     for (iteration, k) in [(0, 1.5 * 0.5), (1, 1.5 * 0.5 + 1.0)] {
         let cell = ir.instance_at(&format!("Top.p.rows.cells[{iteration}]")).unwrap_or_else(|| panic!("cells[{iteration}] is placed"));
         assert_eq!(cell.param(0), Some(&piperine_ir::Constant::Real(piperine_ir::Real::new(k))), "cells[{iteration}].k is m3 + j");
     }
     for (read, lowered) in [("v(p.rows.cells[1].sn)", "probe("), ("p.rows.cells[1].vs", "probe("), ("p.rows.cells[1].deep", "(((m * 0.5) + (1i32 as f64)) * probe(")] {
-        let printed = Elab::ir(&top(read), "Top").print_structural();
+        let printed = SourceElaboration::ir(&top(read), "Top").print_structural();
         let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
         assert!(line.contains(lowered) && line.contains("p.rows.cells[1].sn"), "`{read}` lowers `{lowered}` over the cell's node: {line}");
     }
@@ -362,7 +365,7 @@ fn a_param_in_generation_over_a_param_and_the_loop_variable_reads_through_three_
     );
     for (read, lowered) in [("p.rows.cells[1].k", "direct 1.75"), ("p.rows.cells[1].twice", "direct (1.75 * 2.0)"), ("p.rows.cells[0].k", "direct 0.75"), ("p.rows.cells[0].twice", "direct (0.75 * 2.0)")] {
         let src = format!("{models}module Top() {{ m: f64 = 1.5; signal a: Electrical; signal o: Electrical; let p = GTower(a) {{ m4: m }}; }}\nanalog for Top {{ potential(a) +> 1.0; potential(o) +> {read}; }}\n");
-        let printed = Elab::ir(&src, "Top").print_structural();
+        let printed = SourceElaboration::ir(&src, "Top").print_structural();
         let line = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{read}: the read of `o`: {printed}"));
         assert!(line.ends_with(lowered), "`{read}` lowers `{lowered}`: {line}");
     }
@@ -380,7 +383,7 @@ fn a_body_reads_the_param_of_its_own_generated_child_over_a_param_and_the_loop_v
     // §8.2.8, §8.2.23 (verification finding 13): `c[1].k` with `k: m + (j as f64)` is the iteration's value, the loop variable bound
     // where the child's key value folds as it is for a child of a child (C35): `c[1].k` = 0.25 + 1, `c[0].k` = 0.25
     for (read, lowered) in [("c[1].k", "direct 1.25"), ("c[0].k", "direct 0.25")] {
-        let printed = Elab::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
+        let printed = SourceElaboration::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
         assert!(printed.lines().any(|line| line.trim() == format!("b0.potential +> {lowered}")), "`{read}` lowers `{lowered}`: {printed}");
     }
 }
@@ -392,7 +395,7 @@ fn a_condition_over_the_param_of_an_own_generated_child_reads_the_iterations_val
         ("if c[1].k > 1.0 { v(c[1].sn) } else { 0.0 }", "direct if (1.25 > 1.0) { probe(\"c[1].sn\", gnd) } else { 0.0 }"),
         ("if c[0].k > 1.0 { v(c[0].sn) } else { 0.0 }", "direct if (0.25 > 1.0) { probe(\"c[0].sn\", gnd) } else { 0.0 }"),
     ] {
-        let printed = Elab::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
+        let printed = SourceElaboration::ir(&OWN_GENERATED.replace("READ", read), "Top").print_structural();
         assert!(printed.lines().any(|line| line.trim() == format!("b0.potential +> {lowered}")), "`{read}` lowers `{lowered}`: {printed}");
     }
 }

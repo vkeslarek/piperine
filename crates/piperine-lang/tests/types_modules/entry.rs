@@ -2,23 +2,23 @@
 //! `Types::check` returns for a design with diagnostics, for an unknown top, for the same
 //! design twice, and for a `const` read by several expressions. The M1 corpus joins in T9.
 
-use crate::support;
 
 use piperine_lang::pom::{DeclKind, Design, Reflect};
 use piperine_lang::types::{Ty, Types};
+use piperine_lang_fixtures::pom::PomSource;
 
 #[test]
 fn a_design_with_diagnostics_gives_them_back() {
-    let design = support::build("module Top() { x: f64 = ; }");
+    let design = PomSource::build("module Top() { x: f64 = ; }");
     assert!(!design.diagnostics().is_empty(), "the source must hold a diagnostic");
     let err = Types::check(&design, "Top").expect_err("no table for a design with diagnostics");
     assert_eq!(err, design.diagnostics().to_vec());
-    assert_eq!(err.len(), support::codes(&design).len());
+    assert_eq!(err.len(), PomSource::codes(&design).len());
 }
 
 #[test]
 fn an_unknown_top_is_one_diagnostic() {
-    let design = support::build("module Top() { }");
+    let design = PomSource::build("module Top() { }");
     assert!(design.diagnostics().is_empty());
     let err = Types::check(&design, "Missing").expect_err("no such module");
     assert_eq!(err.len(), 1);
@@ -37,8 +37,8 @@ const SHARED: &str = "const K: f64 = 2.0;\nmodule Top() { }\nanalog for Top { le
 
 #[test]
 fn checking_twice_gives_equal_tables() {
-    let design = support::build(SHARED);
-    assert!(design.diagnostics().is_empty(), "{:?}", support::codes(&design));
+    let design = PomSource::build(SHARED);
+    assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let first = Types::check(&design, "Top").expect("the source is in the subset");
     let second = Types::check(&design, "Top").expect("the source is in the subset");
     assert_eq!(first, second);
@@ -47,7 +47,7 @@ fn checking_twice_gives_equal_tables() {
 
 #[test]
 fn a_const_is_typed_once_by_its_declared_type() {
-    let design = support::build(SHARED);
+    let design = PomSource::build(SHARED);
     let types = Types::check(&design, "Top").expect("the source is in the subset");
     let top = design.module("Top").unwrap().decl().id();
     let konst = design.find("K").expect("the const").id();
@@ -59,7 +59,7 @@ fn a_const_is_typed_once_by_its_declared_type() {
     assert_eq!(types.ty(data.value.expect("a value")), Some(&Ty::F64));
 
     // However many readers it has, a bad initializer is reported once.
-    let design = support::build("const K: f64 = true;\nmodule Top() { }\nanalog for Top { let a = K; let b = K; }");
+    let design = PomSource::build("const K: f64 = true;\nmodule Top() { }\nanalog for Top { let a = K; let b = K; }");
     let err = Types::check(&design, "Top").expect_err("a bool initializer of an f64 const");
     assert_eq!(err.len(), 1, "{err:?}");
 }
@@ -74,23 +74,28 @@ use piperine_lang::pom::{CallClass, DeclId, ExprId, ExprKind};
 /// The six twins of `tests/e2e/twins/` and the module each places.
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
 
-fn twin(file: &str) -> Design {
-    let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", &format!("{file}.msl")].iter().collect();
-    Design::builder().root_file(path).build()
-}
+/// Associated test helpers of `entry`, grouped on one fixture type.
+struct EntryFixture;
 
-/// A declaration and everything under it, with the behavior blocks bound to a module.
-fn with_descendants(design: &Design, decl: DeclId, out: &mut BTreeSet<DeclId>) {
-    if !out.insert(decl) {
-        return;
+impl EntryFixture {
+    fn twin(file: &str) -> Design {
+        let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", &format!("{file}.msl")].iter().collect();
+        Design::builder().root_file(path).build()
     }
-    let data = design.decl_data(decl);
-    for child in &data.children {
-        with_descendants(design, *child, out);
-    }
-    if let DeclKind::Module(m) = &data.kind {
-        for behavior in &m.behaviors {
-            with_descendants(design, *behavior, out);
+
+    /// A declaration and everything under it, with the behavior blocks bound to a module.
+    fn with_descendants(design: &Design, decl: DeclId, out: &mut BTreeSet<DeclId>) {
+        if !out.insert(decl) {
+            return;
+        }
+        let data = design.decl_data(decl);
+        for child in &data.children {
+            EntryFixture::with_descendants(design, *child, out);
+        }
+        if let DeclKind::Module(m) = &data.kind {
+            for behavior in &m.behaviors {
+                EntryFixture::with_descendants(design, *behavior, out);
+            }
         }
     }
 }
@@ -98,7 +103,7 @@ fn with_descendants(design: &Design, decl: DeclId, out: &mut BTreeSet<DeclId>) {
 #[test]
 fn the_reachable_set_of_a_twin_is_typed() {
     for (file, top) in TWINS {
-        let design = twin(file);
+        let design = EntryFixture::twin(file);
         assert!(design.diagnostics().is_empty(), "{file}: {:?}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         let types = Types::check(&design, top).unwrap_or_else(|d| panic!("{file}: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
 
@@ -106,7 +111,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
         // core primitive is called through: that is a name, not a value.
         let mut owned = BTreeSet::new();
         for decl in types.reached() {
-            with_descendants(&design, *decl, &mut owned);
+            EntryFixture::with_descendants(&design, *decl, &mut owned);
         }
         let mut names = BTreeSet::new();
         for i in 0..design.expr_count() {
@@ -130,7 +135,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
     }
 
     // The diode's own expressions: the method call is resolved, the limiter closure is typed.
-    let design = twin("diode_iv");
+    let design = EntryFixture::twin("diode_iv");
     let types = Types::check(&design, "DiodeIv").expect("the diode twin");
     let exp = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(&design.expr_node(*e).kind, ExprKind::MethodCall { method, .. } if method.text == "exp")).expect("`.exp()` of the diode");
     assert_eq!(types.method(exp), Some(piperine_lang::types::Method::Exp));
@@ -145,7 +150,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
 #[test]
 fn the_design_is_unchanged_by_the_check() {
     for (file, top) in TWINS {
-        let design = twin(file);
+        let design = EntryFixture::twin(file);
         let before = design.dump();
         Types::check(&design, top).unwrap_or_else(|d| panic!("{file}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
         assert_eq!(before, design.dump(), "{file}: the POM is read, never written");
@@ -171,8 +176,8 @@ fn every_diagnostic_has_a_span_and_a_code() {
     ];
     for body in bodies {
         let src = format!("{natures}{body}");
-        let design = support::build(&src);
-        assert!(design.diagnostics().is_empty(), "{:?}\n{src}", support::codes(&design));
+        let design = PomSource::build(&src);
+        assert!(design.diagnostics().is_empty(), "{:?}\n{src}", PomSource::codes(&design));
         let err = Types::check(&design, "Top").expect_err("the source holds a mistake");
         assert!(!err.is_empty());
         for d in &err {
@@ -183,6 +188,6 @@ fn every_diagnostic_has_a_span_and_a_code() {
         }
     }
     // The unknown top has a code and no span to point at: the start of the first file.
-    let err = Types::check(&support::build("module Top() { }"), "Nope").expect_err("no such top");
+    let err = Types::check(&PomSource::build("module Top() { }"), "Nope").expect_err("no such top");
     assert_eq!(err[0].diagnostic.code, "P0003");
 }

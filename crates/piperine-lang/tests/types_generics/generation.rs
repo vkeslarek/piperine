@@ -2,12 +2,10 @@
 //! generation `for`/`if` is a const expression (`E0340`), a param inside generation is `E0322`, and an item declared in a
 //! generation `for` has the array type of its element, one level per `for` around it, indexed by ordinal.
 
-#[allow(dead_code)]
-use crate::generic_sources;
 
-use generic_sources::GenericSources;
 use piperine_lang::pom::{DeclKind, Design};
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::generic_sources::GenericSources;
 
 /// Sources checked with generation in a module body.
 struct GenerationSources;

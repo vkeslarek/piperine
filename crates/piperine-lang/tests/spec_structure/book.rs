@@ -4,56 +4,149 @@
 //! HTML (sections by `<section id="..">`, blocks by `<pre data-lang="..">`, code spans by
 //! `<code>`); nothing here parses HTML.
 
-use crate::spec_corpus;
 
 use std::path::PathBuf;
 use std::process::Command;
 
 use piperine_lang::pom::{BUILTINS, BuiltinKind, Design, Reflect};
-use spec_corpus::fragment_diagnostics;
+use piperine_lang_fixtures::spec_corpus::SpecCorpus;
 
-fn repo() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
+/// Associated test helpers of `book`, grouped on one fixture type.
+struct BookFixture;
 
-fn book_dir() -> PathBuf {
-    repo().join("docs/book")
-}
-
-fn content() -> String {
-    std::fs::read_to_string(book_dir().join("content.html")).expect("docs/book/content.html exists")
-}
-
-/// The five entities the Book's source uses, decoded.
-fn decode(text: &str) -> String {
-    text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
-}
-
-/// Every `<pre data-lang="..">..</pre>` block as (language, decoded text), in order.
-fn blocks(html: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut rest = html;
-    while let Some(at) = rest.find("<pre data-lang=\"") {
-        let after = &rest[at + "<pre data-lang=\"".len()..];
-        let (lang, body) = after.split_once("\">").expect("a block's opening tag closes");
-        let (text, tail) = body.split_once("</pre>").expect("a block closes");
-        out.push((lang.to_string(), decode(text)));
-        rest = tail;
+impl BookFixture {
+    fn repo() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
-    out
-}
 
-/// The ids of the Book's chapters, in order.
-fn chapter_ids(html: &str) -> Vec<String> {
-    html.split("<section id=\"").skip(1).filter_map(|s| s.split_once('"')).filter(|(_, rest)| rest.starts_with(" class=\"chapter\"")).map(|(id, _)| id.to_string()).collect()
+    fn book_dir() -> PathBuf {
+        BookFixture::repo().join("docs/book")
+    }
+
+    fn content() -> String {
+        std::fs::read_to_string(BookFixture::book_dir().join("content.html")).expect("docs/book/content.html exists")
+    }
+
+    /// The five entities the Book's source uses, decoded.
+    fn decode(text: &str) -> String {
+        text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&")
+    }
+
+    /// Every `<pre data-lang="..">..</pre>` block as (language, decoded text), in order.
+    fn blocks(html: &str) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let mut rest = html;
+        while let Some(at) = rest.find("<pre data-lang=\"") {
+            let after = &rest[at + "<pre data-lang=\"".len()..];
+            let (lang, body) = after.split_once("\">").expect("a block's opening tag closes");
+            let (text, tail) = body.split_once("</pre>").expect("a block closes");
+            out.push((lang.to_string(), BookFixture::decode(text)));
+            rest = tail;
+        }
+        out
+    }
+
+    /// The ids of the Book's chapters, in order.
+    fn chapter_ids(html: &str) -> Vec<String> {
+        html.split("<section id=\"").skip(1).filter_map(|s| s.split_once('"')).filter(|(_, rest)| rest.starts_with(" class=\"chapter\"")).map(|(id, _)| id.to_string()).collect()
+    }
+
+    // ---- the chapter "Core and standard library" (STD-18 AC 3 to 8, 12) ---------------------------------
+
+    /// The text of the chapter `id`, from its `<section>` tag to the first `</section>`.
+    fn chapter(html: &str, id: &str) -> String {
+        let open = format!("<section id=\"{id}\" class=\"chapter\">");
+        let at = html.find(&open).unwrap_or_else(|| panic!("the Book has a chapter `{id}`"));
+        let rest = &html[at..];
+        rest[..rest.find("</section>").expect("a chapter closes")].to_string()
+    }
+
+    /// The decoded text of every `<code>..</code>` span of `html`.
+    fn code_spans(html: &str) -> Vec<String> {
+        html.split("<code>").skip(1).filter_map(|s| s.split_once("</code>")).map(|(span, _)| BookFixture::decode(span)).collect()
+    }
+
+    /// The decoded text of every `<h3>..</h3>` heading of `html`, with its inline tags kept.
+    fn headings(html: &str) -> Vec<String> {
+        html.split("<h3>").skip(1).filter_map(|s| s.split_once("</h3>")).map(|(h, _)| BookFixture::decode(h)).collect()
+    }
+
+    /// Does a code span name `name`? A name of one or two characters (`m`, `E`, `PI`) must be the whole
+    /// span or the head of a call; a longer name may be any identifier of the span.
+    fn span_names(span: &str, name: &str) -> bool {
+        let bare = name.trim_end_matches('!');
+        if span == name || span.starts_with(&format!("{name}(")) {
+            return true;
+        }
+        if name.len() <= 2 {
+            return false;
+        }
+        let token = |c: char| c.is_alphanumeric() || c == '_';
+        span.split(|c: char| !token(c) && c != '!').any(|t| t == name || t == bare)
+    }
+
+    /// The names of `names` that no code span of `html` names.
+    fn missing(html: &str, names: &[String]) -> Vec<String> {
+        let spans = BookFixture::code_spans(html);
+        names.iter().filter(|n| !spans.iter().any(|s| BookFixture::span_names(s, n))).cloned().collect()
+    }
+
+    fn embedded() -> Design {
+        Design::builder().source("top.msl", "").build()
+    }
+
+    /// The core names of §14, read from the built-in table, and the four the table does not carry as rows
+    /// of those kinds.
+    fn core_names() -> Vec<String> {
+        let kinds = [BuiltinKind::Fn, BuiltinKind::Module, BuiltinKind::Event, BuiltinKind::Statement, BuiltinKind::Method, BuiltinKind::Node];
+        let mut names: Vec<String> = BUILTINS.iter().filter(|r| kinds.contains(&r.kind)).map(|r| r.name.to_string()).collect();
+        names.extend(["Nature", "str", "emit!", "include_str!"].map(String::from));
+        names
+    }
+
+    /// The `pub` namespaces of `std`, by name.
+    fn std_namespaces(design: &Design) -> Vec<String> {
+        design.std_crate().root().submodules().into_iter().filter(|n| n.is_pub()).filter_map(|n| n.name().map(String::from)).collect()
+    }
+
+    /// The names `std::prelude` exports: the `pub` named items of each namespace it glob-imports.
+    fn prelude_exports(design: &Design) -> Vec<String> {
+        let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
+        let mut names = Vec::new();
+        for item in prelude.items() {
+            for import in item.as_use().expect("the prelude holds only `use`").imports() {
+                let ns = import.path.text().strip_prefix("crate::").expect("a crate path").to_string();
+                let namespace = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(ns.as_str())).expect("a namespace");
+                names.extend(namespace.items().into_iter().filter(|i| i.is_pub()).filter_map(|i| i.name().map(String::from)));
+            }
+        }
+        names
+    }
+
+    // ---- the packages note, the cheat sheet and the analysis kind (STD-18 AC 10, 13) -----------------------
+
+    /// The text of `html` with tags removed and whitespace collapsed.
+    fn plain(html: &str) -> String {
+        let mut out = String::new();
+        let mut in_tag = false;
+        for c in html.chars() {
+            match c {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                _ if !in_tag => out.push(c),
+                _ => {}
+            }
+        }
+        BookFixture::decode(&out).split_whitespace().collect::<Vec<_>>().join(" ")
+    }
 }
 
 #[test]
 fn the_book_source_is_in_docs_book() {
     for file in ["content.html", "template.html", "build.py"] {
-        assert!(book_dir().join(file).is_file(), "docs/book/{file} exists");
+        assert!(BookFixture::book_dir().join(file).is_file(), "docs/book/{file} exists");
     }
-    let ids = chapter_ids(&content());
+    let ids = BookFixture::chapter_ids(&BookFixture::content());
     for id in ["welcome", "language", "types", "generics", "values", "natures", "modules", "analog", "digital", "mixed", "packages", "errors", "pom", "cheatsheet"] {
         assert!(ids.iter().any(|c| c == id), "the Book keeps its chapter `{id}`: {ids:?}");
     }
@@ -61,29 +154,29 @@ fn the_book_source_is_in_docs_book() {
 
 #[test]
 fn build_py_writes_an_ignored_index() {
-    let index = book_dir().join("index.html");
+    let index = BookFixture::book_dir().join("index.html");
     let _ = std::fs::remove_file(&index);
-    let status = Command::new("python3").arg("docs/book/build.py").current_dir(repo()).status().expect("python3 is installed: the Book check never skips");
+    let status = Command::new("python3").arg("docs/book/build.py").current_dir(BookFixture::repo()).status().expect("python3 is installed: the Book check never skips");
     assert!(status.success(), "python3 docs/book/build.py exits 0");
     let html = std::fs::read_to_string(&index).expect("build.py wrote docs/book/index.html");
     assert!(html.contains("<section id=\"welcome\""), "the output holds the chapters");
-    let ignored = Command::new("git").args(["check-ignore", "-q", "docs/book/index.html"]).current_dir(repo()).status().expect("git is installed");
+    let ignored = Command::new("git").args(["check-ignore", "-q", "docs/book/index.html"]).current_dir(BookFixture::repo()).status().expect("git is installed");
     assert!(ignored.success(), "git ignores docs/book/index.html");
 }
 
 #[test]
 fn every_msl_block_parses() {
     let mut failures = Vec::new();
-    for (n, (lang, text)) in blocks(&content()).into_iter().enumerate() {
+    for (n, (lang, text)) in BookFixture::blocks(&BookFixture::content()).into_iter().enumerate() {
         match lang.as_str() {
             "msl" => {
-                let diags = fragment_diagnostics(&text);
+                let diags = SpecCorpus::fragment_diagnostics(&text);
                 if !diags.is_empty() {
                     failures.push(format!("block {n}: {diags:?}\n{text}"));
                 }
             }
             "msl-error" => {
-                if fragment_diagnostics(&text).is_empty() {
+                if SpecCorpus::fragment_diagnostics(&text).is_empty() {
                     failures.push(format!("block {n} (msl-error) has no diagnostic:\n{text}"));
                 }
             }
@@ -95,89 +188,17 @@ fn every_msl_block_parses() {
 
 #[test]
 fn the_book_has_at_least_40_msl_blocks() {
-    let count = blocks(&content()).iter().filter(|(lang, _)| lang == "msl").count();
+    let count = BookFixture::blocks(&BookFixture::content()).iter().filter(|(lang, _)| lang == "msl").count();
     assert!(count >= 40, "the Book has {count} msl blocks, at least 40 are required");
-}
-
-// ---- the chapter "Core and standard library" (STD-18 AC 3 to 8, 12) ---------------------------------
-
-/// The text of the chapter `id`, from its `<section>` tag to the first `</section>`.
-fn chapter(html: &str, id: &str) -> String {
-    let open = format!("<section id=\"{id}\" class=\"chapter\">");
-    let at = html.find(&open).unwrap_or_else(|| panic!("the Book has a chapter `{id}`"));
-    let rest = &html[at..];
-    rest[..rest.find("</section>").expect("a chapter closes")].to_string()
-}
-
-/// The decoded text of every `<code>..</code>` span of `html`.
-fn code_spans(html: &str) -> Vec<String> {
-    html.split("<code>").skip(1).filter_map(|s| s.split_once("</code>")).map(|(span, _)| decode(span)).collect()
-}
-
-/// The decoded text of every `<h3>..</h3>` heading of `html`, with its inline tags kept.
-fn headings(html: &str) -> Vec<String> {
-    html.split("<h3>").skip(1).filter_map(|s| s.split_once("</h3>")).map(|(h, _)| decode(h)).collect()
-}
-
-/// Does a code span name `name`? A name of one or two characters (`m`, `E`, `PI`) must be the whole
-/// span or the head of a call; a longer name may be any identifier of the span.
-fn span_names(span: &str, name: &str) -> bool {
-    let bare = name.trim_end_matches('!');
-    if span == name || span.starts_with(&format!("{name}(")) {
-        return true;
-    }
-    if name.len() <= 2 {
-        return false;
-    }
-    let token = |c: char| c.is_alphanumeric() || c == '_';
-    span.split(|c: char| !token(c) && c != '!').any(|t| t == name || t == bare)
-}
-
-/// The names of `names` that no code span of `html` names.
-fn missing(html: &str, names: &[String]) -> Vec<String> {
-    let spans = code_spans(html);
-    names.iter().filter(|n| !spans.iter().any(|s| span_names(s, n))).cloned().collect()
-}
-
-fn embedded() -> Design {
-    Design::builder().source("top.msl", "").build()
-}
-
-/// The core names of §14, read from the built-in table, and the four the table does not carry as rows
-/// of those kinds.
-fn core_names() -> Vec<String> {
-    let kinds = [BuiltinKind::Fn, BuiltinKind::Module, BuiltinKind::Event, BuiltinKind::Statement, BuiltinKind::Method, BuiltinKind::Node];
-    let mut names: Vec<String> = BUILTINS.iter().filter(|r| kinds.contains(&r.kind)).map(|r| r.name.to_string()).collect();
-    names.extend(["Nature", "str", "emit!", "include_str!"].map(String::from));
-    names
-}
-
-/// The `pub` namespaces of `std`, by name.
-fn std_namespaces(design: &Design) -> Vec<String> {
-    design.std_crate().root().submodules().into_iter().filter(|n| n.is_pub()).filter_map(|n| n.name().map(String::from)).collect()
-}
-
-/// The names `std::prelude` exports: the `pub` named items of each namespace it glob-imports.
-fn prelude_exports(design: &Design) -> Vec<String> {
-    let prelude = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some("prelude")).expect("std declares the prelude");
-    let mut names = Vec::new();
-    for item in prelude.items() {
-        for import in item.as_use().expect("the prelude holds only `use`").imports() {
-            let ns = import.path.text().strip_prefix("crate::").expect("a crate path").to_string();
-            let namespace = design.std_crate().root().submodules().into_iter().find(|n| n.name() == Some(ns.as_str())).expect("a namespace");
-            names.extend(namespace.items().into_iter().filter(|i| i.is_pub()).filter_map(|i| i.name().map(String::from)));
-        }
-    }
-    names
 }
 
 #[test]
 fn the_core_std_chapter_follows_packages() {
-    let html = content();
-    let ids = chapter_ids(&html);
+    let html = BookFixture::content();
+    let ids = BookFixture::chapter_ids(&html);
     let at = ids.iter().position(|c| c == "core-std").expect("a chapter `core-std`");
     assert_eq!(ids.get(at.wrapping_sub(1)).map(String::as_str), Some("packages"), "{ids:?}");
-    assert!(chapter(&html, "core-std").contains("<h2>Core and standard library</h2>"), "the title");
+    assert!(BookFixture::chapter(&html, "core-std").contains("<h2>Core and standard library</h2>"), "the title");
     let numbers: Vec<usize> = html
         .split("<p class=\"ch-num\">Chapter ")
         .skip(1)
@@ -188,16 +209,16 @@ fn the_core_std_chapter_follows_packages() {
 
 #[test]
 fn the_chapter_names_every_core_name() {
-    let absent = missing(&chapter(&content(), "core-std"), &core_names());
+    let absent = BookFixture::missing(&BookFixture::chapter(&BookFixture::content(), "core-std"), &BookFixture::core_names());
     assert!(absent.is_empty(), "the chapter does not name these core names: {absent:?}");
 }
 
 #[test]
 fn the_chapter_has_a_part_per_namespace() {
-    let design = embedded();
-    let namespaces = std_namespaces(&design);
+    let design = BookFixture::embedded();
+    let namespaces = BookFixture::std_namespaces(&design);
     assert_eq!(namespaces.len(), 10, "{namespaces:?}");
-    let heads = headings(&chapter(&content(), "core-std"));
+    let heads = BookFixture::headings(&BookFixture::chapter(&BookFixture::content(), "core-std"));
     let absent: Vec<String> = namespaces.iter().filter(|n| !heads.iter().any(|h| h.contains(&format!("<code>std::{n}</code>")))).cloned().collect();
     assert!(absent.is_empty(), "no heading with `std::<name>` for: {absent:?}; headings: {heads:?}");
 }
@@ -207,24 +228,24 @@ const STD_BEHIND_THE_BOOK: [&str; 0] = [];
 
 #[test]
 fn the_chapter_names_every_prelude_export() {
-    let exports = prelude_exports(&embedded());
+    let exports = BookFixture::prelude_exports(&BookFixture::embedded());
     assert!(exports.len() >= 78, "the prelude exports {} names", exports.len());
-    let html = chapter(&content(), "core-std");
-    let absent: Vec<String> = missing(&html, &exports).into_iter().filter(|name| !STD_BEHIND_THE_BOOK.contains(&name.as_str())).collect();
+    let html = BookFixture::chapter(&BookFixture::content(), "core-std");
+    let absent: Vec<String> = BookFixture::missing(&html, &exports).into_iter().filter(|name| !STD_BEHIND_THE_BOOK.contains(&name.as_str())).collect();
     assert!(absent.is_empty(), "the chapter does not name these prelude exports: {absent:?}");
     // the exceptions are honest: each is still exported and still unnamed (explicit-unknowns removed it from
     // the Book ahead of the files; its task T23 deletes it from `std` and empties the list)
     for name in STD_BEHIND_THE_BOOK {
         assert!(exports.iter().any(|e| e == name), "{name} is no longer exported: drop it from STD_BEHIND_THE_BOOK");
-        assert!(missing(&html, &[name.to_string()]).len() == 1, "the chapter names {name} again: drop it from STD_BEHIND_THE_BOOK");
+        assert!(BookFixture::missing(&html, &[name.to_string()]).len() == 1, "the chapter names {name} again: drop it from STD_BEHIND_THE_BOOK");
     }
 }
 
 #[test]
 fn the_chapter_explains_the_prelude_and_the_engine_items() {
-    let html = chapter(&content(), "core-std");
-    assert!(headings(&html).iter().any(|h| h.contains("std::prelude")), "the chapter has a part on `std::prelude`");
-    let design = embedded();
+    let html = BookFixture::chapter(&BookFixture::content(), "core-std");
+    assert!(BookFixture::headings(&html).iter().any(|h| h.contains("std::prelude")), "the chapter has a part on `std::prelude`");
+    let design = BookFixture::embedded();
     let intrinsics: Vec<String> = design.std_crate().decls().into_iter().filter(|d| d.as_function().is_some_and(|f| f.is_intrinsic())).filter_map(|d| d.name().map(String::from)).collect();
     assert_eq!(intrinsics.len(), 5, "{intrinsics:?}");
     let part = html
@@ -232,10 +253,10 @@ fn the_chapter_explains_the_prelude_and_the_engine_items() {
         .skip(1)
         .find(|p| p.split_once("</h3>").is_some_and(|(h, _)| h.to_lowercase().contains("engine")))
         .expect("a heading that contains `engine`");
-    let absent = missing(part.split("<h3>").next().unwrap(), &intrinsics);
+    let absent = BookFixture::missing(part.split("<h3>").next().unwrap(), &intrinsics);
     assert!(absent.is_empty(), "the part on the engine does not name: {absent:?}");
     // C107: the part on the engine also names `std::prelude` (how the five items reach a model).
-    assert!(code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
+    assert!(BookFixture::code_spans(part.split("<h3>").next().unwrap()).iter().any(|s| s == "std::prelude"), "the part on the engine names `std::prelude`");
 }
 
 /// Markers of chapter blocks that use library names the standard library does not hold yet: none since `resolved-nets`
@@ -244,8 +265,8 @@ const BLOCKS_AHEAD_OF_STD: [&str; 0] = [];
 
 #[test]
 fn chapter_blocks_build_against_std() {
-    let html = chapter(&content(), "core-std");
-    let msl: Vec<String> = blocks(&html).into_iter().filter(|(lang, _)| lang == "msl").map(|(_, text)| text).collect();
+    let html = BookFixture::chapter(&BookFixture::content(), "core-std");
+    let msl: Vec<String> = BookFixture::blocks(&html).into_iter().filter(|(lang, _)| lang == "msl").map(|(_, text)| text).collect();
     assert!(!msl.is_empty(), "the chapter has msl blocks");
     for text in msl {
         let design = Design::builder().source("top.msl", &text).build();
@@ -264,44 +285,27 @@ fn chapter_blocks_build_against_std() {
 fn a_missing_name_is_listed() {
     let names: Vec<String> = ["ddt", "delay", "limit", "m", "emit!"].map(String::from).to_vec();
     let html = "<p><code>ddt(x)</code> and <code>m: f64</code> and <code>emit!(\"a\")</code></p>";
-    assert_eq!(missing(html, &names), ["delay", "limit", "m"], "every missing name is listed, in order");
-    assert!(missing("<code>delay</code>", &["delay".to_string()]).is_empty());
-}
-
-// ---- the packages note, the cheat sheet and the analysis kind (STD-18 AC 10, 13) -----------------------
-
-/// The text of `html` with tags removed and whitespace collapsed.
-fn plain(html: &str) -> String {
-    let mut out = String::new();
-    let mut in_tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => in_tag = true,
-            '>' => in_tag = false,
-            _ if !in_tag => out.push(c),
-            _ => {}
-        }
-    }
-    decode(&out).split_whitespace().collect::<Vec<_>>().join(" ")
+    assert_eq!(BookFixture::missing(html, &names), ["delay", "limit", "m"], "every missing name is listed, in order");
+    assert!(BookFixture::missing("<code>delay</code>", &["delay".to_string()]).is_empty());
 }
 
 #[test]
 fn packages_and_cheatsheet_name_std() {
-    let html = content();
-    let packages = chapter(&html, "packages");
-    assert!(code_spans(&packages).iter().any(|s| s == "std::prelude"), "the chapter `packages` names `std::prelude` in a code span");
-    let text = plain(&packages);
+    let html = BookFixture::content();
+    let packages = BookFixture::chapter(&html, "packages");
+    assert!(BookFixture::code_spans(&packages).iter().any(|s| s == "std::prelude"), "the chapter `packages` names `std::prelude` in a code span");
+    let text = BookFixture::plain(&packages);
     assert!(text.contains("Every crate depends on it"), "packages says `std` is a dependency of every crate: {text}");
     assert!(text.contains("implied in every file"), "packages says the prelude is implied in every file");
-    let cheat = code_spans(&chapter(&html, "cheatsheet"));
-    let absent: Vec<String> = std_namespaces(&embedded()).into_iter().filter(|n| !cheat.iter().any(|s| *s == format!("std::{n}"))).collect();
+    let cheat = BookFixture::code_spans(&BookFixture::chapter(&html, "cheatsheet"));
+    let absent: Vec<String> = BookFixture::std_namespaces(&BookFixture::embedded()).into_iter().filter(|n| !cheat.iter().any(|s| *s == format!("std::{n}"))).collect();
     assert!(absent.is_empty(), "the cheat sheet does not name these namespaces as `std::<name>`: {absent:?}");
 }
 
 #[test]
 fn the_book_says_transient() {
-    let html = content();
-    for (n, (lang, text)) in blocks(&html).into_iter().enumerate() {
+    let html = BookFixture::content();
+    for (n, (lang, text)) in BookFixture::blocks(&html).into_iter().enumerate() {
         assert!(!text.contains("analysis(Tran)"), "block {n} ({lang}) writes `analysis(Tran)`: the analysis kind is `Transient`");
     }
     assert!(!html.contains("analysis(Tran)"), "no span or paragraph writes `analysis(Tran)` either");
@@ -319,11 +323,11 @@ fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
     // `compiler` and `structure` (the Book's order: reading errors 14, the command line 15, the cheat
     // sheet 16, then the object model 17 to how Piperine is organized 21); the chapter numbers are
     // consecutive from 1
-    let html = content();
-    let ids = chapter_ids(&html);
+    let html = BookFixture::content();
+    let ids = BookFixture::chapter_ids(&html);
     let tail: Vec<&str> = ids.iter().rev().take(8).rev().map(String::as_str).collect();
     assert_eq!(tail, ["errors", "cli", "cheatsheet", "pom", "abi", "solver", "compiler", "structure"], "{ids:?}");
-    assert!(chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
+    assert!(BookFixture::chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
     let numbers: Vec<usize> = html
         .split("<p class=\"ch-num\">Chapter ")
         .skip(1)
@@ -339,7 +343,7 @@ fn the_book_has_two_parts_and_the_second_starts_at_the_object_model() {
     // before the first chapter, and Part 2, In depth, right before `pom`; `simulation` follows `mixed`
     // in Part 1, and the value language takes the chapters `language`, `types` and `generics`, the second to
     // the fourth, before `values` shows where a value meets hardware
-    let html = content();
+    let html = BookFixture::content();
     let parts: Vec<(&str, &str)> = html
         .split("<div class=\"part\" id=\"")
         .skip(1)
@@ -355,7 +359,7 @@ fn the_book_has_two_parts_and_the_second_starts_at_the_object_model() {
     let at = |id: &str| html.find(&format!("<section id=\"{id}\" class=\"chapter\">")).unwrap_or_else(|| panic!("a chapter `{id}`"));
     assert!(first < at("welcome"), "Part 1 opens the Book");
     assert!(at("cheatsheet") < second && second < at("pom"), "Part 2 opens right before the object model");
-    let ids = chapter_ids(&html);
+    let ids = BookFixture::chapter_ids(&html);
     assert_eq!(&ids[..5], ["welcome", "language", "types", "generics", "values"], "{ids:?}");
     let mixed = ids.iter().position(|c| c == "mixed").expect("a chapter `mixed`");
     assert_eq!(ids.get(mixed + 1).map(String::as_str), Some("simulation"), "{ids:?}");
@@ -367,7 +371,7 @@ fn the_book_teaches_the_language_on_its_own_terms() {
     // No sentence of the Book sends the reader to another language to learn this one: the prose (code
     // blocks apart, where `backend rust` is what the binary prints) never names Rust except as what it is
     // here, the compiled backend, the generated source, `rustc` and the host library
-    let html = content();
+    let html = BookFixture::content();
     let mut prose = String::new();
     let mut rest = html.as_str();
     while let Some(open) = rest.find("<pre") {
@@ -375,7 +379,7 @@ fn the_book_teaches_the_language_on_its_own_terms() {
         rest = rest[open..].split_once("</pre>").map_or("", |(_, after)| after);
     }
     prose.push_str(rest);
-    let text = plain(&prose);
+    let text = BookFixture::plain(&prose);
     for deferral in ["like Rust", "as in Rust", "is Rust", "are Rust", "know Rust", "Rust's", "Rust has", "Rust and Cargo", "follow Rust", "to Rust's", "Rust habits", "Rust programmer", "Rust eyes", "Rust local", "Rust variable", "Rust method", "Rust-like", "Rust 2018"] {
         assert!(!text.contains(deferral), "the Book defers to Rust: `{deferral}`");
     }
@@ -392,7 +396,7 @@ fn the_welcome_chapter_says_a_bench_is_msl() {
     // CLI-19 AC 13: chapter 1 says a bench is written in MSL and that sweeps, Monte Carlo and
     // optimization live in the host, and no sentence of it says testbenches or stimulus do not
     // live in MSL
-    let text = plain(&chapter(&content(), "welcome"));
+    let text = BookFixture::plain(&BookFixture::chapter(&BookFixture::content(), "welcome"));
     let sentences: Vec<&str> = text.split(". ").collect();
     assert!(sentences.iter().any(|s| s.contains("bench") && s.contains("written in MSL")), "a sentence says a bench is written in MSL");
     assert!(
@@ -416,11 +420,11 @@ fn the_welcome_chapter_says_a_bench_is_msl() {
 fn the_compiler_chapter_says_the_command_line_exists() {
     // CLI-19 AC 9: the chapter `compiler` names `piperine run`, and its part on what comes next
     // does not list the command line as work to come
-    let html = chapter(&content(), "compiler");
-    assert!(code_spans(&html).iter().any(|s| s.starts_with("piperine run")), "the chapter names `piperine run`");
-    assert!(code_spans(&html).iter().any(|s| s == "--backend"), "the chapter names `--backend` where a host picks a backend");
+    let html = BookFixture::chapter(&BookFixture::content(), "compiler");
+    assert!(BookFixture::code_spans(&html).iter().any(|s| s.starts_with("piperine run")), "the chapter names `piperine run`");
+    assert!(BookFixture::code_spans(&html).iter().any(|s| s == "--backend"), "the chapter names `--backend` where a host picks a backend");
     let next = html.split("<h3>What comes next</h3>").nth(1).expect("a part `What comes next`");
-    let text = plain(next.split("<h3>").next().unwrap_or(next));
+    let text = BookFixture::plain(next.split("<h3>").next().unwrap_or(next));
     assert!(!text.to_lowercase().contains("command line"), "what comes next still mentions the command line: {text}");
     assert!(text.contains("Chapter 15"), "what comes next points at the chapter that runs a design: {text}");
 }
@@ -429,8 +433,8 @@ fn the_compiler_chapter_says_the_command_line_exists() {
 fn the_cheat_sheet_lists_the_seven_commands() {
     // CLI-19 AC 10: the cheat sheet names `piperine check`, `build`, `run`, `test`, `new`,
     // `clean` and `fmt`
-    let html = chapter(&content(), "cheatsheet");
-    let text = plain(&html);
+    let html = BookFixture::chapter(&BookFixture::content(), "cheatsheet");
+    let text = BookFixture::plain(&html);
     for command in ["check", "build", "run", "test", "new", "clean", "fmt"] {
         assert!(text.contains(&format!("piperine {command}")), "the cheat sheet names `piperine {command}`");
     }

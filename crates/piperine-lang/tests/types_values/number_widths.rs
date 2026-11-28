@@ -5,10 +5,10 @@
 //! and codes are those of `docs/spec/part_i_values.md` §1 and `appendix_a_lexical.md` A.8, cited at
 //! each assertion.
 
-use crate::support;
 
 use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, Reflect};
 use piperine_lang::types::{Ty, Types};
+use piperine_lang_fixtures::pom::PomSource;
 
 /// Designs of one `analog` body and what the tests ask of them.
 struct Fixture;
@@ -21,8 +21,8 @@ impl Fixture {
 
     /// The design of `src`, which must parse and resolve.
     fn design_of(src: &str) -> Design {
-        let design = support::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", support::codes(&design));
+        let design = PomSource::build(src);
+        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
         design
     }
 
@@ -148,8 +148,8 @@ fn a_literal_out_of_its_type_is_e0909() {
     // an integer literal past its own suffix is `E0909` of the parse phase (A.2 rule 8)
     for (body, text) in [("let y = 300u8;", "300u8"), ("let y = 0x1_0000_0000u32;", "0x1_0000_0000u32")] {
         let src = Fixture::source("", body);
-        let design = support::build(&src);
-        assert_eq!(support::codes(&design), ["E0909"], "{src}");
+        let design = PomSource::build(&src);
+        assert_eq!(PomSource::codes(&design), ["E0909"], "{src}");
         assert!(design.diagnostics().iter().any(|d| src[d.diagnostic.span().range()] == *text), "{src}");
     }
     // the edges are values: the largest finite f16 and f32, a subnormal, and an integer at its maximum
