@@ -1,4 +1,3 @@
-crates/piperine-abi/src/caller.rs::::empty_note	1
 crates/piperine-abi/src/caller.rs::CallError::frame	1
 crates/piperine-abi/src/caller.rs::CallError::from_note	1
 crates/piperine-abi/src/device.rs::Eval::out_cell	1
@@ -16,20 +15,5 @@ crates/piperine-abi/src/shape.rs::ShapeBuf::bytes	1
 crates/piperine-abi/src/shape.rs::ShapeBuf::layout	1
 crates/piperine-abi/src/shape.rs::ShapeBuf::list	1
 crates/piperine-abi/src/shape.rs::ShapeBuf::str	1
-crates/piperine-abi/src/thunk.rs::::create	1
-crates/piperine-abi/src/thunk.rs::::create_with	1
-crates/piperine-abi/src/thunk.rs::::destroy	1
-crates/piperine-abi/src/thunk.rs::::destroy_with	1
-crates/piperine-abi/src/thunk.rs::::eval	1
-crates/piperine-abi/src/thunk.rs::::eval_with	1
-crates/piperine-abi/src/thunk.rs::::react	1
-crates/piperine-abi/src/thunk.rs::::react_with	1
-crates/piperine-abi/src/validate.rs::::check_function	1
-crates/piperine-abi/src/validate.rs::::check_layout	1
-crates/piperine-abi/src/validate.rs::::check_pin	1
-crates/piperine-abi/src/validate.rs::::check_reaction	1
-crates/piperine-abi/src/validate.rs::::known	1
-crates/piperine-abi/src/validate.rs::::known_bits	1
 crates/piperine-abi/src/validate.rs::Entry::fail	1
 crates/piperine-abi/src/validate.rs::Rule::sentence	1
-crates/piperine-abi/src/verify.rs::::f64_at	1

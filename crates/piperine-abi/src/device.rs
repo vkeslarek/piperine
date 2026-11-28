@@ -1,16 +1,16 @@
 //! The Rust side of abi.md §7: the `Device` trait and the borrow-checked
 //! lenses `Eval` and `React` over a call's frame. The lenses hold slices the
-//! thunk has already cut to each cell's length (`cell_lens`, computed from the
+//! thunk has already cut to each cell's length (`Shape::cell_lens`, computed from the
 //! shape entry), so nothing here is `unsafe`.
 
 use std::fmt;
 use std::ops::Deref;
 
 pub use crate::raw::Pod;
-use crate::raw::{ArrayView, Cell, List, Shape, pod_bytes, pod_mut, pod_ref, status};
+use crate::raw::{ArrayView, Cell, List, Shape, status};
 use crate::shape::ShapeRef;
 pub use crate::validate::Access;
-use crate::validate::{CellBytes, cell_bytes};
+use crate::validate::{CellBytes, Validator};
 
 /// A device written in Rust. `module::<D>` turns it into the C entry points.
 pub trait Device: Sized + Send + 'static {
@@ -104,22 +104,22 @@ impl<'a> Values<'a> {
     }
 }
 
-/// The byte length of each cell of `cells` under `access`, from the shape
-/// entry that lists them: what a frame's buffer for that cell holds. `None`
-/// when a cell breaks a rule `validate` checks.
-pub fn cell_lens(shape: &Shape, cells: &List<Cell>, access: Access) -> Option<Vec<usize>> {
-    shape.cell_lens_of(cells, &List::empty(), access)
-}
-
 impl Shape<'_> {
-    /// [`cell_lens`] for cells with `elements`: the entry's `elements` list, empty or one per cell. A `WHOLE`
+    /// The byte length of each cell of `cells` under `access`, from the shape
+    /// entry that lists them: what a frame's buffer for that cell holds. `None`
+    /// when a cell breaks a rule `Validator::validate` checks.
+    pub fn cell_lens(&self, cells: &List<Cell>, access: Access) -> Option<Vec<usize>> {
+        self.cell_lens_of(cells, &List::empty(), access)
+    }
+
+    /// [`Shape::cell_lens`] for cells with `elements`: the entry's `elements` list, empty or one per cell. A `WHOLE`
     /// read of an array pin holds an [`ArrayView`](crate::raw::ArrayView), so its buffer is that struct's size.
     pub fn cell_lens_of(&self, cells: &List<Cell>, elements: &List<u64>, access: Access) -> Option<Vec<usize>> {
         cells
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                cell_bytes(self, c, elements.get(i).copied().unwrap_or(0), access).ok().map(|b| match b {
+                Validator::new(self).cell_bytes(c, elements.get(i).copied().unwrap_or(0), access).ok().map(|b| match b {
                     CellBytes::F64 | CellBytes::I64 => 8,
                     CellBytes::Byte => 1,
                     CellBytes::Layout(l) => l.size as usize,
@@ -193,7 +193,7 @@ impl<'a> Reads<'a> {
 
     /// Read `i` as a `T`; `None` when `T` does not fit its bytes.
     pub fn get<T: Pod>(&self, i: usize) -> Option<&'a T> {
-        pod_ref(self.input.get(i)?)
+        T::from_bytes(self.input.get(i)?)
     }
 }
 
@@ -229,12 +229,12 @@ impl<'a> Eval<'a> {
 
     /// Write `j` as a `T`; `None` when `T` does not fit its bytes.
     pub fn out<T: Pod>(&mut self, j: usize) -> Option<&mut T> {
-        pod_mut(self.output.get_mut(j)?)
+        T::from_bytes_mut(self.output.get_mut(j)?)
     }
 
     /// Writes `value` at byte 0 of write `j`. Panics (a `FAULT`) when it does not fit.
     pub fn set<T: Pod>(&mut self, j: usize, value: T) {
-        let bytes = pod_bytes(&value);
+        let bytes = value.as_bytes();
         let cell = self.out_cell(j);
         let len = cell.len();
         match cell.get_mut(..bytes.len()) {

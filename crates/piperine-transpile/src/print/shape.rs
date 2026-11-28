@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_abi::layout::{BIT, BYTE, F64, NONE, layout_eq};
+use piperine_abi::layout::{BIT, BYTE, F64, NONE};
 use piperine_abi::raw::{
     Cell, DEFAULT, Field, GROUND, Layout, Partial, Shape, Statement, ambient, cell, fn_flag, global, input,
     kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
@@ -254,7 +254,7 @@ impl ShapePrinter {
     /// The name of a shipped layout `l` equals, field names included; `None` for any other.
     fn shipped(l: &Layout<'_>) -> Option<&'static str> {
         let same = |s: &Layout<'_>| {
-            layout_eq(l, s) && l.fields.iter().zip(s.fields.iter()).all(|(a, b)| a.name.as_str() == b.name.as_str())
+            Layout::equals(l, s) && l.fields.iter().zip(s.fields.iter()).all(|(a, b)| a.name.as_str() == b.name.as_str())
         };
         [("F64", &F64), ("BIT", &BIT), ("BYTE", &BYTE), ("NONE", &NONE)]
             .into_iter()

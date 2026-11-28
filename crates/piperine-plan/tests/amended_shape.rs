@@ -165,7 +165,7 @@ fn time_and_static_are_ambient_reads() {
     assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event], vec![stat, time], vec![(t, 0, 8, 0, 0.0), (s, 0, 1, 0, 0.0)]));
     assert_eq!(plan.reactions()[0].reads, [Source::Static, Source::Time]);
 
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -247,7 +247,7 @@ fn an_at_event_is_a_pin_an_arming_reaction_and_a_replace_statement() {
     let names: Vec<&str> = shape.reactions.iter().map(|r| r.name.as_str()).collect();
     assert_eq!(names, ["reaction:0", "reaction:1", "at:0", "at:1"], "the arming reactions follow the body's");
 
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -318,7 +318,7 @@ fn a_stream_is_a_record_pin_with_one_field_per_value() {
     let read = |c: &Cell| c.kind == cell::PIN && c.index == trace;
     assert!(shape.functions.iter().all(|f| !f.reads.iter().any(read)) && shape.reactions.iter().all(|r| !r.reads.iter().any(read)));
 
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 /// `module <name>(p, n) { <param>: f64 = 1.0; analog { v(p, n) +> <operator>(<param> * i(p, n)); } }`:
@@ -370,7 +370,7 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     assert_eq!(partials, [(0, 2), (1, 0), (1, 1), (2, 2)]);
     // INT-12: the row and the KCL term are affine in the pins, a charge never is
     assert_eq!(terms_plan.affine, [true, true, false]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 
     // the same read in a direct addend (`v(p, n) +> r * i(p, n)`: a resistor written as a
     // potential): the row `v(p, n) - r·f` reads f, and stays affine in the pins
@@ -381,7 +381,7 @@ fn a_flow_read_is_the_branch_pin_and_a_potential_ddt_is_a_ddt_term() {
     assert_eq!(partials, [(0, 2), (1, 0), (1, 1), (1, 2)], "the row against p, n and f");
     let terms_plan = plan.functions().iter().find(|x| x.mode == Mode::Terms).expect("terms");
     assert_eq!(terms_plan.affine, [true, true]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -443,7 +443,7 @@ fn a_previous_value_is_the_previous_part_of_the_pin() {
         assert_eq!(shape.pins.get(p as usize).map(|x| x.flags & pin_flag::QUIET), Some(0));
     }
 
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -504,7 +504,7 @@ fn freq_reads_the_ambient_and_analysis_reads_its_global_pin() {
         [Source::Node(0), Source::Node(1), Source::Freq, Source::Analysis(AnalysisKind::Dc), Source::Analysis(AnalysisKind::Ac)]
     );
     assert_eq!(terms.slots, 2, "two tangent slots: p and n");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -563,7 +563,7 @@ fn bound_step_is_a_cap_watch_and_cross_tolerances_are_pins() {
     assert_eq!(Find::function(shape, "cap:0"), (vec![pin(p, part::VALUE), pin(n, part::VALUE)], vec![value(cell::WATCH, 1)], vec![]));
     let modes: Vec<Mode> = plan.functions().iter().map(|f| f.mode).collect();
     assert!(modes.contains(&Mode::Cap(0)) && modes.contains(&Mode::Ttol(0)) && modes.contains(&Mode::Etol(0)), "{modes:?}");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -597,5 +597,5 @@ fn a_fired_read_names_the_event_pin() {
     // nothing of event 1 (which the reaction only waits on).
     assert_eq!(Find::reaction(shape, "reaction:0"), (vec![event0, event1], vec![pin(event0, part::CHANGED)], vec![(q, 0, 1, 0, 0.0)]));
     assert_eq!(plan.reactions()[0].reads, [Source::Fired(0)]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }

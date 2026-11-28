@@ -11,7 +11,7 @@ use piperine_abi::layout::F64;
 use piperine_abi::raw::{Cell, DEFAULT, Module, Partial, Shape, cell, input, op, part, role};
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 use piperine_abi::thunk::module;
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::verify::Verdict;
 
 /// abi.md §11.1, the resistor: `i = v / r`.
 struct Resistor;
@@ -102,10 +102,10 @@ fn exact_partials_verify() {
     let r = Handle::create(VerifyCases::leaked::<Resistor>("r"), &[]).unwrap();
     let c = Handle::create(VerifyCases::leaked::<Capacitor>("c"), &[]).unwrap();
     for at in [[1.2, -0.3, 1e3], [0.0, 0.0, 47.0], [-5.0, 2.0, 0.5]] {
-        assert_eq!(verify_partials(&r, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "resistor at {at:?}");
+        assert_eq!(Verdict::of_partials(&r, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "resistor at {at:?}");
     }
     for at in [[1.2, -0.3, 1e-12], [0.7, 0.1, 2e-9], [-3.0, 4.0, 1.0]] {
-        assert_eq!(verify_partials(&c, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "capacitor at {at:?}");
+        assert_eq!(Verdict::of_partials(&c, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "capacitor at {at:?}");
     }
 }
 
@@ -113,7 +113,7 @@ fn exact_partials_verify() {
 fn a_wrong_partial_is_reported_with_its_index() {
     let c = Handle::create(VerifyCases::leaked::<SkewedCapacitor>("c_skew"), &[]).unwrap();
     let cap = 2e-9;
-    let verdict = verify_partials(&c, 0, &VerifyCases::point(&[0.7, 0.1, cap]), 1e-3).unwrap();
+    let verdict = Verdict::of_partials(&c, 0, &VerifyCases::point(&[0.7, 0.1, cap]), 1e-3).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a 1 % error is not found: {verdict:?}") };
     assert_eq!(found.len(), 1, "only partial 1 is wrong: {found:?}");
     let m = found[0];
@@ -126,9 +126,9 @@ fn a_wrong_partial_is_reported_with_its_index() {
 fn a_point_where_the_limit_is_active_is_skipped() {
     let h = Handle::create(VerifyCases::leaked::<Limiter>("lim"), &[]).unwrap();
     // v = 0.9 against LAST = 0.5: clamped to 0.6, so LIMITED != PROPOSED.
-    assert_eq!(verify_partials(&h, 0, &VerifyCases::point(&[1.0, 0.1, 0.5]), 1e-6), Ok(Verdict::Skipped { limit: 0 }));
+    assert_eq!(Verdict::of_partials(&h, 0, &VerifyCases::point(&[1.0, 0.1, 0.5]), 1e-6), Ok(Verdict::Skipped { limit: 0 }));
     // v = 0.55 against LAST = 0.5: inside the band, the partials are compared.
-    assert_eq!(verify_partials(&h, 0, &VerifyCases::point(&[0.6, 0.05, 0.5]), 1e-6), Ok(Verdict::Exact));
+    assert_eq!(Verdict::of_partials(&h, 0, &VerifyCases::point(&[0.6, 0.05, 0.5]), 1e-6), Ok(Verdict::Exact));
 }
 
 /// One port, f(x) with a declared df/dx: `NanJac` declares NaN; `WrongLog`
@@ -176,7 +176,7 @@ impl Device for WrongLog {
 #[test]
 fn a_non_finite_partial_is_a_mismatch() {
     let h = Handle::create(VerifyCases::leaked::<NanJac>("nan"), &[]).unwrap();
-    let verdict = verify_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6).unwrap();
+    let verdict = Verdict::of_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a NaN partial verified: {verdict:?}") };
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].partial, 0);
@@ -185,11 +185,11 @@ fn a_non_finite_partial_is_a_mismatch() {
 
     // x − h < 0: the finite difference is NaN, which is not a pass either.
     let h = Handle::create(VerifyCases::leaked::<WrongLog>("log"), &[]).unwrap();
-    let verdict = verify_partials(&h, 0, &VerifyCases::point(&[1e-7]), 1e-6).unwrap();
+    let verdict = Verdict::of_partials(&h, 0, &VerifyCases::point(&[1e-7]), 1e-6).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a NaN finite difference verified: {verdict:?}") };
     assert_eq!(found[0].partial, 0);
     assert!(found[0].finite.is_nan());
-    assert!(matches!(verify_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6), Ok(Verdict::Mismatch(_))));
+    assert!(matches!(Verdict::of_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6), Ok(Verdict::Mismatch(_))));
 }
 
 /// The devices and points the verification tests use.

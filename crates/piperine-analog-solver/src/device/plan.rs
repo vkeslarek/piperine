@@ -9,9 +9,9 @@
 use std::collections::HashSet;
 
 use piperine_abi::caller::Handle;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::{Cell, DEFAULT, Function, GROUND, Shape, cell, input, kind, part, watch};
-use piperine_abi::validate::validate;
+use piperine_abi::validate::Validator;
 
 use super::device_error;
 use crate::error::Error;
@@ -300,7 +300,7 @@ fn bind_instance(
 ) -> Result<InstancePlan, Error> {
     let AnalogInstance { path, handle, pins } = inst;
     let shape = handle.shape();
-    validate(shape).map_err(|e| device_error(format!("instance `{path}`: {e}")))?;
+    Validator::validate(shape).map_err(|e| device_error(format!("instance `{path}`: {e}")))?;
     if pins.len() != shape.pins.len() {
         return Err(device_error(format!(
             "instance `{path}`: {} bindings for {} pins",
@@ -508,7 +508,7 @@ fn bind_instance(
         for c in &reads {
             sources.push(source(&path, shape, &pins, f, c)?);
         }
-        let read_lens = ShapeLookup::get(cell_lens(shape, &f.reads, Access::FunctionRead), &path, "read of function", k)?;
+        let read_lens = ShapeLookup::get(shape.cell_lens(&f.reads, Access::FunctionRead), &path, "read of function", k)?;
         let seed = f
             .partials
             .iter()
@@ -526,7 +526,7 @@ fn bind_instance(
             name: f.name.as_str().into(),
             origin: f.origin.as_str().into(),
             reads: sources.into_iter().zip(read_lens).collect(),
-            write_lens: ShapeLookup::get(cell_lens(shape, &f.writes, Access::FunctionWrite), &path, "write of function", k)?,
+            write_lens: ShapeLookup::get(shape.cell_lens(&f.writes, Access::FunctionWrite), &path, "write of function", k)?,
             seed,
             rows,
             limits,

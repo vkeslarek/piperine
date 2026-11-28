@@ -5,7 +5,7 @@
 use std::sync::Arc;
 
 use piperine_abi::layout;
-use piperine_abi::raw::{Cell, Partial, Shape, cell, kind, op, part, pin_flag, role};
+use piperine_abi::raw::{Cell, Layout, Partial, Shape, cell, kind, op, part, pin_flag, role};
 use piperine_abi::shape::{FunctionSpec, PinSpec, ShapeBuf, ShapeRef, TermSpec};
 
 #[test]
@@ -25,10 +25,10 @@ fn resistor_shape_reads_back_through_raw_pointers() {
     assert_eq!(r.init.as_slice(), 1e3f64.to_le_bytes());
     assert_eq!(r.flags, pin_flag::HAS_INIT);
     assert_eq!(r.unit.as_str(), "Ohm");
-    assert!(layout::layout_eq(&r.layout, &layout::F64));
+    assert!(Layout::equals(&r.layout, &layout::F64));
     assert_eq!(r.layout.fields.get(0).unwrap().name.as_str(), "v", "the layout's names are copied");
     let p = shape.pins.get(1).unwrap();
-    assert!(layout::layout_eq(&p.layout, &layout::F64), "a continuous pin is one F64");
+    assert!(Layout::equals(&p.layout, &layout::F64), "a continuous pin is one F64");
 
     assert_eq!(shape.terms.len(), 1);
     let t0 = shape.terms.get(0).unwrap();

@@ -6,9 +6,8 @@
 //! `DigitalPlan::bind` adds the live instances.
 
 use piperine_abi::caller::Handle;
-use piperine_abi::layout::layout_eq;
 use piperine_abi::raw::{Layout, Shape, cell, global, kind, pin_flag, role, statement_flag};
-use piperine_abi::validate::validate;
+use piperine_abi::validate::Validator;
 
 use crate::dag::Dag;
 use crate::net::{NetId, NetKind, NetSpec};
@@ -251,7 +250,7 @@ fn nets_of<'a>(input: &ShapeInput<'_>, cells: impl Iterator<Item = &'a piperine_
 /// `LATER` flags.
 pub fn analyze(nets: &[NetSpec], inputs: &[ShapeInput<'_>], resolution: Resolution) -> Result<Analysis, DigitalError> {
     for input in inputs {
-        validate(input.shape).map_err(|e| bind_error("validate", vec![format!("{}: {e}", input.path)]))?;
+        Validator::validate(input.shape).map_err(|e| bind_error("validate", vec![format!("{}: {e}", input.path)]))?;
         if input.pins.len() != input.shape.pins.len() {
             return Err(bind_error(
                 "bindings",
@@ -524,7 +523,7 @@ fn check_layouts(nets: &[NetSpec], inputs: &[ShapeInput<'_>]) -> Result<(), Digi
                 None => first[id.0 as usize] = Some((n, i)),
                 Some((m, j)) => {
                     let other = inputs[m].shape.pins.get(j).expect("recorded from this shape");
-                    if !layout_eq(&other.layout, &pin.layout) {
+                    if !Layout::equals(&other.layout, &pin.layout) {
                         return Err(bind_error(
                             "P4",
                             vec![format!(

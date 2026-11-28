@@ -16,7 +16,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::{Cell, cell, leaf, part, pin_flag, role};
 use piperine_analog_solver::device::Ambient;
 use piperine_digital_solver::net::NetId;
@@ -309,8 +309,8 @@ fn net_derivatives(bound: &Bound, net: NetId) -> Result<HashMap<NetId, f64>> {
             _ => None,
         };
         let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
-        let reads = cell_lens(shape, &f.reads, Access::FunctionRead).ok_or_else(|| sens(format!("{}: bad read cells", inst.path)))?;
-        let writes = cell_lens(shape, &f.writes, Access::FunctionWrite).ok_or_else(|| sens(format!("{}: bad write cells", inst.path)))?;
+        let reads = shape.cell_lens(&f.reads, Access::FunctionRead).ok_or_else(|| sens(format!("{}: bad read cells", inst.path)))?;
+        let writes = shape.cell_lens(&f.writes, Access::FunctionWrite).ok_or_else(|| sens(format!("{}: bad write cells", inst.path)))?;
         let inputs: Vec<Vec<u8>> = f
             .reads
             .iter()

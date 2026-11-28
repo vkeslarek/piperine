@@ -4,7 +4,7 @@
 
 use piperine_device_fixtures::digital::{And2, CheckedParameter, ClockWatch, Counter, DataFlipFlop, LaterDelayed, BitFaulty, Inverter, Odd, Rearm, MultiRecorder, DriveDisjunction, Rogue, Sampler, Setter, Settler, Stub, Successor, Timer};
 use piperine_device_fixtures::binding::{PlanBinding};
-use piperine_abi::validate::validate;
+use piperine_abi::validate::Validator;
 use piperine_digital_solver::dag::Step;
 use piperine_digital_solver::plan::NetWriter;
 use piperine_digital_solver::tick::Resolution;
@@ -33,7 +33,7 @@ fn every_fixture_shape_is_valid() {
         ("clockwatch", ClockWatch::handle()),
     ];
     for (name, handle) in &all {
-        validate(handle.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        Validator::validate(handle.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
     }
 }
 

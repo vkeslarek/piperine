@@ -8,15 +8,15 @@ use piperine_device_fixtures::circuit;
 use piperine_device_fixtures::mixed;
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
-use piperine_abi::validate::validate;
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::validate::Validator;
+use piperine_abi::verify::Verdict;
 
 #[test]
 fn every_device_function_passes_the_partials_verifier() {
     for (name, module, k, points) in AbiDevicesCases::table() {
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create {name}: {e}"));
         for (i, point) in points.iter().enumerate() {
-            let verdict = verify_partials(&handle, k, point, 1.0e-6)
+            let verdict = Verdict::of_partials(&handle, k, point, 1.0e-6)
                 .unwrap_or_else(|e| panic!("{name} point {i}: the function faulted: {e}"));
             assert_eq!(verdict, Verdict::Exact, "{name} point {i}");
         }
@@ -26,9 +26,9 @@ fn every_device_function_passes_the_partials_verifier() {
 #[test]
 fn every_device_shape_is_valid() {
     for (name, module, _, _) in AbiDevicesCases::table() {
-        validate(module.prototype()).unwrap_or_else(|e| panic!("{name} prototype: {e}"));
+        Validator::validate(module.prototype()).unwrap_or_else(|e| panic!("{name} prototype: {e}"));
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create {name}: {e}"));
-        validate(handle.shape()).unwrap_or_else(|e| panic!("{name} instance: {e}"));
+        Validator::validate(handle.shape()).unwrap_or_else(|e| panic!("{name} instance: {e}"));
     }
 }
 

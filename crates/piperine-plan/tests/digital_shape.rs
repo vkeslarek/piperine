@@ -678,7 +678,7 @@ fn a_cross_event_is_a_watch_with_partials() {
     let (reads, writes, _) = Find::function(shape, "event:0");
     assert_eq!(reads, [pin(en, part::VALUE), pin(crossed, part::CHANGED)]);
     assert_eq!(writes, [pin(event, part::CHANGED)]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -720,7 +720,7 @@ fn every_buck_slice_shape_validates() {
         let (ir, body) = Alone::design(make);
         let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let shape = plan.shape().shape();
-        assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
+        assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()), "{name}");
         // the plan's tables run parallel to the shape's lists
         assert_eq!(plan.functions().len(), shape.functions.len(), "{name}: functions");
         assert_eq!(plan.reactions().len(), shape.reactions.len(), "{name}: reactions");
@@ -780,7 +780,7 @@ fn every_record_layout_holds_its_declared_fields_only() {
         let fields: Vec<String> = p.layout.fields.iter().map(|f| f.name.as_str().to_string()).collect();
         assert_eq!(fields.iter().map(String::as_str).collect::<Vec<_>>(), names, "{name}: the declared fields and nothing after them");
         assert_eq!((p.layout.size, p.layout.align), (size, align), "{name}");
-        assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "{name}");
+        assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()), "{name}");
     }
     // the plan's own layout names the same size, one field per field of the stream
     for (stream, (_, size, _)) in ir.body(body).streams().iter().zip(want) {
@@ -902,7 +902,7 @@ fn a_settle_event_reads_the_global_settle_pin() {
     assert_eq!(writes, [pin(event, part::CHANGED)]);
     assert_eq!(plan.functions()[0].reads, [Source::Settle]);
     assert_eq!(Find::reaction(shape, "reaction:0").0, vec![event], "the reaction listens to the event pin, never to SETTLE");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 
     let (ir, body) = Alone::design(|b| Settling::body(b, true));
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
@@ -910,7 +910,7 @@ fn a_settle_event_reads_the_global_settle_pin() {
     let (ready, settle) = (Find::pin(shape, "ready"), Find::pin(shape, "settle"));
     let (reads, _, _) = Find::function(shape, "event:0");
     assert_eq!(reads, [pin(ready, part::VALUE), pin(settle, part::CHANGED)], "§13 rule 1: the guard is read in the same microstep");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -999,7 +999,7 @@ fn an_event_function_reading_another_event_runs_after_it() {
     assert!(declared.iter().position(|n| n == "event:0") < declared.iter().position(|n| n == "event:1"), "declaration order is the wrong one: {declared:?}");
     let levelized = Levelized::order(shape);
     assert!(levelized.iter().position(|n| n == "event:1") < levelized.iter().position(|n| n == "event:0"), "the dependency order runs the read event first: {levelized:?}");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 /// Bodies of resolved nets (resolved-nets RN-03), each beside the MSL it transcribes:

@@ -513,7 +513,7 @@ impl Driver {
             ..ReactionSpec::default()
         });
         let driver: &'static Driver = Box::leak(Box::new(Driver { commits, shape: shape.freeze() }));
-        let module: &'static piperine_abi::raw::Module = Box::leak(Box::new(piperine_abi::thunk::module_with("Driver", driver)));
+        let module: &'static piperine_abi::raw::Module = Box::leak(Box::new(piperine_abi::thunk::Thunk::module_with("Driver", driver)));
         piperine_abi::caller::Handle::create(module, &[]).expect("creates")
     }
 }

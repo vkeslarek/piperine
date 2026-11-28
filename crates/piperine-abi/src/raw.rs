@@ -2,7 +2,7 @@
 //! with its fields in the listed order, every enumeration a group of named
 //! `u32` constants. Values start at 1 (flags at bit 0), so an all-zero entry
 //! never carries a valid kind. Beside it, the one typed view of a cell's
-//! bytes (`Pod`, `pod_ref`, `pod_mut`, `pod_bytes`) the lenses use.
+//! bytes (`Pod`, with `from_bytes`, `from_bytes_mut` and `as_bytes`) the lenses use.
 
 use core::ffi::c_void;
 use core::marker::PhantomData;
@@ -470,6 +470,11 @@ pub struct Note {
 /// The capacity of `Note.text` in bytes.
 pub const NOTE_TEXT: usize = 248;
 
+impl Note {
+    /// A note with no code and no text: what a caller hands a call before it runs.
+    pub const EMPTY: Note = Note { code: 0, len: 0, text: [0; NOTE_TEXT] };
+}
+
 // ─── The shape ──────────────────────────────────────────────────────────────
 
 /// The complete, immutable description of an instance.
@@ -533,6 +538,32 @@ pub struct Field<'a> {
     pub offset: u32,
     /// Array length.
     pub count: u32,
+}
+
+impl Layout<'_> {
+    /// P4: equal size and alignment and, per field, equal leaf, offset and count. Names do not
+    /// count.
+    pub fn equals(&self, other: &Layout) -> bool {
+        self.size == other.size
+            && self.align == other.align
+            && self.fields.len() == other.fields.len()
+            && self.fields.iter().zip(other.fields.iter()).all(|(x, y)| {
+                x.leaf == y.leaf && x.offset == y.offset && x.count == y.count
+            })
+    }
+}
+
+impl Field<'_> {
+    /// The size in bytes of a `leaf::*` constant; `None` for an unknown one.
+    pub fn leaf_size(constant: u32) -> Option<usize> {
+        match constant {
+            leaf::BOOL | leaf::U8 | leaf::I8 => Some(1),
+            leaf::U16 | leaf::I16 => Some(2),
+            leaf::U32 | leaf::I32 | leaf::F32 => Some(4),
+            leaf::U64 | leaf::I64 | leaf::F64 => Some(8),
+            _ => None,
+        }
+    }
 }
 
 /// A real value added to a row through an operator.
@@ -901,7 +932,33 @@ pub mod status {
 ///
 /// The implementor has no padding, no invalid bit pattern and no pointer;
 /// it is `Copy` and its alignment divides its size.
-pub unsafe trait Pod: Copy + 'static {}
+pub unsafe trait Pod: Copy + 'static {
+    /// `bytes` as a `Self`: `None` when they are too few or misaligned for `Self`.
+    fn from_bytes(bytes: &[u8]) -> Option<&Self> {
+        if bytes.len() < size_of::<Self>() || bytes.as_ptr().align_offset(align_of::<Self>()) != 0 {
+            return None;
+        }
+        // SAFETY: abi.md §12 "Typed access in the lens requires Pod": `Self` is
+        // `Pod`, and the bytes are enough and aligned (checked above).
+        Some(unsafe { &*bytes.as_ptr().cast::<Self>() })
+    }
+
+    /// `bytes` as a mutable `Self`: `None` when they are too few or misaligned.
+    fn from_bytes_mut(bytes: &mut [u8]) -> Option<&mut Self> {
+        if bytes.len() < size_of::<Self>() || bytes.as_ptr().align_offset(align_of::<Self>()) != 0 {
+            return None;
+        }
+        // SAFETY: as for `from_bytes`; the borrow is unique because `bytes` is.
+        Some(unsafe { &mut *bytes.as_mut_ptr().cast::<Self>() })
+    }
+
+    /// The bytes of a `Pod` value.
+    fn as_bytes(&self) -> &[u8] {
+        // SAFETY: abi.md §12: a `Pod` has no padding, so all `size_of::<Self>()`
+        // bytes behind `self` are initialized.
+        unsafe { core::slice::from_raw_parts((self as *const Self).cast::<u8>(), size_of::<Self>()) }
+    }
+}
 
 // SAFETY: abi.md §12 "Typed access in the lens requires Pod": every bit
 // pattern of a numeric leaf is a value and none has padding.
@@ -926,32 +983,6 @@ unsafe impl Pod for f32 {}
 unsafe impl Pod for f64 {}
 // SAFETY: an array of `Pod` has no padding between its elements.
 unsafe impl<T: Pod, const N: usize> Pod for [T; N] {}
-
-/// `bytes` as a `T`: `None` when they are too few or misaligned for `T`.
-pub fn pod_ref<T: Pod>(bytes: &[u8]) -> Option<&T> {
-    if bytes.len() < size_of::<T>() || bytes.as_ptr().align_offset(align_of::<T>()) != 0 {
-        return None;
-    }
-    // SAFETY: abi.md §12 "Typed access in the lens requires Pod": `T` is
-    // `Pod`, and the bytes are enough and aligned (checked above).
-    Some(unsafe { &*bytes.as_ptr().cast::<T>() })
-}
-
-/// `bytes` as a mutable `T`: `None` when they are too few or misaligned.
-pub fn pod_mut<T: Pod>(bytes: &mut [u8]) -> Option<&mut T> {
-    if bytes.len() < size_of::<T>() || bytes.as_ptr().align_offset(align_of::<T>()) != 0 {
-        return None;
-    }
-    // SAFETY: as for `pod_ref`; the borrow is unique because `bytes` is.
-    Some(unsafe { &mut *bytes.as_mut_ptr().cast::<T>() })
-}
-
-/// The bytes of a `Pod` value.
-pub fn pod_bytes<T: Pod>(value: &T) -> &[u8] {
-    // SAFETY: abi.md §12: a `Pod` has no padding, so all `size_of::<T>()`
-    // bytes behind `value` are initialized.
-    unsafe { core::slice::from_raw_parts((value as *const T).cast::<u8>(), size_of::<T>()) }
-}
 
 #[cfg(test)]
 mod tests {

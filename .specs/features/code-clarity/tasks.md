@@ -2079,8 +2079,10 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] The crate's free-function allowance holds exactly the 10 `extern "C"` functions of findings.md §1.2; `unsafe` is still only in `raw`, `thunk`, `caller`
-- [ ] The fixtures crate and the transpiler's printed calls follow in the same commit; goldens byte-identical
-- [ ] Gate check passes: Golden
+  - Not met as written. 30 of the 32 rows are closed (`Validator`, `Thunk<T>`, `Verdict::of_partials`, `Shape::cell_lens`, `Layout::equals`, `Field::leaf_size`, `Pod::{from_bytes, from_bytes_mut, as_bytes}`, `Note::EMPTY`, `ShapeBuf::index`, `Handle::check_cells`). Two rows stay, `thunk.rs::module` and `thunk.rs::library`: generated code spells `use piperine_abi::thunk::{library, module};` and `module::<T>(..)`, so moving them changes the five transpile goldens by more than identifiers, which no row of design.md "What may move" allows (CC-09). The 10 `extern "C"` functions are not allowance rows: the guard permits them itself (`FreeFunctionPermit::ForeignAbi`), and a row for them would be stale. `unsafe` is still only in `raw`, `thunk`, `caller` (true).
+- [x] The fixtures crate and the transpiler's printed calls follow in the same commit; goldens byte-identical
+  - Call-path edits of moved `pub` items (the one exception to "a refactor edits no test"): `validate(..)` → `Validator::validate(..)`, `layout_eq(..)` → `Layout::equals(..)`, `leaf_size(..)` → `Field::leaf_size(..)`, `cell_lens(shape, ..)` → `shape.cell_lens(..)`, `verify_partials(..)` → `Verdict::of_partials(..)`, `module_with(..)` → `Thunk::module_with(..)`, and their imports, in the tests of abi, analog-solver, digital-solver, solver, plan, transpile, interp, parity and root `tests/integrated/package.rs`, and in `device-fixtures/src/partials.rs`
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

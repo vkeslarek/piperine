@@ -122,7 +122,7 @@ fn a_delay_site_has_its_pin_terms_and_maximum() {
     assert_eq!(bound_function.writes, [Target::DelayMaximum(0)]);
     let g = shape.functions.iter().find(|f| f.name.as_str() == "delay0.max").expect("max");
     assert_eq!(g.writes.iter().copied().collect::<Vec<_>>(), [Find::value(max)]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn a_delay_without_a_maximum_bounds_the_history_by_td() {
     let plan = Find::plan(&ir);
     let bound_function = plan.functions().iter().find(|f| f.mode == Mode::DelayMaximum(0)).expect("the max function");
     assert_eq!(bound_function.reads, [Source::Param(0)]);
-    assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(plan.shape().shape()), Ok(()));
 }
 
 #[test]
@@ -150,7 +150,7 @@ fn a_body_without_a_new_form_keeps_its_shape() {
     assert_eq!(Find::pin_names(shape), ["td", "a"]);
     assert_eq!(Find::term_names(shape), ["b0.flow"]);
     assert_eq!(Find::function_names(shape), ["terms"]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 
@@ -175,13 +175,13 @@ fn a_noise_source_is_an_input_with_its_density_function() {
     assert_eq!(noise.writes, [Target::NoiseDensity(0)]);
     let f = shape.functions.iter().find(|f| f.name.as_str() == "noise:0").expect("noise:0");
     assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::INPUT, index: 0, part: part::PSD }]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
     // a density that reads `freq()` reads the ambient `FREQ`, in the density function only
     let plan = Find::plan(&Bodies::noisy(true));
     let noise = plan.functions().iter().find(|f| f.mode == Mode::Noise(0)).expect("the density function");
     assert_eq!(noise.reads, [Source::Freq]);
     assert_eq!(Find::terms_plan(&plan).reads, [Source::NoiseValue(0)]);
-    assert_eq!(piperine_abi::validate::validate(plan.shape().shape()), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(plan.shape().shape()), Ok(()));
 }
 
 
@@ -200,7 +200,7 @@ fn a_session_parameter_is_a_named_global_optional_pin() {
     assert_eq!(function.slots, 0);
     let reads: Vec<Cell> = shape.functions.iter().find(|f| f.name.as_str() == "terms").expect("terms").reads.iter().copied().collect();
     assert_eq!(reads, [Find::value(2)]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 /// A supplier with no module: every body has nothing to run.
@@ -243,5 +243,5 @@ fn a_trace_site_is_a_trace_watch_written_by_terms() {
     assert_eq!(function.writes, [Target::Trace(0)]);
     let f = shape.functions.iter().find(|f| f.name.as_str() == "terms").expect("terms");
     assert_eq!(f.writes.iter().copied().collect::<Vec<_>>(), [Cell { kind: cell::WATCH, index: 0, part: part::VALUE }]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
