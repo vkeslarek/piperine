@@ -2886,7 +2886,7 @@ The rehearsal for BSIM3: the first models whose parameters carry length and widt
 **Done when**:
 - [ ] no test declares a device the library has
 - [ ] every gate of design §6.4 is at zero
-- [ ] each deviation of the ledger has the user's approval recorded
+- [ ] each deviation of the ledger names its ngspice cause and the phase report that informed the user
 
 **Tests**: the gates
 **Gate**: Build; Run gates
