@@ -22,7 +22,7 @@ use super::unroll::{DEPTH, Expansion};
 use crate::refusal::forms::StructureForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId};
-use super::instances::ConcreteValue;
+use super::functions::instances::ConcreteValue;
 use crate::types::{Callee, Substitution, Ty};
 
 /// What the names of the `fn` being expanded stand for, taken before a call rebinds them and put back after it.
@@ -109,7 +109,7 @@ impl Elaboration<'_, '_> {
         };
         // a generic `fn` runs for the arguments the checker read from the call
         if self.state.design.decl_data(function).generics_span.is_some() {
-            let Some(instance) = self.concrete_instance(call) else { return Some(None) };
+            let Some(instance) = self.functions().concrete_instance(call) else { return Some(None) };
             let substitution = self.instance_substitution(instance.item, &instance.arguments);
             return Some(self.expand_under(scope, call, instance.item, binding, Some(substitution)));
         }
@@ -195,7 +195,7 @@ impl Elaboration<'_, '_> {
                     self.refuse(scope.values.file, span, StructureForm::CallThatLeavesOutArgumentInsideDdx);
                     return None;
                 }
-                (_, Some(arg)) if self.state.types.handle(*param) => Argument::Handle { param: *param, target: self.handle_argument_target(scope, arg) },
+                (_, Some(arg)) if self.state.types.handle(*param) => Argument::Handle { param: *param, target: self.functions().handle_argument_target(scope, arg) },
                 (Some(Ty::Str), Some(arg)) => match self.text_of(scope, arg) {
                     Some(text) => Argument::Text { param: *param, text },
                     None => {

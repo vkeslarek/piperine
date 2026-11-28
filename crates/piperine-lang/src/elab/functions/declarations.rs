@@ -1,17 +1,17 @@
 //! Functions: each `fn` a body calls is one IR function (`variants.rs`), lowered when a call first reaches it. Its parameters are its first locals,
 //! then every `let` and closure parameter of its body in declaration order.
 
+use super::FunctionLowering;
 use piperine_ir::{FunctionSpec, Local, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use super::instances::{ConcreteValue, Instance};
 use super::variants::{Half, Variants};
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, FileId, TypeId};
 use crate::types::Ty;
 
-impl Elaboration<'_, '_> {
+impl FunctionLowering<'_, '_, '_> {
     /// The variant of `function` for `half`: the result is the type of the body. `None` after a
     /// diagnostic.
     pub(super) fn lower_function(&mut self, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
@@ -26,13 +26,14 @@ impl Elaboration<'_, '_> {
         scope.analog.in_analog_code = true;
         let mut params = Vec::new();
         let mut ok = true;
-        let declared = data.children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_)));
+        let design = self.state.design;
+        let declared = data.children.iter().copied().filter(|c| matches!(design.decl_data(*c).kind, DeclKind::FnParam(_)));
         for param in declared {
             // An `Option<T>` parameter is two: `name.is` and `name.val` (§3.2), read as the pair
             // of an `Option` local.
             if let Some(Ty::Option(payload)) = self.typed_local(param) {
                 let Some(payload) = self.value_type(&payload) else {
-                    self.refuse(data.file, self.state.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
+                    self.elaboration.refuse(data.file, self.state.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
                     ok = false;
                     continue;
                 };
@@ -89,50 +90,6 @@ impl Elaboration<'_, '_> {
             types.extend(signature.ret.and_then(|ret| self.typed_written(ret)));
         }
         types.iter().for_each(|ty| self.values().register_instances(ty));
-    }
-
-    /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so
-    /// two types giving one method name stay two IR functions.
-    pub(super) fn impl_qualified_name(&self, function: DeclId) -> String {
-        let data = self.state.design.decl_data(function);
-        let own = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let Some(parent) = data.parent else { return own };
-        // an `impl` with parameters is told apart by the arguments of its instances
-        let DeclKind::Impl(owner) = &self.state.design.decl_data(parent).kind else { return own };
-        // an `impl` with parameters is told apart by the arguments of its instances, and a trait `impl` also by its type and
-        // its trait arguments (`impl BitAnd for Logic<N>` and `impl BitAnd<UInt<N>, Logic<N>> for Logic<N>` give two `bitand`)
-        if self.state.design.decl_data(parent).generics_span.is_some() && owner.trait_.is_none() {
-            return own;
-        }
-        let suffix = self.trait_arguments_suffix(parent);
-        // the type as written, under no substitution: the name of an instance is the same wherever it is asked
-        match self.state.consts.written_as_declared(owner.self_ty) {
-            Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.state.design)),
-            None => match self.nature_target_name(parent) {
-                Some(nature) => format!("{nature}.{own}{suffix}"),
-                None => own,
-            },
-        }
-    }
-
-    /// The name of the nature a trait `impl` is written for (`impl Resolve<f64> for Total`): a nature is no written
-    /// type, so two `impl`s of one trait for two natures tell their methods apart by it.
-    fn nature_target_name(&self, implementation: DeclId) -> Option<String> {
-        let entry = self.state.impls.impls().iter().find(|entry| entry.decl == implementation)?;
-        match &entry.target {
-            crate::types::ImplTarget::Declared(decl) => self.state.design.decl_data(*decl).name.as_ref().map(|n| n.text.clone()),
-            _ => None,
-        }
-    }
-
-    /// `::<f64>` for an `impl` of a trait written with arguments (`impl Convert<f64> for Cell`), empty for any other: two
-    /// `impl`s of one trait for one type, written with different arguments, each give a function of one name, and the
-    /// arguments tell them apart. Not inlined: it runs once for every instantiation, deep in a recursion.
-    #[inline(never)]
-    fn trait_arguments_suffix(&self, owner: DeclId) -> String {
-        let arguments = self.state.impls.impls().iter().find(|entry| entry.decl == owner).map(|entry| entry.trait_arguments.clone()).unwrap_or_default();
-        let written: Vec<String> = arguments.iter().filter_map(|argument| self.state.consts.written_as_declared(*argument)).map(|ty| ty.source_name(self.state.design)).collect();
-        if written.is_empty() { String::new() } else { format!("::<{}>", written.join(", ")) }
     }
 
     /// The IR type a type written in a signature names: the checker's type of it, as an IR type.

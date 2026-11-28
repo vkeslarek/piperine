@@ -10,7 +10,7 @@ use super::carriers::Frame;
 use super::consts::Bindings;
 use super::generation::GeneratedItems;
 use super::hoist::PlacementKey;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::reach::demands::{NestedDemand, NestedDemands};
 use super::structural::{BodyKey, BodyVariants, KeyParams};
 use crate::pom::{DeclId, ExprId};

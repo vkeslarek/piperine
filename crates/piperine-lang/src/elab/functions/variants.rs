@@ -10,11 +10,11 @@
 //! once every body is lowered. A function only a const context reaches is folded there and gets
 //! no IR function.
 
+use super::FunctionLowering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{FunctionId, FunctionSpec, GenericInstance, ValueType};
 
-use super::elaborator::Elaboration;
 use super::instances::{ConcreteValue, Instance};
 use crate::msl::Diagnostic;
 use crate::pom::{DeclId, DeclKind};
@@ -27,7 +27,7 @@ const MOST_NESTED_INSTANTIATIONS: usize = 1024;
 /// the function is two IR functions, one for each half of the pair `(is, val)` (MD-67 item 2): both
 /// run the whole body, each returns its half.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Half {
+pub(in crate::elab) enum Half {
     /// The result itself: any function that does not return an `Option`.
     Whole,
     /// Whether the `Option` is `Some`.
@@ -49,7 +49,7 @@ impl Half {
 
 /// The variants requested so far.
 #[derive(Default)]
-pub(super) struct Variants {
+pub(in crate::elab) struct Variants {
     ids: BTreeMap<(DeclId, Vec<ConcreteValue>, Half), FunctionId>,
     /// By id: the generic instance the variant is, `None` for a function as written.
     generic: Vec<Option<GenericInstance>>,
@@ -71,18 +71,18 @@ pub(super) struct Variants {
 
 impl Variants {
     /// The name of the variant of `name` for `half`: the source name, with the half's suffix.
-    pub(super) fn name(name: &str, half: Half) -> String {
+    pub(in crate::elab) fn name(name: &str, half: Half) -> String {
         format!("{name}{}", half.suffix())
     }
 
     /// Whether the variant `id` reads a continuous value; `false` while it is being lowered.
-    pub(super) fn continuous(&self, id: FunctionId) -> bool {
+    pub(in crate::elab) fn continuous(&self, id: FunctionId) -> bool {
         self.continuous.get(id.index()).copied().unwrap_or(false)
     }
 
     /// Adds `spec`, a function no source `fn` stands for (the packing of a decode's two halves, GN-05), after the
     /// variants requested so far; it takes the next id.
-    pub(super) fn add_synthetic(&mut self, spec: FunctionSpec) -> FunctionId {
+    pub(in crate::elab) fn add_synthetic(&mut self, spec: FunctionSpec) -> FunctionId {
         let id = FunctionId(self.results.len() as u32);
         self.generic.push(None);
         self.results.push(Some(spec.ret.clone()));
@@ -93,16 +93,16 @@ impl Variants {
     }
 
     /// The lowered functions in id order; `None` for one that failed (its diagnostics are out).
-    pub(super) fn take(&mut self) -> Vec<Option<FunctionSpec>> {
+    pub(in crate::elab) fn take(&mut self) -> Vec<Option<FunctionSpec>> {
         std::mem::take(&mut self.specs)
     }
 }
 
-impl Elaboration<'_, '_> {
+impl FunctionLowering<'_, '_, '_> {
     /// The variant of `function` for `half` and its result type, lowered the first time it is
     /// reached. `None` after a diagnostic: the variant failed to lower, or the call at `span`
     /// reaches a variant whose body is being lowered (the IR has no recursion).
-    pub(super) fn request(&mut self, function: DeclId, half: Half) -> Option<(FunctionId, ValueType)> {
+    pub(in crate::elab) fn request(&mut self, function: DeclId, half: Half) -> Option<(FunctionId, ValueType)> {
         self.request_instance(function, Vec::new(), half)
     }
 
@@ -110,7 +110,7 @@ impl Elaboration<'_, '_> {
     /// for each distinct list (§3.8.10), named from the function and its arguments, with the substitution
     /// of the arguments set while its body is lowered. A chain of instantiations deeper than 1 024 is
     /// `E0341` (D7).
-    pub(super) fn request_instance(&mut self, function: DeclId, arguments: Vec<ConcreteValue>, half: Half) -> Option<(FunctionId, ValueType)> {
+    pub(in crate::elab) fn request_instance(&mut self, function: DeclId, arguments: Vec<ConcreteValue>, half: Half) -> Option<(FunctionId, ValueType)> {
         let key = (function, arguments.clone(), half);
         if let Some(id) = self.state.functions.variants.ids.get(&key).copied() {
             return match self.state.functions.variants.results[id.index()].clone() {
@@ -139,7 +139,7 @@ impl Elaboration<'_, '_> {
         self.state.functions.variants.results.push(None);
         self.state.functions.variants.specs.push(None);
         self.state.functions.variants.continuous.push(false);
-        self.state.functions.variants.assumed.push(self.declared_result(function, half));
+        self.elaboration.state.functions.variants.assumed.push(self.declared_result(function, half));
         self.state.functions.variants.open.insert(id);
         let spec = crate::stack::Stack::wide(|| self.lower_variant(id, function, &arguments, half));
         self.state.functions.variants.open.remove(&id);
@@ -171,7 +171,7 @@ impl Elaboration<'_, '_> {
     /// Each lowering leaves the expressions of the one before unused.
     fn lower_variant(&mut self, id: FunctionId, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
         // the body of an instance reads the type table through its own arguments; the caller's come back after
-        let outer = self.state.consts.set_substitution(self.instance_substitution(function, arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(function, arguments));
         let lowered = loop {
             let Some(spec) = self.lower_function(function, arguments, half) else { break None };
             if !self.state.functions.variants.recursive.contains(&id) || spec.ret == self.state.functions.variants.assumed[id.index()] {
@@ -186,7 +186,7 @@ impl Elaboration<'_, '_> {
     /// Add the lowered variants to the IR, in the order of their ids. After a diagnostic no IR
     /// is built, and a variant that failed after reaching one that lowered leaves a gap in the
     /// ids: nothing is added.
-    pub(super) fn add_functions(&mut self) {
+    pub(in crate::elab) fn add_functions(&mut self) {
         if !self.state.diagnostics.is_empty() {
             return;
         }

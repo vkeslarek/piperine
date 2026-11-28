@@ -6,7 +6,7 @@
 use piperine_ir::Constant;
 
 use super::elaborator::Elaboration;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::elaborator::Scope;
 use super::structural::BodyKey;
 use crate::refusal::forms::GenericsForm;
@@ -42,7 +42,7 @@ impl Elaboration<'_, '_> {
             self.refuse(file, span, GenericsForm::PlacementOfGenericModuleWhoseArgumentsChecker);
             return None;
         }
-        let instance = self.concrete_instance(call)?;
+        let instance = self.functions().concrete_instance(call)?;
         self.admit_module_instance(module, instance, file, span)
     }
 
@@ -54,8 +54,8 @@ impl Elaboration<'_, '_> {
         let Some(template) = through else { return self.module_instance(call, module) };
         let (file, span) = (self.state.design.decl_data(self.state.design.expr_node(call).owner).file, self.state.design.expr_node(call).span);
         let instance = Instance { item: module, arguments: template.arguments };
-        let bindings = self.instance_bindings(&instance);
-        self.discharge(&instance, &bindings)?;
+        let bindings = self.functions().instance_bindings(&instance);
+        self.functions().discharge(&instance, &bindings)?;
         self.admit_module_instance(module, instance, file, span)
     }
 
@@ -70,7 +70,7 @@ impl Elaboration<'_, '_> {
     fn discharge_module_where(&mut self, module: DeclId, instance: &Instance, file: FileId, span: Span) -> Option<()> {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Some(()) };
         let Some(condition) = data.where_ else { return Some(()) };
-        let bindings = self.instance_bindings(instance);
+        let bindings = self.functions().instance_bindings(instance);
         let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
         let value = self.state.consts.value(condition, &bindings);
         self.state.consts.set_substitution(outer);

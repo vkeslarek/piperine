@@ -7,9 +7,9 @@
 use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr};
 
-use crate::elab::instances::ConcreteValue;
+use crate::elab::functions::instances::ConcreteValue;
 use crate::elab::elaborator::Scope;
-use crate::elab::variants::Half;
+use crate::elab::functions::variants::Half;
 use crate::refusal::forms::GenericsForm;
 use crate::pom::{DeclId, ExprId};
 use crate::types::Ty;
@@ -37,7 +37,7 @@ impl ValueLowering<'_, '_, '_> {
         }
         // a trait's own function runs for the type of its receiver, which is `Self` there
         let instance = if self.is_trait_function(function) { vec![ConcreteValue::Type(self.typed(receiver)?)] } else { impl_arguments };
-        let (id, ret) = self.request_instance(function, instance, Half::Whole)?;
+        let (id, ret) = self.functions().request_instance(function, instance, Half::Whole)?;
         Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
     }
 
@@ -50,7 +50,7 @@ impl ValueLowering<'_, '_, '_> {
             self.refuse(scope.values.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
             return None;
         };
-        values.iter().map(|value| self.concrete_argument(value, scope.values.file, span)).collect()
+        values.iter().map(|value| self.functions().concrete_argument(value, scope.values.file, span)).collect()
     }
 
     /// The call `receiver.f(arguments)` through a bound (`Callee::Bound { item }`, the trait's own function): the

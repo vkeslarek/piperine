@@ -16,8 +16,8 @@ use super::control::LoopFrame;
 
 use super::compound::Pair;
 use crate::elab::elaborator::Scope;
-use crate::elab::variants::Half;
-use crate::elab::instances::ConcreteValue;
+use crate::elab::functions::variants::Half;
+use crate::elab::functions::instances::ConcreteValue;
 use crate::refusal::forms::{GenericsForm, ValueForm};
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, StmtKind};
@@ -190,7 +190,7 @@ impl ValueLowering<'_, '_, '_> {
     /// its body must run once: see `lower_inlined_option_call`.
     pub(super) fn lower_option_call(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Pair> {
         // a generic function runs for the arguments the checker recorded at the call, one instance of each half (§3.8.10)
-        let instance = if self.state.design.decl_data(function).generics_span.is_some() { Some(self.concrete_instance(expr)?) } else { None };
+        let instance = if self.state.design.decl_data(function).generics_span.is_some() { Some(self.functions().concrete_instance(expr)?) } else { None };
         let arguments = instance.as_ref().map(|instance| instance.arguments.clone()).unwrap_or_default();
         if self.is_inlined(function) {
             let Some(instance) = instance else { return self.lower_inlined_option_call(scope, expr, function) };
@@ -201,8 +201,8 @@ impl ValueLowering<'_, '_, '_> {
         }
         let origin = self.expr_origin(expr);
         let first = self.lower_arguments(scope, expr, function)?;
-        let (presence, is_ty) = self.request_instance(function, arguments.clone(), Half::Presence)?;
-        let (payload, val_ty) = self.request_instance(function, arguments, Half::Payload)?;
+        let (presence, is_ty) = self.functions().request_instance(function, arguments.clone(), Half::Presence)?;
+        let (payload, val_ty) = self.functions().request_instance(function, arguments, Half::Payload)?;
         let second = self.lower_arguments(scope, expr, function)?;
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);
@@ -407,7 +407,7 @@ impl ValueLowering<'_, '_, '_> {
                 self.refuse(scope.values.file, span, GenericsForm::MethodOfGenericImplWhoseParametersReceiver);
                 return None;
             };
-            values.iter().map(|value| self.concrete_argument(value, scope.values.file, span)).collect::<Option<Vec<_>>>()?
+            values.iter().map(|value| self.functions().concrete_argument(value, scope.values.file, span)).collect::<Option<Vec<_>>>()?
         } else if self.is_trait_function(function) {
             vec![ConcreteValue::Type(receiver_type)]
         } else {
@@ -421,8 +421,8 @@ impl ValueLowering<'_, '_, '_> {
             Some(lowered)
         };
         let first = lower_all(self, scope)?;
-        let (presence, is_ty) = self.request_instance(function, instance.clone(), Half::Presence)?;
-        let (payload, val_ty) = self.request_instance(function, instance, Half::Payload)?;
+        let (presence, is_ty) = self.functions().request_instance(function, instance.clone(), Half::Presence)?;
+        let (payload, val_ty) = self.functions().request_instance(function, instance, Half::Payload)?;
         let second = lower_all(self, scope)?;
         let is = self.emit(Expr::Call { function: presence, args: first }, is_ty, origin.clone());
         let val = self.emit(Expr::Call { function: payload, args: second }, val_ty, origin);

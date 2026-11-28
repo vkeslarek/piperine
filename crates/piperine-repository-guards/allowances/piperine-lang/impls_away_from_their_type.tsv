@@ -15,18 +15,14 @@ crates/piperine-lang/src/elab/drives.rs::Elaboration	1
 crates/piperine-lang/src/elab/element_commits.rs::Elaboration	1
 crates/piperine-lang/src/elab/element_coverage.rs::Elaboration	1
 crates/piperine-lang/src/elab/elements.rs::Elaboration	4
-crates/piperine-lang/src/elab/event_functions.rs::Elaboration	1
 crates/piperine-lang/src/elab/event_reads.rs::Elaboration	1
 crates/piperine-lang/src/elab/events.rs::Elaboration	1
 crates/piperine-lang/src/elab/expansion.rs::Elaboration	1
-crates/piperine-lang/src/elab/functions.rs::Elaboration	1
 crates/piperine-lang/src/elab/generation.rs::Elaboration	1
 crates/piperine-lang/src/elab/generic_bodies.rs::Elaboration	1
-crates/piperine-lang/src/elab/handles.rs::Elaboration	1
 crates/piperine-lang/src/elab/hoist.rs::Elaboration	1
 crates/piperine-lang/src/elab/host_sources.rs::Elaboration	1
 crates/piperine-lang/src/elab/inflow.rs::Elaboration	1
-crates/piperine-lang/src/elab/instances.rs::Elaboration	1
 crates/piperine-lang/src/elab/nature.rs::Elaboration	1
 crates/piperine-lang/src/elab/node_choice.rs::Elaboration	1
 crates/piperine-lang/src/elab/noise.rs::Elaboration	1
@@ -46,7 +42,6 @@ crates/piperine-lang/src/elab/structural.rs::Elaboration	6
 crates/piperine-lang/src/elab/symbolic.rs::Elaboration	1
 crates/piperine-lang/src/elab/templates.rs::Elaboration	1
 crates/piperine-lang/src/elab/unroll.rs::Elaboration	1
-crates/piperine-lang/src/elab/variants.rs::Elaboration	1
 crates/piperine-lang/src/pom/bundles.rs::Design	1
 crates/piperine-lang/src/pom/check.rs::Design	1
 crates/piperine-lang/src/pom/reflect/body.rs::Design	2

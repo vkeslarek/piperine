@@ -12,7 +12,7 @@ use super::bundles::PortBindings;
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::elaborator::Scope;
 use super::templates::TemplateValue;
 use crate::refusal::forms::StructureForm;

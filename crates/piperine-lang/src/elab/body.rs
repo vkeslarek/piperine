@@ -8,7 +8,7 @@ use super::carriers::{Frame, Structure};
 use super::children::ChildPlan;
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::structural::BodyKey;
 use super::elaborator::Scope;
 use crate::refusal::forms::StructureForm;

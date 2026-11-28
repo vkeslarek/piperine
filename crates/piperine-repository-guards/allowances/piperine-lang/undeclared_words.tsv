@@ -72,7 +72,7 @@ crates/piperine-lang/src/elab/structural.rs::terminal_decl	1
 crates/piperine-lang/src/elab/structural.rs::unkeyed	1
 crates/piperine-lang/src/elab/unroll.rs::body_exprs	1
 crates/piperine-lang/src/elab/unroll.rs::unfoldable_recursion	1
-crates/piperine-lang/src/elab/variants.rs::specs	1
+crates/piperine-lang/src/elab/functions/variants.rs::specs	1
 crates/piperine-lang/src/lib.rs::elab	1
 crates/piperine-lang/src/msl/ast.rs::Arg	1
 crates/piperine-lang/src/msl/ast.rs::Attr	1

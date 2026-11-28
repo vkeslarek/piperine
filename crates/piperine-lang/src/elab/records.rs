@@ -239,7 +239,7 @@ impl Elaboration<'_, '_> {
         for (param, arg) in params.iter().zip(args) {
             let param_name = self.state.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             if self.state.types.handle(*param) {
-                scope.digital.handles.insert(*param, self.handle_argument_target(scope, *arg));
+                scope.digital.handles.insert(*param, self.functions().handle_argument_target(scope, *arg));
                 continue;
             }
             if matches!(self.typed(*arg), Some(Ty::Str)) {

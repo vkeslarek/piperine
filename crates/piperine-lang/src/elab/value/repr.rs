@@ -10,9 +10,9 @@
 use super::ValueLowering;
 use piperine_ir::{Expr, FunctionId, FunctionSpec, Local, TypeId as IrTypeId, ValueType};
 
-use crate::elab::variants::Half;
+use crate::elab::functions::variants::Half;
 use crate::pom::{DeclId, DeclKind};
-use crate::elab::instances::{ConcreteValue, Instance};
+use crate::elab::functions::instances::{ConcreteValue, Instance};
 use crate::types::{ImplTarget, Nominal, Ty};
 
 /// A hand-written layout whose functions exist, set on its type once they are in the IR.
@@ -68,9 +68,9 @@ impl ValueLowering<'_, '_, '_> {
         let width = self.hand_written_width(owner, &[])?;
         let encode_item = self.state.impls.item(owner, "encode")?;
         let decode_item = self.state.impls.item(owner, "decode")?;
-        let (encode, _) = self.request(encode_item, Half::Whole)?;
-        let (presence, _) = self.request(decode_item, Half::Presence)?;
-        let (payload, _) = self.request(decode_item, Half::Payload)?;
+        let (encode, _) = self.functions().request(encode_item, Half::Whole)?;
+        let (presence, _) = self.functions().request(decode_item, Half::Presence)?;
+        let (payload, _) = self.functions().request(decode_item, Half::Payload)?;
         let decode = self.pack_decode(decode_item, &[], &own, width, presence, payload);
         Some(HandWrittenRepr { ty, width, encode, decode })
     }
@@ -88,9 +88,9 @@ impl ValueLowering<'_, '_, '_> {
         let width = self.hand_written_width(owner, &arguments)?;
         let encode_item = self.state.impls.item(owner, "encode")?;
         let decode_item = self.state.impls.item(owner, "decode")?;
-        let (encode, _) = self.request_instance(encode_item, arguments.clone(), Half::Whole)?;
-        let (presence, _) = self.request_instance(decode_item, arguments.clone(), Half::Presence)?;
-        let (payload, _) = self.request_instance(decode_item, arguments.clone(), Half::Payload)?;
+        let (encode, _) = self.functions().request_instance(encode_item, arguments.clone(), Half::Whole)?;
+        let (presence, _) = self.functions().request_instance(decode_item, arguments.clone(), Half::Presence)?;
+        let (payload, _) = self.functions().request_instance(decode_item, arguments.clone(), Half::Payload)?;
         let decode = self.pack_decode(decode_item, &arguments, &own, width, presence, payload);
         Some(HandWrittenRepr { ty, width, encode, decode })
     }

@@ -402,12 +402,12 @@ impl Elaboration<'_, '_> {
         let DeclKind::Fn(data) = &self.state.design.decl_data(function).kind else { return None };
         let body = data.body.clone()?;
         let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.state.design.stmt_node(*stmt).kind.clone()) else { return None };
-        let arguments: Vec<super::instances::ConcreteValue> = nominal
+        let arguments: Vec<super::functions::instances::ConcreteValue> = nominal
             .arguments
             .iter()
             .map(|argument| match argument {
-                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(super::instances::ConcreteValue::Const(*value)),
-                crate::types::GenericValue::Type(ty) => Some(super::instances::ConcreteValue::Type(ty.clone())),
+                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(value)) => Some(super::functions::instances::ConcreteValue::Const(*value)),
+                crate::types::GenericValue::Type(ty) => Some(super::functions::instances::ConcreteValue::Type(ty.clone())),
                 _ => None,
             })
             .collect::<Option<_>>()?;

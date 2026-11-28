@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use piperine_ir::{BodyId, BodySpec, Carrier, CarrierRole, Drive, Expr, FunctionId, Holder, InstanceId, InstanceSpec, NetId, NetSpec, Origin, Resolution, ValueType};
 
 use super::elaborator::Elaboration;
-use super::instances::ConcreteValue;
-use super::variants::Half;
+use super::functions::instances::ConcreteValue;
+use super::functions::variants::Half;
 use crate::msl::Diagnostic;
 use crate::pom::DeclId;
 use crate::types::ResolveImpl;
@@ -196,7 +196,7 @@ impl Elaboration<'_, '_> {
         let function = self.state.design.decl_data(implementation.implementation).children.iter().copied().find(|child| self.state.design.decl_data(*child).name.as_ref().is_some_and(|n| n.text == "resolve"))?;
         let mut by_count: Vec<FunctionId> = Vec::new();
         for drives in 0..=count {
-            by_count.push(self.request_instance(function, vec![ConcreteValue::Const(drives as i128)], Half::Whole)?.0);
+            by_count.push(self.functions().request_instance(function, vec![ConcreteValue::Const(drives as i128)], Half::Whole)?.0);
         }
         let origin = declared.origin.clone();
         let spec = BodySpec { name: format!("{}$resolve~{count}{}", self.resolver_name(implementation), Self::reader_suffix(readers)), origin: origin.clone(), params: vec![], nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children: vec![] };

@@ -5,7 +5,7 @@ use piperine_ir::Constant;
 
 use super::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree};
 use crate::refusal::forms::ConstantForm;
-use crate::elab::instances::ConcreteValue;
+use crate::elab::functions::instances::ConcreteValue;
 use crate::elab::templates::{TemplateValue, Templates};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, Resolution};
 use crate::types::{ConstTerm, GenericValue};

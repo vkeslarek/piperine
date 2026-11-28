@@ -214,7 +214,7 @@ impl Elaboration<'_, '_> {
                     };
                     Some(vec![Disjunct { source: EventSource::Changed(carrier), discrete, continuous: Vec::new(), origin }])
                 }
-                _ if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
+                _ if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
                 _ => {
                     self.refuse(scope.values.file, node.span, AnalogForm::MethodAsEvent);
                     None
@@ -222,9 +222,9 @@ impl Elaboration<'_, '_> {
             },
             ExprKind::Call { args, .. } => match self.state.types.callee(expr) {
                 // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
-                Some(Callee::Function(function)) if self.is_event_function(function) => self.event_function_disjuncts(scope, expr, function),
+                Some(Callee::Function(function)) if self.functions().is_event_function(function) => self.functions().event_function_disjuncts(scope, expr, function),
                 // The same through a method: `Trait::fires(x)` and a call through a bound.
-                Some(Callee::Method(_) | Callee::Bound { .. }) if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
+                Some(Callee::Method(_) | Callee::Bound { .. }) if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
                 Some(Callee::Core(id)) if id.info().name == "cross" => {
                     // `cross(e, ttol, etol)`: positionally or by name (§3.2)
                     let (mut watched, mut ttol, mut etol) = (None, None, None);

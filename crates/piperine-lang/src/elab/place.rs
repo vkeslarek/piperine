@@ -12,7 +12,7 @@ use piperine_ir::{CarrierRole, Constant, InstanceId, ReachedItem, InstanceSpec, 
 use super::body::{ModulePlan, ParamPlan};
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::structural::BodyKey;
 use super::host_sources::{HostPort, HostSources};
 use super::resolvers::{DeclaredNet, ResolvedUse};

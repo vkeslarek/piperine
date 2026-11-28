@@ -10,7 +10,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Origin, Valu
 
 use super::compound::Pair;
 use crate::elab::elaborator::Scope;
-use crate::elab::variants::Half;
+use crate::elab::functions::variants::Half;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, DeclId, ExprId, FileId, ExprKind, Resolution};
 use crate::types::{Length, Nominal, Ty};
@@ -34,7 +34,7 @@ impl ValueLowering<'_, '_, '_> {
             let item = self.state.impls.item(owner, "encode")?;
             let arguments = self.hand_written_arguments(owner, ty)?;
             let argument = self.lower_expr(scope, recv)?;
-            let (function, ret) = self.request_instance(item, arguments, Half::Whole)?;
+            let (function, ret) = self.functions().request_instance(item, arguments, Half::Whole)?;
             return Some(self.emit(Expr::Call { function, args: vec![argument] }, ret, origin));
         }
         let value = self.lower_expr(scope, recv)?;
@@ -106,8 +106,8 @@ impl ValueLowering<'_, '_, '_> {
             let item: DeclId = self.state.impls.item(owner, "decode")?;
             let arguments = self.hand_written_arguments(owner, target)?;
             let first = self.lower_expr(scope, levels)?;
-            let (presence, is_ty) = self.request_instance(item, arguments.clone(), Half::Presence)?;
-            let (payload, val_ty) = self.request_instance(item, arguments, Half::Payload)?;
+            let (presence, is_ty) = self.functions().request_instance(item, arguments.clone(), Half::Presence)?;
+            let (payload, val_ty) = self.functions().request_instance(item, arguments, Half::Payload)?;
             let second = self.lower_expr(scope, levels)?;
             let is = self.emit(Expr::Call { function: presence, args: vec![first] }, is_ty, origin.clone());
             let val = self.emit(Expr::Call { function: payload, args: vec![second] }, val_ty, origin.clone());

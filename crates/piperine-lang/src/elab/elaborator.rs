@@ -1,6 +1,7 @@
 //! The entry point and the pass order of one elaboration run: `Types::check` first, then the
 //! passes over what it reached, each writing through `IrBuilder`.
 
+use crate::elab::functions::FunctionLowering;
 use crate::elab::value::ValueLowering;
 use std::collections::BTreeMap;
 
@@ -9,8 +10,8 @@ use piperine_ir::{BodyId, Env, Expr, ExprId as LoweredExpr, Ir, IrBuilder, Origi
 use super::analog_state::{AnalogScope, AnalogSites};
 use super::consts::{Bindings, ConstEval};
 use super::digital_state::{DigitalScope, DigitalTables};
-use super::function_state::FunctionTables;
-use super::instances::ConcreteValue;
+use super::functions::state::FunctionTables;
+use super::functions::instances::ConcreteValue;
 use super::loops::DriveLoops;
 use super::value::expressions::ValueTypes;
 use super::origin::Locator;
@@ -22,7 +23,7 @@ use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId};
-use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Ty, Types};
+use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Substitution, Ty, Types};
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
 #[derive(Debug, Clone)]
@@ -174,6 +175,11 @@ impl<'d, 't> ElaborationState<'d, 't> {
 }
 
 impl<'d, 't> Elaboration<'d, 't> {
+    /// The view that lowers functions.
+    pub(super) fn functions(&mut self) -> FunctionLowering<'_, 'd, 't> {
+        FunctionLowering::new(self)
+    }
+
     /// The view that lowers value code.
     pub(super) fn values(&mut self) -> ValueLowering<'_, 'd, 't> {
         ValueLowering::new(self)
@@ -237,7 +243,7 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.pad_child_nodes();
         self.build_resolvers();
         let reprs = self.values().lower_hand_written_reprs();
-        self.add_functions();
+        self.functions().add_functions();
         self.values().set_hand_written_reprs(reprs);
         // the last net: an elaboration that placed no top and said nothing is refused by name, never an empty `Err`
         if top_instance.is_none() && self.state.diagnostics.is_empty() {
@@ -535,6 +541,116 @@ impl<'d, 't> Elaboration<'d, 't> {
     /// Whether `function` is written in an `impl` that has generic parameters.
     pub(in crate::elab) fn is_generic_impl_item(&self, function: DeclId) -> bool {
         self.state.design.decl_data(function).parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Impl(_)) && self.state.design.decl_data(parent).generics_span.is_some())
+    }
+
+    /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so
+    /// two types giving one method name stay two IR functions.
+    pub(in crate::elab) fn impl_qualified_name(&self, function: DeclId) -> String {
+        let data = self.state.design.decl_data(function);
+        let own = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let Some(parent) = data.parent else { return own };
+        // an `impl` with parameters is told apart by the arguments of its instances
+        let DeclKind::Impl(owner) = &self.state.design.decl_data(parent).kind else { return own };
+        // an `impl` with parameters is told apart by the arguments of its instances, and a trait `impl` also by its type and
+        // its trait arguments (`impl BitAnd for Logic<N>` and `impl BitAnd<UInt<N>, Logic<N>> for Logic<N>` give two `bitand`)
+        if self.state.design.decl_data(parent).generics_span.is_some() && owner.trait_.is_none() {
+            return own;
+        }
+        let suffix = self.trait_arguments_suffix(parent);
+        // the type as written, under no substitution: the name of an instance is the same wherever it is asked
+        match self.state.consts.written_as_declared(owner.self_ty) {
+            Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.state.design)),
+            None => match self.nature_target_name(parent) {
+                Some(nature) => format!("{nature}.{own}{suffix}"),
+                None => own,
+            },
+        }
+    }
+
+    /// The name of the item a closure is written in: two items each have a `closure$0`, so the instance names the item too.
+    pub(super) fn closure_owner_name(&self, closure: ExprId) -> String {
+        let owner = self.state.design.expr_node(closure).owner;
+        self.state.design.decl_data(owner).name.as_ref().map_or_else(String::new, |name| name.text.clone())
+    }
+
+    /// The position of the closure `closure` among the closures of the item it is written in, in source order.
+    pub(super) fn closure_ordinal(&self, closure: ExprId) -> usize {
+        let owner = self.state.design.expr_node(closure).owner;
+        (0..closure.0).filter(|index| {
+            let node = self.state.design.expr_node(ExprId(*index));
+            node.owner == owner && matches!(node.kind, crate::pom::ExprKind::Closure { .. })
+        }).count()
+    }
+
+    /// The name of the nature a trait `impl` is written for (`impl Resolve<f64> for Total`): a nature is no written
+    /// type, so two `impl`s of one trait for two natures tell their methods apart by it.
+    fn nature_target_name(&self, implementation: DeclId) -> Option<String> {
+        let entry = self.state.impls.impls().iter().find(|entry| entry.decl == implementation)?;
+        match &entry.target {
+            crate::types::ImplTarget::Declared(decl) => self.state.design.decl_data(*decl).name.as_ref().map(|n| n.text.clone()),
+            _ => None,
+        }
+    }
+
+    /// `::<f64>` for an `impl` of a trait written with arguments (`impl Convert<f64> for Cell`), empty for any other: two
+    /// `impl`s of one trait for one type, written with different arguments, each give a function of one name, and the
+    /// arguments tell them apart. Not inlined: it runs once for every instantiation, deep in a recursion.
+    #[inline(never)]
+    fn trait_arguments_suffix(&self, owner: DeclId) -> String {
+        let arguments = self.state.impls.impls().iter().find(|entry| entry.decl == owner).map(|entry| entry.trait_arguments.clone()).unwrap_or_default();
+        let written: Vec<String> = arguments.iter().filter_map(|argument| self.state.consts.written_as_declared(*argument)).map(|ty| ty.source_name(self.state.design)).collect();
+        if written.is_empty() { String::new() } else { format!("::<{}>", written.join(", ")) }
+    }
+
+    /// What the generic parameters of `function` are replaced by in the body of the instance with `arguments`: a
+    /// type for a type parameter and a value for a const one; a closure or a function has no type to give yet (T37).
+    pub(in crate::elab) fn instance_substitution(&self, function: DeclId, arguments: &[ConcreteValue]) -> Substitution {
+        let mut substitution = Substitution::new();
+        // a method of a generic `impl` takes the parameters of the `impl`
+        let owner = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some()).unwrap_or(function);
+        let signature = GenericSignature::of(self.state.design, owner);
+        // a function a trait declares runs for one type, which is `Self`: its one argument
+        if let (true, Some(ConcreteValue::Type(ty))) = (self.is_trait_function(function), arguments.first())
+            && let Some(owner) = self.state.design.decl_data(function).parent
+        {
+            substitution.bind(owner, GenericValue::Type(ty.clone()));
+        }
+        for (parameter, argument) in signature.parameters().iter().zip(arguments) {
+            match argument {
+                ConcreteValue::Type(ty) => substitution.bind(parameter.decl, GenericValue::Type(ty.clone())),
+                ConcreteValue::Const(value) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Value(*value))),
+                ConcreteValue::Bool(flag) => substitution.bind(parameter.decl, GenericValue::Const(ConstTerm::Bool(*flag))),
+                // a closure or a function stands for its function type: the parameter that takes it is a function value
+                ConcreteValue::Function(_) | ConcreteValue::Closure(_) => {
+                    if let Some(ty) = self.callable_type(argument) {
+                        substitution.bind(parameter.decl, GenericValue::Type(ty));
+                    }
+                }
+            }
+        }
+        substitution
+    }
+
+    /// The function type a closure or a function name has: what the parameter bound by `Fn(A) -> R` is in the
+    /// instance (D9: the instance takes the callable as a function value, called by `f(x)` like any local of
+    /// function type). `None` for an argument that is no callable.
+    fn callable_type(&self, value: &ConcreteValue) -> Option<Ty> {
+        match value {
+            ConcreteValue::Closure(closure) => self.typed(*closure),
+            ConcreteValue::Function(function) => {
+                let data = self.state.design.decl_data(*function);
+                let DeclKind::Fn(signature) = &data.kind else { return None };
+                let inputs: Option<Vec<Ty>> = data.children.iter().copied().filter(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::FnParam(_))).map(|param| self.typed_local(param)).collect();
+                let output = signature.ret.and_then(|ret| self.typed_written(ret)).unwrap_or(Ty::Unit);
+                Some(Ty::Fn(inputs?, Box::new(output)))
+            }
+            _ => None,
+        }
+    }
+
+    /// Whether `function` takes a handle: a parameter the checker found to be one.
+    pub(in crate::elab) fn takes_handle(&self, function: DeclId) -> bool {
+        self.state.design.decl_data(function).children.iter().any(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::FnParam(_)) && self.state.types.handle(*child))
     }
 }
 

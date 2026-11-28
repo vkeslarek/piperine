@@ -9,7 +9,7 @@ crates/piperine-lang/src/elab/element_commits.rs::Step	1
 crates/piperine-lang/src/elab/elements.rs::ElementPart	1
 crates/piperine-lang/src/elab/elements.rs::Lookup	1
 crates/piperine-lang/src/elab/expansion.rs::Argument	1
-crates/piperine-lang/src/elab/instances.rs::Instance	1
+crates/piperine-lang/src/elab/functions/instances.rs::Instance	1
 crates/piperine-lang/src/elab/value/iterators.rs::Bound	1
 crates/piperine-lang/src/elab/value/iterators.rs::Source	1
 crates/piperine-lang/src/elab/value/iterators.rs::Stage	1

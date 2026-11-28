@@ -9,7 +9,7 @@ use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, ValueType};
 
 use crate::elab::elaborator::Scope;
-use crate::elab::variants::Half;
+use crate::elab::functions::variants::Half;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{ClosureParam, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
@@ -79,7 +79,7 @@ impl ValueLowering<'_, '_, '_> {
             self.refuse(scope.values.file, span, ValueForm::FunctionWithOptionParameterOrResultUsed);
             return None;
         }
-        let (id, ret) = self.request(function, Half::Whole)?;
+        let (id, ret) = self.functions().request(function, Half::Whole)?;
         let ValueType::Fn(types, _) = ty else { return None };
         Some(self.emit(Expr::FunctionRef(id), ValueType::Fn(types, Box::new(ret)), origin))
     }

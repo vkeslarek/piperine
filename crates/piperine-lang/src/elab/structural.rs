@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use piperine_ir::{BodyId, Constant};
 
 use super::consts::Bindings;
-use super::instances::Instance;
+use super::functions::instances::Instance;
 use super::body::ModulePlan;
 use super::elaborator::Elaboration;
 use super::elaborator::Scope;

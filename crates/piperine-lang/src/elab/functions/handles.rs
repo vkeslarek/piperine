@@ -5,19 +5,14 @@
 //! written in. A probe of the handle lowers to the terminals of that node, a read of a discrete handle to a read of that
 //! carrier (its value), and a carrier method on it to the method on that carrier.
 
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
-use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
+use super::FunctionLowering;
+use crate::elab::elaborator::Scope;
+use crate::pom::{ExprId, ExprKind, Resolution};
 
-impl Elaboration<'_, '_> {
-    /// Whether `function` takes a handle: a parameter the checker found to be one.
-    pub(super) fn takes_handle(&self, function: DeclId) -> bool {
-        self.state.design.decl_data(function).children.iter().any(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::FnParam(_)) && self.state.types.handle(*child))
-    }
-
+impl FunctionLowering<'_, '_, '_> {
     /// What the handle parameter of a call is bound to for the argument `arg`: the argument itself (a name in the frame of
     /// the call), or, when it names a handle of the function being inlined, what that one is bound to.
-    pub(super) fn handle_argument_target(&self, scope: &Scope, arg: ExprId) -> ExprId {
+    pub(in crate::elab) fn handle_argument_target(&self, scope: &Scope, arg: ExprId) -> ExprId {
         let arg = self.peel_parens(arg);
         if let ExprKind::Path(path) = &self.state.design.expr_node(arg).kind
             && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|segment| segment.res)

@@ -2482,8 +2482,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/functions/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Elaboration` in `elab/functions/`
+  - Note: `functions.rs` is `functions/declarations.rs` (a module `functions/functions.rs` would repeat its directory) and `event_functions.rs` is `functions/events.rs`. Eight `&self` helpers that `Instance::name`, `is_inlined` and `instance_substitution` read from shared code stay on `Elaboration` in `elaborator.rs`: `impl_qualified_name`, `nature_target_name`, `trait_arguments_suffix`, `closure_owner_name`, `closure_ordinal`, `instance_substitution`, `callable_type`, `takes_handle` (design.md, T93 annotation).
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

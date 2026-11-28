@@ -9,7 +9,7 @@ use piperine_ir::{AggregateData, Constant, ValueType};
 
 use super::consts::{Bindings, ConstFault, ConstTree};
 use super::elaborator::Elaboration;
-use super::instances::ConcreteValue;
+use super::functions::instances::ConcreteValue;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
 use crate::types::Callee;

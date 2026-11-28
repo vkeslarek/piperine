@@ -11,7 +11,7 @@ use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn
 
 use crate::elab::elements::ElementPart;
 use super::compound::EnumLayout;
-use crate::elab::variants::Half;
+use crate::elab::functions::variants::Half;
 use crate::elab::consts::Bindings;
 use crate::elab::elaborator::{Elaboration, Scope};
 use crate::elab::selectors::ArmCondition;
@@ -411,7 +411,7 @@ impl ValueLowering<'_, '_, '_> {
                 return None;
             }
             // the instance is folded and checked (`instances.rs`) and lowered once for its arguments (`variants.rs`)
-            let instance = self.concrete_instance(expr)?;
+            let instance = self.functions().concrete_instance(expr)?;
             // a function generic over a nature takes handles: inlined for the nature it is instantiated at
             if self.is_inlined(instance.item) {
                 let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
@@ -420,7 +420,7 @@ impl ValueLowering<'_, '_, '_> {
                 return inlined;
             }
             let lowered = self.lower_arguments(scope, expr, instance.item)?;
-            let (id, ret) = self.request_instance(instance.item, instance.arguments, Half::Whole)?;
+            let (id, ret) = self.functions().request_instance(instance.item, instance.arguments, Half::Whole)?;
             return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
         }
         // an associated function of a generic `impl` runs for the arguments the checker read from the call (`Logic::from(b)`)
@@ -428,9 +428,9 @@ impl ValueLowering<'_, '_, '_> {
             && self.is_generic_impl_item(function)
             && let Some(recorded) = self.state.types.instantiation(expr).cloned()
         {
-            let values = recorded.arguments.iter().map(|value| self.concrete_argument(value, scope.values.file, span)).collect::<Option<Vec<_>>>()?;
+            let values = recorded.arguments.iter().map(|value| self.functions().concrete_argument(value, scope.values.file, span)).collect::<Option<Vec<_>>>()?;
             let lowered = self.lower_arguments(scope, expr, function)?;
-            let (id, ret) = self.request_instance(function, values, Half::Whole)?;
+            let (id, ret) = self.functions().request_instance(function, values, Half::Whole)?;
             return Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin));
         }
         match (class, self.state.types.callee(expr)) {
@@ -441,7 +441,7 @@ impl ValueLowering<'_, '_, '_> {
             (_, Some(Callee::Function(function))) if scope.analog.in_analog_block && self.reaches_recursion(function) => self.lower_expanded_call(scope, expr, function, origin),
             (_, Some(Callee::Function(function))) => {
                 let lowered = self.lower_arguments(scope, expr, function)?;
-                let (id, ret) = self.request(function, Half::Whole)?;
+                let (id, ret) = self.functions().request(function, Half::Whole)?;
                 Some(self.emit(Expr::Call { function: id, args: lowered }, ret, origin))
             }
             (_, Some(Callee::Core(id))) => self.lower_core(scope, expr, id, args, ty, origin),

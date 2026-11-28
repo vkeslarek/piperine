@@ -12,14 +12,14 @@
 //! guarded by the choice, `(c && e₁) || (!c && e₂)` (§13 rule 1: a guard is evaluated in the microstep the event fires
 //! in). A recursion unrolls through the same expansion stack as the one of `analog`.
 
-use super::elaborator::Elaboration;
-use super::events::Disjunct;
-use super::expansion::Environment;
+use super::FunctionLowering;
+use crate::elab::events::Disjunct;
+use crate::elab::expansion::Environment;
 use super::instances::ConcreteValue;
-use super::elaborator::Scope;
-use super::value::patterns::Subject;
-use super::symbolic::{ExpandedBody, Flow, Step};
-use super::unroll::Expansion;
+use crate::elab::elaborator::Scope;
+use crate::elab::value::patterns::Subject;
+use crate::elab::symbolic::{ExpandedBody, Flow, Step};
+use crate::elab::unroll::Expansion;
 use crate::refusal::forms::EventFunctionForm;
 use crate::msl::Span;
 use crate::pom::{Arm, DeclId, DeclKind, ExprId, ExprKind, StmtId, StmtKind};
@@ -27,18 +27,18 @@ use crate::types::{Callee, Substitution, Ty};
 use piperine_ir::{Constant, Expr, ValueType};
 
 
-impl Elaboration<'_, '_> {
+impl FunctionLowering<'_, '_, '_> {
     /// Whether `function` is a `fn` whose declared result is an `Event` (§13 rule 7). The type of a call is not asked: a
     /// call read as a `bool` (§13 rules 2 and 9) is typed `bool`, and is the same call of the same function.
-    pub(super) fn is_event_function(&self, function: DeclId) -> bool {
+    pub(in crate::elab) fn is_event_function(&self, function: DeclId) -> bool {
         matches!(&self.state.design.decl_data(function).kind, DeclKind::Fn(function_data) if function_data.ret.is_some_and(|ret| self.typed_written(ret) == Some(Ty::Event)))
     }
 
     /// The disjuncts of the call `call` of the event function `function`: those of the event its body yields, over the
     /// parameters the call binds (§13 rule 7). `None` after a diagnostic.
-    pub(super) fn event_function_disjuncts(&mut self, scope: &mut Scope, call: ExprId, function: DeclId) -> Option<Vec<Disjunct>> {
+    pub(in crate::elab) fn event_function_disjuncts(&mut self, scope: &mut Scope, call: ExprId, function: DeclId) -> Option<Vec<Disjunct>> {
         let Some(slots) = self.state.types.binding(call).map(<[_]>::to_vec) else {
-            self.refuse(scope.values.file, self.state.design.expr_node(call).span, EventFunctionForm::CallWhoseArgumentsTypeCheckerDidNot);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(call).span, EventFunctionForm::CallWhoseArgumentsTypeCheckerDidNot);
             return None;
         };
         // a function generic over a nature runs for the nature the call is instantiated at
@@ -51,14 +51,14 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether the call `call` is of a method, or of a function of a trait, whose declared result is an `Event`.
-    pub(super) fn is_event_method(&self, call: ExprId) -> bool {
+    pub(in crate::elab) fn is_event_method(&self, call: ExprId) -> bool {
         matches!(self.state.types.callee(call), Some(Callee::Method(function) | Callee::Bound { item: function }) if self.is_event_function(function))
     }
 
     /// The disjuncts of the call `call` of a method whose result is an `Event` (`x.fires()`, `Trait::fires(x)`, or a
     /// call through a bound): the body of the `impl`'s function for the receiver's type, or the trait's default body,
     /// over the receiver and the arguments (§3.7.8, §13 rule 7). `None` after a diagnostic.
-    pub(super) fn event_method_disjuncts(&mut self, scope: &mut Scope, call: ExprId) -> Option<Vec<Disjunct>> {
+    pub(in crate::elab) fn event_method_disjuncts(&mut self, scope: &mut Scope, call: ExprId) -> Option<Vec<Disjunct>> {
         let span = self.state.design.expr_node(call).span;
         let (Some(Callee::Method(named) | Callee::Bound { item: named }), Some((receiver, arguments))) = (self.state.types.callee(call), self.method_operands(call)) else { return None };
         let receiver_type = self.typed(receiver)?;

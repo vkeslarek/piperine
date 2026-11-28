@@ -8,9 +8,9 @@
 //! Three passes, each writing through [`IrBuilder`](piperine_ir::IrBuilder): natures, bodies
 //! (first-reach order, each function variant lowered when a call first reaches it), then the
 //! instance tree. Any diagnostic means no `Ir`.
-
+mod functions;
 mod value;
-mod analog_state; mod digital_state; mod function_state; mod structure_state;
+mod analog_state; mod digital_state; mod structure_state;
 mod body; mod bundles; mod carrier_arrays;
 mod carriers;
 mod children;
@@ -19,14 +19,14 @@ mod contribute;
 mod delays; mod derivatives; mod noise; mod partial; mod session;
 mod diagnose;
 mod drive_loops; mod drive_overlaps; mod drives;
-mod event_functions; mod event_reads;
+mod event_reads;
 mod events; mod expansion; mod symbolic;
 mod override_text;
 mod elaborator; mod analog; mod element_commits; mod element_coverage; mod elements;
-mod functions; mod generation; mod generic_bodies;
-mod handles; mod hoist;
+mod generation; mod generic_bodies;
+mod hoist;
 mod host_sources;
-mod inflow; mod instances;
+mod inflow;
 mod loops;
 mod nature;
 mod origin;
@@ -39,7 +39,6 @@ mod signal_flow;
 mod structural;
 mod templates;
 mod unroll;
-mod variants;
 pub use consts::{Bindings, CompositeKind, ConstEval, ConstFault, ConstTree, Exit};
 pub use {value::files::{FileFault, IncludedFiles}, value::tables::{HexText, TableFault, TableText}};
 pub use elaborator::{Elaborator, RunStatistics};
