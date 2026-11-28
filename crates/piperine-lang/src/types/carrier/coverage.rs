@@ -8,25 +8,25 @@ use std::collections::BTreeSet;
 
 use crate::pom::{DeclId, ElementNaming};
 
-use super::check::Checker;
+use super::CarrierTyping;
 use super::element_target::Element;
-use super::ty::Length;
-use super::Ty;
+use crate::types::ty::Length;
+use crate::types::Ty;
 
 /// The carriers whose element coverage or drive overlaps the checker cannot judge, because a length is generic or a
 /// param, or a drive is written inside generation: each instance is judged by the elaborator, where lengths, generation
 /// indices and generation arms are folded.
 #[derive(Debug, Clone, Default)]
-pub(super) struct DeferredCoverage {
+pub(in crate::types) struct DeferredCoverage {
     /// Carriers with no initial value whose type has no `Default` and that a constant element drive names in part (`E0187`).
-    pub(super) missing_initial: BTreeSet<DeclId>,
+    pub(in crate::types) missing_initial: BTreeSet<DeclId>,
     /// Carriers with an initial value that `out` ports of children hold in part (`E0223` once every element is handed).
-    pub(super) handed_initial: BTreeSet<DeclId>,
+    pub(in crate::types) handed_initial: BTreeSet<DeclId>,
     /// Carriers with an initial value that undelayed element definitions name in part (`E0338` once every element is defined).
-    pub(super) defined_initial: BTreeSet<DeclId>,
+    pub(in crate::types) defined_initial: BTreeSet<DeclId>,
     /// Carriers a drive of which reaches elements only the elaborator folds: their overlaps (`E0335`, `E0221`, `E0220`)
     /// are judged per instance.
-    pub(super) overlaps: BTreeSet<DeclId>,
+    pub(in crate::types) overlaps: BTreeSet<DeclId>,
 }
 
 /// Which elements of one carrier a set of drives names, in row-major order for nested arrays.
@@ -45,7 +45,7 @@ pub(crate) struct ElementCoverage {
 
 impl ElementCoverage {
     /// The coverage of the carrier of type `held` with no drive yet.
-    pub(super) fn of(held: &Ty) -> Self {
+    pub(in crate::types) fn of(held: &Ty) -> Self {
         let mut total = Some(1u64);
         let mut at = held;
         while let Ty::Array(element, length) = at {
@@ -74,7 +74,7 @@ impl ElementCoverage {
     }
 
     /// A drive that reaches `element`.
-    pub(super) fn cover(&mut self, element: Element) {
+    pub(in crate::types) fn cover(&mut self, element: Element) {
         match element {
             Element::Whole | Element::Any => self.everything = true,
             Element::Unfolded => self.deferred = true,
@@ -92,7 +92,7 @@ impl ElementCoverage {
 
     /// Whether only the elaborator can tell if every element is named: some constant element is, over an array whose
     /// length is not known yet.
-    pub(super) fn is_deferred(&self) -> bool {
+    pub(in crate::types) fn is_deferred(&self) -> bool {
         self.deferred && !self.everything
     }
 
@@ -131,10 +131,10 @@ impl ElementCoverage {
     }
 }
 
-impl Checker<'_> {
+impl CarrierTyping<'_, '_> {
     /// The carriers of this module a drive or a hand-over of which reaches elements only the elaborator folds: their
     /// overlaps are judged per instance (`Types::defers_drive_overlaps`).
-    pub(super) fn defer_unfolded_overlaps(&mut self) {
+    pub(in crate::types) fn defer_unfolded_overlaps(&mut self) {
         let drives = self.state.carriers.book.elements.iter().map(|(carrier, element, _, _)| (*carrier, *element));
         let handed = self.state.carriers.book.handed.iter().map(|(carrier, element, _, _)| (*carrier, *element));
         let unfolded: Vec<DeclId> = drives.chain(handed).filter(|(_, element)| *element == Element::Unfolded).map(|(carrier, _)| carrier).collect();
@@ -157,7 +157,7 @@ impl Checker<'_> {
 
     /// The elements of `decl` a driver specifies the value of: an undelayed definition, an `out` port of a child it is
     /// handed to, or a drive refused as unsupported (the refusal is the diagnostic, no second one for the carrier).
-    pub(super) fn driven_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
+    pub(in crate::types) fn driven_coverage(&self, decl: DeclId, held: &Ty) -> ElementCoverage {
         let mut coverage = self.undelayed_coverage(decl, held);
         if self.state.carriers.book.refused.contains(&decl) {
             coverage.cover(Element::Whole);
@@ -172,7 +172,7 @@ impl Checker<'_> {
 
     /// `E0338` for an array of carriers with an initial value whose every element an undelayed definition names: the
     /// initial value would apply to no element (§8.2.21). With an element left, the initial value is that element's.
-    pub(super) fn initial_values_under_element_definitions(&mut self, children: &[DeclId]) {
+    pub(in crate::types) fn initial_values_under_element_definitions(&mut self, children: &[DeclId]) {
         let defined: BTreeSet<DeclId> = self.state.carriers.book.undelayed_elements.iter().map(|(carrier, _, _)| *carrier).collect();
         for decl in children.iter().copied().filter(|decl| defined.contains(decl)) {
             let Some(held) = self.state.result.carriers.get(&decl).cloned() else { continue };

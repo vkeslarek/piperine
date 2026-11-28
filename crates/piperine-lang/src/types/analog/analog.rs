@@ -39,7 +39,7 @@ impl AnalogTyping<'_, '_> {
             self.coded(file, "E0450", node.span, "`inflow()` is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         self.expressions().apply(expr, &[], args)?;
-        let measured = match self.declared_port(recv) {
+        let measured = match self.carriers().declared_port(recv) {
             Some((decl, Ty::Node(nature))) => matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_)) && NatureRules::of(self.state.design, nature).flow,
             _ => false,
         };
@@ -263,7 +263,7 @@ impl AnalogTyping<'_, '_> {
         };
         let name = id.name();
         if matches!(name.as_str(), "cross" | "at") && self.state.values.event_slot() != Some(expr) {
-            self.core_event_out_of_place(expr, &name, args);
+            self.carriers().core_event_out_of_place(expr, &name, args);
             return None;
         }
         self.judge_core_place(&name, sig.allowed, file, node.span);
@@ -291,7 +291,7 @@ impl AnalogTyping<'_, '_> {
         let bound = self.expressions().bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
         self.state.modules.end_placement();
         bound?;
-        self.event_arguments(&name, args);
+        self.carriers().event_arguments(&name, args);
         Some(sig.result.ty())
     }
 

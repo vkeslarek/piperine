@@ -20,7 +20,7 @@ impl ModuleTyping<'_, '_> {
             (Some(ret), Some(result)) => match self.lower_type(ret) {
                 Some(ty) => self.expressions().check_as(result, &ty, "E0301"),
                 None => {
-                    self.infer_event_position(result);
+                    self.carriers().infer_event_position(result);
                 }
             },
             (Some(_), None) => {

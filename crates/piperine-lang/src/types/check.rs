@@ -8,13 +8,14 @@ use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
-use super::definition::DriveBook;
 use super::value::flow::ExitFrame;
 use super::generics::tables::GenericsTables;
 use super::analog::tables::AnalogTables;
+use super::carrier::tables::CarrierTables;
 use super::module::tables::ModuleTables;
 use super::value::tables::ValueTables;
 use super::value::ExpressionTyping;
+use super::carrier::CarrierTyping;
 use super::analog::AnalogTyping;
 use super::module::ModuleTyping;
 use super::traits::TraitTyping;
@@ -110,16 +111,6 @@ pub(super) struct Diagnostics {
     pub(super) reported_spans: BTreeSet<(FileId, usize, usize)>,
 }
 
-/// What checking discrete carriers (§12, §13) keeps: what the module being checked drives, and how many definitions
-/// the check is inside.
-#[derive(Default)]
-pub(super) struct CarrierTables {
-    /// What the module being checked drives, by definition and by commit.
-    pub(super) book: DriveBook,
-    /// How many definitions the check is inside: their values are not read from the solve (`classes.rs`).
-    pub(super) in_definition: u32,
-}
-
 impl<'d> CheckState<'d> {
     /// The empty state of a check of `design`.
     fn new(design: &'d Design) -> Self {
@@ -171,6 +162,11 @@ impl<'d> Checker<'d> {
     /// The view that types analog behaviour.
     pub(super) fn analog(&mut self) -> AnalogTyping<'_, 'd> {
         AnalogTyping::new(self)
+    }
+
+    /// The view that types discrete carriers.
+    pub(super) fn carriers(&mut self) -> CarrierTyping<'_, 'd> {
+        CarrierTyping::new(self)
     }
 
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
@@ -255,11 +251,11 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (book, modules) = (std::mem::take(&mut self.state.carriers.book), self.state.modules.save());
+        let (carriers, modules) = (self.state.carriers.save(), self.state.modules.save());
         let saved = self.state.values.save();
         self.declaration(module);
         self.state.values.restore(saved);
-        self.state.carriers.book = book;
+        self.state.carriers.restore(carriers);
         self.state.modules.restore(modules);
     }
 
@@ -406,7 +402,7 @@ impl<'d> Checker<'d> {
                         None
                     }
                 },
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.state.design, d).carries_values => self.discrete_carrier_type(d, file, node.span, *path),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.state.design, d).carries_values => self.carriers().discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generics().generic_nominal(*path, d, file, node.span),
@@ -710,7 +706,7 @@ impl<'d> Checker<'d> {
             (DeclKind::Param(p), ItemPhase::Declarations) => self.modules().param(child, &p.clone()),
             (DeclKind::Signal(s), ItemPhase::Declarations) => self.modules().signal(child, &s.clone()),
             (DeclKind::Let(_), ItemPhase::Lets) => self.modules().type_module_let(child),
-            (DeclKind::Definition(d), ItemPhase::Definitions) => self.definition(&d.clone()),
+            (DeclKind::Definition(d), ItemPhase::Definitions) => self.carriers().definition(&d.clone()),
             (DeclKind::Port(_) | DeclKind::Param(_) | DeclKind::Signal(_) | DeclKind::Let(_) | DeclKind::Definition(_), _) => {}
             (DeclKind::GenericParam(_) | DeclKind::Behavior(_) | DeclKind::Error, _) => {}
             // A closure's parameters (`|new, old| ..` of `limexp`, §22.2.4) are children of the
@@ -748,7 +744,7 @@ impl<'d> Checker<'d> {
         // Ports, params and signals first, then the `let`s in order, then definitions: every
         // name of the body is visible in the whole body (§8.2), and a carrier's type is known
         // before anything reads it.
-        self.state.carriers.book = DriveBook::default();
+        self.state.carriers.reset_book();
         // each bundle port or signal is followed by the fields it stands for, typed like ports and signals of their own (§7 rule 14)
         let items = self.state.design.module_items(&data.children);
         for phase in [ItemPhase::Declarations, ItemPhase::Lets, ItemPhase::Definitions] {
@@ -756,7 +752,7 @@ impl<'d> Checker<'d> {
                 self.module_item(child, phase);
             }
         }
-        self.definition_loops();
+        self.carriers().definition_loops();
         self.modules().module_result(decl, m);
         for behavior in m.behaviors.iter().copied() {
             let b = self.state.design.decl_data(behavior).clone();
@@ -767,7 +763,7 @@ impl<'d> Checker<'d> {
                     self.expressions().statements(&bd.body, None);
                     self.state.values.set_context(Context::Module);
                 }
-                BehaviorKind::Digital => self.digital_block(behavior),
+                BehaviorKind::Digital => self.carriers().digital_block(behavior),
             }
         }
         // A placement no statement above typed (one written where only the module lists it).
@@ -781,8 +777,8 @@ impl<'d> Checker<'d> {
         // the carriers declared inside generation are the module's too, one array each (§8.2.23)
         let carriers = self.modules().generated_items(&items);
         self.modules().missing_initial_values(&carriers);
-        self.initial_values_under_element_definitions(&carriers);
-        self.defer_unfolded_overlaps();
+        self.carriers().initial_values_under_element_definitions(&carriers);
+        self.carriers().defer_unfolded_overlaps();
         self.modules().handed_drives();
     }
 }

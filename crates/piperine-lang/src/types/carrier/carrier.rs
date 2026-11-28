@@ -9,17 +9,17 @@ use crate::refusal::forms::DigitalForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
-use super::check::Checker;
-use super::generics::generics::GenericSignature;
-use super::analog::nature_rules::NatureRules;
-use super::{Builtin, Nominal, Ty};
+use super::CarrierTyping;
+use crate::types::generics::generics::GenericSignature;
+use crate::types::analog::nature_rules::NatureRules;
+use crate::types::{Builtin, Nominal, Ty};
 
-impl Checker<'_> {
+impl CarrierTyping<'_, '_> {
     /// A discrete nature written at `path`, the stdlib's `Bit<T>` or a project's (§4 rule 12): a
     /// carrier of `nature` holding the type its `value` field names. A generic nature takes its
     /// type arguments in order and falls back to each parameter's default; a nature whose `value`
     /// is not one of its parameters holds that type for every argument list.
-    pub(super) fn discrete_carrier_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
+    pub(in crate::types) fn discrete_carrier_type(&mut self, nature: DeclId, file: FileId, span: crate::msl::Span, path: PathId) -> Option<Ty> {
         let name = self.state.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let DeclKind::Nature(data) = &self.state.design.decl_data(nature).kind else { return None };
         let value_type = data.fields.iter().find_map(|f| match f {
@@ -61,7 +61,7 @@ impl Checker<'_> {
         };
         let value = self.carried_type(held)?;
         // a resolved nature's `impl`s are judged wherever a carrier of it is (§4 rule 8)
-        for implementation in super::analog::nature::ResolveImpls::declarations(&self.state.traits, nature) {
+        for implementation in crate::types::analog::nature::ResolveImpls::declarations(&self.state.traits, nature) {
             self.reach(implementation);
             // the body of `resolve` is run by the net's resolver (`elab/resolvers.rs`): it is checked and typed with the model
             for item in self.state.design.decl_data(implementation).children.clone() {
@@ -71,7 +71,7 @@ impl Checker<'_> {
             }
         }
         if NatureRules::of(self.state.design, nature).resolved && !self.state.result.resolve_tables.contains_key(&nature) {
-            let table = super::analog::nature::ResolveImpls::new(self).of(nature);
+            let table = crate::types::analog::nature::ResolveImpls::new(self).of(nature);
             self.state.result.resolve_tables.insert(nature, table);
         }
         Some(Ty::Carrier { nature, value: Box::new(value) })
@@ -105,7 +105,7 @@ impl Checker<'_> {
                 None
             }
             // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
-            v if self.trait_typing().repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.generics().bounds_of(*param).contains(&super::Bound::Repr)) => {
+            v if self.trait_typing().repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.generics().bounds_of(*param).contains(&crate::types::Bound::Repr)) => {
                 self.trait_typing().reach_hand_written_repr(v);
                 Some(value)
             }
@@ -124,7 +124,7 @@ impl Checker<'_> {
 
     /// The type of a port or a signal: a node of a conservative nature, a carrier of `Bit<T>`,
     /// or `P0001` and `None`.
-    pub(super) fn port_type(&mut self, ty: TypeId) -> Option<Ty> {
+    pub(in crate::types) fn port_type(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.state.design.type_node(ty).clone();
         let file = self.state.design.decl_data(node.owner).file;
         match self.lower_type(ty)? {
@@ -147,7 +147,7 @@ impl Checker<'_> {
             // A value input: a port of a value type (§8.1.4), the expression the caller wrote.
             value @ (Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::Enum(_) | Ty::Option(_)) => Some(value),
             other => {
-                self.refuse_with(file, node.span, DigitalForm::ValueInputPortOfType, [other.name(self.state.design).to_string()]);
+                self.checker.refuse_with(file, node.span, DigitalForm::ValueInputPortOfType, [other.name(self.checker.state.design).to_string()]);
                 None
             }
         }
@@ -157,7 +157,7 @@ impl Checker<'_> {
     /// holds `V` (`X` when the bound is written `Resolve<X>`), resolved like the nature it becomes (§22.3). `None` for a
     /// bound whose types are refused.
     fn resolved_parameter_carrier(&mut self, param: DeclId) -> Option<Ty> {
-        let table = super::analog::nature::ResolveImpls::new(self).of(param);
+        let table = crate::types::analog::nature::ResolveImpls::new(self).of(param);
         let entry = table.first()?.clone();
         self.state.result.resolve_tables.entry(param).or_insert(table);
         Some(Ty::Carrier { nature: param, value: Box::new(entry.value) })
@@ -165,7 +165,7 @@ impl Checker<'_> {
 
     /// The type a read of a port or a signal declaration has: a node is a node, a carrier gives
     /// the value it holds.
-    pub(super) fn read_type(&mut self, decl: DeclId, ty: TypeId) -> Option<Ty> {
+    pub(in crate::types) fn read_type(&mut self, decl: DeclId, ty: TypeId) -> Option<Ty> {
         match self.port_type(ty)? {
             carrier @ Ty::Carrier { .. } => {
                 let held = self.modules().generated_type(decl, carrier.clone());
@@ -184,7 +184,7 @@ impl Checker<'_> {
     }
 
     /// The port or signal `expr` reads, through parentheses, with the type of its declaration.
-    pub(super) fn declared_port(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
+    pub(in crate::types) fn declared_port(&mut self, expr: ExprId) -> Option<(DeclId, Ty)> {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.declared_port(*inner),
             // one element of an array of carriers or of nodes (CV-24): the carrier the element is, of the array's declaration
@@ -226,7 +226,7 @@ impl Checker<'_> {
 
     /// The initial value of a carrier or a node reads no carrier and no probe (`E0210`, §5.1.5).
     /// The nodes a probe names are part of the probe, not reads of their own.
-    pub(super) fn initial_reads(&mut self, init: ExprId) {
+    pub(in crate::types) fn initial_reads(&mut self, init: ExprId) {
         let node = self.state.design.expr_node(init).clone();
         let file = self.file_of_expr(init);
         let what = match &node.kind {
@@ -250,7 +250,7 @@ impl Checker<'_> {
 
     /// Whether `f` is the stdlib's own item behind a built-in method (§3.3.7): a method of the
     /// `impl Bit` (`rise`, `fall`).
-    pub(super) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
+    pub(in crate::types) fn stdlib_builtin(&self, f: DeclId) -> Option<Builtin> {
         let data = self.state.design.decl_data(f);
         if !matches!(data.kind, DeclKind::Fn(_)) || !self.is_std(f) {
             return None;
@@ -267,7 +267,7 @@ impl Checker<'_> {
     /// The type a path's first segment names when it is the owner of an associated item
     /// (`T::WIDTH`, `T::default()`): a built-in scalar type, a struct or an enum. `None` for any
     /// other segment.
-    pub(super) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
+    pub(in crate::types) fn path_owner_type(&mut self, file: FileId, span: Span, owner: Resolution) -> Option<Ty> {
         match owner {
             Resolution::Builtin(id) => match (id.info().name, id.width()) {
                 ("fN", Some(w)) => Ty::float(u32::from(w)),
@@ -289,7 +289,7 @@ impl Checker<'_> {
     /// `T::WIDTH` written with a concrete `Repr` type `T` as its first segment: the level count
     /// of `T`, a const `u32` (§2, US-02 AC 3). `None` when `expr` is not such a path, so the caller
     /// reports it as it reports any other built-in name.
-    pub(super) fn width_read(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn width_read(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Path(path) = &node.kind else { return None };
         let segments = self.state.design.path_node(*path).segments.clone();
@@ -311,7 +311,7 @@ impl Checker<'_> {
     /// method reads the drives of a resolved carrier other than the module's own, and a one-driver
     /// carrier has no other (§5.2.7). Returns whether the rule fired, so the caller stops there; a
     /// resolved carrier is not this rule's (until the resolved carriers are typed it stays `P0001`).
-    pub(super) fn others_on_one_driver(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> bool {
+    pub(in crate::types) fn others_on_one_driver(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> bool {
         let Some((decl, Ty::Carrier { nature, .. })) = self.declared_port(recv) else { return false };
         if !NatureRules::of(self.state.design, nature).one_driver {
             return false;
@@ -330,7 +330,7 @@ impl Checker<'_> {
 
     /// `c.prev()` on a discrete carrier: the value before its most recent change, of the
     /// carrier's value type (§5.3). On a node it is `E0230`.
-    pub(super) fn prev_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn prev_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {
@@ -353,7 +353,7 @@ impl Checker<'_> {
 
     /// `s.others()` on a resolved carrier (§5.2.7): the resolution of every drive but this module's
     /// own, of the nature's `value` type. The one-driver carrier was `E0224` before this is asked.
-    pub(super) fn others_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn others_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {

@@ -207,7 +207,7 @@ pub struct Types<'d> {
     pub(super) somes: BTreeSet<ExprId>,
     pub(super) carriers: BTreeMap<DeclId, Ty>,
     /// The array carriers whose element drives only the elaborator can judge, per instance (`DeferredCoverage`).
-    pub(super) deferred_coverage: super::coverage::DeferredCoverage,
+    pub(super) deferred_coverage: super::carrier::coverage::DeferredCoverage,
     pub(super) builtins: BTreeMap<ExprId, Builtin>,
     pub(super) event_reads: BTreeSet<ExprId>,
     pub(super) widths: BTreeMap<ExprId, u32>,
@@ -259,7 +259,7 @@ impl<'d> Types<'d> {
             reached: Vec::new(),
             somes: BTreeSet::new(),
             carriers: BTreeMap::new(),
-            deferred_coverage: super::coverage::DeferredCoverage::default(),
+            deferred_coverage: super::carrier::coverage::DeferredCoverage::default(),
             builtins: BTreeMap::new(),
             event_reads: BTreeSet::new(),
             widths: BTreeMap::new(),

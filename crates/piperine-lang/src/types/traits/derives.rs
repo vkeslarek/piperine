@@ -199,7 +199,7 @@ impl TraitTyping<'_, '_> {
         }
         let span = self.state.design.expr_node(expr).span;
         let file = self.file_of_expr(expr);
-        let owner_type = if owner.name.text == "Option" && matches!(owner.res, Resolution::Builtin(_)) { self.option_owner_type(file, span, owner.args.as_ref()) } else { self.path_owner_type(file, span, owner.res) };
+        let owner_type = if owner.name.text == "Option" && matches!(owner.res, Resolution::Builtin(_)) { self.option_owner_type(file, span, owner.args.as_ref()) } else { self.carriers().path_owner_type(file, span, owner.res) };
         let Some(ty) = owner_type else { return Some(None) };
         if argument_count != 0 {
             self.report(file, crate::msl::Diagnostic::new("E0141", format!("`default` takes no argument, found {argument_count}"), span, "no argument expected"));

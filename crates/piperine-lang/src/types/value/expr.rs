@@ -161,7 +161,7 @@ impl ExpressionTyping<'_, '_> {
                 && found != Ty::Never
             {
                 if self.state.result.event_reads.contains(&expr) {
-                    self.event_where_another_type_is_expected(expr, expected);
+                    self.carriers().event_where_another_type_is_expected(expr, expected);
                 } else {
                     let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
                     self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
@@ -193,7 +193,7 @@ impl ExpressionTyping<'_, '_> {
             let in_event_position = self.state.values.event_slot == Some(expr);
             let mut ty = self.infer_kind(expr);
             if ty == Some(Ty::Event) && !in_event_position {
-                ty = Some(self.event_out_of_place(expr));
+                ty = Some(self.carriers().event_out_of_place(expr));
             }
             self.modules().record_node_choice(expr, ty.as_ref());
             self.state.result.exprs[expr.index()] = ty.clone();
@@ -242,7 +242,7 @@ impl ExpressionTyping<'_, '_> {
                 match self.infer(*operand) {
                     Some(t) if t.is_integer() => Some(t),
                     Some(Ty::Bool) | None => Some(Ty::Bool),
-                    Some(Ty::Event) => self.negated_event(expr, *operand),
+                    Some(Ty::Event) => self.carriers().negated_event(expr, *operand),
                     // a struct or an enum takes `!` from the `impl` of `Not` (Appendix H.10)
                     Some(t) if Self::takes_operator_traits(&t) => self.operator_call(expr, OperatorTrait::Not, *operand, &t, None),
                     Some(other) => {
@@ -314,7 +314,7 @@ impl ExpressionTyping<'_, '_> {
                 };
                 Some(if comparison { Ty::Bool } else { ty })
             }
-            BinOp::And | BinOp::Or => self.logical(whole, op == BinOp::And, lhs, rhs),
+            BinOp::And | BinOp::Or => self.carriers().logical(whole, op == BinOp::And, lhs, rhs),
             BinOp::Eq | BinOp::Ne => {
                 let (first, second) = self.literal_last(lhs, rhs);
                 let first_ty = self.infer(first);
@@ -647,8 +647,8 @@ impl ExpressionTyping<'_, '_> {
                     DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
                     // a bundle is no value (§7 rule 9)
                     DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.modules().bundle_as_value(expr),
-                    DeclKind::Port(p) => self.read_type(decl, p.ty),
-                    DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.modules().generated_read(expr, decl, read)),
+                    DeclKind::Port(p) => self.carriers().read_type(decl, p.ty),
+                    DeclKind::Signal(s) => self.carriers().read_type(decl, s.ty).map(|read| self.modules().generated_read(expr, decl, read)),
                     DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_read(expr, decl, file, node.span),
                     DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
@@ -662,20 +662,20 @@ impl ExpressionTyping<'_, '_> {
                 }
             }
             Resolution::Builtin(id) if id.info().kind == BuiltinKind::Node => Some(Ty::AnyNode),
-            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.settle_event()),
+            Resolution::Builtin(id) if id.info().kind == BuiltinKind::Event => Some(self.carriers().settle_event()),
             Resolution::Builtin(id) if id.info().name == "None" => {
                 let message = "`None` has no type here: write it where an `Option<T>` is expected";
                 self.report(file, Diagnostic::new("E0180", format!("mismatched types: {message}"), node.span, "`Option` of what?"));
                 None
             }
-            Resolution::Builtin(id) => match self.width_read(expr) {
+            Resolution::Builtin(id) => match self.carriers().width_read(expr) {
                 Some(width) => Some(width),
                 None => {
                     self.refuse_with(file, node.span, ValueForm::BuiltIn, [id.name().to_string()]);
                     None
                 }
             },
-            Resolution::Deferred(_) => match self.width_read(expr) {
+            Resolution::Deferred(_) => match self.carriers().width_read(expr) {
                 Some(width) => Some(width),
                 None => {
                     self.refuse(file, node.span, ValueForm::UnresolvedName);
@@ -770,7 +770,7 @@ impl ExpressionTyping<'_, '_> {
                 }
                 StmtKind::Empty => {}
                 StmtKind::Contribution { lhs, rhs } => self.analog().contribution(file, node.span, *lhs, *rhs),
-                StmtKind::Commit { place, value, after } => self.commit(file, node.span, *place, *value, *after),
+                StmtKind::Commit { place, value, after } => self.carriers().commit(file, node.span, *place, *value, *after),
                 StmtKind::Item(_) | StmtKind::Signal(_) | StmtKind::Reaction(_) => {
                     self.refuse(file, node.span, RefusedForm::statement(&node.kind));
                 }

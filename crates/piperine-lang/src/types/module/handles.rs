@@ -137,7 +137,7 @@ impl ModuleTyping<'_, '_> {
 
     /// The type of the port, signal or handle `expr` names; `None` for any other expression.
     pub(in crate::types) fn carrier_named(&mut self, expr: ExprId) -> Option<Ty> {
-        match self.declared_port(expr) {
+        match self.carriers().declared_port(expr) {
             Some((_, ty)) => Some(ty),
             None => self.handle_named(expr).and_then(|decl| self.handle_type(decl)),
         }

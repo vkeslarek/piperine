@@ -410,7 +410,7 @@ crates/piperine-lang/src/pom/to_ast.rs::ty	1
 crates/piperine-lang/src/types/value/aggregate.rs::decl	1
 crates/piperine-lang/src/types/value/aggregate.rs::ty	1
 crates/piperine-lang/src/types/module/bundle.rs::unparenthesized	1
-crates/piperine-lang/src/types/carrier.rs::stdlib_builtin	1
+crates/piperine-lang/src/types/carrier/carrier.rs::stdlib_builtin	1
 crates/piperine-lang/src/types/catalogue.rs::Arg	1
 crates/piperine-lang/src/types/catalogue.rs::CoreSig	1
 crates/piperine-lang/src/types/catalogue.rs::F64	2
@@ -427,9 +427,9 @@ crates/piperine-lang/src/types/traits/coherence.rs::supertrait_rule	1
 crates/piperine-lang/src/types/analog/continuity.rs::binding_init	1
 crates/piperine-lang/src/types/analog/continuity.rs::inits	1
 crates/piperine-lang/src/types/value/control.rs::match_expr	1
-crates/piperine-lang/src/types/coverage.rs::undelayed_coverage	1
-crates/piperine-lang/src/types/definition.rs::undelayed	1
-crates/piperine-lang/src/types/definition.rs::undelayed_elements	1
+crates/piperine-lang/src/types/carrier/coverage.rs::undelayed_coverage	1
+crates/piperine-lang/src/types/carrier/definition.rs::undelayed	1
+crates/piperine-lang/src/types/carrier/definition.rs::undelayed_elements	1
 crates/piperine-lang/src/types/value/exits.rs::return_expr	1
 crates/piperine-lang/src/types/value/exits.rs::try_expr	1
 crates/piperine-lang/src/types/module/generation.rs::runtime_read	1

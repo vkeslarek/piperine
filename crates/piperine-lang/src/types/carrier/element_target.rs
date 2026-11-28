@@ -8,13 +8,13 @@
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
-use super::check::Checker;
-use super::ty::Length;
-use super::Ty;
+use super::CarrierTyping;
+use crate::types::ty::Length;
+use crate::types::Ty;
 
 /// The element of a carrier a drive reaches, for the rule that a carrier has one drive (§5.2.4).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Element {
+pub(in crate::types) enum Element {
     /// The carrier itself, no element named.
     Whole,
     /// The element a constant index names (row-major for nested arrays).
@@ -33,7 +33,7 @@ pub(super) enum Element {
 impl Element {
     /// Whether two drives reach one element as the checker can tell: an element decided at run time may be any of them;
     /// an element only the elaborator folds is judged there, per instance (§8.2.20, `elab/drive_overlaps.rs`).
-    pub(super) fn overlaps(self, other: Element) -> bool {
+    pub(in crate::types) fn overlaps(self, other: Element) -> bool {
         if self == Element::Any || other == Element::Any {
             return true;
         }
@@ -48,7 +48,7 @@ impl Element {
 
     /// The subscript that names this element for a person (`[2]`, `[2..4]`, row-major flat), empty when it names no constant
     /// element.
-    pub(super) fn subscript(self) -> String {
+    pub(in crate::types) fn subscript(self) -> String {
         match self {
             Element::At(at) => format!("[{at}]"),
             Element::Run(first, length) => format!("[{first}..{}]", first + length),
@@ -77,19 +77,19 @@ pub(super) enum DriveKind {
 
 /// A target resolved: the carrier, the type of the levels it names and the element.
 #[derive(Clone, Debug)]
-pub(super) struct DriveTarget {
+pub(in crate::types) struct DriveTarget {
     /// The port or signal that is the root of the place.
-    pub(super) carrier: DeclId,
+    pub(in crate::types) carrier: DeclId,
     /// The type of the levels the place names: what the written value has.
-    pub(super) held: Ty,
+    pub(in crate::types) held: Ty,
     /// The element the place names.
-    pub(super) element: Element,
+    pub(in crate::types) element: Element,
     /// Whether the place is a `pub` resolved signal of a child (`inst.name`), which this module holds a drive of; the
     /// module's own bookkeeping of definitions and commits does not apply to it.
-    pub(super) reached: bool,
+    pub(in crate::types) reached: bool,
 }
 
-impl Checker<'_> {
+impl CarrierTyping<'_, '_> {
     /// The target of an element or field place `place` (`what`: "commit" or "definition"); `None` after reporting a
     /// target that is no carrier of this module's.
     pub(super) fn projected_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
@@ -175,7 +175,7 @@ impl Checker<'_> {
 
     /// The elements the carrier argument `expr` (`x`, `x[k]`, `x[r]` of a nested array, `rx[k].valid`) hands to a port or reads:
     /// a constant element, a run for a sub-array, any element for an index that does not fold, else the whole carrier.
-    pub(super) fn element_named_by(&mut self, expr: ExprId) -> Element {
+    pub(in crate::types) fn element_named_by(&mut self, expr: ExprId) -> Element {
         let (root, steps) = self.place_steps(expr);
         let Some(decl) = self.carrier_root(root).filter(|_| !steps.is_empty()) else { return Element::Whole };
         let port_ty = match &self.state.design.decl_data(decl).kind {
@@ -189,7 +189,7 @@ impl Checker<'_> {
 
     /// The elements of the leaf `decl` the element indexes `indexes` of an array of bundles name (`lanes[k]` given to a bundle
     /// port reaches the element `k` of each of its leaves, struct of arrays): the whole leaf when there is none.
-    pub(super) fn element_of_indexes(&mut self, decl: DeclId, indexes: &[ExprId]) -> Element {
+    pub(in crate::types) fn element_of_indexes(&mut self, decl: DeclId, indexes: &[ExprId]) -> Element {
         if indexes.is_empty() {
             return Element::Whole;
         }
@@ -230,7 +230,7 @@ impl Checker<'_> {
     /// The element a drive written at `place` reaches of the carrier `carrier`, `written` as its place names it: a drive
     /// written inside generation, or of a carrier declared there, is [`Element::Unfolded`], since which iterations and
     /// arms elaborate it, and so which elements it reaches, is known per instance only (§8.2.23, §8.2.24).
-    pub(super) fn judged_element(&self, place: ExprId, carrier: DeclId, written: Element) -> Element {
+    pub(in crate::types) fn judged_element(&self, place: ExprId, carrier: DeclId, written: Element) -> Element {
         let generated = self.inside_generation(self.state.design.expr_node(place).owner) || self.inside_generation(carrier);
         if generated && written != Element::Any { Element::Unfolded } else { written }
     }

@@ -309,7 +309,7 @@ const CORE_ROWS: &[(&str, CoreSig)] = &[
     ("source_scale", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     ("now", CoreSig { required: &[], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::F64 }),
     // `cross` and `at` are core modules with an `Event` result, placed in event positions only
-    // (`core_call` judges the position, `Checker::event_arguments` the tolerances and the time).
+    // (`core_call` judges the position, `CarrierTyping::event_arguments` the tolerances and the time).
     ("cross", CoreSig { required: &[CoreParam::F64], optional: &[CoreParam::OptionF64, CoreParam::OptionF64], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     ("at", CoreSig { required: &[CoreParam::F64], optional: &[], allowed: Allowed::Everywhere, result: CoreResult::Event }),
     // `freq()` is continuous (§14.4.2, `continuity.rs`); `bound_step(dt)` is a statement of `analog` (§14.10).

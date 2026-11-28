@@ -81,7 +81,7 @@ impl ModuleTyping<'_, '_> {
         let field = self.state.design.decl_data(nominal.decl).children.iter().copied().find(|child| self.state.design.decl_data(*child).name.as_ref().is_some_and(|n| n.text == name.text))?;
         let DeclKind::Field(written) = self.state.design.decl_data(field).kind.clone() else { return None };
         let substitution = self.generics().nominal_substitution(&nominal);
-        let ty = if self.state.design.bundle_struct_of_type(written.ty).is_some() { self.bundle_type(written.ty)? } else { self.port_type(written.ty)? };
+        let ty = if self.state.design.bundle_struct_of_type(written.ty).is_some() { self.bundle_type(written.ty)? } else { self.carriers().port_type(written.ty)? };
         Some((field, substitution.apply(&ty)))
     }
 

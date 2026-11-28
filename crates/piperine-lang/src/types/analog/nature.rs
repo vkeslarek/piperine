@@ -237,9 +237,9 @@ impl AnalogTyping<'_, '_> {
     /// The value of a definition or a commit to `target`: a carrier of a resolved nature takes the
     /// type of the `impl Resolve` its value picks (`ResolveImpls::pick`), any other the type it
     /// holds, mismatching with `code`.
-    pub(in crate::types) fn check_drive_value(&mut self, target: &crate::types::element_target::DriveTarget, value: ExprId, code: &'static str) {
+    pub(in crate::types) fn check_drive_value(&mut self, target: &crate::types::carrier::element_target::DriveTarget, value: ExprId, code: &'static str) {
         let resolved = match self.state.result.carriers.get(&target.carrier).map(Ty::innermost) {
-            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.state.design, *nature).resolved && target.element == crate::types::element_target::Element::Whole => Some(*nature),
+            Some(Ty::Carrier { nature, .. }) if super::nature_rules::NatureRules::of(self.state.design, *nature).resolved && target.element == crate::types::carrier::element_target::Element::Whole => Some(*nature),
             _ => None,
         };
         match resolved {
@@ -267,8 +267,8 @@ impl AnalogTyping<'_, '_> {
     /// `E0187` for a resolved carrier this module drives with no initial value whose driven type has no `Default`
     /// (§5.2.12): the drive has a value from `(0, 0)` on. An undelayed definition gives it one.
     pub(in crate::types) fn missing_resolved_initial_value(&mut self, carrier: DeclId) {
-        let driven_here = self.state.carriers.book.defined.contains_key(&carrier) || self.state.carriers.book.committed.contains_key(&carrier);
-        if !driven_here || self.has_initial(carrier) || self.state.carriers.book.undelayed.contains(&carrier) {
+        let driven_here = self.state.carriers.drives_whole(carrier);
+        if !driven_here || self.carriers().has_initial(carrier) || self.state.carriers.is_driven_without_delay(carrier) {
             return;
         }
         let Some(implementation) = self.state.result.carrier_drive_impls.get(&carrier).and_then(|picked| picked.first().copied()) else { return };

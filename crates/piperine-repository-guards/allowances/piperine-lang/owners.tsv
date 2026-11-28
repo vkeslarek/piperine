@@ -1,5 +1,4 @@
 AnalogLowering	1
-CarrierTyping	1
 DigitalLowering	1
 ElaborationState	1
 FunctionLowering	1

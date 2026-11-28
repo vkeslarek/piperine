@@ -305,7 +305,7 @@ impl ExpressionTyping<'_, '_> {
             self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
             return None;
         }
-        if name == "others" && self.others_on_one_driver(expr, *recv, args) {
+        if name == "others" && self.carriers().others_on_one_driver(expr, *recv, args) {
             return None;
         }
         // `c0.cs.abs()`: the receiver's type is the concrete item's, which nothing here gives (§8.4.8)
@@ -314,7 +314,7 @@ impl ExpressionTyping<'_, '_> {
         }
         // The built-in a stdlib item resolved to, or the built-in row of the language.
         let builtin = match res {
-            Resolution::Decl(f) => match self.stdlib_builtin(*f) {
+            Resolution::Decl(f) => match self.carriers().stdlib_builtin(*f) {
                 Some(builtin) => Some(builtin),
                 // a method the project writes in an `impl` or a trait is typed from its signature
                 None if self.is_project_method(*f) => None,
@@ -332,7 +332,7 @@ impl ExpressionTyping<'_, '_> {
                 "prev" => Some(Builtin::Prev),
                 "changed" => Some(Builtin::Changed),
                 "inflow" => return self.analog().inflow_read(expr, *recv, args),
-                "others" => return self.others_read(expr, *recv, args),
+                "others" => return self.carriers().others_read(expr, *recv, args),
                 _ => {
                     self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
                     return None;
@@ -349,10 +349,10 @@ impl ExpressionTyping<'_, '_> {
             return self.modules().param_history(expr, name == "changed", *recv, args);
         }
         if builtin == Some(Builtin::Prev) {
-            return self.prev_read(expr, *recv, args);
+            return self.carriers().prev_read(expr, *recv, args);
         }
         if let Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) = builtin {
-            return self.edge_read(expr, edge, *recv, args);
+            return self.carriers().edge_read(expr, edge, *recv, args);
         }
         // §7 rule 13: a function of a bundle, called on a bundle carrier or on a bundle handle (`bundle_handles.rs`)
         if let Some(bundle) = self.modules().bundle_named_type(*recv) {

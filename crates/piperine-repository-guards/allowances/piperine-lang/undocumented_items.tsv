@@ -427,7 +427,7 @@ crates/piperine-lang/src/pom/to_ast.rs::Rebuild::path	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::reaction	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::stmt	1
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::ty	1
-crates/piperine-lang/src/types/carrier.rs::Checker::no_repr	1
+crates/piperine-lang/src/types/carrier/carrier.rs::CarrierTyping::no_repr	1
 crates/piperine-lang/src/types/catalogue.rs::::Catalogue	1
 crates/piperine-lang/src/types/catalogue.rs::::Core	1
 crates/piperine-lang/src/types/catalogue.rs::::row	1

@@ -6,11 +6,12 @@
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, FileId, ReactionData};
 
-use super::check::{Checker, Context};
+use crate::types::check::Context;
+use super::CarrierTyping;
 use super::element_target::{DriveKind, DriveTarget, Element};
-use super::Ty;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl CarrierTyping<'_, '_> {
     /// `on head { body }`.
     pub(super) fn reaction(&mut self, reaction: &ReactionData, file: FileId) {
         let span = self.state.design.expr_node(reaction.event).span;
@@ -27,7 +28,7 @@ impl Checker<'_> {
     }
 
     /// `place <- value [after delay];`
-    pub(super) fn commit(&mut self, file: FileId, span: crate::msl::Span, place: ExprId, value: ExprId, after: Option<ExprId>) {
+    pub(in crate::types) fn commit(&mut self, file: FileId, span: crate::msl::Span, place: ExprId, value: ExprId, after: Option<ExprId>) {
         if self.state.values.context() != Context::Reaction {
             self.refuse(file, span, AnalogForm::CommitOutsideReactionBody);
             return;
@@ -39,7 +40,7 @@ impl Checker<'_> {
             Some(_) if self.expressions().is_function_value(value) => {
                 let found = self.expressions().infer(value).map_or_else(|| "a function value".to_string(), |t| t.name(self.state.design));
                 let message = format!("`{found}` has no `Repr`: a carrier holds only a type that implements it (part I §2)");
-                self.coded(file, "E0112", self.state.design.expr_node(value).span, message, "no `Repr`");
+                self.checker.coded(file, "E0112", self.checker.state.design.expr_node(value).span, message, "no `Repr`");
             }
             Some(target) => self.analog().check_drive_value(target, value, "E0432"),
             None => {

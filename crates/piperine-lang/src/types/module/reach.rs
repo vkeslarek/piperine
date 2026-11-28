@@ -8,7 +8,7 @@ use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 use super::ModuleTyping;
-use crate::types::element_target::{DriveTarget, Element};
+use crate::types::carrier::element_target::{DriveTarget, Element};
 use crate::types::Ty;
 
 impl ModuleTyping<'_, '_> {
@@ -178,13 +178,13 @@ impl ModuleTyping<'_, '_> {
             DeclKind::Signal(s) => (s.ty, None),
             _ => return None,
         };
-        let Some(Ty::Carrier { nature, .. }) = self.port_type(declared) else { return None };
+        let Some(Ty::Carrier { nature, .. }) = self.carriers().port_type(declared) else { return None };
         if direction == Some(crate::msl::ast::Dir::In) || !crate::types::analog::nature_rules::NatureRules::of(self.state.design, nature).resolved {
             return None;
         }
         let ExprKind::Field { expr: receiver, .. } = self.state.design.expr_node(place).kind.clone() else { return None };
         self.infer_receiver(receiver)?;
-        let held = self.read_type(item, declared)?;
+        let held = self.carriers().read_type(item, declared)?;
         self.state.result.exprs[place.index()] = Some(held.clone());
         Some(DriveTarget { carrier: item, held, element: Element::Whole, reached: true })
     }
@@ -246,8 +246,8 @@ impl ModuleTyping<'_, '_> {
     /// The type a read of the child's `item` has.
     fn item_type(&mut self, item: DeclId, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
         match self.state.design.decl_data(item).kind.clone() {
-            DeclKind::Port(p) => self.read_type(item, p.ty),
-            DeclKind::Signal(s) => self.read_type(item, s.ty),
+            DeclKind::Port(p) => self.carriers().read_type(item, p.ty),
+            DeclKind::Signal(s) => self.carriers().read_type(item, s.ty),
             DeclKind::Param(p) => self.lower_type(p.ty),
             _ => {
                 let module = self.module_of_let(item)?;

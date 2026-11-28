@@ -83,7 +83,7 @@ impl ModuleTyping<'_, '_> {
             if !matches!(self.leaf_type(leaf.decl).as_ref().map(Ty::innermost), Some(Ty::Carrier { .. })) {
                 continue;
             }
-            let element = self.element_of_indexes(leaf.decl, &source.elements);
+            let element = self.carriers().element_of_indexes(leaf.decl, &source.elements);
             self.hand_over_element(leaf.decl, element, place, span, file);
         }
     }
@@ -93,8 +93,8 @@ impl ModuleTyping<'_, '_> {
         let declared = self.state.design.decl_data(owner).children.iter().copied().find(|child| self.state.design.decl_data(*child).name.as_ref().is_some_and(|name| name.text == field.name.text));
         let Some(declared) = declared else { return };
         let DeclKind::Field(data) = self.state.design.decl_data(declared).kind.clone() else { return };
-        let Some(expected) = self.port_type(data.ty) else { return };
-        let given = self.declared_port(field.value);
+        let Some(expected) = self.carriers().port_type(data.ty) else { return };
+        let given = self.carriers().declared_port(field.value);
         let fits = match (&expected, given.as_ref().map(|(_, ty)| ty)) {
             (Ty::Node(wanted), Some(Ty::Node(found))) => NatureRules::compatible(self.state.design, *wanted, *found),
             (wanted, Some(found)) => wanted == found,
@@ -140,7 +140,7 @@ impl ModuleTyping<'_, '_> {
             return;
         }
         if matches!(&self.state.design.decl_data(target.decl).kind, DeclKind::Port(p) if p.dir == Some(Dir::Out)) && matches!(found.innermost(), Ty::Carrier { .. }) {
-            let element = self.element_of_indexes(given.decl, &given.elements);
+            let element = self.carriers().element_of_indexes(given.decl, &given.elements);
             self.hand_over_element(given.decl, element, place, span, file);
         }
     }
@@ -198,7 +198,7 @@ impl ModuleTyping<'_, '_> {
     /// One field of a literal given to the leaf `leaf`: a carrier or a node of the leaf's nature, else `E0263`.
     fn connect_literal_leaf(&mut self, field: &FieldInit, leaf: &BundleLeaf, file: FileId) {
         let Some(expected) = self.placed_leaf_type(leaf.decl) else { return };
-        let given = self.declared_port(field.value);
+        let given = self.carriers().declared_port(field.value);
         let fits = match (&expected, given.as_ref().map(|(_, ty)| ty)) {
             (Ty::Node(wanted), Some(Ty::Node(found))) => NatureRules::compatible(self.state.design, *wanted, *found),
             (wanted, Some(found)) => wanted == found,
@@ -233,8 +233,8 @@ impl ModuleTyping<'_, '_> {
     /// The type of the port or signal of a leaf: a node, a carrier or an array of them.
     fn leaf_type(&mut self, leaf: DeclId) -> Option<Ty> {
         match &self.state.design.decl_data(leaf).kind {
-            DeclKind::Port(p) => self.port_type(p.ty),
-            DeclKind::Signal(s) => self.port_type(s.ty),
+            DeclKind::Port(p) => self.carriers().port_type(p.ty),
+            DeclKind::Signal(s) => self.carriers().port_type(s.ty),
             _ => None,
         }
     }

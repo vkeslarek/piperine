@@ -10,7 +10,7 @@ use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId
 
 use crate::types::check::Context;
 use super::ModuleTyping;
-use crate::types::coverage::ElementCoverage;
+use crate::types::carrier::coverage::ElementCoverage;
 use crate::types::traits::derives::DerivedTrait;
 use crate::types::analog::nature_rules::NatureRules;
 use crate::types::{Callee, Substitution, Ty};
@@ -20,7 +20,7 @@ impl ModuleTyping<'_, '_> {
     /// A default is the first commit of an `out` carrier (`E0210`); on any other port it is
     /// outside the subset.
     pub(in crate::types) fn port(&mut self, decl: DeclId, port: &PortData, file: FileId) {
-        let ty = self.port_type(port.ty);
+        let ty = self.carriers().port_type(port.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             self.state.result.carriers.insert(decl, carrier.clone());
         }
@@ -46,13 +46,13 @@ impl ModuleTyping<'_, '_> {
         match (&ty, port.dir) {
             // an array of carriers takes an array of values: `[x; K]` or `[a, b, c]` (§5.1.8)
             (Some(array @ Ty::Array(..)), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { .. }) => {
-                self.initial_reads(default);
+                self.carriers().initial_reads(default);
                 let value = array.read_value();
                 self.within(Context::Const, |this| this.expressions().check_as(default, &value, "E0210"));
             }
             // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
             (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.state.design, *nature).resolved => {
-                self.initial_reads(default);
+                self.carriers().initial_reads(default);
                 self.analog().resolved_initial(decl, *nature, default);
             }
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
@@ -62,7 +62,7 @@ impl ModuleTyping<'_, '_> {
             }
             // An `in` port of a top level starts at its written value too (§3.3.4, §23.1 rule 9).
             (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) => {
-                self.initial_reads(default);
+                self.carriers().initial_reads(default);
                 self.within(Context::Const, |this| this.expressions().check_as(default, value, "E0210"));
             }
             _ => {
@@ -126,7 +126,7 @@ impl ModuleTyping<'_, '_> {
     /// `Bit<T>` whose initial value is a `T`; either is `E0210` when the type differs or the
     /// value reads a carrier or a probe (§5.1.5).
     pub(in crate::types) fn signal(&mut self, decl: DeclId, signal: &SignalData) {
-        let ty = self.port_type(signal.ty);
+        let ty = self.carriers().port_type(signal.ty);
         if let Some(carrier) = ty.as_ref().filter(|t| matches!(t, Ty::Carrier { .. }) || (matches!(t, Ty::Array(..)) && t.is_carrier_element())) {
             let held = self.generated_type(decl, carrier.clone());
             self.state.result.carriers.insert(decl, held);
@@ -139,7 +139,7 @@ impl ModuleTyping<'_, '_> {
             self.state.result.carriers.insert(decl, held);
         }
         let (Some(ty), Some(init)) = (ty, signal.init) else { return };
-        self.initial_reads(init);
+        self.carriers().initial_reads(init);
         if let Ty::Carrier { nature, .. } = &ty
             && NatureRules::of(self.state.design, *nature).resolved
         {
@@ -203,12 +203,12 @@ impl ModuleTyping<'_, '_> {
         }
         let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
             self.refuse(file, pat.span, RefusedForm::pattern(&pat.kind));
-            self.infer_event_position(data.value);
+            self.carriers().infer_event_position(data.value);
             return;
         };
         self.state.modules.lets_open.insert(*binding, data.value);
         let reported = self.reported();
-        let ty = self.infer_event_position(data.value);
+        let ty = self.carriers().infer_event_position(data.value);
         self.state.modules.lets_open.remove(binding);
         // a template whose value was refused (a choice of two modules, `E0180`) holds no template to place: its reads and
         // calls add nothing to that diagnostic
@@ -330,11 +330,11 @@ impl ModuleTyping<'_, '_> {
             if dir != Some(crate::msl::ast::Dir::Out) {
                 continue;
             }
-            if let Some((decl, Ty::Carrier { .. })) = self.declared_port(arg.value) {
+            if let Some((decl, Ty::Carrier { .. })) = self.carriers().declared_port(arg.value) {
                 let (file, span) = (self.file_of_expr(arg.value), self.state.design.expr_node(arg.value).span);
                 // a placement is typed once per path that reaches it: it hands the carrier over once
-                if !self.state.carriers.book.handed.iter().any(|(held, _, at, _)| *held == decl && *at == span) {
-                    self.state.carriers.book.handed.push((decl, crate::types::element_target::Element::Whole, span, file));
+                if !self.state.carriers.is_handed_over_at(decl, span) {
+                    self.state.carriers.hand_over(decl, crate::types::carrier::element_target::Element::Whole, span, file);
                 }
             }
         }
@@ -429,7 +429,7 @@ impl ModuleTyping<'_, '_> {
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
                     self.expressions().check_argument(arg.value, &value);
-                    self.definition_value_input(expr, module, port_decl, arg.value);
+                    self.carriers().definition_value_input(expr, module, port_decl, arg.value);
                 }
                 None => {
                     self.expressions().infer(arg.value);
@@ -445,7 +445,7 @@ impl ModuleTyping<'_, '_> {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
         // A discrete carrier read as a value is typed by what it holds; the declaration tells.
-        if let Some((_, Ty::Carrier { .. })) = self.declared_port(arg) {
+        if let Some((_, Ty::Carrier { .. })) = self.carriers().declared_port(arg) {
             let message = format!("a discrete carrier is connected to a port of {} (§6.1)", port.name(self.state.design));
             self.coded(file, "E0250", span, message, "discrete carrier at a continuous port");
             return;
@@ -471,7 +471,7 @@ impl ModuleTyping<'_, '_> {
     fn connect_carrier(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
-        let carrier = self.declared_port(arg);
+        let carrier = self.carriers().declared_port(arg);
         let found = self.expressions().infer(arg);
         match (&carrier, dir) {
             (Some((_, Ty::Node(_))), _) => {
@@ -515,23 +515,23 @@ impl ModuleTyping<'_, '_> {
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        let named = self.element_named_by(arg);
-        let element = self.judged_element(arg, decl, named);
-        self.state.carriers.book.handed.push((decl, element, span, file));
+        let named = self.carriers().element_named_by(arg);
+        let element = self.carriers().judged_element(arg, decl, named);
+        self.state.carriers.hand_over(decl, element, span, file);
     }
 
     /// [`ModuleTyping::hand_over`] of the elements `element` of a carrier no expression names: a field of a bundle given whole
     /// (`s.valid`), or of an element of an array of bundles (`lanes[k]` hands the element `k` of the leaf `lanes.a`). `place` is
     /// the expression that names the bundle: one written inside generation reaches the carrier in the iterations elaboration
     /// takes only.
-    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: crate::types::element_target::Element, place: ExprId, span: Span, file: FileId) {
+    pub(super) fn hand_over_element(&mut self, decl: DeclId, element: crate::types::carrier::element_target::Element, place: ExprId, span: Span, file: FileId) {
         if matches!(&self.state.design.decl_data(decl).kind, DeclKind::Port(p) if p.dir == Some(crate::msl::ast::Dir::In)) {
             let message = "an `in` port of the parent is connected to an `out` port: the parent may not hand over what it does not drive (§8.1.11)".to_string();
             self.coded(file, "E0314", span, message, "an `in` port at an `out` port");
             return;
         }
-        let element = self.judged_element(place, decl, element);
-        self.state.carriers.book.handed.push((decl, element, span, file));
+        let element = self.carriers().judged_element(place, decl, element);
+        self.state.carriers.hand_over(decl, element, span, file);
     }
 
     /// One argument at an array port (§8.1.10): an array of carriers (or of nodes) of the port's shape, or a part of
@@ -539,7 +539,7 @@ impl ModuleTyping<'_, '_> {
     fn connect_array(&mut self, arg: ExprId, dir: Option<crate::msl::ast::Dir>, port: &Ty) {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
-        let carrier = self.declared_port(arg);
+        let carrier = self.carriers().declared_port(arg);
         let found = self.expressions().infer(arg);
         match carrier {
             Some((decl, held)) if held.is_carrier_element() => {
@@ -595,9 +595,9 @@ impl ModuleTyping<'_, '_> {
     /// a definition or a commit of this module, is `E0220`. An initial value is the value of the elements no `out` port
     /// holds (§5.2.6, §8.2.21), so it is `E0223` only once every element is handed (`handed_initial_values`).
     pub(in crate::types) fn handed_drives(&mut self) {
-        let handed = std::mem::take(&mut self.state.carriers.book.handed);
-        let mut given: Vec<(DeclId, crate::types::element_target::Element)> = Vec::new();
-        let mut clean: Vec<(DeclId, crate::types::element_target::Element, Span, FileId)> = Vec::new();
+        let handed = self.state.carriers.take_handed();
+        let mut given: Vec<(DeclId, crate::types::carrier::element_target::Element)> = Vec::new();
+        let mut clean: Vec<(DeclId, crate::types::carrier::element_target::Element, Span, FileId)> = Vec::new();
         for (decl, element, span, file) in handed {
             // the element as the source names it: `mem[2]`, `lanes[1].a` for a field of an array of bundles
             let name = self.state.design.element_naming(decl).name(&element.subscript());
@@ -608,8 +608,8 @@ impl ModuleTyping<'_, '_> {
             let twice = given.iter().any(|(d, e)| *d == decl && e.overlaps(element));
             given.push((decl, element));
             // an element only the elaborator folds is judged there against the whole-carrier drives too (`elab/drive_overlaps.rs`)
-            let whole_drive = element != crate::types::element_target::Element::Unfolded && (self.state.carriers.book.defined.contains_key(&decl) || self.state.carriers.book.committed.contains_key(&decl));
-            let driven_here = whole_drive || self.state.carriers.book.elements.iter().any(|(c, e, _, _)| *c == decl && e.overlaps(element));
+            let whole_drive = element != crate::types::carrier::element_target::Element::Unfolded && self.state.carriers.drives_whole(decl);
+            let driven_here = whole_drive || self.state.carriers.drives_element(decl, element);
             let nature = match self.state.result.carriers.get(&decl).map(Ty::innermost) {
                 Some(Ty::Carrier { nature, .. }) => self.state.design.decl_data(*nature).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
                 _ => String::new(),
@@ -628,11 +628,11 @@ impl ModuleTyping<'_, '_> {
     /// `E0223` for a carrier with an initial value that `out` ports hold every element of: the initial value would apply
     /// to no element, the instance holds the drive (§5.2.6). With an element no `out` port holds, the initial value is
     /// that element's. A length not known yet leaves the judgement to the elaborator of each instance.
-    fn handed_initial_values(&mut self, handed: &[(DeclId, crate::types::element_target::Element, Span, FileId)]) {
+    fn handed_initial_values(&mut self, handed: &[(DeclId, crate::types::carrier::element_target::Element, Span, FileId)]) {
         let mut judged = BTreeSet::new();
         for (decl, _, span, file) in handed {
             // a leaf of a bundle starts at the default of its field, which the instance that holds the drive repeats: no second initial value
-            if !judged.insert(*decl) || !self.has_initial(*decl) || self.state.design.leaf_owner(*decl).is_some() {
+            if !judged.insert(*decl) || !self.carriers().has_initial(*decl) || self.state.design.leaf_owner(*decl).is_some() {
                 continue;
             }
             let Some(held) = self.state.result.carriers.get(decl).cloned() else { continue };
@@ -680,15 +680,15 @@ impl ModuleTyping<'_, '_> {
                 continue;
             }
             // a carrier with no initial value starts at its `Default`: a hand-written one is a function the elaborator folds
-            if !self.has_initial(decl) {
+            if !self.carriers().has_initial(decl) {
                 self.reach_written_defaults(&value);
             }
-            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.state.design, nature).one_driver || self.trait_typing().implements(&value, DerivedTrait::Default) {
+            if !is_carrier || self.carriers().has_initial(decl) || !NatureRules::of(self.state.design, nature).one_driver || self.trait_typing().implements(&value, DerivedTrait::Default) {
                 continue;
             }
             // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
             let name = item.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            let coverage = self.driven_coverage(decl, &held);
+            let coverage = self.carriers().driven_coverage(decl, &held);
             if coverage.is_deferred() {
                 self.state.result.deferred_coverage.missing_initial.insert(decl);
                 continue;

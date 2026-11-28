@@ -14,7 +14,7 @@ impl ExpressionTyping<'_, '_> {
     /// context, naming the function and the position.
     pub(super) fn check_call_class(&mut self, expr: ExprId, function: DeclId) {
         // a definition that reads the solve is `E0336` (§8.2.5), the rule that names it: it is not asked twice
-        if self.state.values.context != Context::Const || self.state.carriers.in_definition > 0 {
+        if self.state.values.context != Context::Const || self.state.carriers.inside_definition() {
             return;
         }
         let position = "a const context";

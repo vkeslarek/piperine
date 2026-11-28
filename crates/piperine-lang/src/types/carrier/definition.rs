@@ -11,14 +11,14 @@ use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, DefinitionData, ExprId, ExprKind, Resolution};
 
-use super::analog::nature_rules::NatureRules;
-use super::check::Checker;
+use crate::types::analog::nature_rules::NatureRules;
+use super::CarrierTyping;
 use super::element_target::{DriveKind, DriveTarget, Element};
-use super::Ty;
+use crate::types::Ty;
 
 /// What one module drives, so far: by carrier, where.
 #[derive(Debug, Default)]
-pub(super) struct DriveBook {
+pub(in crate::types) struct DriveBook {
     /// The carriers a definition drives.
     pub(super) defined: BTreeMap<DeclId, Span>,
     /// The carriers a commit drives.
@@ -41,7 +41,7 @@ pub(super) struct DriveBook {
     pub(super) refused: BTreeSet<DeclId>,
 }
 
-impl Checker<'_> {
+impl CarrierTyping<'_, '_> {
     /// The carrier `place` names and the value type it holds, when this module may drive it;
     /// else `E0222` naming `what` and `None`. A form of place the subset does not have (an
     /// element, a field) is `P0001`.
@@ -51,7 +51,7 @@ impl Checker<'_> {
         Some(DriveTarget { element, ..written })
     }
 
-    /// [`Checker::drive_target`] with the element as the place writes it, before generation is taken into account.
+    /// [`CarrierTyping::drive_target`] with the element as the place writes it, before generation is taken into account.
     fn written_target(&mut self, place: ExprId, what: &str) -> Option<DriveTarget> {
         let node = self.state.design.expr_node(place).clone();
         let file = self.file_of_expr(place);
@@ -145,7 +145,7 @@ impl Checker<'_> {
     }
 
     /// `place = value [after delay];`
-    pub(super) fn definition(&mut self, data: &DefinitionData) {
+    pub(in crate::types) fn definition(&mut self, data: &DefinitionData) {
         self.state.carriers.in_definition += 1;
         self.definition_parts(data);
         self.state.carriers.in_definition -= 1;
@@ -219,7 +219,7 @@ impl Checker<'_> {
     /// reads, directly or through a `let` (§8.3.9): each read is checked as if the caller's expression
     /// were written there, and a definition is discrete (§8.2.5), so it is `E0336` at the call `call`
     /// naming the input. A discrete argument, or an input only an `analog` block reads, is accepted.
-    pub(super) fn definition_value_input(&mut self, call: ExprId, module: DeclId, input: DeclId, arg: ExprId) {
+    pub(in crate::types) fn definition_value_input(&mut self, call: ExprId, module: DeclId, input: DeclId, arg: ExprId) {
         let read_by_a_definition = self.state.design.decl_data(module).children.clone().into_iter().any(|child| match &self.state.design.decl_data(child).kind {
             DeclKind::Definition(definition) => [Some(definition.value), definition.after].into_iter().flatten().any(|expr| self.modules().reads_decl(expr, input, &mut Vec::new())),
             _ => false,
@@ -234,7 +234,7 @@ impl Checker<'_> {
     }
 
     /// Whether a port or a signal declares an initial value.
-    pub(super) fn has_initial(&self, carrier: DeclId) -> bool {
+    pub(in crate::types) fn has_initial(&self, carrier: DeclId) -> bool {
         match &self.state.design.decl_data(carrier).kind {
             DeclKind::Port(p) => p.default.is_some(),
             DeclKind::Signal(s) => s.init.is_some(),
@@ -269,7 +269,7 @@ impl Checker<'_> {
 
     /// `E0339` once per loop of undelayed definitions: a drive that depends on itself with no
     /// reaction and no `after` in between (§8.2.3).
-    pub(super) fn definition_loops(&mut self) {
+    pub(in crate::types) fn definition_loops(&mut self) {
         let loops = std::mem::take(&mut self.state.carriers.book.loops);
         let targets: Vec<DeclId> = loops.iter().map(|(t, _, _)| *t).collect();
         let edges: BTreeMap<DeclId, BTreeSet<DeclId>> = loops.iter().map(|(t, _, reads)| (*t, reads.iter().copied().filter(|r| targets.contains(r)).collect())).collect();
