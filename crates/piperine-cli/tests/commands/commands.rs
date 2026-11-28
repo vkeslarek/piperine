@@ -104,7 +104,7 @@ fn check_prints_ok_with_the_counts() {
 
 #[test]
 fn check_renders_every_diagnostic_and_exits_1() {
-    // Book claims held here: errors~a1afa480, structure~58f974e3
+    // Book claims held here: errors~a1afa480
     // CLI-14 AC 3: every diagnostic of every run, no `ok` line, exit 1. A type error in the
     // bench of a copy of `rc` is seen by both of its runs (`op` and `step` share it) and
     // reported with its code, file and line; the two runs share the source, so it is reported
