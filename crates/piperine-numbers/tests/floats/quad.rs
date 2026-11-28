@@ -3,12 +3,11 @@
 //! overflow, cancellation and deterministic random operands (CV-31; IEEE 754-2019 clause 5, H.2).
 
 use crate::oracle;
-use crate::random;
 
 use oracle::ExactOracle;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::quad::Float128;
-use random::Xorshift;
+use piperine_device_fixtures::random::Xorshift;
 use std::cmp::Ordering;
 
 /// Operand generation and comparison for binary128 tests.

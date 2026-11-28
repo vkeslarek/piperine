@@ -1,11 +1,10 @@
 //! `Limbs` and the wide integers against exact oracles: `num-bigint` for any width, `u128` and
 //! `i128` wrapping arithmetic for widths up to 128 bits (CV-32; design-d.md "Tech Decisions").
 
-use crate::random;
 
 use num_bigint::BigUint;
 use piperine_numbers::limbs::{Limbs, ToLimbs};
-use random::Xorshift;
+use piperine_device_fixtures::random::Xorshift;
 
 /// The big-integer oracle: conversions between limbs and `BigUint`, and random limb vectors.
 struct BigOracle;

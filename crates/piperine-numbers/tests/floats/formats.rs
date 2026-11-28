@@ -3,7 +3,6 @@
 //! (CV-30, CV-31; IEEE 754-2019 sections 4.3.1 and 7.4).
 
 use crate::exact;
-use crate::random;
 
 use num_bigint::BigUint;
 use num_bigint::BigInt;
@@ -11,7 +10,7 @@ use piperine_numbers::decimal::DecimalText;
 use piperine_numbers::format::{BinaryFormat, FloatClass};
 use piperine_numbers::limbs::ToLimbs;
 use exact::ExactRational;
-use random::Xorshift;
+use piperine_device_fixtures::random::Xorshift;
 
 /// Big-integer helper shared with the integer targets.
 struct BigOracle;

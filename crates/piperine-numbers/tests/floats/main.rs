@@ -16,5 +16,3 @@ mod oracle;
 mod precision;
 mod quad;
 mod transcendental;
-#[path = "../integers/random.rs"]
-mod random;

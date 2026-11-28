@@ -15,24 +15,29 @@ use piperine_ir_fixtures::devices;
 
 use devices::Devices;
 
-/// Fills a staging directory the way a build does, with `tag` as the library's bytes.
-fn fill(staging: &Path, tag: &str) -> Result<(), Error> {
-    let entry = Entry::at(staging);
-    for (path, text) in [
-        (entry.source(), "// design"),
-        (entry.runtime(), "// rt"),
-        (entry.library(), tag),
-    ] {
-        std::fs::write(&path, text).map_err(|e| Error::Cache { dir: staging.to_path_buf(), cause: e.to_string() })?;
-    }
-    Ok(())
-}
+/// Associated test helpers of `cache`, grouped on one fixture type.
+struct CacheFixture;
 
-fn names(dir: &Path) -> Vec<String> {
-    let mut v: Vec<String> =
-        std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
-    v.sort();
-    v
+impl CacheFixture {
+    /// Fills a staging directory the way a build does, with `tag` as the library's bytes.
+    fn fill(staging: &Path, tag: &str) -> Result<(), Error> {
+        let entry = Entry::at(staging);
+        for (path, text) in [
+            (entry.source(), "// design"),
+            (entry.runtime(), "// rt"),
+            (entry.library(), tag),
+        ] {
+            std::fs::write(&path, text).map_err(|e| Error::Cache { dir: staging.to_path_buf(), cause: e.to_string() })?;
+        }
+        Ok(())
+    }
+
+    fn names(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> =
+            std::fs::read_dir(dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        v.sort();
+        v
+    }
 }
 
 // RS-04 AC 4: two builds at the same time on an empty cache both complete and leave one
@@ -49,7 +54,7 @@ fn two_racing_builds_leave_one_entry_and_no_staging() {
             std::thread::spawn(move || {
                 cache.build(&key, "rustc 1.98.0", &["--edition", "2024"], |staging| {
                     barrier.wait();
-                    fill(staging, &format!("library built by thread {i}"))
+                    CacheFixture::fill(staging, &format!("library built by thread {i}"))
                 })
             })
         })
@@ -57,9 +62,9 @@ fn two_racing_builds_leave_one_entry_and_no_staging() {
     let entries: Vec<Entry> = handles.into_iter().map(|h| h.join().unwrap().expect("every build completes")).collect();
     assert!(entries.windows(2).all(|w| w[0] == w[1]), "all builds return the one entry");
 
-    assert_eq!(names(cache.rust_dir()), vec![key.as_str().to_string()], "one entry, no staging directory");
+    assert_eq!(CacheFixture::names(cache.rust_dir()), vec![key.as_str().to_string()], "one entry, no staging directory");
     let entry = cache.entry(&key).expect("the entry is complete");
-    assert_eq!(names(entry.dir()).len(), 4, "design.rs, rt.rs, library, manifest");
+    assert_eq!(CacheFixture::names(entry.dir()).len(), 4, "design.rs, rt.rs, library, manifest");
     // the manifest belongs to the library that stayed (RS-04 AC 5)
     let library = std::fs::read(entry.library()).unwrap();
     let manifest = entry.manifest().unwrap();
@@ -92,9 +97,9 @@ fn two_racing_builds_leave_one_entry_and_no_staging() {
         h.join().unwrap().unwrap_or_else(|e| panic!("compile {i} of 8 completes and loads: {e}"));
     }
     let rust = Cache::at(root.path()).unwrap();
-    let left: Vec<String> = names(rust.rust_dir()).into_iter().filter(|n| !n.starts_with("abi-")).collect();
+    let left: Vec<String> = CacheFixture::names(rust.rust_dir()).into_iter().filter(|n| !n.starts_with("abi-")).collect();
     assert_eq!(left.len(), 1, "one design entry, no staging directory: {left:?}");
-    assert!(names(rust.rust_dir()).iter().all(|n| !n.starts_with('.')), "no staging directory left");
+    assert!(CacheFixture::names(rust.rust_dir()).iter().all(|n| !n.starts_with('.')), "no staging directory left");
 }
 
 // RS-04 AC 8: a directory that cannot be created or written fails with an error naming it.

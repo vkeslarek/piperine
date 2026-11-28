@@ -20,7 +20,7 @@ const DOCUMENTED_ARROWS: [(&str, &[&str]); 18] = [
     ("piperine-ir-fixtures", &["piperine-ir"]),
     ("piperine-lang", &["piperine-ir", "piperine-numbers"]),
     ("piperine-numbers", &[]),
-    ("piperine-parity", &["piperine-api", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-solver", "piperine-transpile"]),
+    ("piperine-parity", &["piperine-abi", "piperine-api", "piperine-interp", "piperine-ir", "piperine-lang", "piperine-plan", "piperine-solver", "piperine-transpile"]),
     ("piperine-plan", &["piperine-abi", "piperine-ir", "piperine-solver"]),
     ("piperine-project", &["piperine-lang"]),
     ("piperine-repository-guards", &[]),

@@ -3,7 +3,6 @@
 //! published digits (CV-31). Every bound is checked exactly: no tolerance.
 
 use crate::exact;
-use crate::random;
 
 use exact::ExactRational;
 use num_bigint::{BigInt, BigUint};
@@ -12,7 +11,7 @@ use piperine_numbers::quad::Float128;
 use piperine_numbers::reduction::ArgumentReduction;
 use piperine_numbers::ziv::ZivRounding;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
-use random::Xorshift;
+use piperine_device_fixtures::random::Xorshift;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;

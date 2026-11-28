@@ -3,14 +3,13 @@
 //! `f32` and `f64` to each other, and `u64`/`i64` with `f32`/`f64` (CV-30, CV-31, CV-32).
 
 use crate::exact;
-use crate::random;
 
 use exact::ExactRational;
 use num_bigint::{BigInt, BigUint, Sign};
 use piperine_numbers::convert::NumberConversion;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::wide::{WideInt, WideUInt};
-use random::Xorshift;
+use piperine_device_fixtures::random::Xorshift;
 
 /// The four float formats, with a name for failure messages.
 const FORMATS: [(&str, BinaryFormat); 4] = [("f16", BinaryFormat::HALF), ("f32", BinaryFormat::SINGLE), ("f64", BinaryFormat::DOUBLE), ("f128", BinaryFormat::QUAD)];

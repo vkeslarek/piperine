@@ -320,23 +320,28 @@ mod tests {
     use piperine_ir_fixtures::alone::Alone;
     use piperine_ir_fixtures::digital::Buck;
 
-    /// Every discrete function of the body `make` builds, by its name in the shape.
-    fn printed(make: fn(&mut IrBuilder) -> BodyId, name: &str) -> String {
-        let (ir, body) = Alone::design(make);
-        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-        let printer = DigitalPrinter::new(ir.body(body), &plan);
-        let k = plan
-            .shape()
-            .shape()
-            .functions
-            .iter()
-            .position(|f| f.name.as_str() == name)
-            .unwrap_or_else(|| panic!("no function `{name}`"));
-        match plan.functions()[k].mode {
-            Mode::Drive(_) => printer.drive(k),
-            _ => printer.event(k),
+    /// Associated test helpers of `digital`, grouped on one fixture type.
+    struct DigitalFixture;
+
+    impl DigitalFixture {
+        /// Every discrete function of the body `make` builds, by its name in the shape.
+        fn printed(make: fn(&mut IrBuilder) -> BodyId, name: &str) -> String {
+            let (ir, body) = Alone::design(make);
+            let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
+            let printer = DigitalPrinter::new(ir.body(body), &plan);
+            let k = plan
+                .shape()
+                .shape()
+                .functions
+                .iter()
+                .position(|f| f.name.as_str() == name)
+                .unwrap_or_else(|| panic!("no function `{name}`"));
+            match plan.functions()[k].mode {
+                Mode::Drive(_) => printer.drive(k),
+                _ => printer.event(k),
+            }
+            .unwrap_or_else(|e| panic!("{e}"))
         }
-        .unwrap_or_else(|e| panic!("{e}"))
     }
 
     #[test]
@@ -352,7 +357,7 @@ fn sample_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
-        assert_eq!(printed(Buck::dpwm, "drive:sample"), sample);
+        assert_eq!(DigitalFixture::printed(Buck::dpwm, "drive:sample"), sample);
 
         // abi.md §11.4: the flip-flop's `rise` is `clk` changed with `clk` high, written as the
         // pin's `CHANGED` byte, nonzero when it fires (the IR's `rise()` reads `[clk.VALUE,
@@ -367,7 +372,7 @@ fn event0(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     cx_.set(0, u8::from(fired_));
     Ok(())
 }";
-        assert_eq!(printed(Buck::dff, "event:0"), rise);
+        assert_eq!(DigitalFixture::printed(Buck::dff, "event:0"), rise);
 
         // dpwm.msl:10 `on clk.changed()`: no guard, so the event is the `CHANGED` byte, and
         // the clock's value is not read at all
@@ -380,7 +385,7 @@ fn event0(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     cx_.set(0, u8::from(fired_));
     Ok(())
 }";
-        assert_eq!(printed(Buck::osc, "event:0"), tick);
+        assert_eq!(DigitalFixture::printed(Buck::osc, "event:0"), tick);
 
         // power.msl:76 `hs_gate = (hs_cmd & !ls_cmd) after tpd`: an `after` moves the value to the
         // private pin `drive:hs_gate.now` (RS-12 AC 5), the drive's own function writes it, and the
@@ -395,7 +400,7 @@ fn hs_gate_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
-        assert_eq!(printed(Buck::gate_driver, "drive:hs_gate"), gate);
+        assert_eq!(DigitalFixture::printed(Buck::gate_driver, "drive:hs_gate"), gate);
         let changed = "\
 // function 3 `drive:hs_gate.changed`: reads hs_gate_now_, hs_gate_now_changed_; writes drive:hs_gate.changed @ power.msl:76:5
 fn hs_gate_drive_changed(cx_: &mut Eval<'_>) -> Result<(), Fault> {
@@ -405,7 +410,7 @@ fn hs_gate_drive_changed(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     cx_.set(0, u8::from(fired_));
     Ok(())
 }";
-        assert_eq!(printed(Buck::gate_driver, "drive:hs_gate.changed"), changed);
+        assert_eq!(DigitalFixture::printed(Buck::gate_driver, "drive:hs_gate.changed"), changed);
 
         // control.msl:24 `at_target = reference == target;` over two integers
         let at_target = "\
@@ -418,6 +423,6 @@ fn at_target_drive(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     rt::Carried::write_pin(value_, cx_.out_bytes(0));
     Ok(())
 }";
-        assert_eq!(printed(Buck::ref_ramp, "drive:at_target"), at_target);
+        assert_eq!(DigitalFixture::printed(Buck::ref_ramp, "drive:at_target"), at_target);
     }
 }

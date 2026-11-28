@@ -807,11 +807,16 @@ mod tests {
         (b.finish(top), [r, c, v, i, d])
     }
 
-    /// The text of the `terms` function of `body`.
-    fn terms(ir: &Ir, body: BodyId) -> String {
-        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-        let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
-        AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"))
+    /// Associated test helpers of `analog`, grouped on one fixture type.
+    struct AnalogFixture;
+
+    impl AnalogFixture {
+        /// The text of the `terms` function of `body`.
+        fn terms(ir: &Ir, body: BodyId) -> String {
+            let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
+            let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
+            AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"))
+        }
     }
 
     /// A probe that ends on an own terminal, which `check()` keeps out of a branch, has no text: the
@@ -859,7 +864,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, r), resistor);
+        assert_eq!(AnalogFixture::terms(&ir, r), resistor);
 
         // `i(p, n) +> ddt(c * v(p, n))` (devices.msl:14): a charge is never affine, so it is
         // written as its value at the iterate
@@ -890,7 +895,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, c), capacitor);
+        assert_eq!(AnalogFixture::terms(&ir, c), capacitor);
     }
 
     #[test]
@@ -942,8 +947,8 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, d), diode);
-        let text = terms(&ir, d);
+        assert_eq!(AnalogFixture::terms(&ir, d), diode);
+        let text = AnalogFixture::terms(&ir, d);
         assert!(!text.contains("vcrit") && !text.contains("pnjlim") && !text.contains("v(a, k)"), "{text}");
     }
 
@@ -997,6 +1002,6 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, v), vsource);
+        assert_eq!(AnalogFixture::terms(&ir, v), vsource);
     }
 }

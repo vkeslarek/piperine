@@ -563,106 +563,191 @@ mod tests {
 
     const OPS: [&str; 8] = ["+", "-", "*", "/", "%", "&", "|", "^"];
 
-    /// Runs `f` and returns its panic message, `None` when it does not panic.
-    fn panic_of(f: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
-        std::panic::catch_unwind(f).err().map(|e| {
-            e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
-        })
-    }
+    /// Associated test helpers of `int`, grouped on one fixture type.
+    struct IntegerFixture;
 
-    /// Every operator of `UInt<N>` against the reference, at the boundaries and 1000 random
-    /// pairs.
-    fn unsigned<const N: u32>() {
-        let max = UInt::<N>::MAX;
-        let mut values = vec![0, 1, 2, max / 2, max / 2 + 1, max.saturating_sub(1), max];
-        let mut words = Words(u64::from(N) * 7919);
-        let pairs: Vec<(u64, u64)> = (0..1000).map(|_| (words.next().unwrap_or(0) & max, words.next().unwrap_or(0) & max)).collect();
-        values.retain(|v| *v <= max);
-        values.sort_unstable();
-        values.dedup();
-        let edges: Vec<(u64, u64)> = values.iter().flat_map(|a| values.iter().map(move |b| (*a, *b))).collect();
-        for (a, b) in edges.into_iter().chain(pairs) {
-            let (x, y) = (UInt::<N>::new(a), UInt::<N>::new(b));
-            assert_eq!((x.get(), y.get()), (a, b), "UInt<{N}> holds {a} and {b}");
-            for op in OPS {
-                let got = match op {
-                    "/" | "%" if b == 0 => {
-                        let message = panic_of(move || {
-                            let _ = if op == "/" { x / y } else { x % y };
-                        });
-                        let what = if op == "/" { "division" } else { "remainder" };
-                        let message = message.unwrap_or_else(|| panic!("UInt<{N}> {a} {op} 0 did not panic"));
-                        assert!(message.contains(what) && message.contains(&format!("UInt<{N}>")), "the panic names the operation: {message}");
-                        continue;
-                    }
-                    "+" => x + y,
-                    "-" => x - y,
-                    "*" => x * y,
-                    "/" => x / y,
-                    "%" => x % y,
-                    "&" => x & y,
-                    "|" => x | y,
-                    _ => x ^ y,
-                };
-                let want = Reference::apply(op, i128::from(a), i128::from(b)).map(|v| Reference::unsigned(v, N));
-                assert_eq!(Some(i128::from(got.get())), want, "UInt<{N}>: {a} {op} {b}");
-            }
-            assert_eq!(i128::from((-x).get()), Reference::unsigned(-i128::from(a), N), "UInt<{N}>: -{a}");
-            assert_eq!(i128::from((!x).get()), Reference::unsigned(!i128::from(a), N), "UInt<{N}>: !{a}");
-            assert_eq!(x < y, a < b, "UInt<{N}>: {a} < {b}");
-            assert_eq!(x == y, a == b, "UInt<{N}>: {a} == {b}");
-            assert_eq!(x.min(y).get(), a.min(b));
-            assert_eq!(x.max(y).get(), a.max(b));
+    impl IntegerFixture {
+        /// Runs `f` and returns its panic message, `None` when it does not panic.
+        fn panic_of(f: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
+            std::panic::catch_unwind(f).err().map(|e| {
+                e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
+            })
         }
-        // `u9` 511 + 1 is 0 (spec RS-10, Independent Test)
-        if N == 9 {
-            assert_eq!(UInt::<9>::new(511) + UInt::<9>::new(1), UInt::<9>::new(0));
-        }
-    }
 
-    /// Every operator of `Int<N>` against the reference, at the boundaries and 1000 random
-    /// pairs.
-    fn signed<const N: u32>() {
-        let (min, max) = (Int::<N>::MIN, Int::<N>::MAX);
-        let mut values = vec![min, min + 1, -2, -1, 0, 1, 2, max - 1, max];
-        values.retain(|v| (min..=max).contains(v));
-        values.sort_unstable();
-        values.dedup();
-        let mut words = Words(u64::from(N) * 104_729);
-        let mut draw = || Int::<N>::new(words.next().unwrap_or(0) as i64).get();
-        let pairs: Vec<(i64, i64)> = (0..1000).map(|_| (draw(), draw())).collect();
-        let edges: Vec<(i64, i64)> = values.iter().flat_map(|a| values.iter().map(move |b| (*a, *b))).collect();
-        for (a, b) in edges.into_iter().chain(pairs) {
-            let (x, y) = (Int::<N>::new(a), Int::<N>::new(b));
-            assert_eq!((x.get(), y.get()), (a, b), "Int<{N}> holds {a} and {b}");
-            for op in OPS {
-                let got = match op {
-                    "/" | "%" if b == 0 => {
-                        let message = panic_of(move || {
-                            let _ = if op == "/" { x / y } else { x % y };
-                        });
-                        let what = if op == "/" { "division" } else { "remainder" };
-                        let message = message.unwrap_or_else(|| panic!("Int<{N}> {a} {op} 0 did not panic"));
-                        assert!(message.contains(what) && message.contains(&format!("Int<{N}>")), "the panic names the operation: {message}");
-                        continue;
-                    }
-                    "+" => x + y,
-                    "-" => x - y,
-                    "*" => x * y,
-                    "/" => x / y,
-                    "%" => x % y,
-                    "&" => x & y,
-                    "|" => x | y,
-                    _ => x ^ y,
-                };
-                let want = Reference::apply(op, i128::from(a), i128::from(b)).map(|v| Reference::signed(v, N));
-                assert_eq!(Some(i128::from(got.get())), want, "Int<{N}>: {a} {op} {b}");
+        /// Every operator of `UInt<N>` against the reference, at the boundaries and 1000 random
+        /// pairs.
+        fn unsigned<const N: u32>() {
+            let max = UInt::<N>::MAX;
+            let mut values = vec![0, 1, 2, max / 2, max / 2 + 1, max.saturating_sub(1), max];
+            let mut words = Words(u64::from(N) * 7919);
+            let pairs: Vec<(u64, u64)> = (0..1000).map(|_| (words.next().unwrap_or(0) & max, words.next().unwrap_or(0) & max)).collect();
+            values.retain(|v| *v <= max);
+            values.sort_unstable();
+            values.dedup();
+            let edges: Vec<(u64, u64)> = values.iter().flat_map(|a| values.iter().map(move |b| (*a, *b))).collect();
+            for (a, b) in edges.into_iter().chain(pairs) {
+                let (x, y) = (UInt::<N>::new(a), UInt::<N>::new(b));
+                assert_eq!((x.get(), y.get()), (a, b), "UInt<{N}> holds {a} and {b}");
+                for op in OPS {
+                    let got = match op {
+                        "/" | "%" if b == 0 => {
+                            let message = IntegerFixture::panic_of(move || {
+                                let _ = if op == "/" { x / y } else { x % y };
+                            });
+                            let what = if op == "/" { "division" } else { "remainder" };
+                            let message = message.unwrap_or_else(|| panic!("UInt<{N}> {a} {op} 0 did not panic"));
+                            assert!(message.contains(what) && message.contains(&format!("UInt<{N}>")), "the panic names the operation: {message}");
+                            continue;
+                        }
+                        "+" => x + y,
+                        "-" => x - y,
+                        "*" => x * y,
+                        "/" => x / y,
+                        "%" => x % y,
+                        "&" => x & y,
+                        "|" => x | y,
+                        _ => x ^ y,
+                    };
+                    let want = Reference::apply(op, i128::from(a), i128::from(b)).map(|v| Reference::unsigned(v, N));
+                    assert_eq!(Some(i128::from(got.get())), want, "UInt<{N}>: {a} {op} {b}");
+                }
+                assert_eq!(i128::from((-x).get()), Reference::unsigned(-i128::from(a), N), "UInt<{N}>: -{a}");
+                assert_eq!(i128::from((!x).get()), Reference::unsigned(!i128::from(a), N), "UInt<{N}>: !{a}");
+                assert_eq!(x < y, a < b, "UInt<{N}>: {a} < {b}");
+                assert_eq!(x == y, a == b, "UInt<{N}>: {a} == {b}");
+                assert_eq!(x.min(y).get(), a.min(b));
+                assert_eq!(x.max(y).get(), a.max(b));
             }
-            assert_eq!(i128::from((-x).get()), Reference::signed(-i128::from(a), N), "Int<{N}>: -{a}");
-            assert_eq!(i128::from((!x).get()), Reference::signed(!i128::from(a), N), "Int<{N}>: !{a}");
-            assert_eq!(x < y, a < b, "Int<{N}>: {a} < {b}");
-            assert_eq!(x.min(y).get(), a.min(b));
-            assert_eq!(x.max(y).get(), a.max(b));
+            // `u9` 511 + 1 is 0 (spec RS-10, Independent Test)
+            if N == 9 {
+                assert_eq!(UInt::<9>::new(511) + UInt::<9>::new(1), UInt::<9>::new(0));
+            }
+        }
+
+        /// Every operator of `Int<N>` against the reference, at the boundaries and 1000 random
+        /// pairs.
+        fn signed<const N: u32>() {
+            let (min, max) = (Int::<N>::MIN, Int::<N>::MAX);
+            let mut values = vec![min, min + 1, -2, -1, 0, 1, 2, max - 1, max];
+            values.retain(|v| (min..=max).contains(v));
+            values.sort_unstable();
+            values.dedup();
+            let mut words = Words(u64::from(N) * 104_729);
+            let mut draw = || Int::<N>::new(words.next().unwrap_or(0) as i64).get();
+            let pairs: Vec<(i64, i64)> = (0..1000).map(|_| (draw(), draw())).collect();
+            let edges: Vec<(i64, i64)> = values.iter().flat_map(|a| values.iter().map(move |b| (*a, *b))).collect();
+            for (a, b) in edges.into_iter().chain(pairs) {
+                let (x, y) = (Int::<N>::new(a), Int::<N>::new(b));
+                assert_eq!((x.get(), y.get()), (a, b), "Int<{N}> holds {a} and {b}");
+                for op in OPS {
+                    let got = match op {
+                        "/" | "%" if b == 0 => {
+                            let message = IntegerFixture::panic_of(move || {
+                                let _ = if op == "/" { x / y } else { x % y };
+                            });
+                            let what = if op == "/" { "division" } else { "remainder" };
+                            let message = message.unwrap_or_else(|| panic!("Int<{N}> {a} {op} 0 did not panic"));
+                            assert!(message.contains(what) && message.contains(&format!("Int<{N}>")), "the panic names the operation: {message}");
+                            continue;
+                        }
+                        "+" => x + y,
+                        "-" => x - y,
+                        "*" => x * y,
+                        "/" => x / y,
+                        "%" => x % y,
+                        "&" => x & y,
+                        "|" => x | y,
+                        _ => x ^ y,
+                    };
+                    let want = Reference::apply(op, i128::from(a), i128::from(b)).map(|v| Reference::signed(v, N));
+                    assert_eq!(Some(i128::from(got.get())), want, "Int<{N}>: {a} {op} {b}");
+                }
+                assert_eq!(i128::from((-x).get()), Reference::signed(-i128::from(a), N), "Int<{N}>: -{a}");
+                assert_eq!(i128::from((!x).get()), Reference::signed(!i128::from(a), N), "Int<{N}>: !{a}");
+                assert_eq!(x < y, a < b, "Int<{N}>: {a} < {b}");
+                assert_eq!(x.min(y).get(), a.min(b));
+                assert_eq!(x.max(y).get(), a.max(b));
+            }
+        }
+
+        /// Shifts of `UInt<N>`/`Int<N>` by `0..=N + 70` against `floor(a · 2^k)` and `floor(a / 2^k)`
+        /// reduced to `N` bits.
+        fn shifts<const N: u32>() {
+            let mut words = Words(u64::from(N) + 5);
+            for _ in 0..50 {
+                let w = words.next().unwrap_or(0);
+                let (u, i) = (UInt::<N>::new(w), Int::<N>::new(w as i64));
+                for k in 0..=u64::from(N) + 70 {
+                    let (ua, ia) = (i128::from(u.get()), i128::from(i.get()));
+                    let shl = |a: i128| if k >= 64 { 0 } else { a.wrapping_mul(1i128 << k) };
+                    let shr = |a: i128| if k >= 127 { if a < 0 { -1 } else { 0 } } else { a >> k };
+                    assert_eq!(i128::from(u.shl_by(k).get()), Reference::unsigned(shl(ua), N), "UInt<{N}> {ua} << {k}");
+                    assert_eq!(i128::from(u.shr_by(k).get()), shr(ua), "UInt<{N}> {ua} >> {k}");
+                    assert_eq!(i128::from(i.shl_by(k).get()), Reference::signed(shl(ia), N), "Int<{N}> {ia} << {k}");
+                    assert_eq!(i128::from(i.shr_by(k).get()), shr(ia), "Int<{N}> {ia} >> {k}");
+                }
+            }
+        }
+
+        /// The saturating, overflow and `pow` rows of `UInt<N>`.
+        fn unsigned_rows<const N: u32>() {
+            let max = UInt::<N>::MAX;
+            let mut words = Words(u64::from(N) * 31);
+            let mut values = vec![0, 1, 2, max / 2, max.saturating_sub(1), max];
+            values.retain(|v| *v <= max);
+            values.extend((0..40).map(|_| words.next().unwrap_or(0) & max));
+            for &a in &values {
+                for &b in &values {
+                    let (x, y) = (UInt::<N>::new(a), UInt::<N>::new(b));
+                    let (ia, ib) = (i128::from(a), i128::from(b));
+                    let range = (0, i128::from(max));
+                    assert_eq!(i128::from(x.saturating_add(y).get()), Rows::hold(ia + ib, range.0, range.1), "u{N}: {a} saturating_add {b}");
+                    assert_eq!(i128::from(x.saturating_sub(y).get()), Rows::hold(ia - ib, range.0, range.1), "u{N}: {a} saturating_sub {b}");
+                    assert_eq!(i128::from(x.saturating_mul(y).get()), Rows::hold(ia.saturating_mul(ib), range.0, range.1), "u{N}: {a} saturating_mul {b}");
+                    assert_eq!(x.add_overflows(y), ia + ib > range.1, "u{N}: {a} add_overflows {b}");
+                    assert_eq!(x.sub_overflows(y), ia - ib < 0, "u{N}: {a} sub_overflows {b}");
+                    assert_eq!(x.mul_overflows(y), ia.saturating_mul(ib) > range.1, "u{N}: {a} mul_overflows {b}");
+                    if b != 0 {
+                        assert_eq!(x.rem_euclid(y).get(), a % b, "u{N}: {a} rem_euclid {b}");
+                    }
+                }
+                for e in [0u32, 1, 2, 5, 13, 70] {
+                    assert_eq!(i128::from(UInt::<N>::new(a).pow(UInt::<32>::new(u64::from(e))).get()), Rows::power(i128::from(a), e, N), "u{N}: {a}.pow({e})");
+                }
+            }
+        }
+
+        /// The same rows of `Int<N>`, with `abs` and `signum`.
+        fn signed_rows<const N: u32>() {
+            let (min, max) = (Int::<N>::MIN, Int::<N>::MAX);
+            let mut words = Words(u64::from(N) * 37);
+            let mut values = vec![min, min + 1, -2, -1, 0, 1, 2, max - 1, max];
+            values.retain(|v| (min..=max).contains(v));
+            values.extend((0..40).map(|_| Int::<N>::new(words.next().unwrap_or(0) as i64).get()));
+            for &a in &values {
+                let x = Int::<N>::new(a);
+                let ia = i128::from(a);
+                let range = (i128::from(min), i128::from(max));
+                assert_eq!(i128::from(x.abs().get()), Reference::signed(ia.abs(), N), "i{N}: {a}.abs()");
+                assert_eq!(i128::from(x.signum().get()), Reference::signed(ia.signum(), N), "i{N}: {a}.signum()");
+                for &b in &values {
+                    let (y, ib) = (Int::<N>::new(b), i128::from(b));
+                    assert_eq!(i128::from(x.saturating_add(y).get()), Rows::hold(ia + ib, range.0, range.1), "i{N}: {a} saturating_add {b}");
+                    assert_eq!(i128::from(x.saturating_sub(y).get()), Rows::hold(ia - ib, range.0, range.1), "i{N}: {a} saturating_sub {b}");
+                    assert_eq!(i128::from(x.saturating_mul(y).get()), Rows::hold(ia.saturating_mul(ib), range.0, range.1), "i{N}: {a} saturating_mul {b}");
+                    assert_eq!(x.add_overflows(y), !(range.0..=range.1).contains(&(ia + ib)), "i{N}: {a} add_overflows {b}");
+                    assert_eq!(x.sub_overflows(y), !(range.0..=range.1).contains(&(ia - ib)), "i{N}: {a} sub_overflows {b}");
+                    assert_eq!(x.mul_overflows(y), !(range.0..=range.1).contains(&(ia.saturating_mul(ib))), "i{N}: {a} mul_overflows {b}");
+                    if b != 0 {
+                        // the Euclidean remainder is in 0..|b|, and `a - r` is a multiple of `b`
+                        let r = i128::from(x.rem_euclid(y).get());
+                        assert!((0..ib.abs()).contains(&r) && (ia - r) % ib == 0, "i{N}: {a} rem_euclid {b} = {r}");
+                    }
+                }
+                for e in [0u32, 1, 2, 5, 13, 70] {
+                    assert_eq!(i128::from(x.pow(UInt::<32>::new(u64::from(e))).get()), Reference::signed(Rows::power(ia, e, N), N), "i{N}: {a}.pow({e})");
+                }
+            }
         }
     }
 
@@ -670,26 +755,26 @@ mod tests {
     fn arithmetic_wraps_at_every_width() {
         // spec RS-10 AC 1, MSL §1 rule 6 and rule 11: `+ - * / %` and unary `-` modulo `2^N`,
         // `Int<N>` in two's complement, a zero divisor a panic; the bit operators with them.
-        unsigned::<1>();
-        unsigned::<3>();
-        unsigned::<8>();
-        unsigned::<9>();
-        unsigned::<12>();
-        unsigned::<16>();
-        unsigned::<31>();
-        unsigned::<32>();
-        unsigned::<63>();
-        unsigned::<64>();
-        signed::<1>();
-        signed::<3>();
-        signed::<8>();
-        signed::<9>();
-        signed::<12>();
-        signed::<16>();
-        signed::<31>();
-        signed::<32>();
-        signed::<63>();
-        signed::<64>();
+        IntegerFixture::unsigned::<1>();
+        IntegerFixture::unsigned::<3>();
+        IntegerFixture::unsigned::<8>();
+        IntegerFixture::unsigned::<9>();
+        IntegerFixture::unsigned::<12>();
+        IntegerFixture::unsigned::<16>();
+        IntegerFixture::unsigned::<31>();
+        IntegerFixture::unsigned::<32>();
+        IntegerFixture::unsigned::<63>();
+        IntegerFixture::unsigned::<64>();
+        IntegerFixture::signed::<1>();
+        IntegerFixture::signed::<3>();
+        IntegerFixture::signed::<8>();
+        IntegerFixture::signed::<9>();
+        IntegerFixture::signed::<12>();
+        IntegerFixture::signed::<16>();
+        IntegerFixture::signed::<31>();
+        IntegerFixture::signed::<32>();
+        IntegerFixture::signed::<63>();
+        IntegerFixture::signed::<64>();
         // signed edge cases written out: MIN / -1 and -MIN wrap to MIN, MIN % -1 is 0, division
         // truncates toward zero and the remainder takes the dividend's sign (as Rust)
         let (min, minus_one) = (Int::<8>::new(-128), Int::<8>::new(-1));
@@ -806,25 +891,6 @@ mod tests {
         }
     }
 
-    /// Shifts of `UInt<N>`/`Int<N>` by `0..=N + 70` against `floor(a · 2^k)` and `floor(a / 2^k)`
-    /// reduced to `N` bits.
-    fn shifts<const N: u32>() {
-        let mut words = Words(u64::from(N) + 5);
-        for _ in 0..50 {
-            let w = words.next().unwrap_or(0);
-            let (u, i) = (UInt::<N>::new(w), Int::<N>::new(w as i64));
-            for k in 0..=u64::from(N) + 70 {
-                let (ua, ia) = (i128::from(u.get()), i128::from(i.get()));
-                let shl = |a: i128| if k >= 64 { 0 } else { a.wrapping_mul(1i128 << k) };
-                let shr = |a: i128| if k >= 127 { if a < 0 { -1 } else { 0 } } else { a >> k };
-                assert_eq!(i128::from(u.shl_by(k).get()), Reference::unsigned(shl(ua), N), "UInt<{N}> {ua} << {k}");
-                assert_eq!(i128::from(u.shr_by(k).get()), shr(ua), "UInt<{N}> {ua} >> {k}");
-                assert_eq!(i128::from(i.shl_by(k).get()), Reference::signed(shl(ia), N), "Int<{N}> {ia} << {k}");
-                assert_eq!(i128::from(i.shr_by(k).get()), shr(ia), "Int<{N}> {ia} >> {k}");
-            }
-        }
-    }
-
     #[test]
     fn a_shift_by_the_width_or_more_is_the_truncated_result() {
         // spec RS-10 AC 4, ROADMAP G5: 0 for `<<` and an unsigned `>>`, the sign for a signed `>>`
@@ -853,16 +919,16 @@ mod tests {
             e.downcast_ref::<String>().cloned().unwrap_or_default()
         });
         assert!(message.is_some_and(|m| m.contains("negative") && m.contains("<<")));
-        shifts::<1>();
-        shifts::<3>();
-        shifts::<8>();
-        shifts::<9>();
-        shifts::<12>();
-        shifts::<16>();
-        shifts::<31>();
-        shifts::<32>();
-        shifts::<63>();
-        shifts::<64>();
+        IntegerFixture::shifts::<1>();
+        IntegerFixture::shifts::<3>();
+        IntegerFixture::shifts::<8>();
+        IntegerFixture::shifts::<9>();
+        IntegerFixture::shifts::<12>();
+        IntegerFixture::shifts::<16>();
+        IntegerFixture::shifts::<31>();
+        IntegerFixture::shifts::<32>();
+        IntegerFixture::shifts::<63>();
+        IntegerFixture::shifts::<64>();
     }
 
     /// Widths 1 and 13 have no native type; the rows are checked against the integers in
@@ -881,77 +947,16 @@ mod tests {
         }
     }
 
-    /// The saturating, overflow and `pow` rows of `UInt<N>`.
-    fn unsigned_rows<const N: u32>() {
-        let max = UInt::<N>::MAX;
-        let mut words = Words(u64::from(N) * 31);
-        let mut values = vec![0, 1, 2, max / 2, max.saturating_sub(1), max];
-        values.retain(|v| *v <= max);
-        values.extend((0..40).map(|_| words.next().unwrap_or(0) & max));
-        for &a in &values {
-            for &b in &values {
-                let (x, y) = (UInt::<N>::new(a), UInt::<N>::new(b));
-                let (ia, ib) = (i128::from(a), i128::from(b));
-                let range = (0, i128::from(max));
-                assert_eq!(i128::from(x.saturating_add(y).get()), Rows::hold(ia + ib, range.0, range.1), "u{N}: {a} saturating_add {b}");
-                assert_eq!(i128::from(x.saturating_sub(y).get()), Rows::hold(ia - ib, range.0, range.1), "u{N}: {a} saturating_sub {b}");
-                assert_eq!(i128::from(x.saturating_mul(y).get()), Rows::hold(ia.saturating_mul(ib), range.0, range.1), "u{N}: {a} saturating_mul {b}");
-                assert_eq!(x.add_overflows(y), ia + ib > range.1, "u{N}: {a} add_overflows {b}");
-                assert_eq!(x.sub_overflows(y), ia - ib < 0, "u{N}: {a} sub_overflows {b}");
-                assert_eq!(x.mul_overflows(y), ia.saturating_mul(ib) > range.1, "u{N}: {a} mul_overflows {b}");
-                if b != 0 {
-                    assert_eq!(x.rem_euclid(y).get(), a % b, "u{N}: {a} rem_euclid {b}");
-                }
-            }
-            for e in [0u32, 1, 2, 5, 13, 70] {
-                assert_eq!(i128::from(UInt::<N>::new(a).pow(UInt::<32>::new(u64::from(e))).get()), Rows::power(i128::from(a), e, N), "u{N}: {a}.pow({e})");
-            }
-        }
-    }
-
-    /// The same rows of `Int<N>`, with `abs` and `signum`.
-    fn signed_rows<const N: u32>() {
-        let (min, max) = (Int::<N>::MIN, Int::<N>::MAX);
-        let mut words = Words(u64::from(N) * 37);
-        let mut values = vec![min, min + 1, -2, -1, 0, 1, 2, max - 1, max];
-        values.retain(|v| (min..=max).contains(v));
-        values.extend((0..40).map(|_| Int::<N>::new(words.next().unwrap_or(0) as i64).get()));
-        for &a in &values {
-            let x = Int::<N>::new(a);
-            let ia = i128::from(a);
-            let range = (i128::from(min), i128::from(max));
-            assert_eq!(i128::from(x.abs().get()), Reference::signed(ia.abs(), N), "i{N}: {a}.abs()");
-            assert_eq!(i128::from(x.signum().get()), Reference::signed(ia.signum(), N), "i{N}: {a}.signum()");
-            for &b in &values {
-                let (y, ib) = (Int::<N>::new(b), i128::from(b));
-                assert_eq!(i128::from(x.saturating_add(y).get()), Rows::hold(ia + ib, range.0, range.1), "i{N}: {a} saturating_add {b}");
-                assert_eq!(i128::from(x.saturating_sub(y).get()), Rows::hold(ia - ib, range.0, range.1), "i{N}: {a} saturating_sub {b}");
-                assert_eq!(i128::from(x.saturating_mul(y).get()), Rows::hold(ia.saturating_mul(ib), range.0, range.1), "i{N}: {a} saturating_mul {b}");
-                assert_eq!(x.add_overflows(y), !(range.0..=range.1).contains(&(ia + ib)), "i{N}: {a} add_overflows {b}");
-                assert_eq!(x.sub_overflows(y), !(range.0..=range.1).contains(&(ia - ib)), "i{N}: {a} sub_overflows {b}");
-                assert_eq!(x.mul_overflows(y), !(range.0..=range.1).contains(&(ia.saturating_mul(ib))), "i{N}: {a} mul_overflows {b}");
-                if b != 0 {
-                    // the Euclidean remainder is in 0..|b|, and `a - r` is a multiple of `b`
-                    let r = i128::from(x.rem_euclid(y).get());
-                    assert!((0..ib.abs()).contains(&r) && (ia - r) % ib == 0, "i{N}: {a} rem_euclid {b} = {r}");
-                }
-            }
-            for e in [0u32, 1, 2, 5, 13, 70] {
-                assert_eq!(i128::from(x.pow(UInt::<32>::new(u64::from(e))).get()), Reference::signed(Rows::power(ia, e, N), N), "i{N}: {a}.pow({e})");
-            }
-        }
-    }
-
     #[test]
     fn integer_rows_wrap_saturate_and_test_overflow() {
-        unsigned_rows::<1>();
-        unsigned_rows::<8>();
-        unsigned_rows::<13>();
-        unsigned_rows::<64>();
-        signed_rows::<1>();
-        signed_rows::<8>();
-        signed_rows::<13>();
-        signed_rows::<64>();
+        IntegerFixture::unsigned_rows::<1>();
+        IntegerFixture::unsigned_rows::<8>();
+        IntegerFixture::unsigned_rows::<13>();
+        IntegerFixture::unsigned_rows::<64>();
+        IntegerFixture::signed_rows::<1>();
+        IntegerFixture::signed_rows::<8>();
+        IntegerFixture::signed_rows::<13>();
+        IntegerFixture::signed_rows::<64>();
         // at the native widths every row is Rust's own method
         let mut words = Words(2026);
         for _ in 0..2000 {
@@ -1000,12 +1005,12 @@ mod tests {
 
     #[test]
     fn rem_euclid_by_zero_panics_naming_it() {
-        let message = panic_of(|| {
+        let message = IntegerFixture::panic_of(|| {
             let _ = UInt::<8>::new(5).rem_euclid(UInt::new(0));
         })
         .expect("a zero divisor panics");
         assert!(message.contains("`rem_euclid`") && message.contains("UInt<8>"), "{message}");
-        let message = panic_of(|| {
+        let message = IntegerFixture::panic_of(|| {
             let _ = Int::<13>::new(-5).rem_euclid(Int::new(0));
         })
         .expect("a zero divisor panics");
@@ -1022,21 +1027,21 @@ mod tests {
         assert_eq!(Unwrap::of(true, 7u8, None), 7);
         assert_eq!(Unwrap::of(true, 1.5, Some("never shown")), 1.5);
         // `Option::None.unwrap()` panics with `called `Option::unwrap()` on a `None` value`
-        let rust = panic_of(|| {
+        let rust = IntegerFixture::panic_of(|| {
             let none: Option<u8> = None;
             let _ = none.unwrap();
         })
         .expect("Rust's unwrap panics");
-        assert_eq!(panic_of(|| {
+        assert_eq!(IntegerFixture::panic_of(|| {
             let _ = Unwrap::of(false, 0u8, None);
         }), Some(rust));
         // `Option::None.expect(msg)` panics with `msg`
-        let rust = panic_of(|| {
+        let rust = IntegerFixture::panic_of(|| {
             let none: Option<u8> = None;
             let _ = none.expect("no flag");
         })
         .expect("Rust's expect panics");
-        assert_eq!(panic_of(|| {
+        assert_eq!(IntegerFixture::panic_of(|| {
             let _ = Unwrap::of(false, 0u8, Some("no flag"));
         }), Some(rust));
     }

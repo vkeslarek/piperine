@@ -1,6 +1,5 @@
 //! One body of a hand-built design compiled with `rustc` and called through the device ABI
-//! (`#[path]`-included, never a target itself): the evaluation harness of the printer tests of
-//! `analog-operators`.
+//! (the evaluation harness of the printer tests of `piperine-transpile`'s `analog` and `digital` targets).
 
 use std::sync::Arc;
 
@@ -12,14 +11,14 @@ use piperine_transpile::{Settings, Transpiler};
 
 /// One body of a design compiled and instantiated at its defaults. The cache directory lives as
 /// long as this does.
-pub struct Device {
+pub struct CompiledDevice {
     handle: Handle,
     _cache: tempfile::TempDir,
 }
 
-impl Device {
+impl CompiledDevice {
     /// The body `name` of `ir`, compiled.
-    pub fn of_body(ir: Ir, name: &str) -> Device {
+    pub fn of_body(ir: Ir, name: &str) -> CompiledDevice {
         let cache = tempfile::tempdir().expect("a temp dir");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
         let ir = Arc::new(ir);
@@ -27,7 +26,7 @@ impl Device {
         let compiled = Transpiler::new(ir).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
         let module = Modules::module(&compiled, body).unwrap_or_else(|| panic!("{name} has a module"));
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
-        Device { handle, _cache: cache }
+        CompiledDevice { handle, _cache: cache }
     }
 
     /// Runs function `name` on `reads`, one byte string per read cell, and returns each write as
@@ -52,10 +51,10 @@ impl Device {
     }
 }
 
-/// Bytes of the cells the tests feed.
-pub struct Bytes;
+/// FedBytes of the cells the tests feed.
+pub struct FedBytes;
 
-impl Bytes {
+impl FedBytes {
     /// A known `f64` held by a continuous pin or an `F64` layout.
     pub fn real(v: f64) -> Vec<u8> {
         v.to_le_bytes().to_vec()

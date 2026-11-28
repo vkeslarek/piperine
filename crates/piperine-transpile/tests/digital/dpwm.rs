@@ -27,16 +27,81 @@ const N: i64 = 400;
 const DEAD: i64 = 4;
 const RELEASE: i64 = N - DEAD;
 
-fn oscillator() -> TopDesign {
-    let mut w = TopDesign::new();
-    let osc = Buck::osc(&mut w.b);
-    w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
-    w
+/// Associated test helpers of `dpwm`, grouped on one fixture type.
+struct DpwmFixture;
+
+impl DpwmFixture {
+    fn oscillator() -> TopDesign {
+        let mut w = TopDesign::new();
+        let osc = Buck::osc(&mut w.b);
+        w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
+        w
+    }
+
+    /// The oscillator into `Dpwm`, with `run` true, the duty word 1325, and both current-limit
+    /// inputs known false.
+    fn dpwm_design() -> BuiltDesign {
+        let mut w = TopDesign::new();
+        let osc = Buck::osc(&mut w.b);
+        let dpwm = Buck::dpwm(&mut w.b);
+        let run = w.hold("Run", BIT, Constant::Bool(true));
+        let duty = w.hold("Duty", ValueAliases::u(12), Constant::Int(1325));
+        let off = w.hold("Off", BIT, Constant::Bool(false));
+        w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
+        w.place("run", run, vec![], &[("run", BIT)]);
+        w.place("duty", duty, vec![], &[("duty", ValueAliases::u(12))]);
+        w.place("oc_off", off, vec![], &[("oc", BIT)]);
+        w.place("sink_off", off, vec![], &[("sink_oc", BIT)]);
+        // clk, run, duty, oc, sink_oc, hs, ls, sample, cut, then the signals count, width, frame,
+        // hs_off, hs_cut, ls_cut
+        w.place(
+            "dpwm",
+            dpwm,
+            vec![],
+            &[
+                ("clk", BIT),
+                ("run", BIT),
+                ("duty", ValueAliases::u(12)),
+                ("oc", BIT),
+                ("sink_oc", BIT),
+                ("hs", BIT),
+                ("ls", BIT),
+                ("sample", BIT),
+                ("cut", BIT),
+                ("dpwm.count", ValueAliases::u(9)),
+                ("dpwm.width", ValueAliases::u(9)),
+                ("dpwm.frame", ValueAliases::u(3)),
+                ("dpwm.hs_off", ValueAliases::u(9)),
+                ("dpwm.hs_cut", BIT),
+                ("dpwm.ls_cut", BIT),
+            ],
+        );
+        BuiltDesign::new(w.finish())
+    }
+
+    fn run_once() -> Seen {
+        static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
+        let built = BUILT.get_or_init(|| Mutex::new(DpwmFixture::dpwm_design())).lock().expect("the design is not poisoned");
+        built.run(STOP, 1e-8)
+    }
+
+    /// The bit reversal of a 3-bit frame index.
+    fn reversed(k: i64) -> i64 {
+        ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1)
+    }
+
+    /// The width in counts of the `p`-th full period, `p` from 1: `duty / 8` counts, one more in
+    /// `duty % 8` periods of every 8, picked by the bit-reversed frame index (SPEC §5.2). The frame
+    /// counter is 0 at reset and counts the wraps; the width of a period is latched at the wrap
+    /// that starts it, from the counter value after that wrap (`dpwm.msl`: `frame + 1`).
+    fn width(duty: i64, p: i64) -> i64 {
+        duty / 8 + i64::from(DpwmFixture::reversed(p % 8) < duty % 8)
+    }
 }
 
 #[test]
 fn the_oscillator_toggles_every_half_period() {
-    let w = oscillator();
+    let w = DpwmFixture::oscillator();
     let seen = BuiltDesign::new(w.finish()).run(100e-9, 1e-9);
     // 200 MHz: a period of 5 ns, a toggle every 2.5 ns, from false: true at 2.5 ns, false at
     // 5 ns, ... `k` = 1 to 40 inside 100 ns, and no change at any other instant
@@ -45,76 +110,16 @@ fn the_oscillator_toggles_every_half_period() {
     assert_eq!(seen.transient("clk"), expected);
 }
 
-/// The oscillator into `Dpwm`, with `run` true, the duty word 1325, and both current-limit
-/// inputs known false.
-fn dpwm_design() -> BuiltDesign {
-    let mut w = TopDesign::new();
-    let osc = Buck::osc(&mut w.b);
-    let dpwm = Buck::dpwm(&mut w.b);
-    let run = w.hold("Run", BIT, Constant::Bool(true));
-    let duty = w.hold("Duty", ValueAliases::u(12), Constant::Int(1325));
-    let off = w.hold("Off", BIT, Constant::Bool(false));
-    w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
-    w.place("run", run, vec![], &[("run", BIT)]);
-    w.place("duty", duty, vec![], &[("duty", ValueAliases::u(12))]);
-    w.place("oc_off", off, vec![], &[("oc", BIT)]);
-    w.place("sink_off", off, vec![], &[("sink_oc", BIT)]);
-    // clk, run, duty, oc, sink_oc, hs, ls, sample, cut, then the signals count, width, frame,
-    // hs_off, hs_cut, ls_cut
-    w.place(
-        "dpwm",
-        dpwm,
-        vec![],
-        &[
-            ("clk", BIT),
-            ("run", BIT),
-            ("duty", ValueAliases::u(12)),
-            ("oc", BIT),
-            ("sink_oc", BIT),
-            ("hs", BIT),
-            ("ls", BIT),
-            ("sample", BIT),
-            ("cut", BIT),
-            ("dpwm.count", ValueAliases::u(9)),
-            ("dpwm.width", ValueAliases::u(9)),
-            ("dpwm.frame", ValueAliases::u(3)),
-            ("dpwm.hs_off", ValueAliases::u(9)),
-            ("dpwm.hs_cut", BIT),
-            ("dpwm.ls_cut", BIT),
-        ],
-    );
-    BuiltDesign::new(w.finish())
-}
-
 /// Eight periods and a little: the ninth period's high side would start at the rising edge
 /// 3600 (17 997.5 ns).
 const STOP: f64 = 17.99e-6;
 
-fn run_once() -> Seen {
-    static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
-    let built = BUILT.get_or_init(|| Mutex::new(dpwm_design())).lock().expect("the design is not poisoned");
-    built.run(STOP, 1e-8)
-}
-
-/// The bit reversal of a 3-bit frame index.
-fn reversed(k: i64) -> i64 {
-    ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1)
-}
-
-/// The width in counts of the `p`-th full period, `p` from 1: `duty / 8` counts, one more in
-/// `duty % 8` periods of every 8, picked by the bit-reversed frame index (SPEC §5.2). The frame
-/// counter is 0 at reset and counts the wraps; the width of a period is latched at the wrap
-/// that starts it, from the counter value after that wrap (`dpwm.msl`: `frame + 1`).
-fn width(duty: i64, p: i64) -> i64 {
-    duty / 8 + i64::from(reversed(p % 8) < duty % 8)
-}
-
 #[test]
 fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
-    let seen = run_once();
+    let seen = DpwmFixture::run_once();
     let duty = 1325;
     // SPEC §5.2: 1325 = 8 * 165 + 5: 166 counts in five periods of eight, 165 in three
-    let widths: Vec<i64> = (1..=8).map(|p| width(duty, p)).collect();
+    let widths: Vec<i64> = (1..=8).map(|p| DpwmFixture::width(duty, p)).collect();
     assert_eq!(widths.iter().filter(|w| **w == 166).count(), 5);
     assert_eq!(widths.iter().filter(|w| **w == 165).count(), 3);
     assert_eq!(widths.iter().sum::<i64>(), 8 * 165 + 5, "five extra counts over the frame");
@@ -157,7 +162,7 @@ fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
 fn two_runs_give_the_same_changes() {
     // the oscillator and the DPWM circuit, run twice on the one compiled design: every
     // observation of the two runs is the same, its instant bit for bit
-    let (first, second) = (run_once(), run_once());
+    let (first, second) = (DpwmFixture::run_once(), DpwmFixture::run_once());
     let (first, second) = (first.all(), second.all());
     assert!(first.len() > 8000, "the run has a few thousand instants: {}", first.len());
     assert_eq!(first, second);

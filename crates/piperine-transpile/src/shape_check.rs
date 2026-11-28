@@ -131,24 +131,29 @@ mod tests {
 
     use super::ShapeCheck;
 
-    fn shape(pin: &str, read: u32) -> ShapeBuf {
-        let mut b = ShapeBuf::new();
-        b.pin(PinSpec::continuous(pin, role::PORT));
-        b.function(FunctionSpec {
-            name: "terms",
-            origin: "t.msl:1:1",
-            flags: 0,
-            reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
-            writes: vec![],
-            partials: vec![],
-            elements: vec![],
-        });
-        b
+    /// Associated test helpers of `shape_check`, grouped on one fixture type.
+    struct ShapeCheckFixture;
+
+    impl ShapeCheckFixture {
+        fn shape(pin: &str, read: u32) -> ShapeBuf {
+            let mut b = ShapeBuf::new();
+            b.pin(PinSpec::continuous(pin, role::PORT));
+            b.function(FunctionSpec {
+                name: "terms",
+                origin: "t.msl:1:1",
+                flags: 0,
+                reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
+                writes: vec![],
+                partials: vec![],
+                elements: vec![],
+            });
+            b
+        }
     }
 
     #[test]
     fn equal_shapes_have_no_difference_and_a_changed_entry_is_named() {
-        let (a, same, other_name, other_read) = (shape("p", 0), shape("p", 0), shape("q", 0), shape("p", 1));
+        let (a, same, other_name, other_read) = (ShapeCheckFixture::shape("p", 0), ShapeCheckFixture::shape("p", 0), ShapeCheckFixture::shape("q", 0), ShapeCheckFixture::shape("p", 1));
         assert_eq!(ShapeCheck::first_difference(a.shape(), same.shape()), None);
         let name = ShapeCheck::first_difference(a.shape(), other_name.shape()).expect("a pin name differs");
         assert!(name.starts_with("pin 0:") && name.contains("`p`") && name.contains("`q`"), "{name}");

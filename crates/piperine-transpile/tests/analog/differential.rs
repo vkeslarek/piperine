@@ -169,11 +169,50 @@ impl Bias {
 /// The `AGE`/`STATIC` cases of a limit (abi.md A2): all six.
 const LIMIT_CASES: [(u8, bool); 6] = [(0, false), (0, true), (1, false), (1, true), (2, false), (2, true)];
 
-/// The cases a function is run over: the six when it reads `AGE` or `STATIC`, else one.
-fn cases(shape: &Shape<'_>, k: usize) -> Vec<(u8, bool)> {
-    let f = shape.functions.get(k).expect("a function");
-    let limited = f.reads.iter().any(|c| (c.kind == cell::INPUT && c.part == part::AGE) || (c.kind == cell::AMBIENT && c.index == ambient::STATIC));
-    if limited { LIMIT_CASES.to_vec() } else { vec![(2, false)] }
+/// Associated test helpers of `differential`, grouped on one fixture type.
+struct DifferentialFixture;
+
+impl DifferentialFixture {
+    /// The cases a function is run over: the six when it reads `AGE` or `STATIC`, else one.
+    fn cases(shape: &Shape<'_>, k: usize) -> Vec<(u8, bool)> {
+        let f = shape.functions.get(k).expect("a function");
+        let limited = f.reads.iter().any(|c| (c.kind == cell::INPUT && c.part == part::AGE) || (c.kind == cell::AMBIENT && c.index == ambient::STATIC));
+        if limited { LIMIT_CASES.to_vec() } else { vec![(2, false)] }
+    }
+
+    /// Every function of every body of `both` on both backends at each of `points`, over its
+    /// `AGE`/`STATIC` cases, seeded and not: the written cells equal in bits, the partials equal as
+    /// `f64` and in bits.
+    fn compare(both: &Both, points: &[Bias]) -> Compared {
+        let mut seen = Compared { functions: 0, calls: 0, limited: 0 };
+        for body in both.bodies() {
+            let (interp, compiled) = both.instances(&body);
+            let shape = interp.shape();
+            assert_eq!(shape.functions.len(), compiled.shape().functions.len(), "{body}: one function list");
+            for (k, f) in shape.functions.iter().enumerate() {
+                let name = f.name.as_str().to_string();
+                assert_eq!(name, compiled.shape().functions.get(k).expect("a function").name.as_str(), "{body}: function {k}");
+                seen.functions += 1;
+                for bias in points {
+                    for (age, is_static) in DifferentialFixture::cases(shape, k) {
+                        let input = bias.input(shape, k, age, is_static);
+                        let none = vec![0u8; f.partials.len()];
+                        for seed in [None, Some(none.as_slice())] {
+                            let want = Written::eval(&interp, k as u32, &input, seed).unwrap_or_else(|e| panic!("{body} {name}: interpreter: {e}"));
+                            let got = Written::eval(&compiled, k as u32, &input, seed).unwrap_or_else(|e| panic!("{body} {name}: compiled: {e}"));
+                            let at = format!("{body} {name} at ({}, {}) last {} AGE {age} STATIC {is_static} seeded {}", bias.first, bias.second, bias.last, seed.is_none());
+                            assert_eq!(got.cells, want.cells, "written cells differ: {at}");
+                            assert_eq!(got.jac, want.jac, "partials differ as f64: {at}");
+                            assert_eq!(got.jac_bits(), want.jac_bits(), "partials differ in bits: {at}");
+                            seen.calls += 1;
+                        }
+                        seen.limited += usize::from(f.name.as_str().starts_with("limit"));
+                    }
+                }
+            }
+        }
+        seen
+    }
 }
 
 /// What `compare` ran: the functions, the calls, and the calls of a `limit` function.
@@ -183,44 +222,10 @@ struct Compared {
     limited: usize,
 }
 
-/// Every function of every body of `both` on both backends at each of `points`, over its
-/// `AGE`/`STATIC` cases, seeded and not: the written cells equal in bits, the partials equal as
-/// `f64` and in bits.
-fn compare(both: &Both, points: &[Bias]) -> Compared {
-    let mut seen = Compared { functions: 0, calls: 0, limited: 0 };
-    for body in both.bodies() {
-        let (interp, compiled) = both.instances(&body);
-        let shape = interp.shape();
-        assert_eq!(shape.functions.len(), compiled.shape().functions.len(), "{body}: one function list");
-        for (k, f) in shape.functions.iter().enumerate() {
-            let name = f.name.as_str().to_string();
-            assert_eq!(name, compiled.shape().functions.get(k).expect("a function").name.as_str(), "{body}: function {k}");
-            seen.functions += 1;
-            for bias in points {
-                for (age, is_static) in cases(shape, k) {
-                    let input = bias.input(shape, k, age, is_static);
-                    let none = vec![0u8; f.partials.len()];
-                    for seed in [None, Some(none.as_slice())] {
-                        let want = Written::eval(&interp, k as u32, &input, seed).unwrap_or_else(|e| panic!("{body} {name}: interpreter: {e}"));
-                        let got = Written::eval(&compiled, k as u32, &input, seed).unwrap_or_else(|e| panic!("{body} {name}: compiled: {e}"));
-                        let at = format!("{body} {name} at ({}, {}) last {} AGE {age} STATIC {is_static} seeded {}", bias.first, bias.second, bias.last, seed.is_none());
-                        assert_eq!(got.cells, want.cells, "written cells differ: {at}");
-                        assert_eq!(got.jac, want.jac, "partials differ as f64: {at}");
-                        assert_eq!(got.jac_bits(), want.jac_bits(), "partials differ in bits: {at}");
-                        seen.calls += 1;
-                    }
-                    seen.limited += usize::from(f.name.as_str().starts_with("limit"));
-                }
-            }
-        }
-    }
-    seen
-}
-
 #[test]
 fn every_m1_function_gives_the_interpreters_bytes() {
     let both = Both::five();
-    let seen = compare(&both, &Bias::POINTS);
+    let seen = DifferentialFixture::compare(&both, &Bias::POINTS);
     // resistor 2, capacitor 2, vsource 2, isource 2, diode 5 (one of them the limit)
     assert_eq!(seen.functions, 13);
     assert_eq!(seen.limited, 3 * 6, "the diode's limit: three points, six AGE/STATIC cases (each run with and without seeds)");
@@ -232,7 +237,7 @@ fn every_m1_function_gives_the_interpreters_bytes() {
     assert_eq!(arms.len(), 8, "the sweep reaches every arm of pnjlim: {arms:?}");
     assert!(sweep.iter().any(|b| b.last < 0.0) && sweep.iter().any(|b| b.last > 0.73), "LAST on both sides of 0 and of vcrit");
     assert!(sweep.iter().any(|b| b.first - b.second > 15.0), "a bias where the diode's exponential passes 1e250");
-    let swept = compare(&both, &sweep);
+    let swept = DifferentialFixture::compare(&both, &sweep);
     assert_eq!(swept.functions, 13);
     assert_eq!(swept.limited, 300 * 6, "the diode's limit at every swept point, six AGE/STATIC cases each");
 }
@@ -540,7 +545,7 @@ fn msl_names_that_equal_generated_names_give_the_interpreters_bytes() {
 
     // and both bodies compile and give the interpreter's bytes, function by function
     let both = Both::of(ir);
-    let seen = compare(&both, &Bias::POINTS);
+    let seen = DifferentialFixture::compare(&both, &Bias::POINTS);
     assert_eq!(seen.functions, 3, "Rt: terms; Limiter: limit:vd, terms");
     assert_eq!(seen.limited, 3 * 6, "Limiter's limit: three points, six AGE/STATIC cases");
 }

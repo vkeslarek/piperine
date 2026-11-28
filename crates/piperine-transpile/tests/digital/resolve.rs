@@ -9,10 +9,9 @@ use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Expr, FunctionSpec, IrBu
 
 use piperine_ir_fixtures::digital;
 use piperine_ir_fixtures::alone;
-use crate::compiled;
 
 use alone::Alone;
-use compiled::{Bytes, Device};
+use piperine_parity::compiled::{FedBytes, CompiledDevice};
 use digital::{Buck, Dx, ValueAliases};
 
 const F: &str = "sum.msl";
@@ -94,7 +93,7 @@ fn resolve_calls_the_instance_of_the_present_count() {
     // abi.md §9 D1: an absent drive (`driving` 0) is left out of what `resolve` receives, whatever its value bytes hold;
     // a present drive of any value, zero included, is passed. `resolve~k` adds `1000 * k` to the sum, so the result names
     // the count the function was called with.
-    let device = Device::of_body(Alone::design(Fixture::resolver).0, "Sum$resolve~2");
+    let device = CompiledDevice::of_body(Alone::design(Fixture::resolver).0, "Sum$resolve~2");
     let run = |d0: Vec<u8>, d1: Vec<u8>| device.run("drive:v", &[&d0, &d1]).expect("the resolver runs")[0];
     assert_eq!(run(Fixture::drive(3, 1), Fixture::drive(4, 1)), 2007.0, "two present drives: resolve::<2>([3, 4])");
     assert_eq!(run(Fixture::drive(3, 1), Fixture::drive(9, 0)), 1003.0, "an absent drive of value 9 is left out: resolve::<1>([3])");
@@ -107,9 +106,9 @@ fn resolve_calls_the_instance_of_the_present_count() {
 fn a_drive_write_marks_the_drive_present() {
     // abi.md §9 D1: a driver writes `driving` 1 with every value it writes; the drive pin holds the driven type's bytes,
     // then the byte. `w.others()` reads the others pin, which holds `V`.
-    let device = Device::of_body(Alone::design(Fixture::source).0, "Source");
+    let device = CompiledDevice::of_body(Alone::design(Fixture::source).0, "Source");
     let (cells, _) = device.run_cells("drive:w", &[]).expect("the drive runs");
     assert_eq!(cells, vec![vec![5, 1]], "the value 5 and `driving` 1");
-    let seen = device.run("drive:seen", &[&Bytes::real(2.5)]).expect("the follower runs");
+    let seen = device.run("drive:seen", &[&FedBytes::real(2.5)]).expect("the follower runs");
     assert_eq!(seen, vec![2.5], "`seen` is what the others pin holds");
 }

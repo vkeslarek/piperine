@@ -5,6 +5,8 @@ edition.workspace = true
 publish = false
 
 [dependencies]
+piperine-abi = { path = "../piperine-abi" }
+piperine-plan = { path = "../piperine-plan" }
 piperine-lang = { path = "../piperine-lang" }
 piperine-interp = { path = "../piperine-interp" }
 piperine-ir = { path = "../piperine-ir" }
@@ -15,8 +17,6 @@ tempfile.workspace = true
 
 [dev-dependencies]
 piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
-piperine-abi = { path = "../piperine-abi" }
-piperine-plan = { path = "../piperine-plan" }
 piperine-numbers = { path = "../piperine-numbers" }
 num-bigint = "0.4"
 

@@ -9,5 +9,3 @@ mod environment;
 mod pid;
 mod reaction;
 mod resolve;
-#[path = "../support/compiled.rs"]
-mod compiled;
