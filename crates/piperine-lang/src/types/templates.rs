@@ -56,7 +56,7 @@ impl Checker<'_> {
             if fields.iter().any(|field| field.res == Resolution::Decl(*child)) {
                 continue;
             }
-            let ty = self.lower_type_quietly(param.ty);
+            let ty = self.expressions().lower_type_quietly(param.ty);
             if ParamRequirement::new(param, ty.as_ref()).is_required() {
                 missing = child_data.name.as_ref().map(|name| name.text.clone());
                 break;

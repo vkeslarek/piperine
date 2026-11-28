@@ -10,9 +10,9 @@ use std::collections::BTreeSet;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
-use super::check::Checker;
+use super::ExpressionTyping;
 use super::class::FunctionClass;
-use super::Ty;
+use crate::types::Ty;
 
 /// The core primitives that read the environment of the solve (§3 table, §14.4): `temperature()` is constant during an
 /// analysis, so a function that reads only it is pure.
@@ -28,9 +28,9 @@ pub(super) struct ClosureInfo {
     pub(super) class: FunctionClass,
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The closure expression `expr` stands for, through parentheses and the value of a block.
-    pub(super) fn closure_expr(&self, expr: ExprId) -> Option<ExprId> {
+    pub(in crate::types) fn closure_expr(&self, expr: ExprId) -> Option<ExprId> {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Closure { .. } => Some(expr),
             ExprKind::Paren(inner) => self.closure_expr(*inner),
@@ -77,7 +77,7 @@ impl Checker<'_> {
     }
 
     /// `E0181` for each closure bound by `let` whose parameters were never given a type by a call.
-    pub(super) fn report_uncalled_closures(&mut self) {
+    pub(in crate::types) fn report_uncalled_closures(&mut self) {
         for closure in std::mem::take(&mut self.state.values.pending_closures).into_values() {
             let file = self.file_of_expr(closure);
             let span = self.state.design.expr_node(closure).span;
@@ -154,7 +154,7 @@ impl Checker<'_> {
 
     /// The class of the function `decl`, read off its source so that one not checked yet answers
     /// too; the union of its body's class and that of every function it reaches.
-    pub(super) fn function_class(&mut self, decl: DeclId, visited: &mut BTreeSet<DeclId>) -> FunctionClass {
+    pub(in crate::types) fn function_class(&mut self, decl: DeclId, visited: &mut BTreeSet<DeclId>) -> FunctionClass {
         if let Some(known) = self.state.values.classes.get(&decl) {
             return *known;
         }
@@ -190,7 +190,7 @@ impl Checker<'_> {
     /// A call of the local `decl` whose type is `fn(..) -> R`, a closure or a function pointer:
     /// the arguments against its parameters, and, for a closure, `E0122` where its class is not
     /// allowed. There is no named function to record as the callee.
-    pub(super) fn local_call(&mut self, expr: ExprId, decl: DeclId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn local_call(&mut self, expr: ExprId, decl: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         // a body `let` written after the call is typed first, so a closure it holds is settled by this call as in text order
@@ -241,7 +241,7 @@ impl Checker<'_> {
 
     /// Whether `expr` is written as a function value: a closure, the name of a function, or a local
     /// bound to a closure (§1.2.10).
-    pub(super) fn is_function_value(&self, expr: ExprId) -> bool {
+    pub(in crate::types) fn is_function_value(&self, expr: ExprId) -> bool {
         if self.closure_expr(expr).is_some() {
             return true;
         }

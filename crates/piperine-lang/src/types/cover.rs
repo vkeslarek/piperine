@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 
 use crate::pom::{DeclId, DeclKind, Design};
 
-use super::aggregate::FieldType;
+use super::value::aggregate::FieldType;
 use super::{Length, Nominal, Ty};
 
 /// What one alternative of a pattern covers of its scrutinee.

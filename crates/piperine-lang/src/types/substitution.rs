@@ -157,7 +157,7 @@ impl Checker<'_> {
     pub(super) fn generic_nominal(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let arguments = self.written_arguments(path, decl, file, span)?;
         // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
-        let declared = if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.enum_type(decl, file, span) } else { self.struct_type(decl, file, span) };
+        let declared = if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.expressions().enum_type(decl, file, span) } else { self.expressions().struct_type(decl, file, span) };
         declared?;
         self.arguments_have_repr(decl, &arguments, file, span)?;
         let nominal = Nominal { decl, arguments };
@@ -225,7 +225,7 @@ impl Checker<'_> {
     /// H.8 rule 6, §2 rule 3: `#[derive(Repr)]` on a generic type holds for the instance whose every type
     /// argument has a `Repr`; one that has none is `E0110` naming the argument. `None` after a refusal.
     fn arguments_have_repr(&mut self, decl: DeclId, arguments: &[GenericValue], file: FileId, span: Span) -> Option<()> {
-        if !self.derives(decl, "Repr") {
+        if !self.expressions().derives(decl, "Repr") {
             return Some(());
         }
         let name = self.state.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -300,7 +300,7 @@ impl Checker<'_> {
             ExprKind::Lit(lit) => match &lit.kind {
                 LitKind::Bool(value) => return Some(ConstTerm::Bool(*value)),
                 LitKind::Int(_) => {
-                    if let Some(value) = self.fold_integer(expr, u8::MAX) {
+                    if let Some(value) = self.expressions().fold_integer(expr, u8::MAX) {
                         return i128::try_from(value).ok().map(ConstTerm::Value);
                     }
                 }
@@ -322,14 +322,14 @@ impl Checker<'_> {
             _ if self.mentions_generic_parameter(expr) => return Some(ConstTerm::Expr(expr)),
             _ => {}
         }
-        if let Some(value) = self.fold_integer(expr, u8::MAX) {
+        if let Some(value) = self.expressions().fold_integer(expr, u8::MAX) {
             return i128::try_from(value).ok().map(ConstTerm::Value);
         }
         // `{ count }` over a param of the module: the elaborator folds it per body variant, which makes the param structural
         if self.reads_module_param(expr) {
             return Some(ConstTerm::Expr(expr));
         }
-        let what = self.expression_name(expr);
+        let what = self.expressions().expression_name(expr);
         self.coded(file, "E0188", node.span, format!("a generic argument that is a constant must be one the checker folds, and {what} is not (§3.8.5)"), "not a constant");
         None
     }

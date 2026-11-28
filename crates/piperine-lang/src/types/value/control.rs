@@ -8,12 +8,12 @@
 use crate::refusal::forms::ValueForm;
 use crate::pom::{Arm, ExprId, ExprKind, PatKind, Resolution};
 
-use super::check::Checker;
-use super::cover::Coverage;
+use super::ExpressionTyping;
+use crate::types::cover::Coverage;
 use super::flow::Assigned;
-use super::Ty;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `match scrutinee { arms }`: its type is that of its arms, checked against `expected`
     /// when the position gives one.
     pub(super) fn match_expr(&mut self, expr: ExprId, expected: Option<&Ty>) -> Option<Ty> {
@@ -25,7 +25,7 @@ impl Checker<'_> {
             && !matches!(t, Ty::Enum(_) | Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::Option(_) | Ty::Tuple(_) | Ty::Struct(_) | Ty::Array(..))
         {
             let span = self.state.design.expr_node(*scrutinee).span;
-            self.refuse_with(file, span, ValueForm::MatchExpressionOver, [t.name(self.state.design).to_string()]);
+            self.checker.refuse_with(file, span, ValueForm::MatchExpressionOver, [t.name(self.checker.state.design).to_string()]);
         }
         let mut covered = Vec::new();
         // A refused pattern is its own diagnostic: the coverage is then not judged.
@@ -121,7 +121,7 @@ impl Checker<'_> {
             // `Some(p)` over a value that is no `Option` is a mismatch of the value.
             if self.is_some_pattern(&pat_node.kind) && !matches!(found, Ty::Option(_)) {
                 let span = self.state.design.expr_node(*expr).span;
-                self.mismatch_text(file, span, "an `Option`", &found.name(self.state.design));
+                self.checker.mismatch_text(file, span, "an `Option`", &found.name(self.checker.state.design));
             } else {
                 self.pattern(file, *pat, &found);
             }

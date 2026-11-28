@@ -91,7 +91,7 @@ impl Checker<'_> {
     fn learn_from_connections(&mut self, inference: &mut Inference<'_>, declared: &[Ty], args: &[Arg], file: FileId) -> Option<()> {
         let mut natures: Vec<(DeclId, DeclId)> = Vec::new();
         for (arg, port) in args.iter().zip(declared) {
-            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.bundle_named_type(arg.value)).or_else(|| self.infer(arg.value));
+            let given = self.declared_port(arg.value).map(|(_, ty)| ty).or_else(|| self.bundle_named_type(arg.value)).or_else(|| self.expressions().infer(arg.value));
             // `gnd` is a node of any nature: it names none, so it teaches nothing
             let Some(given) = given.filter(|ty| *ty != Ty::AnyNode) else { continue };
             let declared_parameter = match port.innermost() {
@@ -129,7 +129,7 @@ impl Checker<'_> {
                 continue;
             }
             // a template that did not type was refused where it is written: nothing is left to infer from it
-            let given = self.infer(field.value)?;
+            let given = self.expressions().infer(field.value)?;
             inference.unify(&declared, &given);
         }
         Some(())

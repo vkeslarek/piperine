@@ -7,8 +7,8 @@
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind};
 
-use super::check::Checker;
-use super::{Callee, ConstTerm, GenericValue, LogicPattern, Nominal, Ty};
+use super::ExpressionTyping;
+use crate::types::{Callee, ConstTerm, GenericValue, LogicPattern, Nominal, Ty};
 
 /// A function of §22.1 the checker types by its contract.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,7 +41,7 @@ impl Intrinsic {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Which §22.1 function `function` is, when it is the stdlib's own (`std/values.msl`).
     pub(super) fn intrinsic_of(&self, function: DeclId) -> Option<Intrinsic> {
         let data = self.state.design.decl_data(function);
@@ -103,7 +103,7 @@ impl Checker<'_> {
             Some(table @ Ty::Array(..)) => table,
             Some(other) => {
                 let span = self.state.design.expr_node(args[1].value).span;
-                self.mismatch_text(file, span, "[(f64, f64); N]", &other.name(self.state.design));
+                self.checker.mismatch_text(file, span, "[(f64, f64); N]", &other.name(self.checker.state.design));
                 return None;
             }
             None => return None,
@@ -112,7 +112,7 @@ impl Checker<'_> {
             && **element != pair
         {
             let span = self.state.design.expr_node(args[1].value).span;
-            self.mismatch_text(file, span, "[(f64, f64); N]", &table.name(self.state.design));
+            self.checker.mismatch_text(file, span, "[(f64, f64); N]", &table.name(self.checker.state.design));
             return None;
         }
         self.apply(expr, &[Ty::F64, table, Ty::Str], args)?;
@@ -120,7 +120,7 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The struct `Logic` of the standard library (`std/logic.msl`), when the design holds it.
     fn library_logic(&self) -> Option<DeclId> {
         (0..self.state.design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| {
@@ -131,7 +131,7 @@ impl Checker<'_> {
     }
 
     /// The number of levels of a `Logic<N>` type, `None` for any other type.
-    pub(super) fn logic_width(&self, ty: &Ty) -> Option<u64> {
+    pub(in crate::types) fn logic_width(&self, ty: &Ty) -> Option<u64> {
         let Ty::Struct(nominal) = ty else { return None };
         if Some(nominal.decl) != self.library_logic() {
             return None;
@@ -208,7 +208,7 @@ impl Checker<'_> {
         let found = self.infer(subject.value)?;
         let Some(width) = self.logic_width(&found) else {
             let span = self.state.design.expr_node(subject.value).span;
-            self.mismatch_text(file, span, "a `Logic<N>`", &found.name(self.state.design));
+            self.checker.mismatch_text(file, span, "a `Logic<N>`", &found.name(self.checker.state.design));
             return None;
         };
         self.apply(expr, &[found, Ty::Str], args)?;

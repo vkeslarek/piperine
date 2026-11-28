@@ -21,14 +21,14 @@ impl Checker<'_> {
                 self.coded(file, "E0430", span, message, "not an `Event`");
             }
         }
-        let outer = std::mem::replace(&mut self.state.values.context, Context::Reaction);
-        self.statements(&reaction.body.stmts, Some(&Ty::Unit));
-        self.state.values.context = outer;
+        let outer = self.state.values.replace_context(Context::Reaction);
+        self.expressions().statements(&reaction.body.stmts, Some(&Ty::Unit));
+        self.state.values.set_context(outer);
     }
 
     /// `place <- value [after delay];`
     pub(super) fn commit(&mut self, file: FileId, span: crate::msl::Span, place: ExprId, value: ExprId, after: Option<ExprId>) {
-        if self.state.values.context != Context::Reaction {
+        if self.state.values.context() != Context::Reaction {
             self.refuse(file, span, AnalogForm::CommitOutsideReactionBody);
             return;
         }
@@ -36,18 +36,18 @@ impl Checker<'_> {
         let target = self.drive_target(place, "commit");
         match &target {
             // §1 rule 9: a function value or a closure has no `Repr`, so no carrier holds one
-            Some(_) if self.is_function_value(value) => {
-                let found = self.infer(value).map_or_else(|| "a function value".to_string(), |t| t.name(self.state.design));
+            Some(_) if self.expressions().is_function_value(value) => {
+                let found = self.expressions().infer(value).map_or_else(|| "a function value".to_string(), |t| t.name(self.state.design));
                 let message = format!("`{found}` has no `Repr`: a carrier holds only a type that implements it (part I §2)");
                 self.coded(file, "E0112", self.state.design.expr_node(value).span, message, "no `Repr`");
             }
             Some(target) => self.check_drive_value(target, value, "E0432"),
             None => {
-                self.infer(value);
+                self.expressions().infer(value);
             }
         }
         if let Some(after) = after {
-            self.check_as(after, &Ty::F64, "E0433");
+            self.expressions().check_as(after, &Ty::F64, "E0433");
         }
         let Some(DriveTarget { carrier, element, reached, .. }) = target else { return };
         if reached {

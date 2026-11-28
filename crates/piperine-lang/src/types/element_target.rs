@@ -98,7 +98,7 @@ impl Checker<'_> {
         let (root, steps) = self.place_steps(place);
         let Some(decl) = self.carrier_root(root) else {
             self.coded(file, "E0222", span, format!("the target of a {what} is not a discrete carrier of this module (§8.2.10)"), "not a carrier");
-            self.infer(place);
+            self.expressions().infer(place);
             return None;
         };
         let (port_ty, direction) = match &self.state.design.decl_data(decl).kind {
@@ -125,11 +125,11 @@ impl Checker<'_> {
         if steps.len() < levels.len() || steps[..levels.len()].iter().any(|step| !matches!(step, Step::Index(_))) {
             self.refuse_with(file, span, ValueForm::OfWholeArrayOfCarriersOrOf, [what.to_string()]);
             self.state.carriers.book.refused.insert(decl);
-            self.infer(place);
+            self.expressions().infer(place);
             return None;
         }
         let element = self.element_of(&steps[..levels.len()], &levels);
-        let held = self.infer(place)?;
+        let held = self.expressions().infer(place)?;
         Some(DriveTarget { carrier: decl, held, element, reached: false })
     }
 
@@ -246,7 +246,7 @@ impl Checker<'_> {
                 _ if level == 0 => Some(0),
                 _ => None,
             };
-            let (Some(at), Some(count)) = (self.fold_length(*index), count) else {
+            let (Some(at), Some(count)) = (self.expressions().fold_length(*index), count) else {
                 return if self.runtime_read(*index).is_none() { Element::Unfolded } else { Element::Any };
             };
             flat = flat * count + at;

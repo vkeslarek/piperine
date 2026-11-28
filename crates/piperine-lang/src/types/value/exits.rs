@@ -3,10 +3,10 @@
 
 use crate::pom::ExprId;
 
-use super::check::Checker;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `return` or `return value` (§1.8.11): the value has the innermost function's or closure's
     /// result type, `return` alone gives `()`. Its type is `!` (§1.5.16).
     pub(super) fn return_expr(&mut self, expr: ExprId, value: Option<ExprId>) -> Option<Ty> {
@@ -53,7 +53,7 @@ impl Checker<'_> {
             Ty::Option(inner) => Some(*inner),
             other => {
                 let operand_span = self.state.design.expr_node(operand).span;
-                self.mismatch_text(file, operand_span, "an `Option`", &other.name(self.state.design));
+                self.checker.mismatch_text(file, operand_span, "an `Option`", &other.name(self.checker.state.design));
                 None
             }
         }

@@ -60,14 +60,14 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let name = stream.str_value().unwrap_or_default();
-        match self.state.values.context {
+        match self.state.values.context() {
             Context::Reaction | Context::Analog | Context::Function => {}
             Context::Module | Context::Const => {
                 let message = "`emit!` is written in a reaction, in `analog` or in a `fn` only (§19 rule 10)".to_string();
                 self.coded(file, "E0601", span, message, "`emit!` out of place");
             }
         }
-        if self.state.values.context == Context::Analog {
+        if self.state.values.context() == Context::Analog {
             // a stream other than `sim` and `checks` is a trace (§19 rule 4): it checks
             if is_reserved(&name) {
                 self.analog_writes_reserved(file, span, &name);
@@ -77,8 +77,8 @@ impl Checker<'_> {
         let mut typed = Vec::new();
         for field in fields {
             // An event is judged below, as a field that is not a value (`E0606`).
-            self.state.values.event_slot = Some(field.value);
-            let found = self.infer(field.value);
+            self.state.values.set_event_slot(field.value);
+            let found = self.expressions().infer(field.value);
             let field_name = field.name.text.clone();
             if !seen.insert(field_name.clone()) {
                 let message = format!("the field `{field_name}` is written twice in one `emit!` (§19 rule 11)");
@@ -86,7 +86,7 @@ impl Checker<'_> {
                 continue;
             }
             let Some(found) = found else { continue };
-            if !(self.repr_ok(&found) || found == Ty::Str || self.is_plain_composite(&found, true)) {
+            if !(self.expressions().repr_ok(&found) || found == Ty::Str || self.expressions().is_plain_composite(&found, true)) {
                 let message = format!("the field `{field_name}` has type `{}`, which is not a value type (§19 rule 11)", found.name(self.state.design));
                 self.coded(file, "E0606", field.span, message, "not a value");
                 continue;
@@ -100,7 +100,7 @@ impl Checker<'_> {
             }
             typed.push((field_name, found, field.span, file));
         }
-        if let Some(owner) = self.state.values.owner {
+        if let Some(owner) = self.state.values.owner() {
             self.state.modules.records.sites.push(Site { owner, stream: name, fields: typed });
         }
         Some(Ty::Unit)
@@ -119,12 +119,12 @@ impl Checker<'_> {
         if streams.is_empty() {
             return;
         }
-        if let Some(owner) = self.state.values.owner {
+        if let Some(owner) = self.state.values.owner() {
             self.state.modules.records.calls.entry(owner).or_default().push(function);
         }
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
-        if self.state.values.context == Context::Analog {
+        if self.state.values.context() == Context::Analog {
             if let Some(stream) = streams.iter().find(|s| is_reserved(s)) {
                 self.analog_writes_reserved(file, span, &stream.clone());
             }
@@ -154,7 +154,7 @@ impl Checker<'_> {
                     found.insert(stream.str_value().unwrap_or_default());
                 }
                 ExprKind::Call { callee, .. } => {
-                    if let Some(Resolution::Decl(g)) = self.callee_resolution(*callee)
+                    if let Some(Resolution::Decl(g)) = self.expressions().callee_resolution(*callee)
                         && matches!(self.state.design.decl_data(g).kind, DeclKind::Fn(_))
                     {
                         found.extend(self.function_streams(g));

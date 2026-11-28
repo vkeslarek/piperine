@@ -7,16 +7,16 @@ use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, FileId, FnParamData};
 
-use super::bounds::BoundCheck;
-use super::check::Checker;
-use super::inference::Inference;
-use super::{Callee, GenericValue, Instantiation, Substitution, Ty};
+use crate::types::bounds::BoundCheck;
+use super::ExpressionTyping;
+use crate::types::inference::Inference;
+use crate::types::{Callee, GenericValue, Instantiation, Substitution, Ty};
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The type of the `self` parameter `param` of the function `function`: the type of its `impl`, or
     /// the trait for a function declared in a trait (`Self` there is opaque until an `impl` gives
     /// it). `self` outside an `impl` and a trait, or not the first parameter, is `E0187`.
-    pub(super) fn self_parameter(&mut self, function: DeclId, param: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn self_parameter(&mut self, function: DeclId, param: DeclId) -> Option<Ty> {
         let data = self.state.design.decl_data(param);
         let (file, span) = (data.file, data.span);
         let first = self.state.design.decl_data(function).children.iter().find(|child| matches!(self.state.design.decl_data(**child).kind, DeclKind::FnParam(_))) == Some(&param);
@@ -90,7 +90,7 @@ impl Checker<'_> {
         let item = table.implementation(function, &recv_ty, &mut |ty, bound| BoundCheck::new(self).satisfies(ty, bound));
         let Some(item) = item else {
             let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            self.coded(file, "E0187", span, format!("`{}` does not implement the trait that gives `{name}` (§3.7.8)", recv_ty.name(self.state.design)), "a type that does not implement the trait");
+            self.checker.coded(file, "E0187", span, format!("`{}` does not implement the trait that gives `{name}` (§3.7.8)", recv_ty.name(self.checker.state.design)), "a type that does not implement the trait");
             for arg in rest {
                 self.infer(arg.value);
             }
@@ -119,7 +119,7 @@ impl Checker<'_> {
     /// A call `recv.name(args)` of the method `function` of the project: the receiver is the `self`
     /// argument, the arguments bind to the parameters after it, and the call records
     /// `Callee::Method(function)`. `None` after a refusal.
-    pub(super) fn method_call_of(&mut self, expr: ExprId, recv: ExprId, recv_ty: &Ty, function: DeclId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn method_call_of(&mut self, expr: ExprId, recv: ExprId, recv_ty: &Ty, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         self.reach(function);
@@ -154,7 +154,7 @@ impl Checker<'_> {
         {
             substitution.bind(*owner, GenericValue::Type(recv_ty.clone()));
         } else if !recv_ty.fits(&substitution.apply(own)) {
-            self.mismatch(file, self.state.design.expr_node(recv).span, own, recv_ty);
+            self.checker.mismatch(file, self.checker.state.design.expr_node(recv).span, own, recv_ty);
         }
         let callee = if matches!(recv_ty, Ty::Param(_)) { Callee::Bound { item: function } } else { Callee::Method(function) };
         self.state.result.callees.insert(expr, callee);

@@ -9,11 +9,10 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
 use super::continuity::Continuity;
-use super::class::FunctionClass;
-use super::closures::ClosureInfo;
 use super::definition::DriveBook;
-use super::assign::Places;
-use super::flow::{ExitFrame, Flow};
+use super::value::flow::ExitFrame;
+use super::value::tables::ValueTables;
+use super::value::ExpressionTyping;
 use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::{ConstTerm, Ty, Types};
@@ -105,79 +104,6 @@ pub(super) struct Diagnostics {
     pub(super) reported_spans: BTreeSet<(FileId, usize, usize)>,
 }
 
-/// What value expressions (§1.5, §3) are typed under, and what typing them has learnt that the result does not keep.
-pub(super) struct ValueTables {
-    /// The declaration being checked: a module, a function or a constant.
-    pub(super) owner: Option<DeclId>,
-    /// Where the expression being checked is written.
-    pub(super) context: Context,
-    /// Set while the `where` of a `fn` is checked: its parameters are not in scope (§3 rule 8).
-    pub(super) fn_where: bool,
-    /// The one expression that may be an `Event`: an event position hands it down just before it
-    /// types the expression, which judges an `Event` anywhere else.
-    pub(super) event_slot: Option<ExprId>,
-    /// Set while the guard of an event, the right operand of `ev && guard`, is typed.
-    pub(super) in_guard: bool,
-    /// Bindings whose value could not be typed: a read of one is silent, so one mistake is
-    /// one diagnostic.
-    pub(super) poisoned: BTreeSet<DeclId>,
-    /// The initializer of each `let` with a name, which says whether the name's value depends on the run.
-    pub(super) let_values: BTreeMap<DeclId, ExprId>,
-    /// Which names are places and which locals the body assigns (§1.5.12).
-    pub(super) places: Places,
-    /// The locals bound to a bare integer literal whose type no use has fixed yet (§1.4.4), each
-    /// with the literal expression: `let mut total = 0;` waits for `total += k`.
-    pub(super) open_literals: BTreeMap<DeclId, ExprId>,
-    /// The locals declared without a value (`let x;`, §1.7.5).
-    pub(super) deferred: BTreeSet<DeclId>,
-    /// The control state of the body being checked.
-    pub(super) flow: Flow,
-    /// The captures and the function class of each closure typed so far.
-    pub(super) closures: BTreeMap<ExprId, ClosureInfo>,
-    /// The closure each local is bound to by `let` (the local's value is that closure).
-    pub(super) closure_locals: BTreeMap<DeclId, ExprId>,
-    /// The locals bound to a closure whose parameters wait for the first call to be typed.
-    pub(super) pending_closures: BTreeMap<DeclId, ExprId>,
-    /// The function class of each function whose class is known.
-    pub(super) classes: BTreeMap<DeclId, FunctionClass>,
-    /// The type the context expects of one call, handed down by `check_as` just before the call
-    /// is typed: the result type of a call that is generic over its result (`logic`, `cast`).
-    pub(super) call_expected: Option<(ExprId, Ty)>,
-    /// The enums whose variants are typed (`enums.rs`).
-    pub(super) declared: BTreeSet<DeclId>,
-    /// The structs and enums whose fields are being typed: meeting one again is a type that
-    /// contains itself (§1.3.8).
-    pub(super) declaring: BTreeSet<DeclId>,
-    /// The structs and enums that could not be typed: a use is silent, the cause is reported.
-    pub(super) broken: BTreeSet<DeclId>,
-}
-
-impl Default for ValueTables {
-    fn default() -> Self {
-        ValueTables {
-            owner: None,
-            context: Context::Module,
-            fn_where: false,
-            event_slot: None,
-            in_guard: false,
-            poisoned: BTreeSet::new(),
-            let_values: BTreeMap::new(),
-            places: Places::default(),
-            open_literals: BTreeMap::new(),
-            deferred: BTreeSet::new(),
-            flow: Flow::default(),
-            closures: BTreeMap::new(),
-            closure_locals: BTreeMap::new(),
-            pending_closures: BTreeMap::new(),
-            classes: BTreeMap::new(),
-            call_expected: None,
-            declared: BTreeSet::new(),
-            declaring: BTreeSet::new(),
-            broken: BTreeSet::new(),
-        }
-    }
-}
-
 /// What checking module bodies (§8) is in the middle of: the `let`s being typed, the placements being connected, the
 /// reads through templates, the node choices left to judge, and the `emit!` sites.
 #[derive(Default)]
@@ -264,6 +190,11 @@ impl<'d> Checker<'d> {
         Checker { state: CheckState::new(design), worklist: DeclarationWorklist::default() }
     }
 
+    /// The view that types value expressions.
+    pub(super) fn expressions(&mut self) -> ExpressionTyping<'_, 'd> {
+        ExpressionTyping::new(self)
+    }
+
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
     pub(super) fn project_defines(&self, name: &str) -> bool {
         self.state.traits.defines_method(name, |decl| self.is_std(decl))
@@ -288,7 +219,7 @@ impl<'d> Checker<'d> {
         let mut result = self.state.result;
         result.continuous = continuous;
         result.emits = emits;
-        result.assigned = self.state.values.places.into_assigned();
+        result.assigned = self.state.values.into_assigned();
         Ok(result)
     }
 
@@ -319,9 +250,9 @@ impl<'d> Checker<'d> {
 
     /// Run `body` with `context` as the place being checked, then restore the one outside.
     pub(super) fn within<R>(&mut self, context: Context, body: impl FnOnce(&mut Self) -> R) -> R {
-        let outer = std::mem::replace(&mut self.state.values.context, context);
+        let outer = self.state.values.replace_context(context);
         let result = body(self);
-        self.state.values.context = outer;
+        self.state.values.set_context(outer);
         result
     }
 
@@ -346,23 +277,18 @@ impl<'d> Checker<'d> {
             return;
         }
         self.reach(module);
-        let (owner, context, event_slot, in_guard, fn_where) = (self.state.values.owner, self.state.values.context, self.state.values.event_slot, self.state.values.in_guard, self.state.values.fn_where);
-        let (book, lets_open, placing, flow) = (std::mem::take(&mut self.state.carriers.book), std::mem::take(&mut self.state.modules.lets_open), std::mem::take(&mut self.state.modules.placing), std::mem::take(&mut self.state.values.flow));
-        self.state.values.context = Context::Module;
-        self.state.values.event_slot = None;
-        self.state.values.in_guard = false;
-        self.state.values.fn_where = false;
+        let (book, lets_open, placing) = (std::mem::take(&mut self.state.carriers.book), std::mem::take(&mut self.state.modules.lets_open), std::mem::take(&mut self.state.modules.placing));
+        let saved = self.state.values.save();
         self.declaration(module);
-        (self.state.values.owner, self.state.values.context, self.state.values.event_slot, self.state.values.in_guard, self.state.values.fn_where) = (owner, context, event_slot, in_guard, fn_where);
-        (self.state.carriers.book, self.state.modules.lets_open, self.state.modules.placing, self.state.values.flow) = (book, lets_open, placing, flow);
+        self.state.values.restore(saved);
+        (self.state.carriers.book, self.state.modules.lets_open, self.state.modules.placing) = (book, lets_open, placing);
     }
 
     fn declaration(&mut self, decl: DeclId) {
         if !self.worklist.checked.insert(decl) {
             return;
         }
-        self.state.values.owner = Some(decl);
-        self.state.values.flow = Flow::default();
+        self.state.values.begin_declaration(decl);
         match &self.state.design.decl_data(decl).kind {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
@@ -370,7 +296,7 @@ impl<'d> Checker<'d> {
             DeclKind::Impl(_) => self.coherence(decl),
             other => self.refuse_declaration(decl, RefusedForm::item(other)),
         }
-        self.report_uncalled_closures();
+        self.expressions().report_uncalled_closures();
     }
 
     // ---- reporting -------------------------------------------------------------------------
@@ -489,7 +415,7 @@ impl<'d> Checker<'d> {
                     ("usize", _) => Some(Ty::UInt(64)),
                     ("isize", _) => Some(Ty::Int(64)),
                     (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
-                    ("Option", _) => self.option_type(file, node.span, *path),
+                    ("Option", _) => self.expressions().option_type(file, node.span, *path),
                     ("Event", _) => Some(Ty::Event),
                     _ => {
                         self.refuse_with(file, node.span, ValueForm::Type, [id.name().to_string()]);
@@ -503,8 +429,8 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
                 // §3.8.2: a type or nature parameter is a type of the generic body, opaque
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_)) => self.enum_type(d, file, node.span),
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_)) => self.struct_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_)) => self.expressions().enum_type(d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_)) => self.expressions().struct_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it; a generic one's names its
                 // arguments, `G<2>` (§8.4.3)
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Module(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generic_module_type(*path, d, file, node.span),
@@ -520,8 +446,8 @@ impl<'d> Checker<'d> {
                 }
             },
             TypeKind::Tuple(items) if items.is_empty() => Some(Ty::Unit),
-            TypeKind::Tuple(items) => self.tuple_type(items),
-            TypeKind::Array { elem, len } => self.array_type(file, node.span, *elem, *len),
+            TypeKind::Tuple(items) => self.expressions().tuple_type(items),
+            TypeKind::Array { elem, len } => self.expressions().array_type(file, node.span, *elem, *len),
             TypeKind::Flip(_) | TypeKind::Infer => {
                 self.refuse(file, node.span, RefusedForm::type_form(&node.kind));
                 None
@@ -608,7 +534,7 @@ impl<'d> Checker<'d> {
         let DeclKind::Const(data) = self.state.design.decl_data(decl).kind.clone() else { return };
         let Some(ty) = self.lower_type(data.ty) else { return };
         match data.value {
-            Some(value) => self.within(Context::Const, |this| this.check(value, &ty)),
+            Some(value) => self.within(Context::Const, |this| this.expressions().check(value, &ty)),
             None => {
                 let d = self.state.design.decl_data(decl);
                 let (file, span) = (d.file, d.span);
@@ -685,7 +611,7 @@ impl<'d> Checker<'d> {
             let DeclKind::FnParam(p) = &self.state.design.decl_data(child).kind else { continue };
             let ty = match p {
                 FnParamData::Named { ty } => self.lower_type(*ty),
-                FnParamData::SelfValue => self.self_parameter(decl, child),
+                FnParamData::SelfValue => self.expressions().self_parameter(decl, child),
                 FnParamData::Error => {
                     let d = self.state.design.decl_data(child);
                     self.refuse(d.file, d.span, ValueForm::SelfParameter);
@@ -726,9 +652,9 @@ impl<'d> Checker<'d> {
             if self.state.generics.generic_item == Some(decl) {
                 self.defer(super::Obligation::Where { item: decl, condition: cond });
             }
-            self.state.values.fn_where = true;
-            self.within(Context::Const, |this| this.check(cond, &Ty::Bool));
-            self.state.values.fn_where = false;
+            self.state.values.set_fn_where(true);
+            self.within(Context::Const, |this| this.expressions().check(cond, &Ty::Bool));
+            self.state.values.set_fn_where(false);
         }
         for (param, ty) in parts.params {
             match ty {
@@ -736,26 +662,25 @@ impl<'d> Checker<'d> {
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => {
                     let (file, span) = (self.state.design.decl_data(param).file, self.state.design.decl_data(param).span);
                     self.refuse(file, span, ValueForm::ArrayOfCarriersAsFunctionParameter);
-                    self.state.values.poisoned.insert(param);
+                    self.state.values.poison(param);
                 }
                 Some(ty) => {
                     self.note_handle(param, &ty);
                     self.state.result.locals.insert(param, ty);
                 }
                 None => {
-                    self.state.values.poisoned.insert(param);
+                    self.state.values.poison(param);
                 }
             }
         }
         // before the body: a handle kept is `E0133`, not the mismatch the same span would also report
         self.check_handle_result(decl, parts.ret.as_ref());
         self.check_handle_uses(decl);
-        self.state.values.context = Context::Function;
-        self.state.values.flow.exit = Some(ExitFrame::new(parts.ret.clone(), false));
+        self.state.values.begin_function(ExitFrame::new(parts.ret.clone(), false));
         match (&f.body, parts.ret) {
             (Some(body), Some(ret)) => self.function_body(body, &ret, data.file),
             (Some(body), None) => {
-                self.statements(&body.stmts, None);
+                self.expressions().statements(&body.stmts, None);
             }
             // a function a trait declares has no body; its implementations do
             (None, _) if data.parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Trait(_))) => {}
@@ -763,13 +688,13 @@ impl<'d> Checker<'d> {
             (None, _) if f.abi.is_some() => {}
             (None, _) => self.refuse(data.file, data.span, ValueForm::FunctionWithoutBody),
         }
-        self.state.values.context = Context::Module;
+        self.state.values.set_context(Context::Module);
     }
 
     /// The statements of a body against the declared result. A missing result is reported
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
-        if let Some(found) = self.statements(&body.stmts, Some(ret))
+        if let Some(found) = self.expressions().statements(&body.stmts, Some(ret))
             && !self.compatible_at(file, body.span, &found, ret)
             && found != Ty::Never
         {
@@ -834,7 +759,7 @@ impl<'d> Checker<'d> {
         }
         if let Some(cond) = m.where_ {
             // Part III §8 errors: the `where` after the port list that is not a `bool` const expression.
-            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0304"));
+            self.within(Context::Const, |this| this.expressions().check_as(cond, &Ty::Bool, "E0304"));
         }
         // Ports, params and signals first, then the `let`s in order, then definitions: every
         // name of the body is visible in the whole body (§8.2), and a carrier's type is known
@@ -854,9 +779,9 @@ impl<'d> Checker<'d> {
             let DeclKind::Behavior(bd) = &b.kind else { continue };
             match bd.kind {
                 BehaviorKind::Analog => {
-                    self.state.values.context = Context::Analog;
-                    self.statements(&bd.body, None);
-                    self.state.values.context = Context::Module;
+                    self.state.values.set_context(Context::Analog);
+                    self.expressions().statements(&bd.body, None);
+                    self.state.values.set_context(Context::Module);
                 }
                 BehaviorKind::Digital => self.digital_block(behavior),
             }
@@ -866,7 +791,7 @@ impl<'d> Checker<'d> {
             // a placement inside generation is typed with generation itself (T72); until then its loop variable has no type
             let in_generation = self.inside_generation(self.state.design.expr_node(instance).owner);
             if self.state.result.exprs[instance.index()].is_none() && !in_generation {
-                self.infer(instance);
+                self.expressions().infer(instance);
             }
         }
         // the carriers declared inside generation are the module's too, one array each (§8.2.23)

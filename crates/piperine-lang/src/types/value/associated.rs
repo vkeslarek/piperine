@@ -5,11 +5,11 @@
 
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, TypeId};
 
-use super::check::Checker;
-use super::inference::Inference;
-use super::{Instantiation, Ty};
+use super::ExpressionTyping;
+use crate::types::inference::Inference;
+use crate::types::{Instantiation, Ty};
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The generic `impl` (one with parameters of its own) `function` is written in, when `function` has none of its own.
     pub(super) fn generic_impl_of(&self, function: DeclId) -> Option<DeclId> {
         let owner = self.state.design.decl_data(function).parent?;
@@ -47,7 +47,7 @@ impl Checker<'_> {
     }
 
     /// The type a written type is, without a diagnostic of its own: `None` when it has none.
-    pub(super) fn lower_type_quietly(&mut self, ty: TypeId) -> Option<Ty> {
+    pub(in crate::types) fn lower_type_quietly(&mut self, ty: TypeId) -> Option<Ty> {
         self.state.result.written.get(&ty).cloned().or_else(|| self.lower_type(ty))
     }
 

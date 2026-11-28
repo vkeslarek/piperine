@@ -16,8 +16,8 @@ use super::{Builtin, Ty};
 impl Checker<'_> {
     /// `infer` of an expression written in an event position: an `Event` is allowed there.
     pub(super) fn infer_event_position(&mut self, expr: ExprId) -> Option<Ty> {
-        self.state.values.event_slot = Some(expr);
-        self.infer(expr)
+        self.state.values.set_event_slot(expr);
+        self.expressions().infer(expr)
     }
 
     /// An `Event` typed where `expr` stands, outside an event position: where an event is read
@@ -38,7 +38,7 @@ impl Checker<'_> {
     /// Whether an `Event` stands for a `bool` here: inside a guard (§13 rule 9) and in a
     /// reaction body (§13 rule 2).
     fn reads_events(&self) -> bool {
-        self.state.values.in_guard || self.state.values.context == Context::Reaction
+        self.state.values.in_guard() || self.state.values.context() == Context::Reaction
     }
 
     /// `expr`, an `Event`, read as a `bool`: whether it fired in this microstep (§13 rule 2). The
@@ -80,13 +80,13 @@ impl Checker<'_> {
     pub(super) fn logical(&mut self, whole: ExprId, is_and: bool, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(whole);
         let span = self.state.design.expr_node(whole).span;
-        let in_event_position = self.state.values.event_slot == Some(whole);
+        let in_event_position = self.state.values.event_slot() == Some(whole);
         let left = self.infer_event_position(lhs);
         match (is_and, left) {
             (true, Some(Ty::Event)) => {
-                let outer = std::mem::replace(&mut self.state.values.in_guard, true);
-                self.check(rhs, &Ty::Bool);
-                self.state.values.in_guard = outer;
+                let outer = self.state.values.replace_in_guard(true);
+                self.expressions().check(rhs, &Ty::Bool);
+                self.state.values.replace_in_guard(outer);
                 Some(Ty::Event)
             }
             (false, Some(Ty::Event)) => {
@@ -122,7 +122,7 @@ impl Checker<'_> {
                 if let Some(other) = left.filter(|t| *t != Ty::Bool) {
                     self.mismatch(file, self.state.design.expr_node(lhs).span, &Ty::Bool, &other);
                 }
-                self.check(rhs, &Ty::Bool);
+                self.expressions().check(rhs, &Ty::Bool);
                 Some(Ty::Bool)
             }
         }
@@ -156,9 +156,9 @@ impl Checker<'_> {
             _ => "fall",
         };
         match self.declared_port(recv) {
-            Some((_, Ty::Carrier { value, .. })) if builtin == Builtin::Changed || *value == Ty::Bool || self.logic_width(&value) == Some(1) => {
-                self.apply(expr, &[], args)?;
-                self.infer(recv);
+            Some((_, Ty::Carrier { value, .. })) if builtin == Builtin::Changed || *value == Ty::Bool || self.expressions().logic_width(&value) == Some(1) => {
+                self.expressions().apply(expr, &[], args)?;
+                self.expressions().infer(recv);
                 self.state.result.builtins.insert(expr, builtin);
                 Some(Ty::Event)
             }
@@ -200,7 +200,7 @@ impl Checker<'_> {
         let message = format!("`{name}` is a core module with an `Event` result: it is placed in an event position only (§13 rule 10)");
         self.coded(file, "E0443", span, message, "not in an event position");
         for arg in args {
-            self.infer(arg.value);
+            self.expressions().infer(arg.value);
         }
     }
 

@@ -101,7 +101,7 @@ impl Checker<'_> {
         match ty {
             Ty::Array(element, length) => {
                 let folded = match length {
-                    Length::Generic(ConstTerm::Expr(expr)) => super::lengths::IntegerFolder::with_values(self.state.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
+                    Length::Generic(ConstTerm::Expr(expr)) => super::value::lengths::IntegerFolder::with_values(self.state.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
                     other => other.clone(),
                 };
                 Ty::Array(Box::new(self.fold_lengths(element, values)), folded)

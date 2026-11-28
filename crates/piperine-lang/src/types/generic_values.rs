@@ -6,7 +6,7 @@
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 
-use super::aggregate::FieldType;
+use super::value::aggregate::FieldType;
 use super::check::Checker;
 use super::inference::Inference;
 use super::{GenericSignature, GenericValue, Nominal, Substitution, Ty};
@@ -36,7 +36,7 @@ impl Checker<'_> {
     /// The fields of `owner` (a struct, or a variant) as the instance `scrutinee` has them: the declared
     /// field types with the arguments of the type substituted.
     pub(super) fn instance_layout(&mut self, owner: DeclId, scrutinee: &Ty) -> Option<Vec<FieldType>> {
-        let layout = self.fields_of(owner)?;
+        let layout = self.expressions().fields_of(owner)?;
         let (Ty::Struct(nominal) | Ty::Enum(nominal)) = scrutinee else { return Some(layout) };
         if nominal.arguments.is_empty() {
             return Some(layout);
@@ -59,11 +59,11 @@ impl Checker<'_> {
         let signature = self.generic_signature(type_decl);
         let mut inference = Inference::new(&signature);
         for (position, value) in values {
-            if let (Some(field), Some(given)) = (layout.get(*position), self.infer(*value)) {
+            if let (Some(field), Some(given)) = (layout.get(*position), self.expressions().infer(*value)) {
                 inference.unify(&field.ty, &given);
             }
         }
-        if let Some(expected) = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
+        if let Some(expected) = self.state.values.take_expected_call_type(expr) {
             inference.unify(&open, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, type_decl, type_decl, file, span)?;

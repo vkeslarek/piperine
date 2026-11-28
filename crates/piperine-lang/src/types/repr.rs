@@ -17,7 +17,7 @@ impl Checker<'_> {
         let DeclKind::Const(data) = &self.state.design.decl_data(width).kind else { return None };
         let value = data.value?;
         let values = self.impl_widths(entry.decl, ty)?;
-        u32::try_from(super::lengths::IntegerFolder::with_values(self.state.design, values).fold(value, u8::MAX)?).ok()
+        u32::try_from(super::value::lengths::IntegerFolder::with_values(self.state.design, values).fold(value, u8::MAX)?).ok()
     }
 
     /// What the parameters of the `impl` `owner` take for the type `ty` it is written for: the level count of each
@@ -31,7 +31,7 @@ impl Checker<'_> {
         }
         let DeclKind::Impl(data) = &self.state.design.decl_data(owner).kind else { return None };
         let self_ty = data.self_ty;
-        let declared = self.lower_type_quietly(self_ty)?;
+        let declared = self.expressions().lower_type_quietly(self_ty)?;
         let signature = super::GenericSignature::of(self.state.design, owner);
         let mut inference = super::inference::Inference::new(&signature);
         inference.unify(&declared, ty);

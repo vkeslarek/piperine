@@ -245,7 +245,7 @@ impl Checker<'_> {
             self.refuse(file, span, PatternForm::PatternNamingSomethingThatIsNoStruct);
             return None;
         };
-        let (ty, owner) = self.constructed_type(target, file, span)?;
+        let (ty, owner) = self.expressions().constructed_type(target, file, span)?;
         // a generic type's pattern is of its declaration, whatever arguments the scrutinee has
         let same_type = match (&ty, scrut) {
             (Ty::Struct(open), Ty::Struct(given)) | (Ty::Enum(open), Ty::Enum(given)) => open.decl == given.decl,

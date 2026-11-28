@@ -85,7 +85,7 @@ impl Checker<'_> {
         let file = self.state.design.decl_data(node.owner).file;
         if let Resolution::Decl(d) = self.state.design.type_resolution(ty)
             && matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_))
-            && !self.derives(d, "Repr")
+            && !self.expressions().derives(d, "Repr")
             && self.state.traits.hand_written_repr(&Ty::enumeration(d)).is_none()
         {
             let name = self.state.design.decl_data(d).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
@@ -280,8 +280,8 @@ impl Checker<'_> {
                 _ => None,
             },
             Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
-            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.enum_type(decl, file, span),
-            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.struct_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.expressions().enum_type(decl, file, span),
+            Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.expressions().struct_type(decl, file, span),
             _ => None,
         }
     }
@@ -323,7 +323,7 @@ impl Checker<'_> {
         let message = format!("`{name}.others()`: `{name}` is a carrier of `{nature_name}`, which has no `resolve`, so it has one drive and no other to read (§5.2.7)");
         self.coded(file, "E0224", span, message, "`others()` on a one-driver carrier");
         for arg in args {
-            self.infer(arg.value);
+            self.expressions().infer(arg.value);
         }
         true
     }
@@ -335,9 +335,9 @@ impl Checker<'_> {
         let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {
             Some((_, Ty::Carrier { value, .. })) => {
-                self.apply(expr, &[], args)?;
+                self.expressions().apply(expr, &[], args)?;
                 self.state.result.builtins.insert(expr, Builtin::Prev);
-                self.infer(recv);
+                self.expressions().infer(recv);
                 Some(*value)
             }
             Some((_, Ty::Node(_))) => {
@@ -358,9 +358,9 @@ impl Checker<'_> {
         let span = self.state.design.expr_node(expr).span;
         match self.declared_port(recv) {
             Some((_, Ty::Carrier { nature, value })) if NatureRules::of(self.state.design, nature).resolved => {
-                self.apply(expr, &[], args)?;
+                self.expressions().apply(expr, &[], args)?;
                 self.state.result.builtins.insert(expr, Builtin::Others);
-                self.infer(recv);
+                self.expressions().infer(recv);
                 Some(*value)
             }
             _ => {

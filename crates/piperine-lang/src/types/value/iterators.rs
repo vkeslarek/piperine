@@ -10,11 +10,11 @@ use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, ExprId, ExprKind, FileId};
 
-use super::check::Checker;
-use super::derives::DerivedTrait;
-use super::{Method, Ty};
+use super::ExpressionTyping;
+use crate::types::derives::DerivedTrait;
+use crate::types::{Method, Ty};
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The range expression `lo..hi` with some bounds missing: both bounds one integer or float
     /// type (§1.5.11); it is iterable (H.6 rule 3) when both bounds are there and the type is an
     /// integer. `..` has no type to give the elements and is outside the subset.
@@ -30,7 +30,7 @@ impl Checker<'_> {
         let element = self.infer(first)?;
         if !(element.is_integer() || element == Ty::F64) {
             let span = self.state.design.expr_node(first).span;
-            self.mismatch_text(file, span, "an integer or a float type", &element.name(self.state.design));
+            self.checker.mismatch_text(file, span, "an integer or a float type", &element.name(self.checker.state.design));
             return None;
         }
         if second != first {
@@ -52,7 +52,7 @@ impl Checker<'_> {
 
     /// The element type a `for` binds over `iter`: an array gives its elements by value, a range
     /// and an iterator their elements (§1.8.9). Anything else is `E0180`.
-    pub(super) fn iteration_element(&mut self, iter: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn iteration_element(&mut self, iter: ExprId) -> Option<Ty> {
         let found = self.infer(iter)?;
         match &found {
             Ty::Array(element, _) => Some((**element).clone()),
@@ -61,7 +61,7 @@ impl Checker<'_> {
                 None => {
                     let file = self.file_of_expr(iter);
                     let span = self.state.design.expr_node(iter).span;
-                    self.mismatch_text(file, span, "an array, an integer range or an iterator", &found.name(self.state.design));
+                    self.checker.mismatch_text(file, span, "an array, an integer range or an iterator", &found.name(self.checker.state.design));
                     None
                 }
             },
@@ -102,7 +102,7 @@ impl Checker<'_> {
             Method::IteratorSum => {
                 self.apply(expr, &[], args)?;
                 if !(element.is_integer() || *element == Ty::F64) {
-                    self.mismatch_text(file, span, "an integer or a float element type", &element.name(self.state.design));
+                    self.checker.mismatch_text(file, span, "an integer or a float element type", &element.name(self.checker.state.design));
                     return None;
                 }
                 Some(element.clone())
@@ -125,9 +125,9 @@ impl Checker<'_> {
         }
     }
 
-    /// `it.fold(init, f)` (H.7): `f` takes the accumulator and the element and gives the
+    /// `it.expressions().fold(init, f)` (H.7): `f` takes the accumulator and the element and gives the
     /// accumulator. An integer literal `init` over an integer element has the element's type.
-    fn fold(&mut self, expr: ExprId, element: &Ty, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn fold(&mut self, expr: ExprId, element: &Ty, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let [init, function] = args else {
@@ -144,7 +144,7 @@ impl Checker<'_> {
         Some(accumulator)
     }
 
-    /// `it.zip(other)` (H.7): `other` is an iterator; the pairs end when either does.
+    /// `it.expressions().zip(other)` (H.7): `other` is an iterator; the pairs end when either does.
     fn zip(&mut self, expr: ExprId, element: &Ty, reversible: bool, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
@@ -155,7 +155,7 @@ impl Checker<'_> {
         let found = self.infer(other.value)?;
         let Some((second, second_reversible)) = Self::sequence_of(&found) else {
             let span = self.state.design.expr_node(other.value).span;
-            self.mismatch_text(file, span, "an iterator", &found.name(self.state.design));
+            self.checker.mismatch_text(file, span, "an iterator", &found.name(self.checker.state.design));
             return None;
         };
         Some(Ty::Iterator { element: Box::new(Ty::Tuple(vec![element.clone(), second.clone()])), reversible: reversible && second_reversible })
@@ -179,7 +179,7 @@ impl Checker<'_> {
         if !matches!(self.state.design.expr_node(argument.value).kind, ExprKind::Closure { .. }) {
             let file = self.file_of_expr(expr);
             self.infer(argument.value);
-            self.refuse(file, self.state.design.expr_node(argument.value).span, ValueForm::IteratorRowWithArgumentThatIsNot);
+            self.checker.refuse(file, self.checker.state.design.expr_node(argument.value).span, ValueForm::IteratorRowWithArgumentThatIsNot);
             return None;
         }
         self.closure_typed(argument.value, params, result)

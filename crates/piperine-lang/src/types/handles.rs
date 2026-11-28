@@ -43,7 +43,7 @@ impl Checker<'_> {
     /// The type of the argument `expr` for a parameter generic over a nature: the carrier it names (a discrete one is
     /// the carrier, not the value it reads, so the call's nature is inferred from it), else the type it reads as.
     pub(super) fn infer_carrier(&mut self, expr: ExprId) -> Option<Ty> {
-        let read = self.infer(expr)?;
+        let read = self.expressions().infer(expr)?;
         match self.carrier_named(expr) {
             Some(carrier @ Ty::Carrier { .. }) => {
                 self.state.result.exprs[expr.index()] = Some(Self::handle_read_type(&carrier));
@@ -127,11 +127,11 @@ impl Checker<'_> {
             Some(found) if found == *expected => {
                 // an element `x[k]`: its base and its index are typed like any read
                 if matches!(self.state.design.expr_node(expr).kind, ExprKind::Index { .. }) {
-                    self.infer(expr);
+                    self.expressions().infer(expr);
                 }
                 self.state.result.exprs[expr.index()] = Some(Self::handle_read_type(&found));
             }
-            _ => self.check(expr, expected),
+            _ => self.expressions().check(expr, expected),
         }
     }
 
@@ -282,13 +282,13 @@ impl Checker<'_> {
                     DeclKind::Let(data) => Some(data.value),
                     _ => None,
                 });
-                let Some(init) = self.state.values.let_values.get(&decl).copied().or(body_value) else {
+                let Some(init) = self.state.values.let_value(decl).or(body_value) else {
                     return Some("a value only a pattern or a loop binds".to_string());
                 };
                 // judged once: a variable met again is being judged or was found to depend on nothing of the run (one that does
                 // ends the search), so following it again adds nothing and the judgement ends
                 followed.push(decl);
-                self.run_read(init, followed).or_else(|| self.state.values.places.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
+                self.run_read(init, followed).or_else(|| self.state.values.writes_of(decl).iter().find_map(|write| self.write_reads_the_run(decl, *write, followed)))
             }
             _ => None,
         }
@@ -297,7 +297,7 @@ impl Checker<'_> {
     /// What makes the assignment `write` of `decl` depend on the run: an assignment in a closure, the value it writes, or a condition
     /// around it inside the body that declares `decl` (an `if`, a `match`, a loop's condition or range, and every condition inside
     /// a loop around it, which may end the loop early).
-    fn write_reads_the_run(&self, decl: DeclId, write: super::assign::Write, followed: &mut Vec<DeclId>) -> Option<String> {
+    fn write_reads_the_run(&self, decl: DeclId, write: super::value::assign::Write, followed: &mut Vec<DeclId>) -> Option<String> {
         if write.in_closure {
             return Some("an assignment inside a closure".to_string());
         }

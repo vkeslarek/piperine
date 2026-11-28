@@ -59,7 +59,7 @@ impl Checker<'_> {
                 self.state.modules.template_reads.insert(expr);
                 Some(Ty::AnyNode)
             }
-            _ => self.field_of_value(expr, *receiver, name),
+            _ => self.expressions().field_of_value(expr, *receiver, name),
         }
     }
 
@@ -137,7 +137,7 @@ impl Checker<'_> {
             // an iteration of a placement in generation: the element of the array of its instances (§8.2.23)
             ExprKind::Index { expr: inner, index } => {
                 let whole = self.open_instance(*inner)?;
-                self.infer(*index);
+                self.expressions().infer(*index);
                 match whole {
                     Ty::Array(element, _) => *element,
                     other => other,
@@ -205,7 +205,7 @@ impl Checker<'_> {
                 }
             }
         }
-        self.infer(receiver)
+        self.expressions().infer(receiver)
     }
 
     /// The param `recv` names (through parentheses) and its type: a param of the module being
@@ -227,8 +227,8 @@ impl Checker<'_> {
     /// known, so `prev()` has the param's type and is not flagged.
     pub(super) fn param_history(&mut self, expr: ExprId, changed: bool, recv: ExprId, args: &[crate::pom::Arg]) -> Option<Ty> {
         let (_, ty) = self.param_receiver(recv)?;
-        self.apply(expr, &[], args)?;
-        self.infer(recv);
+        self.expressions().apply(expr, &[], args)?;
+        self.expressions().infer(recv);
         self.state.result.builtins.insert(expr, if changed { super::Builtin::Changed } else { super::Builtin::Prev });
         Some(if changed { Ty::Event } else { ty })
     }
@@ -253,7 +253,7 @@ impl Checker<'_> {
                 let module = self.module_of_let(item)?;
                 self.check_ahead(module);
                 let found = self.state.result.locals.get(&item).cloned();
-                if found.is_none() && !self.state.values.poisoned.contains(&item) {
+                if found.is_none() && !self.state.values.is_poisoned(item) {
                     self.refuse(file, span, StructureForm::LetOfChildWhoseTypeIsNot);
                 }
                 found

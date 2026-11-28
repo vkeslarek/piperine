@@ -6,9 +6,10 @@
 
 use crate::pom::{DeclId, ExprId};
 
-use super::check::{Checker, Context};
+use crate::types::check::Context;
+use super::ExpressionTyping;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `E0122` for a call of `function` written where its class is not allowed: a solve-reading function in a const
     /// context, naming the function and the position.
     pub(super) fn check_call_class(&mut self, expr: ExprId, function: DeclId) {

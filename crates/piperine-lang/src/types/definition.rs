@@ -100,7 +100,7 @@ impl Checker<'_> {
             }
             _ => {
                 self.coded(file, "E0222", node.span, format!("the target of a {what} is not a place (§8.2.10)"), "not a place");
-                self.infer(place);
+                self.expressions().infer(place);
                 None
             }
         }
@@ -159,11 +159,11 @@ impl Checker<'_> {
         match &target {
             Some(target) => self.check_drive_value(target, data.value, "E0337"),
             None => {
-                self.infer(data.value);
+                self.expressions().infer(data.value);
             }
         }
         if let Some(after) = data.after {
-            self.check_as(after, &Ty::F64, "E0433");
+            self.expressions().check_as(after, &Ty::F64, "E0433");
         }
         for (expr, what) in [(Some(data.value), "a definition"), (data.after, "the delay of a definition")] {
             let Some(expr) = expr else { continue };

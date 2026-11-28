@@ -1903,6 +1903,7 @@ T152 → T153 → T154 → T155
 ### T70: `ExpressionTyping` and `types/value/`
 
 **What**: Move the files design.md lists into `types/value/` and their methods from `impl Checker` to `impl ExpressionTyping`; `ValueTables`' fields become private to the directory.
+**Decision (coordinator, user AFK, pending review)**: every typing view (`ExpressionTyping`, `PatternTyping`, `ModuleTyping`, `AnalogTyping`, `CarrierTyping`, `GenericsSolver`) borrows `&mut Checker`, not `&mut CheckState` as design.md's sketch says: `reach` and `check_ahead` use the worklist and re-enter `declaration()`, so a view must reach the worklist. The worklist stays in `Checker`, so "`Checker` has two fields" (T69, T76) stays true. A view is declared in its directory's `mod.rs` (the guard `an_inherent_impl_lives_with_its_type` accepts impls below the declaring `mod.rs`), derefs to `Checker` for what is no concern of its own (reporting, the worklist), and a call into another concern's method goes through `Checker`'s accessor (`self.expressions().check(..)`). A table's fields are private to its directory; another concern asks through a method of the table.
 **Where**: `crates/piperine-lang/src/types/value`
 **Depends on**: T69
 **Reuses**: T69
@@ -1912,8 +1913,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/value/`; the diagnostics of every test are unchanged in text and order
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/value/`; the diagnostics of every test are unchanged in text and order (no test edited, no call path of a moved `pub` item either: every moved item was `pub(super)`)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

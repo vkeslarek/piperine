@@ -52,7 +52,7 @@ impl Checker<'_> {
             (Some(array @ Ty::Array(..)), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { .. }) => {
                 self.initial_reads(default);
                 let value = array.read_value();
-                self.within(Context::Const, |this| this.check_as(default, &value, "E0210"));
+                self.within(Context::Const, |this| this.expressions().check_as(default, &value, "E0210"));
             }
             // the initial value of a resolved port is the module's first drive of it, of the driven type (§5.2.3)
             (Some(Ty::Carrier { nature, .. }), None) if NatureRules::of(self.state.design, *nature).resolved => {
@@ -62,17 +62,17 @@ impl Checker<'_> {
             (Some(value), _) if !matches!(value, Ty::Node(_) | Ty::Carrier { .. }) => {
                 let span = self.state.design.expr_node(default).span;
                 self.coded(file, "E0311", span, "a value input takes no initial value (§8.1.7)".to_string(), "no initial value here");
-                self.infer(default);
+                self.expressions().infer(default);
             }
             // An `in` port of a top level starts at its written value too (§3.3.4, §23.1 rule 9).
             (Some(Ty::Carrier { value, .. }), Some(crate::msl::ast::Dir::Out | crate::msl::ast::Dir::In)) => {
                 self.initial_reads(default);
-                self.within(Context::Const, |this| this.check_as(default, value, "E0210"));
+                self.within(Context::Const, |this| this.expressions().check_as(default, value, "E0210"));
             }
             _ => {
                 let span = self.state.design.expr_node(default).span;
                 self.refuse(file, span, StructureForm::PortDefaultValue);
-                self.infer(default);
+                self.expressions().infer(default);
             }
         }
     }
@@ -85,9 +85,9 @@ impl Checker<'_> {
             // an array of templates (`pair: [Cell; 2]`, §8.4.1): each element a template, the param structural as one template is
             Ty::Array(ref element, _) if matches!(**element, Ty::Module(_)) => Some(ty),
             // An integer, enum, `Option` or composite param (PI-01 to PI-03, CV-18).
-            plain if self.is_param_type(&plain) => Some(plain),
+            plain if self.expressions().is_param_type(&plain) => Some(plain),
             // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds
-            Ty::Param(parameter) if self.is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
+            Ty::Param(parameter) if self.expressions().is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
             // a param of a type parameter bound by `Fn(P)` (`cell: C`, §8.4.1) holds a template of a module that fits `P`
             Ty::Param(parameter) if self.callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
             other => {
@@ -98,10 +98,10 @@ impl Checker<'_> {
             }
         });
         if let (Some(ty), Some(default)) = (&ty, param.default) {
-            self.within(Context::Const, |this| this.check(default, ty));
+            self.within(Context::Const, |this| this.expressions().check(default, ty));
         }
         if let Some(cond) = param.where_ {
-            self.within(Context::Const, |this| this.check_as(cond, &Ty::Bool, "E0318"));
+            self.within(Context::Const, |this| this.expressions().check_as(cond, &Ty::Bool, "E0318"));
             self.where_reads_later_param(decl, cond);
         }
     }
@@ -156,7 +156,7 @@ impl Checker<'_> {
             Ty::Array(_, length) => Ty::Array(Box::new(Ty::F64), length.clone()),
             _ => Ty::F64,
         };
-        self.within(Context::Const, |this| this.check_as(init, &value, "E0210"));
+        self.within(Context::Const, |this| this.expressions().check_as(init, &value, "E0210"));
     }
 
     /// Types the `let` item `decl` of a module body once: in the body's order, or earlier where a read of its name needs its
@@ -220,13 +220,13 @@ impl Checker<'_> {
             Some(Ty::Module(_)) if self.reported() > reported && !self.binds_an_instance(*binding) => None,
             other => other,
         };
-        if let Some(closure) = self.closure_expr(data.value) {
-            self.state.values.closure_locals.insert(*binding, closure);
+        if let Some(closure) = self.expressions().closure_expr(data.value) {
+            self.state.values.bind_closure(*binding, closure);
         }
         match ty {
             Some(Ty::Str) => {
                 self.refuse(file, pat.span, StructureForm::StringLiteralBoundByLet);
-                self.state.values.poisoned.insert(*binding);
+                self.state.values.poison(*binding);
             }
             Some(ty) => {
                 // inside a generation `for` the binding is the array of its element (§8.2.23)
@@ -234,7 +234,7 @@ impl Checker<'_> {
                 self.state.result.locals.insert(*binding, held);
             }
             None => {
-                self.state.values.poisoned.insert(*binding);
+                self.state.values.poison(*binding);
             }
         }
     }
@@ -248,16 +248,16 @@ impl Checker<'_> {
         let ExprKind::Call { callee, args, params, .. } = &node.kind else { return None };
         // §8.3.4: a function, a closure and a reaction body place no instance, nor does a const
         // context.
-        if matches!(self.state.values.context, Context::Function | Context::Reaction | Context::Const) {
+        if matches!(self.state.values.context(), Context::Function | Context::Reaction | Context::Const) {
             let name = self.state.design.decl_data(module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-            if self.state.values.context == Context::Const {
+            if self.state.values.context() == Context::Const {
                 self.coded(file, "E0352", node.span, format!("`{name}` is placed in a const context: a result is not fixed during a solve (§8.3.4)"), "placement in a const context");
             } else {
-                let place = if self.state.values.context == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
+                let place = if self.state.values.context() == Context::Reaction { "a reaction body" } else { "a `fn` or a closure" };
                 self.coded(file, "E0350", node.span, format!("`{name}` is placed in {place}: it places no instance (§8.3.4)"), "placement out of place");
             }
             for arg in args {
-                self.infer(arg.value);
+                self.expressions().infer(arg.value);
             }
             return None;
         }
@@ -285,7 +285,7 @@ impl Checker<'_> {
                     self.coded(file, "E0180", node.span, message, "a placement through a value that is not a template");
                 }
                 for arg in args {
-                    self.infer(arg.value);
+                    self.expressions().infer(arg.value);
                 }
                 return None;
             }
@@ -347,7 +347,7 @@ impl Checker<'_> {
     /// Whether `expr` is a name whose value already raised a diagnostic.
     pub(super) fn reads_poisoned(&self, expr: ExprId) -> bool {
         match &self.state.design.expr_node(expr).kind {
-            ExprKind::Path(path) => matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.state.values.poisoned.contains(&d)),
+            ExprKind::Path(path) => matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Decl(d)) if self.state.values.is_poisoned(d)),
             _ => false,
         }
     }
@@ -355,7 +355,7 @@ impl Checker<'_> {
     /// Whether `callee` is a const expression whose value is a template of `module` (§8.4.4, §8.4.6): a param, a `const`, a
     /// function's result, a template written in place. A callee that reads a port, a signal or a probe is `E0362`.
     fn callee_is_template_of(&mut self, callee: ExprId, module: DeclId) -> bool {
-        if !matches!(self.infer(callee), Some(Ty::Module(found)) if found.decl == module) {
+        if !matches!(self.expressions().infer(callee), Some(Ty::Module(found)) if found.decl == module) {
             return false;
         }
         // through the `let`s that hold it (`let t = if sel { .. } else { .. };`): a choice of templates the run makes is no
@@ -402,7 +402,7 @@ impl Checker<'_> {
                 self.coded(file, "E0312", span, message, "wrong number of connections");
             }
             for arg in args {
-                self.infer(arg.value);
+                self.expressions().infer(arg.value);
             }
             return;
         }
@@ -418,13 +418,13 @@ impl Checker<'_> {
                 Some(carrier @ Ty::Carrier { .. }) => self.connect_carrier(arg.value, dir, &carrier),
                 Some(array @ Ty::Array(..)) if array.is_carrier_element() => self.connect_array(arg.value, dir, &array),
                 Some(expected @ Ty::Node(_)) => {
-                    let Some(found) = self.infer(arg.value) else { continue };
+                    let Some(found) = self.expressions().infer(arg.value) else { continue };
                     let name = self.state.design.decl_data(port_decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                     self.connect(arg.value, &format!("the node port `{name}`"), &expected, &found);
                 }
                 // a nature parameter of the enclosing generic module, passed on to a placement: a node of that nature, or `gnd`
                 Some(expected) if self.is_nature_parameter(&expected) => {
-                    let Some(found) = self.infer(arg.value) else { continue };
+                    let Some(found) = self.expressions().infer(arg.value) else { continue };
                     if found != expected && found != Ty::AnyNode {
                         let span = self.state.design.expr_node(arg.value).span;
                         self.mismatch(file, span, &expected, &found);
@@ -432,11 +432,11 @@ impl Checker<'_> {
                 }
                 // A value input: any expression of its type, a probe included (§8.1.13).
                 Some(value) => {
-                    self.check_argument(arg.value, &value);
+                    self.expressions().check_argument(arg.value, &value);
                     self.definition_value_input(expr, module, port_decl, arg.value);
                 }
                 None => {
-                    self.infer(arg.value);
+                    self.expressions().infer(arg.value);
                 }
             }
         }
@@ -476,7 +476,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
-        let found = self.infer(arg);
+        let found = self.expressions().infer(arg);
         match (&carrier, dir) {
             (Some((_, Ty::Node(_))), _) => {
                 self.coded(file, "E0250", span, "a node is connected to a port of a discrete nature (§6.1)".to_string(), "node at a discrete port");
@@ -501,7 +501,7 @@ impl Checker<'_> {
             }
             (None, _) => {
                 let Ty::Carrier { value, .. } = port else { return };
-                self.check_as(arg, value, "E0337");
+                self.expressions().check_as(arg, value, "E0337");
                 if self.continuous(arg) {
                     let message = "a continuous expression is connected to an `in` port: it reads a probe, `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(Static)` (§8.1.12)".to_string();
                     self.coded(file, "E0316", span, message, "a continuous expression at an `in` port");
@@ -544,7 +544,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(arg);
         let span = self.state.design.expr_node(arg).span;
         let carrier = self.declared_port(arg);
-        let found = self.infer(arg);
+        let found = self.expressions().infer(arg);
         match carrier {
             Some((decl, held)) if held.is_carrier_element() => {
                 if !self.same_shape(&held, port) {
@@ -565,7 +565,7 @@ impl Checker<'_> {
                 if let Some(found) = found.filter(|f| f.is_carrier_element()) {
                     self.shape_mismatch(file, span, &found, port);
                 } else {
-                    self.check_as(arg, &port.read_value(), "E0337");
+                    self.expressions().check_as(arg, &port.read_value(), "E0337");
                 }
             }
         }
@@ -731,15 +731,15 @@ impl Checker<'_> {
             // a param of a generic module's type `T` takes the type the placement gave `T`
             let declared = param.and_then(|t| self.lower_type(t)).map(|ty| substitution.map_or(ty.clone(), |given| given.apply(&ty)));
             match declared {
-                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.check(field.value, &ty),
+                Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.expressions().check(field.value, &ty),
                 // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)
                 Some(Ty::Option(inner)) => {
                     let option = Ty::Option(inner.clone());
-                    self.option_argument(field.value, &option, &inner)
+                    self.expressions().option_argument(field.value, &option, &inner)
                 }
-                Some(plain) if self.is_param_type(&plain) => self.check(field.value, &plain),
+                Some(plain) if self.expressions().is_param_type(&plain) => self.expressions().check(field.value, &plain),
                 _ => {
-                    self.infer(field.value);
+                    self.expressions().infer(field.value);
                 }
             }
         }
@@ -771,9 +771,9 @@ impl Checker<'_> {
                 let table = std::rc::Rc::clone(&self.state.traits);
                 if let Some(function) = table.builtin_functions("Default", "default", ty).first() {
                     self.reach(*function);
-                } else if self.derives(nominal.decl, "Default") {
+                } else if self.expressions().derives(nominal.decl, "Default") {
                     let substitution = self.nominal_substitution(nominal);
-                    let fields: Vec<Ty> = self.fields_of(nominal.decl).unwrap_or_default().into_iter().map(|field| self.substitute(&substitution, &field.ty)).collect();
+                    let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl).unwrap_or_default().into_iter().map(|field| self.substitute(&substitution, &field.ty)).collect();
                     fields.iter().for_each(|field| self.reach_written_defaults(field));
                 }
             }

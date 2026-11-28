@@ -42,7 +42,7 @@ impl Checker<'_> {
             let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let (file, span) = (self.file_of_expr(read), self.state.design.expr_node(read).span);
             self.coded(file, "E0332", span, format!("the `let` `{name}` reads its own name through a value of its child (§8.2.16)"), "a `let` that reads itself");
-            self.state.values.poisoned.insert(binding);
+            self.state.values.poison(binding);
             return true;
         }
         self.state.result.template_items.insert(read, expected.clone());
@@ -100,7 +100,7 @@ impl Checker<'_> {
             return false;
         }
         for arg in args {
-            self.infer(arg.value);
+            self.expressions().infer(arg.value);
         }
         true
     }
@@ -109,7 +109,7 @@ impl Checker<'_> {
     /// `E0181` at the read when it is.
     pub(super) fn untyped_template_operand(&mut self, operand: ExprId) -> bool {
         let Some(read) = self.template_read_of(operand) else { return false };
-        self.infer(operand);
+        self.expressions().infer(operand);
         let (file, span) = (self.file_of_expr(read), self.state.design.expr_node(read).span);
         self.report_untyped_template_read(file, span);
         true

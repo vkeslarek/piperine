@@ -10,17 +10,17 @@ use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, PathId, Resolution};
 
-use super::check::Checker;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Whether `decl` carries `#[derive(.., trait_name, ..)]`.
-    pub(super) fn derives(&self, decl: DeclId, trait_name: &str) -> bool {
-        super::derives::DerivedTrait::is_listed(self.state.design, decl, trait_name)
+    pub(in crate::types) fn derives(&self, decl: DeclId, trait_name: &str) -> bool {
+        crate::types::derives::DerivedTrait::is_listed(self.state.design, decl, trait_name)
     }
 
     /// `Option<T>` written with its one type argument.
-    pub(super) fn option_type(&mut self, file: FileId, span: Span, path: PathId) -> Option<Ty> {
+    pub(in crate::types) fn option_type(&mut self, file: FileId, span: Span, path: PathId) -> Option<Ty> {
         let args = self.state.design.path_node(path).segments.last().and_then(|s| s.args.clone());
         match &args {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
@@ -75,7 +75,7 @@ impl Checker<'_> {
 
     /// An argument for a parameter of type `Option<inner>` (§3.2.3): an `Option` as it is, or a
     /// value of type `inner`, read as `Some` of it and recorded so.
-    pub(super) fn option_argument(&mut self, expr: ExprId, expected: &Ty, inner: &Ty) {
+    pub(in crate::types) fn option_argument(&mut self, expr: ExprId, expected: &Ty, inner: &Ty) {
         if self.is_none_literal(expr) || self.is_some_call(expr) {
             self.check(expr, expected);
             return;

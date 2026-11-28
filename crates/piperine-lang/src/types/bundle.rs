@@ -27,7 +27,7 @@ impl Checker<'_> {
         let Some(source) = self.bundle_carrier(arg) else {
             let message = "a bundle port takes a bundle carrier or a literal of the bundle (§7 rule 8)".to_string();
             self.coded(file, "E0264", span, message, "not a bundle");
-            self.infer(arg);
+            self.expressions().infer(arg);
             return;
         };
         self.element_indexes(&source);
@@ -102,7 +102,7 @@ impl Checker<'_> {
         };
         if !fits {
             self.literal_field_mismatch(file, field, &field.name.text, &format!("a carrier or node of `{}`", expected.name(self.state.design)));
-            self.infer(field.value);
+            self.expressions().infer(field.value);
             return;
         }
         if let Some((decl, Ty::Carrier { .. })) = given
@@ -168,7 +168,7 @@ impl Checker<'_> {
     pub(super) fn element_indexes(&mut self, place: &BundlePlace) {
         for index in &place.elements {
             if self.state.result.exprs[index.index()].is_none() {
-                self.integer_index(*index);
+                self.expressions().integer_index(*index);
             }
         }
     }
@@ -206,7 +206,7 @@ impl Checker<'_> {
         };
         if !fits {
             self.literal_field_mismatch(file, field, &leaf.path, &format!("a carrier or node of `{}`", expected.name(self.state.design)));
-            self.infer(field.value);
+            self.expressions().infer(field.value);
             return;
         }
         if let Some((decl, Ty::Carrier { .. })) = given

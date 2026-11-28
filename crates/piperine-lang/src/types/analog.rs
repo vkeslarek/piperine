@@ -13,7 +13,7 @@ impl Checker<'_> {
     /// The statement `lhs +> rhs;`: `lhs` is a probe of a branch (`E0410`), `rhs` is an `f64`
     /// (`E0417`).
     pub(super) fn contribution(&mut self, file: crate::pom::FileId, span: crate::msl::Span, lhs: ExprId, rhs: ExprId) {
-        if self.state.values.context != Context::Analog {
+        if self.state.values.context() != Context::Analog {
             self.refuse(file, span, AnalogForm::ContributionOutsideAnalogBlock);
             return;
         }
@@ -25,7 +25,7 @@ impl Checker<'_> {
             let message = "the left side of `+>` is not a potential or flow probe of a branch".to_string();
             self.coded(file, "E0410", target.span, message, "not a probe");
         }
-        self.check_as(rhs, &Ty::F64, "E0417");
+        self.expressions().check_as(rhs, &Ty::F64, "E0417");
     }
 
     /// `p.inflow()` (part III §6 rule 5): the flow entering the module at its port `p`, of a nature
@@ -34,10 +34,10 @@ impl Checker<'_> {
     pub(super) fn inflow_read(&mut self, expr: ExprId, recv: ExprId, args: &[Arg]) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        if matches!(self.state.values.context, Context::Function | Context::Const) {
+        if matches!(self.state.values.context(), Context::Function | Context::Const) {
             self.coded(file, "E0450", node.span, "`inflow()` is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
-        self.apply(expr, &[], args)?;
+        self.expressions().apply(expr, &[], args)?;
         let measured = match self.declared_port(recv) {
             Some((decl, Ty::Node(nature))) => matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_)) && NatureRules::of(self.state.design, nature).flow,
             _ => false,
@@ -45,10 +45,10 @@ impl Checker<'_> {
         if !measured {
             let message = "`inflow()` applies to a port of a nature with `flow`: it measures the flow entering the module there (§6 rule 5)".to_string();
             self.coded(file, "E0243", node.span, message, "not a port of a nature with `flow`");
-            self.infer(recv);
+            self.expressions().infer(recv);
             return None;
         }
-        self.infer(recv);
+        self.expressions().infer(recv);
         self.state.result.builtins.insert(expr, super::Builtin::Inflow);
         Some(Ty::F64)
     }
@@ -103,17 +103,17 @@ impl Checker<'_> {
         };
         // a function probes through a handle (§3 rule 7, §3.1.5); a probe of anything else is out of place
         let operands: Vec<ExprId> = args.iter().map(|arg| arg.value).collect();
-        let through_handles = self.state.values.context == Context::Function && self.probes_only_handles(&operands);
-        if matches!(self.state.values.context, Context::Function | Context::Const) && !through_handles {
+        let through_handles = self.state.values.context() == Context::Function && self.probes_only_handles(&operands);
+        if matches!(self.state.values.context(), Context::Function | Context::Const) && !through_handles {
             self.coded(file, "E0450", node.span, "a probe is allowed in an `analog` block and a module body only".to_string(), "core primitive out of place");
         }
         if args.is_empty() || args.len() > 2 {
-            self.arity_mismatch(file, node.span, "1 to 2", args);
+            self.expressions().arity_mismatch(file, node.span, "1 to 2", args);
             return None;
         }
         let mut natures = Vec::new();
         for arg in args {
-            match self.infer(arg.value) {
+            match self.expressions().infer(arg.value) {
                 Some(Ty::Node(n)) => natures.push(n),
                 Some(Ty::AnyNode) => {}
                 // a handle generic over a nature: its nature is the instantiation's, known there
@@ -163,7 +163,7 @@ impl Checker<'_> {
     /// Whether an `analog` block of the module being checked contributes a potential to the branch
     /// `args` name (the same nodes, in the same order).
     fn contributes_potential_to(&self, args: &[Arg]) -> bool {
-        let Some(owner) = self.state.values.owner else { return false };
+        let Some(owner) = self.state.values.owner() else { return false };
         let DeclKind::Module(m) = &self.state.design.decl_data(owner).kind else { return false };
         let nodes = |args: &[Arg]| -> Vec<Resolution> {
             args.iter()
@@ -216,11 +216,11 @@ impl Checker<'_> {
             return None;
         };
         let name = id.name();
-        if matches!(name.as_str(), "cross" | "at") && self.state.values.event_slot != Some(expr) {
+        if matches!(name.as_str(), "cross" | "at") && self.state.values.event_slot() != Some(expr) {
             self.core_event_out_of_place(expr, &name, args);
             return None;
         }
-        match (sig.allowed, self.state.values.context) {
+        match (sig.allowed, self.state.values.context()) {
             (Allowed::Everywhere, Context::Const) => {
                 let message = format!("`{name}` is an environment function and is not allowed in a const context");
                 self.coded(file, "E0323", node.span, message, "environment function in a const context");
@@ -266,14 +266,14 @@ impl Checker<'_> {
         let (min, max) = (sig.required.len(), sig.required.len() + sig.optional.len());
         if args.len() < min || args.len() > max {
             let expected = if min == max { min.to_string() } else { format!("{min} to {max}") };
-            self.arity_mismatch(file, node.span, expected, args);
+            self.expressions().arity_mismatch(file, node.span, expected, args);
             return None;
         }
         let params: Vec<Ty> = sig.required.iter().chain(sig.optional).map(|p| p.ty()).collect();
         let names = Self::core_parameter_names(&name);
         let named: Vec<Option<usize>> = args.iter().map(|a| a.name.as_ref().and_then(|n| names.iter().position(|p| *p == n.text))).collect();
         self.state.modules.placing.push(None);
-        let bound = self.bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
+        let bound = self.expressions().bind_arguments(expr, &name, &params, sig.required.len(), args, &named);
         self.state.modules.placing.pop();
         bound?;
         self.event_arguments(&name, args);
@@ -296,17 +296,17 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let [value, variable] = args else {
-            self.arity_mismatch(file, span, 2, args);
+            self.expressions().arity_mismatch(file, span, 2, args);
             return None;
         };
         self.state.analog.differentiated += 1;
-        self.check_argument(value.value, &Ty::F64);
+        self.expressions().check_argument(value.value, &Ty::F64);
         self.state.analog.differentiated -= 1;
         let probe_call = matches!(&self.state.design.expr_node(variable.value).kind, ExprKind::Call { class: crate::pom::CallClass::Probe, .. });
         if !probe_call {
             let at = self.state.design.expr_node(variable.value).span;
             self.coded(file, "E0451", at, "the second argument of `ddx` must be a probe call of a potential or a flow of a branch of this module (§14.2.2); `p.inflow()` is not accepted".to_string(), "not a probe call");
-            self.infer(variable.value);
+            self.expressions().infer(variable.value);
             return None;
         }
         self.state.result.exprs[variable.value.index()] = self.probe(variable.value, true);
@@ -320,7 +320,7 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let [arg] = args else {
-            self.arity_mismatch(file, span, 1, args);
+            self.expressions().arity_mismatch(file, span, 1, args);
             return None;
         };
         let kind = match &self.state.design.expr_node(arg.value).kind {
@@ -353,7 +353,7 @@ impl Checker<'_> {
     /// keeps the node's nature, so `v(y)` reads the potential of `y`'s nature.
     fn access_of_operand(&mut self, callee: ExprId, args: &[Arg]) -> OperandAccess {
         let Some(first) = args.first() else { return OperandAccess::NoNode };
-        let Some(Ty::Node(nature)) = self.infer(first.value) else { return OperandAccess::NoNode };
+        let Some(Ty::Node(nature)) = self.expressions().infer(first.value) else { return OperandAccess::NoNode };
         let Some(name) = self.access_name(callee) else { return OperandAccess::NoNode };
         match self.access_role_in(nature, &name) {
             Some(role) => OperandAccess::Found(role, nature),

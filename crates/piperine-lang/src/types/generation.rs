@@ -43,10 +43,10 @@ impl Checker<'_> {
 
     /// The number of iterations of the generation `for` `generation`: a length when both bounds fold, else the range itself,
     /// which the elaborator counts over the instance's params.
-    fn loop_length(&self, generation: DeclId) -> Length {
+    fn loop_length(&mut self, generation: DeclId) -> Length {
         let DeclKind::Generation(GenerationData::For { iter, .. }) = &self.state.design.decl_data(generation).kind else { return Length::Fixed(0) };
         if let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = &self.state.design.expr_node(*iter).kind
-            && let (Some(low), Some(high)) = (self.fold_integer(*lo, 16), self.fold_integer(*hi, 16))
+            && let (Some(low), Some(high)) = (self.expressions().fold_integer(*lo, 16), self.expressions().fold_integer(*hi, 16))
         {
             return Length::Fixed(u64::try_from(high.saturating_sub(low) + u128::from(*inclusive)).unwrap_or(u64::MAX));
         }
@@ -54,7 +54,7 @@ impl Checker<'_> {
     }
 
     /// `element` as the array a generation `for` around `decl` makes of it, nested once for each (§8.2.23).
-    pub(super) fn generated_type(&self, decl: DeclId, element: Ty) -> Ty {
+    pub(super) fn generated_type(&mut self, decl: DeclId, element: Ty) -> Ty {
         self.generation_loops(decl).into_iter().rev().fold(element, |inner, generation| Ty::Array(Box::new(inner), self.loop_length(generation)))
     }
 
@@ -80,7 +80,7 @@ impl Checker<'_> {
 
     /// The value `read` a reader `expr` gets from the generated carrier or node `decl`: the element, wrapped in the levels
     /// of the generation `for`s the reader is not inside.
-    pub(super) fn generated_read(&self, expr: ExprId, decl: DeclId, read: Ty) -> Ty {
+    pub(super) fn generated_read(&mut self, expr: ExprId, decl: DeclId, read: Ty) -> Ty {
         self.outside_loops(decl, expr).into_iter().rev().fold(read, |inner, generation| Ty::Array(Box::new(inner), self.loop_length(generation)))
     }
 
@@ -140,7 +140,7 @@ impl Checker<'_> {
             }
             GenerationData::If { cond, .. } => {
                 if self.const_position(*cond, "a generation condition") {
-                    self.within(Context::Const, |this| this.check(*cond, &Ty::Bool));
+                    self.within(Context::Const, |this| this.expressions().check(*cond, &Ty::Bool));
                 }
             }
         }
@@ -148,7 +148,7 @@ impl Checker<'_> {
 
     /// The element type of the range `iter` of a generation `for`.
     fn generation_element(&mut self, iter: ExprId) -> Option<Ty> {
-        if matches!(self.state.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.range_element(iter) } else { self.iteration_element(iter) }
+        if matches!(self.state.design.expr_node(iter).kind, ExprKind::Range { lo: Some(_), hi: Some(_), .. }) { self.expressions().range_element(iter) } else { self.expressions().iteration_element(iter) }
     }
 
     /// Whether `expr` reads no carrier, node or probe; `E0340` naming `what` and the read when it does.
@@ -179,7 +179,7 @@ impl Checker<'_> {
     fn poison_pattern(&mut self, pat: crate::pom::PatId) {
         match self.state.design.pat_node(pat).kind.clone() {
             PatKind::Ident { binding, .. } => {
-                self.state.values.poisoned.insert(binding);
+                self.state.values.poison(binding);
             }
             PatKind::Tuple(items) => items.into_iter().for_each(|item| self.poison_pattern(item)),
             _ => {}

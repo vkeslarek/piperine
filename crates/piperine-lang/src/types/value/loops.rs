@@ -4,11 +4,11 @@
 
 use crate::pom::{BlockNode, ExprId, ExprKind, PatId};
 
-use super::check::Checker;
+use super::ExpressionTyping;
 use super::flow::{Assigned, LoopFrame};
-use super::Ty;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `while cond { body }`: the type `()`. The condition is evaluated before every iteration, so
     /// what the body assigns is not assigned after the loop (§1.8.16).
     pub(super) fn while_loop(&mut self, cond: ExprId, body: &BlockNode) -> Option<Ty> {
@@ -53,7 +53,7 @@ impl Checker<'_> {
     }
 
     /// The element type of the range `iter` of a `for`: an integer type both bounds have.
-    pub(super) fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn range_element(&mut self, iter: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(iter).clone();
         let file = self.file_of_expr(iter);
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), .. } = &node.kind else { return None };
@@ -66,7 +66,7 @@ impl Checker<'_> {
             }
             Some(other) => {
                 let span = self.state.design.expr_node(first).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
+                self.checker.mismatch_text(file, span, "an integer type", &other.name(self.checker.state.design));
                 self.infer(second);
                 None
             }

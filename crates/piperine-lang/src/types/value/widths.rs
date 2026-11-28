@@ -9,8 +9,8 @@ use crate::msl::lexer::NumberLiteral;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{ExprId, ExprKind, FileId, LitKind};
 
-use super::Ty;
-use super::check::Checker;
+use crate::types::Ty;
+use super::ExpressionTyping;
 
 /// The text of a literal that is spelled as an integer and carries a float suffix (`2f32`, `2f64`).
 pub struct FloatText;
@@ -50,7 +50,7 @@ impl FloatText {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Whether `expr` is a float literal with no type suffix (`1.5`, `1e3`): it takes the float type
     /// its position requires (§1.4.2), `f64` when none.
     pub(super) fn bare_float_literal(&self, expr: ExprId) -> bool {

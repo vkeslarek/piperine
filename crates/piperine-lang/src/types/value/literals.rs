@@ -6,10 +6,10 @@
 use crate::pom::{DeclId, ExprId, ExprKind, Resolution};
 use crate::msl::lexer::NumberLiteral;
 
-use super::check::Checker;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::Ty;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Opens `binding` when its initializer is a bare integer literal that fits `i32`, so a later
     /// use may still give it another integer type.
     pub(super) fn wait_for_use(&mut self, binding: DeclId, init: ExprId) {

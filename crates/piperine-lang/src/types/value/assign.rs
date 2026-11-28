@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::msl::Span;
 use crate::pom::{BinOp, BindingOrigin, DeclId, DeclKind, ExprId, ExprKind, FileId, Resolution};
 
-use super::check::Checker;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::Ty;
 
 /// The local a place is rooted in, and whether the place goes below it (a field or an element).
 struct Root {
@@ -32,13 +32,13 @@ pub(super) struct Places {
 
 /// One assignment of a local.
 #[derive(Debug, Clone, Copy)]
-pub(super) struct Write {
+pub(in crate::types) struct Write {
     /// The assignment expression, `place = value` or `place op= value`.
-    pub(super) assignment: ExprId,
+    pub(in crate::types) assignment: ExprId,
     /// The value it writes.
-    pub(super) value: ExprId,
+    pub(in crate::types) value: ExprId,
     /// Whether it is written inside a closure, which may run any number of times.
-    pub(super) in_closure: bool,
+    pub(in crate::types) in_closure: bool,
 }
 
 impl Places {
@@ -76,7 +76,7 @@ impl Places {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `place = value` or `place op= value`: the type `()` (§1.5.12). The value is typed before
     /// the place is marked assigned, so `x = x + 1` reads an unassigned `x` as the error it is.
     pub(super) fn assignment(&mut self, expr: ExprId, op: Option<BinOp>, lhs: ExprId, rhs: ExprId) -> Option<Ty> {

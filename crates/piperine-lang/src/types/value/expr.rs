@@ -9,22 +9,23 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack::Stack;
 
-use super::check::{Checker, Context};
-use super::derives::DerivedTrait;
+use crate::types::check::Context;
+use super::ExpressionTyping;
+use crate::types::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::operators::OperatorTrait;
 use super::widths::FloatText;
-use super::{Nominal, Ty};
+use crate::types::{Nominal, Ty};
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Check `expr` against `expected`. A mismatch is one diagnostic; the expression then takes
     /// the expected type.
-    pub(super) fn check(&mut self, expr: ExprId, expected: &Ty) {
+    pub(in crate::types) fn check(&mut self, expr: ExprId, expected: &Ty) {
         self.check_as(expr, expected, "E0180");
     }
 
     /// `check` of an argument: an `Option<T>` parameter takes a `T` as `Some` of it (§3.2.3).
-    pub(super) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
+    pub(in crate::types) fn check_argument(&mut self, expr: ExprId, expected: &Ty) {
         if let Ty::Option(inner) = expected {
             self.option_argument(expr, expected, inner);
             return;
@@ -38,7 +39,7 @@ impl Checker<'_> {
 
     /// `check`, where a mismatch of `expr` itself carries `code` (a rule of the specification
     /// with a code of its own, `E0318` for a `where`) instead of the plain `E0180`.
-    pub(super) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
+    pub(in crate::types) fn check_as(&mut self, expr: ExprId, expected: &Ty, code: &'static str) {
         Stack::deep(|| {
             let node = self.state.design.expr_node(expr).clone();
             let file = self.file_of_expr(expr);
@@ -78,7 +79,7 @@ impl Checker<'_> {
                 }
                 // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
                 ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) && expected.is_float() => {
-                    self.mismatch_coded(file, node.span, code, &expected.name(self.state.design), "an integer literal");
+                    self.checker.mismatch_coded(file, node.span, code, &expected.name(self.checker.state.design), "an integer literal");
                     Some(expected.clone())
                 }
                 ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
@@ -187,7 +188,7 @@ impl Checker<'_> {
     }
 
     /// The type of `expr` from the expression alone; `None` after a diagnostic.
-    pub(super) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn infer(&mut self, expr: ExprId) -> Option<Ty> {
         Stack::deep(|| {
             let in_event_position = self.state.values.event_slot == Some(expr);
             let mut ty = self.infer_kind(expr);
@@ -200,6 +201,7 @@ impl Checker<'_> {
         })
     }
 
+    /// The type of `expr` read off the kind of its node, with no type expected of it.
     fn infer_kind(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
@@ -299,6 +301,7 @@ impl Checker<'_> {
         Some(Ty::Str)
     }
 
+    /// The type of the binary operation `whole`, `lhs op rhs`: the operands are typed under the rule of `op` (§1.5).
     pub(super) fn binary(&mut self, whole: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId) -> Option<Ty> {
         let file = self.file_of_expr(lhs);
         let span = self.state.design.expr_node(whole).span;
@@ -386,7 +389,7 @@ impl Checker<'_> {
         self.operands_of(first_ty, lhs, rhs, ordering, accepts)
     }
 
-    /// [`Checker::operands`] with the type of the first operand already inferred.
+    /// [`ExpressionTyping::operands`] with the type of the first operand already inferred.
     fn operands_of(&mut self, first_ty: Option<Ty>, lhs: ExprId, rhs: ExprId, ordering: bool, accepts: impl Fn(&Ty) -> bool) -> Option<Ty> {
         let (first, second) = self.literal_last(lhs, rhs);
         match first_ty {
@@ -429,7 +432,7 @@ impl Checker<'_> {
         if lhs_read != rhs_read {
             return if lhs_read { (rhs, lhs) } else { (lhs, rhs) };
         }
-        let bare = |this: &Self, e: ExprId| this.integer_literal_text(e).is_some_and(|t| NumberLiteral::new(&t).int_suffix_text().is_empty()) || this.open_literal_local(e).is_some();
+        let bare = |this: &mut Self, e: ExprId| this.expressions().integer_literal_text(e).is_some_and(|t| NumberLiteral::new(&t).int_suffix_text().is_empty()) || this.expressions().open_literal_local(e).is_some();
         // a bare float literal takes the type of the other operand (`2.0 * b` with `b: f16`), unless that operand is a bare integer
         // literal: `1 + 1.0` is typed from the float, so the integer literal is the one that does not convert
         if bare(self, lhs) && !bare(self, rhs) || self.bare_float_literal(lhs) && !self.bare_float_literal(rhs) && !bare(self, rhs) { (rhs, lhs) } else { (lhs, rhs) }
@@ -443,7 +446,7 @@ impl Checker<'_> {
             Some(other) => {
                 let file = self.file_of_expr(rhs);
                 let span = self.state.design.expr_node(rhs).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
+                self.checker.mismatch_text(file, span, "an integer type", &other.name(self.checker.state.design));
             }
             None => {}
         }
@@ -522,6 +525,7 @@ impl Checker<'_> {
         found
     }
 
+    /// The type of a literal of `kind` written at `span` of `file`, with no type expected of it (§1.4).
     fn literal(&mut self, kind: &LitKind, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
         match kind {
             // §1.4.2: a suffix gives the type; an SI-suffixed literal is always an `f64` (A.2 rule 1)
@@ -590,7 +594,7 @@ impl Checker<'_> {
     }
 
     /// The text of `expr` when it is an integer literal without an `f64` suffix, through parens.
-    pub(super) fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
+    pub(in crate::types) fn integer_literal_text(&self, expr: ExprId) -> Option<String> {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.integer_literal_text(*inner),
             ExprKind::Lit(lit) => match &lit.kind {
@@ -645,50 +649,7 @@ impl Checker<'_> {
                     DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.bundle_as_value(expr),
                     DeclKind::Port(p) => self.read_type(decl, p.ty),
                     DeclKind::Signal(s) => self.read_type(decl, s.ty).map(|read| self.generated_read(expr, decl, read)),
-                    DeclKind::FnParam(_) | DeclKind::Binding(_) => {
-                        // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
-                        let whole = self.binding_type(decl);
-                        if let Some(read) = self.handle_read(decl) {
-                            // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
-                            if self.is_bundle_type(&read) && !self.state.design.is_method_receiver(expr) && !self.state.design.is_field_base(expr) {
-                                return self.bundle_as_value(expr);
-                            }
-                            return Some(read);
-                        }
-                        let local = whole.map(|whole| self.generated_local(expr, decl, whole));
-                        // A read that requires no type gives the literal its default `i32` (§1.4.2).
-                        self.state.values.open_literals.remove(&decl);
-                        if self.read_before_assignment(file, node.span, decl) {
-                            return local;
-                        }
-                        if self.state.values.pending_closures.contains_key(&decl) {
-                            let message = "a closure whose parameters have no written type is typed by its first call: call it before using it as a value (§1.4.4)".to_string();
-                            self.coded(file, "E0181", node.span, message, "parameter type unknown");
-                            return None;
-                        }
-                        if local.is_none() && self.state.modules.lets_open.contains_key(&decl) {
-                            return self.self_read(file, node.span, decl);
-                        }
-                        // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
-                        if self.continuous_result_in_const(file, node.span, decl) {
-                            return None;
-                        }
-                        // a `let` of a placement names an instance (§8.2.14); one of a template holds a value of the module's
-                        // type, read and placed as a `const` or a param template is (§8.4.1, §8.4.4)
-                        if let Some(Ty::Module(module)) = &local
-                            && self.binds_an_instance(decl)
-                        {
-                            return self.instance_as_value(file, node.span, decl, module.decl);
-                        }
-                        if local.is_none() && !self.state.values.poisoned.contains(&decl) {
-                            if self.state.values.fn_where {
-                                self.refuse(file, node.span, ValueForm::ValueParameterInWhereOfFn);
-                            } else {
-                                self.refuse(file, node.span, ValueForm::NameWhoseTypeIsUnknown);
-                            }
-                        }
-                        local
-                    }
+                    DeclKind::FnParam(_) | DeclKind::Binding(_) => self.local_read(expr, decl, file, node.span),
                     DeclKind::Struct(_) | DeclKind::Variant(_) => self.constructor_value(expr, decl, file, node.span),
                     // §1.2.10: a function's name is a value of type `fn(T..) -> U`
                     DeclKind::Fn(_) => self.function_value(expr),
@@ -728,10 +689,57 @@ impl Checker<'_> {
         }
     }
 
+    /// A read of a parameter or a local binding `decl`: a handle read, or the binding's own type, judged for a read before
+    /// its assignment, a closure still to be typed, a feedback, a continuous `let` in a const context and a template.
+    fn local_read(&mut self, expr: ExprId, decl: crate::pom::DeclId, file: crate::pom::FileId, span: crate::msl::Span) -> Option<Ty> {
+        // a handle read: the value of a discrete carrier, the node itself (§3.1.5, §3.1.6)
+        let whole = self.binding_type(decl);
+        if let Some(read) = self.handle_read(decl) {
+            // a bundle handle is named as a receiver or the base of a field, never read (§7 rule 9)
+            if self.is_bundle_type(&read) && !self.state.design.is_method_receiver(expr) && !self.state.design.is_field_base(expr) {
+                return self.bundle_as_value(expr);
+            }
+            return Some(read);
+        }
+        let local = whole.map(|whole| self.generated_local(expr, decl, whole));
+        // A read that requires no type gives the literal its default `i32` (§1.4.2).
+        self.state.values.open_literals.remove(&decl);
+        if self.read_before_assignment(file, span, decl) {
+            return local;
+        }
+        if self.state.values.pending_closures.contains_key(&decl) {
+            let message = "a closure whose parameters have no written type is typed by its first call: call it before using it as a value (§1.4.4)".to_string();
+            self.coded(file, "E0181", span, message, "parameter type unknown");
+            return None;
+        }
+        if local.is_none() && self.state.modules.lets_open.contains_key(&decl) {
+            return self.self_read(file, span, decl);
+        }
+        // a continuous `let` read where no probe may be written, typed or not yet (§8.3.10)
+        if self.continuous_result_in_const(file, span, decl) {
+            return None;
+        }
+        // a `let` of a placement names an instance (§8.2.14); one of a template holds a value of the module's
+        // type, read and placed as a `const` or a param template is (§8.4.1, §8.4.4)
+        if let Some(Ty::Module(module)) = &local
+            && self.binds_an_instance(decl)
+        {
+            return self.instance_as_value(file, span, decl, module.decl);
+        }
+        if local.is_none() && !self.state.values.poisoned.contains(&decl) {
+            if self.state.values.fn_where {
+                self.refuse(file, span, ValueForm::ValueParameterInWhereOfFn);
+            } else {
+                self.refuse(file, span, ValueForm::NameWhoseTypeIsUnknown);
+            }
+        }
+        local
+    }
+
     /// The statements of a block, a function body or an analog block; the type of the block is
     /// that of its last expression without a `;`, else `()`. With an `expected` type the last
     /// expression is checked against it.
-    pub(super) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
+    pub(in crate::types) fn statements(&mut self, stmts: &[StmtId], expected: Option<&Ty>) -> Option<Ty> {
         self.statements_as(stmts, expected, "E0180")
     }
 
@@ -788,7 +796,7 @@ impl Checker<'_> {
             Some(t) => match self.lower_type(t).filter(|ty| {
                 let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
                 if carriers {
-                    self.refuse(file, self.state.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);
+                    self.checker.refuse(file, self.checker.state.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);
                 }
                 !carriers
             }) {

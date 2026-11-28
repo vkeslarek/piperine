@@ -132,7 +132,7 @@ impl Checker<'_> {
         self.explicit_arguments(&mut inference, &signature, callee, function, file, span)?;
         self.argument_types(&mut inference, &params, args);
         self.callable_arguments(&mut inference, &params, args);
-        if let Some(expected) = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
+        if let Some(expected) = self.state.values.take_expected_call_type(expr) {
             inference.unify(&ret, &expected);
         }
         let substitution = self.complete_arguments(&mut inference, &signature, function, function, file, span)?;
@@ -142,24 +142,24 @@ impl Checker<'_> {
         let params: Vec<Ty> = params.iter().map(|param| self.substitute(&substitution, param)).collect();
         let ret = self.substitute(&substitution, &ret);
         self.state.result.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
-        self.finish_call(expr, callee, function, params, ret, args, false)
+        self.expressions().finish_call(expr, callee, function, params, ret, args, false)
     }
 
     /// The argument the instantiation records for `parameter`: the closure or the function a call
     /// passes for a parameter bound by `Fn(A) -> R` (D9, §3.8.6), else what the substitution gives.
-    fn recorded_argument(&self, parameter: &GenericParameter, declared: &[Ty], args: &[Arg], substitution: &Substitution) -> Option<GenericValue> {
+    fn recorded_argument(&mut self, parameter: &GenericParameter, declared: &[Ty], args: &[Arg], substitution: &Substitution) -> Option<GenericValue> {
         let callable = parameter.bounds.iter().any(|bound| matches!(bound, Bound::Callable { .. }));
         let passed = declared.iter().position(|ty| *ty == Ty::Param(parameter.decl)).and_then(|index| args.get(index));
         if let (true, Some(arg)) = (callable, passed) {
-            if let Some(closure) = self.closure_expr(arg.value) {
+            if let Some(closure) = self.expressions().closure_expr(arg.value) {
                 return Some(GenericValue::Closure(closure));
             }
-            if let Some(Resolution::Decl(decl)) = self.callee_resolution(arg.value) {
+            if let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(arg.value) {
                 if matches!(self.state.design.decl_data(decl).kind, DeclKind::Fn(_)) {
                     return Some(GenericValue::Function(decl));
                 }
-                if let Some(closure) = self.state.values.closure_locals.get(&decl) {
-                    return Some(GenericValue::Closure(*closure));
+                if let Some(closure) = self.state.values.closure_of(decl) {
+                    return Some(GenericValue::Closure(closure));
                 }
             }
         }
@@ -202,13 +202,13 @@ impl Checker<'_> {
     pub(super) fn argument_types(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
         for open_literals in [false, true] {
             for (arg, declared) in args.iter().zip(params) {
-                if self.integer_literal_text(arg.value).is_some() != open_literals || self.callable_bound_of(declared).is_some() {
+                if self.expressions().integer_literal_text(arg.value).is_some() != open_literals || self.callable_bound_of(declared).is_some() {
                     continue;
                 }
                 if open_literals && !self.mentions_open_parameter(declared, inference) {
                     continue;
                 }
-                let given = if self.is_nature_parameter(declared) { self.infer_carrier(arg.value) } else { self.infer(arg.value) };
+                let given = if self.is_nature_parameter(declared) { self.infer_carrier(arg.value) } else { self.expressions().infer(arg.value) };
                 if let Some(given) = given {
                     inference.unify(declared, &given);
                 }
@@ -224,11 +224,11 @@ impl Checker<'_> {
         for (arg, declared) in args.iter().zip(params) {
             let Some(wanted) = self.callable_bound_of(declared) else { continue };
             let expected = inference.found().apply(&wanted);
-            let ty = if self.is_function_value(arg.value) && !self.mentions_open_parameter(&expected, inference) {
-                self.check(arg.value, &expected);
+            let ty = if self.expressions().is_function_value(arg.value) && !self.mentions_open_parameter(&expected, inference) {
+                self.expressions().check(arg.value, &expected);
                 self.state.result.exprs[arg.value.index()].clone()
             } else {
-                self.infer(arg.value)
+                self.expressions().infer(arg.value)
             };
             if let Some(ty) = ty {
                 inference.unify(declared, &ty);

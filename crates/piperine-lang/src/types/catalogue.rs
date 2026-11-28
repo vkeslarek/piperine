@@ -123,7 +123,7 @@ pub(super) enum Lookup {
     /// A row: its method, its argument types and its result.
     Row(Method, Vec<Ty>, Ty),
     /// A row of H.3 or H.4 whose arguments are typed from the receiver's payload and a closure's
-    /// body (`Checker::payload_row`).
+    /// body (`ExpressionTyping::payload_row`).
     Payload(Method),
     /// The receiver's catalogue is complete and has no such row: `E0161` (Appendix H rule 1).
     Absent,

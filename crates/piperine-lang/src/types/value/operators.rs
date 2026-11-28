@@ -7,9 +7,9 @@
 use crate::msl::Span;
 use crate::pom::{Arg, BinOp, DeclId, DeclKind, ExprId, FileId, Resolution, TypeId};
 
-use super::check::Checker;
-use super::inference::Inference;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::inference::Inference;
+use crate::types::Ty;
 
 /// An operator whose meaning on a library type is a trait function (H.10).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -95,7 +95,7 @@ impl OperatorTrait {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Whether an operator on a value of `ty` is a trait function: `ty` is a struct or an enum.
     pub(super) fn takes_operator_traits(ty: &Ty) -> bool {
         matches!(ty, Ty::Struct(_) | Ty::Enum(_))
@@ -164,12 +164,12 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The rules of `impl Tr for T` where `Tr` is a built-in trait the project may implement but `Repr` (H.8, H.10): the
     /// `impl` defines the trait's functions (`bitand`, `eq` and `ne`, `from`, `default`, ..) and no other item, each
     /// with the signature the trait gives under `Self = T` and the `Rhs` and `Out` the `impl` writes or their
     /// defaults. Each is `E0187` naming the trait and the type. The written arguments are typed here so every use sees them.
-    pub(super) fn builtin_impl_rules(&mut self, decl: DeclId, self_ty: TypeId) {
+    pub(in crate::types) fn builtin_impl_rules(&mut self, decl: DeclId, self_ty: TypeId) {
         let table = std::rc::Rc::clone(&self.state.traits);
         let Some(entry) = table.impls().iter().find(|entry| entry.decl == decl) else { return };
         let Some(trait_name) = entry.builtin_trait else { return };
@@ -207,7 +207,7 @@ impl Checker<'_> {
             let found = Ty::Fn(params, Box::new(ret));
             let wanted_type = Ty::Fn(given, Box::new(result.clone()));
             if !found.fits(&wanted_type) {
-                self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (Appendix H)", found.name(self.state.design), wanted_type.name(self.state.design)), "a signature the trait does not give");
+                self.checker.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (Appendix H)", found.name(self.checker.state.design), wanted_type.name(self.checker.state.design)), "a signature the trait does not give");
             }
         }
     }

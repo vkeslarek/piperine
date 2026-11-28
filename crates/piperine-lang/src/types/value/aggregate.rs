@@ -11,8 +11,8 @@ use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FieldInit, FileId, Name, Resolution, TypeId};
 
-use super::check::Checker;
-use super::{ConstTerm, Length, Nominal, Ty};
+use super::ExpressionTyping;
+use crate::types::{ConstTerm, Length, Nominal, Ty};
 
 /// One typed field of a struct or of an enum variant, in declaration order.
 #[derive(Debug, Clone, PartialEq)]
@@ -25,14 +25,14 @@ pub struct FieldType {
     pub ty: Ty,
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     // ---- types as written ------------------------------------------------------------------
 
     /// The type of the struct `decl` named at `span` of `file`: [`Ty::Struct`] once its fields are
     /// typed, else a diagnostic and `None` (a bundle is outside the subset, a duplicate field or a
     /// self-containing type is `E0186`). A generic struct is typed over its own parameters; its uses
     /// carry the arguments (`generic_nominal`).
-    pub(super) fn struct_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+    pub(in crate::types) fn struct_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         if self.state.values.broken.contains(&decl) {
             return None;
         }
@@ -81,7 +81,7 @@ impl Checker<'_> {
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.
-    pub(super) fn fields_of(&mut self, owner: DeclId) -> Option<Vec<FieldType>> {
+    pub(in crate::types) fn fields_of(&mut self, owner: DeclId) -> Option<Vec<FieldType>> {
         if let Some(found) = self.state.result.layouts.get(&owner) {
             return Some(found.clone());
         }
@@ -120,13 +120,13 @@ impl Checker<'_> {
     }
 
     /// `(A, B)` and `(A,)` (§1.2.4).
-    pub(super) fn tuple_type(&mut self, items: &[TypeId]) -> Option<Ty> {
+    pub(in crate::types) fn tuple_type(&mut self, items: &[TypeId]) -> Option<Ty> {
         let types: Option<Vec<Ty>> = items.iter().map(|t| self.lower_type(*t)).collect();
         let types = types?;
         for (ty, node) in types.iter().zip(items) {
             if !ty.is_value() {
                 let (file, span) = self.type_place(*node);
-                self.refuse_with(file, span, ValueForm::InsideTupleType, [ty.name(self.state.design).to_string()]);
+                self.checker.refuse_with(file, span, ValueForm::InsideTupleType, [ty.name(self.checker.state.design).to_string()]);
                 return None;
             }
         }
@@ -135,7 +135,7 @@ impl Checker<'_> {
 
     /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`; one that reads a module
     /// param stays an expression the elaborator folds per body variant (§8.1.2, QC2).
-    pub(super) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
+    pub(in crate::types) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
         let element = self.lower_type(elem);
         let length = self.array_length(file, span, len)?;
         let element = element?;
@@ -144,7 +144,7 @@ impl Checker<'_> {
             return Some(Ty::Array(Box::new(element), length));
         }
         if !element.is_value() && !matches!(element, Ty::Module(_)) {
-            self.refuse_with(file, span, ValueForm::ArrayOf, [element.name(self.state.design).to_string()]);
+            self.checker.refuse_with(file, span, ValueForm::ArrayOf, [element.name(self.checker.state.design).to_string()]);
             return None;
         }
         Some(Ty::Array(Box::new(element), length))
@@ -152,7 +152,7 @@ impl Checker<'_> {
 
     /// The length `len` of an array type: a number the checker folds, a length over const parameters, or one that reads a
     /// module param; else `E0188` naming it (§1.2.5).
-    pub(super) fn array_length(&mut self, file: FileId, span: Span, len: ExprId) -> Option<Length> {
+    pub(in crate::types) fn array_length(&mut self, file: FileId, span: Span, len: ExprId) -> Option<Length> {
         let Some(length) = self.fold_length(len).map(Length::Fixed).or_else(|| self.generic_length(len)).or_else(|| self.module_param_length(len)) else {
             let what = self.expression_name(len);
             self.coded(file, "E0188", span, format!("the length of an array type is a constant, and {what} is not one the checker folds (§1.2.5)"), "not a constant");
@@ -238,7 +238,7 @@ impl Checker<'_> {
 
     /// The type a struct, a tuple struct or a variant constructs, with the declaration that owns
     /// its fields.
-    pub(super) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
+    pub(in crate::types) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
         match &self.state.design.decl_data(target).kind {
             DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.open_type(target), target)),
             DeclKind::Variant(_) => {
@@ -301,7 +301,7 @@ impl Checker<'_> {
 
     /// `s.x` and `t.0` (§1.3.4): the type of the field, or `E0186`
     /// naming the field a type does not have.
-    pub(super) fn field_of_value(&mut self, expr: ExprId, receiver: ExprId, name: &Name) -> Option<Ty> {
+    pub(in crate::types) fn field_of_value(&mut self, expr: ExprId, receiver: ExprId, name: &Name) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
         let found = self.infer(receiver)?;
@@ -360,7 +360,7 @@ impl Checker<'_> {
                 Some(ty) => {
                     let file = self.file_of_expr(*item);
                     let span = self.state.design.expr_node(*item).span;
-                    self.refuse_with(file, span, ValueForm::InsideTuple, [ty.name(self.state.design).to_string()]);
+                    self.checker.refuse_with(file, span, ValueForm::InsideTuple, [ty.name(self.checker.state.design).to_string()]);
                     typed = false;
                 }
                 None => typed = false,
@@ -392,7 +392,7 @@ impl Checker<'_> {
                 // an array of templates is a value of the elaboration (§8.4.1, GAPS L88)
                 if !ty.is_value() && !matches!(ty, Ty::Module(_)) {
                     let span = self.state.design.expr_node(first).span;
-                    self.refuse_with(file, span, ValueForm::InsideArray, [ty.name(self.state.design).to_string()]);
+                    self.checker.refuse_with(file, span, ValueForm::InsideArray, [ty.name(self.checker.state.design).to_string()]);
                     return None;
                 }
                 for item in items.iter().filter(|i| **i != first) {
@@ -443,7 +443,7 @@ impl Checker<'_> {
             Ty::Array(element, _) => (**element).clone(),
             other => {
                 let span = self.state.design.expr_node(base).span;
-                self.mismatch_text(file, span, "an array", &other.name(self.state.design));
+                self.checker.mismatch_text(file, span, "an array", &other.name(self.checker.state.design));
                 return None;
             }
         };
@@ -451,20 +451,20 @@ impl Checker<'_> {
     }
 
     /// An index or a bound of a range: any integer type (§1.5.9).
-    pub(super) fn integer_index(&mut self, index: ExprId) {
+    pub(in crate::types) fn integer_index(&mut self, index: ExprId) {
         match self.infer(index) {
             Some(ty) if ty.is_integer() => {}
             Some(other) => {
                 let file = self.file_of_expr(index);
                 let span = self.state.design.expr_node(index).span;
-                self.mismatch_text(file, span, "an integer type", &other.name(self.state.design));
+                self.checker.mismatch_text(file, span, "an integer type", &other.name(self.checker.state.design));
             }
             None => {}
         }
     }
 
     /// The name of a const expression for a message: a path as written, else a plain word.
-    pub(super) fn expression_name(&self, expr: ExprId) -> String {
+    pub(in crate::types) fn expression_name(&self, expr: ExprId) -> String {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(path) => {
                 let segments: Vec<&str> = self.state.design.path_node(*path).segments.iter().map(|s| s.name.text.as_str()).collect();

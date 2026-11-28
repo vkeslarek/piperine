@@ -84,14 +84,13 @@ crates/piperine-lang/src/pom/resolve/names.rs::Names::expr_inner	-
 crates/piperine-lang/src/pom/to_ast.rs::Rebuild::expr_inner	-
 crates/piperine-lang/src/types/analog.rs::Checker::core_call	-
 crates/piperine-lang/src/types/analog.rs::Checker::probe	-
-crates/piperine-lang/src/types/call.rs::Checker::method_call	-
+crates/piperine-lang/src/types/value/call.rs::ExpressionTyping::method_call	kept: a chain of early returns in the order of the rules for a method call (§3.1.7, §5.3.1, §7 rule 13); each rule is a guard and a hand-off to the method of its form, and the order is the order of the diagnostics
 crates/piperine-lang/src/types/check.rs::Checker::lower_type_node	-
-crates/piperine-lang/src/types/expr.rs::Checker::binary	-
-crates/piperine-lang/src/types/expr.rs::Checker::check_as	-
-crates/piperine-lang/src/types/expr.rs::Checker::closure	-
-crates/piperine-lang/src/types/expr.rs::Checker::infer_kind	-
-crates/piperine-lang/src/types/expr.rs::Checker::let_statement	-
-crates/piperine-lang/src/types/expr.rs::Checker::path	-
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::binary	kept: one match over the binary operators, an arm per rule of §1.5; each arm names the operand rule of its operators
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::check_as	kept: one match over the expression kinds that hands the expected type to the parts of each form; the order of the guards is the order the expected type reaches them, which is the order of the diagnostics
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::closure	kept: the body of `check_as`, which `Stack::deep` wraps to bound the recursion; it is the same match
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::infer_kind	kept: an exhaustive match over the expression kinds, each arm dispatching to the method of its form
+crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::let_statement	kept: the steps of one `let` of a plain name in order (the annotation, a closure whose parameters wait for a call, the initializer, the bookkeeping of the binding), each reading what the one before it fixed, with an early return where one ends it
 crates/piperine-lang/src/types/module.rs::Checker::connections	-
 crates/piperine-lang/src/types/module.rs::Checker::placement	-
 crates/piperine-plan/src/digital.rs::Digital::functions	-

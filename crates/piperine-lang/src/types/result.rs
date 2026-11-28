@@ -17,7 +17,7 @@ impl Checker<'_> {
         let (file, name_span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
         match (module.ret, module.result) {
             (Some(ret), Some(result)) => match self.lower_type(ret) {
-                Some(ty) => self.check_as(result, &ty, "E0301"),
+                Some(ty) => self.expressions().check_as(result, &ty, "E0301"),
                 None => {
                     self.infer_event_position(result);
                 }
@@ -29,7 +29,7 @@ impl Checker<'_> {
             (None, Some(result)) => {
                 let span = self.state.design.expr_node(result).span;
                 self.refuse(file, span, StructureForm::ModuleResult);
-                self.infer(result);
+                self.expressions().infer(result);
             }
             (None, None) => {}
         }
@@ -73,7 +73,7 @@ impl Checker<'_> {
     /// result) read in a const context (a param default, a `where`, a `const` initializer), where no
     /// probe may be written. Reports and returns true when it is one.
     pub(super) fn continuous_result_in_const(&mut self, file: FileId, span: Span, binding: DeclId) -> bool {
-        if self.state.values.context != Context::Const {
+        if self.state.values.context() != Context::Const {
             return false;
         }
         let Some(init) = self.binding_init(binding) else { return false };
@@ -83,7 +83,7 @@ impl Checker<'_> {
         let name = self.state.design.decl_data(binding).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("the continuous result `{name}` is read in a const context, where no probe may be written (§8.3.10)");
         self.coded(file, "E0354", span, message, "a continuous result where probes are not allowed");
-        self.state.values.poisoned.insert(binding);
+        self.state.values.poison(binding);
         true
     }
 
@@ -163,7 +163,7 @@ impl Checker<'_> {
         } else {
             self.refuse_with(file, span, StructureForm::FeedbackOfThroughInstanceWhoseValueIs, [name.to_string()]);
         }
-        self.state.values.poisoned.insert(binding);
+        self.state.values.poison(binding);
         None
     }
 

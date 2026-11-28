@@ -64,7 +64,7 @@ impl Checker<'_> {
     /// that probes or reads the environment of the solve is `E0122` naming it.
     fn module_impl_purity(&mut self, decl: DeclId) {
         for child in self.state.design.decl_data(decl).children.clone() {
-            if !matches!(self.state.design.decl_data(child).kind, DeclKind::Fn(_)) || !self.function_class(child, &mut std::collections::BTreeSet::new()).solve_reading {
+            if !matches!(self.state.design.decl_data(child).kind, DeclKind::Fn(_)) || !self.expressions().function_class(child, &mut std::collections::BTreeSet::new()).solve_reading {
                 continue;
             }
             let item = self.state.design.decl_data(child);
@@ -131,7 +131,7 @@ impl Checker<'_> {
             return;
         }
         if self.state.traits.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait.is_some()) {
-            self.builtin_impl_rules(decl, data.self_ty);
+            self.expressions().builtin_impl_rules(decl, data.self_ty);
             return;
         }
         let Some(Resolution::Decl(trait_decl)) = self.state.design.path_node(path).segments.last().map(|segment| segment.res) else { return };

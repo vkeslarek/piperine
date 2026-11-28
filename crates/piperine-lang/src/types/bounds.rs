@@ -139,7 +139,7 @@ impl Checker<'_> {
 
     /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
     pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
-        let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return None };
+        let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(callee) else { return None };
         if matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return self.module_param_callable(decl).map(|_| decl);
         }
@@ -150,7 +150,7 @@ impl Checker<'_> {
     /// Whether `callee` is a param whose type is a type parameter with an `Fn(..)` bound, though the bound did not type (an input
     /// that failed to lower): the failure is already reported.
     pub(super) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
-        let Some(Resolution::Decl(decl)) = self.callee_resolution(callee) else { return false };
+        let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(callee) else { return false };
         let DeclKind::Param(data) = &self.state.design.decl_data(decl).kind else { return false };
         matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.state.design, parameter))
     }
@@ -172,7 +172,7 @@ impl Checker<'_> {
             let file = self.file_of_expr(expr);
             self.coded(file, "E0140", named.span, "a call through an `Fn` bound takes its arguments by position (§3.2.11)".to_string(), "positional only");
             for arg in args {
-                self.infer(arg.value);
+                self.expressions().infer(arg.value);
             }
             return None;
         }
@@ -182,7 +182,7 @@ impl Checker<'_> {
             self.connect_through_bound(expr, &params, &views, args)?;
             return Some(*result);
         }
-        self.local_call(expr, parameter, args)
+        self.expressions().local_call(expr, parameter, args)
     }
 
     /// The connections of a placement through a template param bounded by `Fn(P)` (§8.4.5): a node input takes what a port of
@@ -192,17 +192,17 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         if args.len() != params.len() {
-            self.arity_mismatch(file, span, params.len(), args);
+            self.expressions().arity_mismatch(file, span, params.len(), args);
             return None;
         }
         for (position, (arg, ty)) in args.iter().zip(params).enumerate() {
             match ty {
                 Ty::Node(_) => {
-                    let Some(found) = self.infer(arg.value) else { continue };
+                    let Some(found) = self.expressions().infer(arg.value) else { continue };
                     self.connect(arg.value, &format!("the node input {} of the `Fn` bound", position + 1), ty, &found);
                 }
                 _ if self.is_bundle_type(ty) => self.connect_bundle_input(arg.value, ty, views.get(position).copied().unwrap_or(BundleView::Producer), position),
-                _ => self.check_argument(arg.value, ty),
+                _ => self.expressions().check_argument(arg.value, ty),
             }
         }
         Some(())
@@ -251,7 +251,7 @@ impl Checker<'_> {
     pub(super) fn parameter_encode(&mut self, param: DeclId, args: &[Arg], file: FileId, span: Span) -> Option<Ty> {
         self.require_bound(param, &Bound::Repr, "encode", file, span)?;
         if !args.is_empty() {
-            self.arity_mismatch(file, span, 0, args);
+            self.expressions().arity_mismatch(file, span, 0, args);
             return None;
         }
         Some(Ty::Array(Box::new(Ty::Bool), Length::Generic(ConstTerm::Width(param))))
@@ -270,10 +270,10 @@ impl Checker<'_> {
         }
         let levels = Ty::Array(Box::new(Ty::Bool), Length::Generic(ConstTerm::Width(param)));
         if args.len() != 1 {
-            self.arity_mismatch(file, span, 1, args);
+            self.expressions().arity_mismatch(file, span, 1, args);
             return Some(None);
         }
-        self.check_argument(args[0].value, &levels);
+        self.expressions().check_argument(args[0].value, &levels);
         Some(Some(Ty::Option(Box::new(Ty::Param(param)))))
     }
 
@@ -295,7 +295,7 @@ impl Checker<'_> {
                 self.state.generics.bound_substitution = Some(bound);
                 self.state.result.bound_arguments.insert(call.0, wanted);
             }
-            return self.method_call_of(call.0, call.1, &Ty::Param(param), function, args);
+            return self.expressions().method_call_of(call.0, call.1, &Ty::Param(param), function, args);
         }
         if name == "encode" && self.bounds_of(param).contains(&Bound::Repr) {
             return self.parameter_encode(param, args, file, method_span);
@@ -313,7 +313,7 @@ impl Checker<'_> {
         let message = format!("no method `{name}` on `{parameter}`: {bounds} of `{parameter}` give none called `{name}` (§3 rule 9); {hint}");
         self.coded(file, "E0161", method_span, message, "a method no bound gives");
         for arg in args {
-            self.infer(arg.value);
+            self.expressions().infer(arg.value);
         }
         None
     }

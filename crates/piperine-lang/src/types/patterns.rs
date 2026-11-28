@@ -120,14 +120,14 @@ impl Checker<'_> {
         let annotated = ty.map(|t| self.lower_type(t));
         let value = match annotated {
             Some(Some(t)) => {
-                self.check(init, &t);
+                self.expressions().check(init, &t);
                 Some(t)
             }
             Some(None) => {
-                self.infer(init);
+                self.expressions().infer(init);
                 None
             }
-            None => self.infer(init),
+            None => self.expressions().infer(init),
         };
         let Some(value) = value else { return };
         match else_ {
@@ -145,9 +145,9 @@ impl Checker<'_> {
     /// `loop` without `break`, so it never completes; otherwise `E0185`. What it assigns is
     /// not assigned after the `let`.
     fn diverging_block(&mut self, file: FileId, block: &BlockNode) {
-        let before = self.state.values.flow.assigned.clone();
-        let found = self.statements(&block.stmts, None);
-        self.state.values.flow.assigned = before;
+        let before = self.state.values.assigned();
+        let found = self.expressions().statements(&block.stmts, None);
+        self.state.values.restore_assigned(before);
         if found.is_some_and(|t| t != Ty::Never) {
             let message = "the `else` block of a `let … else` can complete: it must end in `return`, `break`, `continue` or a `loop` without `break` (§1.7.6)".to_string();
             self.coded(file, "E0185", block.span, message, "the block completes");
@@ -197,9 +197,9 @@ impl Checker<'_> {
     /// A literal pattern: a `bool`, an integer or a float matched against its own type.
     fn literal_pattern(&mut self, file: FileId, span: Span, expr: ExprId, scrut: &Ty) -> Option<Matched> {
         match scrut {
-            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 => self.check(expr, scrut),
+            Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 => self.expressions().check(expr, scrut),
             other => {
-                let found = self.infer(expr)?;
+                let found = self.expressions().infer(expr)?;
                 self.mismatch(file, span, other, &found);
                 return None;
             }
@@ -216,7 +216,7 @@ impl Checker<'_> {
             return None;
         }
         for bound in lo.iter().chain(hi.iter()) {
-            self.check(*bound, scrut);
+            self.expressions().check(*bound, scrut);
         }
         let (low, high) = (lo.map(|e| self.literal_number(e)), hi.map(|e| self.literal_number(e)));
         if let (Some(Some(low)), Some(Some(high))) = (low, high)
@@ -285,7 +285,7 @@ impl Checker<'_> {
             Resolution::Decl(d) => match self.state.design.decl_data(d).kind.clone() {
                 DeclKind::Variant(_) => {
                     let parent = self.state.design.decl_data(d).parent?;
-                    let found = self.enum_type(parent, file, span)?;
+                    let found = self.expressions().enum_type(parent, file, span)?;
                     // a generic enum's variant is of its declaration, whatever arguments the scrutinee has
                     let same = matches!((&found, scrut), (Ty::Enum(open), Ty::Enum(given)) if open.decl == given.decl) || found == *scrut;
                     if !same {

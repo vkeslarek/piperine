@@ -4,23 +4,23 @@
 //! plain; a record field may also hold text. A function value, a module, a carrier and an event
 //! are never plain, so a host can read and write every leaf of a plain value.
 
-use super::check::Checker;
+use super::ExpressionTyping;
 use crate::pom::DeclId;
 
-use super::{Bound, Nominal, Ty};
+use crate::types::{Bound, Nominal, Ty};
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// Whether `ty` is a struct, a tuple, an array or an `Option` all of whose leaves are plain
     /// scalars (`f64`, `bool`, an integer, an enum), or `str` when `text` is allowed. Anything
     /// else, a bare scalar included, is not a plain composite.
-    pub(super) fn is_plain_composite(&mut self, ty: &Ty, text: bool) -> bool {
+    pub(in crate::types) fn is_plain_composite(&mut self, ty: &Ty, text: bool) -> bool {
         ty.is_composite() && self.is_plain(ty, text)
     }
 
     /// Whether a param may hold `ty` (§8.1.15, PI-01 to PI-03): an integer, a unit enum (PI-02; an
     /// enum with a payload is refused by name) or an `Option` of plain data, or a plain composite.
     /// `f64`, `bool` and a module are the caller's.
-    pub(super) fn is_param_type(&mut self, ty: &Ty) -> bool {
+    pub(in crate::types) fn is_param_type(&mut self, ty: &Ty) -> bool {
         match ty {
             Ty::UInt(_) | Ty::Int(_) | Ty::F32 | Ty::F16 | Ty::F128 => true,
             Ty::Enum(_) => true,
@@ -30,7 +30,7 @@ impl Checker<'_> {
 
     /// Whether the generic parameter `parameter` stands for a value type: not a nature (a node's) and not a template
     /// (`C: Fn(Cell)`, phase D), so a `param` of it is an ordinary value (§8.1.15).
-    pub(super) fn is_value_type_parameter(&mut self, parameter: DeclId) -> bool {
+    pub(in crate::types) fn is_value_type_parameter(&mut self, parameter: DeclId) -> bool {
         !self.bounds_of(parameter).contains(&Bound::Nature) && self.callable_of(parameter).is_none()
     }
 

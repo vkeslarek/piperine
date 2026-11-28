@@ -2,16 +2,16 @@
 //! checker infers the classes that restrict a call: a body that reads the environment of the solve
 //! is solve-reading, one that reaches `emit!` is emitting; every other body is pure.
 
-use super::check::Context;
+use crate::types::check::Context;
 
 /// The classes of a function or a closure; a body may belong to several, and the restrictions add
 /// up (§3).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(super) struct FunctionClass {
+pub(in crate::types) struct FunctionClass {
     /// Reads `now()`, `freq()`, `gmin()`, `source_scale()` or `analysis(..)`.
-    pub(super) solve_reading: bool,
+    pub(in crate::types) solve_reading: bool,
     /// Reaches `emit!`.
-    pub(super) emitting: bool,
+    pub(in crate::types) emitting: bool,
 }
 
 impl FunctionClass {

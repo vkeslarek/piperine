@@ -1,7 +1,7 @@
 //! Enums (§1.3.5 to §1.3.7, part I §2 rule 5): unit variants and variants with positional or
 //! named fields, `#[repr(uN)]` and explicit discriminants.
 //!
-//! A variant's fields are typed like a struct's (`Checker::fields_of`), and a type that contains
+//! A variant's fields are typed like a struct's (`ExpressionTyping::fields_of`), and a type that contains
 //! itself through them is `E0186` (§1.3.8). A discriminant is allowed only where no variant has a
 //! field, must fit the tag's levels, and is never repeated (`E0111`).
 
@@ -10,8 +10,8 @@ use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, FieldsForm, FileId};
 
 use super::aggregate::FieldType;
-use super::check::Checker;
-use super::Ty;
+use super::ExpressionTyping;
+use crate::types::Ty;
 
 /// The tag of a declared enum (§2 rule 5, §1.3.7): its width in levels and the discriminant of each
 /// variant, in declaration order.
@@ -23,12 +23,12 @@ pub struct EnumTag {
     pub discriminants: Vec<i128>,
 }
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// The type of the enum `decl` named at `span` of `file`: [`Ty::Enum`] when its variants and
     /// their fields are typed, else a diagnostic and `None` (a generic enum is outside the subset; a
     /// carrier needs `#[derive(Repr)]`, checked where a carrier takes it; a duplicate variant or field and a self-containing
     /// type are `E0186`; a discriminant that does not fit or repeats is `E0111`).
-    pub(super) fn enum_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+    pub(in crate::types) fn enum_type(&mut self, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         if self.state.values.broken.contains(&decl) {
             return None;
         }
@@ -51,7 +51,7 @@ impl Checker<'_> {
     }
 
     /// The variants of the enum `decl`, in declaration order.
-    pub(super) fn variants_of(&self, decl: DeclId) -> Vec<DeclId> {
+    pub(in crate::types) fn variants_of(&self, decl: DeclId) -> Vec<DeclId> {
         self.state.design.decl_data(decl).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Variant(_))).collect()
     }
 
@@ -143,7 +143,7 @@ impl Checker<'_> {
 
     /// The `N` of `#[repr(uN)]` on `decl`: `None` without the attribute, `Some(None)` for another
     /// argument.
-    pub(super) fn repr_width(&self, decl: DeclId) -> Option<Option<u32>> {
+    pub(in crate::types) fn repr_width(&self, decl: DeclId) -> Option<Option<u32>> {
         let attr = self.state.design.decl_data(decl).meta.attrs.iter().find(|a| matches!(self.state.design.path_node(a.path).segments.as_slice(), [only] if only.name.text == "repr"))?;
         let AttrInputNode::List(args) = &attr.input else { return Some(None) };
         let [AttrArgNode::Path(path)] = args.as_slice() else { return Some(None) };
@@ -155,7 +155,7 @@ impl Checker<'_> {
     /// Whether `ty` has a `Repr` layout (§2): what `cast` and `same` take: a scalar, an enum, or a
     /// tuple, an array, a struct whose parts have one. An `Option` is not among them: value code
     /// holds it as a presence and a payload.
-    pub(super) fn repr_ok(&mut self, ty: &Ty) -> bool {
+    pub(in crate::types) fn repr_ok(&mut self, ty: &Ty) -> bool {
         !matches!(ty, Ty::Option(_)) && self.repr_levels(ty).is_some()
     }
 }

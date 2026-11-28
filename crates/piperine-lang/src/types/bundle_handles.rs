@@ -19,7 +19,7 @@ impl Checker<'_> {
             TypeKind::Array { elem, len } => {
                 let element = self.bundle_type(elem)?;
                 let file = self.state.design.decl_data(node.owner).file;
-                let length = self.array_length(file, node.span, len)?;
+                let length = self.expressions().array_length(file, node.span, len)?;
                 Some(Ty::Array(Box::new(element), length))
             }
             _ => {

@@ -7,10 +7,11 @@ use crate::refusal::RefusedForm;
 use crate::msl::Span;
 use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
 
-use super::catalogue::{Catalogue, Lookup};
-use super::check::{Checker, Context};
+use crate::types::catalogue::{Catalogue, Lookup};
+use crate::types::check::Context;
+use super::ExpressionTyping;
 use super::flow::ExitFrame;
-use super::{Builtin, Callee, Method, Ty};
+use crate::types::{Builtin, Callee, Method, Ty};
 
 /// The carrier methods of B.1: not rows of Appendix H, so a miss on them is not `E0161`.
 const CARRIER_METHODS: &[&str] = &["changed", "prev", "rise", "fall", "others", "inflow"];
@@ -18,9 +19,9 @@ const CARRIER_METHODS: &[&str] = &["changed", "prev", "rise", "fall", "others", 
 /// The methods the explicit model of unknowns took out (§3.3): a call is `E0161` with the help that names the three forms.
 const REMOVED_FLAG_METHODS: &[&str] = &["known", "known_or", "is_known", "high", "level", "merge"];
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// What a callee path names, if the callee is a plain path.
-    pub(super) fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
+    pub(in crate::types) fn callee_resolution(&self, callee: ExprId) -> Option<Resolution> {
         match &self.state.design.expr_node(callee).kind {
             ExprKind::Path(path) => self.state.design.path_node(*path).segments.last().map(|s| s.res),
             _ => None,
@@ -138,7 +139,7 @@ impl Checker<'_> {
     /// function's are the substituted ones): the callee recorded, the arguments bound to the
     /// parameters, the result the call's type. `pointers` holds a closure that captures out of a
     /// parameter of function type, which is a function pointer; a parameter bounded by `Fn` is not one.
-    pub(super) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
+    pub(in crate::types) fn finish_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, params: Vec<Ty>, ret: Ty, args: &[Arg], pointers: bool) -> Option<Ty> {
         self.state.result.callees.insert(expr, Callee::Function(function));
         self.state.result.exprs[callee.index()] = Some(Ty::Fn(params.clone(), Box::new(ret.clone())));
         let name = self.state.design.decl_data(function).name.as_ref().map_or_else(String::new, |n| n.text.clone());
@@ -172,7 +173,7 @@ impl Checker<'_> {
     /// is `E0141`. An argument of type `T` for `Option<T>` is `Some` of it, one of type
     /// `Option<T>` is as it is (§3.2.3, §3.2.10). The binding, one slot per parameter, is kept
     /// per call.
-    pub(super) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], required: usize, args: &[Arg], named: &[Option<usize>]) -> Option<()> {
+    pub(in crate::types) fn bind_arguments(&mut self, expr: ExprId, name: &str, params: &[Ty], required: usize, args: &[Arg], named: &[Option<usize>]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let mut slots: Vec<Option<ExprId>> = vec![None; params.len()];
@@ -269,7 +270,7 @@ impl Checker<'_> {
     /// `E0141` (Part I §3.2.6): a call that takes `expected` arguments (a count, or a range
     /// spelled `1 to 2`) and has the arguments of `args`. Every argument is still inferred, so
     /// one wrong count is one diagnostic.
-    pub(super) fn arity_mismatch(&mut self, file: FileId, span: Span, expected: impl std::fmt::Display, args: &[Arg]) {
+    pub(in crate::types) fn arity_mismatch(&mut self, file: FileId, span: Span, expected: impl std::fmt::Display, args: &[Arg]) {
         let found = args.len();
         self.coded(file, "E0141", span, format!("expected {expected} argument(s), found {found}"), "wrong number of arguments");
         for arg in args {
@@ -279,7 +280,7 @@ impl Checker<'_> {
 
     /// Check each argument against its parameter, in order. Only a function call binds by name
     /// (`bind_arguments`); the callers of this one take positional arguments.
-    pub(super) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
+    pub(in crate::types) fn apply(&mut self, expr: ExprId, params: &[Ty], args: &[Arg]) -> Option<()> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         if args.len() != params.len() {
@@ -441,7 +442,7 @@ impl Checker<'_> {
             Method::Expect => {
                 if !matches!(&self.state.design.expr_node(value).kind, ExprKind::Lit(lit) if matches!(lit.kind, LitKind::Str { .. })) {
                     self.infer(value);
-                    self.refuse(file, self.state.design.expr_node(value).span, ValueForm::ExpectWithMessageThatIsNotString);
+                    self.checker.refuse(file, self.checker.state.design.expr_node(value).span, ValueForm::ExpectWithMessageThatIsNotString);
                     return None;
                 }
                 self.check(value, &Ty::Str);
@@ -455,7 +456,7 @@ impl Checker<'_> {
             Method::Map | Method::AndThen | Method::Then => {
                 if !matches!(self.state.design.expr_node(value).kind, ExprKind::Closure { .. }) {
                     self.infer(value);
-                    self.refuse_with(file, self.state.design.expr_node(value).span, ValueForm::WithArgumentThatIsNotClosure, [match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }.to_string()]);
+                    self.checker.refuse_with(file, self.checker.state.design.expr_node(value).span, ValueForm::WithArgumentThatIsNotClosure, [match row { Method::Map => "map", Method::AndThen => "and_then", _ => "then" }.to_string()]);
                     return None;
                 }
                 let params: Vec<Ty> = if row == Method::Then { vec![] } else { vec![payload] };
@@ -464,7 +465,7 @@ impl Checker<'_> {
                     Method::AndThen if matches!(body, Ty::Option(_)) => body,
                     Method::AndThen => {
                         let span = self.state.design.expr_node(value).span;
-                        self.mismatch_text(file, span, "Option<_>", &body.name(self.state.design));
+                        self.checker.mismatch_text(file, span, "Option<_>", &body.name(self.checker.state.design));
                         return None;
                     }
                     _ => Ty::Option(Box::new(body)),

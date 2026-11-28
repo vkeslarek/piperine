@@ -10,7 +10,7 @@ use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, Resolution};
 
-use super::aggregate::FieldType;
+use super::value::aggregate::FieldType;
 use super::check::Checker;
 use super::{GenericValue, Length, Nominal, Ty};
 
@@ -93,7 +93,7 @@ impl DerivedTrait {
 impl Checker<'_> {
     /// Whether `ty` implements `which` (H.8 rules 4 and 7 for the built-in types, a derive for a struct
     /// or an enum; the derive's own validity is judged where the type is declared).
-    pub(super) fn implements(&self, ty: &Ty, which: DerivedTrait) -> bool {
+    pub(super) fn implements(&mut self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
             Ty::Unit => true,
             Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
@@ -105,7 +105,7 @@ impl Checker<'_> {
             Ty::Tuple(items) => items.iter().all(|item| self.implements(item, which)),
             // H.8 rule 6: a generic type implements a trait when it derives it and its arguments do
             Ty::Struct(nominal) | Ty::Enum(nominal) => {
-                (self.derives(nominal.decl, which.name()) || self.written_impl(ty, which))
+                (self.expressions().derives(nominal.decl, which.name()) || self.written_impl(ty, which))
                     && nominal.arguments.iter().all(|argument| match argument {
                         GenericValue::Type(ty) => self.implements(ty, which),
                         _ => true,
@@ -136,14 +136,14 @@ impl Checker<'_> {
         let is_enum = matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_));
         let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.state.design);
         let mut clean = true;
-        let derived: Vec<DerivedTrait> = DerivedTrait::ALL.into_iter().filter(|t| self.derives(decl, t.name())).collect();
+        let derived: Vec<DerivedTrait> = DerivedTrait::ALL.into_iter().filter(|t| self.expressions().derives(decl, t.name())).collect();
         for which in derived {
             let trait_name = which.name();
             if is_enum && which == DerivedTrait::Default {
                 self.derive_refused(file, span, format!("`#[derive(Default)]` on {name}: an enum does not derive `Default` (H.8 rule 4)"));
                 clean = false;
             }
-            if let Some(missing) = which.requires().iter().find(|needed| !self.derives(decl, needed.name())) {
+            if let Some(missing) = which.requires().iter().find(|needed| !self.expressions().derives(decl, needed.name())) {
                 self.derive_refused(file, span, format!("`#[derive({trait_name})]` on {name} needs `#[derive({})]` too (H.8 rules 2 and 3)", missing.name()));
                 clean = false;
             }
@@ -236,9 +236,9 @@ impl Checker<'_> {
             Ty::Array(element, Length::Fixed(length)) => u32::try_from(*length).ok()?.checked_mul(self.repr_levels(element)?),
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
             Ty::Struct(_) | Ty::Enum(_) if self.hand_written_levels(ty).is_some() => self.hand_written_levels(ty),
-            Ty::Struct(nominal) if self.derives(nominal.decl, "Repr") => {
+            Ty::Struct(nominal) if self.expressions().derives(nominal.decl, "Repr") => {
                 let substitution = self.nominal_substitution(nominal);
-                let fields: Vec<Ty> = self.fields_of(nominal.decl)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
+                let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
                 self.repr_sum(&fields)
             }
             Ty::Enum(nominal) => self.enum_levels(nominal),
@@ -254,19 +254,19 @@ impl Checker<'_> {
     /// The levels of a derived enum: the tag, then the widest payload (§2 rules 2, 5 and 6).
     fn enum_levels(&mut self, nominal: &Nominal) -> Option<u32> {
         let decl = nominal.decl;
-        if !self.derives(decl, "Repr") {
+        if !self.expressions().derives(decl, "Repr") {
             return None;
         }
         let substitution = self.nominal_substitution(nominal);
-        let variants = self.variants_of(decl);
-        let tag = match self.repr_width(decl) {
+        let variants = self.expressions().variants_of(decl);
+        let tag = match self.expressions().repr_width(decl) {
             None => usize::BITS - variants.len().saturating_sub(1).leading_zeros(),
             Some(Some(width)) => width,
             Some(None) => return None,
         };
         let mut widest = 0u32;
         for variant in variants {
-            let fields: Vec<Ty> = self.fields_of(variant)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
+            let fields: Vec<Ty> = self.expressions().fields_of(variant)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
             widest = widest.max(self.repr_sum(&fields)?);
         }
         tag.checked_add(widest)
@@ -275,7 +275,7 @@ impl Checker<'_> {
     /// `#[derive(Repr)]` on `decl` whose fields are `fields` requires every field to have a `Repr`
     /// (§2 rule 3): a field without one is `E0110` naming it. `false` when one is refused.
     pub(super) fn judge_repr(&mut self, decl: DeclId, file: FileId, fields: &[FieldType]) -> bool {
-        if !self.derives(decl, "Repr") {
+        if !self.expressions().derives(decl, "Repr") {
             return true;
         }
         let mut clean = true;

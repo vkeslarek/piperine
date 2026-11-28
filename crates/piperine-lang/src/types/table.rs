@@ -117,13 +117,13 @@ pub enum Method {
     IteratorMap,
     /// `it.filter(f)`.
     IteratorFilter,
-    /// `it.fold(init, f)`.
+    /// `it.expressions().fold(init, f)`.
     IteratorFold,
     /// `it.sum()` of an integer or float element type.
     IteratorSum,
     /// `it.count()`.
     IteratorCount,
-    /// `it.zip(other)`.
+    /// `it.expressions().zip(other)`.
     IteratorZip,
     /// `it.enumerate()`.
     IteratorEnumerate,
@@ -355,7 +355,7 @@ impl<'d> Types<'d> {
     /// The value of the const expression `expr` of a generic item for an instantiation: `values` gives each
     /// const parameter its argument. `None` when it does not fold (an underflow, an overflow, a division by zero).
     pub fn fold_with(&self, expr: ExprId, values: BTreeMap<DeclId, u128>) -> Option<u128> {
-        super::lengths::IntegerFolder::with_values(self.design, values).fold(expr, 16)
+        super::value::lengths::IntegerFolder::with_values(self.design, values).fold(expr, 16)
     }
 
     /// The level count a `T::WIDTH` path of the reachable set reads (§2, §22.1): 1 for `bool`, `N`
@@ -403,7 +403,7 @@ impl<'d> Types<'d> {
     /// integer built of literals, `const` names and integer arithmetic (§1.2.5). The elaborator's
     /// own constant evaluator needs a typed literal, which a length does not have.
     pub fn integer_constant(&self, expr: ExprId) -> Option<u128> {
-        super::lengths::IntegerFolder::of(self.design).fold(expr, 16)
+        super::value::lengths::IntegerFolder::of(self.design).fold(expr, 16)
     }
 
     /// The tag of the enum `decl`.

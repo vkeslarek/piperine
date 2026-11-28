@@ -74,16 +74,16 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
             [] => return None,
             [only] => {
                 let mark = self.checker.diagnostics_mark();
-                self.checker.check_as(value, &only.driven, "E0180");
+                self.checker.expressions().check_as(value, &only.driven, "E0180");
                 self.checker.annotate_since(mark, "E0180", &format!(": a drive of `{nature_name}` is a `{}` (its `impl Resolve`, §5.2.15)", only.driven.name(design)));
                 only.clone()
             }
             several => {
-                let bare = self.checker.integer_literal_text(value).filter(|text| text.chars().all(|c| c.is_ascii_digit() || c == '_'));
+                let bare = self.checker.expressions().integer_literal_text(value).filter(|text| text.chars().all(|c| c.is_ascii_digit() || c == '_'));
                 let accepting: Vec<&ResolveImpl> = match &bare {
                     Some(_) => several.iter().filter(|candidate| matches!(candidate.driven, Ty::UInt(_) | Ty::Int(_))).collect(),
                     None => {
-                        let found = self.checker.infer(value)?;
+                        let found = self.checker.expressions().infer(value)?;
                         several.iter().filter(|candidate| found.fits(&candidate.driven)).collect()
                     }
                 };
@@ -95,7 +95,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
                     }
                     [one] => {
                         if bare.is_some() {
-                            self.checker.check_as(value, &one.driven, "E0180");
+                            self.checker.expressions().check_as(value, &one.driven, "E0180");
                         }
                         (*one).clone()
                     }
@@ -103,7 +103,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
                         let names = ambiguous.iter().map(|candidate| format!("`{}`", candidate.driven.name(design))).collect::<Vec<_>>().join(", ");
                         let message = format!("this literal fits more than one `impl Resolve` of `{nature_name}`: {names}; write its type (§5.2.15)");
                         self.checker.coded(file, "E0181", span, message, "an ambiguous literal");
-                        self.checker.infer(value);
+                        self.checker.expressions().infer(value);
                         return None;
                     }
                 }
@@ -215,7 +215,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// emits: `resolve` MUST be of class pure (§4 rule 8), since it runs wherever drives combine.
     fn check_purity(&mut self, function: DeclId, head: &str) {
         let design = self.checker.state.design;
-        let class = self.checker.function_class(function, &mut std::collections::BTreeSet::new());
+        let class = self.checker.expressions().function_class(function, &mut std::collections::BTreeSet::new());
         let impure = if class.solve_reading {
             "solve-reading"
         } else if class.emitting {
@@ -247,7 +247,7 @@ impl Checker<'_> {
                     self.state.result.carrier_drive_impls.entry(target.carrier).or_default().push(picked.implementation);
                 }
             }
-            None => self.check_as(value, &target.held, code),
+            None => self.expressions().check_as(value, &target.held, code),
         }
     }
 }

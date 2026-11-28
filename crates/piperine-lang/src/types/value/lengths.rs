@@ -7,13 +7,13 @@ use crate::msl::lexer::NumberLiteral;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, LitKind, Resolution};
 
 use super::widths::FloatText;
-use super::check::Checker;
-use super::{Length, Ty};
+use super::ExpressionTyping;
+use crate::types::{Length, Ty};
 
 /// The deepest chain of `const` names the folder follows.
 const NESTING: u8 = 16;
 
-impl Checker<'_> {
+impl ExpressionTyping<'_, '_> {
     /// `base[range]` over an array (§1.5.9): `e[a..b]`, `e[a..=b]`, `e[..b]`, `e[a..]` and `e[..]`
     /// are the array of the elements `a` to `b - 1`, of type `[T; b - a]`. A bound that is no
     /// const expression is `E0188` naming it; a range that ends beyond the array or starts after
@@ -24,7 +24,7 @@ impl Checker<'_> {
         let found = self.infer(base)?;
         let Ty::Array(element, Length::Fixed(length)) = &found else {
             let base_span = self.state.design.expr_node(base).span;
-            self.mismatch_text(file, base_span, "an array", &found.name(self.state.design));
+            self.checker.mismatch_text(file, base_span, "an array", &found.name(self.checker.state.design));
             return None;
         };
         let ExprKind::Range { lo, hi, inclusive } = self.state.design.expr_node(range).kind.clone() else { return None };
@@ -57,19 +57,19 @@ impl Checker<'_> {
     }
 
     /// The length an array type or an array repeat gives, when `expr` folds to one.
-    pub(super) fn fold_length(&self, expr: ExprId) -> Option<u64> {
+    pub(in crate::types) fn fold_length(&self, expr: ExprId) -> Option<u64> {
         u64::try_from(self.fold_integer(expr, NESTING)?).ok()
     }
 
     /// The value of the const expression `expr` when it is a non-negative integer the folder
     /// computes; `None` for anything else, an overflow or a division by zero included.
-    pub(super) fn fold_integer(&self, expr: ExprId, nesting: u8) -> Option<u128> {
+    pub(in crate::types) fn fold_integer(&self, expr: ExprId, nesting: u8) -> Option<u128> {
         IntegerFolder::of(self.state.design).fold(expr, nesting)
     }
 }
 
 /// Folds a const expression to a non-negative integer from the POM alone (no type table).
-pub(super) struct IntegerFolder<'d> {
+pub(in crate::types) struct IntegerFolder<'d> {
     /// The design the expression is read from.
     pub(super) design: &'d crate::pom::Design,
     /// The value of each const parameter the expression may name (an instantiation's arguments), and the level count
@@ -79,12 +79,12 @@ pub(super) struct IntegerFolder<'d> {
 
 impl<'d> IntegerFolder<'d> {
     /// A folder that knows no const parameter.
-    pub(super) fn of(design: &'d crate::pom::Design) -> Self {
+    pub(in crate::types) fn of(design: &'d crate::pom::Design) -> Self {
         IntegerFolder { design, values: std::collections::BTreeMap::new() }
     }
 
     /// A folder that reads each const parameter in `values` as its value.
-    pub(super) fn with_values(design: &'d crate::pom::Design, values: std::collections::BTreeMap<DeclId, u128>) -> Self {
+    pub(in crate::types) fn with_values(design: &'d crate::pom::Design, values: std::collections::BTreeMap<DeclId, u128>) -> Self {
         IntegerFolder { design, values }
     }
 }
@@ -93,7 +93,7 @@ impl IntegerFolder<'_> {
     /// The value of the const expression `expr` when it is a non-negative integer, following at
     /// most `nesting` names of `const`s; `None` for anything else, an overflow or a division by
     /// zero included.
-    pub(super) fn fold(&self, expr: ExprId, nesting: u8) -> Option<u128> {
+    pub(in crate::types) fn fold(&self, expr: ExprId, nesting: u8) -> Option<u128> {
         let nesting = nesting.checked_sub(1)?;
         match &self.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match &lit.kind {

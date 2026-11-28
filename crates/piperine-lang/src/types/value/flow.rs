@@ -6,11 +6,11 @@ use std::collections::BTreeSet;
 
 use crate::pom::DeclId;
 
-use super::Ty;
+use crate::types::Ty;
 
 /// Which locals declared without a value (`let x;`) are assigned at one point of a body.
 #[derive(Debug, Clone, Default)]
-pub(super) struct Assigned {
+pub(in crate::types) struct Assigned {
     /// The locals assigned on every path to the point; `None` once no path reaches it (after a
     /// `return`, `break` or `continue`), where every local counts as assigned.
     definite: Option<BTreeSet<DeclId>>,
@@ -74,7 +74,7 @@ pub(super) struct Flow {
 
 /// The function or closure being checked, as a `return` and a `?` see it.
 #[derive(Debug, Clone)]
-pub(super) struct ExitFrame {
+pub(in crate::types) struct ExitFrame {
     /// The result type it declares; `None` when its signature had a diagnostic, or when a closure
     /// has none written and none expected (`inferred`).
     pub(super) result: Option<Ty>,
@@ -87,7 +87,7 @@ pub(super) struct ExitFrame {
 impl ExitFrame {
     /// A function or closure with the declared `result`; with none, `inferred` says whether the
     /// body is to give it.
-    pub(super) fn new(result: Option<Ty>, inferred: bool) -> Self {
+    pub(in crate::types) fn new(result: Option<Ty>, inferred: bool) -> Self {
         ExitFrame { result, inferred, returned: None }
     }
 }
@@ -98,7 +98,7 @@ pub(super) struct LoopFrame {
     /// Whether it is a `loop`, the one loop whose `break` carries a value (§1.8.10).
     pub(super) valued: bool,
     /// The type the loop's `break` values have: given by the position, else the first `break`'s.
-    pub(super) value: Option<Ty>,
+    pub(in crate::types) value: Option<Ty>,
     /// Whether a `break` was met.
     pub(super) broke: bool,
     /// The assignment state at each `break`.
@@ -107,7 +107,7 @@ pub(super) struct LoopFrame {
 
 impl LoopFrame {
     /// A loop whose `break` values are expected to have the type `value`, when it is known.
-    pub(super) fn new(valued: bool, value: Option<Ty>) -> Self {
+    pub(in crate::types) fn new(valued: bool, value: Option<Ty>) -> Self {
         LoopFrame { valued, value, broke: false, exits: Vec::new() }
     }
 }
