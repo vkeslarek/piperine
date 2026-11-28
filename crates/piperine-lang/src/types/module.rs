@@ -10,7 +10,7 @@ use crate::pom::{Arg, DeclId, DeclKind, Dir, ExprId, ExprKind, FieldInit, FileId
 
 use super::check::{Checker, Context};
 use super::coverage::ElementCoverage;
-use super::derives::DerivedTrait;
+use super::traits::derives::DerivedTrait;
 use super::nature_rules::NatureRules;
 use super::{Callee, Substitution, Ty};
 
@@ -89,7 +89,7 @@ impl Checker<'_> {
             // a param of a type parameter (`reset: T`, §8.1.15): typed under the parameter's bounds
             Ty::Param(parameter) if self.expressions().is_value_type_parameter(parameter) => Some(Ty::Param(parameter)),
             // a param of a type parameter bound by `Fn(P)` (`cell: C`, §8.4.1) holds a template of a module that fits `P`
-            Ty::Param(parameter) if self.callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
+            Ty::Param(parameter) if self.generics().callable_of(parameter).is_some() => Some(Ty::Param(parameter)),
             other => {
                 let node = self.state.design.type_node(param.ty).clone();
                 let file = self.state.design.decl_data(node.owner).file;
@@ -292,7 +292,7 @@ impl Checker<'_> {
         };
         // the arguments of a generic module placed through a template value are the ones its type names, `G<2>` (§8.4.3)
         let generic = self.state.design.decl_data(module).generics_span.is_some();
-        let through_template = (generic && through_value).then(|| self.template_substitution(*callee, module));
+        let through_template = (generic && through_value).then(|| self.generics().template_substitution(*callee, module));
         // pushed before the arguments are typed: a `let` that feeds back through its own placement is judged by §8.3.5
         self.state.modules.placing.push(Some(module));
         // recorded before the arguments are typed, which infer the generic arguments: a feedback through the placement reads it
@@ -301,7 +301,7 @@ impl Checker<'_> {
         let substitution = if through_template.is_some() {
             through_template
         } else if generic {
-            let Some(given) = self.generic_placement(expr, *callee, module, args, &fields) else {
+            let Some(given) = self.generics().generic_placement(expr, *callee, module, args, &fields) else {
                 self.state.modules.placing.pop();
                 self.keep_handed_after_failure(module, args);
                 return None;
@@ -311,9 +311,9 @@ impl Checker<'_> {
             None
         };
         self.reach(module);
-        let outer = std::mem::replace(&mut self.state.generics.placement_substitution, substitution.clone());
+        let outer = self.state.generics.replace_placement_substitution(substitution.clone());
         self.connections(expr, module, args, file);
-        self.state.generics.placement_substitution = outer;
+        self.state.generics.replace_placement_substitution(outer);
         self.state.modules.placing.pop();
         self.param_block(&fields, substitution.as_ref());
         let placed = self.placement_type(module)?;
@@ -385,7 +385,7 @@ impl Checker<'_> {
             _ => None,
         }).collect();
         // a bundle port has no type of its own: its fields are the leaves it stands for (`bundle.rs`)
-        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.state.design.is_bundle_owner(*decl) { None } else { self.port_type_under_placement(*ty) }).collect();
+        let kinds: Vec<Option<Ty>> = ports.iter().map(|(decl, ty, _)| if self.state.design.is_bundle_owner(*decl) { None } else { self.generics().port_type_under_placement(*ty) }).collect();
         let call_rule = matches!(&self.state.design.decl_data(module).kind, DeclKind::Module(m) if m.ret.is_some()) || ports.iter().any(|(d, _, _)| self.is_value_input(*d));
         let optional = if call_rule { kinds.iter().rev().take_while(|k| matches!(k, Some(Ty::Option(_)))).count() } else { 0 };
         let (min, max) = (ports.len() - optional, ports.len());
@@ -687,7 +687,7 @@ impl Checker<'_> {
             if !self.has_initial(decl) {
                 self.reach_written_defaults(&value);
             }
-            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.state.design, nature).one_driver || self.implements(&value, DerivedTrait::Default) {
+            if !is_carrier || self.has_initial(decl) || !NatureRules::of(self.state.design, nature).one_driver || self.trait_typing().implements(&value, DerivedTrait::Default) {
                 continue;
             }
             // each element needs its own driver: the elements no driver names have neither value nor initial value (§3.3.4, §8.2.20)
@@ -772,8 +772,8 @@ impl Checker<'_> {
                 if let Some(function) = table.builtin_functions("Default", "default", ty).first() {
                     self.reach(*function);
                 } else if self.expressions().derives(nominal.decl, "Default") {
-                    let substitution = self.nominal_substitution(nominal);
-                    let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl).unwrap_or_default().into_iter().map(|field| self.substitute(&substitution, &field.ty)).collect();
+                    let substitution = self.generics().nominal_substitution(nominal);
+                    let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl).unwrap_or_default().into_iter().map(|field| self.generics().substitute(&substitution, &field.ty)).collect();
                     fields.iter().for_each(|field| self.reach_written_defaults(field));
                 }
             }

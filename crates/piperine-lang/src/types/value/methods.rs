@@ -7,9 +7,9 @@ use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, FileId, FnParamData};
 
-use crate::types::bounds::BoundCheck;
+use crate::types::generics::bounds::BoundCheck;
 use super::ExpressionTyping;
-use crate::types::inference::Inference;
+use crate::types::generics::inference::Inference;
 use crate::types::{Callee, GenericValue, Instantiation, Substitution, Ty};
 
 impl ExpressionTyping<'_, '_> {
@@ -57,10 +57,10 @@ impl ExpressionTyping<'_, '_> {
     /// a function of an `impl` with no parameter; `E0181` naming one the receiver does not give.
     fn impl_substitution(&mut self, call: ExprId, function: DeclId, own: &Ty, recv_ty: &Ty, file: FileId, span: Span) -> Option<Substitution> {
         let Some(owner) = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some()) else { return Some(Substitution::new()) };
-        let signature = self.generic_signature(owner);
+        let signature = self.generics().generic_signature(owner);
         let mut inference = Inference::new(&signature);
         inference.unify(own, recv_ty);
-        let substitution = self.complete_arguments(&mut inference, &signature, owner, function, file, span)?;
+        let substitution = self.generics().complete_arguments(&mut inference, &signature, owner, function, file, span)?;
         // the call is an instantiation of the `impl`: the elaborator instantiates the method with its arguments (T35)
         let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.state.result.instantiations.insert(call, Instantiation { item: owner, arguments });
@@ -143,7 +143,7 @@ impl ExpressionTyping<'_, '_> {
         let (own, rest) = params.split_first()?;
         let mut substitution = self.impl_substitution(expr, function, own, recv_ty, file, span)?;
         // a call through a bound that writes the trait's arguments (`C: Convert<f64>`): they stand for the trait's parameters
-        if let Some(bound) = self.state.generics.bound_substitution.take() {
+        if let Some(bound) = self.state.generics.take_bound_substitution() {
             for (parameter, value) in bound.entries() {
                 substitution.bind(parameter, value.clone());
             }

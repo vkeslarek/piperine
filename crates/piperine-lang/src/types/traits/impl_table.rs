@@ -8,8 +8,8 @@
 
 use crate::pom::{DeclId, DeclKind, Design, GenericArgNode, GenericArgsNode, GenericParamData, Resolution, TypeId, TypeKind};
 
-use super::generics::{Bound, GenericSignature};
-use super::Ty;
+use crate::types::generics::generics::{Bound, GenericSignature};
+use crate::types::Ty;
 
 /// Whether a type satisfies a bound: what a blanket `impl` asks of the type it may apply to.
 pub type BoundOracle<'a> = &'a mut dyn FnMut(&Ty, &Bound) -> bool;

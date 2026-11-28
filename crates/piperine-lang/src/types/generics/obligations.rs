@@ -10,8 +10,8 @@ use std::collections::BTreeMap;
 use crate::msl::Span;
 use crate::pom::{DeclId, ExprId, FileId};
 
-use super::check::Checker;
-use super::{ConstTerm, GenericValue, Length, Substitution, Ty};
+use super::GenericsSolver;
+use crate::types::{ConstTerm, GenericValue, Length, Substitution, Ty};
 
 /// One check a generic item owes at each instantiation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,9 +47,9 @@ pub enum Obligation {
     },
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// Records `obligation` under the generic function being checked, when there is one.
-    pub(super) fn defer(&mut self, obligation: Obligation) {
+    pub(in crate::types) fn defer(&mut self, obligation: Obligation) {
         if let Some(item) = self.state.generics.generic_item {
             let list = self.state.result.obligations.entry(item).or_default();
             if !list.contains(&obligation) {
@@ -60,13 +60,13 @@ impl Checker<'_> {
 
     /// Whether a value of type `found` may stand where `expected` is wanted ([`Ty::fits`]); each pair
     /// of lengths the definition could only accept, not decide, is recorded as an obligation at `at`.
-    pub(super) fn compatible(&mut self, at: ExprId, found: &Ty, expected: &Ty) -> bool {
+    pub(in crate::types) fn compatible(&mut self, at: ExprId, found: &Ty, expected: &Ty) -> bool {
         let (file, span) = (self.file_of_expr(at), self.state.design.expr_node(at).span);
         self.compatible_at(file, span, found, expected)
     }
 
-    /// [`Checker::compatible`] where the two meet at `span` of `file`, which no expression is.
-    pub(super) fn compatible_at(&mut self, file: FileId, span: Span, found: &Ty, expected: &Ty) -> bool {
+    /// [`GenericsSolver::compatible`] where the two meet at `span` of `file`, which no expression is.
+    pub(in crate::types) fn compatible_at(&mut self, file: FileId, span: Span, found: &Ty, expected: &Ty) -> bool {
         if !found.fits(expected) {
             return false;
         }
@@ -78,14 +78,14 @@ impl Checker<'_> {
 
     /// Records the const expression `expr` over const parameters under the generic function being
     /// checked: it must fold for each instantiation.
-    pub(super) fn defer_constant(&mut self, expr: ExprId) {
+    pub(in crate::types) fn defer_constant(&mut self, expr: ExprId) {
         let (file, span) = (self.file_of_expr(expr), self.state.design.expr_node(expr).span);
         self.defer(Obligation::Constant { expr, file, span });
     }
 
     /// `ty` with the arguments of `substitution` replaced, and each array length that is an
     /// expression over const parameters folded now that their values are known.
-    pub(super) fn substitute(&self, substitution: &Substitution, ty: &Ty) -> Ty {
+    pub(in crate::types) fn substitute(&self, substitution: &Substitution, ty: &Ty) -> Ty {
         let values: BTreeMap<DeclId, u128> = substitution
             .entries()
             .filter_map(|(parameter, value)| match value {
@@ -101,7 +101,7 @@ impl Checker<'_> {
         match ty {
             Ty::Array(element, length) => {
                 let folded = match length {
-                    Length::Generic(ConstTerm::Expr(expr)) => super::value::lengths::IntegerFolder::with_values(self.state.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
+                    Length::Generic(ConstTerm::Expr(expr)) => crate::types::value::lengths::IntegerFolder::with_values(self.state.design, values.clone()).fold(*expr, 16).and_then(|n| u64::try_from(n).ok()).map_or_else(|| length.clone(), Length::Fixed),
                     other => other.clone(),
                 };
                 Ty::Array(Box::new(self.fold_lengths(element, values)), folded)

@@ -11,7 +11,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, ExprId, ExprKind, FileId};
 
 use super::ExpressionTyping;
-use crate::types::derives::DerivedTrait;
+use crate::types::traits::derives::DerivedTrait;
 use crate::types::{Method, Ty};
 
 impl ExpressionTyping<'_, '_> {
@@ -90,7 +90,7 @@ impl ExpressionTyping<'_, '_> {
         self.apply(expr, std::slice::from_ref(element), args)?;
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
-        self.require_trait(file, span, element, DerivedTrait::PartialEq);
+        self.trait_typing().require_trait(file, span, element, DerivedTrait::PartialEq);
         Some(Ty::Bool)
     }
 

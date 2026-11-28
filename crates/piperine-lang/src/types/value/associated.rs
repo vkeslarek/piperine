@@ -6,7 +6,7 @@
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, TypeId};
 
 use super::ExpressionTyping;
-use crate::types::inference::Inference;
+use crate::types::generics::inference::Inference;
 use crate::types::{Instantiation, Ty};
 
 impl ExpressionTyping<'_, '_> {
@@ -40,7 +40,7 @@ impl ExpressionTyping<'_, '_> {
         let Some((params, _)) = self.declared_signature(function) else { return false };
         let Some(wanted) = params.first() else { return false };
         let Some(owner) = self.generic_impl_of(function) else { return given.fits(wanted) };
-        let signature = self.generic_signature(owner);
+        let signature = self.generics().generic_signature(owner);
         let mut inference = Inference::new(&signature);
         inference.unify(wanted, given);
         given.fits(&inference.found().apply(wanted))
@@ -58,13 +58,13 @@ impl ExpressionTyping<'_, '_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let (params, ret) = self.declared_signature(function)?;
-        let signature = self.generic_signature(owner);
+        let signature = self.generics().generic_signature(owner);
         let mut inference = Inference::new(&signature);
-        self.learn_from_arguments(&mut inference, &params, args);
+        self.generics().learn_from_arguments(&mut inference, &params, args);
         if let Some(expected) = self.state.values.call_expected.take().filter(|(at, _)| *at == expr).map(|(_, ty)| ty) {
             inference.unify(&ret, &expected);
         }
-        let substitution = self.complete_arguments(&mut inference, &signature, owner, function, file, span)?;
+        let substitution = self.generics().complete_arguments(&mut inference, &signature, owner, function, file, span)?;
         let arguments = signature.parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect();
         self.state.result.instantiations.insert(expr, Instantiation { item: owner, arguments });
         let params: Vec<Ty> = params.iter().map(|param| substitution.apply(param)).collect();

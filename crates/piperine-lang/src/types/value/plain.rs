@@ -31,7 +31,7 @@ impl ExpressionTyping<'_, '_> {
     /// Whether the generic parameter `parameter` stands for a value type: not a nature (a node's) and not a template
     /// (`C: Fn(Cell)`, phase D), so a `param` of it is an ordinary value (§8.1.15).
     pub(in crate::types) fn is_value_type_parameter(&mut self, parameter: DeclId) -> bool {
-        !self.bounds_of(parameter).contains(&Bound::Nature) && self.callable_of(parameter).is_none()
+        !self.generics().bounds_of(parameter).contains(&Bound::Nature) && self.generics().callable_of(parameter).is_none()
     }
 
     /// Whether every leaf of `ty` is a plain scalar, or `str` when `text` is allowed.

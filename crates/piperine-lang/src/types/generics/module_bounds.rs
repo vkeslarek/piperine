@@ -5,8 +5,8 @@
 use crate::msl::Span;
 use crate::pom::{BundleView, DeclId, DeclKind, FileId, TypeId};
 
-use super::check::Checker;
-use super::{Nominal, Substitution, Ty};
+use super::GenericsSolver;
+use crate::types::{Nominal, Substitution, Ty};
 
 /// The first port at which a module differs from the inputs of an `Fn(P)` bound.
 pub(super) struct PortDifference {
@@ -14,7 +14,7 @@ pub(super) struct PortDifference {
     pub(super) what: String,
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The first port of `module` that differs from the inputs `inputs` of an `Fn(P)` bound (§8.4.5): a port of another type,
     /// a bound input with no port, or a port the bound has no input for. `None` when the module fits. The ports of a generic
     /// module are read under the arguments its template names (`S<Electrical>`, §8.4.3).

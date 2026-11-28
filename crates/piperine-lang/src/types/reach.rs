@@ -90,7 +90,7 @@ impl Checker<'_> {
         let ExprKind::Call { callee, .. } = &self.state.design.expr_node(value).kind else { return false };
         let ExprKind::Path(path) = &self.state.design.expr_node(*callee).kind else { return false };
         match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(param)) => matches!(self.state.design.decl_data(param).kind, DeclKind::Param(_)) && self.module_param_callable(param).is_some(),
+            Some(Resolution::Decl(param)) => matches!(self.state.design.decl_data(param).kind, DeclKind::Param(_)) && self.generics().module_param_callable(param).is_some(),
             _ => false,
         }
     }

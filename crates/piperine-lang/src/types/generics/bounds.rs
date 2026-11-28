@@ -9,19 +9,20 @@
 use crate::msl::Span;
 use crate::pom::{Arg, BundleView, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericParamData, Resolution, TypeId, TypeKind};
 
-use super::check::Checker;
-use super::derives::DerivedTrait;
+use crate::types::check::Checker;
+use super::GenericsSolver;
+use crate::types::traits::derives::DerivedTrait;
 use super::generics::{Bound, GenericSignature};
-use super::{ConstTerm, GenericValue, Length, Substitution, Ty};
+use crate::types::{ConstTerm, GenericValue, Length, Substitution, Ty};
 
 /// Whether a type satisfies a bound (§3.8.7).
-pub(super) struct BoundCheck<'c, 'd> {
+pub(in crate::types) struct BoundCheck<'c, 'd> {
     checker: &'c mut Checker<'d>,
 }
 
 impl<'c, 'd> BoundCheck<'c, 'd> {
     /// A check of bounds with the checker's tables.
-    pub(super) fn new(checker: &'c mut Checker<'d>) -> Self {
+    pub(in crate::types) fn new(checker: &'c mut Checker<'d>) -> Self {
         BoundCheck { checker }
     }
 
@@ -29,15 +30,15 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
     /// type's layout, `Nature` for a nature, a project trait where the type names it as a bound, and
     /// `Fn(A) -> R` for a function type of that signature. A type parameter satisfies what its own
     /// bounds give.
-    pub(super) fn satisfies(&mut self, ty: &Ty, bound: &Bound) -> bool {
+    pub(in crate::types) fn satisfies(&mut self, ty: &Ty, bound: &Bound) -> bool {
         match bound {
-            Bound::Library(name) => DerivedTrait::ALL.into_iter().find(|candidate| candidate.name() == *name).is_some_and(|which| self.checker.implements(ty, which)),
+            Bound::Library(name) => DerivedTrait::ALL.into_iter().find(|candidate| candidate.name() == *name).is_some_and(|which| self.checker.trait_typing().implements(ty, which)),
             Bound::Repr => match ty {
-                Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Repr),
-                other => self.checker.repr_levels(other).is_some(),
+                Ty::Param(param) => self.checker.generics().bounds_of(*param).contains(&Bound::Repr),
+                other => self.checker.trait_typing().repr_levels(other).is_some(),
             },
             Bound::Nature => match ty {
-                Ty::Param(param) => self.checker.bounds_of(*param).contains(&Bound::Nature),
+                Ty::Param(param) => self.checker.generics().bounds_of(*param).contains(&Bound::Nature),
                 other => matches!(other, Ty::Node(_) | Ty::Carrier { .. }),
             },
             Bound::Resolve { arguments } => {
@@ -48,10 +49,10 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
                 let Some(wanted) = wanted else { return false };
                 let Some(driven) = wanted.first() else { return false };
-                super::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
+                crate::types::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
             }
             Bound::Trait { decl, arguments } => {
-                if matches!(ty, Ty::Param(param) if self.checker.bounds_of(*param).contains(bound)) {
+                if matches!(ty, Ty::Param(param) if self.checker.generics().bounds_of(*param).contains(bound)) {
                     return true;
                 }
                 let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
@@ -68,10 +69,10 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 })
             }
             Bound::Callable { inputs, output } => {
-                let wanted = self.checker.callable_type(inputs, *output);
+                let wanted = self.checker.generics().callable_type(inputs, *output);
                 match (ty, wanted) {
-                    (Ty::Param(param), Some(wanted)) => self.checker.bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.callable_type(inputs, *output).as_ref() == Some(&wanted))),
-                    (Ty::Module(module), Some(_)) => self.checker.first_differing_port(module, inputs).is_none(),
+                    (Ty::Param(param), Some(wanted)) => self.checker.generics().bounds_of(*param).iter().any(|own| matches!(own, Bound::Callable { inputs, output } if self.checker.generics().callable_type(inputs, *output).as_ref() == Some(&wanted))),
+                    (Ty::Module(module), Some(_)) => self.checker.generics().first_differing_port(module, inputs).is_none(),
                     (found, Some(wanted)) => *found == wanted,
                     (_, None) => false,
                 }
@@ -80,9 +81,9 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
     }
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The bounds written on the type parameter `param`, in order.
-    pub(super) fn bounds_of(&self, param: DeclId) -> Vec<Bound> {
+    pub(in crate::types) fn bounds_of(&self, param: DeclId) -> Vec<Bound> {
         let mut found: Vec<Bound> = match &self.state.design.decl_data(param).kind {
             DeclKind::GenericParam(GenericParamData::Type { bounds, .. }) => bounds.iter().filter_map(|path| GenericSignature::bound(self.state.design, *path)).collect(),
             _ => Vec::new(),
@@ -107,7 +108,7 @@ impl Checker<'_> {
 
     /// Whether the bounds of `param` give the H.8 trait `which`, a supertrait of a bound included
     /// (`Ord` gives `Eq`, `PartialOrd` and `PartialEq`).
-    pub(super) fn param_implements(&self, param: DeclId, which: DerivedTrait) -> bool {
+    pub(in crate::types) fn param_implements(&self, param: DeclId, which: DerivedTrait) -> bool {
         self.bounds_of(param).iter().any(|bound| match bound {
             Bound::Library(name) => DerivedTrait::ALL.into_iter().find(|candidate| candidate.name() == *name).is_some_and(|given| given.gives(which)),
             _ => false,
@@ -115,7 +116,7 @@ impl Checker<'_> {
     }
 
     /// The type of one input of an `Fn` bound: a bundle input (`Fn(Cell)`, `Fn(flip Cell)`) is named by its `struct`, as a port of that
-    /// bundle is; the view is the bound's own, read with [`Checker::callable_views`].
+    /// bundle is; the view is the bound's own, read with [`GenericsSolver::callable_views`].
     pub(super) fn bound_input_type(&mut self, input: TypeId) -> Option<Ty> {
         if matches!(self.state.design.type_node(input).kind, TypeKind::Flip(_)) {
             return self.bundle_type(input);
@@ -138,7 +139,7 @@ impl Checker<'_> {
     }
 
     /// The function parameter or binding `callee` names when its type is a type parameter bound by `Fn`.
-    pub(super) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
+    pub(in crate::types) fn callable_parameter(&mut self, callee: ExprId) -> Option<DeclId> {
         let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(callee) else { return None };
         if matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return self.module_param_callable(decl).map(|_| decl);
@@ -149,15 +150,15 @@ impl Checker<'_> {
 
     /// Whether `callee` is a param whose type is a type parameter with an `Fn(..)` bound, though the bound did not type (an input
     /// that failed to lower): the failure is already reported.
-    pub(super) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
+    pub(in crate::types) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
         let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(callee) else { return false };
         let DeclKind::Param(data) = &self.state.design.decl_data(decl).kind else { return false };
-        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if super::GenericSignature::is_callable(self.state.design, parameter))
+        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if crate::types::GenericSignature::is_callable(self.state.design, parameter))
     }
 
     /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
     /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
-    pub(super) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
         let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { return None };
         match self.lower_type(data.ty)? {
             Ty::Param(parameter) => self.callable_of(parameter),
@@ -167,7 +168,7 @@ impl Checker<'_> {
 
     /// A call of a value of a type parameter bounded by `Fn(A) -> R`: its arguments are positional
     /// only (§3.2.11, `E0140` for a named one) and checked against the bound's inputs.
-    pub(super) fn call_through_bound(&mut self, expr: ExprId, parameter: DeclId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn call_through_bound(&mut self, expr: ExprId, parameter: DeclId, args: &[Arg]) -> Option<Ty> {
         if let Some(named) = args.iter().find(|arg| arg.name.is_some()) {
             let file = self.file_of_expr(expr);
             self.coded(file, "E0140", named.span, "a call through an `Fn` bound takes its arguments by position (§3.2.11)".to_string(), "positional only");
@@ -209,7 +210,7 @@ impl Checker<'_> {
     }
 
     /// The function type a type parameter's `Fn(A) -> R` bound gives its values, `None` without one.
-    pub(super) fn callable_of(&mut self, param: DeclId) -> Option<Ty> {
+    pub(in crate::types) fn callable_of(&mut self, param: DeclId) -> Option<Ty> {
         let (inputs, output) = self.callable_bound(param)?;
         self.callable_type(&inputs, output)
     }
@@ -232,7 +233,7 @@ impl Checker<'_> {
     }
 
     /// The type parameter a path owner names (`T` of `T::WIDTH`), when it is one.
-    pub(super) fn parameter_owner(&self, owner: Resolution) -> Option<DeclId> {
+    pub(in crate::types) fn parameter_owner(&self, owner: Resolution) -> Option<DeclId> {
         match owner {
             Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::GenericParam(GenericParamData::Type { .. })) => Some(decl),
             _ => None,
@@ -241,7 +242,7 @@ impl Checker<'_> {
 
     /// `T::WIDTH` of a type parameter bound by `Repr`: a `u32`, known when `T` is (§2); without the
     /// bound it is `E0161` naming it.
-    pub(super) fn parameter_width(&mut self, param: DeclId, file: FileId, span: Span) -> Option<Ty> {
+    pub(in crate::types) fn parameter_width(&mut self, param: DeclId, file: FileId, span: Span) -> Option<Ty> {
         self.require_bound(param, &Bound::Repr, "WIDTH", file, span)?;
         Some(Ty::UInt(32))
     }
@@ -259,7 +260,7 @@ impl Checker<'_> {
 
     /// `T::decode(levels)` on a type parameter bound by `Repr`: an `Option<T>` from `[bool; T::WIDTH]`
     /// (§2); `E0161` without the bound. `None` when `callee` is not such a path.
-    pub(super) fn parameter_decode(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Option<Ty>> {
+    pub(in crate::types) fn parameter_decode(&mut self, expr: ExprId, callee: ExprId, args: &[Arg]) -> Option<Option<Ty>> {
         let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
         let segments = self.state.design.path_node(*path).segments.clone();
         let [owner, member] = segments.as_slice() else { return None };
@@ -280,7 +281,7 @@ impl Checker<'_> {
     /// A method call on a value of the type parameter `param`: what its bounds give, else `E0161`
     /// naming the method, the parameter and the bound that would give it. The arguments are still
     /// typed, so the one mistake is one diagnostic.
-    pub(super) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId, call: (ExprId, ExprId)) -> Option<Ty> {
+    pub(in crate::types) fn parameter_method(&mut self, param: DeclId, name: &str, method_span: Span, args: &[Arg], file: FileId, call: (ExprId, ExprId)) -> Option<Ty> {
         // a method a project trait gives: through a bound of the parameter, or the trait itself for its `Self`
         if let Some((function, trait_arguments)) = self.trait_method_of(param, name) {
             // the arguments the bound writes for the trait's own parameters (`C: Convert<f64>`) replace them in the

@@ -6,21 +6,21 @@
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
 
-use super::value::aggregate::FieldType;
-use super::check::Checker;
+use crate::types::value::aggregate::FieldType;
+use super::GenericsSolver;
 use super::inference::Inference;
-use super::{GenericSignature, GenericValue, Nominal, Substitution, Ty};
+use crate::types::{GenericSignature, GenericValue, Nominal, Substitution, Ty};
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The type of the generic declaration `decl` written over its own parameters (`Pair<T, U>`), which
     /// the field types of its layout mention; the type itself, plain, for a declaration that is not generic.
-    pub(super) fn open_type(&mut self, decl: DeclId) -> Ty {
+    pub(in crate::types) fn open_type(&mut self, decl: DeclId) -> Ty {
         let signature = GenericSignature::of(self.state.design, decl);
         let arguments = signature
             .parameters()
             .iter()
             .map(|parameter| match parameter.kind {
-                super::ParameterKind::Const(_) => GenericValue::Const(super::ConstTerm::Param(parameter.decl)),
+                crate::types::ParameterKind::Const(_) => GenericValue::Const(crate::types::ConstTerm::Param(parameter.decl)),
                 _ => GenericValue::Type(Ty::Param(parameter.decl)),
             })
             .collect();
@@ -29,13 +29,13 @@ impl Checker<'_> {
     }
 
     /// What the parameters of the type of `ty` are replaced by: its own arguments.
-    pub(super) fn nominal_substitution(&self, nominal: &Nominal) -> Substitution {
+    pub(in crate::types) fn nominal_substitution(&self, nominal: &Nominal) -> Substitution {
         Substitution::of(&GenericSignature::of(self.state.design, nominal.decl), &nominal.arguments)
     }
 
     /// The fields of `owner` (a struct, or a variant) as the instance `scrutinee` has them: the declared
     /// field types with the arguments of the type substituted.
-    pub(super) fn instance_layout(&mut self, owner: DeclId, scrutinee: &Ty) -> Option<Vec<FieldType>> {
+    pub(in crate::types) fn instance_layout(&mut self, owner: DeclId, scrutinee: &Ty) -> Option<Vec<FieldType>> {
         let layout = self.expressions().fields_of(owner)?;
         let (Ty::Struct(nominal) | Ty::Enum(nominal)) = scrutinee else { return Some(layout) };
         if nominal.arguments.is_empty() {
@@ -50,7 +50,7 @@ impl Checker<'_> {
     /// `(field position, value)` of `values` gives what its type says about the arguments, the type the
     /// expression is expected to have (`call_expected`) the rest, a default fills a parameter left
     /// open, and a parameter nothing gives is `E0181`; each argument must satisfy its bounds (`E0187`).
-    pub(super) fn close_constructor(&mut self, expr: ExprId, open: Ty, layout: Vec<FieldType>, values: &[(usize, ExprId)], file: FileId, span: Span) -> Option<(Ty, Vec<FieldType>)> {
+    pub(in crate::types) fn close_constructor(&mut self, expr: ExprId, open: Ty, layout: Vec<FieldType>, values: &[(usize, ExprId)], file: FileId, span: Span) -> Option<(Ty, Vec<FieldType>)> {
         let (Ty::Struct(nominal) | Ty::Enum(nominal)) = &open else { return Some((open, layout)) };
         if nominal.arguments.is_empty() {
             return Some((open, layout));

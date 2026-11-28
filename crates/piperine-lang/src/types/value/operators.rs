@@ -8,7 +8,7 @@ use crate::msl::Span;
 use crate::pom::{Arg, BinOp, DeclId, DeclKind, ExprId, FileId, Resolution, TypeId};
 
 use super::ExpressionTyping;
-use crate::types::inference::Inference;
+use crate::types::generics::inference::Inference;
 use crate::types::Ty;
 
 /// An operator whose meaning on a library type is a trait function (H.10).
@@ -139,7 +139,7 @@ impl ExpressionTyping<'_, '_> {
         let [own, wanted, ..] = params.as_slice() else { return false };
         let generic_owner = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some());
         let Some(owner) = generic_owner else { return rhs_ty.fits(wanted) };
-        let signature = self.generic_signature(owner);
+        let signature = self.generics().generic_signature(owner);
         let mut inference = Inference::new(&signature);
         inference.unify(own, lhs_ty);
         inference.unify(wanted, rhs_ty);

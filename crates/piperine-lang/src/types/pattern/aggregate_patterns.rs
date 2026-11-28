@@ -49,7 +49,7 @@ impl PatternTyping<'_, '_> {
     /// `P(a, b)` and `Tx::Data(a)` (§1.6.5): a tuple struct or a variant with positional fields.
     pub(super) fn constructor_pattern(&mut self, file: FileId, span: Span, path: PathId, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.instance_layout(owner, scrut)?;
+        let layout = self.generics().instance_layout(owner, scrut)?;
         if layout.iter().any(|f| f.name.is_some()) {
             self.mismatch_text(file, span, "a pattern with the fields' names", "a positional pattern");
             return None;
@@ -64,7 +64,7 @@ impl PatternTyping<'_, '_> {
     /// needs `..`, else `E0184`.
     pub(super) fn struct_pattern(&mut self, file: FileId, span: Span, path: PathId, fields: &[FieldPatNode], rest: bool, scrut: &Ty) -> Option<Matched> {
         let (owner, shape) = self.constructor_of(file, span, path, scrut)?;
-        let layout = self.instance_layout(owner, scrut)?;
+        let layout = self.generics().instance_layout(owner, scrut)?;
         let mut columns: Vec<Option<&FieldPatNode>> = vec![None; layout.len()];
         for field in fields {
             let at = match field.res {

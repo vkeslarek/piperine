@@ -4,7 +4,6 @@ CarrierTyping	1
 DigitalLowering	1
 ElaborationState	1
 FunctionLowering	1
-GenericsSolver	1
 ModuleTyping	1
 StructureLowering	1
 ValueLowering	1

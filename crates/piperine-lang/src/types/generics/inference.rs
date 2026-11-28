@@ -7,12 +7,12 @@
 use crate::msl::Span;
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, Resolution, TypeKind};
 
-use super::check::Checker;
+use super::GenericsSolver;
 use super::generics::{Bound, GenericParameter, GenericSignature, ParameterKind};
-use super::{ConstTerm, GenericValue, Instantiation, Length, Substitution, Ty};
+use crate::types::{ConstTerm, GenericValue, Instantiation, Length, Substitution, Ty};
 
 /// What a call of a generic function has learnt about its parameters so far.
-pub(super) struct Inference<'s> {
+pub(in crate::types) struct Inference<'s> {
     /// The parameters of the function, in order.
     signature: &'s GenericSignature,
     /// The arguments found, by parameter.
@@ -21,7 +21,7 @@ pub(super) struct Inference<'s> {
 
 impl<'s> Inference<'s> {
     /// An inference with nothing known.
-    pub(super) fn new(signature: &'s GenericSignature) -> Self {
+    pub(in crate::types) fn new(signature: &'s GenericSignature) -> Self {
         Inference { signature, found: Substitution::new() }
     }
 
@@ -38,14 +38,14 @@ impl<'s> Inference<'s> {
     }
 
     /// What is known.
-    pub(super) fn found(&self) -> &Substitution {
+    pub(in crate::types) fn found(&self) -> &Substitution {
         &self.found
     }
 
     /// Learns from a parameter of type `declared` meeting a value of type `given`: an open type
     /// parameter takes `given`, and the two are taken apart together, an element with an element, a
     /// generic argument with a generic argument, an array length with an array length.
-    pub(super) fn unify(&mut self, declared: &Ty, given: &Ty) {
+    pub(in crate::types) fn unify(&mut self, declared: &Ty, given: &Ty) {
         match (declared, given) {
             (Ty::Param(parameter), _) if self.owns(*parameter) => {
                 if self.found.get(*parameter).is_none() {
@@ -119,11 +119,11 @@ impl<'s> Inference<'s> {
     }
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// A call of the generic function `function`: its generic arguments found, its signature
     /// substituted, its arguments bound and checked against the substituted parameters. `None` when
     /// an argument cannot be found (`E0181`) or one is refused.
-    pub(super) fn generic_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
+    pub(in crate::types) fn generic_call(&mut self, expr: ExprId, callee: ExprId, function: DeclId, args: &[Arg]) -> Option<Ty> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(function);
@@ -195,7 +195,7 @@ impl Checker<'_> {
     /// Learns from the arguments: each argument whose type does not depend on its context first, in
     /// order, then the integer literals with no suffix, which take the type already found (`larger(3u8,
     /// 200)`) or else their default (§1.4.2).
-    pub(super) fn learn_from_arguments(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
+    pub(in crate::types) fn learn_from_arguments(&mut self, inference: &mut Inference<'_>, params: &[Ty], args: &[Arg]) {
         self.argument_types(inference, params, args);
     }
 
@@ -262,7 +262,7 @@ impl Checker<'_> {
 
     /// The substitution for every parameter: what was found, else the default, else `E0181` naming
     /// the first parameter left open, a template parameter (`Fn` bound) included.
-    pub(super) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
+    pub(in crate::types) fn complete_arguments(&mut self, inference: &mut Inference<'_>, signature: &GenericSignature, item: DeclId, function: DeclId, file: FileId, span: Span) -> Option<Substitution> {
         let mut substitution = Substitution::new();
         for parameter in signature.parameters() {
             let value = match inference.found().get(parameter.decl) {

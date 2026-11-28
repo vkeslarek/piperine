@@ -10,7 +10,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, ExprKind, FileId, GenericArgNode, GenericArgsNode, GenericParamData, NatureFieldNode, PathId, Resolution, TypeId};
 
 use super::check::Checker;
-use super::generics::GenericSignature;
+use super::generics::generics::GenericSignature;
 use super::nature_rules::NatureRules;
 use super::{Builtin, Nominal, Ty};
 
@@ -105,8 +105,8 @@ impl Checker<'_> {
                 None
             }
             // a type parameter bound by `Repr` is a type with one (`fn f<T: Repr>(a: Bit<T>)`, §3.8.6)
-            v if self.repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.bounds_of(*param).contains(&super::Bound::Repr)) => {
-                self.reach_hand_written_repr(v);
+            v if self.trait_typing().repr_levels(v).is_some() || matches!(v, Ty::Param(param) if self.generics().bounds_of(*param).contains(&super::Bound::Repr)) => {
+                self.trait_typing().reach_hand_written_repr(v);
                 Some(value)
             }
             other => {
@@ -279,7 +279,7 @@ impl Checker<'_> {
                 ("isize", _) => Some(Ty::Int(64)),
                 _ => None,
             },
-            Resolution::Decl(decl) if self.parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
+            Resolution::Decl(decl) if self.generics().parameter_owner(owner).is_some() => Some(Ty::Param(decl)),
             Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) => self.expressions().enum_type(decl, file, span),
             Resolution::Decl(decl) if matches!(self.state.design.decl_data(decl).kind, DeclKind::Struct(_)) => self.expressions().struct_type(decl, file, span),
             _ => None,
@@ -300,9 +300,9 @@ impl Checker<'_> {
         let file = self.file_of_expr(expr);
         let owner_type = self.path_owner_type(file, node.span, owner.res)?;
         if let Ty::Param(param) = owner_type {
-            return self.parameter_width(param, file, node.span);
+            return self.generics().parameter_width(param, file, node.span);
         }
-        let levels = self.repr_levels(&owner_type)?;
+        let levels = self.trait_typing().repr_levels(&owner_type)?;
         self.state.result.widths.insert(expr, levels);
         Some(Ty::UInt(32))
     }

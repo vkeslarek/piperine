@@ -6,8 +6,8 @@
 
 use crate::pom::{Decl, DeclId, DeclKind, Reflect, Resolution};
 
-use super::check::Checker;
-use super::Ty;
+use super::TraitTyping;
+use crate::types::Ty;
 
 /// The names of the methods of a carrier, which no `impl` may repeat (§3.1.3).
 const CARRIER_METHOD_NAMES: [&str; 4] = ["changed", "prev", "others", "inflow"];
@@ -25,11 +25,11 @@ enum Subject {
     Other,
 }
 
-impl Checker<'_> {
+impl TraitTyping<'_, '_> {
     /// Holds the `impl` `decl` to the rules of §3.1: `E0131` for a method named like a carrier method,
     /// `E0132` for an item that is not a function in an inherent `impl` on a nature or a bundle,
     /// `E0134` for a trait `impl` on a bundle.
-    pub(super) fn coherence(&mut self, decl: DeclId) {
+    pub(in crate::types) fn coherence(&mut self, decl: DeclId) {
         let DeclKind::Impl(data) = &self.state.design.decl_data(decl).kind else { return };
         let (self_ty, inherent) = (data.self_ty, data.trait_.is_none());
         let subject = self.subject(self_ty);
@@ -87,11 +87,11 @@ impl Checker<'_> {
         }
         let (file, span) = (self.state.design.decl_data(decl).file, self.state.design.decl_data(decl).span);
         for earlier in &table.impls()[..position] {
-            if earlier.trait_decl != current.trait_decl || earlier.builtin_trait != current.builtin_trait || !table.overlap(earlier, &current, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
+            if earlier.trait_decl != current.trait_decl || earlier.builtin_trait != current.builtin_trait || !table.overlap(earlier, &current, &mut |ty, bound| crate::types::generics::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
                 continue;
             }
             // for a built-in trait the one argument that tells two `impl`s apart is the `Rhs` (H.10 rule 2), or the source of a `From`
-            let mut arguments = |entry: &super::ImplEntry| -> Option<Vec<Ty>> {
+            let mut arguments = |entry: &crate::types::ImplEntry| -> Option<Vec<Ty>> {
                 let listed = if written.is_some() { &entry.trait_arguments[..entry.trait_arguments.len().min(1)] } else { &entry.trait_arguments[..] };
                 listed.iter().map(|argument| self.lower_type(*argument)).collect()
             };
@@ -106,8 +106,8 @@ impl Checker<'_> {
                 (None, None) => String::new(),
             };
             let target = match &current.target {
-                super::ImplTarget::Declared(decl) => self.state.design.decl_data(*decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
-                super::ImplTarget::Primitive(ty) => ty.name(self.state.design),
+                crate::types::ImplTarget::Declared(decl) => self.state.design.decl_data(*decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+                crate::types::ImplTarget::Primitive(ty) => ty.name(self.state.design),
                 _ => "a type its bound admits".to_string(),
             };
             self.coded(file, "E0187", span, format!("two `impl`s of `{name}` apply to `{target}`: at most one may (§3.7.6)"), "an impl that overlaps an earlier one");
@@ -127,7 +127,7 @@ impl Checker<'_> {
             return;
         }
         if self.state.traits.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait == Some("Resolve")) {
-            super::nature::ResolveImpls::new(self).check(decl);
+            crate::types::nature::ResolveImpls::new(self).check(decl);
             return;
         }
         if self.state.traits.impls().iter().any(|entry| entry.decl == decl && entry.builtin_trait.is_some()) {
@@ -177,33 +177,33 @@ impl Checker<'_> {
     }
 
     /// §3.7.3: the type implements every supertrait of the trait.
-    fn supertrait_rule(&mut self, trait_decl: DeclId, self_ty: &super::Ty, head: &str, file: crate::pom::FileId, span: crate::msl::Span) {
+    fn supertrait_rule(&mut self, trait_decl: DeclId, self_ty: &crate::types::Ty, head: &str, file: crate::pom::FileId, span: crate::msl::Span) {
         let table = std::rc::Rc::clone(&self.state.traits);
         for supertrait in table.supertraits(trait_decl) {
-            if !table.implements(self_ty, supertrait, &mut |ty, bound| super::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
+            if !table.implements(self_ty, supertrait, &mut |ty, bound| crate::types::generics::bounds::BoundCheck::new(self).satisfies(ty, bound)) {
                 let name = self.state.design.decl_data(supertrait).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                self.coded(file, "E0187", span, format!("{head}: `{}` does not implement the supertrait `{name}` (§3.7.3)", self_ty.source_name(self.state.design)), "a supertrait that is not implemented");
+                self.checker.coded(file, "E0187", span, format!("{head}: `{}` does not implement the supertrait `{name}` (§3.7.3)", self_ty.source_name(self.checker.state.design)), "a supertrait that is not implemented");
             }
         }
     }
 
     /// What the trait's own types stand for in an `impl`: `Self` is the type and each generic parameter
     /// of the trait the argument the `impl` writes (`impl Resolve<Driven> for Wire`) or its default.
-    fn trait_substitution(&mut self, trait_decl: DeclId, path: crate::pom::PathId, self_ty: &super::Ty, file: crate::pom::FileId, span: crate::msl::Span) -> Option<super::Substitution> {
-        let signature = super::GenericSignature::of(self.state.design, trait_decl);
+    fn trait_substitution(&mut self, trait_decl: DeclId, path: crate::pom::PathId, self_ty: &crate::types::Ty, file: crate::pom::FileId, span: crate::msl::Span) -> Option<crate::types::Substitution> {
+        let signature = crate::types::GenericSignature::of(self.state.design, trait_decl);
         let nodes = match self.state.design.path_node(path).segments.last().and_then(|segment| segment.args.clone()) {
             Some(crate::pom::GenericArgsNode::Angle { args, .. }) => args,
             _ => Vec::new(),
         };
-        let mut substitution = super::Substitution::new();
-        substitution.bind(trait_decl, super::GenericValue::Type(self_ty.clone()));
-        if !self.generic_argument_count(trait_decl, nodes.len(), file, span) {
+        let mut substitution = crate::types::Substitution::new();
+        substitution.bind(trait_decl, crate::types::GenericValue::Type(self_ty.clone()));
+        if !self.generics().generic_argument_count(trait_decl, nodes.len(), file, span) {
             return None;
         }
         for (index, parameter) in signature.parameters().iter().enumerate() {
             let value = match nodes.get(index) {
-                Some(node) => self.generic_argument(parameter, node, file)?,
-                None => self.default_argument(parameter, &substitution, file)?,
+                Some(node) => self.generics().generic_argument(parameter, node, file)?,
+                None => self.generics().default_argument(parameter, &substitution, file)?,
             };
             substitution.bind(parameter.decl, value);
         }
@@ -211,19 +211,19 @@ impl Checker<'_> {
     }
 
     /// §3.7.4: the `impl`'s item has the signature the trait gives it under `Self = T`.
-    fn signature_rule(&mut self, required: DeclId, defined: DeclId, substitution: Option<&super::Substitution>, head: &str, name: &str) {
+    fn signature_rule(&mut self, required: DeclId, defined: DeclId, substitution: Option<&crate::types::Substitution>, head: &str, name: &str) {
         let (file, span) = (self.state.design.decl_data(defined).file, self.state.design.decl_data(defined).span);
         let Some(substitution) = substitution else { return };
         let (wanted, found) = match (&self.state.design.decl_data(required).kind, &self.state.design.decl_data(defined).kind) {
             (DeclKind::Fn(_), DeclKind::Fn(_)) => {
                 let (Some((wanted_params, wanted_ret)), Some((found_params, found_ret))) = (self.declared_signature(required), self.declared_signature(defined)) else { return };
-                let wanted = Ty::Fn(wanted_params.iter().map(|ty| self.substitute(substitution, ty)).collect(), Box::new(self.substitute(substitution, &wanted_ret)));
+                let wanted = Ty::Fn(wanted_params.iter().map(|ty| self.generics().substitute(substitution, ty)).collect(), Box::new(self.generics().substitute(substitution, &wanted_ret)));
                 (wanted, Ty::Fn(found_params, Box::new(found_ret)))
             }
             (DeclKind::Const(wanted), DeclKind::Const(found)) => {
                 let (wanted, found) = (wanted.ty, found.ty);
                 let (Some(wanted), Some(found)) = (self.lower_type(wanted), self.lower_type(found)) else { return };
-                (self.substitute(substitution, &wanted), found)
+                (self.generics().substitute(substitution, &wanted), found)
             }
             _ => {
                 self.coded(file, "E0187", span, format!("{head}: `{name}` is not the kind of item the trait declares (§3.7.4)"), "a function for a constant or the reverse");
@@ -231,7 +231,7 @@ impl Checker<'_> {
             }
         };
         if !found.fits(&wanted) {
-            self.coded(file, "E0187", span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (§3.7.4)", found.name(self.state.design), wanted.name(self.state.design)), "a signature the trait does not give");
+            self.checker.coded(file, "E0187", span, format!("{head}: `{name}` has the type `{}`, the trait gives it `{}` (§3.7.4)", found.name(self.checker.state.design), wanted.name(self.checker.state.design)), "a signature the trait does not give");
         }
     }
 

@@ -80,7 +80,7 @@ impl ExpressionTyping<'_, '_> {
                 None => ok = false,
             }
         }
-        ok && self.judge_tag(decl, &variants, file, span) & self.judge_repr(decl, file, &typed_fields) & self.judge_derives(decl, file, span, &typed_fields)
+        ok && self.judge_tag(decl, &variants, file, span) & self.trait_typing().judge_repr(decl, file, &typed_fields) & self.trait_typing().judge_derives(decl, file, span, &typed_fields)
     }
 
     /// The tag of the enum `decl` (§2 rule 5): `#[repr(uN)]` gives `N` levels, else
@@ -156,6 +156,6 @@ impl ExpressionTyping<'_, '_> {
     /// tuple, an array, a struct whose parts have one. An `Option` is not among them: value code
     /// holds it as a presence and a payload.
     pub(in crate::types) fn repr_ok(&mut self, ty: &Ty) -> bool {
-        !matches!(ty, Ty::Option(_)) && self.repr_levels(ty).is_some()
+        !matches!(ty, Ty::Option(_)) && self.trait_typing().repr_levels(ty).is_some()
     }
 }

@@ -9,10 +9,10 @@ use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, ExprId, GenericParamData, ExprKind, FileId, GenericArgNode, GenericArgsNode, LitKind, PathId, Resolution, StmtKind, TypeId, TypeKind, UnOp};
 
-use super::check::Checker;
+use super::GenericsSolver;
 use super::bounds::BoundCheck;
 use super::generics::{Bound, GenericParameter, GenericSignature, ParameterDefault, ParameterKind};
-use super::{ConstTerm, GenericValue, Length, Nominal, Ty};
+use crate::types::{ConstTerm, GenericValue, Length, Nominal, Ty};
 
 /// The values the parameters of a generic item are replaced by, by parameter declaration.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -150,11 +150,11 @@ impl Substitution {
     }
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The type a written use of the generic struct or enum `decl` is (`Pair<f64>`, `Maybe<T>`):
     /// its list held to §3.8, the arguments counted (`E0187`), each lowered by the kind of its
     /// parameter, an omitted one taken from the default (§3.8.7). `None` when one is refused.
-    pub(super) fn generic_nominal(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+    pub(in crate::types) fn generic_nominal(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let arguments = self.written_arguments(path, decl, file, span)?;
         // the declaration is typed over its own parameters once, for every use (fields, derives, E0186)
         let declared = if matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_)) { self.expressions().enum_type(decl, file, span) } else { self.expressions().struct_type(decl, file, span) };
@@ -166,7 +166,7 @@ impl Checker<'_> {
 
     /// The type `G<2>` of a template of the generic module `decl` written at `path` (§8.4.3): its arguments, a left-out one its
     /// default, each satisfying its bounds. `None` after a diagnostic (`E0187` for the wrong number of arguments).
-    pub(super) fn generic_module_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
+    pub(in crate::types) fn generic_module_type(&mut self, path: PathId, decl: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let arguments = self.written_arguments(path, decl, file, span)?;
         Some(Ty::Module(Nominal { decl, arguments }))
     }
@@ -232,8 +232,8 @@ impl Checker<'_> {
         let mut holds = true;
         for argument in arguments {
             let GenericValue::Type(ty) = argument else { continue };
-            if !ty.has_param() && self.repr_levels(ty).is_none() {
-                self.coded(file, "E0110", span, format!("`{name}` derives `Repr`, and its argument `{}` has no `Repr` (§2 rule 3)", ty.source_name(self.state.design)), "an argument without `Repr`");
+            if !ty.has_param() && self.trait_typing().repr_levels(ty).is_none() {
+                self.checker.coded(file, "E0110", span, format!("`{name}` derives `Repr`, and its argument `{}` has no `Repr` (§2 rule 3)", ty.source_name(self.checker.state.design)), "an argument without `Repr`");
                 holds = false;
             }
         }
@@ -242,14 +242,14 @@ impl Checker<'_> {
 
     /// The argument `node` for `parameter`: a type for a type or nature parameter, a const for a
     /// const parameter, which a lone name may also spell (`Delay<u8, N>`, §3.8.5).
-    pub(super) fn generic_argument(&mut self, parameter: &GenericParameter, node: &GenericArgNode, file: FileId) -> Option<GenericValue> {
+    pub(in crate::types) fn generic_argument(&mut self, parameter: &GenericParameter, node: &GenericArgNode, file: FileId) -> Option<GenericValue> {
         match (&parameter.kind, node) {
             (ParameterKind::Type | ParameterKind::Nature, GenericArgNode::Type(ty)) => self.lower_type(*ty).map(GenericValue::Type),
             (ParameterKind::Const(_), GenericArgNode::Const(expr)) => self.const_term(*expr, file).map(GenericValue::Const),
             (ParameterKind::Const(_), GenericArgNode::Type(ty)) => match self.const_parameter_named_by(*ty) {
                 Some(named) => Some(GenericValue::Const(ConstTerm::Param(named))),
                 None => {
-                    self.coded(file, "E0187", self.state.design.type_node(*ty).span, format!("`{}` takes a constant here, found a type (§3.8.5)", parameter.name), "a constant");
+                    self.checker.coded(file, "E0187", self.checker.state.design.type_node(*ty).span, format!("`{}` takes a constant here, found a type (§3.8.5)", parameter.name), "a constant");
                     None
                 }
             },
@@ -264,7 +264,7 @@ impl Checker<'_> {
     /// The argument an omitted `parameter` takes from its default, with the earlier parameters
     /// already replaced (`struct Pair<T, U = T>`); a parameter with no default is not omitted
     /// here, the count was checked.
-    pub(super) fn default_argument(&mut self, parameter: &GenericParameter, earlier: &Substitution, file: FileId) -> Option<GenericValue> {
+    pub(in crate::types) fn default_argument(&mut self, parameter: &GenericParameter, earlier: &Substitution, file: FileId) -> Option<GenericValue> {
         match parameter.default.as_ref()? {
             ParameterDefault::Type(ty) => {
                 let lowered = self.lower_type(*ty)?;
@@ -277,7 +277,7 @@ impl Checker<'_> {
     }
 
     /// The const parameter a type node spells: `N` in `Delay<u8, N>` reads as a type name.
-    pub(super) fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
+    pub(in crate::types) fn const_parameter_named_by(&self, ty: TypeId) -> Option<DeclId> {
         let TypeKind::Path(path) = &self.state.design.type_node(ty).kind else { return None };
         match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if self.is_const_parameter(decl) => Some(decl),
@@ -294,7 +294,7 @@ impl Checker<'_> {
     /// literal with `-`, the name of a const parameter, or an expression over const parameters
     /// (`{ N + 1 }`) which the elaborator folds per instantiation; a constant expression with no
     /// parameter is folded now. Anything else is `E0188`.
-    pub(super) fn const_term(&mut self, expr: ExprId, file: FileId) -> Option<ConstTerm> {
+    pub(in crate::types) fn const_term(&mut self, expr: ExprId, file: FileId) -> Option<ConstTerm> {
         let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Lit(lit) => match &lit.kind {
@@ -335,7 +335,7 @@ impl Checker<'_> {
     }
 
     /// The generic parameter the const expression `expr` is the bare name of, if it is one.
-    pub(super) fn generic_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
+    pub(in crate::types) fn generic_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
                 Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, DeclKind::GenericParam(_)) => Some(decl),
@@ -347,7 +347,7 @@ impl Checker<'_> {
     }
 
     /// The type parameter `T` the const expression `expr` is `T::WIDTH` of (§2), if it is.
-    pub(super) fn width_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
+    pub(in crate::types) fn width_parameter_of(&self, expr: ExprId) -> Option<DeclId> {
         let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return None };
         let [owner, member] = self.state.design.path_node(*path).segments.as_slice() else { return None };
         let Resolution::Decl(parameter) = owner.res else { return None };
@@ -355,7 +355,7 @@ impl Checker<'_> {
     }
 
     /// Whether the const expression `expr` names a generic parameter anywhere in it, or the `WIDTH` of one.
-    pub(super) fn mentions_generic_parameter(&self, expr: ExprId) -> bool {
+    pub(in crate::types) fn mentions_generic_parameter(&self, expr: ExprId) -> bool {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(_) => self.generic_parameter_of(expr).is_some() || self.width_parameter_of(expr).is_some(),
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.mentions_generic_parameter(*inner),
@@ -370,7 +370,7 @@ impl Checker<'_> {
 
     /// Whether the const expression `expr` reads a param of a module anywhere in it (`[Bit; n]`, `[Bit; n + 1]`): an
     /// array length the elaborator folds per body variant, which makes the param structural (§8.1.2).
-    pub(super) fn reads_module_param(&self, expr: ExprId) -> bool {
+    pub(in crate::types) fn reads_module_param(&self, expr: ExprId) -> bool {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Path(path) => matches!(
                 self.state.design.path_node(*path).segments.last().map(|segment| segment.res),

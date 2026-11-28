@@ -77,7 +77,7 @@ impl ExpressionTyping<'_, '_> {
             return false;
         }
         let Some(fields) = self.fields_of(decl) else { return false };
-        self.judge_repr(decl, file, &fields) & self.judge_derives(decl, file, span, &fields)
+        self.trait_typing().judge_repr(decl, file, &fields) & self.trait_typing().judge_derives(decl, file, span, &fields)
     }
 
     /// The typed fields of `owner`, a struct or an enum variant, typed on the first call and kept.
@@ -164,7 +164,7 @@ impl ExpressionTyping<'_, '_> {
     /// The length that reads a module param (`[T; n]`, `[T; n + 1]`), left as the expression: the checker types it so the
     /// elaborator's evaluator reads it, and the elaborator folds it per body variant (§8.1.2, QC2).
     fn module_param_length(&mut self, len: ExprId) -> Option<Length> {
-        if !self.reads_module_param(len) {
+        if !self.generics().reads_module_param(len) {
             return None;
         }
         self.infer(len)?;
@@ -174,12 +174,12 @@ impl ExpressionTyping<'_, '_> {
     /// The length `[T; N]` or `[T; N + 1]` writes when it names const parameters (§3.8.3, D14): a
     /// generic length, folded when the item is instantiated; `None` for any other expression.
     fn generic_length(&mut self, len: ExprId) -> Option<Length> {
-        match self.generic_parameter_of(len) {
+        match self.generics().generic_parameter_of(len) {
             Some(parameter) => Some(Length::Generic(ConstTerm::Param(parameter))),
             // `[bool; T::WIDTH]`: the level count of the type argument, known at the instantiation (§2)
-            None if let Some(parameter) = self.width_parameter_of(len) => Some(Length::Generic(ConstTerm::Width(parameter))),
-            None if self.mentions_generic_parameter(len) => {
-                self.defer_constant(len);
+            None if let Some(parameter) = self.generics().width_parameter_of(len) => Some(Length::Generic(ConstTerm::Width(parameter))),
+            None if self.generics().mentions_generic_parameter(len) => {
+                self.generics().defer_constant(len);
                 Some(Length::Generic(ConstTerm::Expr(len)))
             }
             None => None,
@@ -224,7 +224,7 @@ impl ExpressionTyping<'_, '_> {
             seen.push(name);
             values.push((position, init.value));
         }
-        let (ty, layout) = self.close_constructor(expr, open, declared, &values, file, node.span)?;
+        let (ty, layout) = self.generics().close_constructor(expr, open, declared, &values, file, node.span)?;
         for (position, value) in &values {
             self.check(*value, &layout[*position].ty);
         }
@@ -240,10 +240,10 @@ impl ExpressionTyping<'_, '_> {
     /// its fields.
     pub(in crate::types) fn constructed_type(&mut self, target: DeclId, file: FileId, span: Span) -> Option<(Ty, DeclId)> {
         match &self.state.design.decl_data(target).kind {
-            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.open_type(target), target)),
+            DeclKind::Struct(_) => self.struct_type(target, file, span).map(|_| (self.generics().open_type(target), target)),
             DeclKind::Variant(_) => {
                 let parent = self.state.design.decl_data(target).parent?;
-                self.enum_type(parent, file, span).map(|_| (self.open_type(parent), target))
+                self.enum_type(parent, file, span).map(|_| (self.generics().open_type(parent), target))
             }
             other => {
                 self.refuse_with(file, span, ValueForm::AsStructExpression, [RefusedForm::declaration_name(other).to_string()]);
@@ -264,7 +264,7 @@ impl ExpressionTyping<'_, '_> {
             return None;
         }
         let positional: Vec<(usize, ExprId)> = args.iter().enumerate().filter(|(_, arg)| arg.name.is_none()).map(|(position, arg)| (position, arg.value)).collect();
-        let (ty, layout) = if declared.len() == args.len() { self.close_constructor(expr, open, declared, &positional, file, node.span)? } else { (open, declared) };
+        let (ty, layout) = if declared.len() == args.len() { self.generics().close_constructor(expr, open, declared, &positional, file, node.span)? } else { (open, declared) };
         if layout.len() != args.len() {
             let message = format!("{} takes {} argument{}, found {}", ty.name(self.state.design), layout.len(), if layout.len() == 1 { "" } else { "s" }, args.len());
             self.mismatch_text(file, node.span, &format!("{} fields", layout.len()), &format!("{} arguments ({message})", args.len()));
@@ -288,7 +288,7 @@ impl ExpressionTyping<'_, '_> {
     pub(super) fn constructor_value(&mut self, expr: ExprId, target: DeclId, file: FileId, span: Span) -> Option<Ty> {
         let (open, owner) = self.constructed_type(target, file, span)?;
         let declared = self.fields_of(owner)?;
-        let (ty, layout) = self.close_constructor(expr, open, declared, &[], file, span)?;
+        let (ty, layout) = self.generics().close_constructor(expr, open, declared, &[], file, span)?;
         if !layout.is_empty() {
             let name = ty.name(self.state.design);
             self.refuse_with(file, span, ValueForm::NameOfWhichHasFieldsUsedAs, [name.to_string()]);
@@ -307,7 +307,7 @@ impl ExpressionTyping<'_, '_> {
         let found = self.infer(receiver)?;
         match &found {
             Ty::Struct(Nominal { decl, .. }) => {
-                let layout = self.instance_layout(*decl, &found)?;
+                let layout = self.generics().instance_layout(*decl, &found)?;
                 let named = match name.text.parse::<usize>() {
                     Ok(position) => layout.get(position).filter(|f| f.name.is_none()),
                     Err(_) => layout.iter().find(|f| f.name.as_deref() == Some(name.text.as_str())),

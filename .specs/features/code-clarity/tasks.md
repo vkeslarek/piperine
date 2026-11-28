@@ -1948,6 +1948,7 @@ T152 → T153 → T154 → T155
 ### T72: `GenericsSolver`, `TraitTable` and their directories
 
 **What**: The same for `types/generics/` (generics, generic values, inference, substitution, obligations, bounds, module bounds, module generics) under `GenericsSolver`, and for `types/traits/` (traits, coherence, derives, repr) as methods of `TraitTable`.
+**Decision (coordinator, user AFK, pending review)**: the methods of `types/traits/` report diagnostics and reach declarations, which a table of impls cannot do, so they are methods of a view, `TraitTyping`, declared in `traits/mod.rs` over the unchanged data type `ImplTable` (`CheckState::traits`); `traits.rs`, which declares `ImplTable`, becomes `traits/impl_table.rs`.
 **Where**: `crates/piperine-lang/src/types/generics`
 **Depends on**: T71
 **Reuses**: T69
@@ -1957,8 +1958,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in the two directories
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in the two directories (no test edited; every moved item was `pub(super)`)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

@@ -22,8 +22,8 @@ impl Checker<'_> {
                 Some(Ty::Module(wanted)) if wanted.decl == module => Some(wanted),
                 _ => None,
             };
-            let substitution = self.template_instantiation(expr, module, fields, expected)?;
-            self.generic_signature(module).parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect()
+            let substitution = self.generics().template_instantiation(expr, module, fields, expected)?;
+            self.generics().generic_signature(module).parameters().iter().filter_map(|parameter| substitution.get(parameter.decl).cloned()).collect()
         } else {
             Vec::new()
         };

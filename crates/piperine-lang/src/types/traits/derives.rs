@@ -10,13 +10,13 @@ use crate::refusal::forms::GenericsForm;
 use crate::msl::Span;
 use crate::pom::{AttrArgNode, AttrInputNode, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, Resolution};
 
-use super::value::aggregate::FieldType;
-use super::check::Checker;
-use super::{GenericValue, Length, Nominal, Ty};
+use crate::types::value::aggregate::FieldType;
+use super::TraitTyping;
+use crate::types::{GenericValue, Length, Nominal, Ty};
 
 /// One trait of the table of H.8.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DerivedTrait {
+pub(in crate::types) enum DerivedTrait {
     /// `==` and `!=`.
     PartialEq,
     /// Every value equals itself; adds nothing a model calls.
@@ -35,10 +35,10 @@ pub(super) enum DerivedTrait {
 
 impl DerivedTrait {
     /// The seven traits of H.8.
-    pub(super) const ALL: [DerivedTrait; 7] = [Self::PartialEq, Self::Eq, Self::PartialOrd, Self::Ord, Self::Default, Self::Debug, Self::Hash];
+    pub(in crate::types) const ALL: [DerivedTrait; 7] = [Self::PartialEq, Self::Eq, Self::PartialOrd, Self::Ord, Self::Default, Self::Debug, Self::Hash];
 
     /// The trait's spelling in `#[derive(..)]` and in a bound.
-    pub(super) fn name(self) -> &'static str {
+    pub(in crate::types) fn name(self) -> &'static str {
         match self {
             Self::PartialEq => "PartialEq",
             Self::Eq => "Eq",
@@ -51,7 +51,7 @@ impl DerivedTrait {
     }
 
     /// Whether `decl` carries `#[derive(.., name, ..)]`: any trait name, `Repr` included.
-    pub(super) fn is_listed(design: &Design, decl: DeclId, name: &str) -> bool {
+    pub(in crate::types) fn is_listed(design: &Design, decl: DeclId, name: &str) -> bool {
         design.decl_data(decl).meta.attrs.iter().any(|attr| {
             let is_derive = matches!(design.path_node(attr.path).segments.as_slice(), [only] if only.name.text == "derive");
             is_derive && matches!(&attr.input, AttrInputNode::List(args) if args.iter().any(|arg| matches!(arg, AttrArgNode::Path(p) if design.path_node(*p).segments.last().is_some_and(|s| s.name.text == name))))
@@ -60,7 +60,7 @@ impl DerivedTrait {
 
     /// Whether implementing this trait gives `which`: itself and every trait it requires (`Ord` gives
     /// `Eq`, `PartialOrd` and `PartialEq`, H.8 rules 2 and 3).
-    pub(super) fn gives(self, which: DerivedTrait) -> bool {
+    pub(in crate::types) fn gives(self, which: DerivedTrait) -> bool {
         self == which || self.requires().iter().any(|required| required.gives(which))
     }
 
@@ -90,10 +90,10 @@ impl DerivedTrait {
     }
 }
 
-impl Checker<'_> {
+impl TraitTyping<'_, '_> {
     /// Whether `ty` implements `which` (H.8 rules 4 and 7 for the built-in types, a derive for a struct
     /// or an enum; the derive's own validity is judged where the type is declared).
-    pub(super) fn implements(&mut self, ty: &Ty, which: DerivedTrait) -> bool {
+    pub(in crate::types) fn implements(&mut self, ty: &Ty, which: DerivedTrait) -> bool {
         match ty {
             Ty::Unit => true,
             Ty::Bool | Ty::UInt(_) | Ty::Int(_) | Ty::GenericInteger { .. } => which.of_integer(),
@@ -114,7 +114,7 @@ impl Checker<'_> {
             Ty::Fn(..) => which == DerivedTrait::Debug,
             Ty::Node(_) | Ty::AnyNode | Ty::Module(_) | Ty::Carrier { .. } | Ty::Event | Ty::Never | Ty::Range { .. } | Ty::Iterator { .. } => false,
             // what a parameter implements is what its bounds give (§3 rule 9)
-            Ty::Param(param) => self.param_implements(*param, which),
+            Ty::Param(param) => self.generics().param_implements(*param, which),
         }
     }
 
@@ -132,7 +132,7 @@ impl Checker<'_> {
     /// 6): a required trait left out, a field without the trait and `Default` on an enum are
     /// `E0180` naming the trait, and a field without `Default` is `E0187` naming the field and its
     /// type. `false` when one is refused.
-    pub(super) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
+    pub(in crate::types) fn judge_derives(&mut self, decl: DeclId, file: FileId, span: Span, fields: &[FieldType]) -> bool {
         let is_enum = matches!(self.state.design.decl_data(decl).kind, DeclKind::Enum(_));
         let name = if is_enum { Ty::enumeration(decl) } else { Ty::structure(decl) }.name(self.state.design);
         let mut clean = true;
@@ -173,7 +173,7 @@ impl Checker<'_> {
 
     /// `==` or `!=` on a value of `ty` needs `PartialEq`; an ordering operator needs `PartialOrd`
     /// (§1.3.10). Reports `E0180` naming the trait when `ty` lacks it.
-    pub(super) fn require_trait(&mut self, file: FileId, span: Span, ty: &Ty, which: DerivedTrait) {
+    pub(in crate::types) fn require_trait(&mut self, file: FileId, span: Span, ty: &Ty, which: DerivedTrait) {
         if self.implements(ty, which) {
             return;
         }
@@ -190,7 +190,7 @@ impl Checker<'_> {
 
     /// `T::default()` (H.8 rule 4): the call has no argument and `T` must implement `Default`; the
     /// call's type is `T`, recorded for the elaborator. `None` when `callee` is not such a path.
-    pub(super) fn default_call(&mut self, expr: ExprId, callee: ExprId, argument_count: usize) -> Option<Option<Ty>> {
+    pub(in crate::types) fn default_call(&mut self, expr: ExprId, callee: ExprId, argument_count: usize) -> Option<Option<Ty>> {
         let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
         let segments = self.state.design.path_node(*path).segments.clone();
         let [owner, member] = segments.as_slice() else { return None };
@@ -211,7 +211,7 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl TraitTyping<'_, '_> {
     /// The type `Option::<T>` of the owner of `Option::<T>::default()` (H.8 rule 7): `Option` of the
     /// one type argument the turbofish gives. `None` after a diagnostic when it gives none.
     fn option_owner_type(&mut self, file: FileId, span: Span, args: Option<&crate::pom::GenericArgsNode>) -> Option<Ty> {
@@ -225,11 +225,11 @@ impl Checker<'_> {
     }
 }
 
-impl Checker<'_> {
+impl TraitTyping<'_, '_> {
     /// The number of levels of `ty`'s `Repr` (§2 table): the built-in layouts, a tuple, an array and
     /// an `Option` over parts that have one, a struct or an enum that derives `Repr`. `None` for a
     /// type without `Repr`.
-    pub(super) fn repr_levels(&mut self, ty: &Ty) -> Option<u32> {
+    pub(in crate::types) fn repr_levels(&mut self, ty: &Ty) -> Option<u32> {
         match ty {
             Ty::Bool | Ty::F64 | Ty::F32 | Ty::F16 | Ty::F128 | Ty::UInt(_) | Ty::Int(_) => ty.levels(self.state.design),
             Ty::Tuple(items) => self.repr_sum(items),
@@ -237,8 +237,8 @@ impl Checker<'_> {
             Ty::Option(inner) => self.repr_levels(inner)?.checked_add(1),
             Ty::Struct(_) | Ty::Enum(_) if self.hand_written_levels(ty).is_some() => self.hand_written_levels(ty),
             Ty::Struct(nominal) if self.expressions().derives(nominal.decl, "Repr") => {
-                let substitution = self.nominal_substitution(nominal);
-                let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
+                let substitution = self.generics().nominal_substitution(nominal);
+                let fields: Vec<Ty> = self.expressions().fields_of(nominal.decl)?.into_iter().map(|f| self.generics().substitute(&substitution, &f.ty)).collect();
                 self.repr_sum(&fields)
             }
             Ty::Enum(nominal) => self.enum_levels(nominal),
@@ -257,7 +257,7 @@ impl Checker<'_> {
         if !self.expressions().derives(decl, "Repr") {
             return None;
         }
-        let substitution = self.nominal_substitution(nominal);
+        let substitution = self.generics().nominal_substitution(nominal);
         let variants = self.expressions().variants_of(decl);
         let tag = match self.expressions().repr_width(decl) {
             None => usize::BITS - variants.len().saturating_sub(1).leading_zeros(),
@@ -266,7 +266,7 @@ impl Checker<'_> {
         };
         let mut widest = 0u32;
         for variant in variants {
-            let fields: Vec<Ty> = self.expressions().fields_of(variant)?.into_iter().map(|f| self.substitute(&substitution, &f.ty)).collect();
+            let fields: Vec<Ty> = self.expressions().fields_of(variant)?.into_iter().map(|f| self.generics().substitute(&substitution, &f.ty)).collect();
             widest = widest.max(self.repr_sum(&fields)?);
         }
         tag.checked_add(widest)
@@ -274,7 +274,7 @@ impl Checker<'_> {
 
     /// `#[derive(Repr)]` on `decl` whose fields are `fields` requires every field to have a `Repr`
     /// (§2 rule 3): a field without one is `E0110` naming it. `false` when one is refused.
-    pub(super) fn judge_repr(&mut self, decl: DeclId, file: FileId, fields: &[FieldType]) -> bool {
+    pub(in crate::types) fn judge_repr(&mut self, decl: DeclId, file: FileId, fields: &[FieldType]) -> bool {
         if !self.expressions().derives(decl, "Repr") {
             return true;
         }

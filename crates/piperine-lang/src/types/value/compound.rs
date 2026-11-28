@@ -16,7 +16,7 @@ use crate::types::Ty;
 impl ExpressionTyping<'_, '_> {
     /// Whether `decl` carries `#[derive(.., trait_name, ..)]`.
     pub(in crate::types) fn derives(&self, decl: DeclId, trait_name: &str) -> bool {
-        crate::types::derives::DerivedTrait::is_listed(self.state.design, decl, trait_name)
+        crate::types::traits::derives::DerivedTrait::is_listed(self.state.design, decl, trait_name)
     }
 
     /// `Option<T>` written with its one type argument.
@@ -86,7 +86,7 @@ impl ExpressionTyping<'_, '_> {
             return;
         }
         let Some(found) = self.infer(expr) else { return };
-        if self.compatible(expr, &found, expected) {
+        if self.generics().compatible(expr, &found, expected) {
             return;
         }
         if found == *inner {

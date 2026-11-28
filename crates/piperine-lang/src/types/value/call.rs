@@ -40,10 +40,10 @@ impl ExpressionTyping<'_, '_> {
         if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(id)) if id.info().name == "Some") {
             return self.some(expr, args, None);
         }
-        if let Some(found) = self.default_call(expr, *callee, args.len()) {
+        if let Some(found) = self.trait_typing().default_call(expr, *callee, args.len()) {
             return found;
         }
-        if let Some(found) = self.parameter_decode(expr, *callee, args) {
+        if let Some(found) = self.generics().parameter_decode(expr, *callee, args) {
             return found;
         }
         match class {
@@ -52,10 +52,10 @@ impl ExpressionTyping<'_, '_> {
             CallClass::Instance { module: None, .. } if matches!(self.callee_resolution(*callee), Some(Resolution::Builtin(_))) => {}
             // §3.8.6: a value of a type parameter bound by `Fn(A) -> R` is called as a function; the POM
             // reads the call as a placement because a module parameter has the same bound
-            CallClass::Instance { module: None, .. } if let Some(parameter) = self.callable_parameter(*callee) => return self.call_through_bound(expr, parameter, args),
+            CallClass::Instance { module: None, .. } if let Some(parameter) = self.generics().callable_parameter(*callee) => return self.generics().call_through_bound(expr, parameter, args),
             // the `Fn` bound of the param names a type that failed (its refusal is reported where the type is written): the call has
             // nothing left to say
-            CallClass::Instance { module: None, .. } if self.fn_bound_failed(*callee) => {
+            CallClass::Instance { module: None, .. } if self.generics().fn_bound_failed(*callee) => {
                 for arg in args {
                     self.infer(arg.value);
                 }
@@ -126,7 +126,7 @@ impl ExpressionTyping<'_, '_> {
             return self.trait_path_call(expr, function, args);
         }
         if self.state.design.decl_data(function).generics_span.is_some() {
-            return self.generic_call(expr, callee, function, args);
+            return self.generics().generic_call(expr, callee, function, args);
         }
         if let Some(owner) = self.generic_impl_of(function) {
             return self.associated_call(expr, callee, function, owner, args);
@@ -374,7 +374,7 @@ impl ExpressionTyping<'_, '_> {
         let recv_ty = self.infer(*recv)?;
         // §3 rule 9: a value of a type parameter has the methods its bounds give
         if let Ty::Param(param) = recv_ty {
-            return self.parameter_method(param, name, method.span, args, file, (expr, *recv));
+            return self.generics().parameter_method(param, name, method.span, args, file, (expr, *recv));
         }
         // §3.1.7: the methods of a struct or an enum are the project's
         if matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_))

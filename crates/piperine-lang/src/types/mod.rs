@@ -7,45 +7,31 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
-
 mod analog;
 mod attributes;
-mod bounds;
 mod bundle;
 mod bundle_handles;
 mod carrier;
 mod catalogue;
 mod check;
-mod pattern;
-mod coherence;
 mod continuity;
-
 mod coverage;
 mod definition;
-mod derives;
 mod element_target;
 mod event;
 mod generation;
-mod generic_values;
 mod generics;
 mod handles;
-mod inference;
-
 mod model;
 mod module;
-mod module_bounds;
-mod module_generics;
 mod nature;
 mod nature_rules;
-mod obligations;
 mod param_requirement;
-
+mod pattern;
 mod reach;
 mod reaction;
 mod record;
-mod repr;
 mod result;
-mod substitution;
 mod table;
 mod template_items;
 mod templates;
@@ -55,5 +41,5 @@ mod value;
 
 pub(crate) use self::coverage::ElementCoverage;
 pub use self::pattern::logic_pattern::{LogicPattern, PatternFault};
-pub use self::{nature::ResolveImpl, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, value::aggregate::FieldType, value::enums::EnumTag, value::intrinsic::Intrinsic, value::widths::FloatText, obligations::Obligation, substitution::Substitution, param_requirement::ParamRequirement};
-pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};
+pub use self::{nature::ResolveImpl, traits::impl_table::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, value::aggregate::FieldType, value::enums::EnumTag, value::intrinsic::Intrinsic, value::widths::FloatText, generics::obligations::Obligation, generics::substitution::Substitution, param_requirement::ParamRequirement};
+pub use self::{generics::generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

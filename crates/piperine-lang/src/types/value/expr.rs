@@ -11,7 +11,7 @@ use crate::stack::Stack;
 
 use crate::types::check::Context;
 use super::ExpressionTyping;
-use crate::types::derives::DerivedTrait;
+use crate::types::traits::derives::DerivedTrait;
 use super::flow::Assigned;
 use super::operators::OperatorTrait;
 use super::widths::FloatText;
@@ -157,7 +157,7 @@ impl ExpressionTyping<'_, '_> {
                 _ => self.infer(expr),
             };
             if let Some(found) = found
-                && !self.compatible(expr, &found, expected)
+                && !self.generics().compatible(expr, &found, expected)
                 && found != Ty::Never
             {
                 if self.state.result.event_reads.contains(&expr) {
@@ -332,7 +332,7 @@ impl ExpressionTyping<'_, '_> {
                     Some(t) if t.is_composite() || matches!(t, Ty::Param(_)) => {
                         self.check(second, &t);
                         let span = self.state.design.expr_node(first).span;
-                        self.require_trait(file, span, &t, DerivedTrait::PartialEq);
+                        self.trait_typing().require_trait(file, span, &t, DerivedTrait::PartialEq);
                     }
                     Some(_) => {
                         let span = self.state.design.expr_node(first).span;
@@ -401,7 +401,7 @@ impl ExpressionTyping<'_, '_> {
                 self.check(second, &t);
                 let file = self.file_of_expr(first);
                 let span = self.state.design.expr_node(first).span;
-                self.require_trait(file, span, &t, DerivedTrait::PartialOrd);
+                self.trait_typing().require_trait(file, span, &t, DerivedTrait::PartialOrd);
                 Some(t)
             }
             // both operands read through a template: the M1 operators are `f64`

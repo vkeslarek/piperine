@@ -11,8 +11,11 @@ use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Desi
 use super::continuity::Continuity;
 use super::definition::DriveBook;
 use super::value::flow::ExitFrame;
+use super::generics::tables::GenericsTables;
 use super::value::tables::ValueTables;
 use super::value::ExpressionTyping;
+use super::traits::TraitTyping;
+use super::generics::GenericsSolver;
 use super::pattern::PatternTyping;
 use super::nature_rules::NatureRules;
 use super::record::Records;
@@ -156,18 +159,6 @@ pub(super) struct CarrierTables {
     pub(super) in_definition: u32,
 }
 
-/// What typing generic items (§3.8) is under: the generic item being checked and the substitutions in force.
-#[derive(Default)]
-pub(super) struct GenericsTables {
-    /// The generic function whose definition is being checked or whose signature is being typed:
-    /// what a definition defers is recorded under it.
-    pub(super) generic_item: Option<DeclId>,
-    /// The arguments of the generic module whose placement is being connected: the ports are typed under it (GN-13).
-    pub(super) placement_substitution: Option<super::Substitution>,
-    /// The arguments a bound writes for its trait, set for the call through it being typed (`bounds.rs`).
-    pub(super) bound_substitution: Option<super::Substitution>,
-}
-
 impl<'d> CheckState<'d> {
     /// The empty state of a check of `design`.
     fn new(design: &'d Design) -> Self {
@@ -199,6 +190,16 @@ impl<'d> Checker<'d> {
     /// The view that types patterns.
     pub(super) fn patterns(&mut self) -> PatternTyping<'_, 'd> {
         PatternTyping::new(self)
+    }
+
+    /// The view that solves generic items.
+    pub(super) fn generics(&mut self) -> GenericsSolver<'_, 'd> {
+        GenericsSolver::new(self)
+    }
+
+    /// The view that judges traits and `impl`s.
+    pub(super) fn trait_typing(&mut self) -> TraitTyping<'_, 'd> {
+        TraitTyping::new(self)
     }
 
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.
@@ -299,7 +300,7 @@ impl<'d> Checker<'d> {
             DeclKind::Module(_) => self.module(decl),
             DeclKind::Fn(_) => self.function(decl),
             DeclKind::Const(_) => self.constant(decl),
-            DeclKind::Impl(_) => self.coherence(decl),
+            DeclKind::Impl(_) => self.trait_typing().coherence(decl),
             other => self.refuse_declaration(decl, RefusedForm::item(other)),
         }
         self.expressions().report_uncalled_closures();
@@ -431,7 +432,7 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.state.design, d).carries_values => self.discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generic_nominal(*path, d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generics().generic_nominal(*path, d, file, node.span),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Enum(_) | DeclKind::Struct(_)) && !self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span) => None,
                 // §3.8.2: a type or nature parameter is a type of the generic body, opaque
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::GenericParam(crate::pom::GenericParamData::Type { .. })) => Some(Ty::Param(d)),
@@ -439,7 +440,7 @@ impl<'d> Checker<'d> {
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_)) => self.expressions().struct_type(d, file, node.span),
                 // A module named as a type is the type of a param (§8.1.1, PI-04): a template of it; a generic one's names its
                 // arguments, `G<2>` (§8.4.3)
-                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Module(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generic_module_type(*path, d, file, node.span),
+                Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Module(_)) && self.state.design.decl_data(d).generics_span.is_some() => self.generics().generic_module_type(*path, d, file, node.span),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Module(_)) => self.writes_no_arguments_to_a_plain_type(*path, d, file, node.span).then(|| Ty::module(d)),
                 Resolution::Decl(d) => {
                     let what = RefusedForm::declaration_name(&self.state.design.decl_data(d).kind);
@@ -481,8 +482,8 @@ impl<'d> Checker<'d> {
         // a width that names const parameters is an integer of the instantiation's width (`UInt<N>`, `Int<{ N + 1 }>`)
         let term = match &args {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Const(expr) => self.const_term(*expr, file),
-                GenericArgNode::Type(ty) => self.const_parameter_named_by(*ty).map(ConstTerm::Param),
+                GenericArgNode::Const(expr) => self.generics().const_term(*expr, file),
+                GenericArgNode::Type(ty) => self.generics().const_parameter_named_by(*ty).map(ConstTerm::Param),
             },
             _ => None,
         };
@@ -490,7 +491,7 @@ impl<'d> Checker<'d> {
             Some(ConstTerm::Value(value)) => u128::try_from(value).ok(),
             Some(generic @ (ConstTerm::Param(_) | ConstTerm::Expr(_))) if matches!(family, "UInt" | "Int") => {
                 if let ConstTerm::Expr(expr) = &generic {
-                    self.defer_constant(*expr);
+                    self.generics().defer_constant(*expr);
                 }
                 return Some(Ty::GenericInteger { signed: family == "Int", width: generic });
             }
@@ -590,9 +591,9 @@ impl<'d> Checker<'d> {
     /// does not stop the others from being typed, so the body can still be checked.
     pub(super) fn signature_parts(&mut self, decl: DeclId) -> Option<SignatureParts> {
         // what the types of a generic signature defer (`[T; N + 1]`) is recorded under the function
-        let outer = std::mem::replace(&mut self.state.generics.generic_item, self.state.design.decl_data(decl).generics_span.map(|_| decl));
+        let outer = self.state.generics.replace_generic_item(self.state.design.decl_data(decl).generics_span.map(|_| decl));
         let parts = self.signature_parts_of(decl);
-        self.state.generics.generic_item = outer;
+        self.state.generics.replace_generic_item(outer);
         parts
     }
 
@@ -604,7 +605,7 @@ impl<'d> Checker<'d> {
         if data.generics_span.is_some() {
             // the list is held to §3.8; the parameters below are typed with `Ty::Param`, so the body
             // is checked once at its definition (Q1 (c))
-            self.generic_signature(decl);
+            self.generics().generic_signature(decl);
         }
         // a generic `extern "intrinsic"` function (the library's `logic`, `matches_bits`, `parse_table`) is typed through
         // the generic path like any generic function; the other `extern` functions keep their refusal
@@ -640,9 +641,9 @@ impl<'d> Checker<'d> {
     /// signature outside the subset is refused once and the body is still checked, with the
     /// parameters that could not be typed silent.
     fn function(&mut self, decl: DeclId) {
-        let outer = std::mem::replace(&mut self.state.generics.generic_item, self.state.design.decl_data(decl).generics_span.map(|_| decl));
+        let outer = self.state.generics.replace_generic_item(self.state.design.decl_data(decl).generics_span.map(|_| decl));
         self.function_of(decl);
-        self.state.generics.generic_item = outer;
+        self.state.generics.replace_generic_item(outer);
     }
 
     /// [`Checker::function`] with the generic item set.
@@ -655,8 +656,8 @@ impl<'d> Checker<'d> {
         // parameter in it is refused (`P0001`) and the specification gives a non-`bool`
         // condition no code of its own, so that is the plain mismatch.
         if let Some(cond) = f.where_ {
-            if self.state.generics.generic_item == Some(decl) {
-                self.defer(super::Obligation::Where { item: decl, condition: cond });
+            if self.state.generics.generic_item() == Some(decl) {
+                self.generics().defer(super::Obligation::Where { item: decl, condition: cond });
             }
             self.state.values.set_fn_where(true);
             self.within(Context::Const, |this| this.expressions().check(cond, &Ty::Bool));
@@ -701,7 +702,7 @@ impl<'d> Checker<'d> {
     /// whatever else the body got wrong, since it is its own mistake.
     fn function_body(&mut self, body: &BlockNode, ret: &Ty, file: FileId) {
         if let Some(found) = self.expressions().statements(&body.stmts, Some(ret))
-            && !self.compatible_at(file, body.span, &found, ret)
+            && !self.generics().compatible_at(file, body.span, &found, ret)
             && found != Ty::Never
         {
             self.mismatch(file, body.span, ret, &found);
@@ -747,9 +748,9 @@ impl<'d> Checker<'d> {
     /// A module of the reachable set: its params, nodes and placements, then its analog blocks.
     /// The modules it places are reached.
     fn module(&mut self, decl: DeclId) {
-        let outer = std::mem::replace(&mut self.state.generics.generic_item, self.state.design.decl_data(decl).generics_span.map(|_| decl));
+        let outer = self.state.generics.replace_generic_item(self.state.design.decl_data(decl).generics_span.map(|_| decl));
         self.module_of(decl);
-        self.state.generics.generic_item = outer;
+        self.state.generics.replace_generic_item(outer);
     }
 
     /// [`Checker::module`] with the generic item set: a generic module is typed once at its definition, its type and
@@ -758,7 +759,7 @@ impl<'d> Checker<'d> {
         let data = self.state.design.decl_data(decl).clone();
         let DeclKind::Module(m) = &data.kind else { return };
         if data.generics_span.is_some() {
-            self.generic_signature(decl);
+            self.generics().generic_signature(decl);
         }
         if m.abi.is_some() {
             self.refuse(data.file, data.span, ValueForm::ExternModule);

@@ -28,8 +28,8 @@ impl Checker<'_> {
     }
 
     /// Whether `ty` is a type parameter bound by `Nature`: what a function generic over a nature takes (`fn f<N: Nature>(a: N)`).
-    pub(super) fn is_nature_parameter(&self, ty: &Ty) -> bool {
-        matches!(ty, Ty::Param(param) if self.bounds_of(*param).contains(&Bound::Nature))
+    pub(super) fn is_nature_parameter(&mut self, ty: &Ty) -> bool {
+        matches!(ty, Ty::Param(param) if self.generics().bounds_of(*param).contains(&Bound::Nature))
     }
 
     /// Records the parameter `param` of type `ty` as a handle when `ty` is one: a node or a carrier of a nature, or a

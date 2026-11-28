@@ -423,7 +423,7 @@ crates/piperine-lang/src/types/catalogue.rs::ty	4
 crates/piperine-lang/src/types/check.rs::file_of_expr	1
 crates/piperine-lang/src/types/check.rs::ret	1
 crates/piperine-lang/src/types/value/closures.rs::closure_expr	1
-crates/piperine-lang/src/types/coherence.rs::supertrait_rule	1
+crates/piperine-lang/src/types/traits/coherence.rs::supertrait_rule	1
 crates/piperine-lang/src/types/continuity.rs::binding_init	1
 crates/piperine-lang/src/types/continuity.rs::inits	1
 crates/piperine-lang/src/types/value/control.rs::match_expr	1
@@ -433,7 +433,7 @@ crates/piperine-lang/src/types/definition.rs::undelayed_elements	1
 crates/piperine-lang/src/types/value/exits.rs::return_expr	1
 crates/piperine-lang/src/types/value/exits.rs::try_expr	1
 crates/piperine-lang/src/types/generation.rs::runtime_read	1
-crates/piperine-lang/src/types/generics.rs::decl	1
+crates/piperine-lang/src/types/generics/generics.rs::decl	1
 crates/piperine-lang/src/types/value/iterators.rs::range_expr	1
 crates/piperine-lang/src/types/pattern/logic_pattern.rs::X	1
 crates/piperine-lang/src/types/pattern/logic_pattern.rs::Z	1
@@ -459,10 +459,10 @@ crates/piperine-lang/src/types/template_items.rs::report_untyped_template_read	1
 crates/piperine-lang/src/types/template_items.rs::untyped_template_operand	1
 crates/piperine-lang/src/types/template_items.rs::untyped_template_read	1
 crates/piperine-lang/src/types/template_items.rs::untyped_template_receiver	1
-crates/piperine-lang/src/types/traits.rs::decl	1
-crates/piperine-lang/src/types/traits.rs::impls	2
-crates/piperine-lang/src/types/traits.rs::supertraits	1
-crates/piperine-lang/src/types/traits.rs::trait_decl	1
+crates/piperine-lang/src/types/traits/impl_table.rs::decl	1
+crates/piperine-lang/src/types/traits/impl_table.rs::impls	2
+crates/piperine-lang/src/types/traits/impl_table.rs::supertraits	1
+crates/piperine-lang/src/types/traits/impl_table.rs::trait_decl	1
 crates/piperine-lang/src/types/ty.rs::Expr	1
 crates/piperine-lang/src/types/ty.rs::F128	1
 crates/piperine-lang/src/types/ty.rs::F16	1

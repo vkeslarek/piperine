@@ -198,7 +198,7 @@ impl ExpressionTyping<'_, '_> {
         self.settle_pending(decl, args);
         // a value of a type parameter bound by `Fn(A) -> R` is called through the bound (§3.8.6)
         let local = match self.binding_type(decl) {
-            Some(Ty::Param(param)) => self.callable_of(param).or(Some(Ty::Param(param))),
+            Some(Ty::Param(param)) => self.generics().callable_of(param).or(Some(Ty::Param(param))),
             other => other,
         };
         let Some(Ty::Fn(params, result)) = local else {

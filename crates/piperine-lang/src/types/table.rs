@@ -413,7 +413,7 @@ impl<'d> Types<'d> {
 
     /// Whether the struct or enum `decl` writes `#[derive(.., name, ..)]`.
     pub fn derives(&self, decl: DeclId, name: &str) -> bool {
-        super::derives::DerivedTrait::is_listed(self.design, decl, name)
+        super::traits::derives::DerivedTrait::is_listed(self.design, decl, name)
     }
 
     /// Whether an expression of the reachable set is discrete or continuous (part III §8.2);
@@ -561,7 +561,7 @@ impl<'d> Types<'d> {
 
     /// Whether the written type `ty` is the name of a nature parameter of a generic item: a node of the nature a use gives.
     pub fn is_nature_parameter_type(&self, design: &Design, ty: TypeId) -> bool {
-        matches!(self.written.get(&ty), Some(Ty::Param(param)) if super::generics::GenericSignature::is_nature_parameter(design, *param))
+        matches!(self.written.get(&ty), Some(Ty::Param(param)) if super::generics::generics::GenericSignature::is_nature_parameter(design, *param))
     }
 
     /// The type of a `Binding` declaration.
@@ -577,7 +577,7 @@ impl<'d> Types<'d> {
         let owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, crate::pom::DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some())?;
         let first = self.design.decl_data(function).children.iter().copied().find(|child| matches!(self.design.decl_data(*child).kind, crate::pom::DeclKind::FnParam(_)))?;
         let signature = super::GenericSignature::of(self.design, owner);
-        let mut inference = super::inference::Inference::new(&signature);
+        let mut inference = super::generics::inference::Inference::new(&signature);
         inference.unify(self.local(first)?, receiver);
         signature.parameters().iter().map(|parameter| inference.found().get(parameter.decl).cloned()).collect()
     }

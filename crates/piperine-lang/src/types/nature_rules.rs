@@ -1,7 +1,7 @@
 //! The questions the checker asks of a nature's kind (part II §4): how many drives a carrier of
 //! it has, whether an `impl Resolve` combines them, and whether its branches carry a flow.
 
-use super::generics::GenericSignature;
+use super::generics::generics::GenericSignature;
 use crate::pom::{DeclId, DeclKind, Design, NatureKind, QuantityRole};
 
 /// What a nature's kind decides for the rules of `types/`: the one owner of "what kind of carrier

@@ -112,7 +112,7 @@ impl ExpressionTyping<'_, '_> {
                     _ => place,
                 };
                 if let Some(found) = found
-                    && !self.compatible(expr, &found, &place)
+                    && !self.generics().compatible(expr, &found, &place)
                 {
                     let span = self.state.design.expr_node(expr).span;
                     self.mismatch(file, span, &place, &found);

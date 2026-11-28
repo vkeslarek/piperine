@@ -7,7 +7,7 @@
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, Design, ExprId, FileId, GenericArgNode, GenericArgsNode, GenericParamData, PathId, Resolution, TypeId, TypeKind};
 
-use super::check::Checker;
+use super::GenericsSolver;
 
 /// What a generic parameter stands for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -96,7 +96,7 @@ const LIBRARY_TRAITS: [&str; 7] = ["PartialEq", "Eq", "PartialOrd", "Ord", "Defa
 
 impl GenericSignature {
     /// The list of `item` as written; empty for an item with no `<..>`. Reads the POM only: the
-    /// rules of the list are held by [`Checker::generic_signature`].
+    /// rules of the list are held by [`GenericsSolver::generic_signature`].
     pub fn of(design: &Design, item: DeclId) -> GenericSignature {
         let parameters = design
             .decl_data(item)
@@ -154,9 +154,9 @@ impl GenericSignature {
         bounds.iter().any(|path| matches!(Self::bound(design, *path), Some(Bound::Callable { .. })))
     }
 
-    /// The bound a path names, `None` for a name that is no trait (`Checker::generic_signature`
+    /// The bound a path names, `None` for a name that is no trait (`GenericsSolver::generic_signature`
     /// reports it).
-    pub(super) fn bound(design: &Design, path: PathId) -> Option<Bound> {
+    pub(in crate::types) fn bound(design: &Design, path: PathId) -> Option<Bound> {
         let segment = design.path_node(path).segments.last()?;
         match segment.res {
             Resolution::Builtin(builtin) => match builtin.info().name {
@@ -200,11 +200,11 @@ impl GenericSignature {
     }
 }
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The generic parameter list of `item`, held to the rules of §3.8: a parameter with a default
     /// is never followed by one without (§3.8.4), a const parameter is an integer or a `bool`
     /// (§3.8.3), and a bound names a trait (§3.8.6, `E0161`); a list that breaks one is `E0187`.
-    pub(super) fn generic_signature(&mut self, item: DeclId) -> GenericSignature {
+    pub(in crate::types) fn generic_signature(&mut self, item: DeclId) -> GenericSignature {
         let signature = GenericSignature::of(self.state.design, item);
         let mut defaulted: Option<&GenericParameter> = None;
         for parameter in &signature.parameters {
@@ -264,7 +264,7 @@ impl Checker<'_> {
 
     /// Whether a use of `item` writes `written` generic arguments where its list takes
     /// `required..=all` (§3.8.7); a wrong number is `E0187` at `span`, naming the item.
-    pub(super) fn generic_argument_count(&mut self, item: DeclId, written: usize, file: FileId, span: Span) -> bool {
+    pub(in crate::types) fn generic_argument_count(&mut self, item: DeclId, written: usize, file: FileId, span: Span) -> bool {
         let signature = GenericSignature::of(self.state.design, item);
         let (low, high) = (signature.required(), signature.parameters.len());
         if (low..=high).contains(&written) {

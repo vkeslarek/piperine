@@ -6,15 +6,15 @@
 
 use crate::pom::{Arg, DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution, TypeId};
 
-use super::check::Checker;
+use super::GenericsSolver;
 use super::inference::Inference;
-use super::nature_rules::NatureRules;
-use super::{GenericSignature, GenericValue, Instantiation, Nominal, Substitution, Ty};
+use crate::types::nature_rules::NatureRules;
+use crate::types::{GenericSignature, GenericValue, Instantiation, Nominal, Substitution, Ty};
 
-impl Checker<'_> {
+impl GenericsSolver<'_, '_> {
     /// The substitution the placement `expr` of the generic module `module` makes, recorded as its instantiation
     /// (`Types::instantiation`); `None` after a diagnostic.
-    pub(super) fn generic_placement(&mut self, expr: ExprId, callee: ExprId, module: DeclId, args: &[Arg], fields: &[FieldInit]) -> Option<Substitution> {
+    pub(in crate::types) fn generic_placement(&mut self, expr: ExprId, callee: ExprId, module: DeclId, args: &[Arg], fields: &[FieldInit]) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
@@ -29,7 +29,7 @@ impl Checker<'_> {
     /// The instantiation a template `expr` of the generic module `module` makes (§8.4.3): the arguments written on its head,
     /// `Name::<G> { .. }`, else the ones its param values give, then the defaults; recorded as the template's instantiation. `None`
     /// after a diagnostic, `E0181` for an argument nothing gives.
-    pub(super) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Nominal>) -> Option<Substitution> {
+    pub(in crate::types) fn template_instantiation(&mut self, expr: ExprId, module: DeclId, fields: &[FieldInit], expected: Option<&Nominal>) -> Option<Substitution> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(module);
@@ -63,7 +63,7 @@ impl Checker<'_> {
 
     /// The arguments of the generic module `module` that the type of the template value `callee` names (`G<2>`, §8.4.3), as the
     /// substitution its ports and result are read under.
-    pub(super) fn template_substitution(&mut self, callee: ExprId, module: DeclId) -> Substitution {
+    pub(in crate::types) fn template_substitution(&mut self, callee: ExprId, module: DeclId) -> Substitution {
         let mut substitution = Substitution::new();
         let Some(Ty::Module(template)) = self.state.result.exprs[callee.index()].clone() else { return substitution };
         for (parameter, argument) in self.generic_signature(module).parameters().iter().zip(template.arguments) {
@@ -125,7 +125,7 @@ impl Checker<'_> {
             let declared = self.lower_type(data.ty);
             self.state.generics.generic_item = outer;
             let Some(declared @ Ty::Param(parameter)) = declared else { continue };
-            if !self.bounds_of(parameter).iter().any(|bound| matches!(bound, super::Bound::Callable { .. })) {
+            if !self.bounds_of(parameter).iter().any(|bound| matches!(bound, crate::types::Bound::Callable { .. })) {
                 continue;
             }
             // a template that did not type was refused where it is written: nothing is left to infer from it
@@ -136,10 +136,10 @@ impl Checker<'_> {
     }
 
     /// The type of a port as a placement sees it: its declared type under the arguments the placement gives.
-    pub(super) fn port_type_under_placement(&mut self, ty: TypeId) -> Option<Ty> {
+    pub(in crate::types) fn port_type_under_placement(&mut self, ty: TypeId) -> Option<Ty> {
         let declared = match &self.state.generics.placement_substitution {
             Some(_) => {
-                let outer = std::mem::replace(&mut self.state.generics.generic_item, self.state.modules.placing.last().copied().flatten());
+                let outer = std::mem::replace(&mut self.checker.state.generics.generic_item, self.checker.state.modules.placing.last().copied().flatten());
                 let declared = self.port_type(ty);
                 self.state.generics.generic_item = outer;
                 declared

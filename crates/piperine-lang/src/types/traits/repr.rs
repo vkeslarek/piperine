@@ -5,10 +5,10 @@
 
 use crate::pom::{DeclId, DeclKind, TypeId};
 
-use super::check::Checker;
-use super::{Length, Ty, Types};
+use super::TraitTyping;
+use crate::types::{Length, Ty, Types};
 
-impl Checker<'_> {
+impl TraitTyping<'_, '_> {
     /// The number of levels of `ty` when its `Repr` is written by hand: the folded `WIDTH` of its
     /// `impl Repr`. `None` for a type with no such `impl`, or a `WIDTH` the folder cannot read.
     pub(super) fn hand_written_levels(&mut self, ty: &Ty) -> Option<u32> {
@@ -17,7 +17,7 @@ impl Checker<'_> {
         let DeclKind::Const(data) = &self.state.design.decl_data(width).kind else { return None };
         let value = data.value?;
         let values = self.impl_widths(entry.decl, ty)?;
-        u32::try_from(super::value::lengths::IntegerFolder::with_values(self.state.design, values).fold(value, u8::MAX)?).ok()
+        u32::try_from(crate::types::value::lengths::IntegerFolder::with_values(self.state.design, values).fold(value, u8::MAX)?).ok()
     }
 
     /// What the parameters of the `impl` `owner` take for the type `ty` it is written for: the level count of each
@@ -32,16 +32,16 @@ impl Checker<'_> {
         let DeclKind::Impl(data) = &self.state.design.decl_data(owner).kind else { return None };
         let self_ty = data.self_ty;
         let declared = self.expressions().lower_type_quietly(self_ty)?;
-        let signature = super::GenericSignature::of(self.state.design, owner);
-        let mut inference = super::inference::Inference::new(&signature);
+        let signature = crate::types::GenericSignature::of(self.state.design, owner);
+        let mut inference = crate::types::generics::inference::Inference::new(&signature);
         inference.unify(&declared, ty);
         for parameter in signature.parameters() {
             match inference.found().get(parameter.decl)? {
-                super::GenericValue::Type(argument) => {
+                crate::types::GenericValue::Type(argument) => {
                     let levels = self.repr_levels(&argument.clone())?;
                     values.insert(parameter.decl, u128::from(levels));
                 }
-                super::GenericValue::Const(super::ConstTerm::Value(count)) => {
+                crate::types::GenericValue::Const(crate::types::ConstTerm::Value(count)) => {
                     values.insert(parameter.decl, u128::try_from(*count).ok()?);
                 }
                 _ => return None,
@@ -53,7 +53,7 @@ impl Checker<'_> {
     /// Puts the `impl Repr` of `ty`, with its `WIDTH`, `encode` and `decode`, on the worklist: a carrier of the type
     /// commits by `encode` and reads by `decode` (§2 rule 4), so the elaborator lowers both, and a type the run
     /// never carries leaves them unreached. A type with a derived layout has none.
-    pub(super) fn reach_hand_written_repr(&mut self, ty: &Ty) {
+    pub(in crate::types) fn reach_hand_written_repr(&mut self, ty: &Ty) {
         let Some(owner) = self.state.traits.hand_written_repr(ty).map(|entry| entry.decl) else { return };
         self.reach(owner);
         let items: Vec<DeclId> = ["WIDTH", "encode", "decode"].iter().filter_map(|name| self.state.traits.item(owner, name)).collect();
@@ -94,7 +94,7 @@ impl Checker<'_> {
             let found = Ty::Fn(params, Box::new(ret));
             if !found.fits(&wanted) {
                 let (item_file, item_span) = (self.state.design.decl_data(item).file, self.state.design.decl_data(item).span);
-                self.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, §2 gives it `{}`", found.name(self.state.design), wanted.name(self.state.design)), "a signature §2 does not give");
+                self.checker.coded(item_file, "E0187", item_span, format!("{head}: `{name}` has the type `{}`, §2 gives it `{}`", found.name(self.checker.state.design), wanted.name(self.checker.state.design)), "a signature §2 does not give");
             }
         }
     }

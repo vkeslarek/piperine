@@ -7,7 +7,7 @@ use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId, GenericParamData, NatureFieldNode, NatureKind, Resolution};
 
 use super::check::Checker;
-use super::generics::GenericSignature;
+use super::generics::generics::GenericSignature;
 use super::{ConstTerm, ImplEntry, ImplTarget, Length, Ty};
 
 /// The name of the built-in trait whose `impl`s make a nature resolved.
@@ -275,7 +275,7 @@ impl Checker<'_> {
         let Some(driven) = self.state.result.resolve_tables.get(&nature).and_then(|table| table.iter().find(|candidate| candidate.implementation == implementation)).map(|candidate| candidate.driven.clone()) else { return };
         // a hand-written `Default` is a function the elaborator folds
         self.reach_written_defaults(&driven);
-        if self.implements(&driven, super::derives::DerivedTrait::Default) {
+        if self.trait_typing().implements(&driven, super::traits::derives::DerivedTrait::Default) {
             return;
         }
         let item = self.state.design.decl_data(carrier).clone();

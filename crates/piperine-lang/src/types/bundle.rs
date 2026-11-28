@@ -225,7 +225,7 @@ impl Checker<'_> {
     /// The type of the port leaf `leaf` of the module being placed, under the arguments the placement gives its generic parameters.
     fn placed_leaf_type(&mut self, leaf: DeclId) -> Option<Ty> {
         match &self.state.design.decl_data(leaf).kind {
-            DeclKind::Port(p) => self.port_type_under_placement(p.ty),
+            DeclKind::Port(p) => self.generics().port_type_under_placement(p.ty),
             _ => None,
         }
     }
