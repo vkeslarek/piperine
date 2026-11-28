@@ -162,10 +162,10 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
     assert_eq!(device.run("terms", &[&Bytes::real(0.75), &Bytes::real(0.25)]).expect("only the flow is enabled"), [0.25, -1.75]);
 }
 
-/// Associated test helpers of `structure`, grouped on one fixture type.
-struct StructureFixture;
+/// The body whose branch reads the rate of a derivative state.
+struct RateBody;
 
-impl StructureFixture {
+impl RateBody {
     /// `i(a, gnd) +> 2.0 * rate(D0)` under a condition when asked, on a flow branch, with the site
     /// `ddt(v(a, gnd))`.
     fn rate_in_a_flow(under_a_condition: bool, abstol: bool) -> Ir {
@@ -194,7 +194,7 @@ fn a_derivative_state_is_written_outside_every_condition() {
     // `terms` reads `a`, the rate pin `u` and `en` and writes `b0.flow`, `d0.rate` (`u`) and
     // `d0.state` (`-a`). With `a = 0.5`, `u = 0.125`: `en` high gives flow `2u = 0.25`, `en` low gives
     // flow 0 (the arm does not run); the rate and state terms are the same in both: `0.125`, `-0.5`.
-    let device = Device::of(StructureFixture::rate_in_a_flow(true, false));
+    let device = Device::of(RateBody::rate_in_a_flow(true, false));
     let (a, u) = (Bytes::real(0.5), Bytes::real(0.125));
     assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(true)]).expect("terms"), [0.25, 0.125, -0.5]);
     assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(false)]).expect("terms"), [0.0, 0.125, -0.5]);
@@ -206,7 +206,7 @@ fn a_derivative_read_is_its_rate_pin() {
     // partial against the pin is 2; the rate term `u` has partial 1 against it; the state term
     // `-a` has partial -1 against `a`. The plan declares them as (b0.flow, u), (d0.rate, u),
     // (d0.state, a), in that order.
-    let device = Device::of(StructureFixture::rate_in_a_flow(false, false));
+    let device = Device::of(RateBody::rate_in_a_flow(false, false));
     let (values, partials) = device.run_with_partials("terms", &[&Bytes::real(0.5), &Bytes::real(0.125)]).expect("terms");
     assert_eq!(values, [0.25, 0.125, -0.5]);
     assert_eq!(partials, [2.0, 1.0, -1.0]);
@@ -216,7 +216,7 @@ fn a_derivative_read_is_its_rate_pin() {
 fn a_derivative_abstol_function_writes_its_pin() {
     // `ddt(v(a, gnd), 2.0 * tol)` with `tol = 0.25`: the function `d0.abstol` reads the param alone
     // and writes `0.5` to the site's `abstol` pin.
-    let device = Device::of(StructureFixture::rate_in_a_flow(false, true));
+    let device = Device::of(RateBody::rate_in_a_flow(false, true));
     assert_eq!(device.run("d0.abstol", &[&Bytes::real(0.25)]).expect("d0.abstol"), [0.5]);
 }
 

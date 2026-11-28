@@ -22,10 +22,10 @@ use piperine_ir_fixtures::circuits;
 use circuits::HandCircuits;
 use devices::{Devices, Ex};
 
-/// Associated test helpers of `golden`, grouped on one fixture type.
-struct GoldenFixture;
+/// The designs the golden tests print: the five M1 bodies and a body whose names are Rust keywords.
+struct GoldenDesigns;
 
-impl GoldenFixture {
+impl GoldenDesigns {
     /// The five M1 bodies, each alone as its design, at the values the parity twins give them, with
     /// the name of its golden file.
     fn m1() -> Vec<(&'static str, Ir)> {
@@ -42,43 +42,6 @@ impl GoldenFixture {
             ("isource", alone(Devices::isource, "I", vec![0.0, 0.0])),
             ("diode", alone(Devices::diode, "D", vec![1e-14, 1.0, 0.0])),
         ]
-    }
-
-    fn source(ir: Ir) -> String {
-        let t = Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}"));
-        t.source().unwrap_or_else(|e| panic!("{e}"))
-    }
-
-    fn golden(name: &str) -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}.rs"))
-    }
-
-    /// Whether `line` is `// <path> @ <file>:<line>:<col>`, the path not empty.
-    fn locates(line: &str) -> bool {
-        let Some(body) = line.trim_start().strip_prefix("// ") else { return false };
-        let Some((path, origin)) = body.rsplit_once(" @ ") else { return false };
-        let mut parts = origin.rsplitn(3, ':');
-        let (col, row, file) = (parts.next(), parts.next(), parts.next());
-        !path.trim().is_empty()
-            && file.is_some_and(|f| !f.is_empty())
-            && row.is_some_and(|r| r.parse::<u32>().is_ok())
-            && col.is_some_and(|c| c.parse::<u32>().is_ok())
-    }
-
-    /// The kind of item a line opens, if it opens one RS-02 AC 1 names.
-    fn item(line: &str) -> Option<&'static str> {
-        let t = line.trim_start();
-        if t.starts_with("pub mod ") || t.starts_with("mod ") {
-            Some("mod")
-        } else if t.starts_with("fn ") || t.starts_with("pub fn ") || t.starts_with("pub extern \"C\" fn ") {
-            Some("fn")
-        } else if ["s.pin(", "s.term(", "s.input(", "s.watch(", "s.function(", "s.reaction("].iter().any(|c| t.starts_with(c)) {
-            Some("shape entry")
-        } else if t.split_once(" => Self::").is_some_and(|(k, _)| k.parse::<u32>().is_ok()) {
-            Some("function arm")
-        } else {
-            None
-        }
     }
 
     /// `Loop(fn, in) { type: f64 }` with `i(fn, in) +> v(fn, in) / type`: a body, two nodes and a
@@ -121,21 +84,73 @@ impl GoldenFixture {
     }
 }
 
+/// A design transpiled to its source text.
+struct PrintedSource;
+
+impl PrintedSource {
+    fn source(ir: Ir) -> String {
+        let t = Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}"));
+        t.source().unwrap_or_else(|e| panic!("{e}"))
+    }
+}
+
+/// The path of a pinned golden file.
+struct GoldenFile;
+
+impl GoldenFile {
+    fn golden(name: &str) -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/golden").join(format!("{name}.rs"))
+    }
+}
+
+/// One line of a printed source, read for its origin comment or the item it opens.
+struct PrintedLine;
+
+impl PrintedLine {
+    /// Whether `line` is `// <path> @ <file>:<line>:<col>`, the path not empty.
+    fn locates(line: &str) -> bool {
+        let Some(body) = line.trim_start().strip_prefix("// ") else { return false };
+        let Some((path, origin)) = body.rsplit_once(" @ ") else { return false };
+        let mut parts = origin.rsplitn(3, ':');
+        let (col, row, file) = (parts.next(), parts.next(), parts.next());
+        !path.trim().is_empty()
+            && file.is_some_and(|f| !f.is_empty())
+            && row.is_some_and(|r| r.parse::<u32>().is_ok())
+            && col.is_some_and(|c| c.parse::<u32>().is_ok())
+    }
+
+    /// The kind of item a line opens, if it opens one RS-02 AC 1 names.
+    fn item(line: &str) -> Option<&'static str> {
+        let t = line.trim_start();
+        if t.starts_with("pub mod ") || t.starts_with("mod ") {
+            Some("mod")
+        } else if t.starts_with("fn ") || t.starts_with("pub fn ") || t.starts_with("pub extern \"C\" fn ") {
+            Some("fn")
+        } else if ["s.pin(", "s.term(", "s.input(", "s.watch(", "s.function(", "s.reaction("].iter().any(|c| t.starts_with(c)) {
+            Some("shape entry")
+        } else if t.split_once(" => Self::").is_some_and(|(k, _)| k.parse::<u32>().is_ok()) {
+            Some("function arm")
+        } else {
+            None
+        }
+    }
+}
+
 #[test]
 fn the_five_m1_bodies_print_as_the_golden_files() {
-    for (name, ir) in GoldenFixture::m1() {
-        let path = GoldenFixture::golden(name);
+    for (name, ir) in GoldenDesigns::m1() {
+        let path = GoldenFile::golden(name);
         if std::env::var_os("PIPERINE_UPDATE_GOLDEN").is_some() {
-            std::fs::write(&path, GoldenFixture::source(ir.clone())).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            std::fs::write(&path, PrintedSource::source(ir.clone())).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         }
         let pinned = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
-        assert_eq!(GoldenFixture::source(ir), pinned, "{name}: the source differs from {}", path.display());
+        assert_eq!(PrintedSource::source(ir), pinned, "{name}: the source differs from {}", path.display());
     }
 }
 
 #[test]
 fn transpiling_twice_gives_the_same_bytes() {
-    for (name, ir) in GoldenFixture::m1() {
+    for (name, ir) in GoldenDesigns::m1() {
         let once = Transpiler::new(Arc::new(ir.clone())).expect("checked");
         let first = once.source().expect("source");
         assert_eq!(once.source().expect("source"), first, "{name}: one transpiler, two calls");
@@ -146,19 +161,19 @@ fn transpiling_twice_gives_the_same_bytes() {
 
 #[test]
 fn every_item_sits_under_its_path_and_origin() {
-    for (name, ir) in GoldenFixture::m1() {
-        let text = GoldenFixture::source(ir);
+    for (name, ir) in GoldenDesigns::m1() {
+        let text = PrintedSource::source(ir);
         let lines: Vec<&str> = text.lines().collect();
         let mut seen = std::collections::BTreeMap::new();
         for (i, line) in lines.iter().enumerate() {
-            let Some(kind) = GoldenFixture::item(line) else { continue };
+            let Some(kind) = PrintedLine::item(line) else { continue };
             *seen.entry(kind).or_insert(0) += 1;
             // an attribute sits between an item and its comment
             let mut above = i.checked_sub(1).map(|j| lines[j]);
             if above.is_some_and(|l| l.trim_start().starts_with("#[")) {
                 above = i.checked_sub(2).map(|j| lines[j]);
             }
-            assert!(above.is_some_and(GoldenFixture::locates), "{name}: the {kind} on line {} has no `// path @ file:line:col` above it: {line}", i + 1);
+            assert!(above.is_some_and(PrintedLine::locates), "{name}: the {kind} on line {} has no `// path @ file:line:col` above it: {line}", i + 1);
         }
         // every kind occurs in each design
         for kind in ["mod", "fn", "shape entry", "function arm"] {
@@ -169,8 +184,8 @@ fn every_item_sits_under_its_path_and_origin() {
 
 #[test]
 fn each_function_is_a_generic_fn_and_each_body_a_device_mod() {
-    let (_, diode) = GoldenFixture::m1().into_iter().find(|(n, _)| *n == "diode").expect("the diode");
-    let text = GoldenFixture::source(diode.clone());
+    let (_, diode) = GoldenDesigns::m1().into_iter().find(|(n, _)| *n == "diode").expect("the diode");
+    let text = PrintedSource::source(diode.clone());
     // the two IR functions the diode reaches (std/analog.msl's vt and pnjlim), generic over Real
     let fns: Vec<&str> = text.lines().filter(|l| l.starts_with("fn ")).collect();
     assert_eq!(fns.len(), diode.functions().count(), "{fns:?}");
@@ -184,7 +199,7 @@ fn each_function_is_a_generic_fn_and_each_body_a_device_mod() {
     assert!(text.contains("    pub struct Diode;\n") && text.contains("    impl Device for Diode {\n"), "{text}");
 
     // a design of several bodies: one mod each, in body order, each registered by its MSL name
-    let text = GoldenFixture::source(HandCircuits::diode());
+    let text = PrintedSource::source(HandCircuits::diode());
     let mods: Vec<&str> = text.lines().filter(|l| l.starts_with("pub mod ") && l.ends_with('{')).collect();
     assert_eq!(mods, ["pub mod vsource {", "pub mod resistor {", "pub mod diode {"]);
     for (module, ty, abi) in [("vsource", "Vsource", "Vsource"), ("resistor", "Resistor", "Resistor"), ("diode", "Diode", "Diode")] {
@@ -195,7 +210,7 @@ fn each_function_is_a_generic_fn_and_each_body_a_device_mod() {
 
 #[test]
 fn a_keyword_identifier_is_raw_and_the_abi_name_is_not() {
-    let text = GoldenFixture::source(GoldenFixture::keywords());
+    let text = PrintedSource::source(GoldenDesigns::keywords());
     // in Rust: raw identifiers (RS-02 AC 2)
     assert!(text.contains("pub mod r#loop {"), "{text}");
     assert!(text.contains("fn terms_block<R: Real>(r#fn: R, r#in: R, r#type: R) -> [R; 1] {"), "{text}");
@@ -234,7 +249,7 @@ fn a_design_with_nothing_to_run_has_no_module() {
         origin: Origin { file: "empty.msl".into(), line: 1, col: 1 },
     });
     let ir = b.finish(top);
-    let text = GoldenFixture::source(ir.clone());
+    let text = PrintedSource::source(ir.clone());
     let mods: Vec<&str> = text.lines().filter(|l| l.trim_start().starts_with("pub mod ")).collect();
     assert_eq!(mods, ["pub mod rt;"], "{text}");
     assert!(!text.contains("impl Device"), "{text}");
@@ -257,7 +272,7 @@ fn a_design_with_nothing_to_run_has_no_module() {
 fn a_body_without_analog_prints_no_terms_function() {
     // `RcHeld` holds `out` at 0 V and has no `analog` block (edge case 2): it runs, with its
     // shape and no function
-    let text = GoldenFixture::source(HandCircuits::rc_held());
+    let text = PrintedSource::source(HandCircuits::rc_held());
     let start = text.find("pub mod rc_held {").expect("RcHeld has a module");
     let held = &text[start..];
     let end = held.find("\n}\n").map_or(held.len(), |e| e + 3);

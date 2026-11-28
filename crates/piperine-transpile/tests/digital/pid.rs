@@ -22,33 +22,10 @@ const F: &str = "script.msl";
 /// The samples: one per rising edge of the oscillator.
 const SAMPLES: i64 = 200;
 
-/// Associated test helpers of `pid`, grouped on one fixture type.
-struct PidFixture;
+/// The ramp and the PID as a compiled design.
+struct PidDesign;
 
-impl PidFixture {
-    /// The inputs of sample `s`: `(run, target, meas)`. Both the `Script` body and the reference
-    /// model read them from here, so the script is written once.
-    ///
-    /// - `s < 8`: `run` low, the loop at rest.
-    /// - `8 <= s < 170`: `run` high (soft-start from sample 8); `170 <= s < 180`: `run` dropped;
-    ///   `s >= 180`: raised again (a second soft-start).
-    /// - `target` is 150 codes, 100 from sample 120 (the reference ramps back down after it).
-    /// - `meas` is 0 up to sample 39, a step to 20, then to 1023 (the output at full scale: the
-    ///   error clamps at -256 and the output saturates low), then back to 0 (the error jumps up by
-    ///   hundreds of codes: the derivative saturates the output high), then 100.
-    fn script(s: i64) -> (bool, i64, i64) {
-        let run = !(s < 8 || (170..180).contains(&s));
-        let target = if s < 120 { 150 } else { 100 };
-        let meas = match s {
-            0..=39 => 0,
-            40..=79 => 20,
-            80..=109 => 1023,
-            110..=139 => 0,
-            _ => 100,
-        };
-        (run, target, meas)
-    }
-
+impl PidDesign {
     /// `if s < t0 { v0 } else if s < t1 { v1 } ... else { last }`, over the local `s` (a plain
     /// `u8`), the values built by `value`.
     fn chain(x: &mut Dx<'_>, steps: &[(i128, i128)], last: i128, ty: &ValueType) -> piperine_ir::ExprId {
@@ -87,9 +64,9 @@ impl PidFixture {
         let body = b.body(Buck::spec("Script", F, 1));
         let (u8_, u10) = (ValueAliases::u(8), ValueAliases::u(10));
         b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-        b.carrier(body, Buck::carrier("run", BIT, CarrierRole::Out, Some(Constant::Bool(PidFixture::script(0).0)), F, 1, 30));
-        b.carrier(body, Buck::carrier("target", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidFixture::script(0).1 as i128)), F, 1, 40));
-        b.carrier(body, Buck::carrier("meas", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidFixture::script(0).2 as i128)), F, 1, 50));
+        b.carrier(body, Buck::carrier("run", BIT, CarrierRole::Out, Some(Constant::Bool(PidReference::script(0).0)), F, 1, 30));
+        b.carrier(body, Buck::carrier("target", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).1 as i128)), F, 1, 40));
+        b.carrier(body, Buck::carrier("meas", u10.clone(), CarrierRole::Out, Some(Constant::Int(PidReference::script(0).2 as i128)), F, 1, 50));
         b.carrier(body, Buck::carrier("n", u8_.clone(), CarrierRole::Signal, Some(Constant::Int(0)), F, 2, 12));
         let mut x = Dx::new(b, F, 5, 12);
         let clk = x.carrier(0, BIT);
@@ -104,13 +81,13 @@ impl PidFixture {
         let next = x.bin(BinaryOp::Add, s, one, u8_.clone());
         let commit_n = x.commit(4, next, None);
         x.at(8, 16);
-        let run = PidFixture::chain(&mut x, &[(8, 0), (170, 1), (180, 0)], 1, &BIT);
+        let run = PidDesign::chain(&mut x, &[(8, 0), (170, 1), (180, 0)], 1, &BIT);
         let commit_run = x.commit(1, run, None);
         x.at(9, 19);
-        let target = PidFixture::chain(&mut x, &[(120, 150)], 100, &u10);
+        let target = PidDesign::chain(&mut x, &[(120, 150)], 100, &u10);
         let commit_target = x.commit(2, target, None);
         x.at(10, 17);
-        let meas = PidFixture::chain(&mut x, &[(40, 0), (80, 20), (110, 1023), (140, 0)], 100, &u10);
+        let meas = PidDesign::chain(&mut x, &[(40, 0), (80, 20), (110, 1023), (140, 0)], 100, &u10);
         let commit_meas = x.commit(3, meas, None);
         let locals = vec![Local { name: "s".into(), ty: u8_, mutable: false }];
         Buck::reaction(b, body, vec![fall], vec![let_s, commit_n, commit_run, commit_target, commit_meas], locals, F, 5);
@@ -120,7 +97,7 @@ impl PidFixture {
     fn design() -> BuiltDesign {
         let mut w = TopDesign::new();
         let osc = Buck::osc(&mut w.b);
-        let script_body = PidFixture::script_body(&mut w.b);
+        let script_body = PidDesign::script_body(&mut w.b);
         let ramp = Buck::ref_ramp(&mut w.b);
         let pid = Buck::pid(&mut w.b);
         let (u10, u12) = (ValueAliases::u(10), ValueAliases::u(12));
@@ -146,6 +123,34 @@ impl PidFixture {
         );
         BuiltDesign::new(w.finish())
     }
+}
+
+/// The difference equations the design must follow.
+struct PidReference;
+
+impl PidReference {
+    /// The inputs of sample `s`: `(run, target, meas)`. Both the `Script` body and the reference
+    /// model read them from here, so the script is written once.
+    ///
+    /// - `s < 8`: `run` low, the loop at rest.
+    /// - `8 <= s < 170`: `run` high (soft-start from sample 8); `170 <= s < 180`: `run` dropped;
+    ///   `s >= 180`: raised again (a second soft-start).
+    /// - `target` is 150 codes, 100 from sample 120 (the reference ramps back down after it).
+    /// - `meas` is 0 up to sample 39, a step to 20, then to 1023 (the output at full scale: the
+    ///   error clamps at -256 and the output saturates low), then back to 0 (the error jumps up by
+    ///   hundreds of codes: the derivative saturates the output high), then 100.
+    fn script(s: i64) -> (bool, i64, i64) {
+        let run = !(s < 8 || (170..180).contains(&s));
+        let target = if s < 120 { 150 } else { 100 };
+        let meas = match s {
+            0..=39 => 0,
+            40..=79 => 20,
+            80..=109 => 1023,
+            110..=139 => 0,
+            _ => 100,
+        };
+        (run, target, meas)
+    }
 
     /// Sample by sample, the SPEC's equations. Both bodies react to the same rising edge, so each
     /// reads the other's value from before the edge: the PID reads the reference the ramp committed
@@ -154,7 +159,7 @@ impl PidFixture {
         let mut s = State { reference: 0, duty: 0, integ: 0, deriv: 0, e_prev: 0 };
         let mut states = Vec::new();
         for sample in 0..SAMPLES {
-            let (run, target, meas) = PidFixture::script(sample);
+            let (run, target, meas) = PidReference::script(sample);
             let (target, meas) = (target as i32, meas as i32);
             let old_reference = s.reference;
             // SPEC §7.2: the reference moves one code per sample towards the target, and rests at 0
@@ -191,7 +196,12 @@ impl PidFixture {
         }
         states
     }
+}
 
+/// What a run of the PID is read back as.
+struct PidObservation;
+
+impl PidObservation {
     /// The value of the net's series after the instant `at`: the last change at or before it.
     fn value_at(series: &[(i64, Vec<u8>)], at: i64) -> &[u8] {
         &series.iter().rev().find(|(t, _)| *t <= at).expect("an initial value").1
@@ -216,11 +226,11 @@ impl PidFixture {
                 // sample `s` is the rising edge `s + 1`; its commits apply at that instant
                 let at = TopDesign::rising_edge(s + 1);
                 State {
-                    reference: PidFixture::decode(PidFixture::value_at(&reference, at), 2, false),
-                    duty: PidFixture::decode(PidFixture::value_at(&duty, at), 2, false),
-                    integ: PidFixture::decode(PidFixture::value_at(&integ, at), 4, true),
-                    deriv: PidFixture::decode(PidFixture::value_at(&deriv, at), 4, true),
-                    e_prev: PidFixture::decode(PidFixture::value_at(&e_prev, at), 2, true),
+                    reference: PidObservation::decode(PidObservation::value_at(&reference, at), 2, false),
+                    duty: PidObservation::decode(PidObservation::value_at(&duty, at), 2, false),
+                    integ: PidObservation::decode(PidObservation::value_at(&integ, at), 4, true),
+                    deriv: PidObservation::decode(PidObservation::value_at(&deriv, at), 4, true),
+                    e_prev: PidObservation::decode(PidObservation::value_at(&e_prev, at), 2, true),
                 }
             })
             .collect()
@@ -249,7 +259,7 @@ const DUTY_MAX: i32 = 2880;
 
 #[test]
 fn the_ramp_and_the_pid_follow_their_difference_equations() {
-    let expected = PidFixture::model();
+    let expected = PidReference::model();
     // the script reaches what it is for, so a loop that did nothing could not match: both rails,
     // the integrator's hold while saturated, the resets, the ramp both ways
     assert!(expected.iter().any(|s| s.duty == DUTY_MAX), "saturates high");
@@ -259,8 +269,8 @@ fn the_ramp_and_the_pid_follow_their_difference_equations() {
     assert!(expected.windows(2).any(|w| w[1].reference < w[0].reference && w[1].reference > 0), "the ramp goes down");
     assert!(expected.iter().any(|s| s.e_prev == E_MIN) && expected.iter().any(|s| s.e_prev == E_MAX || s.e_prev > 100));
 
-    let seen = PidFixture::design().run(1.0e-6, 1e-8);
-    let observed = PidFixture::observed(&seen);
+    let seen = PidDesign::design().run(1.0e-6, 1e-8);
+    let observed = PidObservation::observed(&seen);
     for (sample, (want, got)) in expected.iter().zip(&observed).enumerate() {
         assert_eq!(want, got, "sample {sample}");
     }

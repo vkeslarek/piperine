@@ -27,10 +27,10 @@ use devices::Devices;
 /// descriptor (ETXTBSY); the tests here take turns.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
-/// Associated test helpers of `compiled`, grouped on one fixture type.
-struct CompiledFixture;
+/// A design compiled under fresh settings.
+struct CompileTarget;
 
-impl CompiledFixture {
+impl CompileTarget {
     fn compile(ir: &Ir, settings: &Settings) -> Compiled {
         let t = Transpiler::new(Arc::new(ir.clone())).unwrap_or_else(|e| panic!("{e}"));
         t.compile(settings).unwrap_or_else(|e| panic!("{e}"))
@@ -41,7 +41,12 @@ impl CompiledFixture {
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
         (cache, settings)
     }
+}
 
+/// The five M1 bodies in one design.
+struct AllFiveDesign;
+
+impl AllFiveDesign {
     /// A design that holds every M1 device body (the top is a resistor alone).
     fn all_five() -> Ir {
         let mut b = IrBuilder::new();
@@ -53,7 +58,12 @@ impl CompiledFixture {
         let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
         b.finish(top)
     }
+}
 
+/// The elements of an ABI list.
+struct LoadedItems;
+
+impl LoadedItems {
     /// A list's elements, read through the safe accessor.
     fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
         (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
@@ -65,9 +75,9 @@ impl CompiledFixture {
 #[test]
 fn modules_come_through_the_symbol_and_bind_like_the_interpreter() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let (_cache, settings) = CompiledFixture::fresh();
+    let (_cache, settings) = CompileTarget::fresh();
     let ir = HandCircuits::divider();
-    let compiled = CompiledFixture::compile(&ir, &settings);
+    let compiled = CompileTarget::compile(&ir, &settings);
     let interp = Interpreter::new(Arc::new(ir.clone())).expect("a checked IR");
 
     let mut running = 0;
@@ -80,7 +90,7 @@ fn modules_come_through_the_symbol_and_bind_like_the_interpreter() {
         assert_eq!(ours.name().as_str(), body.name());
         assert!(std::ptr::eq(ours, compiled.loaded().module(body.name()).expect("in the library")), "through the symbol");
         let pins = |m: &Module| -> Vec<(String, u32, u32)> {
-            CompiledFixture::items(&m.prototype().pins).iter().map(|p| (p.name.as_str().to_string(), p.kind, p.role)).collect()
+            LoadedItems::items(&m.prototype().pins).iter().map(|p| (p.name.as_str().to_string(), p.kind, p.role)).collect()
         };
         assert_eq!(pins(ours), pins(theirs), "{}: the same pins in the same order", body.name());
     }
@@ -95,22 +105,22 @@ struct Entries;
 impl Entries {
     fn of(shape: &Shape<'_>) -> Vec<String> {
         let mut out = Vec::new();
-        for p in CompiledFixture::items(&shape.pins) {
+        for p in LoadedItems::items(&shape.pins) {
             out.push(format!(
                 "pin {} {} kind {} role {} global {} flags {} size {} init {:?} check {} abstol {:?}",
                 p.name.as_str(), p.origin.as_str(), p.kind, p.role, p.global, p.flags, p.layout.size,
                 p.init.as_slice(), p.check, p.abstol
             ));
         }
-        for t in CompiledFixture::items(&shape.terms) {
+        for t in LoadedItems::items(&shape.terms) {
             out.push(format!("term {} {} op {} {} {}", t.name.as_str(), t.origin.as_str(), t.op, t.plus, t.minus));
         }
-        for i in CompiledFixture::items(&shape.inputs) {
+        for i in LoadedItems::items(&shape.inputs) {
             out.push(format!("input {} {} kind {}", i.name.as_str(), i.origin.as_str(), i.kind));
         }
-        for f in CompiledFixture::items(&shape.functions) {
-            let cells = |l: &List<'_, Cell>| CompiledFixture::items(l).iter().map(|c| (c.kind, c.index, c.part)).collect::<Vec<_>>();
-            let partials: Vec<_> = CompiledFixture::items(&f.partials).iter().map(|p| (p.write, p.to, p.read, p.at)).collect();
+        for f in LoadedItems::items(&shape.functions) {
+            let cells = |l: &List<'_, Cell>| LoadedItems::items(l).iter().map(|c| (c.kind, c.index, c.part)).collect::<Vec<_>>();
+            let partials: Vec<_> = LoadedItems::items(&f.partials).iter().map(|p| (p.write, p.to, p.read, p.at)).collect();
             out.push(format!(
                 "function {} {} flags {} reads {:?} writes {:?} partials {:?}",
                 f.name.as_str(), f.origin.as_str(), f.flags, cells(&f.reads), cells(&f.writes), partials
@@ -126,9 +136,9 @@ impl Entries {
 #[test]
 fn loaded_shapes_equal_the_plans_entry_by_entry() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let (_cache, settings) = CompiledFixture::fresh();
-    let ir = CompiledFixture::all_five();
-    let compiled = CompiledFixture::compile(&ir, &settings);
+    let (_cache, settings) = CompileTarget::fresh();
+    let ir = AllFiveDesign::all_five();
+    let compiled = CompileTarget::compile(&ir, &settings);
     let mut checked = 0;
     for body in ir.bodies() {
         let module = Modules::module(&compiled, body.id()).unwrap_or_else(|| panic!("{} has a module", body.name()));
@@ -199,7 +209,7 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
     let body = Devices::resistor(&mut b);
     let top = Devices::alone(&mut b, body, "R", 1, vec![1000.0]);
     let ir = b.finish(top);
-    let compiled = CompiledFixture::compile(&ir, &settings);
+    let compiled = CompileTarget::compile(&ir, &settings);
     let module = Modules::module(&compiled, body).expect("the resistor's module");
     let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
     let k = handle.shape().functions.iter().position(|f| f.name.as_str() == "terms").expect("terms") as u32;
@@ -226,9 +236,9 @@ fn a_panic_in_compiled_code_is_a_fault_and_the_instance_survives() {
 #[test]
 fn the_compiled_divider_solves() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let (_cache, settings) = CompiledFixture::fresh();
+    let (_cache, settings) = CompileTarget::fresh();
     let ir = HandCircuits::divider();
-    let compiled = CompiledFixture::compile(&ir, &settings);
+    let compiled = CompileTarget::compile(&ir, &settings);
     let mid = NodeIdentifier::Anonymous(ir.node_at("Divider.mid").expect("node mid").id().index());
     let vin = ir.node_at("Divider.vin").expect("node vin");
     assert_eq!(ir.instance_at("Divider.v1").expect("v1").binding(0), Some(NodeRef::Node(vin.id())));

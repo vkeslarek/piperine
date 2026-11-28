@@ -169,10 +169,10 @@ impl Bias {
 /// The `AGE`/`STATIC` cases of a limit (abi.md A2): all six.
 const LIMIT_CASES: [(u8, bool); 6] = [(0, false), (0, true), (1, false), (1, true), (2, false), (2, true)];
 
-/// Associated test helpers of `differential`, grouped on one fixture type.
-struct DifferentialFixture;
+/// The compiled functions against the interpreter, on both backends.
+struct BackendComparison;
 
-impl DifferentialFixture {
+impl BackendComparison {
     /// The cases a function is run over: the six when it reads `AGE` or `STATIC`, else one.
     fn cases(shape: &Shape<'_>, k: usize) -> Vec<(u8, bool)> {
         let f = shape.functions.get(k).expect("a function");
@@ -194,7 +194,7 @@ impl DifferentialFixture {
                 assert_eq!(name, compiled.shape().functions.get(k).expect("a function").name.as_str(), "{body}: function {k}");
                 seen.functions += 1;
                 for bias in points {
-                    for (age, is_static) in DifferentialFixture::cases(shape, k) {
+                    for (age, is_static) in BackendComparison::cases(shape, k) {
                         let input = bias.input(shape, k, age, is_static);
                         let none = vec![0u8; f.partials.len()];
                         for seed in [None, Some(none.as_slice())] {
@@ -225,7 +225,7 @@ struct Compared {
 #[test]
 fn every_m1_function_gives_the_interpreters_bytes() {
     let both = Both::five();
-    let seen = DifferentialFixture::compare(&both, &Bias::POINTS);
+    let seen = BackendComparison::compare(&both, &Bias::POINTS);
     // resistor 2, capacitor 2, vsource 2, isource 2, diode 5 (one of them the limit)
     assert_eq!(seen.functions, 13);
     assert_eq!(seen.limited, 3 * 6, "the diode's limit: three points, six AGE/STATIC cases (each run with and without seeds)");
@@ -237,7 +237,7 @@ fn every_m1_function_gives_the_interpreters_bytes() {
     assert_eq!(arms.len(), 8, "the sweep reaches every arm of pnjlim: {arms:?}");
     assert!(sweep.iter().any(|b| b.last < 0.0) && sweep.iter().any(|b| b.last > 0.73), "LAST on both sides of 0 and of vcrit");
     assert!(sweep.iter().any(|b| b.first - b.second > 15.0), "a bias where the diode's exponential passes 1e250");
-    let swept = DifferentialFixture::compare(&both, &sweep);
+    let swept = BackendComparison::compare(&both, &sweep);
     assert_eq!(swept.functions, 13);
     assert_eq!(swept.limited, 300 * 6, "the diode's limit at every swept point, six AGE/STATIC cases each");
 }
@@ -545,7 +545,7 @@ fn msl_names_that_equal_generated_names_give_the_interpreters_bytes() {
 
     // and both bodies compile and give the interpreter's bytes, function by function
     let both = Both::of(ir);
-    let seen = DifferentialFixture::compare(&both, &Bias::POINTS);
+    let seen = BackendComparison::compare(&both, &Bias::POINTS);
     assert_eq!(seen.functions, 3, "Rt: terms; Limiter: limit:vd, terms");
     assert_eq!(seen.limited, 3 * 6, "Limiter's limit: three points, six AGE/STATIC cases");
 }

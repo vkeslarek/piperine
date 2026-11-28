@@ -44,10 +44,10 @@ const R: f64 = 1e3;
 const C: f64 = 1e-9;
 const LEVEL: f64 = 0.5;
 
-/// Associated test helpers of `carrierless`, grouped on one fixture type.
-struct CarrierlessFixture;
+/// The bodies with no carrier: `Monitor` and the `Step` design that places it.
+struct CarrierlessBodies;
 
-impl CarrierlessFixture {
+impl CarrierlessBodies {
     fn at(line: u32) -> Origin {
         Origin { file: F.into(), line, col: 1 }
     }
@@ -77,7 +77,7 @@ impl CarrierlessFixture {
     fn step() -> Ir {
         let mut b = IrBuilder::new();
         let (vsrc, res, cap) = (Devices::vsource(&mut b), Devices::resistor(&mut b), Devices::capacitor(&mut b));
-        let mon = CarrierlessFixture::monitor(&mut b);
+        let mon = CarrierlessBodies::monitor(&mut b);
         let el = Devices::electrical(&mut b);
         let signals: [(&str, Option<f64>); 2] = [("vin", None), ("vout", Some(0.0))];
         // (name, body, terminals by signal index, params); `None` is ground
@@ -91,12 +91,12 @@ impl CarrierlessFixture {
         let real = |v: &f64| Constant::Real(Real::new(*v));
         let top_body = b.body(BodySpec {
             name: "Step".into(),
-            origin: CarrierlessFixture::at(7),
+            origin: CarrierlessBodies::at(7),
             params: vec![],
             nodes: signals
                 .iter()
                 .enumerate()
-                .map(|(i, (n, init))| BodyNode { name: n.to_string(), nature: el, role: NodeRole::Signal, init: init.map(Real::new), origin: CarrierlessFixture::at(8 + i as u32) })
+                .map(|(i, (n, init))| BodyNode { name: n.to_string(), nature: el, role: NodeRole::Signal, init: init.map(Real::new), origin: CarrierlessBodies::at(8 + i as u32) })
                 .collect(),
             branches: Vec::<Branch>::new(),
             limits: vec![],
@@ -111,7 +111,7 @@ impl CarrierlessFixture {
                     body: *body,
                     nodes: nodes.iter().map(terminal).collect(),
                     params: params.iter().enumerate().map(|(k, v)| (k as u32, real(v))).collect(),
-                    origin: CarrierlessFixture::at(10 + i as u32),
+                    origin: CarrierlessBodies::at(10 + i as u32),
                 })
                 .collect(),
         });
@@ -120,7 +120,7 @@ impl CarrierlessFixture {
             .iter()
             .enumerate()
             .map(|(i, (n, init))| {
-                b.node(NodeSpec { path: format!("Step.{n}"), nature: el, declared_by: top, init: init.map(Real::new), origin: CarrierlessFixture::at(8 + i as u32) })
+                b.node(NodeSpec { path: format!("Step.{n}"), nature: el, declared_by: top, init: init.map(Real::new), origin: CarrierlessBodies::at(8 + i as u32) })
             })
             .collect();
         let top = b.instance(InstanceSpec {
@@ -130,7 +130,7 @@ impl CarrierlessFixture {
             parent: None,
             nodes: ids.iter().map(|id| NodeRef::Node(*id)).collect(),
             params: vec![],
-            origin: CarrierlessFixture::at(7),
+            origin: CarrierlessBodies::at(7),
         });
         for (i, (name, body, nodes, params)) in places.iter().enumerate() {
             b.instance(InstanceSpec {
@@ -140,7 +140,7 @@ impl CarrierlessFixture {
                 parent: Some(top),
                 nodes: nodes.iter().map(|n| n.map_or(NodeRef::Ground, |k| NodeRef::Node(ids[k]))).collect(),
                 params: params.iter().map(real).collect(),
-                origin: CarrierlessFixture::at(10 + i as u32),
+                origin: CarrierlessBodies::at(10 + i as u32),
             });
         }
         let ir = b.finish(top);
@@ -160,7 +160,7 @@ impl Sink for Seen {
 
 #[test]
 fn a_reaction_with_no_carrier_runs_and_its_record_arrives() {
-    let ir = Arc::new(CarrierlessFixture::step());
+    let ir = Arc::new(CarrierlessBodies::step());
     let cache = tempfile::tempdir().expect("a temp dir");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let compiled = Transpiler::new(ir.clone()).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));

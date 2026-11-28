@@ -12,6 +12,8 @@ pub mod real;
 pub mod numbers;
 pub mod table;
 pub mod widths;
+#[cfg(test)]
+mod panic_text;
 
 /// The text of `rt/real.rs`, as generated code compiles it.
 pub const REAL: &str = include_str!("rt/real.rs");

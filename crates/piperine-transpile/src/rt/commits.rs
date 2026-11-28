@@ -119,10 +119,10 @@ pub(crate) mod tests {
     use super::Commits;
     use crate::rt::int::UInt;
 
-    /// Associated test helpers of `commits`, grouped on one fixture type.
-    pub struct CommitsFixture;
+    /// A reaction frame whose commits are recorded.
+    pub struct RecordedReaction;
 
-    impl CommitsFixture {
+    impl RecordedReaction {
         /// A reaction frame whose commits are recorded, as `(statement, bytes, after)`; a commit
         /// with flags is not one of them (see `flushed`).
         pub(crate) fn react_with(f: impl FnOnce(&mut React<'_>)) -> Vec<(u32, Vec<u8>, f64)> {
@@ -167,7 +167,7 @@ pub(crate) mod tests {
     #[test]
     fn every_commit_reaches_the_host_in_the_order_made() {
         // nothing reaches `React` before `flush`; a record goes through its own statement as made
-        let made = CommitsFixture::react_with(|cx| {
+        let made = RecordedReaction::react_with(|cx| {
             let mut commits = Commits::new();
             commits.commit(2, UInt::<9>::new(300), 5e-9);
             commits.commit(0, true, 0.0);
@@ -179,7 +179,7 @@ pub(crate) mod tests {
             made,
             [(2, vec![44, 1], 5e-9), (0, vec![1], 0.0), (4, vec![7, 1, 1, 1], 0.0), (0, LOW.to_vec(), 1e-9)]
         );
-        let made = CommitsFixture::react_with(|_| {
+        let made = RecordedReaction::react_with(|_| {
             let mut commits = Commits::new();
             commits.commit(0, true, 0.0);
             drop(commits);
@@ -206,7 +206,7 @@ pub(crate) mod tests {
     fn a_timer_is_armed_for_a_later_time_only() {
         // msl-digital A3 on abi.md C1, C4: an arming fires its event pin (no bytes) `t - now`
         // later, at the next microstep for `t == now`, and never (`+inf`) for a past time
-        let made = CommitsFixture::react_with(|cx| {
+        let made = RecordedReaction::react_with(|cx| {
             let mut commits = Commits::new();
             commits.arm(0, 15e-9, 5e-9);
             commits.arm(1, 5e-9, 5e-9);

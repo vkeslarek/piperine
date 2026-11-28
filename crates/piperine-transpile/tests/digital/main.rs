@@ -7,5 +7,6 @@ mod digital_circuit;
 mod dpwm;
 mod environment;
 mod pid;
+mod pin_bytes;
 mod reaction;
 mod resolve;

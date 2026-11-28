@@ -487,10 +487,10 @@ mod tests {
     use super::{Dual, Real};
     use piperine_interp::Dual as Reference;
 
-    /// Associated test helpers of `real`, grouped on one fixture type.
-    struct RealFixture;
+    /// The fixed points the dual numbers are checked at.
+    struct SamplePoints;
 
-    impl RealFixture {
+    impl SamplePoints {
         /// 200 points in (-8, 8), from a fixed linear congruential sequence.
         fn points() -> Vec<f64> {
             let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -501,7 +501,12 @@ mod tests {
                 })
                 .collect()
         }
+    }
 
+    /// A dual number against the reference interpreter, over one expression written once over `Real`.
+    struct DualCheck;
+
+    impl DualCheck {
         /// The value's bits equal, every tangent entry equal as `f64`; an entry the reference does
         /// not hold is zero there (its tangent is empty or shorter).
         fn same(what: &str, x: f64, ours: Dual<2>, reference: &Reference) {
@@ -519,34 +524,34 @@ mod tests {
 
     #[test]
     fn dual_gives_the_interpreters_values_and_tangents() {
-        let xs = RealFixture::points();
+        let xs = SamplePoints::points();
         for (k, &x) in xs.iter().enumerate() {
             let y = xs[(k + 1) % xs.len()];
             let (a, b) = (Dual::<2>::seeded(x, 0), Dual::<2>::seeded(y, 1));
             let (ra, rb) = (Reference::seeded(x, 0, 2), Reference::seeded(y, 1, 2));
             // the four operators and negation, both operands seeded
-            RealFixture::same("a + b", x, a + b, &(ra.clone() + rb.clone()));
-            RealFixture::same("a - b", x, a - b, &(ra.clone() - rb.clone()));
-            RealFixture::same("a * b", x, a * b, &(ra.clone() * rb.clone()));
-            RealFixture::same("a / b", x, a / b, &(ra.clone() / rb.clone()));
-            RealFixture::same("-a", x, -a, &(-ra.clone()));
+            DualCheck::same("a + b", x, a + b, &(ra.clone() + rb.clone()));
+            DualCheck::same("a - b", x, a - b, &(ra.clone() - rb.clone()));
+            DualCheck::same("a * b", x, a * b, &(ra.clone() * rb.clone()));
+            DualCheck::same("a / b", x, a / b, &(ra.clone() / rb.clone()));
+            DualCheck::same("-a", x, -a, &(-ra.clone()));
             // a constant on either side: the reference holds an empty tangent there
             let (c, rc) = (Dual::<2>::constant(y), Reference::constant(y));
-            RealFixture::same("c * a", x, c * a, &(rc.clone() * ra.clone()));
-            RealFixture::same("a / c", x, a / c, &(ra.clone() / rc.clone()));
-            RealFixture::same("c - a", x, c - a, &(rc.clone() - ra.clone()));
-            RealFixture::same("c + c", x, c + c, &(rc.clone() + rc.clone()));
+            DualCheck::same("c * a", x, c * a, &(rc.clone() * ra.clone()));
+            DualCheck::same("a / c", x, a / c, &(ra.clone() / rc.clone()));
+            DualCheck::same("c - a", x, c - a, &(rc.clone() - ra.clone()));
+            DualCheck::same("c + c", x, c + c, &(rc.clone() + rc.clone()));
             // the methods; `ln` and `sqrt` over |x|, where they are real
-            RealFixture::same("exp", x, a.exp(), &ra.exp());
-            RealFixture::same("abs", x, a.abs(), &ra.abs());
+            DualCheck::same("exp", x, a.exp(), &ra.exp());
+            DualCheck::same("abs", x, a.abs(), &ra.abs());
             let (p, rp) = (Dual::<2>::seeded(x.abs(), 0), Reference::seeded(x.abs(), 0, 2));
-            RealFixture::same("ln", x, p.ln(), &rp.ln());
-            RealFixture::same("sqrt", x, p.sqrt(), &rp.sqrt());
+            DualCheck::same("ln", x, p.ln(), &rp.ln());
+            DualCheck::same("sqrt", x, p.sqrt(), &rp.sqrt());
             // a composition, as a diode's current reads: is * (exp(v / nvt) - 1), nvt kept from 0
             let ours = c * ((a / (b.abs() + Dual::constant(1.0))).exp() - Dual::constant(1.0));
             let one = Reference::constant(1.0);
             let theirs = rc.clone() * ((ra.clone() / (rb.abs() + one.clone())).exp() - one);
-            RealFixture::same("is * (exp(a / (|b| + 1)) - 1)", x, ours, &theirs);
+            DualCheck::same("is * (exp(a / (|b| + 1)) - 1)", x, ours, &theirs);
             assert_eq!(a.value().to_bits(), x.to_bits());
         }
     }
@@ -581,7 +586,7 @@ mod tests {
         let f = Dual::<3>::seeded(2.7, 0).floor();
         assert_eq!((f.v, f.d), (2.0, [0.0; 3]));
         // the plain real is the standard library's
-        for v in RealFixture::points() {
+        for v in SamplePoints::points() {
             assert_eq!(Real::clamp(v, -1.0, 2.0).to_bits(), v.max(-1.0).min(2.0).to_bits());
             assert_eq!(Real::floor(v).to_bits(), v.floor().to_bits());
             assert_eq!(Real::min(v, 1.0).to_bits(), v.min(1.0).to_bits());
@@ -591,15 +596,15 @@ mod tests {
 
     #[test]
     fn f64_is_a_real() {
-        for x in RealFixture::points() {
+        for x in SamplePoints::points() {
             let (is, nvt) = (1e-14, 0.025852);
-            let generic = RealFixture::diode(x, is, nvt);
+            let generic = DualCheck::diode(x, is, nvt);
             let plain = is * ((x / nvt).exp() - 1.0) + (x * x).sqrt().ln().abs() - -x;
             assert_eq!(generic.to_bits(), plain.to_bits(), "at {x}");
             assert_eq!(<f64 as Real>::constant(x).to_bits(), x.to_bits());
             assert_eq!(Real::value(x).to_bits(), x.to_bits());
             // the value of the dual instantiation is the plain one, bit for bit
-            let dual = RealFixture::diode(Dual::<1>::seeded(x, 0), Dual::constant(is), Dual::constant(nvt));
+            let dual = DualCheck::diode(Dual::<1>::seeded(x, 0), Dual::constant(is), Dual::constant(nvt));
             assert_eq!(dual.value().to_bits(), plain.to_bits(), "at {x}");
         }
     }
@@ -683,7 +688,7 @@ mod tests {
 
     #[test]
     fn each_row_has_the_value_of_rusts_method() {
-        let xs = RealFixture::points();
+        let xs = SamplePoints::points();
         for (k, &x) in xs.iter().enumerate() {
             let y = xs[(k + 1) % xs.len()];
             for name in Rows::NAMES {

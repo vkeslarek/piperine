@@ -131,10 +131,10 @@ mod tests {
 
     use super::ShapeCheck;
 
-    /// Associated test helpers of `shape_check`, grouped on one fixture type.
-    struct ShapeCheckFixture;
+    /// A shape of one pin and its reads, as bytes.
+    struct PinShape;
 
-    impl ShapeCheckFixture {
+    impl PinShape {
         fn shape(pin: &str, read: u32) -> ShapeBuf {
             let mut b = ShapeBuf::new();
             b.pin(PinSpec::continuous(pin, role::PORT));
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn equal_shapes_have_no_difference_and_a_changed_entry_is_named() {
-        let (a, same, other_name, other_read) = (ShapeCheckFixture::shape("p", 0), ShapeCheckFixture::shape("p", 0), ShapeCheckFixture::shape("q", 0), ShapeCheckFixture::shape("p", 1));
+        let (a, same, other_name, other_read) = (PinShape::shape("p", 0), PinShape::shape("p", 0), PinShape::shape("q", 0), PinShape::shape("p", 1));
         assert_eq!(ShapeCheck::first_difference(a.shape(), same.shape()), None);
         let name = ShapeCheck::first_difference(a.shape(), other_name.shape()).expect("a pin name differs");
         assert!(name.starts_with("pin 0:") && name.contains("`p`") && name.contains("`q`"), "{name}");

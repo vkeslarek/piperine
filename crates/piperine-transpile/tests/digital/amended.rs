@@ -15,6 +15,7 @@ use piperine_solver::prelude::NodeIdentifier;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use piperine_transpile::{Error, Transpiler};
 
+use crate::pin_bytes::PinBytes;
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 
@@ -30,21 +31,32 @@ const TICK: f64 = 1e-15;
 const BIT: ValueType = ValueType::Bool;
 const REAL: ValueType = ValueType::F64;
 
-/// Associated test helpers of `amended`, grouped on one fixture type.
-struct AmendedFixture;
+/// The oscillator the amended tests run under.
+struct TopClock;
 
-impl AmendedFixture {
+impl TopClock {
     /// The 200 MHz oscillator on the net `Top.clk`: it toggles every 2.5 ns from 2.5 ns.
     fn clock(w: &mut TopDesign) {
         let osc = Buck::osc(&mut w.b);
         w.place("osc", osc, vec![Constant::Real(Real::new(200e6))], &[("clk", BIT)]);
     }
+}
 
-    /// The bytes of a known `f64` in its pin (abi.md P3, `REAL`: the value at 0, known at 8).
-    fn real_bytes(v: f64) -> Vec<u8> {
-        v.to_le_bytes().to_vec()
+/// A node of the design, as the solver names it.
+struct DesignNode;
+
+impl DesignNode {
+    /// The solver node of the design node `Top.<name>`.
+    fn node(ir: &piperine_ir::Ir, name: &str) -> NodeIdentifier {
+        let path = format!("Top.{name}");
+        NodeIdentifier::Anonymous(ir.node_at(&path).unwrap_or_else(|| panic!("no node {path}")).id().index())
     }
+}
 
+/// The bodies the amended tests compile.
+struct AmendedBodies;
+
+impl AmendedBodies {
     /// An environment read at the origin of `x`.
     fn env(x: &mut Dx<'_>, env: Env) -> ExprId {
         let o = x.origin();
@@ -82,12 +94,6 @@ impl AmendedFixture {
         let commit = x.commit(1, v, None);
         Buck::reaction(b, body, vec![changed], vec![commit], vec![], F, 3);
         body
-    }
-
-    /// The solver node of the design node `Top.<name>`.
-    fn node(ir: &piperine_ir::Ir, name: &str) -> NodeIdentifier {
-        let path = format!("Top.{name}");
-        NodeIdentifier::Anonymous(ir.node_at(&path).unwrap_or_else(|| panic!("no node {path}")).id().index())
     }
 
     /// `module <name>(in clk: Bit, out q: Bit)` with the carriers a hoisted `transition` and a
@@ -162,14 +168,6 @@ impl AmendedFixture {
         body
     }
 
-    /// The transient changes of `count` from a 40 ns run of the timer.
-    fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
-        let mut w = TopDesign::new();
-        let body = AmendedFixture::timer(&mut w.b, rearm);
-        w.place("timer", body, vec![], &[("timer.t0", REAL), ("timer.dt", REAL), ("count", ValueType::UInt(8))]);
-        BuiltDesign::new(w.finish()).run(40e-9, 1e-9).transient("count")
-    }
-
     /// `module <name>(in clk: Bit, out hit: Bit)`:
     ///
     /// ```text
@@ -184,7 +182,7 @@ impl AmendedFixture {
         b.carrier(body, Buck::carrier("hit", BIT, CarrierRole::Out, None, F, 1, 35));
         let value = match time {
             Time::Fixed(v) => Dx::new(b, F, 3, 25).real(v),
-            Time::Now => AmendedFixture::env(&mut Dx::new(b, F, 3, 25), Env::Time),
+            Time::Now => AmendedBodies::env(&mut Dx::new(b, F, 3, 25), Env::Time),
         };
         let rise = Buck::rise(b, body, 0, F, 3, 8);
         let commit = Dx::new(b, F, 3, 20).commit(1, value, None);
@@ -225,31 +223,6 @@ impl AmendedFixture {
         }
         Buck::reaction(b, body, vec![rise], stmts, vec![], F, 2);
         body
-    }
-
-    /// The probe under the 200 MHz clock, compiled.
-    fn probed(emits: bool) -> BuiltDesign {
-        let mut w = TopDesign::new();
-        AmendedFixture::clock(&mut w);
-        let body = AmendedFixture::probe(&mut w.b, emits);
-        w.place("probe", body, vec![], &[("clk", BIT), ("n", ValueType::UInt(8))]);
-        BuiltDesign::new(w.finish())
-    }
-
-    /// The microsteps of each instant the digital side runs through `stop` ticks, from the start of
-    /// an analysis, as `(tick, microsteps)`.
-    fn microsteps(built: &BuiltDesign, stop: i64) -> Vec<(i64, u32)> {
-        use piperine_digital_solver::engine::{Horizon, Mode};
-        use piperine_digital_solver::tick::Tick;
-        let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
-        let digital = &mut circuit.bound_mut().digital;
-        digital.start().unwrap_or_else(|e| panic!("{e:?}"));
-        let mut ran = Vec::new();
-        while let Some(at) = digital.next_due().filter(|t| t.0 <= stop) {
-            let out = digital.run_instant(at, &[], Horizon::uniform(Tick(stop)), Mode::default()).unwrap_or_else(|e| panic!("{e:?}"));
-            ran.push((at.0, out.microsteps));
-        }
-        ran
     }
 
     /// `module <name>(p, n) { <param>: f64 = <default>; analog { v(p, n) +> <value>; } }`, the value
@@ -316,13 +289,51 @@ impl AmendedFixture {
     }
 }
 
+/// Designs run under the oscillator, read back.
+struct ClockedRuns;
+
+impl ClockedRuns {
+    /// The transient changes of `count` from a 40 ns run of the timer.
+    fn counted(rearm: bool) -> Vec<(i64, Vec<u8>)> {
+        let mut w = TopDesign::new();
+        let body = AmendedBodies::timer(&mut w.b, rearm);
+        w.place("timer", body, vec![], &[("timer.t0", REAL), ("timer.dt", REAL), ("count", ValueType::UInt(8))]);
+        BuiltDesign::new(w.finish()).run(40e-9, 1e-9).transient("count")
+    }
+
+    /// The probe under the 200 MHz clock, compiled.
+    fn probed(emits: bool) -> BuiltDesign {
+        let mut w = TopDesign::new();
+        TopClock::clock(&mut w);
+        let body = AmendedBodies::probe(&mut w.b, emits);
+        w.place("probe", body, vec![], &[("clk", BIT), ("n", ValueType::UInt(8))]);
+        BuiltDesign::new(w.finish())
+    }
+
+    /// The microsteps of each instant the digital side runs through `stop` ticks, from the start of
+    /// an analysis, as `(tick, microsteps)`.
+    fn microsteps(built: &BuiltDesign, stop: i64) -> Vec<(i64, u32)> {
+        use piperine_digital_solver::engine::{Horizon, Mode};
+        use piperine_digital_solver::tick::Tick;
+        let mut circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+        let digital = &mut circuit.bound_mut().digital;
+        digital.start().unwrap_or_else(|e| panic!("{e:?}"));
+        let mut ran = Vec::new();
+        while let Some(at) = digital.next_due().filter(|t| t.0 <= stop) {
+            let out = digital.run_instant(at, &[], Horizon::uniform(Tick(stop)), Mode::default()).unwrap_or_else(|e| panic!("{e:?}"));
+            ran.push((at.0, out.microsteps));
+        }
+        ran
+    }
+}
+
 #[test]
 fn now_is_the_time_of_the_instant_and_of_the_solve() {
     let mut w = TopDesign::new();
-    AmendedFixture::clock(&mut w);
-    let stamp = AmendedFixture::on_clock(&mut w.b, "Stamp", "t", REAL, |x| AmendedFixture::env(x, Env::Time));
+    TopClock::clock(&mut w);
+    let stamp = AmendedBodies::on_clock(&mut w.b, "Stamp", "t", REAL, |x| AmendedBodies::env(x, Env::Time));
     w.place("stamp", stamp, vec![], &[("clk", BIT), ("t", REAL)]);
-    let ramp = AmendedFixture::source(&mut w.b, "Ramp", |x| AmendedFixture::env(x, Env::Time));
+    let ramp = AmendedBodies::source(&mut w.b, "Ramp", |x| AmendedBodies::env(x, Env::Time));
     w.place_analog("ramp", ramp, &["x"], &[]);
     let built = BuiltDesign::new(w.finish());
     let (seen, result) = built.run_with(20e-9, 1e-9);
@@ -332,11 +343,11 @@ fn now_is_the_time_of_the_instant_and_of_the_solve() {
     // default), so the reaction fired by the clock's change at 15 ns commits 15e-9 as that tick
     // in seconds; the commit applies at the next microstep of the same instant
     let fifteen = seen.transient("t").into_iter().find(|(at, _)| *at == 15 * NS);
-    assert_eq!(fifteen, Some((15 * NS, AmendedFixture::real_bytes((15 * NS) as f64 * TICK))), "t at 15 ns: {:?}", seen.transient("t"));
+    assert_eq!(fifteen, Some((15 * NS, PinBytes::real_pin_bytes((15 * NS) as f64 * TICK))), "t at 15 ns: {:?}", seen.transient("t"));
 
     // abi.md §4.2: in `analog`, `TIME` is the time of the solve: `v(x) +> now()` holds the node
     // at the time of each accepted point
-    let x = AmendedFixture::node(&built.ir, "x");
+    let x = DesignNode::node(&built.ir, "x");
     let points: Vec<(f64, f64)> =
         result.iter().map(|s| (s.time(), s.get_node(&x).expect("v(x) is solved"))).filter(|(t, _)| *t > 0.0).collect();
     assert!(points.len() >= 3, "three accepted times: {points:?}");
@@ -348,11 +359,11 @@ fn now_is_the_time_of_the_instant_and_of_the_solve() {
 #[test]
 fn static_is_true_only_in_the_equilibrium() {
     let mut w = TopDesign::new();
-    AmendedFixture::clock(&mut w);
-    let mode = AmendedFixture::on_clock(&mut w.b, "Mode", "s", BIT, |x| AmendedFixture::env(x, Env::Static));
+    TopClock::clock(&mut w);
+    let mode = AmendedBodies::on_clock(&mut w.b, "Mode", "s", BIT, |x| AmendedBodies::env(x, Env::Static));
     w.place("mode", mode, vec![], &[("clk", BIT), ("s", BIT)]);
-    let level = AmendedFixture::source(&mut w.b, "Level", |x| {
-        let stat = AmendedFixture::env(x, Env::Static);
+    let level = AmendedBodies::source(&mut w.b, "Level", |x| {
+        let stat = AmendedBodies::env(x, Env::Static);
         let (one, zero) = (x.real(1.0), x.real(0.0));
         x.if_(stat, one, zero, REAL)
     });
@@ -376,7 +387,7 @@ fn static_is_true_only_in_the_equilibrium() {
     assert_eq!(seen.transient("s").first(), Some(&(5 * NS / 2, LOW.to_vec())), "s at the first transient instant");
 
     // in `analog`: the operating point solves `v(x) = 1`, every transient point `v(x) = 0`
-    let x = AmendedFixture::node(&built.ir, "x");
+    let x = DesignNode::node(&built.ir, "x");
     let points: Vec<(f64, f64)> = result.iter().map(|s| (s.time(), s.get_node(&x).expect("v(x) is solved"))).collect();
     assert_eq!(points.first(), Some(&(0.0, 1.0)), "the operating point: {points:?}");
     assert!(points.len() > 1 && points[1..].iter().all(|(_, v)| *v == 0.0), "every transient point: {points:?}");
@@ -385,8 +396,8 @@ fn static_is_true_only_in_the_equilibrium() {
 #[test]
 fn hoisted_names_print_as_rust_identifiers() {
     let mut w = TopDesign::new();
-    AmendedFixture::clock(&mut w);
-    let body = AmendedFixture::hoisted(&mut w.b, "Hoisted", None);
+    TopClock::clock(&mut w);
+    let body = AmendedBodies::hoisted(&mut w.b, "Hoisted", None);
     // every carrier is bound to a net, a signal to the one its instance declares
     w.place("h", body, vec![], &[("clk", BIT), ("h.gate.x", BIT), ("h.above$0.init$0.up", BIT), ("q", BIT)]);
     // `BuiltDesign::new` asserts the compiler's standard error is empty: no warning on `gate_dx`,
@@ -403,7 +414,7 @@ fn hoisted_names_print_as_rust_identifiers() {
 
     // a name that spells like a hoisted one is refused, not shadowed
     let mut w = TopDesign::new();
-    let body = AmendedFixture::hoisted(&mut w.b, "Clash", Some("gate_dx"));
+    let body = AmendedBodies::hoisted(&mut w.b, "Clash", Some("gate_dx"));
     w.place("h", body, vec![], &[("clk", BIT), ("h.gate.x", BIT), ("h.above$0.init$0.up", BIT), ("q", BIT), ("h.gate_dx", BIT)]);
     let transpiler = Transpiler::new(std::sync::Arc::new(w.finish())).unwrap_or_else(|e| panic!("{e}"));
     assert_eq!(
@@ -421,7 +432,7 @@ fn at_fires_once_at_its_time() {
     // part IV §13 `at(t)`: the event fires once, at `t`. Armed at the start with t0 = 10 ns and
     // dt = 5 ns, it fires at 15 ns and the counter, which adds one per firing, reads 1 from then
     // on (`Bit<u8>`: its value byte)
-    assert_eq!(AmendedFixture::counted(false), [(15 * NS, vec![1])]);
+    assert_eq!(ClockedRuns::counted(false), [(15 * NS, vec![1])]);
 }
 
 #[test]
@@ -429,7 +440,7 @@ fn a_rearmed_at_drops_the_earlier_firing() {
     // part IV §13: `at(t)` re-arms when `t` changes; abi.md C3: the arming statement is `REPLACE`,
     // so the firing armed for 15 ns is removed when `dt <- 20n` at 12 ns re-arms the timer for
     // t0 + dt = 30 ns: no firing at 15 ns, one at 30 ns
-    assert_eq!(AmendedFixture::counted(true), [(30 * NS, vec![1])]);
+    assert_eq!(ClockedRuns::counted(true), [(30 * NS, vec![1])]);
 }
 
 /// What a timed signal `t` of `Late` holds when the clock first rises.
@@ -452,7 +463,7 @@ fn a_past_time_does_not_fire() {
         ("now", "Now", Time::Now),
         ("later", "Later", Time::Fixed(8e-9)),
     ] {
-        let body = AmendedFixture::late(&mut w.b, module, time);
+        let body = AmendedBodies::late(&mut w.b, module, time);
         let hit = format!("{name}_hit");
         w.place(name, body, vec![], &[("clk", BIT), (&format!("{name}.t"), REAL), (&hit, BIT)]);
     }
@@ -468,7 +479,7 @@ fn a_past_time_does_not_fire() {
 
 #[test]
 fn an_emit_commits_one_record_and_adds_no_microstep() {
-    let emitting = AmendedFixture::probed(true);
+    let emitting = ClockedRuns::probed(true);
     let seen = emitting.run(4e-9, 1e-9);
     // abi.md C5: the sink delivers each commit to a RECORD pin as a record of the stream
     // `<instance path>.<pin name>`, stamped with the instant it was made: the reaction runs once
@@ -493,8 +504,8 @@ fn an_emit_commits_one_record_and_adds_no_microstep() {
 
     // P7: a RECORD pin is QUIET, so its commit never keeps an instant's microstep loop alive:
     // every instant through the rise runs as many microsteps as without the emit
-    let silent = AmendedFixture::probed(false);
-    let (with, without) = (AmendedFixture::microsteps(&emitting, 5 * NS / 2), AmendedFixture::microsteps(&silent, 5 * NS / 2));
+    let silent = ClockedRuns::probed(false);
+    let (with, without) = (ClockedRuns::microsteps(&emitting, 5 * NS / 2), ClockedRuns::microsteps(&silent, 5 * NS / 2));
     assert_eq!(with.last().map(|(t, _)| *t), Some(5 * NS / 2), "the rise is run: {with:?}");
     assert_eq!(with, without);
 }
@@ -507,18 +518,18 @@ fn the_inductor_functions_pass_verify_partials() {
 
     let mut w = TopDesign::new();
     // the power stage's inductor: `v(p, n) +> ddt(l * i(p, n))`
-    let inductor = AmendedFixture::potential(&mut w.b, "Inductor", "l", 10e-6, |x, l, flow| {
+    let inductor = AmendedBodies::potential(&mut w.b, "Inductor", "l", 10e-6, |x, l, flow| {
         let charge = x.bin(piperine_ir::BinaryOp::Mul, l, flow, REAL);
         Addend { operator: Operator::Ddt, negated: false, value: charge }
     });
     // a voltage-controlled voltage source: `v(p, n) +> g * v(p, gnd)`, no flow read
-    let vcvs = AmendedFixture::potential(&mut w.b, "Vcvs", "g", 2.0, |x, g, _| {
+    let vcvs = AmendedBodies::potential(&mut w.b, "Vcvs", "g", 2.0, |x, g, _| {
         let v = x.probe(Terminal::Node(0), Terminal::Ground);
         let value = x.bin(piperine_ir::BinaryOp::Mul, g, v, REAL);
         Addend { operator: Operator::Direct, negated: false, value }
     });
     // the flow read in a direct addend: `v(p, n) +> r * i(p, n)`
-    let resistor = AmendedFixture::potential(&mut w.b, "FlowResistor", "r", 50.0, |x, r, flow| {
+    let resistor = AmendedBodies::potential(&mut w.b, "FlowResistor", "r", 50.0, |x, r, flow| {
         let value = x.bin(piperine_ir::BinaryOp::Mul, r, flow, REAL);
         Addend { operator: Operator::Direct, negated: false, value }
     });
@@ -566,7 +577,7 @@ fn the_inductor_functions_pass_verify_partials() {
 #[test]
 fn a_previous_value_is_read_in_a_guard_and_in_a_reaction() {
     let mut w = TopDesign::new();
-    let body = AmendedFixture::sequence(&mut w.b);
+    let body = AmendedBodies::sequence(&mut w.b);
     let u8 = ValueType::UInt(8);
     w.place("seq", body, vec![], &[("x", u8.clone()), ("p", u8), ("g", BIT)]);
     let seen = BuiltDesign::new(w.finish()).run(4e-9, 1e-9);

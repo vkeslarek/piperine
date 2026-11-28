@@ -232,10 +232,10 @@ mod tests {
     use piperine_ir_fixtures::devices::{Devices, Ex};
     use crate::print::AnalogPrinter;
 
-    /// Associated test helpers of `limit`, grouped on one fixture type.
-    struct LimitFixture;
+    /// The text of the function of a body whose mode is picked.
+    struct LimitPrint;
 
-    impl LimitFixture {
+    impl LimitPrint {
         fn printed(ir: &Ir, body: BodyId, mode: fn(Mode) -> bool) -> String {
             let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
             let k = plan.functions().iter().position(|f| mode(f.mode)).expect("the function");
@@ -246,7 +246,12 @@ mod tests {
             }
             .unwrap_or_else(|e| panic!("{e}"))
         }
+    }
 
+    /// The `Hold` body whose limit the tests print.
+    struct HoldBody;
+
+    impl HoldBody {
         /// `Hold(p, n)`: `i(p, n) +> limit(v(p, n), |new, old| old)`, with no seed (the interpreter's
         /// limit fixture, `hold.msl`).
         fn hold() -> (Ir, BodyId) {
@@ -338,12 +343,12 @@ fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(LimitFixture::printed(&ir, d, |m| matches!(m, Mode::Limit(_))), diode);
+        assert_eq!(LimitPrint::printed(&ir, d, |m| matches!(m, Mode::Limit(_))), diode);
 
         // With no seed, `old` starts from the input x and nothing is raised; the closure ignores
         // `new`, which prints as `_` (an MSL name could spell `_new`).
-        let (ir, body) = LimitFixture::hold();
-        let text = LimitFixture::printed(&ir, body, |m| matches!(m, Mode::Limit(_)));
+        let (ir, body) = HoldBody::hold();
+        let text = LimitPrint::printed(&ir, body, |m| matches!(m, Mode::Limit(_)));
         assert!(text.contains("fn y_limit_block<R: Real>(p: R, n: R) -> (R, impl Fn(R, R) -> R) {"), "{text}");
         assert!(text.contains("    (p - n, move |_, old| old)\n"), "{text}");
         assert!(text.contains("let old_ = if from_seed_ { proposed_.v } else { y_last_ };"), "{text}");
@@ -362,18 +367,18 @@ fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let ir = b.finish(top);
         // §18 rule 3, abi.md A2: the terms read the site's held value `vd_limit_`, never its input
         // v(a, k), its function or its seed; those are the limit function's
-        let terms = LimitFixture::printed(&ir, d, |m| m == Mode::Terms);
+        let terms = LimitPrint::printed(&ir, d, |m| m == Mode::Terms);
         assert!(terms.contains("let vd = vd_limit_;"), "{terms}");
         assert!(terms.contains("let vd_limit_ = cx_.f64(0);"), "{terms}");
         for absent in ["a - k", "cx_.f64(7)", "pnjlim", "vcrit", "LAST", "_last", "_age", "is_static_"] {
             assert!(!terms.contains(absent), "`{absent}` in the terms function:\n{terms}");
         }
-        let limit = LimitFixture::printed(&ir, d, |m| matches!(m, Mode::Limit(_)));
+        let limit = LimitPrint::printed(&ir, d, |m| matches!(m, Mode::Limit(_)));
         assert!(limit.contains("pnjlim(new, old, nvt, vcrit)") && limit.contains("(a - k, "), "{limit}");
 
         // the seedless `Hold`: its terms are the held value alone
-        let (ir, body) = LimitFixture::hold();
-        let terms = LimitFixture::printed(&ir, body, |m| m == Mode::Terms);
+        let (ir, body) = HoldBody::hold();
+        let terms = LimitPrint::printed(&ir, body, |m| m == Mode::Terms);
         assert!(terms.contains("fn terms_block<R: Real>(y_limit_: R) -> [R; 1] {"), "{terms}");
         assert!(terms.contains("let b0_flow_ = y_limit_;"), "{terms}");
     }

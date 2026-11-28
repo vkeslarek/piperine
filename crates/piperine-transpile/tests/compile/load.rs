@@ -59,13 +59,13 @@ impl Workshop {
     }
 }
 
-/// Associated test helpers of `load`, grouped on one fixture type.
-struct LoadFixture;
+/// The source of a library with no module, written against the ABI crate.
+struct LibrarySource;
 
-impl LoadFixture {
+impl LibrarySource {
     /// A library of the given minor with no module, written against the ABI crate.
     fn library_source(minor: &str) -> String {
-        LoadFixture::library_setting(&format!("library.minor = {minor};"))
+        LibrarySource::library_setting(&format!("library.minor = {minor};"))
     }
 
     /// A library with no module whose `Library` is changed by `statement` before it is exported.
@@ -85,7 +85,12 @@ impl LoadFixture {
     "#
         )
     }
+}
 
+/// The `Error::Load` a refused library gives.
+struct LoadError;
+
+impl LoadError {
     fn must_name(err: &Error, entry: &Entry, what: &str) {
         match err {
             Error::Load { file, cause } => {
@@ -96,13 +101,18 @@ impl LoadFixture {
         }
         assert!(err.to_string().contains(&*entry.library().to_string_lossy()), "Display names the file: {err}");
     }
+}
 
+/// The source files of a directory tree.
+struct SourceFiles;
+
+impl SourceFiles {
     /// Source files under `dir`, recursively.
     fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
         for entry in std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{}: {e}", dir.display())) {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                LoadFixture::sources(&path, out);
+                SourceFiles::sources(&path, out);
             } else if path.extension().is_some_and(|e| e == "rs") {
                 out.push(path);
             }
@@ -115,7 +125,7 @@ impl LoadFixture {
 fn a_file_that_is_no_library_is_named() {
     let shop = Workshop::new();
     let entry = shop.file("no-library", b"this is text, not a shared object");
-    LoadFixture::must_name(&Loaded::open(&entry).expect_err("not a library"), &entry, "cannot be opened");
+    LoadError::must_name(&Loaded::open(&entry).expect_err("not a library"), &entry, "cannot be opened");
 }
 
 // RS-05 AC 3: a library without `piperine_abi_1` fails, naming the file and the symbol.
@@ -123,7 +133,7 @@ fn a_file_that_is_no_library_is_named() {
 fn a_library_without_the_symbol_is_named() {
     let shop = Workshop::new();
     let entry = shop.library("no-symbol", "#[unsafe(no_mangle)]\npub extern \"C\" fn something_else() {}\n");
-    LoadFixture::must_name(&Loaded::open(&entry).expect_err("no symbol"), &entry, "piperine_abi_1");
+    LoadError::must_name(&Loaded::open(&entry).expect_err("no symbol"), &entry, "piperine_abi_1");
 }
 
 // RS-05 AC 3 / abi.md §12: a `Library.minor` newer than the host's is refused, naming the file;
@@ -131,13 +141,13 @@ fn a_library_without_the_symbol_is_named() {
 #[test]
 fn a_library_of_a_newer_minor_is_refused() {
     let shop = Workshop::new();
-    let current = shop.library("minor-now", &LoadFixture::library_source("piperine_abi::raw::MINOR"));
+    let current = shop.library("minor-now", &LibrarySource::library_source("piperine_abi::raw::MINOR"));
     let loaded = Loaded::open(&current).expect("the host's own minor loads");
     assert_eq!(loaded.names(), Vec::<&str>::new());
     assert!(loaded.module("anything").is_none());
 
-    let future = shop.library("minor-next", &LoadFixture::library_source("piperine_abi::raw::MINOR + 1"));
-    LoadFixture::must_name(&Loaded::open(&future).expect_err("a newer minor"), &future, "minor");
+    let future = shop.library("minor-next", &LibrarySource::library_source("piperine_abi::raw::MINOR + 1"));
+    LoadError::must_name(&Loaded::open(&future).expect_err("a newer minor"), &future, "minor");
 }
 
 // RS-05 AC 3 / abi.md §12 (verification F7): a `Library.size` smaller than the `Library` this
@@ -145,11 +155,11 @@ fn a_library_of_a_newer_minor_is_refused() {
 #[test]
 fn a_library_smaller_than_the_host_reads_is_refused() {
     let shop = Workshop::new();
-    let exact = shop.library("size-now", &LoadFixture::library_setting("library.size = std::mem::size_of::<Library>() as _;"));
+    let exact = shop.library("size-now", &LibrarySource::library_setting("library.size = std::mem::size_of::<Library>() as _;"));
     Loaded::open(&exact).expect("the host's own size loads");
 
-    let short = shop.library("size-short", &LoadFixture::library_setting("library.size = (std::mem::size_of::<Library>() - 1) as _;"));
-    LoadFixture::must_name(&Loaded::open(&short).expect_err("a Library smaller than the host reads"), &short, "Library.size");
+    let short = shop.library("size-short", &LibrarySource::library_setting("library.size = (std::mem::size_of::<Library>() - 1) as _;"));
+    LoadError::must_name(&Loaded::open(&short).expect_err("a Library smaller than the host reads"), &short, "Library.size");
 }
 
 // RS-04 AC 5: bytes that do not match the recorded hash are not loaded. The changed file is a
@@ -158,19 +168,19 @@ fn a_library_smaller_than_the_host_reads_is_refused() {
 #[test]
 fn a_library_whose_bytes_changed_is_not_loaded() {
     let shop = Workshop::new();
-    let entry = shop.library("changed", &LoadFixture::library_source("piperine_abi::raw::MINOR"));
+    let entry = shop.library("changed", &LibrarySource::library_source("piperine_abi::raw::MINOR"));
     let mut bytes = std::fs::read(entry.library()).unwrap();
     bytes.extend_from_slice(b"tampered");
     std::fs::write(entry.library(), &bytes).unwrap();
     let err = Loaded::open(&entry).expect_err("a changed library");
-    LoadFixture::must_name(&err, &entry, "bytes changed");
+    LoadError::must_name(&err, &entry, "bytes changed");
     assert!(!err.to_string().contains("cannot be opened"), "the hash check came before the open: {err}");
     // the manifest still records the original hash: the entry did not adopt the change
     assert_ne!(entry.manifest().unwrap().library_sha256, piperine_transpile::Manifest::hash(&bytes));
     let _ = shop.root();
 }
 
-/// Associated test helpers of `load`, grouped on one fixture type.
+/// The scan of a source text for `unsafe` code.
 struct UnsafeScan;
 
 impl UnsafeScan {
@@ -212,10 +222,10 @@ fn unsafe_lives_in_load_only() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let load = root.join("src/load.rs");
     let mut files = Vec::new();
-    LoadFixture::sources(&root.join("src"), &mut files);
+    SourceFiles::sources(&root.join("src"), &mut files);
     let golden_dir = root.join("tests/golden");
     let mut goldens = Vec::new();
-    LoadFixture::sources(&golden_dir, &mut goldens);
+    SourceFiles::sources(&golden_dir, &mut goldens);
     assert_eq!(goldens.len(), 5, "the five M1 goldens");
 
     for file in files.iter().chain(&goldens).filter(|f| **f != load) {

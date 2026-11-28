@@ -385,10 +385,10 @@ mod tests {
     use piperine_ir_fixtures::devices::{Devices, Ex};
     use crate::print::AnalogPrinter;
 
-    /// Associated test helpers of `site`, grouped on one fixture type.
-    struct SiteFixture;
+    /// The text of the function of a body whose mode is picked.
+    struct SitePrint;
 
-    impl SiteFixture {
+    impl SitePrint {
         /// The text of the function of `body` whose mode `pick` selects.
         fn printed(ir: &Ir, body: BodyId, pick: impl Fn(Mode) -> bool) -> String {
             let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
@@ -400,7 +400,12 @@ mod tests {
             }
             .unwrap_or_else(|e| panic!("{e}"))
         }
+    }
 
+    /// The `Ac` body whose `ac_stim` site the tests print.
+    struct AcStimBody;
+
+    impl AcStimBody {
         /// `Ac(p, n) { mag: f64 = 1.0; phase: f64 = 0.0; }` with `i(p, n) +> ac_stim(mag, phase)`.
         fn phased() -> (Ir, BodyId) {
             let mut b = IrBuilder::new();
@@ -467,11 +472,11 @@ fn ac_stim(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     cx_.set(1, 0.0);
     Ok(())
 }";
-        assert_eq!(SiteFixture::printed(&ir, v, |m| matches!(m, Mode::Stim(_))), vsource);
+        assert_eq!(SitePrint::printed(&ir, v, |m| matches!(m, Mode::Stim(_))), vsource);
 
         // a stimulus with a phase: RE = mag·cos(phase), IM = mag·sin(phase)
-        let (ac, body) = SiteFixture::phased();
-        let text = SiteFixture::printed(&ac, body, |m| matches!(m, Mode::Stim(_)));
+        let (ac, body) = AcStimBody::phased();
+        let text = SitePrint::printed(&ac, body, |m| matches!(m, Mode::Stim(_)));
         assert!(text.contains("fn s_stim_block<R: Real>(mag: R, phase: R) -> (R, R) {\n    (mag, phase)\n}"), "{text}");
         assert!(text.contains("let (mag_, phase_) = Self::s_stim_block::<f64>(mag, phase);"), "{text}");
         assert!(text.contains("cx_.set(0, mag_ * phase_.cos());\n    cx_.set(1, mag_ * phase_.sin());"), "{text}");
@@ -490,10 +495,10 @@ fn r_check(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     cx_.set(0, if ok_ { HIGH } else { LOW });
     Ok(())
 }";
-        assert_eq!(SiteFixture::printed(&ir, r, |m| matches!(m, Mode::Check(_))), resistor);
+        assert_eq!(SitePrint::printed(&ir, r, |m| matches!(m, Mode::Check(_))), resistor);
 
         // devices.msl:34: `cj0: f64 = 0.0 where cj0 >= 0.0`, the diode's third check
-        let cj0 = SiteFixture::printed(&ir, d, |m| m == Mode::Check(2));
+        let cj0 = SitePrint::printed(&ir, d, |m| m == Mode::Check(2));
         assert!(cj0.contains("fn cj0_check_block<R: Real>(cj0: R) -> bool {\n    cj0.value() >= 0.0\n}"), "{cj0}");
         assert!(cj0.starts_with("// Diode.cj0: its `where` @ devices.msl:34:5\n"), "{cj0}");
         assert!(cj0.contains("// function 4 `check:cj0`: reads cj0; writes check:cj0 @ devices.msl:34:5"), "{cj0}");

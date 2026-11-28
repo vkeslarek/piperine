@@ -509,6 +509,7 @@ impl<const N: u32, const M: u32> Shr<Int<M>> for Int<N> {
 
 #[cfg(test)]
 mod tests {
+    use crate::rt::panic_text::PanicText;
     use super::{Int, UInt};
 
     /// The references: the operation done on the integers themselves in `i128` (wrapping only
@@ -563,17 +564,10 @@ mod tests {
 
     const OPS: [&str; 8] = ["+", "-", "*", "/", "%", "&", "|", "^"];
 
-    /// Associated test helpers of `int`, grouped on one fixture type.
-    struct IntegerFixture;
+    /// Every operator of the fixed-width integers against the reference.
+    struct OperatorSweep;
 
-    impl IntegerFixture {
-        /// Runs `f` and returns its panic message, `None` when it does not panic.
-        fn panic_of(f: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
-            std::panic::catch_unwind(f).err().map(|e| {
-                e.downcast_ref::<String>().cloned().or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string())).unwrap_or_default()
-            })
-        }
-
+    impl OperatorSweep {
         /// Every operator of `UInt<N>` against the reference, at the boundaries and 1000 random
         /// pairs.
         fn unsigned<const N: u32>() {
@@ -591,7 +585,7 @@ mod tests {
                 for op in OPS {
                     let got = match op {
                         "/" | "%" if b == 0 => {
-                            let message = IntegerFixture::panic_of(move || {
+                            let message = PanicText::panic_of(move || {
                                 let _ = if op == "/" { x / y } else { x % y };
                             });
                             let what = if op == "/" { "division" } else { "remainder" };
@@ -642,7 +636,7 @@ mod tests {
                 for op in OPS {
                     let got = match op {
                         "/" | "%" if b == 0 => {
-                            let message = IntegerFixture::panic_of(move || {
+                            let message = PanicText::panic_of(move || {
                                 let _ = if op == "/" { x / y } else { x % y };
                             });
                             let what = if op == "/" { "division" } else { "remainder" };
@@ -755,26 +749,26 @@ mod tests {
     fn arithmetic_wraps_at_every_width() {
         // spec RS-10 AC 1, MSL §1 rule 6 and rule 11: `+ - * / %` and unary `-` modulo `2^N`,
         // `Int<N>` in two's complement, a zero divisor a panic; the bit operators with them.
-        IntegerFixture::unsigned::<1>();
-        IntegerFixture::unsigned::<3>();
-        IntegerFixture::unsigned::<8>();
-        IntegerFixture::unsigned::<9>();
-        IntegerFixture::unsigned::<12>();
-        IntegerFixture::unsigned::<16>();
-        IntegerFixture::unsigned::<31>();
-        IntegerFixture::unsigned::<32>();
-        IntegerFixture::unsigned::<63>();
-        IntegerFixture::unsigned::<64>();
-        IntegerFixture::signed::<1>();
-        IntegerFixture::signed::<3>();
-        IntegerFixture::signed::<8>();
-        IntegerFixture::signed::<9>();
-        IntegerFixture::signed::<12>();
-        IntegerFixture::signed::<16>();
-        IntegerFixture::signed::<31>();
-        IntegerFixture::signed::<32>();
-        IntegerFixture::signed::<63>();
-        IntegerFixture::signed::<64>();
+        OperatorSweep::unsigned::<1>();
+        OperatorSweep::unsigned::<3>();
+        OperatorSweep::unsigned::<8>();
+        OperatorSweep::unsigned::<9>();
+        OperatorSweep::unsigned::<12>();
+        OperatorSweep::unsigned::<16>();
+        OperatorSweep::unsigned::<31>();
+        OperatorSweep::unsigned::<32>();
+        OperatorSweep::unsigned::<63>();
+        OperatorSweep::unsigned::<64>();
+        OperatorSweep::signed::<1>();
+        OperatorSweep::signed::<3>();
+        OperatorSweep::signed::<8>();
+        OperatorSweep::signed::<9>();
+        OperatorSweep::signed::<12>();
+        OperatorSweep::signed::<16>();
+        OperatorSweep::signed::<31>();
+        OperatorSweep::signed::<32>();
+        OperatorSweep::signed::<63>();
+        OperatorSweep::signed::<64>();
         // signed edge cases written out: MIN / -1 and -MIN wrap to MIN, MIN % -1 is 0, division
         // truncates toward zero and the remainder takes the dividend's sign (as Rust)
         let (min, minus_one) = (Int::<8>::new(-128), Int::<8>::new(-1));
@@ -919,16 +913,16 @@ mod tests {
             e.downcast_ref::<String>().cloned().unwrap_or_default()
         });
         assert!(message.is_some_and(|m| m.contains("negative") && m.contains("<<")));
-        IntegerFixture::shifts::<1>();
-        IntegerFixture::shifts::<3>();
-        IntegerFixture::shifts::<8>();
-        IntegerFixture::shifts::<9>();
-        IntegerFixture::shifts::<12>();
-        IntegerFixture::shifts::<16>();
-        IntegerFixture::shifts::<31>();
-        IntegerFixture::shifts::<32>();
-        IntegerFixture::shifts::<63>();
-        IntegerFixture::shifts::<64>();
+        OperatorSweep::shifts::<1>();
+        OperatorSweep::shifts::<3>();
+        OperatorSweep::shifts::<8>();
+        OperatorSweep::shifts::<9>();
+        OperatorSweep::shifts::<12>();
+        OperatorSweep::shifts::<16>();
+        OperatorSweep::shifts::<31>();
+        OperatorSweep::shifts::<32>();
+        OperatorSweep::shifts::<63>();
+        OperatorSweep::shifts::<64>();
     }
 
     /// Widths 1 and 13 have no native type; the rows are checked against the integers in
@@ -949,14 +943,14 @@ mod tests {
 
     #[test]
     fn integer_rows_wrap_saturate_and_test_overflow() {
-        IntegerFixture::unsigned_rows::<1>();
-        IntegerFixture::unsigned_rows::<8>();
-        IntegerFixture::unsigned_rows::<13>();
-        IntegerFixture::unsigned_rows::<64>();
-        IntegerFixture::signed_rows::<1>();
-        IntegerFixture::signed_rows::<8>();
-        IntegerFixture::signed_rows::<13>();
-        IntegerFixture::signed_rows::<64>();
+        OperatorSweep::unsigned_rows::<1>();
+        OperatorSweep::unsigned_rows::<8>();
+        OperatorSweep::unsigned_rows::<13>();
+        OperatorSweep::unsigned_rows::<64>();
+        OperatorSweep::signed_rows::<1>();
+        OperatorSweep::signed_rows::<8>();
+        OperatorSweep::signed_rows::<13>();
+        OperatorSweep::signed_rows::<64>();
         // at the native widths every row is Rust's own method
         let mut words = Words(2026);
         for _ in 0..2000 {
@@ -1005,12 +999,12 @@ mod tests {
 
     #[test]
     fn rem_euclid_by_zero_panics_naming_it() {
-        let message = IntegerFixture::panic_of(|| {
+        let message = PanicText::panic_of(|| {
             let _ = UInt::<8>::new(5).rem_euclid(UInt::new(0));
         })
         .expect("a zero divisor panics");
         assert!(message.contains("`rem_euclid`") && message.contains("UInt<8>"), "{message}");
-        let message = IntegerFixture::panic_of(|| {
+        let message = PanicText::panic_of(|| {
             let _ = Int::<13>::new(-5).rem_euclid(Int::new(0));
         })
         .expect("a zero divisor panics");
@@ -1027,21 +1021,21 @@ mod tests {
         assert_eq!(Unwrap::of(true, 7u8, None), 7);
         assert_eq!(Unwrap::of(true, 1.5, Some("never shown")), 1.5);
         // `Option::None.unwrap()` panics with `called `Option::unwrap()` on a `None` value`
-        let rust = IntegerFixture::panic_of(|| {
+        let rust = PanicText::panic_of(|| {
             let none: Option<u8> = None;
             let _ = none.unwrap();
         })
         .expect("Rust's unwrap panics");
-        assert_eq!(IntegerFixture::panic_of(|| {
+        assert_eq!(PanicText::panic_of(|| {
             let _ = Unwrap::of(false, 0u8, None);
         }), Some(rust));
         // `Option::None.expect(msg)` panics with `msg`
-        let rust = IntegerFixture::panic_of(|| {
+        let rust = PanicText::panic_of(|| {
             let none: Option<u8> = None;
             let _ = none.expect("no flag");
         })
         .expect("Rust's expect panics");
-        assert_eq!(IntegerFixture::panic_of(|| {
+        assert_eq!(PanicText::panic_of(|| {
             let _ = Unwrap::of(false, 0u8, Some("no flag"));
         }), Some(rust));
     }

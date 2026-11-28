@@ -14,10 +14,10 @@ use piperine_transpile::{Error, Rustc, Settings};
 /// descriptor (ETXTBSY); the tests here take turns.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
-/// Associated test helpers of `rustc`, grouped on one fixture type.
-struct RustcFixture;
+/// A script standing in for the compiler, and the settings that point at it.
+struct CompilerScript;
 
-impl RustcFixture {
+impl CompilerScript {
     fn script(path: &Path, body: &str) {
         std::fs::write(path, format!("#!/bin/sh\n{body}\n")).expect("write script");
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).expect("chmod");
@@ -34,7 +34,7 @@ impl RustcFixture {
 fn a_missing_compiler_is_named_and_the_interpreter_is_offered() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("no-such-rustc");
-    let err = Rustc::locate(&RustcFixture::settings(&missing)).expect_err("no compiler there");
+    let err = Rustc::locate(&CompilerScript::settings(&missing)).expect_err("no compiler there");
     assert!(matches!(err, Error::NoCompiler { .. }), "{err:?}");
     let text = err.to_string();
     assert!(text.contains("rustc"), "{text}");
@@ -48,17 +48,17 @@ fn a_compiler_below_1_85_is_refused_with_both_versions() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let dir = tempfile::tempdir().unwrap();
     let old = dir.path().join("rustc");
-    RustcFixture::script(&old, "printf 'rustc 1.70.0 (90c541806 2023-05-31)\\nbinary: rustc\\nrelease: 1.70.0\\n'");
-    let err = Rustc::locate(&RustcFixture::settings(&old)).expect_err("1.70 is too old");
+    CompilerScript::script(&old, "printf 'rustc 1.70.0 (90c541806 2023-05-31)\\nbinary: rustc\\nrelease: 1.70.0\\n'");
+    let err = Rustc::locate(&CompilerScript::settings(&old)).expect_err("1.70 is too old");
     assert_eq!(err, Error::CompilerTooOld { found: "1.70.0".into(), required: "1.85" });
     let text = err.to_string();
     assert!(text.contains("1.70.0") && text.contains("1.85"), "{text}");
 
     // the edge: 1.85 itself, and a newer pre-release, are accepted
-    RustcFixture::script(&old, "printf 'rustc 1.85.0\\nrelease: 1.85.0\\n'");
-    assert!(Rustc::locate(&RustcFixture::settings(&old)).is_ok());
-    RustcFixture::script(&old, "printf 'rustc 1.86.0-nightly\\nrelease: 1.86.0-nightly\\n'");
-    assert!(Rustc::locate(&RustcFixture::settings(&old)).is_ok());
+    CompilerScript::script(&old, "printf 'rustc 1.85.0\\nrelease: 1.85.0\\n'");
+    assert!(Rustc::locate(&CompilerScript::settings(&old)).is_ok());
+    CompilerScript::script(&old, "printf 'rustc 1.86.0-nightly\\nrelease: 1.86.0-nightly\\n'");
+    assert!(Rustc::locate(&CompilerScript::settings(&old)).is_ok());
 }
 
 // RS-03 AC 1: the compiler named is run, `cargo` is not run, not even one beside it.
@@ -70,9 +70,9 @@ fn the_compiler_is_run_directly_and_cargo_never() {
     let cargo_log = dir.path().join("cargo.log");
     // `cargo` beside the wrapper logs any call; the wrapper puts its own directory first on
     // PATH, so a `cargo` run by anything under it would be this one.
-    RustcFixture::script(&dir.path().join("cargo"), &format!("echo \"$@\" >> {}", cargo_log.display()));
+    CompilerScript::script(&dir.path().join("cargo"), &format!("echo \"$@\" >> {}", cargo_log.display()));
     let wrapper = dir.path().join("rustc");
-    RustcFixture::script(
+    CompilerScript::script(
         &wrapper,
         &format!(
             "REAL=$(command -v rustc)\nPATH=\"{}:$PATH\"\necho \"$@\" >> {}\nexec \"$REAL\" \"$@\"",
@@ -81,7 +81,7 @@ fn the_compiler_is_run_directly_and_cargo_never() {
         ),
     );
 
-    let rustc = Rustc::locate(&RustcFixture::settings(&wrapper)).expect("the real rustc behind the wrapper");
+    let rustc = Rustc::locate(&CompilerScript::settings(&wrapper)).expect("the real rustc behind the wrapper");
     assert!(rustc.version_text().contains("release: "));
     let src = dir.path().join("abi.rs");
     std::fs::write(&src, "pub fn f() -> u32 { 1 }\n").unwrap();

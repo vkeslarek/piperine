@@ -26,10 +26,10 @@ use digital::{Buck, Dx};
 
 const F: &str = "gate.msl";
 
-/// Associated test helpers of `analog_if`, grouped on one fixture type.
-struct AnalogIfFixture;
+/// The `Gate` body and the current it carries.
+struct GateBody;
 
-impl AnalogIfFixture {
+impl GateBody {
     /// The `Gate` body above.
     fn gate(b: &mut IrBuilder) -> BodyId {
         let el = Buck::electrical(b);
@@ -52,14 +52,10 @@ impl AnalogIfFixture {
         body
     }
 
-    fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
-        (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
-    }
-
     /// The current the gate carries at 2 V when its params are `a` and `b` and `en` is `enabled`.
     fn current(a: f64, b: f64, enabled: bool) -> f64 {
         let mut ir = IrBuilder::new();
-        let body = AnalogIfFixture::gate(&mut ir);
+        let body = GateBody::gate(&mut ir);
         let ir = Alone::finish(ir);
         let cache = tempfile::tempdir().expect("a temp dir");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
@@ -68,13 +64,13 @@ impl AnalogIfFixture {
         let module = Modules::module(&compiled, body).expect("the gate's module");
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
         let shape = handle.shape();
-        let k = AnalogIfFixture::items(&shape.functions).iter().position(|f| f.name.as_str() == "terms").expect("terms");
-        let function = AnalogIfFixture::items(&shape.functions)[k];
-        let reads: Vec<Vec<u8>> = AnalogIfFixture::items(&function.reads)
+        let k = ListedItems::items(&shape.functions).iter().position(|f| f.name.as_str() == "terms").expect("terms");
+        let function = ListedItems::items(&shape.functions)[k];
+        let reads: Vec<Vec<u8>> = ListedItems::items(&function.reads)
             .iter()
             .map(|c: &Cell| {
                 assert_eq!(c.kind, cell::PIN, "a gate reads pins");
-                let value = match AnalogIfFixture::items(&shape.pins)[c.index as usize].name.as_str() {
+                let value = match ListedItems::items(&shape.pins)[c.index as usize].name.as_str() {
                     "p" => 2.0,
                     "n" => 0.0,
                     "a" => a,
@@ -93,9 +89,18 @@ impl AnalogIfFixture {
     }
 }
 
+/// The elements of an ABI list.
+struct ListedItems;
+
+impl ListedItems {
+    fn items<T: Copy>(list: &List<'_, T>) -> Vec<T> {
+        (0..list.len()).map(|i| *list.get(i).expect("a readable element")).collect()
+    }
+}
+
 #[test]
 fn an_if_in_an_analog_block_runs_the_arm_its_carrier_names() {
     // the condition is the value of `en`: its `then` arm is `a`, its `else` arm is `b`
-    assert_eq!(AnalogIfFixture::current(3.0, 5.0, true), 2.0 * 3.0);
-    assert_eq!(AnalogIfFixture::current(3.0, 5.0, false), 2.0 * 5.0);
+    assert_eq!(GateBody::current(3.0, 5.0, true), 2.0 * 3.0);
+    assert_eq!(GateBody::current(3.0, 5.0, false), 2.0 * 5.0);
 }

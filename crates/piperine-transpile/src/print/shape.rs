@@ -463,10 +463,10 @@ mod tests {
     use super::ShapePrinter;
     use piperine_ir_fixtures::devices::Devices;
 
-    /// Associated test helpers of `shape`, grouped on one fixture type.
-    struct ShapeFixture;
+    /// The calls a printed shape holds, one per entry.
+    struct ShapeCalls;
 
-    impl ShapeFixture {
+    impl ShapeCalls {
         /// Each entry's call: the comment line before it names the entry and its origin.
         fn entries(shape: &Shape<'_>) -> Vec<(&'static str, String, String)> {
             let mut out = Vec::new();
@@ -485,7 +485,7 @@ mod tests {
             let text = ShapePrinter::new().prototype(shape);
             let lines: Vec<&str> = text.lines().collect();
             let calls: Vec<usize> = (0..lines.len()).filter(|i| lines[*i].trim_start().starts_with("s.")).collect();
-            let expected = ShapeFixture::entries(shape);
+            let expected = ShapeCalls::entries(shape);
             // `s.freeze()` closes the text; every other `s.` line is an entry's call
             assert_eq!(lines.last(), Some(&"s.freeze()"), "{what}");
             assert_eq!(calls.len(), expected.len() + 1, "{what}: calls\n{text}");
@@ -518,7 +518,7 @@ mod tests {
             let counts = (shape.pins.len(), shape.terms.len(), shape.inputs.len(), shape.functions.len());
             let expected = if body == diode { (10, 2, 1, 5) } else { (5, 2, 1, 2) };
             assert_eq!(counts, expected, "{}", ir.body(body).name());
-            ShapeFixture::one_call_per_entry(ir.body(body).name(), shape);
+            ShapeCalls::one_call_per_entry(ir.body(body).name(), shape);
         }
 
         // a shape with what M1 shapes lack: an event pin, a custom layout, a watch, a reaction
@@ -540,7 +540,7 @@ mod tests {
             ..ReactionSpec::default()
         });
         let frozen = s.freeze();
-        ShapeFixture::one_call_per_entry("the D flip-flop", frozen.shape());
+        ShapeCalls::one_call_per_entry("the D flip-flop", frozen.shape());
         let text = ShapePrinter::new().prototype(frozen.shape());
         assert!(text.contains("PinSpec::event(\"event:0\", role::PRIVATE)"), "{text}");
         assert!(text.contains("flags: statement_flag::LATER, min_after: 1e-9"), "{text}");

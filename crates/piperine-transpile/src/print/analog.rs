@@ -795,7 +795,7 @@ mod tests {
     use super::AnalogPrinter;
     use piperine_ir_fixtures::devices::Devices;
 
-    /// Associated test helpers of `analog`, grouped on one fixture type.
+    /// The device bodies whose terms the tests print.
     struct AnalogLibrary;
 
     impl AnalogLibrary {
@@ -812,10 +812,10 @@ mod tests {
         }
     }
 
-    /// Associated test helpers of `analog`, grouped on one fixture type.
-    struct AnalogFixture;
+    /// The terms function of a body as printed text.
+    struct TermsPrint;
 
-    impl AnalogFixture {
+    impl TermsPrint {
         /// The text of the `terms` function of `body`.
         fn terms(ir: &Ir, body: BodyId) -> String {
             let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
@@ -869,7 +869,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(AnalogFixture::terms(&ir, r), resistor);
+        assert_eq!(TermsPrint::terms(&ir, r), resistor);
 
         // `i(p, n) +> ddt(c * v(p, n))` (devices.msl:14): a charge is never affine, so it is
         // written as its value at the iterate
@@ -900,7 +900,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(AnalogFixture::terms(&ir, c), capacitor);
+        assert_eq!(TermsPrint::terms(&ir, c), capacitor);
     }
 
     #[test]
@@ -952,8 +952,8 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(AnalogFixture::terms(&ir, d), diode);
-        let text = AnalogFixture::terms(&ir, d);
+        assert_eq!(TermsPrint::terms(&ir, d), diode);
+        let text = TermsPrint::terms(&ir, d);
         assert!(!text.contains("vcrit") && !text.contains("pnjlim") && !text.contains("v(a, k)"), "{text}");
     }
 
@@ -1007,6 +1007,6 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(AnalogFixture::terms(&ir, v), vsource);
+        assert_eq!(TermsPrint::terms(&ir, v), vsource);
     }
 }

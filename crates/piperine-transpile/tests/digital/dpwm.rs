@@ -27,10 +27,10 @@ const N: i64 = 400;
 const DEAD: i64 = 4;
 const RELEASE: i64 = N - DEAD;
 
-/// Associated test helpers of `dpwm`, grouped on one fixture type.
-struct DpwmFixture;
+/// The oscillator into `Dpwm`, built and run.
+struct DpwmDesign;
 
-impl DpwmFixture {
+impl DpwmDesign {
     fn oscillator() -> TopDesign {
         let mut w = TopDesign::new();
         let osc = Buck::osc(&mut w.b);
@@ -81,10 +81,15 @@ impl DpwmFixture {
 
     fn run_once() -> Seen {
         static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
-        let built = BUILT.get_or_init(|| Mutex::new(DpwmFixture::dpwm_design())).lock().expect("the design is not poisoned");
+        let built = BUILT.get_or_init(|| Mutex::new(DpwmDesign::dpwm_design())).lock().expect("the design is not poisoned");
         built.run(STOP, 1e-8)
     }
+}
 
+/// The widths of the dithered periods, as the specification states them.
+struct DutyModel;
+
+impl DutyModel {
     /// The bit reversal of a 3-bit frame index.
     fn reversed(k: i64) -> i64 {
         ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1)
@@ -95,13 +100,13 @@ impl DpwmFixture {
     /// counter is 0 at reset and counts the wraps; the width of a period is latched at the wrap
     /// that starts it, from the counter value after that wrap (`dpwm.msl`: `frame + 1`).
     fn width(duty: i64, p: i64) -> i64 {
-        duty / 8 + i64::from(DpwmFixture::reversed(p % 8) < duty % 8)
+        duty / 8 + i64::from(DutyModel::reversed(p % 8) < duty % 8)
     }
 }
 
 #[test]
 fn the_oscillator_toggles_every_half_period() {
-    let w = DpwmFixture::oscillator();
+    let w = DpwmDesign::oscillator();
     let seen = BuiltDesign::new(w.finish()).run(100e-9, 1e-9);
     // 200 MHz: a period of 5 ns, a toggle every 2.5 ns, from false: true at 2.5 ns, false at
     // 5 ns, ... `k` = 1 to 40 inside 100 ns, and no change at any other instant
@@ -116,10 +121,10 @@ const STOP: f64 = 17.99e-6;
 
 #[test]
 fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
-    let seen = DpwmFixture::run_once();
+    let seen = DpwmDesign::run_once();
     let duty = 1325;
     // SPEC §5.2: 1325 = 8 * 165 + 5: 166 counts in five periods of eight, 165 in three
-    let widths: Vec<i64> = (1..=8).map(|p| DpwmFixture::width(duty, p)).collect();
+    let widths: Vec<i64> = (1..=8).map(|p| DutyModel::width(duty, p)).collect();
     assert_eq!(widths.iter().filter(|w| **w == 166).count(), 5);
     assert_eq!(widths.iter().filter(|w| **w == 165).count(), 3);
     assert_eq!(widths.iter().sum::<i64>(), 8 * 165 + 5, "five extra counts over the frame");
@@ -162,7 +167,7 @@ fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
 fn two_runs_give_the_same_changes() {
     // the oscillator and the DPWM circuit, run twice on the one compiled design: every
     // observation of the two runs is the same, its instant bit for bit
-    let (first, second) = (DpwmFixture::run_once(), DpwmFixture::run_once());
+    let (first, second) = (DpwmDesign::run_once(), DpwmDesign::run_once());
     let (first, second) = (first.all(), second.all());
     assert!(first.len() > 8000, "the run has a few thousand instants: {}", first.len());
     assert_eq!(first, second);

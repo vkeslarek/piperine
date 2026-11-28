@@ -114,10 +114,10 @@ mod tests {
         assert_eq!(payload.downcast_ref::<String>().map(String::as_str), Some("level 9 of a u8"));
     }
 
-    /// Associated test helpers of `control`, grouped on one fixture type.
-    struct ControlFixture;
+    /// A raised panic read back as its text.
+    struct RaisedPanic;
 
-    impl ControlFixture {
+    impl RaisedPanic {
         /// The text a caught panic carries.
         fn message(payload: Box<dyn std::any::Any + Send>) -> String {
             payload.downcast_ref::<String>().cloned().expect("a raised panic carries its text")
@@ -133,7 +133,7 @@ mod tests {
             trips.tick();
         }
         let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| trips.tick())).expect_err("iteration 2^24 + 1 panics");
-        let text = ControlFixture::message(payload);
+        let text = RaisedPanic::message(payload);
         assert!(text.contains("loop @ spin.msl:3:5") && text.contains("16777216"), "{text}");
         assert_eq!(Trips::LIMIT, 16_777_216);
     }
@@ -147,7 +147,7 @@ mod tests {
             depth = depth.deeper("fact");
         }
         let payload = std::panic::catch_unwind(|| depth.deeper("fact")).err().expect("call 1025 panics");
-        let text = ControlFixture::message(payload);
+        let text = RaisedPanic::message(payload);
         assert!(text.contains("fact") && text.contains("1024"), "{text}");
     }
 }

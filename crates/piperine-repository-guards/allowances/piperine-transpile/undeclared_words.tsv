@@ -69,7 +69,6 @@ crates/piperine-transpile/tests/digital/amended.rs::env	1
 crates/piperine-transpile/tests/digital/carrier_arrays.rs::ram	1
 crates/piperine-transpile/tests/digital/digital_circuit.rs::a_net_starts_at_its_own_init	1
 crates/piperine-transpile/tests/digital/digital_circuit.rs::q_after	1
-crates/piperine-transpile/tests/digital/environment.rs::f64_at	1
 crates/piperine-transpile/tests/digital/pid.rs::deriv	1
 crates/piperine-transpile/tests/digital/pid.rs::e_prev	1
 crates/piperine-transpile/tests/digital/pid.rs::integ	1

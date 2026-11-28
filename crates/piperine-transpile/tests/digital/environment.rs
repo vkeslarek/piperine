@@ -10,6 +10,7 @@
 use piperine_ir::{BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, IrBuilder, ValueType};
 use piperine_solver::prelude::Context;
 
+use crate::pin_bytes::PinBytes;
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 
@@ -22,14 +23,10 @@ const A: &str = "env.msl";
 const KELVIN: f64 = 350.0;
 const GMIN: f64 = 3.0e-12;
 
-/// Associated test helpers of `environment`, grouped on one fixture type.
-struct EnvironmentFixture;
+/// The `Ambient` body, which reads the host environment.
+struct AmbientBody;
 
-impl EnvironmentFixture {
-    fn f64_at(bytes: &[u8]) -> f64 {
-        f64::from_le_bytes(bytes[..8].try_into().expect("eight bytes"))
-    }
-
+impl AmbientBody {
     /// ```text
     /// module Ambient(in clk: Bit, out t: Bit<f64>, out g: Bit<f64>, out s: Bit<f64>,
     ///                out dt: Bit<f64>, out dg: Bit<f64>, out ds: Bit<f64>) {}
@@ -64,7 +61,7 @@ fn a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scal
     let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![piperine_ir::Constant::Real(piperine_ir::Real::new(200e6))], &[("clk", ValueType::Bool)]);
-    let body = EnvironmentFixture::ambient(&mut w.b);
+    let body = AmbientBody::ambient(&mut w.b);
     let nets: Vec<(&str, ValueType)> = ["clk", "t", "g", "s", "dt", "dg", "ds"]
         .into_iter()
         .map(|n| (n, if n == "clk" { ValueType::Bool } else { ValueType::F64 }))
@@ -76,7 +73,7 @@ fn a_compiled_reaction_and_drive_read_the_hosts_temperature_gmin_and_source_scal
     context.tolerances.gmin = GMIN;
     // 6 ns: the clock changes at 2.5 ns
     let (seen, _) = built.run_in(context, 6e-9, 1e-9);
-    let last = |name: &str| EnvironmentFixture::f64_at(&seen.series(name).last().unwrap_or_else(|| panic!("net {name} has a value")).1);
+    let last = |name: &str| PinBytes::real_at(&seen.series(name).last().unwrap_or_else(|| panic!("net {name} has a value")).1);
     // the reaction commits what the solver holds: the host's temperature, the session's gmin and
     // a source scale of 1.0
     // the reaction commits what the solver holds, in the operating point (where `changed()`

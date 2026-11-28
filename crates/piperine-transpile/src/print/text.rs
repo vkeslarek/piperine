@@ -213,10 +213,10 @@ mod tests {
         assert_ne!(Text::spelled_cased("DiffPair::<module `Square`>"), Text::spelled_cased("DiffPair::<module `Linear`>"));
     }
 
-    /// Associated test helpers of `text`, grouped on one fixture type.
-    struct TextFixture;
+    /// A real printed as a literal and read back.
+    struct RealLiteral;
 
-    impl TextFixture {
+    impl RealLiteral {
         /// The significant digits of a decimal literal: its mantissa's digits, leading and trailing
         /// zeros dropped.
         fn significant(literal: &str) -> usize {
@@ -233,7 +233,7 @@ mod tests {
             assert!(text.contains('.') || text.contains('e'), "{text} is not a float literal");
             let back: f64 = text.parse().unwrap_or_else(|e| panic!("{text}: {e}"));
             assert_eq!(back.to_bits(), v.to_bits(), "{text} does not parse back to {v:e}");
-            let n = TextFixture::significant(&text);
+            let n = RealLiteral::significant(&text);
             if n > 1 {
                 let shorter = format!("{v:.*e}", n - 2);
                 let parsed: f64 = shorter.parse().unwrap_or_else(|e| panic!("{shorter}: {e}"));
@@ -264,11 +264,11 @@ mod tests {
         for bits in subnormals {
             let v = f64::from_bits(bits);
             assert!(v.is_subnormal(), "{bits:#x}");
-            TextFixture::round_trips_shortest(v);
-            TextFixture::round_trips_shortest(-v);
+            RealLiteral::round_trips_shortest(v);
+            RealLiteral::round_trips_shortest(-v);
         }
         for v in [-0.0, 0.0, 1e-14, 0.1, f64::MAX, f64::MIN, f64::MIN_POSITIVE, f64::EPSILON] {
-            TextFixture::round_trips_shortest(v);
+            RealLiteral::round_trips_shortest(v);
         }
 
         // 1000 bit patterns from a fixed linear congruential sequence: every finite one
@@ -278,7 +278,7 @@ mod tests {
             state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
             let v = f64::from_bits(state);
             if v.is_finite() {
-                TextFixture::round_trips_shortest(v);
+                RealLiteral::round_trips_shortest(v);
                 finite += 1;
             } else {
                 assert!(Text::real(v).starts_with("f64::"), "{v}");
