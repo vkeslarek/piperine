@@ -2578,8 +2578,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `ConstEval` stays one type; every `impl ConstEval` is below `elab/consts/`
-- [ ] Gate check passes: Golden
+- [x] `ConstEval` stays one type; every `impl ConstEval` is below `elab/consts/`
+  - Note: `ConstEval` is declared in `consts/evaluator.rs` and every family file is below `consts/evaluator/` (the `impls_away_from_their_type` guard takes an `impl` as with its type when it is in the declaring file or below the directory that file opens, so the families sit under the file that declares the type, and `consts/mod.rs` stays a 35-line list). `evaluator.rs` holds the module doc, the struct, the constructor, the readers of its state and `fold`; `Bindings` is `consts/bindings.rs`, `ConstFault` and `Exit` `consts/faults.rs`. The methods that were in the 1 084-line file moved to the family files: `literal`, `real`, `boolean`, `unary`, `binary`, `known_binary`, `integer_binary`, `cast` to `numbers.rs`; `call`, `apply_function`, `instantiation_substitution` to `control.rs`; new `methods.rs` (`method`, `encoded_levels`, `known_method`) and `names.rs` (`path`, `body_let`, `body_let_value`, `is_trait_item`). `composite.rs` (978 lines) is 170 and the aggregate kinds have `aggregates.rs`, `comparison.rs`, `options.rs`, `patterns.rs`, `places.rs`, `sequences.rs`. `consts/imported.rs`, the only `impl Elaboration` of the directory, is `value/imported.rs` of `ValueLowering`; `bind_param`, `imported_tree`, `key_text` and `tree_text`, which `&self` code reads, stay on `Elaboration`. One test edited: `tests/elab_generics.rs::the_elaborator_reads_types_only_through_the_substitution` named the file `elab/consts.rs`; it names `elab/consts/` and `elab/consts/evaluator.rs` now, the assertions unchanged.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

@@ -13,11 +13,11 @@ crates/piperine-lang/src/elab/digital/carriers.rs::carrier_init_over	1
 crates/piperine-lang/src/elab/value/closures.rs::calls_option_function_decl	1
 crates/piperine-lang/src/elab/value/compound.rs::standalone_arm_tests	1
 crates/piperine-lang/src/elab/value/compound.rs::val	1
-crates/piperine-lang/src/elab/consts.rs::Ungenerated	1
-crates/piperine-lang/src/elab/consts.rs::consts	1
-crates/piperine-lang/src/elab/consts.rs::expr	1
-crates/piperine-lang/src/elab/consts.rs::impls	1
-crates/piperine-lang/src/elab/consts/imported.rs::tree_expr	1
+crates/piperine-lang/src/elab/consts/faults.rs::Ungenerated	1
+crates/piperine-lang/src/elab/consts/evaluator.rs::consts	1
+crates/piperine-lang/src/elab/consts/faults.rs::expr	1
+crates/piperine-lang/src/elab/consts/evaluator.rs::impls	1
+crates/piperine-lang/src/elab/value/imported.rs::tree_expr	1
 crates/piperine-lang/src/elab/analog/contribute.rs::expr	1
 crates/piperine-lang/src/elab/value/control.rs::lower_assignment_expr	1
 crates/piperine-lang/src/elab/analog/derivatives.rs::leaf_exprs	1

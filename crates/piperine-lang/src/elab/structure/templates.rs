@@ -89,7 +89,7 @@ impl StructureLowering<'_, '_, '_> {
             other => other,
         };
         match (ty, tree) {
-            (Some(ty), _) => self.import_tree(expr, tree, &ty),
+            (Some(ty), _) => self.values().import_tree(expr, tree, &ty),
             (None, ConstTree::Scalar(value)) => Ok(*value),
             (None, ConstTree::Composite { .. }) => Err(ConstFault::refused(expr, StructureForm::CompositeValueOfTypeThatHasNo)),
         }
@@ -200,11 +200,11 @@ impl StructureLowering<'_, '_, '_> {
             }
             // a value of `T` bound to a param of `Option<T>` is `Some` of it (§3.2.3)
             if self.state.types.implicit_some(expr) {
-                return self.implicit_some_constant(expr, bindings);
+                return self.values().implicit_some_constant(expr, bindings);
             }
             // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
             if self.typed(expr).is_some_and(|ty| ty.is_composite() || matches!(ty, crate::types::Ty::Enum(_))) {
-                return self.composite_constant(expr, bindings);
+                return self.values().composite_constant(expr, bindings);
             }
             return self.state.consts.value(expr, bindings);
         };

@@ -13,6 +13,7 @@
 //! the first arm that matches, a loop runs while its condition holds. A read that has no constant
 //! at elaboration is a fault at that read.
 
+use crate::types::{Callee, ConstTerm, GenericValue, Intrinsic};
 use std::collections::BTreeMap;
 
 use piperine_ir::Constant;
@@ -495,5 +496,96 @@ impl ConstEval<'_, '_> {
             Err(fault) => return Err(fault),
         };
         value.ok_or(ConstFault::refused(expr, ConstantForm::FunctionBodyWithNoValue))
+    }
+
+    /// A call of a function of the reachable set, or of a function a local holds: its body
+    /// evaluated over its arguments. Every other callee needs a run.
+    pub(super) fn call(&mut self, expr: ExprId, args: &[ExprId], bindings: &Bindings) -> Result<Constant, ConstFault> {
+        if let Some(Callee::Intrinsic(parser @ (Intrinsic::ParseTable | Intrinsic::ParseHex))) = self.types.callee(expr) {
+            return self.parse_array(expr, parser, args, bindings);
+        }
+        if let Some(Callee::Intrinsic(Intrinsic::Logic)) = self.types.callee(expr) {
+            return self.logic_literal(expr, args);
+        }
+        let function = match self.types.callee(expr) {
+            Some(Callee::Function(function)) => FnValue::Named(function),
+            _ => match self.called_function_value(expr) {
+                Some(function) => function,
+                None => {
+                    let what = match &self.design.expr_node(expr).kind {
+                        ExprKind::Call { class: crate::pom::CallClass::Probe, .. } => "a probe",
+                        ExprKind::Call { class: crate::pom::CallClass::Instance { .. }, .. } => "the result of an instance",
+                        _ => "a call that is not a function",
+                    };
+                    return Err(ConstFault::Dynamic { expr, what: what.to_string() });
+                }
+            },
+        };
+        let mut arguments = Vec::new();
+        for arg in args {
+            arguments.push(match self.fn_value_of(*arg) {
+                Some(function) => Argument { value: None, function: Some(function) },
+                None => Argument { value: Some(self.fold(*arg, bindings)?), function: None },
+            });
+        }
+        // a call of a generic function evaluates its body for the arguments the checker recorded, read under the
+        // instance being evaluated: its const parameters are values in the body (GN-01, GN-14)
+        let outer = match self.types.instantiation(expr).cloned() {
+            Some(instantiation) => {
+                // a type argument can nest as deep as the instantiation chain does (D7): the walk over it has its own stack
+                let substitution = crate::stack::Stack::wide(|| self.instantiation_substitution(&instantiation));
+                Some(self.set_substitution(substitution))
+            }
+            None => None,
+        };
+        let result = self.apply_value(expr, function, arguments, bindings);
+        if let Some(outer) = outer {
+            self.set_substitution(outer);
+        }
+        result
+    }
+
+    /// The body of the function `function` evaluated for `arguments`; a function reads no param of
+    /// the caller.
+    pub(super) fn apply_function(&mut self, expr: ExprId, function: DeclId, arguments: Vec<Argument>) -> Result<Constant, ConstFault> {
+        let data = self.design.decl_data(function);
+        let DeclKind::Fn(f) = &data.kind else {
+            return Err(ConstFault::refused(expr, ConstantForm::CallOfNameThatIsNotFunction));
+        };
+        let Some(body) = &f.body else {
+            return Err(ConstFault::refused(expr, ValueForm::LoweredFunctionWithoutBody));
+        };
+        self.enter(expr)?;
+        let params = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
+        let (mut frame, mut functions) = (BTreeMap::new(), BTreeMap::new());
+        for (param, argument) in params.zip(arguments) {
+            if let Some(value) = argument.value {
+                frame.insert(param, value);
+            }
+            if let Some(function) = argument.function {
+                functions.insert(param, function);
+            }
+        }
+        let outer = std::mem::replace(&mut self.locals, frame);
+        let outer_functions = std::mem::replace(&mut self.fn_values, functions);
+        let result = crate::stack::Stack::deep(|| self.exec_block(expr, &body.stmts, &Bindings::new()));
+        self.depth -= 1;
+        self.locals = outer;
+        self.fn_values = outer_functions;
+        self.returned(expr, result)
+    }
+
+    /// What the parameters of the item of `instantiation` are replaced by: each argument under the substitution of the
+    /// instance being evaluated, a const expression folded to its value.
+    pub(super) fn instantiation_substitution(&self, instantiation: &crate::types::Instantiation) -> crate::types::Substitution {
+        let arguments: Vec<GenericValue> = instantiation
+            .arguments
+            .iter()
+            .map(|argument| match self.substitution.apply_value(argument) {
+                GenericValue::Const(ConstTerm::Expr(expr)) => self.integer(expr).and_then(|count| i128::try_from(count).ok()).map_or(GenericValue::Const(ConstTerm::Expr(expr)), |count| GenericValue::Const(ConstTerm::Value(count))),
+                other => other,
+            })
+            .collect();
+        crate::types::Substitution::of(&crate::types::GenericSignature::of(self.design, instantiation.item), &arguments)
     }
 }

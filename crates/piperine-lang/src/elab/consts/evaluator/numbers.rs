@@ -10,6 +10,8 @@
 //! Every entry returns `None` when the types involved are not number widths, so the evaluator's
 //! own arms (`f64`, integers up to 64 bits) run unchanged for them.
 
+use super::{Bindings, CompositeKind, Width};
+use crate::types::Nominal;
 use std::cmp::Ordering;
 
 use piperine_ir::{Constant, Real, WideData, WideId};
@@ -326,5 +328,216 @@ impl ConstEval<'_, '_> {
         let (width, signed) = target.integer_shape().ok_or_else(refused)?;
         let converted = integer.convert(width, signed);
         Ok(self.integer_constant(&converted))
+    }
+
+    /// A literal as the constant it is: a number of its type's width, a bool, a real.
+    pub(super) fn literal(&mut self, expr: ExprId, kind: &LitKind) -> Result<Constant, ConstFault> {
+        let known = |value: Constant| Ok(value);
+        if let Some(number) = self.number_literal(expr, kind) {
+            return number;
+        }
+        match kind {
+            LitKind::Float { value, .. } => known(Constant::Real(Real::new(*value))),
+            LitKind::Bool(b) => known(Constant::Bool(*b)),
+            LitKind::Int(text) if text.ends_with("f64") => {
+                let digits: String = text.trim_end_matches("f64").chars().filter(|c| *c != '_').collect();
+                match digits.parse::<f64>() {
+                    Ok(value) => known(Constant::Real(Real::new(value))),
+                    Err(_) => Err(ConstFault::refused(expr, ConstantForm::IntegerLiteral)),
+                }
+            }
+            LitKind::Int(text) => match (self.width(expr), NumberLiteral::new(text).int_value()) {
+                // An `i8` literal `128` is the operand of a unary `-` (the checker allowed it): it
+                // wraps to -128 here and the minus wraps it back.
+                (Some(width), Some(value)) => known(width.wrap(value as i128)),
+                _ => Err(ConstFault::refused(expr, ConstantForm::IntegerLiteral)),
+            },
+            LitKind::Str { .. } => Err(ConstFault::refused(expr, ConstantForm::Literal)),
+        }
+    }
+
+    /// The `f64` of a value, or the fault of an ill-typed read (the type checker rules it out).
+    pub(super) fn real(expr: ExprId, value: Constant) -> Result<f64, ConstFault> {
+        match value {
+            Constant::Real(r) => Ok(r.get()),
+            Constant::Bool(_) => Err(ConstFault::refused(expr, ConstantForm::BoolWhereFloatIsRequired)),
+            Constant::Int(_) => Err(ConstFault::refused(expr, ConstantForm::IntegerWhereFloatIsRequired)),
+            Constant::Aggregate(_) => Err(ConstFault::refused(expr, ConstantForm::CompositeValueWhereFloatIsRequired)),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::refused(expr, ConstantForm::NumberWidthValueWhereFloatIsRequired)),
+        }
+    }
+
+    pub(super) fn boolean(expr: ExprId, value: Constant) -> Result<bool, ConstFault> {
+        match value {
+            Constant::Bool(b) => Ok(b),
+            Constant::Real(_) => Err(ConstFault::refused(expr, ConstantForm::FloatWhereBoolIsRequired)),
+            Constant::Int(_) => Err(ConstFault::refused(expr, ConstantForm::IntegerWhereBoolIsRequired)),
+            Constant::Aggregate(_) => Err(ConstFault::refused(expr, ConstantForm::CompositeValueWhereBoolIsRequired)),
+            Constant::FloatBits(_) | Constant::Wide(_) => Err(ConstFault::refused(expr, ConstantForm::NumberWidthValueWhereBoolIsRequired)),
+        }
+    }
+
+    /// A unary operator over `operand`, wrapped to the width of an integer result.
+    pub(super) fn unary(&mut self, expr: ExprId, op: UnOp, operand: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(operand, bindings)?;
+        if let Some(number) = self.number_unary(expr, op, operand, value) {
+            return number;
+        }
+        if let (Constant::Int(v), Some(width)) = (value, self.width(expr)) {
+            return match op {
+                UnOp::Neg => Ok(width.wrap(v.wrapping_neg())),
+                UnOp::Not => Ok(width.wrap(!v)),
+            };
+        }
+        match op {
+            UnOp::Neg => Ok(Constant::Real(Real::new(-Self::real(operand, value)?))),
+            UnOp::Not => Ok(Constant::Bool(!Self::boolean(operand, value)?)),
+        }
+    }
+
+    /// A binary operator over `lhs` and `rhs`: `&&` and `||` stop at a left operand that decides.
+    pub(super) fn binary(&mut self, expr: ExprId, op: BinOp, lhs: ExprId, rhs: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let left = self.fold(lhs, bindings)?;
+        // `&&` and `||` short-circuit on the left operand, as in the source: the right side is not read.
+        match op {
+            BinOp::And if !Self::boolean(lhs, left)? => return Ok(Constant::Bool(false)),
+            BinOp::Or if Self::boolean(lhs, left)? => return Ok(Constant::Bool(true)),
+            _ => {}
+        }
+        let right = self.fold(rhs, bindings)?;
+        if self.composite_of(left).is_some() || self.composite_of(right).is_some() {
+            return self.composite_binary(expr, op, left, right);
+        }
+        self.known_binary(expr, op, (lhs, left), (rhs, right))
+    }
+
+    /// An operator over two operands, `(expression, value)` each.
+    pub(super) fn known_binary(&mut self, expr: ExprId, op: BinOp, (lhs, left): (ExprId, Constant), (rhs, right): (ExprId, Constant)) -> Result<Constant, ConstFault> {
+        if let Some(number) = self.number_binary(expr, op, (lhs, left), (rhs, right)) {
+            return number;
+        }
+        if let (Constant::Int(a), Constant::Int(b)) = (left, right) {
+            return self.integer_binary(expr, op, a, b);
+        }
+        let real = |value: f64| Ok(Constant::Real(Real::new(value)));
+        match op {
+            BinOp::And | BinOp::Or => Ok(Constant::Bool(Self::boolean(rhs, right)?)),
+            BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor => {
+                let (a, b) = (Self::boolean(lhs, left)?, Self::boolean(rhs, right)?);
+                Ok(Constant::Bool(match op {
+                    BinOp::BitAnd => a & b,
+                    BinOp::BitOr => a | b,
+                    _ => a ^ b,
+                }))
+            }
+            BinOp::Eq | BinOp::Ne => {
+                let equal = match (left, right) {
+                    (Constant::Real(a), Constant::Real(b)) => a.get() == b.get(),
+                    (Constant::Bool(a), Constant::Bool(b)) => a == b,
+                    _ => return Err(ConstFault::refused(expr, ConstantForm::ComparisonOfFloatAndBool)),
+                };
+                Ok(Constant::Bool(equal == (op == BinOp::Eq)))
+            }
+            _ => {
+                let (a, b) = (Self::real(lhs, left)?, Self::real(rhs, right)?);
+                match op {
+                    BinOp::Add => real(a + b),
+                    BinOp::Sub => real(a - b),
+                    BinOp::Mul => real(a * b),
+                    BinOp::Div => real(a / b),
+                    BinOp::Lt => Ok(Constant::Bool(a < b)),
+                    BinOp::Le => Ok(Constant::Bool(a <= b)),
+                    BinOp::Gt => Ok(Constant::Bool(a > b)),
+                    BinOp::Ge => Ok(Constant::Bool(a >= b)),
+                    _ => Err(ConstFault::refused(expr, ConstantForm::Operator)),
+                }
+            }
+        }
+    }
+
+    /// An operator over two integers. The operands have the result's type, a shift amount any
+    /// integer type; the result wraps to the type the checker gave `expr`.
+    pub(super) fn integer_binary(&self, expr: ExprId, op: BinOp, a: i128, b: i128) -> Result<Constant, ConstFault> {
+        let compare = |holds: bool| Ok(Constant::Bool(holds));
+        match op {
+            BinOp::Lt => return compare(a < b),
+            BinOp::Le => return compare(a <= b),
+            BinOp::Gt => return compare(a > b),
+            BinOp::Ge => return compare(a >= b),
+            BinOp::Eq => return compare(a == b),
+            BinOp::Ne => return compare(a != b),
+            _ => {}
+        }
+        let Some(width) = self.width(expr) else {
+            return Err(ConstFault::refused(expr, ConstantForm::IntegerOperatorOutsideIntegerType));
+        };
+        let panic = |what: &str| Err(ConstFault::Panic { expr, what: what.to_string() });
+        let value = match op {
+            BinOp::Add => a.wrapping_add(b),
+            BinOp::Sub => a.wrapping_sub(b),
+            BinOp::Mul => a.wrapping_mul(b),
+            BinOp::Div if b == 0 => return panic("an integer division by zero"),
+            BinOp::Rem if b == 0 => return panic("an integer remainder by zero"),
+            BinOp::Div => a.wrapping_div(b),
+            BinOp::Rem => a.wrapping_rem(b),
+            BinOp::BitAnd => a & b,
+            BinOp::BitOr => a | b,
+            BinOp::BitXor => a ^ b,
+            BinOp::Shl | BinOp::Shr if b < 0 => return panic("a shift by a negative amount"),
+            // G5: a shift by the width or more is the mathematical result truncated to the width.
+            BinOp::Shl if b >= i128::from(width.bits) => 0,
+            BinOp::Shr if b >= i128::from(width.bits) => {
+                if a < 0 {
+                    -1
+                } else {
+                    0
+                }
+            }
+            BinOp::Shl => a << b,
+            // `a` is held sign-extended, so `>>` is arithmetic for a signed type and logical for
+            // an unsigned one (whose value is never negative).
+            BinOp::Shr => a >> b,
+            _ => return Err(ConstFault::refused(expr, ConstantForm::OperatorOnIntegers)),
+        };
+        Ok(width.wrap(value))
+    }
+
+    /// `operand as T`: among the integer types by truncation and sign extension (§1 rule 1),
+    /// from `f64` saturating with NaN as 0 (G4), from `bool` as 0 or 1; to `f64` exactly as the
+    /// compiled code converts.
+    pub(super) fn cast(&mut self, expr: ExprId, operand: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+        let value = self.fold(operand, bindings)?;
+        // An enum value is folded to its variant's position (held with its parts when a variant has fields); `as` reads its discriminant (§1.3.7).
+        let value = match value {
+            Constant::Aggregate(_) => match self.composite_of(value).map(|c| c.kind) {
+                Some(CompositeKind::Variant(position)) => Constant::Int(i128::from(position)),
+                _ => return Err(ConstFault::refused(expr, ConstantForm::CastOfCompositeValue)),
+            },
+            other => other,
+        };
+        let value = match (self.typed(operand), value) {
+            (Some(Ty::Enum(Nominal { decl, .. })), Constant::Int(position)) => match self.types.enum_tag(decl).and_then(|t| t.discriminants.get(position as usize)) {
+                Some(discriminant) => Constant::Int(*discriminant),
+                None => return Err(ConstFault::refused(expr, ConstantForm::CastOfVariantOutsideItsEnum)),
+            },
+            (_, value) => value,
+        };
+        if let Some(source) = self.typed(operand)
+            && let Some(number) = self.number_cast(expr, &source, value)
+        {
+            return number;
+        }
+        let converted = match (self.typed(expr), value) {
+            (Some(Ty::F64), Constant::Int(v)) => Constant::Real(Real::new(v as f64)),
+            (Some(Ty::F64), Constant::Real(r)) => Constant::Real(r),
+            (Some(to), value) => match (Width::of(&to), value) {
+                (Some(width), Constant::Int(v)) => width.wrap(v),
+                (Some(width), Constant::Real(r)) => width.saturate(r.get()),
+                (Some(width), Constant::Bool(b)) => width.wrap(i128::from(b)),
+                (None, _) | (Some(_), Constant::Aggregate(_) | Constant::FloatBits(_) | Constant::Wide(_)) => return Err(ConstFault::refused(expr, ConstantForm::Cast)),
+            },
+            (None, _) => return Err(ConstFault::refused(expr, ConstantForm::Cast)),
+        };
+        Ok(converted)
     }
 }

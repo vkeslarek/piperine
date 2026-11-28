@@ -29,8 +29,8 @@ crates/piperine-lang/src/elab/structure/children.rs::StructureLowering::lower_ch
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option	-
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_method	-
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_row	-
-crates/piperine-lang/src/elab/consts.rs::ConstEval::known_method	-
-crates/piperine-lang/src/elab/consts/composite.rs::ConstEval::run_row	-
+crates/piperine-lang/src/elab/consts/evaluator/methods.rs::ConstEval::known_method	kept: one arm per method row of Appendix H, each folding its constants
+crates/piperine-lang/src/elab/consts/evaluator/sequences.rs::ConstEval::run_row	kept: one arm per sequence row of Appendix H.7
 crates/piperine-lang/src/elab/digital/element_commits.rs::DigitalLowering::place_target	-
 crates/piperine-lang/src/elab/digital/elements.rs::DigitalLowering::node_run	-
 crates/piperine-lang/src/elab/digital/events.rs::DigitalLowering::disjuncts	-

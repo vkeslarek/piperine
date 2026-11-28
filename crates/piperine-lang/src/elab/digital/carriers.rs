@@ -342,7 +342,7 @@ impl DigitalLowering<'_, '_, '_> {
     pub(super) fn carrier_init_over(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Constant> {
         let bindings = bindings.clone();
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.state.consts.value(expr, &bindings) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.values().composite_constant(expr, &bindings) } else { self.state.consts.value(expr, &bindings) };
         match folded {
             Ok(value) => Some(value),
             Err(fault) => {
@@ -401,7 +401,7 @@ impl DigitalLowering<'_, '_, '_> {
             .collect::<Option<_>>()?;
         let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(function, &arguments));
         // a unit variant of an enum with no field is its tag, no composite
-        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.state.consts.value(expr, &Bindings::new()) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.values().composite_constant(expr, &Bindings::new()) } else { self.state.consts.value(expr, &Bindings::new()) };
         self.state.consts.set_substitution(outer);
         let value = folded.ok()?;
         Some(self.values().ir_constant(value, stored))
