@@ -4,7 +4,6 @@
 //! `tests/book/inventory.tsv`) and `claims_guard` (every sentence that states a value or an outcome has a row).
 //! One module per chapter; the support modules the chapters share are declared once, here.
 
-#[allow(dead_code)] // item scope: each chapter and guard uses part of the support modules
 #[path = "support"]
 mod support {
     pub mod book;

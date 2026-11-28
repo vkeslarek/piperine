@@ -1,4 +1,2 @@
-crates/piperine-transpile/src/print/analog.rs::library	1
-crates/piperine-transpile/tests/compile/load.rs::unsafe_lines	1
 crates/piperine-transpile/tests/golden/diode.rs::pnjlim	1
 crates/piperine-transpile/tests/golden/diode.rs::vt	1

@@ -170,28 +170,33 @@ fn a_library_whose_bytes_changed_is_not_loaded() {
     let _ = shop.root();
 }
 
-/// The lines of `text` that open an `unsafe` block, fn, impl, trait or extern, or that name an
-/// `unsafe(...)` attribute other than `unsafe(no_mangle)`; comments are not code.
-fn unsafe_lines(text: &str) -> Vec<(usize, &str)> {
-    text.lines()
-        .enumerate()
-        .filter(|(_, line)| !line.trim_start().starts_with("//"))
-        .filter(|(_, line)| {
-            let mut rest = *line;
-            while let Some(at) = rest.find("unsafe") {
-                let before_ok = at == 0 || !rest[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_' || c == '"');
-                let after = rest[at + "unsafe".len()..].trim_start();
-                let opens = ["{", "fn ", "impl", "trait", "extern"].iter().any(|k| after.starts_with(k));
-                let attribute = after.starts_with('(') && !after.starts_with("(no_mangle)");
-                if before_ok && (opens || attribute) {
-                    return true;
+/// Associated test helpers of `load`, grouped on one fixture type.
+struct UnsafeScan;
+
+impl UnsafeScan {
+    /// The lines of `text` that open an `unsafe` block, fn, impl, trait or extern, or that name an
+    /// `unsafe(...)` attribute other than `unsafe(no_mangle)`; comments are not code.
+    fn unsafe_lines(text: &str) -> Vec<(usize, &str)> {
+        text.lines()
+            .enumerate()
+            .filter(|(_, line)| !line.trim_start().starts_with("//"))
+            .filter(|(_, line)| {
+                let mut rest = *line;
+                while let Some(at) = rest.find("unsafe") {
+                    let before_ok = at == 0 || !rest[..at].ends_with(|c: char| c.is_alphanumeric() || c == '_' || c == '"');
+                    let after = rest[at + "unsafe".len()..].trim_start();
+                    let opens = ["{", "fn ", "impl", "trait", "extern"].iter().any(|k| after.starts_with(k));
+                    let attribute = after.starts_with('(') && !after.starts_with("(no_mangle)");
+                    if before_ok && (opens || attribute) {
+                        return true;
+                    }
+                    rest = &rest[at + "unsafe".len()..];
                 }
-                rest = &rest[at + "unsafe".len()..];
-            }
-            false
-        })
-        .map(|(i, l)| (i + 1, l))
-        .collect()
+                false
+            })
+            .map(|(i, l)| (i + 1, l))
+            .collect()
+    }
 }
 
 // RS-05 AC 4 and C32: every `unsafe` of the feature is in `src/load.rs`, each block under a
@@ -201,8 +206,8 @@ fn unsafe_lines(text: &str) -> Vec<(usize, &str)> {
 #[test]
 fn unsafe_lives_in_load_only() {
     // the scan itself: it finds each form, and passes the one allowed attribute and a comment
-    assert_eq!(unsafe_lines("let x = unsafe { f() };\nunsafe fn g() {}\nunsafe impl Send for T {}\n#[unsafe(export_name = \"x\")]").len(), 4);
-    assert_eq!(unsafe_lines("#[unsafe(no_mangle)]\n// an unsafe { block } in a comment\nlet s = \"unsafe\";").len(), 0);
+    assert_eq!(UnsafeScan::unsafe_lines("let x = unsafe { f() };\nunsafe fn g() {}\nunsafe impl Send for T {}\n#[unsafe(export_name = \"x\")]").len(), 4);
+    assert_eq!(UnsafeScan::unsafe_lines("#[unsafe(no_mangle)]\n// an unsafe { block } in a comment\nlet s = \"unsafe\";").len(), 0);
 
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let load = root.join("src/load.rs");
@@ -215,7 +220,7 @@ fn unsafe_lives_in_load_only() {
 
     for file in files.iter().chain(&goldens).filter(|f| **f != load) {
         let text = std::fs::read_to_string(file).unwrap();
-        assert_eq!(unsafe_lines(&text), vec![], "{} holds unsafe code outside load.rs", file.display());
+        assert_eq!(UnsafeScan::unsafe_lines(&text), vec![], "{} holds unsafe code outside load.rs", file.display());
     }
     for golden in &goldens {
         let text = std::fs::read_to_string(golden).unwrap();
@@ -225,7 +230,7 @@ fn unsafe_lives_in_load_only() {
 
     let text = std::fs::read_to_string(&load).unwrap();
     let lines: Vec<&str> = text.lines().collect();
-    let blocks = unsafe_lines(&text);
+    let blocks = UnsafeScan::unsafe_lines(&text);
     assert!(blocks.len() >= 3, "load.rs holds the unsafe of the feature: {blocks:?}");
     for (line, _) in blocks {
         let above: Vec<&str> =

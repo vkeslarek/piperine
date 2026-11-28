@@ -134,12 +134,17 @@ fn freq_in_a_reaction_is_zero() {
     }
 }
 
-/// The four kind nodes `d`, `t`, `a`, `n` of `KindsBench` in `solved`, as volts.
-fn kinds_of(ir: &piperine_ir::Ir, get: impl Fn(&NodeIdentifier) -> f64) -> [f64; 4] {
-    ["d", "t", "a", "n"].map(|name| {
-        let node = ir.node_at(&format!("KindsBench.{name}")).expect("a kind node");
-        get(&NodeIdentifier::Anonymous(node.id().index()))
-    })
+/// Associated test helpers of `environment`, grouped on one fixture type.
+struct EnvironmentKinds;
+
+impl EnvironmentKinds {
+    /// The four kind nodes `d`, `t`, `a`, `n` of `KindsBench` in `solved`, as volts.
+    fn kinds_of(ir: &piperine_ir::Ir, get: impl Fn(&NodeIdentifier) -> f64) -> [f64; 4] {
+        ["d", "t", "a", "n"].map(|name| {
+            let node = ir.node_at(&format!("KindsBench.{name}")).expect("a kind node");
+            get(&NodeIdentifier::Anonymous(node.id().index()))
+        })
+    }
 }
 
 #[test]
@@ -147,7 +152,7 @@ fn analysis_dc_holds_in_an_op() {
     // FIX-11 AC 1: in an operating point `analysis(Dc)` is true (1 V) and the three others false.
     let mut running = EnvironmentFixture::project().compile("KindsBench").unwrap_or_else(|r| panic!("{r}"));
     let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
-    let volts = kinds_of(&running.ir, |id| solved.get_node(id).expect("a kind node"));
+    let volts = EnvironmentKinds::kinds_of(&running.ir, |id| solved.get_node(id).expect("a kind node"));
     for (volt, wanted) in volts.iter().zip([1.0, 0.0, 0.0, 0.0]) {
         ToleranceContract::DC_VOLTAGE.assert(&Point::new("analysis op", "v(kind)", Coordinate::OperatingPoint), wanted, *volt);
     }
@@ -162,7 +167,7 @@ fn analysis_transient_holds_in_a_transient() {
     let points: Vec<_> = result.iter().collect();
     assert!(points.len() > 2, "the transient takes steps");
     for point in [points[0], points[points.len() - 1]] {
-        let volts = kinds_of(&built.ir, |id| point.get_node(id).expect("a kind node"));
+        let volts = EnvironmentKinds::kinds_of(&built.ir, |id| point.get_node(id).expect("a kind node"));
         for (volt, wanted) in volts.iter().zip([0.0, 1.0, 0.0, 0.0]) {
             ToleranceContract::TRAN_VOLTAGE.assert(&Point::new("analysis transient", "v(kind)", Coordinate::Time(point.time())), wanted, *volt);
         }
