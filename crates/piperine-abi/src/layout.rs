@@ -1,5 +1,5 @@
-//! The shipped layouts (abi.md §3.1 P3) and the byte rules the solver needs: layout equality
-//! (P4).
+//! The shipped layouts (abi.md §3.1 P3). Layout equality (P4) is `Layout::equals` and a
+//! leaf's width `Field::leaf_size`.
 
 use crate::raw::{Field, Layout, List, Str, leaf};
 
@@ -22,25 +22,3 @@ pub static NONE: Layout = Layout { size: 0, align: 1, fields: List::empty() };
 pub const LOW: [u8; 1] = [0];
 /// A true `BIT`.
 pub const HIGH: [u8; 1] = [1];
-
-/// The size in bytes of a `leaf::*` constant; `None` for an unknown one.
-pub fn leaf_size(l: u32) -> Option<usize> {
-    match l {
-        leaf::BOOL | leaf::U8 | leaf::I8 => Some(1),
-        leaf::U16 | leaf::I16 => Some(2),
-        leaf::U32 | leaf::I32 | leaf::F32 => Some(4),
-        leaf::U64 | leaf::I64 | leaf::F64 => Some(8),
-        _ => None,
-    }
-}
-
-/// P4: equal size and alignment and, per field, equal leaf, offset and count. Names do not
-/// count.
-pub fn layout_eq(a: &Layout, b: &Layout) -> bool {
-    a.size == b.size
-        && a.align == b.align
-        && a.fields.len() == b.fields.len()
-        && a.fields.iter().zip(b.fields.iter()).all(|(x, y)| {
-            x.leaf == y.leaf && x.offset == y.offset && x.count == y.count
-        })
-}

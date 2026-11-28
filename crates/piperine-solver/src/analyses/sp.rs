@@ -89,7 +89,7 @@ impl<'a> NonLinearSystem<AnalogReference, Complex<f64>> for SpSystem<'a> {
         _state: &CircularArrayBuffer2<Complex<f64>>,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
         let mut stamps = Vec::new();
-        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(self.circuit, &self.dc_point);
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: self.frequency,
@@ -144,9 +144,32 @@ impl<'a> SpSolver<'a> {
             return Err(Error::simple(SolverDomain::Sp, "`.sp` requires at least one port"));
         }
 
+        Self::validate_ports(&options.ports)?;
+
+        let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
+
+        let resolved = Self::resolve_ports(circuit, &options.ports)?;
+
+        let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
+        let mut system = SpSystem {
+            circuit,
+            context,
+            dc_point,
+            frequency: 0.0,
+            ports: resolved.iter().map(|p| p.reference.clone()).collect(),
+            z0: resolved.iter().map(|p| p.spec.z0).collect(),
+            driven: 0,
+        };
+        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
+
+        Ok(Self { system, solver, ports: resolved, sweep: options.sweep, policy: piperine_analog_solver::tolerances::Policy::default() })
+    }
+
+    /// Validates the port list (SP-05): every `z0 > 0`, no port on ground, no duplicate `num`, no two ports on one node.
+    fn validate_ports(ports: &[SpPort]) -> crate::core::result::Result<()> {
         let mut seen_nums = std::collections::HashSet::new();
         let mut seen_nodes = std::collections::HashSet::new();
-        for port in &options.ports {
+        for port in ports {
             if port.z0 <= 0.0 {
                 return Err(Error::simple(
                     SolverDomain::Sp,
@@ -169,11 +192,13 @@ impl<'a> SpSolver<'a> {
                 ));
             }
         }
+        Ok(())
+    }
 
-        let dc_point = DcSolver::new(circuit, context.clone())?.solve()?;
-
-        let mut resolved = Vec::with_capacity(options.ports.len());
-        for spec in &options.ports {
+    /// Each port with the netlist reference of its node, which must exist.
+    fn resolve_ports(circuit: &CircuitInstance, ports: &[SpPort]) -> crate::core::result::Result<Vec<ResolvedPort>> {
+        let mut resolved = Vec::with_capacity(ports.len());
+        for spec in ports {
             let reference = circuit
                 .netlist()
                 .reference_for(&AnalogVariable::Node(spec.node.clone()))
@@ -183,20 +208,7 @@ impl<'a> SpSolver<'a> {
                 .clone();
             resolved.push(ResolvedPort { spec: spec.clone(), reference });
         }
-
-        let size = circuit.netlist().max_index().map(|i| i + 1).unwrap_or(0);
-        let mut system = SpSystem {
-            circuit,
-            context,
-            dc_point,
-            frequency: 0.0,
-            ports: resolved.iter().map(|p| p.reference.clone()).collect(),
-            z0: resolved.iter().map(|p| p.spec.z0).collect(),
-            driven: 0,
-        };
-        let solver = NewtonRaphsonSolver::new(&mut system, size, 1)?;
-
-        Ok(Self { system, solver, ports: resolved, sweep: options.sweep, policy: piperine_analog_solver::tolerances::Policy::default() })
+        Ok(resolved)
     }
 
     /// Sweeps every frequency, driving one port at a time, filling the `S`

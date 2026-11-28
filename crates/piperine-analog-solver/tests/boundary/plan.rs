@@ -12,8 +12,8 @@ use std::collections::HashSet;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::Module;
-use piperine_abi::validate::{Rule, validate};
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::validate::{Rule, Validator};
+use piperine_abi::verify::Verdict;
 use piperine_analog_solver::device::AnalogBinding::{Absent, Discrete, Ground};
 use piperine_analog_solver::device::{AnalogPlan, Assembly};
 use piperine_analog_solver::netlist::AnalogReference;
@@ -115,10 +115,10 @@ fn every_fixture_shape_is_valid() {
     let m = FixtureModules::all();
     for (name, module) in PlanCircuits::valid(&m) {
         let h = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create {name}: {e}"));
-        validate(h.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        Validator::validate(h.shape()).unwrap_or_else(|e| panic!("{name}: {e}"));
     }
     let h = Handle::create(m.bad_limit, &[]).expect("create");
-    assert_eq!(validate(h.shape()).expect_err("A3").rule, Rule::LimitCorrection);
+    assert_eq!(Validator::validate(h.shape()).expect_err("A3").rule, Rule::LimitCorrection);
 }
 
 #[test]
@@ -161,7 +161,7 @@ fn every_fixture_function_passes_the_partials_verifier() {
     ];
     for (name, module, k, input) in points {
         let h = Handle::create(module, &[]).expect("create");
-        let verdict = verify_partials(&h, k, &input, 1e-6).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let verdict = Verdict::of_partials(&h, k, &input, 1e-6).unwrap_or_else(|e| panic!("{name}: {e}"));
         assert_eq!(verdict, Verdict::Exact, "{name}");
     }
 }

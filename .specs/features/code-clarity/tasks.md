@@ -2095,8 +2095,12 @@ T152 → T153 → T154 → T155
 **Done when**:
 
 - [ ] The crate's free-function allowance holds exactly the 10 `extern "C"` functions of findings.md §1.2; `unsafe` is still only in `raw`, `thunk`, `caller`
-- [ ] The fixtures crate and the transpiler's printed calls follow in the same commit; goldens byte-identical
-- [ ] Gate check passes: Golden
+  - Not met as written. 30 of the 32 rows are closed (`Validator`, `Thunk<T>`, `Verdict::of_partials`, `Shape::cell_lens`, `Layout::equals`, `Field::leaf_size`, `Pod::{from_bytes, from_bytes_mut, as_bytes}`, `Note::EMPTY`, `ShapeBuf::index`, `Handle::check_cells`). Two rows stay, `thunk.rs::module` and `thunk.rs::library`: generated code spells `use piperine_abi::thunk::{library, module};` and `module::<T>(..)`, so moving them changes the five transpile goldens by more than identifiers, which no row of design.md "What may move" allows (CC-09). The 10 `extern "C"` functions are not allowance rows: the guard permits them itself (`FreeFunctionPermit::ForeignAbi`), and a row for them would be stale. `unsafe` is still only in `raw`, `thunk`, `caller` (true).
+  - Phase 11 fix round 1 (P11-4): the two rows are recorded as CC-04 exceptions in findings.md §1.2 (named, with the reason; owner: user review at T155 / device-abi-simplification). The goldens are not changed here; this box stays unticked until that review closes them.
+  - Departure (P11-9): `Validator` holds the `Shape` it validates and returns the first `Rule` it finds broken, not the `Rule` list. The list is only the order of the checks, so a value that holds nothing but that order would own no state; the shape is what every check reads, which makes it the owner of the checks.
+- [x] The fixtures crate and the transpiler's printed calls follow in the same commit; goldens byte-identical
+  - Call-path edits of moved `pub` items (the one exception to "a refactor edits no test"): `validate(..)` → `Validator::validate(..)`, `layout_eq(..)` → `Layout::equals(..)`, `leaf_size(..)` → `Field::leaf_size(..)`, `cell_lens(shape, ..)` → `shape.cell_lens(..)`, `verify_partials(..)` → `Verdict::of_partials(..)`, `module_with(..)` → `Thunk::module_with(..)`, and their imports, in the tests of abi, analog-solver, digital-solver, solver, plan, transpile, interp, parity and root `tests/integrated/package.rs`, and in `device-fixtures/src/partials.rs`
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2117,8 +2121,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every `piperine_abi::raw::…` path compiles unchanged; the layout tests pass unedited
-- [ ] Gate check passes: Golden
+- [x] Every `piperine_abi::raw::…` path compiles unchanged; the layout tests pass unedited
+  - Departure (P11-8): three tests changed, by file path and not by call path, because the split moves the text they read: `abi/tests/contract/contract.rs` (`ContractReading::raw_sources`, and the `raw` directory skipped by the no-`unsafe` scan), `transpile/tests/abi_source.rs` (a recursive `SourceTree` over `raw/`), `transpile/tests/cache.rs` (`raw.rs` → `raw/shape.rs`, including one assertion message). None is weaker: the pointer-field scan still reads all raw text, the `unsafe` scan still covers every non-raw file (`seen >= 6` holds), and the cache test still finds and replaces the `Field` struct.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden
@@ -2139,8 +2144,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate has no row in the free-function allowance
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] The crate has no row in the free-function allowance
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2161,8 +2166,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Its row of `long_functions.tsv` is `split`; the crate's rows all have verdicts
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] Its row of `long_functions.tsv` is `split`; the crate's rows all have verdicts
+  - Departure: the row is deleted, not marked `split`: `bind_instance` is no longer long, and the guard refuses a row whose item is not. `Assembly::param_stamps` was split too and its row deleted. Phase 11 fix round 1 (P11-2): `NewtonRaphsonSolver::solve` and `solve_with_strategy` are split by verbatim extraction (`iterate`, `iterate_timed`, `seed_guess`, `exhausted_after`) and their rows are deleted; the crate has no row left.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2183,8 +2189,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No free function and no `#[allow]` in the file; no function of it takes more than 5 parameters beyond `self`
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] No free function and no `#[allow]` in the file; no function of it takes more than 5 parameters beyond `self`
+  - Departure: two owners, not one. The D half (`write_net`, `write_element`, `fire_net`, `run_functions`, `run_cone`, `walk`, `call_function`, `apply`, `relax`) borrows the plan shared and the store mutably, the R half (`run_reactions`, `call_reaction`) the plan mutably and the store shared, and `Digital::shadow` has only `&self.plan`: one type holding both borrows cannot be built there. So `FunctionRun` (plan, store, dirty set, observer) owns D and `ReactionRun` (plan, snapshot, samples, ambient, instant, queue, observer, commit counter, settle commits) owns R. `fired_reactions` became `Firing::fired`, `cell_bytes` `CellReader::bytes` (with the `WHOLE`-read input loop the two calls duplicated, `CellReader::inputs`), `earliest_other` `LatestCalls::earliest_other`, `fault` `DigitalError::device_fault` (in `error.rs`). `call_reaction`'s commit closure became `CommitCheck` (`accept` → `plan_commit` → `statement` / `due` / `target`); `run_reactions` splits into `Job::list`, `call_all`, `cut_horizon`, `queue_commits`, `queue_commit`; `relax` into `RelaxGroup`, `relax_passes`, `hold_pass`.
+  - Fix round 1 (P11-3, P11-6): `Digital::microsteps` is split (`resume_microstep`, `scan_nets`, `not_quiet`, `begin_microstep`, `live_at`, `suspended_for_host`, `analog_values`, `report`, `landing_after_functions`, with the private `Reached`) and its long-function row deleted; the fields of `ReactionRun`, `FunctionRun`, `CommitCheck` and `CellReader` carry `///`.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2205,8 +2213,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate has no row in the free-function allowance
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] The crate has no row in the free-function allowance
+  - Fix round 1 (P11-3): `Dag::build` is split (`refuse_cycles_outside_relax`, `group_steps`, `order_groups`) and its long-function row deleted.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2227,9 +2236,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
-- [ ] No free function in the file; `bind`'s row is `split`
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
+- [x] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
+  - `GroundName::refusal` words the one error. `CircuitBuilder::node` keeps returning a reference (its signature is unchanged) and records the refusal; `build` fails with it, so no circuit is ever built on such a node. The replace row is `repoints/T83.tsv` (`edge_a_ground_alias_is_refused`). `net.rs`'s `ground_is_a_pseudo_net_with_no_index` now asserts the label `gnd` (the S21 consequence). No example, Book listing, golden, fixture or spec page used `GND`, `vss` or `VSS` as ground; nothing printed moved.
+  - Behaviour change, plainly (S21): the ground net's label is `gnd` where it was `GND` (`Net::ground().label()`, and `NodeIdentifier::Gnd` displays `gnd` too, fix round 1), and `GND`, `vss`, `VSS` no longer route to ground: the builder records a refusal that `build` raises. Fix round 1 (P11-1): a name is refused only when nothing in the design resolves under it. The builder only ever sees resolved full paths (`Top.vss`, never a bare `vss`), so a design's own `vss` never reaches the refusal; the noise request resolves the name first and refuses `GND`/`vss`/`VSS` (naming `gnd`) only when it resolves to nothing. Tests: `piperine-api/tests/noise.rs`, module `ground_spellings`: `a_node_named_like_a_ground_alias_is_an_output` (a design node `vss` is an output of a noise run) and `a_ground_alias_naming_nothing_is_e0801_naming_gnd` (`GND` naming nothing is `E0801` naming `gnd`).
+- [x] No free function in the file; `bind`'s row is `split`
+  - Departure: the row is deleted, not marked `split`: no method of the split is over the limit, and the guard refuses a row whose item is no longer long. `bind` is `Bind::run`; the pins bind through `continuous_pin` (PORT/PRIVATE, with `hold_and_tolerance`), `discrete_pin` → `discrete_port`, `parameter_pin`, `global_pin` (+ `global_net`), PRIVATE in `discrete_pin`; then `finish`, `mark_analog_reads`, `sample_numbers`, `InstanceBinding::into_plans`/`site_bindings`. The former per-instance `Bind` is `InstanceBinding`. The 4 other free functions: `encode` → `ParamValue::encode`, `bind_error` → `Bind::error`, `create` → inlined into `Bind::instance` (`Handle::create`), `analog_pins` → `InstanceBinding::analog_pins`.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2250,8 +2262,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate has no row in the free-function allowance
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
+- [x] The crate has no row in the free-function allowance
+  - Fix round 1 (P11-3): the long-function rows of this task's files are closed by splitting, each by verbatim extraction: `AdjointSolver::solve` (`transpose_solve`, `parameter_derivatives`), `NoiseSolver::solve` (`contributions`), `PssSolver::solve` (`starting_step`, `check_orbit_repeats`, `finite_difference_jacobian`, `update_jacobian`), `ParamStampCollector::diff_residual` (`tally`, `row_contributions`, with `StampPosition`) and `collect_device` (`requested_net`, `analytic_stamps`), `SpSolver::new` (`validate_ports`, `resolve_ports`), `Protocol::transient_loop` (`stop_tick`, `plan_step`, `attempt_step`, `run_step_instant`, `refuse_rejections`, `deliver_outcome`). No row of these remains.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
@@ -2272,8 +2285,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every public path is unchanged; the transient and parity-baseline targets pass unedited
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api -p piperine-cli --test twins`
+- [x] Every public path is unchanged; the transient and parity-baseline targets pass unedited
+  - `transient.rs` stays the module root and re-exports every item at its old path (`Keep`, `Reentry`, `TransientAnalysisOptions`, `ScheduledSet`, `TransientSystem`, `UicClamp`; `DeviceRun`, `DeviceMark` crate-wide); it holds `TransientSolver`, its setup, recording and `solve`. `solve` reads as `reentry_point` → `scheduled_commits` → `check_reentry_binding` → `sides` → `run_protocol` (with `RunStart::enter` and `HostCommits::commit`) → `finish_solve`. `device_attempt` (110 lines) was re-keyed to `transient/attempt.rs`, and fix round 1 (P11-3) splits it (`refuse_exhausted_budget`, `target_time`) and deletes its row; `solve`'s row is deleted (no longer long). The allowance rows of the moved items are re-keyed to their new files with the same counts; the 11 undocumented rows of the file are deleted (the items are documented).
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api -p piperine-cli --test twins`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

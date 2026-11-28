@@ -8,7 +8,7 @@ use piperine_device_fixtures::binding::{Placed, PlanBinding};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_digital_solver::advance::Advance;
 use piperine_digital_solver::landing::{LandingCause, LandingTest, TimePointRule};
-use piperine_digital_solver::run::{Phase, fired_reactions};
+use piperine_digital_solver::run::{Firing, Phase};
 use piperine_digital_solver::store::Store;
 use piperine_digital_solver::engine::{Digital, Horizon, Mode};
 use piperine_digital_solver::net::{NetId, NetSpec};
@@ -57,7 +57,7 @@ impl Landings {
         let mut store = Store::new(&d.plan().nets);
         store.begin_microstep();
         store.fire(AdvanceCases::net(&d, fire));
-        let firing = fired_reactions(&d.plan().instances, Phase::Microstep, &store);
+        let firing = Firing::fired(&d.plan().instances, Phase::Microstep, &store);
         LandingTest::new(TimePointRule::Declared, d.plan(), &waited).after_functions(&store, &firing, analog_read_changed)
     }
 

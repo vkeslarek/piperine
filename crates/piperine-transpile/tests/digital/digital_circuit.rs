@@ -238,7 +238,7 @@ fn a_parent_signal_reaches_its_childrens_ports() {
     let shape = plan.shape().shape();
     let clk = shape.pins.iter().find(|p| p.name.as_str() == "clk").expect("the signal's pin");
     assert_eq!(clk.role, piperine_abi::raw::role::PORT);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]

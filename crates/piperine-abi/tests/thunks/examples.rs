@@ -12,11 +12,11 @@ use piperine_device_fixtures::digital::DataFlipFlop;
 use piperine_device_fixtures::examples::{DigitalToAnalog, LimitingDiode, ShapeParts};
 use piperine_device_fixtures::mixed::Comparator;
 use piperine_abi::caller::{Commit, Handle};
-use piperine_abi::device::{Access, Flow, cell_lens};
+use piperine_abi::device::{Access, Flow};
 use piperine_abi::layout::{HIGH, LOW};
 use piperine_abi::raw::{Module, status};
-use piperine_abi::validate::validate;
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::validate::Validator;
+use piperine_abi::verify::Verdict;
 
 static M_RESISTOR: OnceLock<Module> = OnceLock::new();
 static M_DIODE: OnceLock<Module> = OnceLock::new();
@@ -111,9 +111,9 @@ fn worked_examples_produce_their_stated_values() {
 fn worked_examples_pass_validation() {
     for m in ExampleChecks::modules() {
         let proto = m.prototype();
-        assert_eq!(validate(proto), Ok(()), "prototype of {}", m.name().as_str());
+        assert_eq!(Validator::validate(proto), Ok(()), "prototype of {}", m.name().as_str());
         let h = Handle::create(m, &[]).unwrap_or_else(|e| panic!("create {}: {e}", m.name().as_str()));
-        assert_eq!(validate(h.shape()), Ok(()), "shape of {}", m.name().as_str());
+        assert_eq!(Validator::validate(h.shape()), Ok(()), "shape of {}", m.name().as_str());
     }
 }
 
@@ -131,12 +131,12 @@ fn worked_examples_pass_the_partials_verifier() {
     ];
     for (m, k, point) in cases {
         let h = Handle::create(m, &[]).unwrap();
-        assert_eq!(verify_partials(&h, k, &point, 1e-6), Ok(Verdict::Exact), "{} fn {k}", m.name().as_str());
+        assert_eq!(Verdict::of_partials(&h, k, &point, 1e-6), Ok(Verdict::Exact), "{} fn {k}", m.name().as_str());
     }
     // The diode's limiter at an active point is skipped, not compared.
     let d = Handle::create(m_d, &[]).unwrap();
     let active = vec![ExampleChecks::real_bytes(0.8), ExampleChecks::real_bytes(0.0), ExampleChecks::real_bytes(IS), ExampleChecks::real_bytes(1.0), ExampleChecks::real_bytes(T), ExampleChecks::real_bytes(0.6), vec![1], vec![0]];
-    assert_eq!(verify_partials(&d, 0, &active, 1e-6), Ok(Verdict::Skipped { limit: 0 }));
+    assert_eq!(Verdict::of_partials(&d, 0, &active, 1e-6), Ok(Verdict::Skipped { limit: 0 }));
 }
 
 /// The checks over the worked examples.
@@ -163,7 +163,7 @@ impl ExampleChecks {
     /// Calls function `k` with every partial seeded; returns each write's bytes and `jac`.
     fn eval(h: &Handle, k: u32, reads: &[Vec<u8>]) -> (Vec<Vec<u8>>, Vec<f64>) {
         let func = *h.shape().functions.get(k as usize).expect("the function exists");
-        let lens = cell_lens(h.shape(), &func.writes, Access::FunctionWrite).expect("valid writes");
+        let lens = h.shape().cell_lens(&func.writes, Access::FunctionWrite).expect("valid writes");
         let mut out: Vec<Vec<u8>> = lens.iter().map(|n| vec![0u8; *n]).collect();
         let n = func.partials.len();
         let mut jac = vec![0.0; n];

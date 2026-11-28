@@ -168,7 +168,7 @@ fn a_list_whose_stride_is_below_its_element_is_refused() {
 
 #[test]
 fn raw_views_have_no_public_pointer_field() {
-    let raw = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/raw.rs")).expect("read raw.rs");
+    let raw = ContractReading::raw_sources();
     for field in [
         "pub ptr:", "pub len: usize", "pub stride:", "pub prototype:", "pub data:", "pub create:", "pub destroy:",
         "pub eval:", "pub react:",
@@ -192,7 +192,7 @@ fn no_unsafe_outside_raw_thunk_and_caller() {
     for entry in std::fs::read_dir(&src).expect("read src") {
         let path = entry.expect("dir entry").path();
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("").to_string();
-        if ["raw.rs", "thunk.rs", "caller.rs"].contains(&name.as_str()) {
+        if ["raw.rs", "raw", "thunk.rs", "caller.rs"].contains(&name.as_str()) {
             continue;
         }
         seen += 1;
@@ -209,6 +209,18 @@ fn no_unsafe_outside_raw_thunk_and_caller() {
 pub struct ContractReading;
 
 impl ContractReading {
+    /// The text of `raw.rs` and of every file of `raw/`, one after the other.
+    fn raw_sources() -> String {
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        let mut text = std::fs::read_to_string(src.join("raw.rs")).expect("read raw.rs");
+        let mut parts: Vec<_> = std::fs::read_dir(src.join("raw")).expect("read raw/").map(|e| e.expect("entry").path()).collect();
+        parts.sort();
+        for part in parts {
+            text.push_str(&std::fs::read_to_string(part).expect("read a raw section"));
+        }
+        text
+    }
+
     /// A group of constants: no member is 0 and no two are equal.
     fn assert_group(name: &str, group: &[u32]) {
         for (i, a) in group.iter().enumerate() {

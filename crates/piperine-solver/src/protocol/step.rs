@@ -43,6 +43,19 @@ pub struct StepView<'a> {
 }
 
 impl<'a> StepView<'a> {
+    /// The call both sites make: the observer, if any, sees the sides at `time` (the owner's).
+    pub(super) fn observe<D: DiscreteSide, A: AnalogSide>(
+        observer: &mut Option<Box<dyn StepObserver>>,
+        time: f64,
+        discrete: &D,
+        analog: &A,
+    ) {
+        if let Some(observer) = observer {
+            let nets = Nets(discrete);
+            observer.step(&StepView::new(analog.step_time().unwrap_or(time), analog.solution(), &nets));
+        }
+    }
+
     pub(super) fn new(time: f64, solution: &'a [f64], nets: &'a dyn NetRead) -> StepView<'a> {
         StepView { time, solution, nets }
     }
@@ -70,15 +83,3 @@ impl<'a> StepView<'a> {
     }
 }
 
-/// The call both sites make: the observer, if any, sees the sides at `time` (the owner's).
-pub(super) fn observe<D: DiscreteSide, A: AnalogSide>(
-    observer: &mut Option<Box<dyn StepObserver>>,
-    time: f64,
-    discrete: &D,
-    analog: &A,
-) {
-    if let Some(observer) = observer {
-        let nets = Nets(discrete);
-        observer.step(&StepView::new(analog.step_time().unwrap_or(time), analog.solution(), &nets));
-    }
-}

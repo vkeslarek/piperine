@@ -248,13 +248,34 @@ impl<'a> NoiseSolver<'a> {
 
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
+        let (contributions, output_power, input_power) = Self::contributions(&frequencies, psd_map, &input_gain_squared);
+
+        Ok(NoiseAnalysisResult {
+            frequencies,
+            integrated_noise,
+            output_total: output_power.sqrt(),
+            input_noise_sq: (!input_gain_squared.is_empty())
+                .then(|| out_noise_sq.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect()),
+            input_total: (!input_gain_squared.is_empty()).then(|| input_power.sqrt()),
+            out_noise_sq,
+            contributions,
+        })
+    }
+
+    /// The contribution of each noise source (its band-integrated power and its density), and the band powers of the
+    /// output and, with an input (`input_gain_squared` not empty), of the input-referred noise.
+    fn contributions(
+        frequencies: &[f64],
+        psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)>,
+        input_gain_squared: &[f64],
+    ) -> (Vec<crate::core::result::NoiseContribution>, f64, f64) {
         let mut contributions = Vec::new();
         let (mut output_power, mut input_power) = (0.0, 0.0);
         for ((element, source), (kind, psd)) in psd_map {
-            output_power += Integrator::power_law(&frequencies, &psd);
+            output_power += Integrator::power_law(frequencies, &psd);
             if !input_gain_squared.is_empty() {
-                let referred: Vec<f64> = psd.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect();
-                input_power += Integrator::power_law(&frequencies, &referred);
+                let referred: Vec<f64> = psd.iter().zip(input_gain_squared).map(|(n, gain)| n / gain).collect();
+                input_power += Integrator::power_law(frequencies, &referred);
             }
             let mut integrated_sq = 0.0;
             if frequencies.len() > 1 {
@@ -271,17 +292,7 @@ impl<'a> NoiseSolver<'a> {
                 psd,
             });
         }
-
-        Ok(NoiseAnalysisResult {
-            frequencies,
-            integrated_noise,
-            output_total: output_power.sqrt(),
-            input_noise_sq: (!input_gain_squared.is_empty())
-                .then(|| out_noise_sq.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect()),
-            input_total: (!input_gain_squared.is_empty()).then(|| input_power.sqrt()),
-            out_noise_sq,
-            contributions,
-        })
+        (contributions, output_power, input_power)
     }
 
     /// Adds `val` to the PSD series of `key` at frequency index `i`: a second input of the same
@@ -316,7 +327,7 @@ impl<'a> NoiseSolver<'a> {
         adjoint: &Array1<Complex<f64>>,
         functional: &OutputFunctional,
     ) -> crate::core::result::Result<Vec<(String, String, NoiseKind, f64)>> {
-        let op = crate::analyses::ac::operating_vector(self.circuit, &self.dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(self.circuit, &self.dc_point);
         let amb = Ambient {
             time: 0.0,
             freq: f_hz,
@@ -351,7 +362,7 @@ impl<'a> NoiseSolver<'a> {
 
     /// The operating point as the assembly's solution vector, and the ambient at `frequency`.
     fn small_signal_point(circuit: &CircuitInstance, dc_point: &DcAnalysisResult, frequency: f64, context: &Context) -> (Vec<f64>, Ambient) {
-        let operating_point = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let operating_point = crate::analyses::ac::AcSystem::operating_vector(circuit, dc_point);
         let ambient = Ambient { time: 0.0, freq: frequency, is_static: false, gmin: context.tolerances.gmin, source_scale: 1.0 };
         (operating_point, ambient)
     }
@@ -458,7 +469,7 @@ impl<'a> NoiseSolver<'a> {
         f_hz: f64,
         context: &Context,
     ) -> crate::core::result::Result<Vec<Stamp<AnalogReference, Complex<f64>>>> {
-        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(circuit, dc_point);
         let amb = Ambient {
             time: 0.0,
             freq: f_hz,

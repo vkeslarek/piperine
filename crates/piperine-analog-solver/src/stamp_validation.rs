@@ -14,25 +14,30 @@ use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
-/// Returns `None` when every stamp is finite (the common case, checked
-/// with zero allocation); otherwise an `E0507` of `SolverDomain::Device`
-/// naming `device_name` and the row (and column) of the first stamp found.
-pub fn non_finite_stamp_error(device_name: &str, stamps: &[Stamp<AnalogReference, f64>]) -> Option<Error> {
-    let at = stamps.iter().find_map(|s| match s {
-        Stamp::Matrix(r, c, v) if !v.is_finite() => {
-            Some(format!("row {}, column {}: {v}", r.idx()?, c.idx()?))
-        }
-        Stamp::Rhs(r, v) if !v.is_finite() => Some(format!("row {} of the right-hand side: {v}", r.idx()?)),
-        _ => None,
-    })?;
-    Some(Error::run(
-        RunCode::E0507,
-        SolverDomain::Device,
-        format!(
-            "device `{device_name}` contributed a NaN or infinite stamp at {at} (§17.1 rule 4: a \
-             contribution or stamp shall not be NaN or infinity)"
-        ),
-    ))
+/// The checks of a device's stamps before they reach the shared linear system.
+pub struct StampValidation;
+
+impl StampValidation {
+    /// Returns `None` when every stamp is finite (the common case, checked
+    /// with zero allocation); otherwise an `E0507` of `SolverDomain::Device`
+    /// naming `device_name` and the row (and column) of the first stamp found.
+    pub fn non_finite_error(device_name: &str, stamps: &[Stamp<AnalogReference, f64>]) -> Option<Error> {
+        let at = stamps.iter().find_map(|s| match s {
+            Stamp::Matrix(r, c, v) if !v.is_finite() => {
+                Some(format!("row {}, column {}: {v}", r.idx()?, c.idx()?))
+            }
+            Stamp::Rhs(r, v) if !v.is_finite() => Some(format!("row {} of the right-hand side: {v}", r.idx()?)),
+            _ => None,
+        })?;
+        Some(Error::run(
+            RunCode::E0507,
+            SolverDomain::Device,
+            format!(
+                "device `{device_name}` contributed a NaN or infinite stamp at {at} (§17.1 rule 4: a \
+                 contribution or stamp shall not be NaN or infinity)"
+            ),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -58,7 +63,7 @@ mod tests {
             Stamp::Matrix(b.clone(), a.clone(), f64::NAN),
             Stamp::Rhs(b.clone(), 2.0),
         ];
-        let err = non_finite_stamp_error("r1", &stamps).expect("a NaN stamp");
+        let err = StampValidation::non_finite_error("r1", &stamps).expect("a NaN stamp");
         assert_eq!(err.code(), Some(RunCode::E0507));
         let text = err.to_string();
         assert!(text.contains("device `r1`"), "{text}");
@@ -66,9 +71,9 @@ mod tests {
         assert!(!text.contains("LRM"), "{text}");
 
         let rhs = vec![Stamp::Rhs(b, f64::INFINITY)];
-        let text = non_finite_stamp_error("r1", &rhs).expect("an infinite right side").to_string();
+        let text = StampValidation::non_finite_error("r1", &rhs).expect("an infinite right side").to_string();
         assert!(text.contains("row 5 of the right-hand side"), "{text}");
 
-        assert!(non_finite_stamp_error("r1", &[Stamp::Matrix(a.clone(), a, 1.0)]).is_none());
+        assert!(StampValidation::non_finite_error("r1", &[Stamp::Matrix(a.clone(), a, 1.0)]).is_none());
     }
 }

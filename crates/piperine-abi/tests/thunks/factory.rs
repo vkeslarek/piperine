@@ -1,5 +1,5 @@
 //! A module that carries its data (feature `ir-interp`, INT-08):
-//! `thunk::module_with(name, &'static factory)` returns a `Module` whose
+//! `Thunk::module_with(name, &'static factory)` returns a `Module` whose
 //! `data` is the factory and whose prototype is the factory's; its `create`
 //! goes through the factory with the same value checks and shape validation
 //! as `module::<D>`; its `eval`/`react` run the instance the factory made,
@@ -16,7 +16,7 @@ use piperine_abi::raw::{
     Cell, DEFAULT, GROUND, Module, Partial, Shape, Statement, cell, op, part, pin_flag, role, status,
 };
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec};
-use piperine_abi::thunk::module_with;
+use piperine_abi::thunk::Thunk;
 
 thread_local! {
     static DROPS: StdCell<usize> = const { StdCell::new(0) };
@@ -50,7 +50,7 @@ impl Gain {
 
     fn module(name: &'static str, k: f64) -> (&'static Gain, &'static Module) {
         let g = Gain::leak(k, false);
-        (g, Box::leak(Box::new(module_with(name, g))))
+        (g, Box::leak(Box::new(Thunk::module_with(name, g))))
     }
 }
 
@@ -127,7 +127,7 @@ fn create_goes_through_the_factory_and_validates() {
 
     // The created shape is validated.
     let broken = Gain::leak(3.0, true);
-    let m = Box::leak(Box::new(module_with("broken", broken)));
+    let m = Box::leak(Box::new(Thunk::module_with("broken", broken)));
     let err = Handle::create(m, &[]).expect_err("an invalid created shape");
     assert_eq!(err.status, status::FAULT);
     assert!(err.message.starts_with("the created shape is invalid"), "{}", err.message);

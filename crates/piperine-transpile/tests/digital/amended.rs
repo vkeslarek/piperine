@@ -454,7 +454,7 @@ fn potential(b: &mut IrBuilder, name: &str, param: &str, default: f64, value: im
 #[test]
 fn the_inductor_functions_pass_verify_partials() {
     use piperine_abi::caller::Handle;
-    use piperine_abi::verify::{Verdict, verify_partials};
+    use piperine_abi::verify::Verdict;
     use piperine_plan::Modules;
 
     let mut w = TopDesign::new();
@@ -489,7 +489,7 @@ fn the_inductor_functions_pass_verify_partials() {
             for point in &points {
                 let input: Vec<Vec<u8>> = (0..f.reads.len()).map(|i| point[i % point.len()].to_le_bytes().to_vec()).collect();
                 // abi.md §8 (F5): every declared partial agrees with its finite difference
-                match verify_partials(&handle, k as u32, &input, 1e-6) {
+                match Verdict::of_partials(&handle, k as u32, &input, 1e-6) {
                     Ok(Verdict::Exact) => {}
                     other => panic!("{name} {} at {point:?}: {other:?}", f.name.as_str()),
                 }

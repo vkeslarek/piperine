@@ -8,7 +8,7 @@ use std::ffi::c_void;
 use std::fmt;
 use std::panic::{AssertUnwindSafe, catch_unwind, resume_unwind};
 
-use crate::device::{Access, Flow, cell_lens};
+use crate::device::{Access, Flow};
 use crate::raw::{self, Host, Instance, List, Module, NOTE_TEXT, Note, Shape, Value, status};
 
 /// A call that did not return `OK` (or `FINISH` from a reaction).
@@ -55,10 +55,6 @@ pub struct Commit<'a> {
     pub offset: u32,
     pub bytes: &'a [u8],
     pub after: f64,
-}
-
-fn empty_note() -> Note {
-    Note { code: 0, len: 0, text: [0; NOTE_TEXT] }
 }
 
 /// What a host serves an [`ArrayView`](raw::ArrayView) from: the elements of one array pin at the call's snapshot.
@@ -139,7 +135,7 @@ impl FunctionFrame {
     /// The frame of function `f` of `shape`.
     fn of(shape: &Shape<'_>, f: &raw::Function<'_>) -> Self {
         let reads = shape.cell_lens_of(&f.reads, &f.elements, Access::FunctionRead);
-        let writes = cell_lens(shape, &f.writes, Access::FunctionWrite);
+        let writes = shape.cell_lens(&f.writes, Access::FunctionWrite);
         Self { cells: reads.zip(writes).map(|(reads, writes)| (reads.into(), writes.into())) }
     }
 }
@@ -232,7 +228,7 @@ impl Handle {
             .iter()
             .map(|(pin, b)| Value { pin: *pin, bytes: raw::Bytes::from_slice(b) })
             .collect();
-        let mut note = empty_note();
+        let mut note = Note::EMPTY;
         // SAFETY: abi.md §2 entry 2: `module` is a live module; `values` and
         // `note` live for the call.
         let made = unsafe { (module.create)(module, List::from_slice(&values), &mut note) };
@@ -275,7 +271,7 @@ impl Handle {
     /// Runs function `k`. `input` holds the bytes of each read cell, `output`
     /// a buffer per written cell pre-filled with its current bytes, `seed` and
     /// `jac` one entry per declared partial (`jac` pre-zeroed). Each buffer is
-    /// at least its cell's length (`device::cell_lens`).
+    /// at least its cell's length (`Shape::cell_lens`).
     pub fn eval(
         &self,
         k: u32,
@@ -285,8 +281,8 @@ impl Handle {
         jac: &mut [f64],
     ) -> Result<(), CallError> {
         let (reads, writes) = self.cells(k)?;
-        check_cells("read", input.iter().map(|b| b.len()), reads)?;
-        check_cells("write", output.iter().map(|b| b.len()), writes)?;
+        Self::check_cells("read", input.iter().map(|b| b.len()), reads)?;
+        Self::check_cells("write", output.iter().map(|b| b.len()), writes)?;
         let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
         buffers.input.clear();
         buffers.input.extend(input.iter().map(|b| b.as_ptr()));
@@ -312,7 +308,7 @@ impl Handle {
         if input.len() < wanted {
             return Err(CallError::frame(format!("{} input bytes for {wanted} bytes of read cells", input.len())));
         }
-        check_cells("write", output.iter().map(Vec::len), writes)?;
+        Self::check_cells("write", output.iter().map(Vec::len), writes)?;
         let mut buffers = self.inner.calls.lock().unwrap_or_else(|e| e.into_inner());
         buffers.input.clear();
         let mut at = 0;
@@ -346,7 +342,7 @@ impl Handle {
                 jac.len()
             )));
         }
-        let mut note = empty_note();
+        let mut note = Note::EMPTY;
         let frame = raw::Eval {
             size: size_of::<raw::Eval>() as u32,
             input: buffers.input.as_ptr(),
@@ -379,11 +375,11 @@ impl Handle {
         let Some(reads) = shape.cell_lens_of(&r.reads, &r.elements, Access::ReactionRead) else {
             return Err(CallError::frame(format!("reaction {k} names a cell its shape does not have")));
         };
-        check_cells("read", input.iter().map(|b| b.len()), &reads)?;
+        Self::check_cells("read", input.iter().map(|b| b.len()), &reads)?;
         let input: Vec<*const u8> = input.iter().map(|b| b.as_ptr()).collect();
         let host = Host { size: size_of::<Host>() as u32, commit: trampoline, commit_element: element_trampoline };
         let mut data = Trampoline { commit, panic: None };
-        let mut note = empty_note();
+        let mut note = Note::EMPTY;
         let frame = raw::React {
             size: size_of::<raw::React>() as u32,
             input: input.as_ptr(),
@@ -406,19 +402,19 @@ impl Handle {
             _ => Err(CallError::from_note(s, &note)),
         }
     }
-}
 
-/// Checks a frame's buffers against the cells' lengths.
-fn check_cells(what: &str, got: impl ExactSizeIterator<Item = usize>, want: &[usize]) -> Result<(), CallError> {
-    if got.len() != want.len() {
-        return Err(CallError::frame(format!("{} {what} buffers for {} {what} cells", got.len(), want.len())));
-    }
-    for (i, (g, w)) in got.zip(want).enumerate() {
-        if g < *w {
-            return Err(CallError::frame(format!("{what} {i} has {g} bytes, its cell {w}")));
+    /// Checks a frame's buffers against the cells' lengths.
+    fn check_cells(what: &str, got: impl ExactSizeIterator<Item = usize>, want: &[usize]) -> Result<(), CallError> {
+        if got.len() != want.len() {
+            return Err(CallError::frame(format!("{} {what} buffers for {} {what} cells", got.len(), want.len())));
         }
+        for (i, (g, w)) in got.zip(want).enumerate() {
+            if g < *w {
+                return Err(CallError::frame(format!("{what} {i} has {g} bytes, its cell {w}")));
+            }
+        }
+        Ok(())
     }
-    Ok(())
 }
 
 impl Drop for Inner {

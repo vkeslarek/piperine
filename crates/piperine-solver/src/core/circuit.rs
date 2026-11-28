@@ -337,7 +337,7 @@ impl CircuitInstance {
                 return Err(Error::simple(SolverDomain::Device, "a node was allocated after bind; cannot bind again"));
             }
         }
-        let bound = crate::core::bind::bind(crate::core::bind::BindInput {
+        let bound = crate::core::bind::Bind::run(crate::core::bind::BindInput {
             specs: recipe.specs,
             arrays: recipe.arrays,
             shared: recipe.shared,

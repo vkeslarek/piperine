@@ -9,7 +9,7 @@ use piperine_abi::raw::{
 };
 use piperine_abi::shape::{FunctionSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
 use piperine_digital_solver::net::{NetId, NetSpec};
-use piperine_digital_solver::plan::{Analysis, Binding, NetWriter, ShapeInput, analyze};
+use piperine_digital_solver::plan::{Analysis, Binding, NetWriter, DigitalPlan, ShapeInput};
 use piperine_digital_solver::tick::Resolution;
 use piperine_digital_solver::error::DigitalError;
 
@@ -225,7 +225,7 @@ impl BindCases {
     fn analyze_of(specs: &[NetSpec], inputs: &[(&str, &ShapeRef, Vec<Binding>)], r: Resolution) -> Result<Analysis, DigitalError> {
         let inputs: Vec<ShapeInput<'_>> =
             inputs.iter().map(|(path, shape, pins)| ShapeInput { path, shape: shape.shape(), pins }).collect();
-        analyze(specs, &inputs, r)
+        DigitalPlan::analyze(specs, &inputs, r)
     }
 
     /// The bind error helper `bind_error`.

@@ -70,7 +70,7 @@ fn a_switch_branch_has_a_flow_pin_and_an_equation_term() {
     assert_eq!(Find::terms(shape), [("b0.flow".into(), op::FLOW, a, GROUND), ("b0.eq".into(), op::FLOW, flow, GROUND)]);
     let terms = Find::terms_plan(&plan);
     assert_eq!(terms.writes, [Target::Term(Term::Current(0)), Target::Term(Term::Eq(0))]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn a_conditional_flow_contribution_reads_its_condition() {
     let terms = Find::terms_plan(&plan);
     assert_eq!(terms.reads, [Source::Node(0), Source::Carrier(0)], "the node it probes, then the carrier its condition reads");
     assert_eq!(terms.slots, 1, "only the node is a differentiable read");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -121,7 +121,7 @@ fn a_body_without_new_forms_keeps_its_shape() {
         [("b0.flow".into(), op::FLOW, a, GROUND), ("b0.eq".into(), op::FLOW, flow, GROUND), ("b0.charge".into(), op::DDT, flow, GROUND)]
     );
     assert_eq!(Find::terms_plan(&plan).affine, [true, true, false]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -151,7 +151,7 @@ fn a_derivative_site_has_a_rate_pin_and_two_terms() {
     let terms = Find::terms_plan(&plan);
     assert_eq!(terms.writes[2..], [Target::Term(Term::DerivativeRate(0)), Target::Term(Term::DerivativeState(0))]);
     assert_eq!(terms.affine, [true, true, true, false], "the rate term is linear in its pin, the state term is a charge");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -177,7 +177,7 @@ fn a_derivative_abstol_names_its_pin() {
     assert_eq!((reads, writes, partials), (vec![Find::value(0)], vec![Find::value(abstol)], vec![]), "it reads the param `tol` alone and has no partial");
     let function = plan.functions().iter().find(|f| f.mode == Mode::DerivativeAbstol(0)).expect("the abstol function");
     assert_eq!((function.reads.clone(), function.writes.clone()), (vec![Source::Param(0)], vec![Target::DerivativeAbstol(0)]));
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -201,7 +201,7 @@ fn a_derivative_read_is_a_differentiable_pin_read() {
     let (reads, _, partials) = Find::function(shape, "terms");
     assert_eq!(reads, [Find::value(Find::pin(shape, "a")), Find::value(Find::pin(shape, "d0.rate"))]);
     assert_eq!(partials, [(0, 1), (1, 1), (2, 0)]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -221,7 +221,7 @@ fn a_guarded_limit_reads_its_enabled_sources() {
     assert_eq!(function.reads, [Source::Node(0), Source::Carrier(0), Source::LimitLast(0), Source::LimitAge(0), Source::Static]);
     let (reads, _, _) = Find::function(shape, "limit:lim");
     assert_eq!(reads[1], Find::value(Find::pin(shape, "en")), "the carrier's pin value");
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -238,7 +238,7 @@ fn a_guarded_cap_reads_its_when_sources() {
     assert_eq!((function.reads.clone(), function.writes.clone()), (vec![Source::Carrier(0)], vec![Target::Cap(0)]));
     let (reads, _, _) = Find::function(shape, "cap:0");
     assert_eq!(reads, [Find::value(Find::pin(shape, "en"))]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -254,7 +254,7 @@ fn a_param_changed_event_reads_the_params_changed_byte() {
     let event = Find::pin(shape, "event:0");
     assert_eq!(reads, [Find::value(0), Cell { kind: cell::PIN, index: 0, part: part::CHANGED }]);
     assert_eq!(writes, [Cell { kind: cell::PIN, index: event, part: part::CHANGED }]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -267,7 +267,7 @@ fn a_param_previous_reads_its_previous_part() {
     let reaction = shape.reactions.iter().find(|r| r.name.as_str() == "reaction:0").expect("the reaction");
     let reads: Vec<Cell> = reaction.reads.iter().copied().collect();
     assert_eq!(reads, [Cell { kind: cell::PIN, index: 0, part: part::PREVIOUS }]);
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 #[test]
@@ -299,7 +299,7 @@ fn a_reached_carrier_is_a_port_pin() {
     let pin = shape.pins.get(Find::pin(shape, "seen") as usize).expect("the pin");
     assert_eq!((pin.kind, pin.role), (kind::DISCRETE, role::PORT));
     assert!(BodyPlan::carrier_is_port(top_body, seen));
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()));
 }
 
 /// A body that `Ir::check` refuses, planned without being checked: the plan's error names the body, where the plan used to panic.

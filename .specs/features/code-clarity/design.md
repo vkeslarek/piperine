@@ -173,7 +173,7 @@ The `**Build**` line is green at the base (`validate_tasks.py --execute` runs it
 | `Dc`, `Transient`, `Ac`, `Noise` are written `Analysis::Dc`, …; `analysis(Static)` is `is_static()` | OQ4 (row 16) | 29 `.msl` lines (7 of them in `std`), 3 Book lines, 53 spec lines, 60 Rust test lines; no bare variant name resolves | T105, T106 |
 | `Option` is a std enum; `Range<T>` and `Iterator<T>` are named | Q14 (b), (c) (row 11) | spec §1, Appendix H.4, H.6, H.7, H.9; reflection shows `Option` as a `std` item | T110, T111 |
 | Builtins declared in `std` | CC-11 AC 2, Assumption 5 | wording of a diagnostic that named "the catalogue"; `E0457` narrows to `gnd` (S16) | T103–T114 |
-| `GND`, `vss`, `VSS` stop naming ground | S21, rule 1 (the spec knows `gnd` only) | nothing in the corpora (T29 stops if one uses an alias) | T29 |
+| `GND`, `vss`, `VSS` stop naming ground | S21, rule 1 (the spec knows `gnd` only) | the host-visible ground label (`Net::ground().label()` and `NodeIdentifier::Gnd`'s display) `GND` → `gnd`; the builder and a noise request refuse `GND`/`vss`/`VSS` only when nothing in the design resolves under that name; nothing else in the corpora (T83 stopped if one used an alias: none does) | T83 |
 | A NaN pole and an empty shoot return the solver's `Error` instead of a panic | rule 9, `findings.md` §1.9 | nothing a passing run prints | T24 |
 | Names of `piperine-abi` and of the embedded runtime that generated code spells | Q3 (row 7); spec Out of Scope: generated code "follows the renames only" | transpile goldens, by identifier only: the task shows `git diff --word-diff` holds renamed identifiers and nothing else | T132, T137 |
 

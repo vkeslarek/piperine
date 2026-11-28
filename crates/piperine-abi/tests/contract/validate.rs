@@ -9,7 +9,7 @@ use piperine_abi::raw::{
     Shape, Cell, DEFAULT, Partial, Statement, ambient, cell, fn_flag, global, input, kind, op, part, pin_flag, role, watch,
 };
 use piperine_abi::shape::{FunctionSpec, InputSpec, PinSpec, ReactionSpec, ShapeBuf, ShapeRef, TermSpec, WatchSpec};
-use piperine_abi::validate::{Rule, validate};
+use piperine_abi::validate::{Rule, Validator};
 
 /// The specs of a shape, mutable before it is built.
 #[derive(Clone, Default)]
@@ -144,12 +144,12 @@ fn every_shape_local_rule_is_enforced() {
         let built = ShapeCases::resistor().build();
         let mut shape = *built.shape();
         plant(&mut shape);
-        let err = validate(&shape).expect_err(&format!("{rule:?} is not refused"));
+        let err = Validator::validate(&shape).expect_err(&format!("{rule:?} is not refused"));
         assert_eq!((err.rule, err.entry.as_str(), err.origin.as_str()), (rule, entry, origin));
     }
     for (rule, plant, entry, origin) in table {
         let shape = plant().build();
-        let err = validate(shape.shape()).expect_err(&format!("{rule:?} is not refused"));
+        let err = Validator::validate(shape.shape()).expect_err(&format!("{rule:?} is not refused"));
         assert_eq!(err.rule, rule, "the planted {rule:?} defect is reported as {err}");
         assert_eq!(err.entry, entry, "{rule:?}");
         assert_eq!(err.origin, origin, "{rule:?}");
@@ -158,10 +158,10 @@ fn every_shape_local_rule_is_enforced() {
 
     // A3, the second half: with OWNS_CORRECTION, a partial against that limit.
     let mut s = ShapeCases::resistor_writing_a_limit(fn_flag::OWNS_CORRECTION);
-    assert!(validate(s.clone().build().shape()).is_ok(), "OWNS_CORRECTION and no partial against the limit is legal");
+    assert!(Validator::validate(s.clone().build().shape()).is_ok(), "OWNS_CORRECTION and no partial against the limit is legal");
     s.functions[0].reads.push(Cell { kind: cell::INPUT, index: 0, part: part::VALUE });
     s.functions[0].partials.push(Partial { write: 0, to: 0, read: 3, at: 0 });
-    let err = validate(s.build().shape()).expect_err("a partial against the owned limit");
+    let err = Validator::validate(s.build().shape()).expect_err("a partial against the owned limit");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::LimitCorrection, "function i"));
 }
 
@@ -170,22 +170,22 @@ fn a_zeroed_shape_entry_is_an_unknown_constant() {
     let zero_pin = PinSpec { kind: 0, role: 0, ..PinSpec::event("", role::PRIVATE) };
     let mut s = ShapeBuf::new();
     s.pin(zero_pin);
-    let err = validate(s.freeze().shape()).expect_err("a zeroed pin");
+    let err = Validator::validate(s.freeze().shape()).expect_err("a zeroed pin");
     assert_eq!(err.rule, Rule::UnknownConstant);
 
     let mut specs = ShapeCases::resistor();
     specs.terms[0] = TermSpec { name: "", origin: "", op: 0, plus: 0, minus: 0, abstol: 0, max: 0 };
-    let err = validate(specs.build().shape()).expect_err("a zeroed term");
+    let err = Validator::validate(specs.build().shape()).expect_err("a zeroed term");
     assert_eq!(err.rule, Rule::UnknownConstant);
 
     let mut specs = ShapeCases::resistor();
     specs.functions[0].reads[0] = Cell { kind: 0, index: 0, part: 0 };
-    let err = validate(specs.build().shape()).expect_err("a zeroed cell");
+    let err = Validator::validate(specs.build().shape()).expect_err("a zeroed cell");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "function i"));
 
     let mut specs = ShapeCases::flip_flop();
     specs.reactions[0].writes[0] = Statement { pin: 2, offset: 0, len: 1, flags: 0x80, min_after: 0.0 };
-    let err = validate(specs.build().shape()).expect_err("an unknown statement flag");
+    let err = Validator::validate(specs.build().shape()).expect_err("an unknown statement flag");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnknownConstant, "reaction sample"));
 }
 
@@ -199,7 +199,7 @@ fn an_index_is_checked_before_it_is_followed() {
     ] {
         let mut specs = ShapeCases::resistor();
         plant(&mut specs);
-        let err = validate(specs.build().shape()).expect_err("an index of u32::MAX");
+        let err = Validator::validate(specs.build().shape()).expect_err("an index of u32::MAX");
         assert_eq!(err.rule, Rule::IndexOutOfRange, "{err}");
     }
     for plant in [
@@ -210,16 +210,16 @@ fn an_index_is_checked_before_it_is_followed() {
     ] {
         let mut specs = ShapeCases::flip_flop();
         plant(&mut specs);
-        let err = validate(specs.build().shape()).expect_err("an index out of range");
+        let err = Validator::validate(specs.build().shape()).expect_err("an index out of range");
         assert_eq!((err.rule, err.entry.as_str()), (Rule::IndexOutOfRange, "reaction sample"), "{err}");
     }
 }
 
 #[test]
 fn the_valid_fixtures_pass() {
-    assert_eq!(validate(ShapeCases::resistor().build().shape()), Ok(()));
-    assert_eq!(validate(ShapeCases::flip_flop().build().shape()), Ok(()));
-    assert_eq!(validate(ShapeBuf::new().freeze().shape()), Ok(()), "an empty shape");
+    assert_eq!(Validator::validate(ShapeCases::resistor().build().shape()), Ok(()));
+    assert_eq!(Validator::validate(ShapeCases::flip_flop().build().shape()), Ok(()));
+    assert_eq!(Validator::validate(ShapeBuf::new().freeze().shape()), Ok(()), "an empty shape");
     // The legal forms of the three bound rules: a CROSS watch firing an event
     // pin, a term bound read from a discrete F64 pin, a statement on a discrete pin.
     let mut ff = ShapeCases::flip_flop();
@@ -232,16 +232,16 @@ fn the_valid_fixtures_pass() {
         ttol: DEFAULT,
         etol: DEFAULT,
     });
-    assert_eq!(validate(ff.build().shape()), Ok(()));
+    assert_eq!(Validator::validate(ff.build().shape()), Ok(()));
     let mut res = ShapeCases::resistor();
     res.terms[0].abstol = 0;
     res.terms[0].max = 0;
-    assert_eq!(validate(res.build().shape()), Ok(()));
+    assert_eq!(Validator::validate(res.build().shape()), Ok(()));
     // A `check` naming a discrete BOOL pin, and a QUIET pin read by value only.
     let mut ff = ShapeCases::flip_flop();
     ff.pins.push(PinSpec { flags: pin_flag::HAS_CHECK, check: 0, ..PinSpec::discrete("k", role::PRIVATE, &BIT) });
     ff.pins[1].flags = pin_flag::QUIET;
-    assert_eq!(validate(ff.build().shape()), Ok(()));
+    assert_eq!(Validator::validate(ff.build().shape()), Ok(()));
     // The flip-flop's pins are of every discrete kind the rules look at.
     let ff = ShapeCases::flip_flop().build();
     let kinds: Vec<u32> = ff.shape().pins.iter().map(|p| p.kind).collect();
@@ -254,7 +254,7 @@ fn a_shape_with_an_unreadable_list_is_refused() {
     let mut shape = *built.shape();
     // SAFETY: the shape's live pins, read by a stride below the element (refused).
     shape.pins = unsafe { piperine_abi::raw::List::from_raw_parts(shape.pins.as_ptr(), shape.pins.len(), size_of::<piperine_abi::raw::Pin>() - 8) };
-    let err = validate(&shape).expect_err("a pin list read below its element size");
+    let err = Validator::validate(&shape).expect_err("a pin list read below its element size");
     assert_eq!(err.rule, Rule::UnreadableList);
     let mut shape = *built.shape();
     let mut f = *shape.functions.get(0).unwrap();
@@ -262,7 +262,7 @@ fn a_shape_with_an_unreadable_list_is_refused() {
     f.reads = unsafe { piperine_abi::raw::List::from_raw_parts(f.reads.as_ptr(), f.reads.len(), 4) };
     let fs = [f];
     shape.functions = piperine_abi::raw::List::from_slice(&fs);
-    let err = validate(&shape).expect_err("a cell list read below its element size");
+    let err = Validator::validate(&shape).expect_err("a cell list read below its element size");
     assert_eq!((err.rule, err.entry.as_str()), (Rule::UnreadableList, "function i"));
 }
 
@@ -276,18 +276,18 @@ fn a_reaction_may_read_gmin_and_source_scale() {
     for index in [ambient::GMIN, ambient::SOURCE_SCALE] {
         let mut s = ShapeCases::flip_flop();
         s.reactions[0].reads.push(ambient_cell(index));
-        validate(s.build().shape()).unwrap_or_else(|e| panic!("a reaction reading ambient {index}: {e}"));
+        Validator::validate(s.build().shape()).unwrap_or_else(|e| panic!("a reaction reading ambient {index}: {e}"));
         let mut s = ShapeCases::flip_flop();
         s.functions[0].reads.push(ambient_cell(index));
-        validate(s.build().shape()).unwrap_or_else(|e| panic!("a discrete function reading ambient {index}: {e}"));
+        Validator::validate(s.build().shape()).unwrap_or_else(|e| panic!("a discrete function reading ambient {index}: {e}"));
     }
     let mut s = ShapeCases::flip_flop();
     s.reactions[0].reads.push(ambient_cell(ambient::FREQ));
-    let e = validate(s.build().shape()).expect_err("FREQ in a reaction");
+    let e = Validator::validate(s.build().shape()).expect_err("FREQ in a reaction");
     assert_eq!(e.rule, Rule::UnknownConstant, "{e}");
     let mut s = ShapeCases::flip_flop();
     s.functions[0].reads.push(ambient_cell(ambient::TIME));
-    assert_eq!(validate(s.build().shape()).expect_err("TIME in a discrete function").rule, Rule::DiscreteReadsAnalog);
+    assert_eq!(Validator::validate(s.build().shape()).expect_err("TIME in a discrete function").rule, Rule::DiscreteReadsAnalog);
 }
 
 /// The shapes the validation tests check.

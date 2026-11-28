@@ -179,9 +179,9 @@ fn the_table_diode_passes_the_partials_verifier() {
     // rows, `parse_table`) and a boot image (`boot.hex`, `parse_hex`); every function of its device passes `verify_partials`
     // at three bias points, the declared partial being the derivative of the cubic spline through the table.
     use piperine_abi::caller::Handle;
-    use piperine_abi::device::{Access, cell_lens};
+    use piperine_abi::device::Access;
     use piperine_abi::raw::{Shape, ambient, cell, part, role};
-    use piperine_abi::verify::{Verdict, verify_partials};
+    use piperine_abi::verify::Verdict;
     use piperine_plan::Modules;
 
     let diode = Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/tables/diode.msl")).compile("TableDiodeBench").unwrap_or_else(|rejection| panic!("{rejection}"));
@@ -192,7 +192,7 @@ fn the_table_diode_passes_the_partials_verifier() {
     let mut verified = 0;
     for (k, function) in shape.functions.iter().enumerate() {
         for (first, second) in [(0.2503, 0.0), (0.4107, 0.0), (0.5611, 0.0)] {
-            let lens = cell_lens(shape, &function.reads, Access::FunctionRead).expect("read lens");
+            let lens = shape.cell_lens(&function.reads, Access::FunctionRead).expect("read lens");
             let input: Vec<Vec<u8>> = function
                 .reads
                 .iter()
@@ -214,7 +214,7 @@ fn the_table_diode_passes_the_partials_verifier() {
                     value.to_le_bytes().to_vec()
                 })
                 .collect();
-            match verify_partials(&handle, k as u32, &input, 1e-6) {
+            match Verdict::of_partials(&handle, k as u32, &input, 1e-6) {
                 Ok(Verdict::Exact) => verified += 1,
                 other => panic!("`{}` at ({first}, {second}): {other:?}", function.name.as_str()),
             }

@@ -25,7 +25,7 @@ impl fmt::Display for NodeIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             NodeIdentifier::Anonymous(n) => write!(f, "n{}", n),
-            NodeIdentifier::Gnd => write!(f, "GND"),
+            NodeIdentifier::Gnd => write!(f, "gnd"),
         }
     }
 }

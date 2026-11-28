@@ -136,7 +136,7 @@ fn a_new_scalar_inside_a_composite_is_one_leaf_with_its_count() {
     );
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    assert_eq!(piperine_abi::validate::validate(shape), Ok(()), "a U64 field of count > 1 and an f32 pin validate (abi.md §3.1 P3)");
+    assert_eq!(piperine_abi::validate::Validator::validate(shape), Ok(()), "a U64 field of count > 1 and an f32 pin validate (abi.md §3.1 P3)");
 
     let wide = Fixture::pin(shape, "wide");
     assert_eq!((wide.kind, wide.layout.size, Fixture::fields(&wide.layout)), (kind::DISCRETE, 32, vec![(leaf::U64, 0, 4)]));
@@ -172,7 +172,7 @@ fn a_new_scalar_inside_a_composite_is_one_leaf_with_its_count() {
     // P4: the layout is a function of the IR type alone, so two pins of one type are equal
     let (first, second) = (PinLayout::in_ir(&ir, &ValueType::UInt(200)).expect("u200"), PinLayout::in_ir(&ir, &ValueType::UInt(200)).expect("u200"));
     assert_eq!(first.size(), 32);
-    assert!(piperine_abi::layout::layout_eq(&first.layout(&first.fields()), &second.layout(&second.fields())));
+    assert!(piperine_abi::raw::Layout::equals(&first.layout(&first.fields()), &second.layout(&second.fields())));
 }
 
 #[test]

@@ -13,9 +13,9 @@
 #![cfg(unix)]
 
 use piperine_abi::caller::Handle;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::{Cell, Shape, ambient, cell, part, role};
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::verify::Verdict;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Constant, Env, FunctionId, FunctionSpec, IrBuilder,
     Local, MathFn, NodeRole, Operator, Origin, Param, QuantityRole, Real, Site, Stmt, Terminal, ValueType,
@@ -161,7 +161,7 @@ impl Bias {
     /// The input of a function: one byte buffer per read.
     fn input(&self, shape: &Shape<'_>, k: usize, age: u8, is_static: bool) -> Vec<Vec<u8>> {
         let f = shape.functions.get(k).expect("a function");
-        let lens = cell_lens(shape, &f.reads, Access::FunctionRead).expect("read lens");
+        let lens = shape.cell_lens(&f.reads, Access::FunctionRead).expect("read lens");
         f.reads.iter().zip(&lens).map(|(c, len)| self.bytes(shape, c, *len, age, is_static)).collect()
     }
 }
@@ -252,7 +252,7 @@ fn every_compiled_function_passes_verify_partials() {
                 let held = Bias { last: bias.first - bias.second, ..*bias };
                 let input = held.input(shape, k, 2, false);
                 points += 1;
-                match verify_partials(&handle, k as u32, &input, 1e-6) {
+                match Verdict::of_partials(&handle, k as u32, &input, 1e-6) {
                     Ok(Verdict::Exact) => exact += 1,
                     Ok(other) => panic!("{body} {} at {}: {other:?}", f.name.as_str(), bias.first),
                     Err(e) => panic!("{body} {} at {} faulted: {e}", f.name.as_str(), bias.first),

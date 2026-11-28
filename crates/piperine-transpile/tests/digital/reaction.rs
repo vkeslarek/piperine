@@ -10,7 +10,7 @@
 use std::sync::{Arc, Mutex, OnceLock};
 
 use piperine_abi::caller::{CallError, Commit, Handle};
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::{Cell, List, Module, Statement, cell, status, statement_flag};
 use piperine_abi::raw::{ambient, part};
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Drive, Env, Event, EventSource, Expr, Ir, IrBuilder, MathFn, Origin, ValueType};
@@ -470,7 +470,7 @@ fn run_event(handle: &Handle, name: &str, given: &[(&str, u32, Vec<u8>)]) -> u8 
         })
         .collect();
     let reads: Vec<&[u8]> = input.iter().map(Vec::as_slice).collect();
-    let lens = cell_lens(shape, &function.writes, Access::FunctionWrite).expect("write lens");
+    let lens = shape.cell_lens(&function.writes, Access::FunctionWrite).expect("write lens");
     let mut cells: Vec<Vec<u8>> = lens.iter().map(|len| vec![0u8; *len]).collect();
     let mut writes: Vec<&mut [u8]> = cells.iter_mut().map(Vec::as_mut_slice).collect();
     handle.eval(k as u32, &reads, &mut writes, &[], &mut []).unwrap_or_else(|e| panic!("{e}"));

@@ -1,5 +1,5 @@
 //! The generic device: one `BodyFactory` per body, leaked once and turned into a `Module` by
-//! `thunk::module_with`; each instance it creates (`Interpreted`) runs the body's functions by
+//! `Thunk::module_with`; each instance it creates (`Interpreted`) runs the body's functions by
 //! walking its `analog` block.
 
 use std::sync::Arc;

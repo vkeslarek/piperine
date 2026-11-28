@@ -304,7 +304,7 @@ impl<'a> PoleZeroSolver<'a> {
         size: usize,
     ) -> crate::core::result::Result<Array2<Complex<f64>>> {
         let mut y = Array2::<Complex<f64>>::zeros((size, size));
-        let op = crate::analyses::ac::operating_vector(circuit, dc_point);
+        let op = crate::analyses::ac::AcSystem::operating_vector(circuit, dc_point);
         let amb = piperine_analog_solver::device::Ambient {
             time: 0.0,
             freq: omega / (2.0 * std::f64::consts::PI),

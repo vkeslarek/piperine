@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::rc::Rc;
 
-use piperine_analog_solver::device::{Ambient, AssemblySnapshot};
+use piperine_analog_solver::device::AssemblySnapshot;
 use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use piperine_digital_solver::advance::Advance as DigitalAdvance;
 use piperine_digital_solver::landing::{LandingCause as DigitalLandingCause, TimePointRule};
@@ -30,7 +30,7 @@ use crate::protocol::{
 };
 use crate::analyses::dc::DcSolver;
 use crate::analyses::transient::{DeviceMark, DeviceRun, TransientSolver};
-use crate::core::bind::{Bound, NameMap, Site};
+use crate::core::bind::{Bound, NameMap};
 use crate::core::result::{ReentryState, TransientStep};
 
 impl From<DigitalLandingCause> for LandingCause {
@@ -46,28 +46,8 @@ impl From<DigitalLandingCause> for LandingCause {
     }
 }
 
-/// An instant that does not go quiet (`E0501`) as the owner reports it, naming
-/// the bound it ran into: the engine's own text names the nets and the tick, not the bound.
-pub(crate) fn instant_error(e: DigitalError, microsteps: usize) -> Error {
-    match e {
-        DigitalError::NotQuiet { .. } => Error::simple(SolverDomain::Digital, format!("{e} (the bound is {microsteps} microsteps)")),
-        other => digital_error(other),
-    }
-}
 
-/// A digital failure as the owner reports it (the text keeps every typed field).
-pub(crate) fn digital_error(e: DigitalError) -> Error {
-    if let DigitalError::Unsettled { tick, drives, .. } = e {
-        return Error::Unsettled { domain: SolverDomain::Digital, tick, drives };
-    }
-    Error::simple(SolverDomain::Digital, e.to_string())
-}
 
-/// A `Digital` over an empty plan: what `Bound` holds while a run owns the real one.
-pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
-    let plan = DigitalPlan::bind(Vec::new(), Vec::new(), Resolution { seconds_per_tick }).map_err(digital_error)?;
-    Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::default()))
-}
 
 /// The discrete side's settled state at the top of a transient step: the
 /// engine's checkpoint and every net's bytes, which the analog side attaches
@@ -102,6 +82,29 @@ pub(crate) struct DigitalSide {
 }
 
 impl DigitalSide {
+    /// An instant that does not go quiet (`E0501`) as the owner reports it, naming
+    /// the bound it ran into: the engine's own text names the nets and the tick, not the bound.
+    pub(crate) fn instant_error(e: DigitalError, microsteps: usize) -> Error {
+        match e {
+            DigitalError::NotQuiet { .. } => Error::simple(SolverDomain::Digital, format!("{e} (the bound is {microsteps} microsteps)")),
+            other => DigitalSide::digital_error(other),
+        }
+    }
+
+    /// A digital failure as the owner reports it (the text keeps every typed field).
+    pub(crate) fn digital_error(e: DigitalError) -> Error {
+        if let DigitalError::Unsettled { tick, drives, .. } = e {
+            return Error::Unsettled { domain: SolverDomain::Digital, tick, drives };
+        }
+        Error::simple(SolverDomain::Digital, e.to_string())
+    }
+
+    /// A `Digital` over an empty plan: what `Bound` holds while a run owns the real one.
+    pub(crate) fn empty_digital(seconds_per_tick: f64) -> Result<Digital> {
+        let plan = DigitalPlan::bind(Vec::new(), Vec::new(), Resolution { seconds_per_tick }).map_err(DigitalSide::digital_error)?;
+        Ok(Digital::new(plan, DigitalLimits::default(), TimePointRule::default()))
+    }
+
     /// The discrete side of `digital` for an analysis whose kind is the global
     /// constant `analysis` (`DC`, `TRAN`, `AC` or `NOISE`).
     pub(crate) fn new(digital: Digital, bound: &Bound, analysis: u32) -> Result<DigitalSide> {
@@ -243,7 +246,7 @@ impl DiscreteSide for DigitalSide {
     type Mark = DigitalMark;
 
     fn start(&mut self, at: Tick) -> Result<()> {
-        self.digital.start_at(DigitalTick(at)).map_err(digital_error)?;
+        self.digital.start_at(DigitalTick(at)).map_err(DigitalSide::digital_error)?;
         for (net, bytes) in &self.on_start {
             // A param bound before the run holds that value from the start: it is no change (§5.3.1).
             if self.digital.plan().nets[net.0 as usize].param {
@@ -251,7 +254,7 @@ impl DiscreteSide for DigitalSide {
             } else {
                 // a value the host gave before the run is the carrier's initial value (§5.3, D8)
                 self.digital.expect_initial(*net);
-                self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(digital_error)?;
+                self.digital.host_commit(*net, 0, bytes, DigitalTick(at)).map_err(DigitalSide::digital_error)?;
             }
         }
         Ok(())
@@ -263,7 +266,7 @@ impl DiscreteSide for DigitalSide {
 
     fn advance(&mut self, to: Tick) -> Result<Advance> {
         let microsteps = self.microsteps;
-        Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| instant_error(e, microsteps))? {
+        Ok(match self.digital.advance(DigitalTick(to)).map_err(|e| DigitalSide::instant_error(e, microsteps))? {
             DigitalAdvance::Reached => Advance::Reached,
             DigitalAdvance::Landing { tick, cause } => Advance::Landing { tick: tick.0, cause: cause.into() },
             DigitalAdvance::Final(tick) => Advance::Final(tick.0),
@@ -271,7 +274,7 @@ impl DiscreteSide for DigitalSide {
     }
 
     fn fire(&mut self, net: u32, at: Tick) -> Result<()> {
-        self.digital.fire(NetId(net), DigitalTick(at)).map_err(digital_error)
+        self.digital.fire(NetId(net), DigitalTick(at)).map_err(DigitalSide::digital_error)
     }
 
     fn reopen(&mut self, at: Tick, next_microstep: bool) {
@@ -290,7 +293,7 @@ impl DiscreteSide for DigitalSide {
         let limit = DigitalHorizon { stop: DigitalTick(limit.stop), crossing: DigitalTick(limit.crossing) };
         let mode = Mode { is_static: mode.is_static, settle: mode.settle };
         let microsteps = self.microsteps;
-        let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| instant_error(e, microsteps))?;
+        let out = self.digital.run_instant(DigitalTick(at), samples, limit, mode).map_err(|e| DigitalSide::instant_error(e, microsteps))?;
         // read against the copy as it stood before the instant, so it is taken first
         let passing = self.passing_slots(out.passing)?;
         let mut boundary = self.changed_slots(out.boundary)?;
@@ -333,7 +336,7 @@ impl DiscreteSide for DigitalSide {
     }
 
     fn shadow(&self, net: u32, offset: u32, bytes: &[u8]) -> Result<Shadow> {
-        Ok(match self.digital.shadow(NetId(net), offset, bytes).map_err(digital_error)? {
+        Ok(match self.digital.shadow(NetId(net), offset, bytes).map_err(DigitalSide::digital_error)? {
             DigitalShadow::Accept => Shadow::Accept,
             DigitalShadow::Refused { check } => Shadow::Refused { check },
             DigitalShadow::Reshape { instance } => Shadow::Reshape { instance },
@@ -341,7 +344,7 @@ impl DiscreteSide for DigitalSide {
     }
 
     fn host_commit(&mut self, net: u32, offset: u32, bytes: &[u8], at: Tick) -> Result<()> {
-        self.digital.host_commit(NetId(net), offset, bytes, DigitalTick(at)).map_err(digital_error)
+        self.digital.host_commit(NetId(net), offset, bytes, DigitalTick(at)).map_err(DigitalSide::digital_error)
     }
 
     fn net(&self, id: u32) -> Option<&[u8]> {
@@ -392,35 +395,8 @@ impl DiscreteSide for DigitalSide {
     }
 }
 
-/// The net of an instance's event pin (a `CROSS` watch's), as bind placed it.
-fn event_net(names: &NameMap, instance: usize, pin: u32) -> Result<u32> {
-    match names.pins.get(instance).and_then(|p| p.get(pin as usize)) {
-        Some(Site::Net(n)) => Ok(n.0),
-        _ => Err(Error::simple(
-            SolverDomain::Device,
-            format!("instance `{}`: crossing event pin {pin} is bound to no net", names.instances[instance]),
-        )),
-    }
-}
 
-/// An accepted solution of the assembly, as the discrete side reads it.
-pub(crate) fn accepted(bound: &mut Bound, x: &[f64], amb: Ambient) -> Result<(Accepted, f64)> {
-    let acc = bound.analog.accept(x, amb)?;
-    let fired = acc.fired.iter().map(|(i, p)| event_net(&bound.names, *i, *p)).collect::<Result<Vec<u32>>>()?;
-    Ok((Accepted { fired, samples: bound.analog.samples(x) }, acc.cap))
-}
 
-/// The trace records of the assembly, as the sink reads them.
-pub(crate) fn traces(bound: &mut Bound, time: f64, out: &mut Vec<Observation>) {
-    for t in bound.analog.drain_traces() {
-        out.push(Observation {
-            path: format!("{}.{}", t.instance, t.watch),
-            analysis: Default::default(),
-            time,
-            kind: ObservationKind::Trace { iteration: t.iteration as u32, bytes: t.bytes },
-        });
-    }
-}
 
 /// The analog side of an operating point: the DC driver's plan and the assembly.
 pub(crate) struct EquilibriumSide<'s, 'c> {
@@ -468,7 +444,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
     fn equilibrium(&mut self) -> Result<Accepted> {
         let x = self.dc.equilibrium(self.solution.is_none())?;
         let amb = self.dc.system.ambient();
-        let (acc, _cap) = accepted(self.bound(), x.as_slice().expect("a contiguous solution"), amb)?;
+        let (acc, _cap) = self.bound().accepted(x.as_slice().expect("a contiguous solution"), amb)?;
         self.solution = Some(x);
         Ok(acc)
     }
@@ -482,7 +458,7 @@ impl AnalogSide for EquilibriumSide<'_, '_> {
     }
 
     fn drain_traces(&mut self, out: &mut Vec<Observation>) {
-        traces(self.bound(), 0.0, out);
+        self.bound().drain_traces(0.0, out);
     }
 }
 
@@ -550,7 +526,7 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn equilibrium(&mut self) -> Result<Accepted> {
         let (x, amb) = self.tran.device_op_round(&mut self.run)?;
-        let (acc, cap) = accepted(self.tran.device_bound(), x.as_slice().expect("a contiguous solution"), amb)?;
+        let (acc, cap) = self.tran.device_bound().accepted(x.as_slice().expect("a contiguous solution"), amb)?;
         self.run.set_cap(cap);
         Ok(acc)
     }
@@ -574,7 +550,7 @@ impl AnalogSide for TransientSide<'_, '_> {
 
     fn drain_traces(&mut self, out: &mut Vec<Observation>) {
         let time = self.run.attempted();
-        traces(self.tran.device_bound(), time, out);
+        self.tran.device_bound().drain_traces(time, out);
     }
 
     fn solution(&self) -> &[f64] {

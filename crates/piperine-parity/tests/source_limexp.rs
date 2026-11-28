@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 
 use piperine_abi::caller::Handle;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_parity::backend::{Backend, BackendSelection};
 use piperine_parity::bench::Bench;
 use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
@@ -129,7 +129,7 @@ impl CompiledDiode {
         let shape = self.handle.shape();
         let k = shape.functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
         let function = shape.functions.get(k).expect("the function");
-        let lens = cell_lens(shape, &function.writes, Access::FunctionWrite).expect("write lens");
+        let lens = shape.cell_lens(&function.writes, Access::FunctionWrite).expect("write lens");
         let mut cells: Vec<Vec<u8>> = lens.iter().map(|len| vec![0u8; *len]).collect();
         let mut writes: Vec<&mut [u8]> = cells.iter_mut().map(Vec::as_mut_slice).collect();
         let wanted = vec![1u8; function.partials.len()];

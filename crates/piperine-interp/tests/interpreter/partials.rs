@@ -4,9 +4,9 @@
 //! the proposed value so `pnjlim` returns it.
 
 use piperine_abi::caller::Handle;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::{Cell, Shape, ambient, cell, part, role};
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::verify::Verdict;
 
 use crate::models;
 
@@ -81,11 +81,11 @@ fn every_m1_function_passes_verify_partials() {
         let handle = Handle::create(m.module(body), &[]).unwrap_or_else(|e| panic!("create {body}: {e}"));
         let shape = handle.shape();
         for (k, f) in shape.functions.iter().enumerate() {
-            let lens = cell_lens(shape, &f.reads, Access::FunctionRead).expect("lens");
+            let lens = shape.cell_lens(&f.reads, Access::FunctionRead).expect("lens");
             let mut exact = 0;
             for (i, bias) in Bias::POINTS.iter().enumerate() {
                 let point: Vec<Vec<u8>> = f.reads.iter().zip(&lens).map(|(c, len)| bias.bytes(shape, c, *len)).collect();
-                match verify_partials(&handle, k as u32, &point, 1e-6) {
+                match Verdict::of_partials(&handle, k as u32, &point, 1e-6) {
                     Ok(Verdict::Exact) => exact += 1,
                     Ok(other) => panic!("{body} {} at point {i}: {other:?}", f.name.as_str()),
                     Err(e) => panic!("{body} {} at point {i} faulted: {e}", f.name.as_str()),

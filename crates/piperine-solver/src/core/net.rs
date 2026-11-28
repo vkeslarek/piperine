@@ -6,12 +6,14 @@
 //! loops use. `Net` is the one *public* identity over all of them: a
 //! dense index for the fast path paired with a [`NetKind`] and a stable label,
 //! so diagnostics, queries, and result mapping treat `v(out)`, `i(vsrc)`, a
-//! digital net, and `GND` symmetrically.
+//! digital net, and `gnd` symmetrically.
 
 use std::fmt;
 use std::sync::Arc;
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, Netlist};
+
+use crate::core::ground::GroundName;
 
 /// What kind of solved signal a [`Net`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -44,6 +46,20 @@ pub struct Net {
 }
 
 impl Net {
+    /// The `v(node)` / `i(branch)` label an analog variable carries as a [`Net`].
+    fn analog_label(variable: &AnalogVariable) -> String {
+        match variable {
+            AnalogVariable::Node(node) => format!("v({node})"),
+            AnalogVariable::Branch(branch) => match &branch.name {
+                Some(name) => format!("i({}.{})", branch.component, name),
+                None => format!("i({})", branch.component),
+            },
+            AnalogVariable::Time => "time".into(),
+            AnalogVariable::Frequency => "freq".into(),
+            AnalogVariable::Iteration => "iter".into(),
+        }
+    }
+
     const NONE: usize = usize::MAX;
 
     /// An analog node voltage at dense index `dense`.
@@ -76,12 +92,12 @@ impl Net {
         }
     }
 
-    /// The ground pseudo net: no solved unknown, canonical label `GND`.
+    /// The ground pseudo net: no solved unknown, label `gnd` (its one spelling, [`GroundName`]).
     pub fn ground() -> Self {
         Self {
             dense: Self::NONE,
             kind: NetKind::Pseudo,
-            label: "GND".into(),
+            label: GroundName::TEXT.into(),
             analog: None,
         }
     }
@@ -122,23 +138,10 @@ impl fmt::Display for Net {
     }
 }
 
-/// The `v(node)` / `i(branch)` label an analog variable carries as a [`Net`].
-fn analog_label(variable: &AnalogVariable) -> String {
-    match variable {
-        AnalogVariable::Node(node) => format!("v({node})"),
-        AnalogVariable::Branch(branch) => match &branch.name {
-            Some(name) => format!("i({}.{})", branch.component, name),
-            None => format!("i({})", branch.component),
-        },
-        AnalogVariable::Time => "time".into(),
-        AnalogVariable::Frequency => "freq".into(),
-        AnalogVariable::Iteration => "iter".into(),
-    }
-}
 
 impl From<&AnalogReference> for Net {
     fn from(reference: &AnalogReference) -> Self {
-        let label = analog_label(reference.variable());
+        let label = Net::analog_label(reference.variable());
         let dense = reference.idx().unwrap_or(Net::NONE);
         let variable: Arc<AnalogVariable> = reference.variable().clone();
         let kind = match reference.variable().as_ref() {
@@ -198,7 +201,7 @@ mod tests {
         assert_eq!(net.kind(), NetKind::Pseudo);
         assert_eq!(net.dense(), None);
         assert!(net.is_ground());
-        assert_eq!(net.label(), "GND");
+        assert_eq!(net.label(), "gnd");
     }
 
     #[test]

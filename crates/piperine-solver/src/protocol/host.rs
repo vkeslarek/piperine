@@ -52,29 +52,30 @@ impl HostCx<'_> {
 /// A host waiter.
 pub type Waiter = Box<dyn FnMut(&mut HostCx<'_>)>;
 
-/// Checks a host write on the shadow, then commits it at `at`.
-pub(super) fn host_write<D: DiscreteSide>(
-    discrete: &mut D,
-    in_transient: bool,
-    net: u32,
-    offset: u32,
-    bytes: &[u8],
-    at: Tick,
-) -> Result<SetOutcome> {
-    Ok(match discrete.shadow(net, offset, bytes)? {
-        Shadow::Accept => {
-            discrete.host_commit(net, offset, bytes, at)?;
-            SetOutcome::Committed
-        }
-        Shadow::Refused { check } => SetOutcome::Refused { reason: format!("check {check} is false") },
-        Shadow::Reshape { instance } if in_transient => {
-            SetOutcome::Refused { reason: format!("instance {instance} would need another shape inside a transient") }
-        }
-        Shadow::Reshape { instance } => SetOutcome::Reshape { instance },
-    })
-}
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// Checks a host write on the shadow, then commits it at `at`.
+    pub(super) fn host_write(
+        discrete: &mut D,
+        in_transient: bool,
+        net: u32,
+        offset: u32,
+        bytes: &[u8],
+        at: Tick,
+    ) -> Result<SetOutcome> {
+        Ok(match discrete.shadow(net, offset, bytes)? {
+            Shadow::Accept => {
+                discrete.host_commit(net, offset, bytes, at)?;
+                SetOutcome::Committed
+            }
+            Shadow::Refused { check } => SetOutcome::Refused { reason: format!("check {check} is false") },
+            Shadow::Reshape { instance } if in_transient => {
+                SetOutcome::Refused { reason: format!("instance {instance} would need another shape inside a transient") }
+            }
+            Shadow::Reshape { instance } => SetOutcome::Reshape { instance },
+        })
+    }
+
     /// Writes `bytes` at `offset` of `net` from the host (abi.md §10 "Host
     /// actions"): checked on the discrete side's shadow first (P6), then queued
     /// as a host commit at `at` (a scheduled write) or at the current time.
@@ -89,7 +90,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     pub fn set(&mut self, net: u32, offset: u32, bytes: &[u8], at: Option<f64>) -> Result<SetOutcome> {
         let now_tick = self.now_tick;
         let tick = at.map_or(now_tick, |t| self.tick(t)).max(now_tick);
-        let outcome = host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)?;
+        let outcome = Self::host_write(&mut self.discrete, self.in_transient, net, offset, bytes, tick)?;
         if outcome == SetOutcome::Committed && self.started && !self.in_transient && tick == now_tick {
             let samples = std::mem::take(&mut self.samples);
             let mode = InstantMode { is_static: false, settle: false };
@@ -136,7 +137,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let Protocol { discrete, waiters, .. } = self;
             for event in part.host_events {
                 for (net, waiter) in waiters.iter_mut().filter(|(net, _)| *net == event) {
-                    let mut write = |n: u32, offset: u32, bytes: &[u8]| host_write(discrete, in_transient, n, offset, bytes, at);
+                    let mut write = |n: u32, offset: u32, bytes: &[u8]| Self::host_write(discrete, in_transient, n, offset, bytes, at);
                     waiter(&mut HostCx { time, event: *net, write: &mut write });
                 }
             }

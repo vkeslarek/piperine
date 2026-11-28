@@ -1,6 +1,6 @@
 //! Carriers: their layouts and their pins, the resolved and element-drive pins.
 
-use piperine_abi::layout::{BIT, BYTE, F64, leaf_size};
+use piperine_abi::layout::{BIT, BYTE, F64};
 use piperine_abi::raw::{Field, Layout, List, Str, leaf, pin_flag, role};
 use piperine_abi::shape::{PinSpec, ShapeBuf};
 use piperine_ir::{Body, CarrierRole, Constant, Ir, Origin, ValueType};
@@ -110,7 +110,7 @@ impl CarrierLayout {
                 if v < lo || v > hi {
                     return None;
                 }
-                v.to_le_bytes()[..leaf_size(field.leaf)?].to_vec()
+                v.to_le_bytes()[..Field::leaf_size(field.leaf)?].to_vec()
             }
             _ => return None,
         };
