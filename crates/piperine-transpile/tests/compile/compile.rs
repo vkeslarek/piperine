@@ -22,24 +22,38 @@ use devices::Devices;
 /// descriptor (ETXTBSY); the tests here take turns.
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
-/// The M1 body `build` makes, alone as a design.
-fn design(build: fn(&mut IrBuilder) -> BodyId, name: &str, params: Vec<f64>) -> Ir {
-    let mut b = IrBuilder::new();
-    let body = build(&mut b);
-    let top = Devices::alone(&mut b, body, name, 1, params);
-    b.finish(top)
+/// The M1 bodies, each alone as a design.
+struct DeviceDesigns;
+
+impl DeviceDesigns {
+    /// The M1 body `build` makes, alone as a design.
+    fn design(build: fn(&mut IrBuilder) -> BodyId, name: &str, params: Vec<f64>) -> Ir {
+        let mut b = IrBuilder::new();
+        let body = build(&mut b);
+        let top = Devices::alone(&mut b, body, name, 1, params);
+        b.finish(top)
+    }
+
+    fn resistor() -> Ir {
+        DeviceDesigns::design(Devices::resistor, "R", vec![1000.0])
+    }
+
+    fn capacitor() -> Ir {
+        DeviceDesigns::design(Devices::capacitor, "C", vec![1e-9])
+    }
 }
 
-fn resistor() -> Ir {
-    design(Devices::resistor, "R", vec![1000.0])
-}
+/// A design transpiled and compiled with a given set of settings.
+struct Compilation;
 
-fn capacitor() -> Ir {
-    design(Devices::capacitor, "C", vec![1e-9])
-}
+impl Compilation {
+    fn transpiler(ir: Ir) -> Transpiler {
+        Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}"))
+    }
 
-fn transpiler(ir: Ir) -> Transpiler {
-    Transpiler::new(Arc::new(ir)).unwrap_or_else(|e| panic!("{e}"))
+    fn compile(t: &Transpiler, settings: &Settings) -> Compiled {
+        t.compile(settings).unwrap_or_else(|e| panic!("{e}"))
+    }
 }
 
 /// A compiler wrapper in `dir`: logs each call's arguments to `rustc.log`, then runs the real
@@ -89,10 +103,6 @@ impl Wrapper {
     }
 }
 
-fn compile(t: &Transpiler, settings: &Settings) -> Compiled {
-    t.compile(settings).unwrap_or_else(|e| panic!("{e}"))
-}
-
 // RS-01 AC 1, RS-02 AC 4: each of the five M1 designs compiles with no error and the compiler
 // has nothing to say (a fresh build, so its standard error is the build's).
 #[test]
@@ -100,14 +110,14 @@ fn the_m1_design_compiles_with_no_error_and_no_warning() {
     let cache = tempfile::tempdir().unwrap();
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let bodies = [
-        ("Resistor", resistor()),
-        ("Capacitor", capacitor()),
-        ("Vsource", design(Devices::vsource, "V", vec![0.0, 0.0])),
-        ("Isource", design(Devices::isource, "I", vec![0.0, 0.0])),
-        ("Diode", design(Devices::diode, "D", vec![1e-14, 1.0, 0.0])),
+        ("Resistor", DeviceDesigns::resistor()),
+        ("Capacitor", DeviceDesigns::capacitor()),
+        ("Vsource", DeviceDesigns::design(Devices::vsource, "V", vec![0.0, 0.0])),
+        ("Isource", DeviceDesigns::design(Devices::isource, "I", vec![0.0, 0.0])),
+        ("Diode", DeviceDesigns::design(Devices::diode, "D", vec![1e-14, 1.0, 0.0])),
     ];
     for (name, ir) in bodies {
-        let compiled = compile(&transpiler(ir), &settings);
+        let compiled = Compilation::compile(&Compilation::transpiler(ir), &settings);
         let report = compiled.report();
         assert!(!report.cache_hit, "{name}: a first build");
         assert_eq!(report.warnings, "", "{name}: rustc has no warning for the generated source");
@@ -123,14 +133,14 @@ fn a_second_build_runs_no_compiler() {
     let work = tempfile::tempdir().unwrap();
     let wrapper = Wrapper::new(work.path(), "rustc", "one", false);
     let settings = wrapper.settings(&work.path().join("cache"));
-    let t = transpiler(resistor());
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
 
-    let first = compile(&t, &settings);
+    let first = Compilation::compile(&t, &settings);
     let after_first = wrapper.builds();
     assert_eq!(after_first.len(), 2, "the ABI rlib and the design's cdylib: {after_first:?}");
     let calls_before = wrapper.calls().len();
 
-    let second = compile(&t, &settings);
+    let second = Compilation::compile(&t, &settings);
     assert_eq!(wrapper.builds(), after_first, "the second build ran no compiler");
     // RS-04 AC 1 as amended (verification F6): the warm build ran the version probe the key
     // needs (RS-Q3) and nothing else
@@ -150,8 +160,8 @@ fn a_changed_ir_is_another_entry() {
     let wrapper = Wrapper::new(work.path(), "rustc", "one", false);
     let settings = wrapper.settings(&work.path().join("cache"));
 
-    let resistor = compile(&transpiler(resistor()), &settings);
-    let capacitor = compile(&transpiler(capacitor()), &settings);
+    let resistor = Compilation::compile(&Compilation::transpiler(DeviceDesigns::resistor()), &settings);
+    let capacitor = Compilation::compile(&Compilation::transpiler(DeviceDesigns::capacitor()), &settings);
     assert_ne!(resistor.source_path(), capacitor.source_path());
     assert_ne!(resistor.entry().dir(), capacitor.entry().dir());
     assert!(resistor.entry().library().is_file() && capacitor.entry().library().is_file());
@@ -170,15 +180,15 @@ fn another_compiler_version_is_another_entry() {
     let cache = work.path().join("cache");
     let a = Wrapper::new(work.path(), "rustc-a", "build A", false);
     let b = Wrapper::new(work.path(), "rustc-b", "build B", false);
-    let t = transpiler(resistor());
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
 
-    let with_a = compile(&t, &a.settings(&cache));
-    let with_b = compile(&t, &b.settings(&cache));
+    let with_a = Compilation::compile(&t, &a.settings(&cache));
+    let with_b = Compilation::compile(&t, &b.settings(&cache));
     assert_ne!(with_a.entry().dir(), with_b.entry().dir());
     assert!(!with_b.report().cache_hit, "the other compiler text is a miss");
     assert_eq!(b.builds().len(), 2, "the other compiler built the ABI and the design again: {:?}", b.builds());
     // and each compiler text is a hit on its own entry afterwards
-    assert!(compile(&t, &a.settings(&cache)).report().cache_hit);
+    assert!(Compilation::compile(&t, &a.settings(&cache)).report().cache_hit);
     assert_eq!(a.builds().len(), 2);
 }
 
@@ -190,7 +200,7 @@ fn a_compile_error_keeps_the_source_and_shows_stderr() {
     let work = tempfile::tempdir().unwrap();
     let wrapper = Wrapper::new(work.path(), "rustc", "one", true);
     let cache = work.path().join("cache");
-    let t = transpiler(resistor());
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
     let err = t.compile(&wrapper.settings(&cache)).expect_err("the compiler fails");
     let Error::CompileFailed { stderr, source } = &err else { panic!("{err:?}") };
     assert!(stderr.contains("boom from the wrapper"), "{stderr}");
@@ -209,9 +219,9 @@ fn a_corrupted_library_is_rebuilt() {
     let work = tempfile::tempdir().unwrap();
     let wrapper = Wrapper::new(work.path(), "rustc", "one", false);
     let settings = wrapper.settings(&work.path().join("cache"));
-    let t = transpiler(resistor());
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
 
-    let first = compile(&t, &settings);
+    let first = Compilation::compile(&t, &settings);
     let library = first.entry().library();
     let mut bad = std::fs::read(&library).unwrap();
     bad.extend_from_slice(b"corrupted");
@@ -222,7 +232,7 @@ fn a_corrupted_library_is_rebuilt() {
     std::fs::rename(&scratch, &library).unwrap();
     assert_eq!(wrapper.builds().len(), 2);
 
-    let again = compile(&t, &settings);
+    let again = Compilation::compile(&t, &settings);
     assert!(!again.report().cache_hit, "a corrupted entry is not a hit");
     assert_eq!(wrapper.builds().len(), 3, "one rebuild: {:?}", wrapper.builds());
     assert!(wrapper.builds()[2].contains("--crate-type cdylib"));
@@ -239,8 +249,8 @@ fn a_corrupted_library_is_rebuilt() {
 fn the_source_is_kept_beside_the_library_and_reported() {
     let cache = tempfile::tempdir().unwrap();
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-    let t = transpiler(resistor());
-    let compiled = compile(&t, &settings);
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
+    let compiled = Compilation::compile(&t, &settings);
     let source = compiled.source_path();
     assert_eq!(source.file_name().unwrap(), "design.rs");
     assert_eq!(std::fs::read_to_string(&source).unwrap(), t.source().unwrap());
@@ -255,15 +265,15 @@ fn the_source_is_kept_beside_the_library_and_reported() {
 fn a_build_reports_its_cost() {
     let cache = tempfile::tempdir().unwrap();
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-    let t = transpiler(resistor());
+    let t = Compilation::transpiler(DeviceDesigns::resistor());
 
-    let built = compile(&t, &settings);
+    let built = Compilation::compile(&t, &settings);
     let r = built.report();
     assert!(!r.cache_hit);
     assert_eq!(r.rustc_invocations, 2, "the ABI rlib and the cdylib");
     assert!(r.transpile > Duration::ZERO && r.compile > Duration::ZERO && r.load > Duration::ZERO, "{r:?}");
 
-    let hit = compile(&t, &settings);
+    let hit = Compilation::compile(&t, &settings);
     let r = hit.report();
     assert!(r.cache_hit);
     assert_eq!(r.rustc_invocations, 0);

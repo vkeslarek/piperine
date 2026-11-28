@@ -42,7 +42,7 @@ fn clock_src_reads_its_waveform() {
             falling += usize::from(v == 1.0);
             continue;
         }
-        assert_eq!(v, MixedSignalCases::at(period, s.time()), "v(clk) at t = {:e}", s.time());
+        assert_eq!(v, MixedSignalRead::at(period, s.time()), "v(clk) at t = {:e}", s.time());
     }
     assert_eq!(falling, 3, "each falling edge is a landing, read on the level before it");
 }
@@ -72,10 +72,10 @@ fn a_comparator_and_toggle_divide_the_clock() {
     assert_eq!(bound.digital.read(bound.names.nets["net:c"]), LOW, "the clock is low at 2.9 ms");
 }
 
-/// The helpers of the mixed_signal tests.
-pub struct MixedSignalCases;
+/// A mixed-signal value read at a time.
+struct MixedSignalRead;
 
-impl MixedSignalCases {
+impl MixedSignalRead {
     /// `ClockSrc::at` of `tests/helpers/devices.rs`.
     fn at(period: f64, t: f64) -> f64 {
         let ph = t - period * (t / period).floor();

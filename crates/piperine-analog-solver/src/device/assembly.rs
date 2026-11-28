@@ -6,19 +6,17 @@
 //! `set_discrete` (abi.md §10). A non-finite value or seeded partial that the
 //! solve reads fails it, naming instance, cell and origin (A4).
 
-use piperine_abi::raw::{ambient, op, watch};
+use piperine_abi::raw::{Cell, Shape, ambient, cell, kind, op, part, watch};
 
-use super::ddt::{History, Stage, companion_current, stamp_ddt};
-use super::delay::{Delayed, stamp_delay};
 use super::cell::RealCell;
-use super::device_error;
-use super::flow::{stamp_flow, stamp_rows};
-use super::limit::{LimitState, advance, linear, take_iterates, vetoes};
-use super::watch::{Accepted, TraceRecord, Watched, accept_watches, record_traces, tolerance};
-use super::small_signal::{
-    ComplexStamps, NoiseColumn, SmallSignal, StimulusColumn, TermLinearization, response, stamp_matrix, stimulus,
-};
-use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source, TermPlan};
+use super::ddt::{DdtStamp, History, Stage};
+use super::delay::{DelayStamp, Delayed};
+use super::flow::FlowStamp;
+use super::limit::{LimitState, Limits};
+use super::slot_view::SlotView;
+use super::small_signal::{ComplexStamps, NoiseColumn, SmallSignal, StimulusColumn, TermLinearization};
+use super::watch::{Accepted, TraceRecord, Watched, Watches};
+use super::plan::{AnalogPlan, FnPlan, InstancePlan, Source};
 use crate::error::{Error, RunCode, SolverDomain};
 use crate::math::integration::DdtState;
 use crate::math::linear::Stamp;
@@ -71,6 +69,30 @@ impl FnState {
     pub fn f64(&self, w: usize) -> f64 {
         RealCell::read(&self.out[w])
     }
+
+    /// Calls function `f` of `inst` unless its read bytes are those of its last call (F3);
+    /// whether it was called. Its `TRACE` buffers start each call empty (A5).
+    pub fn call(&mut self, inst: &InstancePlan, f: &FnPlan, ctx: &Reads<'_>, scratch: &mut Vec<u8>) -> Result<bool, Error> {
+        scratch.clear();
+        for (source, len) in &f.reads {
+            ctx.push(*source, *len, scratch);
+        }
+        if self.valid && self.read == *scratch {
+            return Ok(false);
+        }
+        for (slot, _) in &f.traces {
+            self.out[*slot].fill(0);
+        }
+        self.jac.fill(0.0);
+        self.valid = false;
+        inst.handle.eval_packed(f.k, scratch, &mut self.out, &f.seed, &mut self.jac).map_err(|e| {
+            Error::device(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
+        })?;
+        self.read.clear();
+        self.read.extend_from_slice(scratch);
+        self.valid = true;
+        Ok(true)
+    }
 }
 
 /// The mutable side of one instance.
@@ -84,6 +106,70 @@ pub(crate) struct InstanceState {
     pub delay: Vec<Delayed>,
     /// Per watch.
     pub watched: Vec<Watched>,
+}
+
+impl InstanceState {
+    /// A4: every term value, limit iterate and seeded partial a Newton solve
+    /// reads is finite, and the strengths the sweep `need` names.
+    fn check_finite(&self, inst: &InstancePlan, need: Need) -> Result<(), Error> {
+    let fail = |cell: String, origin: &str, v: f64| {
+            Err(Error::run(
+                RunCode::E0507,
+                SolverDomain::Device,
+                format!(
+                    "instance `{}`: {cell} ({origin}) is not finite: {v} (abi.md A4; §17.1 rule 4: a \
+                     contribution or stamp shall not be NaN or infinity)",
+                    inst.path
+                ),
+            ))
+        };
+        for t in &inst.terms {
+            let Some((fi, w)) = t.value else { continue };
+            let fs = &self.fns[fi];
+            let v = fs.f64(w);
+            if !v.is_finite() {
+                return fail(format!("term `{}`", t.name), &t.origin, v);
+            }
+            if let Some((tf, tw)) = t.td {
+                let td = self.fns[tf].f64(tw);
+                if !td.is_finite() {
+                    return fail(format!("term `{}`.TIME", t.name), &t.origin, td);
+                }
+            }
+            for p in t.direct.iter().map(|(p, _)| p).chain(t.via.iter().map(|(p, _)| p)) {
+                if !fs.jac[*p].is_finite() {
+                    let f = &inst.functions[fi];
+                    return fail(format!("partial {p} of term `{}` in function `{}`", t.name, f.name), &t.origin, fs.jac[*p]);
+                }
+            }
+        }
+        for x in &inst.inputs {
+            for (what, at) in [("PROPOSED", x.proposed), ("LIMITED", x.limited)] {
+                let Some((fi, w)) = at else { continue };
+                let v = self.fns[fi].f64(w);
+                if !v.is_finite() {
+                    return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
+                }
+            }
+            // Strengths only where the sweep reads them (A4).
+            for (what, at, read) in [("RE", x.re, need.stim), ("IM", x.im, need.stim), ("PSD", x.psd, need.noise)] {
+                let Some((fi, w)) = at.filter(|_| read) else { continue };
+                let v = self.fns[fi].f64(w);
+                if !v.is_finite() {
+                    return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
+                }
+            }
+            if let Some((fi, _)) = x.proposed {
+                for (p, _) in &x.p {
+                    let v = self.fns[fi].jac[*p];
+                    if !v.is_finite() {
+                        return fail(format!("partial {p} of input `{}`.PROPOSED", x.name), &x.origin, v);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// A `CROSS` watch that went from `≤ 0` at the last accepted solution to `> 0` at a solution
@@ -194,16 +280,16 @@ impl Assembly {
                         f.rows || (need.stim && f.stim) || (need.noise && f.noise) || (need.watch && f.watch);
                     if needed && f.limits == pass {
                         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
-                        if run(inst, f, &mut st.fns[fi], &ctx, &mut self.scratch)? {
-                            record_traces(inst, f, &st.fns[fi], self.iteration, &mut self.traces);
+                        if st.fns[fi].call(inst, f, &ctx, &mut self.scratch)? {
+                            Watches::new(inst).record_traces(f, &st.fns[fi], self.iteration, &mut self.traces);
                         }
                     }
                 }
                 if pass {
-                    take_iterates(inst, st, need.small_signal);
+                    Limits::new(inst).take_iterates(st, need.small_signal);
                 }
             }
-            check_finite(inst, st, need)?;
+            st.check_finite(inst, need)?;
         }
         Ok(())
     }
@@ -213,7 +299,7 @@ impl Assembly {
     pub fn limiting_active(&self) -> Vec<LimitState> {
         let mut out = Vec::new();
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
-            vetoes(inst, st, &mut out);
+            Limits::new(inst).vetoes(st, &mut out);
         }
         out
     }
@@ -223,7 +309,7 @@ impl Assembly {
     pub fn end_iteration(&mut self) {
         self.iteration += 1;
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
-            advance(inst, st, 2);
+            Limits::new(inst).advance(st, 2);
         }
     }
 
@@ -236,12 +322,13 @@ impl Assembly {
         self.iteration = 0;
         let mut acc = Accepted { fired: Vec::new(), cap: f64::INFINITY };
         for (index, (inst, st)) in self.plan.instances.iter().zip(self.state.iter_mut()).enumerate() {
-            accept_watches(index, inst, st, &self.slots, &self.written, &mut acc)?;
-            advance(inst, st, 1);
+            let slots = SlotView { bytes: &self.slots, written: &self.written };
+            Watches::new(inst).accept(index, st, &slots, &mut acc)?;
+            Limits::new(inst).advance(st, 1);
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DELAY {
-                    let v = linear(t, inst, st).v;
-                    st.delay[ti].push(amb.time, v, max_of(t, &self.slots, &self.written));
+                    let v = Limits::new(inst).linear(t, st).v;
+                    st.delay[ti].push(amb.time, v, slots.bound_of(t));
                 }
             }
         }
@@ -260,7 +347,9 @@ impl Assembly {
     pub fn rising(&mut self, x: &[f64], amb: Ambient) -> Result<Vec<Rising>, Error> {
         self.evaluate_for(x, amb, Need::ACCEPT)?;
         let mut out = Vec::new();
+        let slots = SlotView { bytes: &self.slots, written: &self.written };
         for (index, (inst, st)) in self.plan.instances.iter().zip(&self.state).enumerate() {
+            let watches = Watches::new(inst);
             for (wi, w) in inst.watches.iter().enumerate() {
                 let Some((fi, slot)) = w.value.filter(|_| w.kind == watch::CROSS) else { continue };
                 let now = st.fns[fi].f64(slot);
@@ -271,8 +360,8 @@ impl Assembly {
                         watch: wi,
                         before,
                         now,
-                        ttol: tolerance(inst, w, "ttol", w.ttol, &self.slots, &self.written)?,
-                        etol: tolerance(inst, w, "etol", w.etol, &self.slots, &self.written)?,
+                        ttol: watches.tolerance(w, "ttol", w.ttol, &slots)?,
+                        etol: watches.tolerance(w, "etol", w.etol, &slots)?,
                     });
                 }
             }
@@ -367,18 +456,27 @@ impl Assembly {
         self.evaluate(x, amb)?;
         self.stage = stage;
         out.clear();
+        let slots = SlotView { bytes: &self.slots, written: &self.written };
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
             for (ti, t) in inst.terms.iter().enumerate() {
-                let lin = linear(t, inst, st);
+                let linear = Limits::new(inst).linear(t, st);
                 match (t.op, stage) {
-                    (op::DDT, Some(stage)) => stamp_ddt(t, &lin, &st.ddt[ti], stage, x, out),
-                    (op::DDT, None) => stamp_rows(t, &lin, 0.0, 0.0, out),
+                    (op::DDT, Some(stage)) => DdtStamp { term: t, linear, history: &st.ddt[ti], stage }.stamp(x, out),
+                    (op::DDT, None) => FlowStamp::new(t, linear).rows(0.0, 0.0, out),
                     (op::DELAY, Some(_)) => {
                         let td = t.td.map_or(0.0, |(f, w)| st.fns[f].f64(w));
-                        let at = (amb.time, td, max_of(t, &self.slots, &self.written));
-                        stamp_delay(&inst.path, t, &lin, &st.delay[ti], at, x, out)?;
+                        let delay = DelayStamp {
+                            path: &inst.path,
+                            term: t,
+                            linear,
+                            history: &st.delay[ti],
+                            now: amb.time,
+                            delay: td,
+                            max: slots.bound_of(t),
+                        };
+                        delay.stamp(x, out)?;
                     }
-                    _ => stamp_flow(t, &lin, x, out),
+                    _ => FlowStamp::new(t, linear).norton(x, out),
                 }
             }
         }
@@ -393,10 +491,9 @@ impl Assembly {
         let omega = 2.0 * std::f64::consts::PI * amb.freq;
         let (mut matrix, mut rhs) = (Vec::new(), Vec::new());
         for (inst, st) in self.plan.instances.iter().zip(&self.state) {
+            let small_signal = SmallSignal::new(inst, st, omega);
             for t in &inst.terms {
-                let w = response(t, st, omega);
-                stamp_matrix(t, &linear(t, inst, st), w, &mut matrix);
-                stimulus(t, inst, st, w, &mut rhs);
+                small_signal.stamp_term(t, &mut matrix, &mut rhs);
             }
         }
         Ok((matrix, rhs))
@@ -441,7 +538,7 @@ impl Assembly {
     ) -> Result<TermLinearization, Error> {
         let index = self.instance_index(instance)?;
         let Some(term_index) = self.plan.instances[index].terms.iter().position(|t| t.name == term) else {
-            return Err(device_error(format!("instance `{instance}` has no term `{term}`")));
+            return Err(Error::device(format!("instance `{instance}` has no term `{term}`")));
         };
         self.evaluate_for(operating_point, ambient, Need { small_signal: true, ..Need::NEWTON })?;
         let omega = 2.0 * std::f64::consts::PI * ambient.freq;
@@ -455,7 +552,7 @@ impl Assembly {
             .instances
             .iter()
             .position(|inst| inst.path == path)
-            .ok_or_else(|| device_error(format!("no instance `{path}` in the plan")))
+            .ok_or_else(|| Error::device(format!("no instance `{path}` in the plan")))
     }
 
     /// Records, for every `DDT` term, its value at the converged solution `x`
@@ -472,8 +569,8 @@ impl Assembly {
         for (inst, st) in self.plan.instances.iter().zip(self.state.iter_mut()) {
             for (ti, t) in inst.terms.iter().enumerate() {
                 if t.op == op::DDT {
-                    let q = linear(t, inst, st).v;
-                    let i = stage.map_or(0.0, |stage| companion_current(stage, q, &st.ddt[ti]));
+                    let q = Limits::new(inst).linear(t, st).v;
+                    let i = stage.map_or(0.0, |stage| st.ddt[ti].companion_current(stage, q));
                     st.ddt[ti].push(q, i);
                 }
             }
@@ -521,57 +618,11 @@ impl Assembly {
         let inst = &self.plan.instances[instance];
         let st = &self.state[instance];
         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
-        let shape = inst.handle.shape();
+        let pins = ParamPins { shape: inst.handle.shape(), listed: wrt };
         let mut d = vec![0.0; inst.terms.len()];
         let mut scratch: Vec<u8> = Vec::new();
         for f in inst.functions.iter().filter(|f| f.rows && !f.limits) {
-            let sf = shape.functions.get(f.k as usize).ok_or_else(|| {
-                device_error(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
-            })?;
-            let pin_d = |c: &piperine_abi::raw::Cell| {
-                let discrete = shape
-                    .pins
-                    .get(c.index as usize)
-                    .is_some_and(|p| p.kind == piperine_abi::raw::kind::DISCRETE);
-                (c.kind == piperine_abi::raw::cell::PIN && discrete)
-                    .then(|| wrt.iter().find(|(q, _)| *q == c.index))
-                    .flatten()
-            };
-            let seed: Vec<u8> = sf
-                .partials
-                .iter()
-                .map(|p| u8::from(sf.reads.get(p.read as usize).is_some_and(|c| pin_d(c).is_some())))
-                .collect();
-            if seed.iter().all(|s| *s == 0) {
-                continue;
-            }
-            scratch.clear();
-            for (source, len) in &f.reads {
-                ctx.push(*source, *len, &mut scratch);
-            }
-            let mut at = 0;
-            let input: Vec<&[u8]> = f
-                .reads
-                .iter()
-                .map(|(_, len)| {
-                    let cell = &scratch[at..at + len];
-                    at += len;
-                    cell
-                })
-                .collect();
-            let mut out: Vec<Vec<u8>> = f.write_lens.iter().map(|n| vec![0; *n]).collect();
-            let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
-            let mut jac = vec![0.0; seed.len()];
-            inst.handle.eval(f.k, &input, &mut output, &seed, &mut jac).map_err(|e| {
-                device_error(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
-            })?;
-            for (pi, p) in sf.partials.iter().enumerate() {
-                let (Some(r), Some(w)) = (sf.reads.get(p.read as usize), sf.writes.get(p.write as usize)) else { continue };
-                let Some((_, dp)) = pin_d(r) else { continue };
-                if w.kind == piperine_abi::raw::cell::TERM && w.part == piperine_abi::raw::part::VALUE {
-                    d[w.index as usize] += jac[pi] * dp;
-                }
-            }
+            pins.add_derivatives(inst, f, &ctx, &mut scratch, &mut d)?;
         }
         let mut out = Vec::new();
         for (t, g) in inst.terms.iter().zip(d) {
@@ -587,6 +638,7 @@ impl Assembly {
         }
         Ok(out)
     }
+
 
     /// The term histories and limit states, to restore when a step is rejected.
     pub fn snapshot(&self) -> AssemblySnapshot {
@@ -609,11 +661,65 @@ impl Assembly {
     }
 }
 
-/// The bound of a `DELAY` term: the `F64` at byte 0 of its `max` slot, or unbounded. A slot the
-/// parameter cone has not written yet (the operating point's first solve comes before the cone's
-/// first run) is unbounded too: its zero bytes are no bound.
-fn max_of(t: &TermPlan, slots: &[Vec<u8>], written: &[bool]) -> f64 {
-    t.max.filter(|s| written[*s]).map_or(f64::INFINITY, |s| RealCell::read(&slots[s]))
+/// The pins of one instance's shape against which a parameter's derivative is known: the
+/// discrete pins `wrt` lists, each with `d`, the derivative of its bytes with respect to the param.
+struct ParamPins<'a> {
+    /// The instance's shape.
+    shape: &'a Shape<'a>,
+    /// Each such pin with `d`.
+    listed: &'a [(u32, f64)],
+}
+
+impl ParamPins<'_> {
+    /// The entry of `listed` for cell `c`, when `c` is one of its discrete pins.
+    fn derivative(&self, c: &Cell) -> Option<&(u32, f64)> {
+        let discrete = self.shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::DISCRETE);
+        (c.kind == cell::PIN && discrete).then(|| self.listed.iter().find(|(q, _)| *q == c.index)).flatten()
+    }
+
+    /// Adds to `d`, per term, `g·d` for every partial `g` of function `f` that a pin of `listed` reaches:
+    /// evaluates `f` seeding only those partials. A function none of them reach is not called.
+    fn add_derivatives(&self, inst: &InstancePlan, f: &FnPlan, ctx: &Reads<'_>, scratch: &mut Vec<u8>, d: &mut [f64]) -> Result<(), Error> {
+        let sf = self.shape.functions.get(f.k as usize).ok_or_else(|| {
+            Error::device(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
+        })?;
+        let seed: Vec<u8> = sf
+            .partials
+            .iter()
+            .map(|p| u8::from(sf.reads.get(p.read as usize).is_some_and(|c| self.derivative(c).is_some())))
+            .collect();
+        if seed.iter().all(|s| *s == 0) {
+            return Ok(());
+        }
+        scratch.clear();
+        for (source, len) in &f.reads {
+            ctx.push(*source, *len, scratch);
+        }
+        let mut at = 0;
+        let input: Vec<&[u8]> = f
+            .reads
+            .iter()
+            .map(|(_, len)| {
+                let cell = &scratch[at..at + len];
+                at += len;
+                cell
+            })
+            .collect();
+        let mut out: Vec<Vec<u8>> = f.write_lens.iter().map(|n| vec![0; *n]).collect();
+        let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+        let mut jac = vec![0.0; seed.len()];
+        inst.handle.eval(f.k, &input, &mut output, &seed, &mut jac).map_err(|e| {
+            Error::device(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
+        })?;
+        for (pi, p) in sf.partials.iter().enumerate() {
+            let (Some(r), Some(w)) = (sf.reads.get(p.read as usize), sf.writes.get(p.write as usize)) else { continue };
+            let Some((_, dp)) = self.derivative(r) else { continue };
+            if w.kind == cell::TERM && w.part == part::VALUE {
+                d[w.index as usize] += jac[pi] * dp;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Which outputs one evaluation needs beyond the rows of a Newton solve.
@@ -669,96 +775,4 @@ impl Reads<'_> {
             }
         }
     }
-}
-
-/// Calls `f` unless its read bytes are those of its last call (F3);
-/// whether it was called. Its `TRACE` buffers start each call empty (A5).
-pub(crate) fn run(
-    inst: &InstancePlan,
-    f: &FnPlan,
-    st: &mut FnState,
-    ctx: &Reads<'_>,
-    scratch: &mut Vec<u8>,
-) -> Result<bool, Error> {
-    scratch.clear();
-    for (source, len) in &f.reads {
-        ctx.push(*source, *len, scratch);
-    }
-    if st.valid && st.read == *scratch {
-        return Ok(false);
-    }
-    for (slot, _) in &f.traces {
-        st.out[*slot].fill(0);
-    }
-    st.jac.fill(0.0);
-    st.valid = false;
-    inst.handle.eval_packed(f.k, scratch, &mut st.out, &f.seed, &mut st.jac).map_err(|e| {
-        device_error(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
-    })?;
-    st.read.clear();
-    st.read.extend_from_slice(scratch);
-    st.valid = true;
-    Ok(true)
-}
-
-/// A4: every term value, limit iterate and seeded partial a Newton solve
-/// reads is finite, and the strengths the sweep `need` names.
-fn check_finite(inst: &InstancePlan, st: &InstanceState, need: Need) -> Result<(), Error> {
-    let fail = |cell: String, origin: &str, v: f64| {
-        Err(Error::run(
-            RunCode::E0507,
-            SolverDomain::Device,
-            format!(
-                "instance `{}`: {cell} ({origin}) is not finite: {v} (abi.md A4; §17.1 rule 4: a \
-                 contribution or stamp shall not be NaN or infinity)",
-                inst.path
-            ),
-        ))
-    };
-    for t in &inst.terms {
-        let Some((fi, w)) = t.value else { continue };
-        let fs = &st.fns[fi];
-        let v = fs.f64(w);
-        if !v.is_finite() {
-            return fail(format!("term `{}`", t.name), &t.origin, v);
-        }
-        if let Some((tf, tw)) = t.td {
-            let td = st.fns[tf].f64(tw);
-            if !td.is_finite() {
-                return fail(format!("term `{}`.TIME", t.name), &t.origin, td);
-            }
-        }
-        for p in t.direct.iter().map(|(p, _)| p).chain(t.via.iter().map(|(p, _)| p)) {
-            if !fs.jac[*p].is_finite() {
-                let f = &inst.functions[fi];
-                return fail(format!("partial {p} of term `{}` in function `{}`", t.name, f.name), &t.origin, fs.jac[*p]);
-            }
-        }
-    }
-    for x in &inst.inputs {
-        for (what, at) in [("PROPOSED", x.proposed), ("LIMITED", x.limited)] {
-            let Some((fi, w)) = at else { continue };
-            let v = st.fns[fi].f64(w);
-            if !v.is_finite() {
-                return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
-            }
-        }
-        // Strengths only where the sweep reads them (A4).
-        for (what, at, read) in [("RE", x.re, need.stim), ("IM", x.im, need.stim), ("PSD", x.psd, need.noise)] {
-            let Some((fi, w)) = at.filter(|_| read) else { continue };
-            let v = st.fns[fi].f64(w);
-            if !v.is_finite() {
-                return fail(format!("input `{}`.{what}", x.name), &x.origin, v);
-            }
-        }
-        if let Some((fi, _)) = x.proposed {
-            for (p, _) in &x.p {
-                let v = st.fns[fi].jac[*p];
-                if !v.is_finite() {
-                    return fail(format!("partial {p} of input `{}`.PROPOSED", x.name), &x.origin, v);
-                }
-            }
-        }
-    }
-    Ok(())
 }

@@ -5,38 +5,16 @@
 //! each run through `piperine::`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-    pub mod standard_library;
-}
+use crate::support;
 
 use piperine::{Field, Overrides, Record};
-use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
+use support::printed::Printed;
 use support::model::{Model, Ran};
 use support::records::Fields;
 use support::refusal::Refusal;
 use support::standard_library::StandardLibrary;
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`4.990040e-1`).
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
 
 /// The operating point of the top `Top`, the run of a file with a top and no analysis named.
 struct OperatingPoint;

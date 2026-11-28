@@ -7,13 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod gaps;
-    pub mod inventory;
-}
+use crate::support;
 
 use support::book::{BlockId, Book, Fingerprint};
 use support::gaps::Gaps;
@@ -659,5 +653,38 @@ fn a_missing_module_or_function_of_a_directory_target_fails() {
     let module = coverage.resolve("piperine-cli/commands::absent::prints_the_table").err().expect("a missing module fails");
     assert!(module.contains("unreadable"), "{module}");
     let function = coverage.resolve("piperine-cli/commands::run::absent").err().expect("a missing function fails");
+    assert!(function.contains("no top-level"), "{function}");
+}
+
+/// A root target whose `main.rs` declares modules, as `tests/book/main.rs` does.
+struct RootDirectoryTarget;
+
+impl RootDirectoryTarget {
+    /// A tree holding `tests/book/main.rs` and `tests/book/chapter.rs` with one test function, the target declared in the manifest.
+    fn planted() -> tempfile::TempDir {
+        let root = tempfile::tempdir().expect("a temporary tree");
+        let directory = root.path().join("tests/book");
+        std::fs::create_dir_all(&directory).expect("a target directory");
+        std::fs::write(root.path().join("Cargo.toml"), "[package]\nname = \"demo\"\n\n[[test]]\nname = \"book\"\npath = \"tests/book/main.rs\"\n").expect("a planted manifest");
+        std::fs::write(directory.join("main.rs"), "mod chapter;\n").expect("a planted main");
+        std::fs::write(directory.join("chapter.rs"), "#[test]\nfn prints_the_table() {\n    let x = 1;\n}\n").expect("a planted module");
+        root
+    }
+}
+
+#[test]
+fn a_test_of_a_root_main_target_resolves_through_its_module() {
+    let tree = RootDirectoryTarget::planted();
+    let found = Coverage::at(tree.path()).resolve("piperine/book::chapter::prints_the_table").expect("the module's test resolves");
+    assert!(found.body().contains("let x = 1;"), "{}", found.body());
+}
+
+#[test]
+fn a_missing_module_or_function_of_a_root_main_target_fails() {
+    let tree = RootDirectoryTarget::planted();
+    let coverage = Coverage::at(tree.path());
+    let module = coverage.resolve("piperine/book::absent::prints_the_table").err().expect("a missing module fails");
+    assert!(module.contains("unreadable"), "{module}");
+    let function = coverage.resolve("piperine/book::chapter::absent").err().expect("a missing function fails");
     assert!(function.contains("no top-level"), "{function}");
 }

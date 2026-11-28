@@ -5,34 +5,13 @@
 //! directly, and the mistakes of the chapter's table get the codes the chapter names, each run
 //! through `piperine::`. Each test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use piperine::{Cell, Field, Overrides, Record};
-use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
+use support::printed::Printed;
 use support::model::{Model, Ran};
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`1.052399e-4`).
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
 
 /// A transient to `stop` of the top `top`, the run the chapter's commands make.
 struct Transient;

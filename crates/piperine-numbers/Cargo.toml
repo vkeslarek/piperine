@@ -9,3 +9,4 @@ description = "Numbers of any width: limb integers, exact f16, correctly rounded
 [dev-dependencies]
 # Test oracle only: exact rational arithmetic the library under test is compared against.
 num-bigint = "0.4"
+piperine-numbers-fixtures = { path = "../piperine-numbers-fixtures" }

@@ -232,49 +232,59 @@ mod tests {
     use piperine_ir_fixtures::devices::{Devices, Ex};
     use crate::print::AnalogPrinter;
 
-    fn printed(ir: &Ir, body: BodyId, mode: fn(Mode) -> bool) -> String {
-        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-        let k = plan.functions().iter().position(|f| mode(f.mode)).expect("the function");
-        let printer = AnalogPrinter::new(ir.body(body), &plan);
-        match plan.functions()[k].mode {
-            Mode::Limit(_) => printer.limit(k),
-            _ => printer.terms(k),
+    /// The text of the function of a body whose mode is picked.
+    struct LimitPrint;
+
+    impl LimitPrint {
+        fn printed(ir: &Ir, body: BodyId, mode: fn(Mode) -> bool) -> String {
+            let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
+            let k = plan.functions().iter().position(|f| mode(f.mode)).expect("the function");
+            let printer = AnalogPrinter::new(ir.body(body), &plan);
+            match plan.functions()[k].mode {
+                Mode::Limit(_) => printer.limit(k),
+                _ => printer.terms(k),
+            }
+            .unwrap_or_else(|e| panic!("{e}"))
         }
-        .unwrap_or_else(|e| panic!("{e}"))
     }
 
-    /// `Hold(p, n)`: `i(p, n) +> limit(v(p, n), |new, old| old)`, with no seed (the interpreter's
-    /// limit fixture, `hold.msl`).
-    fn hold() -> (Ir, BodyId) {
-        let mut b = IrBuilder::new();
-        let el = Devices::electrical(&mut b);
-        let mut e = Ex::new(&mut b, "hold.msl", 3, 30);
-        let x = e.probe(Terminal::Node(0), Terminal::Node(1));
-        let old = e.local(1);
-        let f = e.closure(vec![0, 1], old);
-        let limited = e.limit(0, x, f, None);
-        let contribute = b.stmt(Stmt::Contribute {
-            branch: 0,
-            quantity: QuantityRole::Flow,
-            addends: vec![Addend { operator: Operator::Direct, negated: false, value: limited }],
-        });
-        let at = |line: u32| Origin { file: "hold.msl".into(), line, col: 1 };
-        let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at(1) };
-        let local = |name: &str| Local { name: name.into(), ty: ValueType::F64, mutable: false };
-        let body = b.body(BodySpec {
-            name: "Hold".into(),
-            origin: at(1),
-            params: vec![],
-            nodes: vec![port("p"), port("n")],
-            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
-            limits: vec![Site { name: "y".into(), origin: at(3), enabled: None }],
-            stims: vec![],
-            locals: vec![local("new"), local("old")],
-            analog: Some(vec![contribute]),
-            children: vec![],
-        });
-        let top = Devices::alone(&mut b, body, "H", 1, vec![]);
-        (b.finish(top), body)
+    /// The `Hold` body whose limit the tests print.
+    struct HoldBody;
+
+    impl HoldBody {
+        /// `Hold(p, n)`: `i(p, n) +> limit(v(p, n), |new, old| old)`, with no seed (the interpreter's
+        /// limit fixture, `hold.msl`).
+        fn hold() -> (Ir, BodyId) {
+            let mut b = IrBuilder::new();
+            let el = Devices::electrical(&mut b);
+            let mut e = Ex::new(&mut b, "hold.msl", 3, 30);
+            let x = e.probe(Terminal::Node(0), Terminal::Node(1));
+            let old = e.local(1);
+            let f = e.closure(vec![0, 1], old);
+            let limited = e.limit(0, x, f, None);
+            let contribute = b.stmt(Stmt::Contribute {
+                branch: 0,
+                quantity: QuantityRole::Flow,
+                addends: vec![Addend { operator: Operator::Direct, negated: false, value: limited }],
+            });
+            let at = |line: u32| Origin { file: "hold.msl".into(), line, col: 1 };
+            let port = |name: &str| BodyNode { name: name.into(), nature: el, role: NodeRole::Port, init: None, origin: at(1) };
+            let local = |name: &str| Local { name: name.into(), ty: ValueType::F64, mutable: false };
+            let body = b.body(BodySpec {
+                name: "Hold".into(),
+                origin: at(1),
+                params: vec![],
+                nodes: vec![port("p"), port("n")],
+                branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Node(1), kind: BranchKind::Flow }],
+                limits: vec![Site { name: "y".into(), origin: at(3), enabled: None }],
+                stims: vec![],
+                locals: vec![local("new"), local("old")],
+                analog: Some(vec![contribute]),
+                children: vec![],
+            });
+            let top = Devices::alone(&mut b, body, "H", 1, vec![]);
+            (b.finish(top), body)
+        }
     }
 
     #[test]
@@ -333,12 +343,12 @@ fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(printed(&ir, d, |m| matches!(m, Mode::Limit(_))), diode);
+        assert_eq!(LimitPrint::printed(&ir, d, |m| matches!(m, Mode::Limit(_))), diode);
 
         // With no seed, `old` starts from the input x and nothing is raised; the closure ignores
         // `new`, which prints as `_` (an MSL name could spell `_new`).
-        let (ir, body) = hold();
-        let text = printed(&ir, body, |m| matches!(m, Mode::Limit(_)));
+        let (ir, body) = HoldBody::hold();
+        let text = LimitPrint::printed(&ir, body, |m| matches!(m, Mode::Limit(_)));
         assert!(text.contains("fn y_limit_block<R: Real>(p: R, n: R) -> (R, impl Fn(R, R) -> R) {"), "{text}");
         assert!(text.contains("    (p - n, move |_, old| old)\n"), "{text}");
         assert!(text.contains("let old_ = if from_seed_ { proposed_.v } else { y_last_ };"), "{text}");
@@ -357,18 +367,18 @@ fn vd_limit(cx_: &mut Eval<'_>) -> Result<(), Fault> {
         let ir = b.finish(top);
         // §18 rule 3, abi.md A2: the terms read the site's held value `vd_limit_`, never its input
         // v(a, k), its function or its seed; those are the limit function's
-        let terms = printed(&ir, d, |m| m == Mode::Terms);
+        let terms = LimitPrint::printed(&ir, d, |m| m == Mode::Terms);
         assert!(terms.contains("let vd = vd_limit_;"), "{terms}");
         assert!(terms.contains("let vd_limit_ = cx_.f64(0);"), "{terms}");
         for absent in ["a - k", "cx_.f64(7)", "pnjlim", "vcrit", "LAST", "_last", "_age", "is_static_"] {
             assert!(!terms.contains(absent), "`{absent}` in the terms function:\n{terms}");
         }
-        let limit = printed(&ir, d, |m| matches!(m, Mode::Limit(_)));
+        let limit = LimitPrint::printed(&ir, d, |m| matches!(m, Mode::Limit(_)));
         assert!(limit.contains("pnjlim(new, old, nvt, vcrit)") && limit.contains("(a - k, "), "{limit}");
 
         // the seedless `Hold`: its terms are the held value alone
-        let (ir, body) = hold();
-        let terms = printed(&ir, body, |m| m == Mode::Terms);
+        let (ir, body) = HoldBody::hold();
+        let terms = LimitPrint::printed(&ir, body, |m| m == Mode::Terms);
         assert!(terms.contains("fn terms_block<R: Real>(y_limit_: R) -> [R; 1] {"), "{terms}");
         assert!(terms.contains("let b0_flow_ = y_limit_;"), "{terms}");
     }

@@ -20,7 +20,8 @@ use piperine_ir_fixtures::devices;
 use crate::models;
 
 use devices::{Devices, Ex};
-use models::{In, Models, View};
+use models::{In, Models};
+use piperine_device_fixtures::shapes::View;
 
 /// The physical constants `vt()` folds (`std/analog.msl`).
 const K_B: f64 = 1.380649e-23;

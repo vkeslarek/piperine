@@ -9,18 +9,7 @@
 //! the rollback of a rejected step, the purpose of the chapter) are `prose` rows: no value of a run
 //! states them. Each test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod manifests;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use piperine::request::Options;
 use piperine::{Cell, Overrides, RunSpec};

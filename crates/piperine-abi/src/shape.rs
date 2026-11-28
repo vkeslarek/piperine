@@ -154,12 +154,12 @@ impl Default for ShapeBuf {
     }
 }
 
-/// The index the next entry of a list of `len` entries gets.
-fn index(len: usize) -> u32 {
-    u32::try_from(len).expect("a shape list holds at most u32::MAX entries")
-}
-
 impl ShapeBuf {
+    /// The index the next entry of a list of `len` entries gets.
+    fn index(len: usize) -> u32 {
+        u32::try_from(len).expect("a shape list holds at most u32::MAX entries")
+    }
+
     /// An empty shape.
     pub fn new() -> ShapeBuf {
         ShapeBuf {
@@ -250,7 +250,7 @@ impl ShapeBuf {
             abstol: p.abstol,
             count: p.count,
         };
-        let i = index(self.pins.len());
+        let i = Self::index(self.pins.len());
         self.pins.push(pin);
         self.shape.pins = List::detached(&self.pins);
         i
@@ -267,7 +267,7 @@ impl ShapeBuf {
             abstol: t.abstol,
             max: t.max,
         };
-        let i = index(self.terms.len());
+        let i = Self::index(self.terms.len());
         self.terms.push(term);
         self.shape.terms = List::detached(&self.terms);
         i
@@ -276,7 +276,7 @@ impl ShapeBuf {
     /// Adds a held input; returns its index.
     pub fn input(&mut self, x: InputSpec<'_>) -> u32 {
         let input = Input { name: self.str(x.name), origin: self.str(x.origin), kind: x.kind };
-        let i = index(self.inputs.len());
+        let i = Self::index(self.inputs.len());
         self.inputs.push(input);
         self.shape.inputs = List::detached(&self.inputs);
         i
@@ -293,7 +293,7 @@ impl ShapeBuf {
             ttol: w.ttol,
             etol: w.etol,
         };
-        let i = index(self.watches.len());
+        let i = Self::index(self.watches.len());
         self.watches.push(watch);
         self.shape.watches = List::detached(&self.watches);
         i
@@ -310,7 +310,7 @@ impl ShapeBuf {
             partials: Self::list(&mut self.partials, &f.partials),
             elements: Self::list(&mut self.elements, &f.elements),
         };
-        let i = index(self.functions.len());
+        let i = Self::index(self.functions.len());
         self.functions.push(function);
         self.shape.functions = List::detached(&self.functions);
         i
@@ -327,7 +327,7 @@ impl ShapeBuf {
             writes: Self::list(&mut self.statements, &r.writes),
             elements: Self::list(&mut self.elements, &r.elements),
         };
-        let i = index(self.reactions.len());
+        let i = Self::index(self.reactions.len());
         self.reactions.push(reaction);
         self.shape.reactions = List::detached(&self.reactions);
         i

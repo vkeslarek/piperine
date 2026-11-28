@@ -13,12 +13,9 @@ use std::sync::{Mutex, OnceLock};
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
-#[allow(dead_code)]
-#[path = "buck/support.rs"]
-mod support;
 
 use mixed::{BuiltDesign, Seen};
-use support::{HIGH, LOW, build, transient, with_buck};
+use piperine_parity::buck_fixture::{BuckProject, NetChanges, HIGH, LOW};
 
 /// One clock count (5 ns) in ticks.
 const COUNT: i64 = 5_000_000;
@@ -30,44 +27,54 @@ const RELEASE: i64 = N - DEAD;
 
 #[test]
 fn the_oscillator_toggles_every_half_period() {
-    let seen = build(&with_buck("bench.msl"), "OscBench").run(100e-9, 1e-9);
+    let seen = BuiltDesign::of(&BuckProject::with_buck("bench.msl"), "OscBench").run(100e-9, 1e-9);
     // 200 MHz: a period of 5 ns, a toggle every 2.5 ns, from false: true at 2.5 ns, false at
     // 5 ns, ... `k` = 1 to 40 inside 100 ns, and no change at any other instant
     let expected: Vec<(i64, Vec<u8>)> =
         (1..=40).map(|k| (k * 2_500_000, if k % 2 == 1 { HIGH.to_vec() } else { LOW.to_vec() })).collect();
-    assert_eq!(transient(&seen, "OscBench.clk"), expected);
+    assert_eq!(NetChanges::transient(&seen, "OscBench.clk"), expected);
 }
 
 /// Eight periods and a little: the ninth period's high side would start at the rising edge
 /// 3600 (17 997.5 ns).
 const STOP: f64 = 17.99e-6;
 
-fn run_once() -> Seen {
-    static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
-    let built =
-        BUILT.get_or_init(|| Mutex::new(build(&with_buck("bench.msl"), "DpwmBench"))).lock().expect("the design is not poisoned");
-    built.run(STOP, 1e-8)
+/// The `DpwmBench` of the buck bench file, built once and run for the whole test.
+struct DpwmRun;
+
+impl DpwmRun {
+    fn run_once() -> Seen {
+        static BUILT: OnceLock<Mutex<BuiltDesign>> = OnceLock::new();
+        let built =
+            BUILT.get_or_init(|| Mutex::new(BuiltDesign::of(&BuckProject::with_buck("bench.msl"), "DpwmBench"))).lock().expect("the design is not poisoned");
+        built.run(STOP, 1e-8)
+    }
 }
 
-/// The bit reversal of a 3-bit frame index.
-fn reversed(k: i64) -> i64 {
-    ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1)
-}
+/// The dithering pattern of the DPWM: the bit reversal of the frame index and the width it gives each period.
+struct DpwmReference;
 
-/// The width in counts of the `p`-th full period, `p` from 1: `duty / 8` counts, one more in
-/// `duty % 8` periods of every 8, picked by the bit-reversed frame index (SPEC §5.2). The frame
-/// counter is 0 at reset and counts the wraps; the width of a period is latched at the wrap
-/// that starts it, from the counter value after that wrap.
-fn width(duty: i64, p: i64) -> i64 {
-    duty / 8 + i64::from(reversed(p % 8) < duty % 8)
+impl DpwmReference {
+    /// The bit reversal of a 3-bit frame index.
+    fn reversed(k: i64) -> i64 {
+        ((k & 1) << 2) | (k & 2) | ((k >> 2) & 1)
+    }
+
+    /// The width in counts of the `p`-th full period, `p` from 1: `duty / 8` counts, one more in
+    /// `duty % 8` periods of every 8, picked by the bit-reversed frame index (SPEC §5.2). The frame
+    /// counter is 0 at reset and counts the wraps; the width of a period is latched at the wrap
+    /// that starts it, from the counter value after that wrap.
+    fn width(duty: i64, p: i64) -> i64 {
+        duty / 8 + i64::from(DpwmReference::reversed(p % 8) < duty % 8)
+    }
 }
 
 #[test]
 fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
-    let seen = run_once();
+    let seen = DpwmRun::run_once();
     let duty = 1325;
     // SPEC §5.2: 1325 = 8 * 165 + 5: 166 counts in five periods of eight, 165 in three
-    let widths: Vec<i64> = (1..=8).map(|p| width(duty, p)).collect();
+    let widths: Vec<i64> = (1..=8).map(|p| DpwmReference::width(duty, p)).collect();
     assert_eq!(widths.iter().filter(|w| **w == 166).count(), 5);
     assert_eq!(widths.iter().filter(|w| **w == 165).count(), 3);
     assert_eq!(widths.iter().sum::<i64>(), 8 * 165 + 5, "five extra counts over the frame");
@@ -90,8 +97,8 @@ fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
         high_intervals.push((TopDesign::rising_edge(start), TopDesign::rising_edge(start + w)));
         low_intervals.push((TopDesign::rising_edge(start + w + DEAD), TopDesign::rising_edge(start + RELEASE)));
     }
-    assert_eq!(transient(&seen, "DpwmBench.hs"), hs, "the high side: on at the wrap, off after `width` counts");
-    assert_eq!(transient(&seen, "DpwmBench.ls"), ls, "the low side: 4 counts after the high side, off at count 396");
+    assert_eq!(NetChanges::transient(&seen, "DpwmBench.hs"), hs, "the high side: on at the wrap, off after `width` counts");
+    assert_eq!(NetChanges::transient(&seen, "DpwmBench.ls"), ls, "the low side: 4 counts after the high side, off at count 396");
     // SPEC §5.3: both commands are never on together, and each edge sees 4 counts (20 ns) of
     // dead time: after the high side falls, and before the next high side rises
     for (h, l) in high_intervals.iter().zip(&low_intervals) {
@@ -102,14 +109,14 @@ fn the_dpwm_dithers_keeps_dead_time_and_never_overlaps() {
         assert_eq!(next.0 - l.1, DEAD * COUNT, "20 ns from the low side off to the next high side on");
     }
     // no current limit was asked: the `cut` flag never rose
-    assert_eq!(transient(&seen, "DpwmBench.cut"), vec![]);
+    assert_eq!(NetChanges::transient(&seen, "DpwmBench.cut"), vec![]);
 }
 
 #[test]
 fn two_runs_give_the_same_changes() {
     // the oscillator and the DPWM circuit, run twice on the one compiled design: every
     // observation of the two runs is the same, its instant bit for bit
-    let (first, second) = (run_once().all(), run_once().all());
+    let (first, second) = (DpwmRun::run_once().all(), DpwmRun::run_once().all());
     assert!(first.len() > 8000, "the run has a few thousand instants: {}", first.len());
     assert_eq!(first, second);
 }

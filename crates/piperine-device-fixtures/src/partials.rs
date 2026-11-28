@@ -6,9 +6,9 @@
 //! (the test of this crate, `its_devices_pass_the_partials_verifier`, holds every device to it).
 
 use piperine_abi::caller::Handle;
-use piperine_abi::device::{Access, cell_lens};
+use piperine_abi::device::Access;
 use piperine_abi::raw::Module;
-use piperine_abi::verify::{Verdict, verify_partials};
+use piperine_abi::verify::Verdict;
 
 /// A function that is a fixture of a failure path: what it does at every point.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -73,7 +73,7 @@ impl PartialsCheck {
         let shape = handle.shape();
         for (k, f) in shape.functions.iter().enumerate() {
             let k = k as u32;
-            let lens = cell_lens(shape, &f.reads, Access::FunctionRead)
+            let lens = shape.cell_lens(&f.reads, Access::FunctionRead)
                 .unwrap_or_else(|| panic!("{name} fn {k}: a read cell breaks a shape rule"));
             let fixture = fixtures.iter().find(|(f, _)| *f == k).map(|(_, x)| *x);
             let mut exact = false;
@@ -81,7 +81,7 @@ impl PartialsCheck {
                 for (_, read, value) in fixed.iter().filter(|(f, _, _)| *f == k) {
                     point[*read] = PartialsCheck::read_bytes(lens[*read], *value, 1);
                 }
-                let verdict = verify_partials(&handle, k, &point, 1.0e-6);
+                let verdict = Verdict::of_partials(&handle, k, &point, 1.0e-6);
                 match (fixture, verdict) {
                     (Some(Fixture::NonFinite), Ok(Verdict::Mismatch(m))) if m.iter().all(|m| !m.finite.is_finite()) => {}
                     (Some(Fixture::AlwaysLimited), Ok(Verdict::Skipped { .. })) => {}

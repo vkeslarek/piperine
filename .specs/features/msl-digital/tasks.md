@@ -13,23 +13,23 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-digital/design.md`
 **Status**: Approved
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-plan --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-transpile --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run tint**: `cargo test -p piperine-lang --test types_integers`
-**Run tcomp**: `cargo test -p piperine-lang --test types_compound`
-**Run tcar**: `cargo test -p piperine-lang --test types_carriers`
-**Run tev**: `cargo test -p piperine-lang --test types_events`
-**Run tres**: `cargo test -p piperine-lang --test types_results`
-**Run tbuck**: `cargo test -p piperine-lang --test types_buck`
-**Run evalues**: `cargo test -p piperine-lang --test elab_values`
-**Run edig**: `cargo test -p piperine-lang --test elab_digital`
-**Run eres**: `cargo test -p piperine-lang --test elab_results`
-**Run emix**: `cargo test -p piperine-lang --test elab_mixed`
-**Run ebuck**: `cargo test -p piperine-lang --test elab_buck`
+**Run tint**: `cargo test -p piperine-lang --test types_values integers::`
+**Run tcomp**: `cargo test -p piperine-lang --test types_patterns compound::`
+**Run tcar**: `cargo test -p piperine-lang --test types_carriers carriers::`
+**Run tev**: `cargo test -p piperine-lang --test types_analog events::`
+**Run tres**: `cargo test -p piperine-lang --test types_modules results::`
+**Run tbuck**: `cargo test -p piperine-lang --test types_modules buck::`
+**Run evalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run edig**: `cargo test -p piperine-lang --test elab_digital digital::`
+**Run eres**: `cargo test -p piperine-lang --test elab_digital results::`
+**Run emix**: `cargo test -p piperine-lang --test elab_analog mixed::`
+**Run ebuck**: `cargo test -p piperine-lang --test elab_structure buck_converter::`
 **Run iramend**: `cargo test -p piperine-ir --test model amendments::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planamend**: `cargo test -p piperine-plan --test shape amended_shape::`
 **Run amended**: `cargo test -p piperine-transpile --test digital amended::`
 **Run nets**: `cargo test -p piperine-transpile --test digital digital_circuit::`
-**Run project**: `cargo test -p piperine-parity --test project`
+**Run project**: `cargo test -p piperine-parity --test boundary project::`
 **Run bcommits**: `cargo test -p piperine-parity --test buck_commits`
 **Run bdpwm**: `cargo test -p piperine-parity --test buck_dpwm`
 **Run bcontrol**: `cargo test -p piperine-parity --test buck_control`
@@ -2414,7 +2414,7 @@ Proof: run brecords | test records_of_two_reactions_at_different_statements_keep
 Proof: run tev | test an_emit_in_analog_is_p0001_by_name ... ok
 
 **C183** - A module-body `let` gives its module only the names its own pattern binds: a later `let` reads them; a `match` arm's or an `if let`'s binding inside its value resolves in that arm and is `E0161` in a later `let` (T66's resolver rule, verification F8). (DIG-03, AC 4; T66)
-Proof: `cargo test -p piperine-lang --test pom_resolve a_body_let_gives_its_module_only_the_names_of_its_own_pattern -- --exact`
+Proof: `cargo test -p piperine-lang --test pom resolve::a_body_let_gives_its_module_only_the_names_of_its_own_pattern -- --exact`
 
 ---
 

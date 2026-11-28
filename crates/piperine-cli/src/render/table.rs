@@ -38,10 +38,15 @@ mod tests {
     use super::*;
     use piperine_api::{Cell, CompositeCell};
 
-    fn laid_out(table: &Table) -> String {
-        let mut out = Vec::new();
-        TextTable::write(table, &mut out).expect("a vector takes writes");
-        String::from_utf8(out).expect("text")
+    /// A table as the lines a terminal shows.
+    struct LaidOutTable;
+
+    impl LaidOutTable {
+        fn laid_out(table: &Table) -> String {
+            let mut out = Vec::new();
+            TextTable::write(table, &mut out).expect("a vector takes writes");
+            String::from_utf8(out).expect("text")
+        }
     }
 
     #[test]
@@ -54,7 +59,7 @@ mod tests {
                 vec![Cell::Text("Step.vout".into()), Cell::Real(1.0)],
             ],
         };
-        assert_eq!(laid_out(&op), "signal     value\nStep.vin   1.000000e0\nStep.vout  1.000000e0\n");
+        assert_eq!(LaidOutTable::laid_out(&op), "signal     value\nStep.vin   1.000000e0\nStep.vout  1.000000e0\n");
         // a column wider in its header than in its cells, an absent `Option`, and a last column whose
         // cells are shorter than its header: no line ends in a space
         let tran = Table {
@@ -64,7 +69,7 @@ mod tests {
                 vec![Cell::Real(1e-6), Cell::Real(0.5), Cell::Int(7)],
             ],
         };
-        let text = laid_out(&tran);
+        let text = LaidOutTable::laid_out(&tran);
         let want = [
             "time         Step.vout    ok",
             "0.000000e0   None         true",
@@ -75,6 +80,6 @@ mod tests {
         assert!(text.lines().all(|l| l == l.trim_end()), "{text:?}");
         // a table with no row is its header
         let empty = Table { columns: vec!["signal".into(), "value".into()], rows: vec![] };
-        assert_eq!(laid_out(&empty), "signal  value\n");
+        assert_eq!(LaidOutTable::laid_out(&empty), "signal  value\n");
     }
 }

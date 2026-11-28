@@ -3,6 +3,10 @@
 
 use std::fmt;
 
+use piperine_abi::caller::CallError;
+
+use crate::tick::Tick;
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DigitalError {
     /// More delta cycles than the cap at one evaluation time.
@@ -28,6 +32,13 @@ pub enum DigitalError {
     Unsupported { what: &'static str },
     /// A host write the engine refuses; nothing changed.
     HostWrite { net: String, reason: &'static str },
+}
+
+impl DigitalError {
+    /// The `Fault` of a device call that failed with `error` at `tick`, in the instance at path `instance`.
+    pub(crate) fn device_fault(error: CallError, tick: Tick, instance: &str) -> DigitalError {
+        DigitalError::Fault { code: error.code, message: error.message, tick: tick.0, instance: instance.to_string() }
+    }
 }
 
 impl fmt::Display for DigitalError {

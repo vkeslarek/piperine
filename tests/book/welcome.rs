@@ -5,34 +5,13 @@
 //! asserted at the precision the Book prints it. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod inventory;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use piperine::{Cell, Field, Overrides};
-use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
+use support::printed::Printed;
 use support::model::{Model, Ran};
 use support::refusal::{Refusal, Reported};
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`6.320928e-1`); `what` says
-    /// what the number is.
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
 
 /// The project `piperine new rc` makes, as `examples/rc`.
 struct RcProject;

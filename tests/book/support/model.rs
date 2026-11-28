@@ -14,6 +14,8 @@ use super::book::Book;
 use super::inventory::Inventory;
 use super::records::KeptRecords;
 use piperine_parity::compile_cache::CompileCache;
+use piperine_parity::tree_copy::TreeCopy;
+use piperine_parity::table_columns::TableColumns;
 
 /// What opens a model: a lone file, or the package in the model's directory.
 enum Opening {
@@ -72,7 +74,7 @@ impl Model {
             }
             Some((package, inside)) => {
                 let root = directory.path().join(package);
-                Self::copy_tree(&Self::repository().join("examples").join(package), &root);
+                TreeCopy::copy(&Self::repository().join("examples").join(package), &root);
                 Self::write(&root, inside, &text);
                 let opening = Opening::File(root.join(inside));
                 Model { directory, opening, named: None }
@@ -102,7 +104,7 @@ impl Model {
     pub fn example(name: &str) -> Model {
         let directory = Self::directory();
         let root = directory.path().join(name);
-        Self::copy_tree(&Self::repository().join("examples").join(name), &root);
+        TreeCopy::copy(&Self::repository().join("examples").join(name), &root);
         Model { directory, opening: Opening::Package(root), named: None }
     }
 
@@ -184,28 +186,13 @@ impl Model {
         std::fs::create_dir_all(path.parent().expect("a file has a directory")).expect("a directory for the model's file");
         std::fs::write(&path, text).unwrap_or_else(|error| panic!("{}: {error}", path.display()));
     }
-
-    /// Copies the tree `from` to `to`.
-    fn copy_tree(from: &Path, to: &Path) {
-        std::fs::create_dir_all(to).expect("a directory for the copy");
-        for entry in std::fs::read_dir(from).unwrap_or_else(|error| panic!("{}: {error}", from.display())) {
-            let entry = entry.expect("a directory entry");
-            let target = to.join(entry.file_name());
-            if entry.file_type().expect("a file type").is_dir() {
-                Self::copy_tree(&entry.path(), &target);
-            } else {
-                std::fs::copy(entry.path(), &target).unwrap_or_else(|error| panic!("{}: {error}", target.display()));
-            }
-        }
-    }
 }
 
 impl Ran {
     /// The cell of `row` under the column named `column`. Panics naming the column when the table
     /// has none.
     pub fn cell(&self, row: usize, column: &str) -> &Cell {
-        let at = self.table.columns.iter().position(|name| name == column).unwrap_or_else(|| panic!("no column `{column}` in {:?}", self.table.columns));
-        &self.table.rows[row][at]
+        TableColumns::cell(&self.table, row, column)
     }
 
     /// The real number of `row` under `column`. Panics when the cell is not a real number.

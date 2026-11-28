@@ -3,12 +3,10 @@
 mod amended;
 mod carrier_arrays;
 mod carrierless;
-mod commits;
 mod digital_circuit;
 mod dpwm;
 mod environment;
 mod pid;
+mod pin_bytes;
 mod reaction;
 mod resolve;
-#[path = "../support/compiled.rs"]
-mod compiled;

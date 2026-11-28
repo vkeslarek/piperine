@@ -10,7 +10,7 @@ use piperine_solver::prelude::{CircuitInstance, Context, Net, SensAnalysisOption
 /// `∂v_mid/∂r2 = V·r1/(r1+r2)² = 2.5e-3 V/Ω` and `∂v_mid/∂v1.dc = 0.5`.
 #[test]
 fn divider_sensitivities_match_analytic_values() {
-    let (mut circuit, info) = SensitivityCases::build("Top");
+    let (mut circuit, info) = SensitivityCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let opts = SensAnalysisOptions::new(
         vec![mid.clone()],
@@ -34,7 +34,7 @@ fn divider_sensitivities_match_analytic_values() {
 /// has the physical sign (raising `r1` drops the diode voltage).
 #[test]
 fn diode_sensitivity_is_step_independent_and_signed() {
-    let (mut circuit, info) = SensitivityCases::build("DiodeTop");
+    let (mut circuit, info) = SensitivityCircuit::build("DiodeTop");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let mut opts = SensAnalysisOptions::new(vec![mid.clone()], vec![("r1".into(), "r".into())]);
@@ -54,7 +54,7 @@ fn diode_sensitivity_is_step_independent_and_signed() {
 /// digital/pseudo output net.
 #[test]
 fn sens_error_paths_are_loud() {
-    let (mut circuit, info) = SensitivityCases::build("Top");
+    let (mut circuit, info) = SensitivityCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let err = circuit
@@ -99,7 +99,7 @@ fn sens_error_paths_are_loud() {
 /// loud naming the param.
 #[test]
 fn sens_rebuild_class_param_fails_loud() {
-    let (mut circuit, info) = SensitivityCases::build("OptTop");
+    let (mut circuit, info) = SensitivityCircuit::build("OptTop");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let err = circuit
@@ -122,10 +122,10 @@ fn sens_rebuild_class_param_fails_loud() {
     circuit.sens(opts, Context::default()).expect("sens").solve().expect("restampable param solves");
 }
 
-/// The helpers of the sens tests.
-pub struct SensitivityCases;
+/// The circuit the sensitivity tests differentiate.
+struct SensitivityCircuit;
 
-impl SensitivityCases {
+impl SensitivityCircuit {
     /// The build helper `build`.
     fn build(top: &str) -> (CircuitInstance, NodeMap) {
         CircuitBuilding::divider_fixture(top)

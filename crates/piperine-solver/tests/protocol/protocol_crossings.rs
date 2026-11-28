@@ -30,11 +30,11 @@ impl Sink for Collect {
 #[test]
 fn a_fired_crossing_is_a_commit_at_the_landing() {
     let mut b = CircuitBuilder::new("crossing");
-    let top = ProtocolCrossingsCases::sine(&mut b);
+    let top = SineCrossings::sine(&mut b);
     let gnd = b.ground();
     let r = b.node("r");
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top.clone()), Port::Node(r), ProtocolCrossingsCases::net("out")]);
+    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top.clone()), Port::Node(r), SineCrossings::net("out")]);
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut solver = Solver::new(b.build().expect("build"))
         .with_tran_opts(TransientAnalysisOptions::new(2.0e-4, 1.0e-5))
@@ -57,7 +57,7 @@ fn a_fired_crossing_is_a_commit_at_the_landing() {
     let k = result.iter().position(|s| s.time() == crossing.time).expect("an accepted step at exactly the landing");
     let v = |i: usize| result.get(i).unwrap().get_node(&CircuitBuilding::node_id(&top)).unwrap();
     assert!(v(k - 1) <= 0.5 && v(k) > 0.5, "the sign change lies in the last step: {} {}", v(k - 1), v(k));
-    let late = crossing.time - ProtocolCrossingsCases::sine_truth();
+    let late = crossing.time - SineCrossings::sine_truth();
     assert!(v(k) - 0.5 < ETOL || late.abs() <= TTOL + TICK, "located: e = {:e}, late {late:e}", v(k) - 0.5);
     // `out` changes one microstep later, in the same instant.
     let (oi, out) = seen
@@ -74,9 +74,9 @@ fn a_fired_crossing_is_a_commit_at_the_landing() {
 fn a_reaction_reads_the_accepted_solution() {
     let at = 2.0e-4;
     let mut b = CircuitBuilder::new("sampler");
-    let top = ProtocolCrossingsCases::sine(&mut b);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[ProtocolCrossingsCases::net("go")]);
-    b.device(digital::Sampler::module(), "smp", &[], &[Port::Node(top.clone()), ProtocolCrossingsCases::net("go"), ProtocolCrossingsCases::net("s")]);
+    let top = SineCrossings::sine(&mut b);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[SineCrossings::net("go")]);
+    b.device(digital::Sampler::module(), "smp", &[], &[Port::Node(top.clone()), SineCrossings::net("go"), SineCrossings::net("s")]);
     let mut solver = Solver::new(b.build().expect("build")).with_tran_opts(TransientAnalysisOptions::new(5.0e-4, 1.0e-5)).build();
     let result = solver.tran().expect("tran").solve().expect("solve");
 
@@ -94,7 +94,7 @@ fn a_cap_watch_bounds_the_next_step() {
     // every step, and the controller reaches it (a 10 ns dt asks for more).
     for caps in [[4.0e-9, 1.0e-9], [1.0e-9, 4.0e-9]] {
         let mut b = CircuitBuilder::new("capped sine");
-        let top = ProtocolCrossingsCases::sine(&mut b);
+        let top = SineCrossings::sine(&mut b);
         for (i, cap) in caps.into_iter().enumerate() {
             b.device(mixed::Capped::module(), &format!("cap{i}"), &[("cap", ParamValue::Real(cap))], &[Port::Node(top.clone())]);
         }
@@ -133,14 +133,14 @@ fn a_ramp_lands_within_ttol_plus_one_tick() {
         b.device(circuit::RampSource::module(), "v1", &[], &[Port::Node(top.clone()), Port::Node(gnd.clone())]);
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
         let params = [("ttol", ParamValue::Real(TTOL)), ("etol", ParamValue::Real(1.0e-300))];
-        b.device(ProtocolCrossingsCases::tol_comparator(), "cmp", &params, &[Port::Node(top.clone()), Port::Node(r), ProtocolCrossingsCases::net("out")]);
-        let (result, seen) = ProtocolCrossingsCases::run(b, 1.0e-3, dt, |_| {}, Context::default());
-        let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
+        b.device(ToleranceComparison::tol_comparator(), "cmp", &params, &[Port::Node(top.clone()), Port::Node(r), SineCrossings::net("out")]);
+        let (result, seen) = SineCrossings::run(b, 1.0e-3, dt, |_| {}, Context::default());
+        let fired = SineCrossings::crossings(&seen, "cmp.up");
         assert_eq!(fired.len(), 1, "dt {dt:e}: one crossing: {fired:?}");
         let late = fired[0] - truth;
         assert!(late <= TTOL + TICK, "dt {dt:e}: landed {late:e} s after the crossing");
         assert!(late > -TICK, "dt {dt:e}: landed {late:e} s before the crossing");
-        assert!(ProtocolCrossingsCases::at(&result, &top, fired[0]) > 0.5, "dt {dt:e}: e > 0 where it fires");
+        assert!(SineCrossings::at(&result, &top, fired[0]) > 0.5, "dt {dt:e}: e > 0 where it fires");
     }
 }
 
@@ -149,12 +149,12 @@ fn a_sine_crossing_is_located() {
     // SCX-01 AC 1, the T45 repro: the 1 V 1 kHz sine against 0.5 V fires 0.97 µs late today, at
     // the first accepted point after the sign change. Located, 0 < e < etol (1 µV) or the landing
     // is within ttol (1 ps) plus one tick of asin(0.5) / (2π·1 kHz)
-    let (b, top) = ProtocolCrossingsCases::sine_against(0.5);
-    let (result, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-6, |o| o.dt_max = 1.0e-6, Context::default());
-    let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
+    let (b, top) = SineCrossings::sine_against(0.5);
+    let (result, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-6, |o| o.dt_max = 1.0e-6, Context::default());
+    let fired = SineCrossings::crossings(&seen, "cmp.up");
     assert_eq!(fired.len(), 1, "{fired:?}");
-    let e = ProtocolCrossingsCases::at(&result, &top, fired[0]) - 0.5;
-    let late = fired[0] - ProtocolCrossingsCases::sine_truth();
+    let e = SineCrossings::at(&result, &top, fired[0]) - 0.5;
+    let late = fired[0] - SineCrossings::sine_truth();
     assert!(e > 0.0, "e > 0 where it fires: {e:e}");
     assert!(e < ETOL || late.abs() <= TTOL + TICK, "late by {late:e} s with e = {e:e} V");
 }
@@ -174,12 +174,12 @@ fn an_rc_charge_trips_at_its_threshold() {
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &clk, &x);
     CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-9, &x, &gnd);
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.625, &r, &gnd);
-    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(x.clone()), Port::Node(r), ProtocolCrossingsCases::net("out")]);
-    let (result, seen) = ProtocolCrossingsCases::run(b, 2.5e-6, 1.0e-8, |o| o.dt_max = 5.0e-8, Context::default());
-    let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
+    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(x.clone()), Port::Node(r), SineCrossings::net("out")]);
+    let (result, seen) = SineCrossings::run(b, 2.5e-6, 1.0e-8, |o| o.dt_max = 5.0e-8, Context::default());
+    let fired = SineCrossings::crossings(&seen, "cmp.up");
     assert_eq!(fired.len(), 1, "{fired:?}");
     let truth = 1.0e-6 + 1.0e-6 * (1.0f64 / 0.375).ln();
-    let e = ProtocolCrossingsCases::at(&result, &x, fired[0]) - 0.625;
+    let e = SineCrossings::at(&result, &x, fired[0]) - 0.625;
     let late = fired[0] - truth;
     assert!(e > 0.0, "e > 0 where it trips: {e:e}");
     assert!(e < ETOL || late.abs() <= TTOL + TICK, "late by {late:e} s with v − 0.625 = {e:e} V");
@@ -200,11 +200,11 @@ fn the_earliest_of_several_crossings_lands_first() {
         let r = b.node(&format!("r_{name}"));
         CircuitBuilding::add_voltage_source(&mut b, &format!("v_{name}"), vth, &r, &gnd);
         let params = [("ttol", ParamValue::Real(TTOL)), ("etol", ParamValue::Real(1.0e-300))];
-        b.device(ProtocolCrossingsCases::tol_comparator(), &format!("c_{name}"), &params, &[Port::Node(top.clone()), Port::Node(r), ProtocolCrossingsCases::net(name)]);
+        b.device(ToleranceComparison::tol_comparator(), &format!("c_{name}"), &params, &[Port::Node(top.clone()), Port::Node(r), SineCrossings::net(name)]);
     }
-    let (_, seen) = ProtocolCrossingsCases::run(b, 1.0e-3, 1.0e-3, |o| o.dt_max = 1.0e-3, Context::default());
-    let lo = ProtocolCrossingsCases::crossings(&seen, "c_lo.up");
-    let hi = ProtocolCrossingsCases::crossings(&seen, "c_hi.up");
+    let (_, seen) = SineCrossings::run(b, 1.0e-3, 1.0e-3, |o| o.dt_max = 1.0e-3, Context::default());
+    let lo = SineCrossings::crossings(&seen, "c_lo.up");
+    let hi = SineCrossings::crossings(&seen, "c_hi.up");
     assert_eq!((lo.len(), hi.len()), (1, 1), "{lo:?} {hi:?}");
     for (fired, truth) in [(lo[0], 0.3e-3), (hi[0], 0.7e-3)] {
         assert!(fired - truth <= TTOL + TICK && fired - truth > -TICK, "{fired:e} vs {truth:e}");
@@ -221,13 +221,13 @@ fn the_earliest_of_several_crossings_lands_first() {
 fn crossings_on_one_tick_fire_together() {
     // SCX-01 AC 3: two comparators on one sine and one 0.5 V reference cross at the same
     // instant: they land on one tick and fire together there
-    let (mut b, top) = ProtocolCrossingsCases::sine_against(0.5);
+    let (mut b, top) = SineCrossings::sine_against(0.5);
     let r2 = b.node("r2");
     let gnd = b.ground();
     CircuitBuilding::add_voltage_source(&mut b, "vr2", 0.5, &r2, &gnd);
-    b.device(mixed::Comparator::module(), "cmp2", &[], &[Port::Node(top), Port::Node(r2), ProtocolCrossingsCases::net("out2")]);
-    let (_, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-6, |o| o.dt_max = 1.0e-6, Context::default());
-    let (a, b2) = (ProtocolCrossingsCases::crossings(&seen, "cmp.up"), ProtocolCrossingsCases::crossings(&seen, "cmp2.up"));
+    b.device(mixed::Comparator::module(), "cmp2", &[], &[Port::Node(top), Port::Node(r2), SineCrossings::net("out2")]);
+    let (_, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-6, |o| o.dt_max = 1.0e-6, Context::default());
+    let (a, b2) = (SineCrossings::crossings(&seen, "cmp.up"), SineCrossings::crossings(&seen, "cmp2.up"));
     assert_eq!((a.len(), b2.len()), (1, 1), "{a:?} {b2:?}");
     assert_eq!(a[0], b2[0], "one tick");
     let ticks = a[0] / TICK;
@@ -239,14 +239,14 @@ fn the_session_ttol_applies_to_a_watch_without_a_ttol_pin() {
     // SCX-01 AC 4: the comparator has no ttol pin. With TransientAnalysisOptions::ttol at 1 s
     // every crossing is "within ttol" at the first accepted point after the sign change, so it
     // fires there, where e exceeds 1 µV; at the default 1 ps it is located (C6)
-    let (b, top) = ProtocolCrossingsCases::sine_against(0.5);
-    let (result, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-5, |o| o.ttol = 1.0, Context::default());
-    let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
+    let (b, top) = SineCrossings::sine_against(0.5);
+    let (result, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-5, |o| o.ttol = 1.0, Context::default());
+    let fired = SineCrossings::crossings(&seen, "cmp.up");
     assert_eq!(fired.len(), 1);
     let k = result.iter().position(|s| s.time() == fired[0]).expect("an accepted step");
     let v = |i: usize| result.get(i).unwrap().get_node(&CircuitBuilding::node_id(&top)).unwrap();
     assert!(v(k - 1) <= 0.5 && v(k) > 0.5 + ETOL, "unlocated: {} then {}", v(k - 1), v(k));
-    assert!(fired[0] - ProtocolCrossingsCases::sine_truth() > TTOL + TICK, "later than a located landing");
+    assert!(fired[0] - SineCrossings::sine_truth() > TTOL + TICK, "later than a located landing");
 }
 
 #[test]
@@ -257,18 +257,18 @@ fn a_watch_without_an_etol_pin_takes_the_potential_abstol() {
     // sign change, e above 1 µV. At the default vntol it fires under 1 µV.
     let mut loose = Context::default();
     loose.tolerances.vntol = 0.6;
-    let (b, top) = ProtocolCrossingsCases::sine_against(0.5);
-    let (result, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-5, |_| {}, loose);
-    let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
+    let (b, top) = SineCrossings::sine_against(0.5);
+    let (result, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-5, |_| {}, loose);
+    let fired = SineCrossings::crossings(&seen, "cmp.up");
     assert_eq!(fired.len(), 1);
-    let e = ProtocolCrossingsCases::at(&result, &top, fired[0]) - 0.5;
+    let e = SineCrossings::at(&result, &top, fired[0]) - 0.5;
     assert!(e > ETOL, "etol 0.6 V: not located, e = {e:e}");
 
-    let (b, top) = ProtocolCrossingsCases::sine_against(0.5);
-    let (result, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-5, |_| {}, Context::default());
-    let fired = ProtocolCrossingsCases::crossings(&seen, "cmp.up");
-    let e = ProtocolCrossingsCases::at(&result, &top, fired[0]) - 0.5;
-    let late = fired[0] - ProtocolCrossingsCases::sine_truth();
+    let (b, top) = SineCrossings::sine_against(0.5);
+    let (result, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-5, |_| {}, Context::default());
+    let fired = SineCrossings::crossings(&seen, "cmp.up");
+    let e = SineCrossings::at(&result, &top, fired[0]) - 0.5;
+    let late = fired[0] - SineCrossings::sine_truth();
     assert!(e > 0.0 && (e < ETOL || late.abs() <= TTOL + TICK), "etol 1 µV: e = {e:e}, late {late:e}");
 }
 
@@ -287,10 +287,10 @@ fn a_crossing_in_the_step_after_a_jump_is_not_located() {
         let r = b.node("r");
         b.device(mixed::ClockSource::module(), "ck", &[("period", ParamValue::Real(period))], &[Port::Node(clk.clone()), Port::Node(gnd.clone())]);
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(clk), Port::Node(r), ProtocolCrossingsCases::net("c")]);
-        let (result, seen) = ProtocolCrossingsCases::run(b, 0.4e-3, 1.0e-5, |o| o.ttol = ttol, Context::default());
+        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(clk), Port::Node(r), SineCrossings::net("c")]);
+        let (result, seen) = SineCrossings::run(b, 0.4e-3, 1.0e-5, |o| o.ttol = ttol, Context::default());
         let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
-        (ProtocolCrossingsCases::crossings(&seen, "cmp.up"), times)
+        (SineCrossings::crossings(&seen, "cmp.up"), times)
     };
     let (fired, times) = edge_run(TTOL);
     let (unlocated, unlocated_times) = edge_run(1.0);
@@ -322,9 +322,9 @@ fn a_curved_crossing_converges_from_both_sides() {
     let top = b.node("top");
     CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &top, &gnd);
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &gnd);
-    b.device(ProtocolCrossingsCases::saturating(), "sat", &[], &[]);
-    let (_, seen) = ProtocolCrossingsCases::run(b, 40.0e-6, 20.0e-6, |o| o.dt_max = 20.0e-6, Context::default());
-    let fired = ProtocolCrossingsCases::crossings(&seen, "sat.up");
+    b.device(SineCrossings::saturating(), "sat", &[], &[]);
+    let (_, seen) = SineCrossings::run(b, 40.0e-6, 20.0e-6, |o| o.dt_max = 20.0e-6, Context::default());
+    let fired = SineCrossings::crossings(&seen, "sat.up");
     assert_eq!(fired.len(), 1, "{fired:?}");
     let truth = 1.0e-6 * 1000f64.ln();
     let e = 1.0 - (-fired[0] / 1.0e-6).exp() - 0.999;
@@ -340,11 +340,11 @@ fn a_landing_costs_a_few_steps_not_a_regrowth() {
     // down. Each may add the landing step and the retakes accepted just before the crossing (the
     // estimate closes in on it): at most 4 accepted steps per landing over the same run with
     // ttol = 1 s, where no crossing is retaken.
-    let (located, seen) = ProtocolCrossingsCases::run(ProtocolCrossingsCases::fast_sine(), 1.0e-3, 1.0e-6, |_| {}, Context::default());
-    let (unlocated, seen_unlocated) = ProtocolCrossingsCases::run(ProtocolCrossingsCases::fast_sine(), 1.0e-3, 1.0e-6, |o| o.ttol = 1.0, Context::default());
-    let landings = ProtocolCrossingsCases::crossings(&seen, "cmp.up").len() + ProtocolCrossingsCases::crossings(&seen, "cmp.down").len();
+    let (located, seen) = SineCrossings::run(SineCrossings::fast_sine(), 1.0e-3, 1.0e-6, |_| {}, Context::default());
+    let (unlocated, seen_unlocated) = SineCrossings::run(SineCrossings::fast_sine(), 1.0e-3, 1.0e-6, |o| o.ttol = 1.0, Context::default());
+    let landings = SineCrossings::crossings(&seen, "cmp.up").len() + SineCrossings::crossings(&seen, "cmp.down").len();
     assert_eq!(landings, 20, "ten crossings each way");
-    assert_eq!(ProtocolCrossingsCases::crossings(&seen_unlocated, "cmp.up").len() + ProtocolCrossingsCases::crossings(&seen_unlocated, "cmp.down").len(), 20);
+    assert_eq!(SineCrossings::crossings(&seen_unlocated, "cmp.up").len() + SineCrossings::crossings(&seen_unlocated, "cmp.down").len(), 20);
     assert!(
         located.len() <= unlocated.len() + 4 * landings,
         "located {} steps against {} unlocated: more than 4 per landing",
@@ -361,18 +361,18 @@ fn steps_of_a_few_ticks_grow_back() {
     // 1 µs of a run started there within log1.5(1e9) ≈ 52 steps. Grown from the floored step
     // instead, 1.5 fs floors to 1 fs forever and the run crawls into its step budget: the budget
     // here (a few thousand attempts) makes that fail fast, not hang.
-    let (b, _) = ProtocolCrossingsCases::sine_against(0.5);
-    let (reference, _) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-6, |o| o.max_steps = 5_000, Context::default());
-    let (b, _) = ProtocolCrossingsCases::sine_against(0.5);
-    let (tiny, seen) = ProtocolCrossingsCases::run(b, 2.0e-4, 1.0e-15, |o| o.max_steps = 5_000, Context::default());
-    assert_eq!(ProtocolCrossingsCases::crossings(&seen, "cmp.up").len(), 1);
+    let (b, _) = SineCrossings::sine_against(0.5);
+    let (reference, _) = SineCrossings::run(b, 2.0e-4, 1.0e-6, |o| o.max_steps = 5_000, Context::default());
+    let (b, _) = SineCrossings::sine_against(0.5);
+    let (tiny, seen) = SineCrossings::run(b, 2.0e-4, 1.0e-15, |o| o.max_steps = 5_000, Context::default());
+    assert_eq!(SineCrossings::crossings(&seen, "cmp.up").len(), 1);
     assert!(tiny.len() <= reference.len() + 60, "{} steps from 1 fs against {} from 1 µs", tiny.len(), reference.len());
 }
 
-/// The helpers of the protocol_crossings tests.
-pub struct ProtocolCrossingsCases;
+/// The sine circuits whose crossings the protocol tests count, and the truth they are held to.
+struct SineCrossings;
 
-impl ProtocolCrossingsCases {
+impl SineCrossings {
     /// The net helper `net`.
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
@@ -390,11 +390,6 @@ impl ProtocolCrossingsCases {
         CircuitBuilding::add_resistor(b, "r1", 1.0e3, &top, &out);
         CircuitBuilding::add_capacitor(b, "c1", 1.0e-6, &out, &gnd);
         top
-    }
-
-    /// The tol comparator helper `tol_comparator`.
-    fn tol_comparator() -> &'static Module {
-        ToleranceComparator::module()
     }
 
     /// A transient of `b` to `stop` from the initial step `dt`, with `options` adjusted by `adjust`;
@@ -436,11 +431,11 @@ impl ProtocolCrossingsCases {
     /// The sine of `sine()` against `vref` through a default comparator `cmp`.
     fn sine_against(vref: f64) -> (CircuitBuilder, AnalogReference) {
         let mut b = CircuitBuilder::new("crossing");
-        let top = ProtocolCrossingsCases::sine(&mut b);
+        let top = SineCrossings::sine(&mut b);
         let gnd = b.ground();
         let r = b.node("r");
         CircuitBuilding::add_voltage_source(&mut b, "vr", vref, &r, &gnd);
-        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top.clone()), Port::Node(r), ProtocolCrossingsCases::net("out")]);
+        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top.clone()), Port::Node(r), SineCrossings::net("out")]);
         (b, top)
     }
 
@@ -468,7 +463,17 @@ impl ProtocolCrossingsCases {
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &out);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-6, &out, &gnd);
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top), Port::Node(r), ProtocolCrossingsCases::net("o")]);
+        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(top), Port::Node(r), SineCrossings::net("o")]);
         b
+    }
+}
+
+/// The tolerance two crossing times are compared with.
+struct ToleranceComparison;
+
+impl ToleranceComparison {
+    /// The tol comparator helper `tol_comparator`.
+    fn tol_comparator() -> &'static Module {
+        ToleranceComparator::module()
     }
 }

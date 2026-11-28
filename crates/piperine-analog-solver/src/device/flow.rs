@@ -75,33 +75,44 @@ impl<'a> Linear<'a> {
     }
 }
 
-/// Adds `weight·g_j` at (`plus`, `j`) and its negative at (`minus`, `j`),
-/// and `rhs` to the right side of `plus` and its negative to `minus`.
-pub(crate) fn stamp_rows(
-    t: &TermPlan,
-    lin: &Linear<'_>,
-    weight: f64,
-    rhs: f64,
-    out: &mut Vec<Stamp<AnalogReference, f64>>,
-) {
-    for (c, g) in lin.cols() {
-        let g = weight * g;
-        if let Some(p) = &t.plus {
-            out.push(Stamp::Matrix(p.clone(), c.clone(), g));
-        }
-        if let Some(m) = &t.minus {
-            out.push(Stamp::Matrix(m.clone(), c.clone(), -g));
-        }
-    }
-    if let Some(p) = &t.plus {
-        out.push(Stamp::Rhs(p.clone(), rhs));
-    }
-    if let Some(m) = &t.minus {
-        out.push(Stamp::Rhs(m.clone(), -rhs));
-    }
+/// The Norton stamps of one term at its linearization: the part of the assembly `FLOW`, `DDT` and
+/// `DELAY` stamping reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FlowStamp<'a> {
+    /// The term whose rows are stamped.
+    term: &'a TermPlan,
+    /// The term at the iterate.
+    linear: Linear<'a>,
 }
 
-/// The Norton stamps of a `FLOW` term at iterate `x`.
-pub(crate) fn stamp_flow(t: &TermPlan, lin: &Linear<'_>, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) {
-    stamp_rows(t, lin, 1.0, -(lin.v - lin.dot(x)), out);
+impl<'a> FlowStamp<'a> {
+    /// The stamps of `term` at `linear`.
+    pub fn new(term: &'a TermPlan, linear: Linear<'a>) -> Self {
+        Self { term, linear }
+    }
+
+    /// Adds `weight·g_j` at (`plus`, `j`) and its negative at (`minus`, `j`),
+    /// and `rhs` to the right side of `plus` and its negative to `minus`.
+    pub fn rows(&self, weight: f64, rhs: f64, out: &mut Vec<Stamp<AnalogReference, f64>>) {
+        for (c, g) in self.linear.cols() {
+            let g = weight * g;
+            if let Some(p) = &self.term.plus {
+                out.push(Stamp::Matrix(p.clone(), c.clone(), g));
+            }
+            if let Some(m) = &self.term.minus {
+                out.push(Stamp::Matrix(m.clone(), c.clone(), -g));
+            }
+        }
+        if let Some(p) = &self.term.plus {
+            out.push(Stamp::Rhs(p.clone(), rhs));
+        }
+        if let Some(m) = &self.term.minus {
+            out.push(Stamp::Rhs(m.clone(), -rhs));
+        }
+    }
+
+    /// The Norton stamps of a `FLOW` term at iterate `x`.
+    pub fn norton(&self, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) {
+        self.rows(1.0, -(self.linear.v - self.linear.dot(x)), out);
+    }
 }

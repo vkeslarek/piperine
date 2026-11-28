@@ -10,8 +10,8 @@ use piperine_solver::prelude::*;
 
 #[test]
 fn test_solver_entry_point() {
-    let (circuit1, node1) = SolverEntryCases::create_divider(1000.0, 1000.0);
-    let (circuit2, node2) = SolverEntryCases::create_divider(1000.0, 3000.0);
+    let (circuit1, node1) = EntryDivider::create_divider(1000.0, 1000.0);
+    let (circuit2, node2) = EntryDivider::create_divider(1000.0, 3000.0);
     let mut solver1 = Solver::new(circuit1).build();
     let mut solver2 = Solver::new(circuit2).build(); // test AC2
 
@@ -37,10 +37,10 @@ fn test_solver_setup_error_propagation() {
     assert!(err_str.contains("setup error"));
 }
 
-/// The helpers of the solver_entry tests.
-pub struct SolverEntryCases;
+/// The divider the solver entry tests create.
+struct EntryDivider;
 
-impl SolverEntryCases {
+impl EntryDivider {
     /// The create divider helper `create_divider`.
     fn create_divider(r1_val: f64, r2_val: f64) -> (CircuitInstance, AnalogReference) {
         let mut b = CircuitBuilder::new("test");
@@ -52,5 +52,4 @@ impl SolverEntryCases {
         CircuitBuilding::add_resistor(&mut b, "r2", r2_val, &mid, &gnd);
         (b.build().expect("build"), mid)
     }
-
 }

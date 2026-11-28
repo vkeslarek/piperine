@@ -14,12 +14,9 @@ use piperine_plan::{BodyPlan, Modules, Netlist};
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
 use piperine_ir_fixtures::circuits;
-#[allow(dead_code)]
-#[path = "../../../piperine-interp/tests/interpreter/models.rs"]
-mod models;
-
 use circuits::HandCircuits;
-use models::{Models, View};
+use piperine_ir_fixtures::devices::Devices;
+use piperine_device_fixtures::shapes::View;
 
 #[test]
 fn the_interpreter_and_the_plan_crate_share_one_body_plan() {
@@ -28,10 +25,10 @@ fn the_interpreter_and_the_plan_crate_share_one_body_plan() {
 
     // and that plan is what the interpreter serves: for each of the five M1 bodies, the shape
     // planned here equals the module's shape entry by entry
-    let m = Models::all();
+    let interp = Interpreter::new(Arc::new(Devices::design_of_every_device())).expect("the M1 design passes check()");
     let mut compared = Vec::new();
-    for body in m.interp.ir().bodies() {
-        let Some(module) = m.interp.module(body.id()) else { continue };
+    for body in interp.ir().bodies() {
+        let Some(module) = interp.module(body.id()) else { continue };
         let plan = BodyPlan::build(body).expect("the body plans");
         let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create `{}`: {e}", body.name()));
         let (served, planned) = (View { shape: handle.shape() }, View { shape: plan.shape().shape() });
@@ -65,11 +62,16 @@ impl Modules for Supplier {
     }
 }
 
-fn instances(ir: &Ir, supplier: &Supplier) -> (Vec<String>, piperine_solver::prelude::CircuitInstance) {
-    let circuit = Netlist::new(ir).circuit(supplier).unwrap_or_else(|e| panic!("circuit: {e}"));
-    let mut paths = circuit.bound().names.instances.clone();
-    paths.sort();
-    (paths, circuit)
+/// The instance list of a built circuit.
+struct CircuitInstances;
+
+impl CircuitInstances {
+    fn instances(ir: &Ir, supplier: &Supplier) -> (Vec<String>, piperine_solver::prelude::CircuitInstance) {
+        let circuit = Netlist::new(ir).circuit(supplier).unwrap_or_else(|e| panic!("circuit: {e}"));
+        let mut paths = circuit.bound().names.instances.clone();
+        paths.sort();
+        (paths, circuit)
+    }
 }
 
 #[test]
@@ -79,13 +81,13 @@ fn the_netlist_binds_whatever_supplies_the_modules() {
 
     // every module supplied: the three instances are bound and the divider reads 7.5 V
     // (10 V across 1 k and 3 k)
-    let (paths, mut circuit) = instances(&ir, &supplier(&[]));
+    let (paths, mut circuit) = CircuitInstances::instances(&ir, &supplier(&[]));
     assert_eq!(paths, ["Divider.r1", "Divider.r2", "Divider.v1"]);
     let mid = NodeIdentifier::Anonymous(ir.node_at("Divider.mid").expect("mid").id().index());
     let v = circuit.dc(Context::default()).expect("dc").solve().expect("solve").get_node(&mid).expect("v(mid)");
     assert!((v - 7.5).abs() < 1e-9, "v(mid) = {v}");
 
     // a body the supplier does not supply gets no device: only the source is bound
-    let (paths, _) = instances(&ir, &supplier(&["Resistor"]));
+    let (paths, _) = CircuitInstances::instances(&ir, &supplier(&["Resistor"]));
     assert_eq!(paths, ["Divider.v1"]);
 }

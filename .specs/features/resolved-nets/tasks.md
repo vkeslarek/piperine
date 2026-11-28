@@ -12,28 +12,28 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: In Progress - B1 and B2 (T1 to T10) done and on `main`; B3 onward (T11 to T39) re-planned 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan and of spec Q2 to Q4
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 and B2 as planned then; the re-plan of B3 onward has no approval yet)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesnatures**: `cargo test -p piperine-lang --test types_natures`
-**Run elabnatures**: `cargo test -p piperine-lang --test elab_natures`
-**Run sourcenatures**: `cargo test -p piperine-parity --test source_natures`
+**Run typesnatures**: `cargo test -p piperine-lang --test types_analog natures::`
+**Run elabnatures**: `cargo test -p piperine-lang --test elab_analog natures::`
+**Run sourcenatures**: `cargo test -p piperine-parity --test source_carriers natures::`
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol protocol_transient::`
 **Run irresolved**: `cargo test -p piperine-ir --test model resolved::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
 **Run transresolve**: `cargo test -p piperine-transpile --test digital resolve::`
-**Run sourceresolved**: `cargo test -p piperine-parity --test source_resolved`
-**Run sourcenets**: `cargo test -p piperine-parity --test source_nets`
-**Run typesgenmod**: `cargo test -p piperine-lang --test types_generic_modules`
-**Run elabgenmod**: `cargo test -p piperine-lang --test elab_generic_modules`
-**Run booknatures**: `cargo test -p piperine --test book_natures`
-**Run bookmodules**: `cargo test -p piperine --test book_modules`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookcorestd**: `cargo test -p piperine --test book_core_std`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run sourceresolved**: `cargo test -p piperine-parity --test source_carriers resolved::`
+**Run sourcenets**: `cargo test -p piperine-parity --test source_carriers nets::`
+**Run typesgenmod**: `cargo test -p piperine-lang --test types_generics generic_modules::`
+**Run elabgenmod**: `cargo test -p piperine-lang --test elab_structure generic_modules::`
+**Run booknatures**: `cargo test -p piperine --test book natures::`
+**Run bookmodules**: `cargo test -p piperine --test book modules::`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookcorestd**: `cargo test -p piperine --test book core_std::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-**Run typesaggregates**: `cargo test -p piperine-lang --test types_aggregates`
-**Run sourcelogic**: `cargo test -p piperine-parity --test source_logic`
+**Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
+**Run typesaggregates**: `cargo test -p piperine-lang --test types_patterns aggregates::`
+**Run sourcelogic**: `cargo test -p piperine-parity --test source_stdlib logic::`
 **Run hostpatterns**: `cargo test -p piperine-api --test host host_patterns::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`

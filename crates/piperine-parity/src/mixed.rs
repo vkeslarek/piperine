@@ -103,6 +103,12 @@ pub struct BuiltDesign {
 }
 
 impl BuiltDesign {
+    /// `top` of `project`, elaborated and compiled once.
+    pub fn of(project: &crate::project::Project, top: &str) -> BuiltDesign {
+        let ir = project.elaborate(top).unwrap_or_else(|r| panic!("{r}"));
+        BuiltDesign::new(ir)
+    }
+
     /// Compiles `ir` into a cache of its own; a warning in the generated source fails the build.
     pub fn new(ir: Ir) -> BuiltDesign {
         let ir = Arc::new(ir);

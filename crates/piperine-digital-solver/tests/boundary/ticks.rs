@@ -14,7 +14,7 @@ fn the_default_tick_is_one_femtosecond() {
 #[test]
 fn a_delay_is_due_at_the_nearest_tick() {
     // C1: a tick of 1 s makes the half-tick boundary exact.
-    let r = TickCases::ticks(1.0);
+    let r = TickCounts::ticks(1.0);
     let now = Tick(10);
     assert_eq!(r.due(now, 0.4), Ok(Due::NextMicrostep), "below half a tick rounds to no advance");
     assert_eq!(r.due(now, 0.5), Ok(Due::At(Tick(11))), "half a tick rounds up");
@@ -27,7 +27,7 @@ fn a_delay_is_due_at_the_nearest_tick() {
 
 #[test]
 fn a_non_advancing_delay_is_the_next_microstep() {
-    let r = TickCases::ticks(1e-9);
+    let r = TickCounts::ticks(1e-9);
     let now = Tick(7);
     assert_eq!(r.due(now, 0.0), Ok(Due::NextMicrostep));
     assert_eq!(r.due(now, -3e-9), Ok(Due::NextMicrostep));
@@ -66,9 +66,9 @@ fn an_infinite_delay_never_comes_due() {
 }
 
 /// The tick counts the time tests use.
-pub struct TickCases;
+struct TickCounts;
 
-impl TickCases {
+impl TickCounts {
     /// The ticks helper `ticks`.
     fn ticks(seconds_per_tick: f64) -> Resolution {
         Resolution { seconds_per_tick }

@@ -1,9 +1,1 @@
 crates/piperine-numbers/src/transcendental.rs::Float128	5
-crates/piperine-numbers/tests/floats/exact_algebra.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_integers.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_nearest.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_parts.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_root.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_scaled.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_text.rs::ExactRational	1
-crates/piperine-numbers/tests/floats/exact_values.rs::ExactRational	1

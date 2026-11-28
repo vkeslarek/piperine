@@ -4,7 +4,7 @@
 
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Child, Constant, Env, Expr,
-    ExprId, FunctionId, FunctionSpec, InstanceId, InstanceSpec, IrBuilder, Local, MathFn,
+    ExprId, FunctionId, FunctionSpec, InstanceId, InstanceSpec, Ir, IrBuilder, Local, MathFn,
     NatureId, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, Quantity, QuantityRole, Real,
     Site, Stmt, Terminal, UnaryOp, ValueType,
 };
@@ -512,6 +512,19 @@ impl Devices {
             analog: Some(vec![let_nvt, let_vcrit, let_vd, let_id, contribute]),
             children: vec![],
         })
+    }
+
+    /// The design that holds every M1 device body: `Resistor`, `Capacitor`, `Vsource`, `Isource`, `Diode`,
+    /// with a resistor alone as the top.
+    pub fn design_of_every_device() -> Ir {
+        let mut b = IrBuilder::new();
+        let resistor = Devices::resistor(&mut b);
+        Devices::capacitor(&mut b);
+        Devices::vsource(&mut b);
+        Devices::isource(&mut b);
+        Devices::diode(&mut b);
+        let top = Devices::alone(&mut b, resistor, "R", 1, vec![1000.0]);
+        b.finish(top)
     }
 
     /// The body alone as the design: a top instance named after it, both ports on ground, the

@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::{Cell, Partial, Shape, ambient, cell, global, input, kind, op, part, pin_flag, role};
-use piperine_abi::validate::validate;
+use piperine_abi::validate::Validator;
 use piperine_interp::Interpreter;
 use piperine_ir::{
     BodyNode, BodySpec, InstanceSpec, IrBuilder, NodeRef, NodeRole, NodeSpec, Origin, Real, Stmt,
@@ -23,7 +23,8 @@ use crate::models;
 
 use circuits::HandCircuits;
 use devices::{Devices, Ex};
-use models::{Models, View};
+use models::Models;
+use piperine_device_fixtures::shapes::View;
 
 /// Hand-built bodies the five devices do not cover.
 struct Odd;
@@ -363,7 +364,7 @@ fn every_m1_shape_validates() {
     let shapes = Cells::every_shape(&m, &quiet, &held);
     assert_eq!(shapes.len(), 7);
     for (name, shape) in shapes {
-        assert_eq!(validate(shape), Ok(()), "{name}");
+        assert_eq!(Validator::validate(shape), Ok(()), "{name}");
     }
 }
 

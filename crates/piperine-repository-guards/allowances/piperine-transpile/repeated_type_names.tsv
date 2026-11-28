@@ -1,5 +1,4 @@
 crates/piperine-transpile/src/cache.rs::Entry	1
-crates/piperine-transpile/src/cache.rs::Key	1
 crates/piperine-transpile/src/cache.rs::Manifest	1
 crates/piperine-transpile/src/compiled.rs::Report	1
 crates/piperine-transpile/src/error.rs::Error	1

@@ -20,8 +20,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run grid**: `cargo test -p piperine-api --test records grid::`
 **Run memory**: `cargo test -p piperine-api --test memory memory::`
 **Run bucklong**: `cargo test -p piperine-api --test buck_long`
-**Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
-**Run paritygrid**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_grid -- --nocapture`
+**Run parity**: `cargo test -p piperine-parity --test parity`
+**Run paritygrid**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity grid:: -- --nocapture`
 **Run clilib**: `cargo test -p piperine-cli --lib`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run run**: `cargo test -p piperine-cli --test commands run::`

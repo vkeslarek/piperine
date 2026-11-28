@@ -13,6 +13,7 @@
 //! - `binding` binds placed devices into a digital plan, `circuits` places the `circuit` devices on a circuit
 //!   builder, `scripted` holds the scripted stand-ins of the two sub-solvers.
 //! - `solver_devices`: the devices of the solver's own integration targets, one module per target.
+//! - `shapes`: `View`, an ABI shape read as plain values.
 //! - `partials`: the `PartialsCheck` that holds every device's declared partials to a finite difference;
 //!   `tests/partials.rs` lists every device once.
 
@@ -29,4 +30,5 @@ pub mod examples;
 pub mod mixed;
 pub mod partials;
 pub mod scripted;
+pub mod shapes;
 pub mod solver_devices;

@@ -21,10 +21,10 @@ use piperine_transpile::rt::widths::{Convert, FloatRepr};
 use piperine_transpile::rt::{NUMBER_FILES, Runtime, RuntimeForms};
 use piperine_transpile::Rustc;
 
-/// The helpers of this target.
-struct Files;
+/// The paths of the files a runtime is made of.
+struct EmbeddedPaths;
 
-impl Files {
+impl EmbeddedPaths {
     /// The paths of runtime files.
     fn paths(files: Vec<(&'static str, &'static str)>) -> Vec<&'static str> {
         files.into_iter().map(|(path, _)| path).collect()
@@ -35,9 +35,9 @@ impl Files {
 fn a_design_without_number_widths_gets_todays_runtime_files() {
     // MD-63 item 1 and the cache keys: a design that uses none of the new types gets exactly the files it had,
     // whatever the switch `numbers: false` says, so no existing cache entry or golden moves
-    assert_eq!(Files::paths(Runtime::files(false)), ["rt.rs"], "an analog-only design has `real.rs` alone as `rt.rs`");
+    assert_eq!(EmbeddedPaths::paths(Runtime::files(false)), ["rt.rs"], "an analog-only design has `real.rs` alone as `rt.rs`");
     assert_eq!(
-        Files::paths(Runtime::files(true)),
+        EmbeddedPaths::paths(Runtime::files(true)),
         ["rt.rs", "rt/real.rs", "rt/int.rs", "rt/pin.rs", "rt/control.rs", "rt/commits.rs", "rt/array.rs", "rt/table.rs"],
         "a digital design gets the files of `rt`"
     );
@@ -48,8 +48,8 @@ fn a_design_without_number_widths_gets_todays_runtime_files() {
     // a design that uses a number width gets those files, then `rt/numbers.rs`, every library file and `rt/widths.rs`,
     // and a root that re-exports the types the printer spells
     let with = Runtime::files_for(RuntimeForms { digital: false, numbers: true });
-    let with_paths = Files::paths(with.clone());
-    assert_eq!(with_paths[1..8], Files::paths(Runtime::files(true))[1..], "the digital files follow the root unchanged");
+    let with_paths = EmbeddedPaths::paths(with.clone());
+    assert_eq!(with_paths[1..8], EmbeddedPaths::paths(Runtime::files(true))[1..], "the digital files follow the root unchanged");
     assert!(with_paths.contains(&"rt/numbers.rs") && with_paths.contains(&"rt/widths.rs"));
     for (path, text) in NUMBER_FILES {
         assert!(with.iter().any(|(file, body)| *file == path && *body == text), "{path} is embedded verbatim");

@@ -13,9 +13,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-packages/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
-**Run errors**: `cargo test -p piperine-lang --test msl_errors`
-**Run crates**: `cargo test -p piperine-lang --test pom_crates`
-**Run docs**: `cargo test -p piperine-lang --test pom_docs`
+**Run errors**: `cargo test -p piperine-lang --test msl errors::`
+**Run crates**: `cargo test -p piperine-lang --test pom crates::`
+**Run docs**: `cargo test -p piperine-lang --test pom docs::`
 **Run manifest**: `cargo test -p piperine-project --test project manifest::`
 **Run paths**: `cargo test -p piperine-project --test project paths::`
 **Run git**: `cargo test -p piperine-project --test project git::`

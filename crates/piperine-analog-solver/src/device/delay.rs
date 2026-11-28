@@ -11,8 +11,7 @@ use crate::error::Error;
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
-use super::device_error;
-use super::flow::{Linear, stamp_flow};
+use super::flow::{FlowStamp, Linear};
 use super::plan::TermPlan;
 
 /// The accepted `(t, v)` of one `DELAY` term, in time order.
@@ -63,25 +62,38 @@ impl Delayed {
     }
 }
 
-/// The stamps of a `DELAY` term of current value `lin` at time `now` with
-/// delay `td` and bound `max`, in a transient stage.
-pub(crate) fn stamp_delay(
-    path: &str,
-    t: &TermPlan,
-    lin: &Linear<'_>,
-    hist: &Delayed,
-    (now, td, max): (f64, f64, f64),
-    x: &[f64],
-    out: &mut Vec<Stamp<AnalogReference, f64>>,
-) -> Result<(), Error> {
-    if td > max {
-        return Err(device_error(format!(
-            "instance `{path}`: term `{}` ({}): delay {td} exceeds its max {max}",
-            t.name, t.origin
-        )));
+/// The stamps of one `DELAY` term in a transient stage: the part of the assembly it reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DelayStamp<'a> {
+    /// The path of the instance, for the error.
+    pub path: &'a str,
+    /// The term whose rows are stamped.
+    pub term: &'a TermPlan,
+    /// The term at the iterate, its current value.
+    pub linear: Linear<'a>,
+    /// The accepted values of the term.
+    pub history: &'a Delayed,
+    /// The time of the solve.
+    pub now: f64,
+    /// The delay.
+    pub delay: f64,
+    /// The bound of the delay.
+    pub max: f64,
+}
+
+impl DelayStamp<'_> {
+    /// The stamps of a `DELAY` term of current value `linear` at time `now` with
+    /// delay `td` and bound `max`, in a transient stage.
+    pub fn stamp(&self, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) -> Result<(), Error> {
+        if self.delay > self.max {
+            return Err(Error::device(format!(
+                "instance `{}`: term `{}` ({}): delay {} exceeds its max {}",
+                self.path, self.term.name, self.term.origin, self.delay, self.max
+            )));
+        }
+        let (h, w) = self.history.at(self.now - self.delay, self.now);
+        let at = self.linear.scaled(h + w * self.linear.v, w);
+        FlowStamp::new(self.term, at).norton(x, out);
+        Ok(())
     }
-    let (h, w) = hist.at(now - td, now);
-    let at = lin.scaled(h + w * lin.v, w);
-    stamp_flow(t, &at, x, out);
-    Ok(())
 }

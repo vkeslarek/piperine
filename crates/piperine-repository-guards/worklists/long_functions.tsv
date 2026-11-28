@@ -1,19 +1,4 @@
-crates/piperine-abi/src/validate.rs::::cell_bytes	-
-crates/piperine-abi/src/validate.rs::::check_function	-
-crates/piperine-abi/src/validate.rs::::validate	-
-crates/piperine-analog-solver/src/device/assembly.rs::Assembly::param_stamps	-
-crates/piperine-analog-solver/src/device/plan.rs::::bind_instance	-
-crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve	-
-crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve_with_strategy	-
 crates/piperine-api/src/probe.rs::Probe::resolve	-
-crates/piperine-digital-solver/src/dag.rs::Dag::build	-
-crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-
-crates/piperine-digital-solver/src/plan.rs::::analyze	-
-crates/piperine-digital-solver/src/run.rs::::call_function	-
-crates/piperine-digital-solver/src/run.rs::::call_reaction	-
-crates/piperine-digital-solver/src/run.rs::::closure	-
-crates/piperine-digital-solver/src/run.rs::::relax	-
-crates/piperine-digital-solver/src/run.rs::::run_reactions	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
 crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	kept: one arm per variant, every arm a one-line name
@@ -72,19 +57,9 @@ crates/piperine-lang/src/types/value/expr.rs::ExpressionTyping::let_statement	ke
 crates/piperine-lang/src/types/module/module.rs::ModuleTyping::connections	kept: the connection rules of one placement in order (the ports and their types, the arity as E0141 or E0312, then one arm per kind of port, each arm one call); the order is the order of the diagnostics
 crates/piperine-lang/src/types/module/module.rs::ModuleTyping::placement	kept: the steps of one placement in the order its rules need them: the place is judged first, the placement is pushed before its arguments are typed so a feedback through it reads it, and popped after the connections; each step reads what the one before fixed, with an early return where one ends it
 crates/piperine-plan/src/netlist.rs::Netlist::circuit	-
-crates/piperine-solver/src/analyses/adjoint.rs::AdjointSolver::solve	-
-crates/piperine-solver/src/analyses/noise.rs::NoiseSolver::solve	-
-crates/piperine-solver/src/analyses/pss.rs::PssSolver::solve	-
-crates/piperine-solver/src/analyses/sensitivity.rs::::diff_residual	-
-crates/piperine-solver/src/analyses/sensitivity.rs::ParamStampCollector::collect_device	-
-crates/piperine-solver/src/analyses/sp.rs::SpSolver::new	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::calculate_gain	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::calculate_output_resistance	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::new	-
-crates/piperine-solver/src/analyses/transient.rs::TransientSolver::device_attempt	-
-crates/piperine-solver/src/analyses/transient.rs::TransientSolver::solve	-
-crates/piperine-solver/src/core/bind.rs::::bind	-
-crates/piperine-solver/src/protocol/transient.rs::Protocol::transient_loop	-
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::closure	-
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::reads	-
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::terms_function	-

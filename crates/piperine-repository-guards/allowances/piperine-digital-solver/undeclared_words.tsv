@@ -5,7 +5,7 @@ crates/piperine-digital-solver/src/engine.rs::obs	1
 crates/piperine-digital-solver/src/net.rs::init	1
 crates/piperine-digital-solver/src/observe.rs::Obs	1
 crates/piperine-digital-solver/src/plan.rs::k	1
-crates/piperine-digital-solver/src/plan.rs::reachability	1
+crates/piperine-digital-solver/src/plan.rs::Reachability	1
 crates/piperine-digital-solver/src/run.rs::Ran	1
 crates/piperine-digital-solver/src/run.rs::Reshape	1
 crates/piperine-digital-solver/src/run.rs::ran	1

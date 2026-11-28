@@ -24,9 +24,9 @@ const ORIGIN: &str = "failure_rules.rs";
 
 #[test]
 fn section_12_unresolvable_noise_output_node_is_an_analysis_error() {
-    let mut circuit = FailureRulesCases::resistor_circuit();
+    let mut circuit = FailureCircuit::resistor_circuit();
     let options = NoiseAnalysisOptions {
-        sweep_options: FailureRulesCases::sweep(),
+        sweep_options: FailureCircuit::sweep(),
         output_node: NodeIdentifier::Anonymous(99),
         reference_node: NodeIdentifier::Gnd,
         input_source_name: None,
@@ -37,15 +37,15 @@ fn section_12_unresolvable_noise_output_node_is_an_analysis_error() {
         .and_then(|mut n| n.solve())
         .map(|_| ())
         .expect_err("§12: an unresolvable output node must fail");
-    FailureRulesCases::assert_rule(&err, SolverDomain::Noise, "output node");
+    FailureCircuit::assert_rule(&err, SolverDomain::Noise, "output node");
 }
 
 #[test]
 fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
-    let mut circuit = FailureRulesCases::resistor_circuit();
+    let mut circuit = FailureCircuit::resistor_circuit();
     let options = NoiseAnalysisOptions {
-        sweep_options: FailureRulesCases::sweep(),
-        output_node: FailureRulesCases::node_a(&circuit),
+        sweep_options: FailureCircuit::sweep(),
+        output_node: FailureCircuit::node_a(&circuit),
         reference_node: NodeIdentifier::Anonymous(98),
         input_source_name: None,
         output_flow: None,
@@ -55,7 +55,7 @@ fn section_12_unresolvable_noise_reference_node_is_an_analysis_error() {
         .and_then(|mut n| n.solve())
         .map(|_| ())
         .expect_err("§12: an unresolvable reference node must fail");
-    FailureRulesCases::assert_rule(&err, SolverDomain::Noise, "reference node");
+    FailureCircuit::assert_rule(&err, SolverDomain::Noise, "reference node");
 }
 
 // ─── §15 — a linear solve returning NaN or infinity ───────────────────────────
@@ -83,7 +83,7 @@ fn section_15_a_non_finite_stamp_is_a_convergence_failure() {
         .and_then(|mut dc| dc.solve())
         .map(|_| ())
         .expect_err("§15/§7.3.2.1: a NaN contribution must fail, never converge");
-    FailureRulesCases::assert_rule(&err, SolverDomain::Device, "E0507");
+    FailureCircuit::assert_rule(&err, SolverDomain::Device, "E0507");
     let text = err.to_string();
     assert!(
         text.contains("instance `nan`"),
@@ -102,7 +102,7 @@ fn a_non_finite_contribution_is_e0507_and_names_the_instance() {
     b.device(NanSource::module(), "nan", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::dc_error(&mut circuit);
+    let err = FailureCircuit::dc_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0507), "{err}");
     let text = err.to_string();
     assert!(text.contains("instance `nan`"), "the instance is named: {err}");
@@ -112,25 +112,25 @@ fn a_non_finite_contribution_is_e0507_and_names_the_instance() {
 #[test]
 fn section_18_a_non_positive_period_is_an_analysis_error() {
     for period in [0.0, -1e-6] {
-        let mut circuit = FailureRulesCases::resistor_circuit();
+        let mut circuit = FailureCircuit::resistor_circuit();
         let err = circuit
-            .pss(FailureRulesCases::pss_options(period, 0.0), Context::default())
+            .pss(FailureCircuit::pss_options(period, 0.0), Context::default())
             .and_then(|p| p.solve())
             .map(|_| ())
             .expect_err("§18: a non-positive period must fail");
-        FailureRulesCases::assert_rule(&err, SolverDomain::Pss, "period must be positive");
+        FailureCircuit::assert_rule(&err, SolverDomain::Pss, "period must be positive");
     }
 }
 
 #[test]
 fn section_18_a_negative_pre_roll_is_an_analysis_error() {
-    let mut circuit = FailureRulesCases::resistor_circuit();
+    let mut circuit = FailureCircuit::resistor_circuit();
     let err = circuit
-        .pss(FailureRulesCases::pss_options(1e-3, -1.0), Context::default())
+        .pss(FailureCircuit::pss_options(1e-3, -1.0), Context::default())
         .and_then(|p| p.solve())
         .map(|_| ())
         .expect_err("§18: a negative pre-roll must fail");
-    FailureRulesCases::assert_rule(&err, SolverDomain::Pss, "tstab");
+    FailureCircuit::assert_rule(&err, SolverDomain::Pss, "tstab");
 }
 
 // ─── §9 — DC fails plain Newton, gmin stepping, and source stepping ────────────
@@ -152,7 +152,7 @@ fn section_9_exhausting_every_dc_strategy_is_a_convergence_failure() {
     // The exhausted plan reports its last attempt, so the domain is `Newton`
     // rather than `Dc` — §16 calls this a "convergence failure" without fixing
     // the domain, and this is the domain the code actually uses.
-    FailureRulesCases::assert_rule(&err, SolverDomain::Newton, "converge");
+    FailureCircuit::assert_rule(&err, SolverDomain::Newton, "converge");
 }
 
 /// HYG-03 AC 4: an equilibrium no strategy settles is `E0505`, naming the
@@ -166,7 +166,7 @@ fn an_equilibrium_that_never_converges_is_e0505_with_its_unknowns() {
     b.device(Oscillator::module(), "osc", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::dc_error(&mut circuit);
+    let err = FailureCircuit::dc_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0505), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(run.names, vec!["node of r.p, osc.p".to_string()], "the one unknown that never settles: {err}");
@@ -183,7 +183,7 @@ fn a_singular_solve_names_the_pins_of_its_node() {
     CircuitBuilding::add_capacitor(&mut b, "c2", 2e-9, &a, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::dc_error(&mut circuit);
+    let err = FailureCircuit::dc_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(run.names, vec!["node of c1.p, c2.p".to_string()], "{err}");
@@ -200,7 +200,7 @@ fn a_loop_of_sources_names_both_instances() {
     CircuitBuilding::add_voltage_source(&mut b, "v2", 2.0, &a, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::dc_error(&mut circuit);
+    let err = FailureCircuit::dc_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(
@@ -221,7 +221,7 @@ fn an_instance_is_named_once_in_a_singular_report() {
     CircuitBuilding::add_capacitor(&mut b, "c2", 2e-9, &a, &a);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::dc_error(&mut circuit);
+    let err = FailureCircuit::dc_error(&mut circuit);
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert_eq!(run.names, vec!["node of c1.p, c2.p+n".to_string()], "{err}");
     assert_eq!(err.to_string().matches("c2").count(), 1, "{err}");
@@ -239,7 +239,7 @@ fn a_step_that_fails_newton_at_the_floor_is_e0508_with_its_time() {
     b.device(LateOscillator::module(), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::tran_error(&mut circuit);
+    let err = FailureCircuit::tran_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0508), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     let t = run.time.expect("the time of the failing step");
@@ -259,7 +259,7 @@ fn a_singular_transient_step_is_e0503_naming_both_sources() {
     b.device(LateSource::module(), "late", &[], &[Port::Node(a), Port::Node(gnd)]);
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::tran_error(&mut circuit);
+    let err = FailureCircuit::tran_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     let t = run.time.expect("the time of the singular step");
@@ -279,7 +279,7 @@ fn a_singular_ac_point_is_e0503_naming_the_node() {
 
     let err = circuit
         .ac(Context::default())
-        .and_then(|mut ac| ac.solve_sweep(FailureRulesCases::sweep()))
+        .and_then(|mut ac| ac.solve_sweep(FailureCircuit::sweep()))
         .map(|_| ())
         .expect_err("a node with no small-signal path must be singular");
     assert_eq!(err.code(), Some(RunCode::E0503), "{err}");
@@ -304,7 +304,7 @@ fn a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier() {
     );
     let mut circuit = b.build().expect("build");
 
-    let err = FailureRulesCases::tran_error(&mut circuit);
+    let err = FailureCircuit::tran_error(&mut circuit);
     assert_eq!(err.code(), Some(RunCode::E0504), "{err}");
     let Error::Run(run) = &err else { panic!("a run error, got {err}") };
     assert!(run.detail.contains("go"), "the carrier is named: {err}");
@@ -312,10 +312,10 @@ fn a_jump_step_that_fails_at_the_floor_is_e0504_naming_the_carrier() {
     assert!(t > 5.0e-7 && t <= 1.0e-6, "the failing step lies after the delivery at 500 ns: {t:e}");
 }
 
-/// The helpers of the failure_rules tests.
-pub struct FailureRulesCases;
+/// The resistor circuit the failure rules fail, and the errors they raise.
+struct FailureCircuit;
 
-impl FailureRulesCases {
+impl FailureCircuit {
     // ─── Fixtures ─────────────────────────────────────────────────────────────────
 
     /// A one-resistor circuit between node 1 and ground.

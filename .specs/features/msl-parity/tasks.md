@@ -14,14 +14,14 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-solver --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-parity || cargo build -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
 **Run lib**: `cargo test -p piperine-parity --lib`
-**Run twins**: `cargo test -p piperine-parity --test twins`
-**Run harness**: `cargo test -p piperine-parity --test harness`
-**Run bench**: `cargo test -p piperine-parity --test bench`
-**Run op**: `cargo test -p piperine-parity --test parity_op`
-**Run dc**: `cargo test -p piperine-parity --test parity_dc`
-**Run ac**: `cargo test -p piperine-parity --test parity_ac`
-**Run tran**: `cargo test -p piperine-parity --test parity_tran`
-**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run twins**: `cargo test -p piperine-parity --test harness twins::`
+**Run harness**: `cargo test -p piperine-parity --test harness harness::`
+**Run bench**: `cargo test -p piperine-parity --test harness bench::`
+**Run op**: `cargo test -p piperine-parity --test parity op::`
+**Run dc**: `cargo test -p piperine-parity --test parity dc::`
+**Run ac**: `cargo test -p piperine-parity --test parity ac::`
+**Run tran**: `cargo test -p piperine-parity --test parity tran::`
+**Run corpus**: `cargo test -p piperine-parity --test parity corpus::`
 
 Executors: Sonnet implements every task; Opus verifies the feature. The worktree and branch are told at dispatch. Phase 1 (T1 to T4) runs in wave 1: it needs only `piperine-lang` as it is today, ngspice and the fixtures. Phase 2 (T5 to T10) runs in wave 3: it needs `msl-typeck`, `msl-ir`, `msl-elab` and `ir-interp` merged into the worktree first. ngspice must be installed where the tests run (`/usr/bin/ngspice`, ngspice-47 on the planning machine); `check_proofs.py` is run without `PIPERINE_NGSPICE` set.
 

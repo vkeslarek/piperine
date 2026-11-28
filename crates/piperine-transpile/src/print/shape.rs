@@ -7,7 +7,7 @@
 
 use std::collections::BTreeSet;
 
-use piperine_abi::layout::{BIT, BYTE, F64, NONE, layout_eq};
+use piperine_abi::layout::{BIT, BYTE, F64, NONE};
 use piperine_abi::raw::{
     Cell, DEFAULT, Field, GROUND, Layout, Partial, Shape, Statement, ambient, cell, fn_flag, global, input,
     kind, leaf, op, part, pin_flag, reaction_flag, role, statement_flag, watch,
@@ -254,7 +254,7 @@ impl ShapePrinter {
     /// The name of a shipped layout `l` equals, field names included; `None` for any other.
     fn shipped(l: &Layout<'_>) -> Option<&'static str> {
         let same = |s: &Layout<'_>| {
-            layout_eq(l, s) && l.fields.iter().zip(s.fields.iter()).all(|(a, b)| a.name.as_str() == b.name.as_str())
+            Layout::equals(l, s) && l.fields.iter().zip(s.fields.iter()).all(|(a, b)| a.name.as_str() == b.name.as_str())
         };
         [("F64", &F64), ("BIT", &BIT), ("BYTE", &BYTE), ("NONE", &NONE)]
             .into_iter()
@@ -463,38 +463,43 @@ mod tests {
     use super::ShapePrinter;
     use piperine_ir_fixtures::devices::Devices;
 
-    /// Each entry's call: the comment line before it names the entry and its origin.
-    fn entries(shape: &Shape<'_>) -> Vec<(&'static str, String, String)> {
-        let mut out = Vec::new();
-        out.extend(shape.pins.iter().map(|p| ("s.pin(", p.name.as_str().to_string(), p.origin.as_str().to_string())));
-        out.extend(shape.terms.iter().map(|x| ("s.term(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
-        out.extend(shape.inputs.iter().map(|x| ("s.input(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
-        out.extend(shape.watches.iter().map(|x| ("s.watch(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
-        out.extend(shape.functions.iter().map(|x| ("s.function(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
-        out.extend(shape.reactions.iter().map(|x| ("s.reaction(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
-        out
-    }
+    /// The calls a printed shape holds, one per entry.
+    struct ShapeCalls;
 
-    /// The text holds one call per entry, in the shape's order, each on the line after a comment
-    /// with the entry's name and origin, and no other call.
-    fn one_call_per_entry(what: &str, shape: &Shape<'_>) {
-        let text = ShapePrinter::new().prototype(shape);
-        let lines: Vec<&str> = text.lines().collect();
-        let calls: Vec<usize> = (0..lines.len()).filter(|i| lines[*i].trim_start().starts_with("s.")).collect();
-        let expected = entries(shape);
-        // `s.freeze()` closes the text; every other `s.` line is an entry's call
-        assert_eq!(lines.last(), Some(&"s.freeze()"), "{what}");
-        assert_eq!(calls.len(), expected.len() + 1, "{what}: calls\n{text}");
-        for (at, (call, name, origin)) in calls.iter().zip(&expected) {
-            assert!(lines[*at].starts_with(call), "{what}: line {at} is not `{call}…`: {}", lines[*at]);
-            let comment = lines[at - 1];
-            assert!(
-                comment.starts_with("// ") && comment.contains(&format!("`{name}`")) && comment.ends_with(&format!("@ {origin}")),
-                "{what}: the comment over `{name}` is `{comment}`"
-            );
+    impl ShapeCalls {
+        /// Each entry's call: the comment line before it names the entry and its origin.
+        fn entries(shape: &Shape<'_>) -> Vec<(&'static str, String, String)> {
+            let mut out = Vec::new();
+            out.extend(shape.pins.iter().map(|p| ("s.pin(", p.name.as_str().to_string(), p.origin.as_str().to_string())));
+            out.extend(shape.terms.iter().map(|x| ("s.term(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
+            out.extend(shape.inputs.iter().map(|x| ("s.input(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
+            out.extend(shape.watches.iter().map(|x| ("s.watch(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
+            out.extend(shape.functions.iter().map(|x| ("s.function(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
+            out.extend(shape.reactions.iter().map(|x| ("s.reaction(", x.name.as_str().to_string(), x.origin.as_str().to_string())));
+            out
         }
-        let comments = lines.iter().filter(|l| l.starts_with("// ")).count();
-        assert_eq!(comments, expected.len(), "{what}: one comment per entry");
+
+        /// The text holds one call per entry, in the shape's order, each on the line after a comment
+        /// with the entry's name and origin, and no other call.
+        fn one_call_per_entry(what: &str, shape: &Shape<'_>) {
+            let text = ShapePrinter::new().prototype(shape);
+            let lines: Vec<&str> = text.lines().collect();
+            let calls: Vec<usize> = (0..lines.len()).filter(|i| lines[*i].trim_start().starts_with("s.")).collect();
+            let expected = ShapeCalls::entries(shape);
+            // `s.freeze()` closes the text; every other `s.` line is an entry's call
+            assert_eq!(lines.last(), Some(&"s.freeze()"), "{what}");
+            assert_eq!(calls.len(), expected.len() + 1, "{what}: calls\n{text}");
+            for (at, (call, name, origin)) in calls.iter().zip(&expected) {
+                assert!(lines[*at].starts_with(call), "{what}: line {at} is not `{call}…`: {}", lines[*at]);
+                let comment = lines[at - 1];
+                assert!(
+                    comment.starts_with("// ") && comment.contains(&format!("`{name}`")) && comment.ends_with(&format!("@ {origin}")),
+                    "{what}: the comment over `{name}` is `{comment}`"
+                );
+            }
+            let comments = lines.iter().filter(|l| l.starts_with("// ")).count();
+            assert_eq!(comments, expected.len(), "{what}: one comment per entry");
+        }
     }
 
     #[test]
@@ -513,7 +518,7 @@ mod tests {
             let counts = (shape.pins.len(), shape.terms.len(), shape.inputs.len(), shape.functions.len());
             let expected = if body == diode { (10, 2, 1, 5) } else { (5, 2, 1, 2) };
             assert_eq!(counts, expected, "{}", ir.body(body).name());
-            one_call_per_entry(ir.body(body).name(), shape);
+            ShapeCalls::one_call_per_entry(ir.body(body).name(), shape);
         }
 
         // a shape with what M1 shapes lack: an event pin, a custom layout, a watch, a reaction
@@ -535,7 +540,7 @@ mod tests {
             ..ReactionSpec::default()
         });
         let frozen = s.freeze();
-        one_call_per_entry("the D flip-flop", frozen.shape());
+        ShapeCalls::one_call_per_entry("the D flip-flop", frozen.shape());
         let text = ShapePrinter::new().prototype(frozen.shape());
         assert!(text.contains("PinSpec::event(\"event:0\", role::PRIVATE)"), "{text}");
         assert!(text.contains("flags: statement_flag::LATER, min_after: 1e-9"), "{text}");

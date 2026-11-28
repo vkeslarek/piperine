@@ -1087,24 +1087,75 @@ mod tests {
     use piperine_ir_fixtures::devices::Devices;
     use piperine_ir_fixtures::digital::{Buck, Dx, ValueAliases};
 
-    /// The resistor, the voltage source and the diode (with `vt` and `pnjlim`) in one `Ir`.
-    fn library() -> Ir {
-        let mut b = IrBuilder::new();
-        let r = Devices::resistor(&mut b);
-        Devices::vsource(&mut b);
-        Devices::diode(&mut b);
-        let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
-        b.finish(top)
+    /// The device bodies the expression tests read.
+    struct DeviceLibrary;
+
+    impl DeviceLibrary {
+        /// The resistor, the voltage source and the diode (with `vt` and `pnjlim`) in one `Ir`.
+        fn library() -> Ir {
+            let mut b = IrBuilder::new();
+            let r = Devices::resistor(&mut b);
+            Devices::vsource(&mut b);
+            Devices::diode(&mut b);
+            let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
+            b.finish(top)
+        }
+
+        /// The value of the first addend of `body`'s only contribution.
+        fn contributed<'a>(ir: &'a Ir, body: &str) -> (piperine_ir::Body<'a>, piperine_ir::ExprId) {
+            let body = ir.bodies().find(|b| b.name() == body).unwrap_or_else(|| panic!("no body {body}"));
+            let value = body
+                .analog()
+                .unwrap_or_default()
+                .iter()
+                .find_map(|s| match ir.stmt(*s) {
+                    Stmt::Contribute { addends, .. } => Some(addends[0].value),
+                    _ => None,
+                })
+                .expect("a contribution");
+            (body, value)
+        }
     }
 
-    fn function(ir: &Ir, name: &str) -> String {
-        let f = ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no fn {name}"));
-        ExpressionPrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{name}: {e}"))
+    /// A function of an `Ir` as printed text.
+    struct FunctionPrint;
+
+    impl FunctionPrint {
+        fn function(ir: &Ir, name: &str) -> String {
+            let f = ir.functions().find(|f| f.name() == name).unwrap_or_else(|| panic!("no fn {name}"));
+            ExpressionPrinter::function(ir, f.id()).unwrap_or_else(|e| panic!("{name}: {e}"))
+        }
+    }
+
+    /// A function of one expression, defined in an `IrBuilder`.
+    struct FunctionDefinition;
+
+    impl FunctionDefinition {
+        /// A function of one expression: `fn name(params) -> ret { body }` at `dpwm.msl:1`.
+        fn defined(
+            b: &mut IrBuilder,
+            name: &str,
+            params: &[(&str, ValueType)],
+            ret: ValueType,
+            body: impl FnOnce(&mut Dx<'_>) -> ExprId,
+        ) -> FunctionId {
+            let mut x = Dx::new(b, "dpwm.msl", 1, 1);
+            let body = body(&mut x);
+            let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone(), mutable: false }).collect();
+            b.function(FunctionSpec {
+                name: name.into(),
+                origin: Origin { file: "dpwm.msl".into(), line: 1, col: 1 },
+                params: locals.clone(),
+                ret,
+                locals,
+                body,
+            })
+        }
     }
 
     #[test]
     fn a_function_prints_as_a_generic_fn() {
-        let ir = library();
+        let ir = DeviceLibrary::library();
         // std/analog.msl:10: `pub fn vt(t: f64) -> f64 { K_B * t / Q }`, the constants folded
         let vt = "\
 // fn vt @ analog.msl:10:1
@@ -1112,7 +1163,7 @@ fn vt<R: Real>(t: R) -> R {
     R::constant(1.380649e-23) * t / R::constant(1.602176634e-19)
 }
 ";
-        assert_eq!(function(&ir, "vt"), vt);
+        assert_eq!(FunctionPrint::function(&ir, "vt"), vt);
 
         // std/analog.msl:21-31, line by line; its two `let arg` are distinct locals of one owner, printed `arg_4_` and `arg_5_`
         let pnjlim = "\
@@ -1145,31 +1196,16 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
     }
 }
 ";
-        assert_eq!(function(&ir, "pnjlim"), pnjlim);
-    }
-
-    /// The value of the first addend of `body`'s only contribution.
-    fn contributed<'a>(ir: &'a Ir, body: &str) -> (piperine_ir::Body<'a>, piperine_ir::ExprId) {
-        let body = ir.bodies().find(|b| b.name() == body).unwrap_or_else(|| panic!("no body {body}"));
-        let value = body
-            .analog()
-            .unwrap_or_default()
-            .iter()
-            .find_map(|s| match ir.stmt(*s) {
-                Stmt::Contribute { addends, .. } => Some(addends[0].value),
-                _ => None,
-            })
-            .expect("a contribution");
-        (body, value)
+        assert_eq!(FunctionPrint::function(&ir, "pnjlim"), pnjlim);
     }
 
     #[test]
     fn an_unsupported_form_is_named_with_path_and_origin() {
-        let ir = library();
+        let ir = DeviceLibrary::library();
         let at = |line, col| Origin { file: "devices.msl".into(), line, col };
 
         // `i(p, n) +> v(p, n) / r`: the probe `v(p, n)` (devices.msl:8) has no value lowering
-        let (resistor, value) = contributed(&ir, "Resistor");
+        let (resistor, value) = DeviceLibrary::contributed(&ir, "Resistor");
         let Expr::Binary { lhs: probe, .. } = ir.expr(value) else { panic!("v(p, n) / r") };
         let err = ExpressionPrinter::of_body(&ir, resistor).expr(value).expect_err("a probe is not a value form");
         assert_eq!(
@@ -1178,7 +1214,7 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         );
 
         // `v(p, n) +> dc * source_scale() + ac_stim(ac)`: the stimulus (devices.msl:21) neither
-        let (vsource, value) = contributed(&ir, "Vsource");
+        let (vsource, value) = DeviceLibrary::contributed(&ir, "Vsource");
         let Expr::Binary { rhs: stim, .. } = ir.expr(value) else { panic!("dc * source_scale() + ac_stim(ac)") };
         let err = ExpressionPrinter::of_body(&ir, vsource).expr(value).expect_err("ac_stim is not a value form");
         assert_eq!(
@@ -1188,27 +1224,6 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         // the message names the three
         let text = err.to_string();
         assert!(text.contains("ac_stim") && text.contains("body Vsource") && text.contains("devices.msl:21:30"), "{text}");
-    }
-
-    /// A function of one expression: `fn name(params) -> ret { body }` at `dpwm.msl:1`.
-    fn defined(
-        b: &mut IrBuilder,
-        name: &str,
-        params: &[(&str, ValueType)],
-        ret: ValueType,
-        body: impl FnOnce(&mut Dx<'_>) -> ExprId,
-    ) -> FunctionId {
-        let mut x = Dx::new(b, "dpwm.msl", 1, 1);
-        let body = body(&mut x);
-        let locals: Vec<Local> = params.iter().map(|(n, t)| Local { name: (*n).to_string(), ty: t.clone(), mutable: false }).collect();
-        b.function(FunctionSpec {
-            name: name.into(),
-            origin: Origin { file: "dpwm.msl".into(), line: 1, col: 1 },
-            params: locals.clone(),
-            ret,
-            locals,
-            body,
-        })
     }
 
     #[test]
@@ -1260,37 +1275,37 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         for (k, (method, recv, others, result, ..)) in rows.iter().enumerate() {
             let mut params = vec![("x", recv.clone())];
             params.extend(others.iter().enumerate().map(|(i, t)| (["y", "z"][i], t.clone())));
-            defined(&mut b, &format!("row{k}"), &params, result.clone(), |x| {
+            FunctionDefinition::defined(&mut b, &format!("row{k}"), &params, result.clone(), |x| {
                 let receiver = x.local(0, recv.clone());
                 let args: Vec<ExprId> = others.iter().enumerate().map(|(i, t)| x.local(i as u32 + 1, t.clone())).collect();
                 x.method(*method, receiver, args, result.clone())
             });
         }
         // A literal exponent prints as an `i32` literal (analog code has no `rt::Int`).
-        defined(&mut b, "powi_literal", &[("x", f.clone())], f.clone(), |x| {
+        FunctionDefinition::defined(&mut b, "powi_literal", &[("x", f.clone())], f.clone(), |x| {
             let receiver = x.local(0, ValueType::F64);
             let exponent = x.int(3, ValueAliases::i(32));
             x.method(Method::Powi, receiver, vec![exponent], ValueType::F64)
         });
         // `unwrap` and `expect` of the pair: `rt::Unwrap::of(is, value, message)`.
-        defined(&mut b, "unwrapped", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
+        FunctionDefinition::defined(&mut b, "unwrapped", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
             let (is, v) = (x.local(0, ValueType::Bool), x.local(1, ValueAliases::u(8)));
             let o = x.origin();
             x.b.expr(Expr::Unwrap { is, value: v, message: None }, ValueAliases::u(8), o)
         });
-        defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
+        FunctionDefinition::defined(&mut b, "expected", &[("is", ValueType::Bool), ("v", u8_.clone())], u8_.clone(), |x| {
             let (is, v) = (x.local(0, ValueType::Bool), x.local(1, ValueAliases::u(8)));
             let o = x.origin();
             x.b.expr(Expr::Unwrap { is, value: v, message: Some("need the \"reading\"".to_string()) }, ValueAliases::u(8), o)
         });
         let ir = Alone::finish(b);
         for (k, (method, _, _, _, want)) in rows.iter().enumerate() {
-            let (name, text) = (format!("row{k}"), function(&ir, &format!("row{k}")));
+            let (name, text) = (format!("row{k}"), FunctionPrint::function(&ir, &format!("row{k}")));
             assert!(text.lines().any(|l| l.trim() == *want), "{method:?}: `{want}` is the body of {name}:\n{text}");
         }
-        assert!(function(&ir, "powi_literal").lines().any(|l| l.trim() == "x.powi(3_i32)"), "{}", function(&ir, "powi_literal"));
-        assert!(function(&ir, "unwrapped").contains("rt::Unwrap::of(is, v, None)"), "{}", function(&ir, "unwrapped"));
-        assert!(function(&ir, "expected").contains("rt::Unwrap::of(is, v, Some(\"need the \\\"reading\\\"\"))"), "{}", function(&ir, "expected"));
+        assert!(FunctionPrint::function(&ir, "powi_literal").lines().any(|l| l.trim() == "x.powi(3_i32)"), "{}", FunctionPrint::function(&ir, "powi_literal"));
+        assert!(FunctionPrint::function(&ir, "unwrapped").contains("rt::Unwrap::of(is, v, None)"), "{}", FunctionPrint::function(&ir, "unwrapped"));
+        assert!(FunctionPrint::function(&ir, "expected").contains("rt::Unwrap::of(is, v, Some(\"need the \\\"reading\\\"\"))"), "{}", FunctionPrint::function(&ir, "expected"));
     }
 
     #[test]
@@ -1300,25 +1315,25 @@ fn pnjlim<R: Real>(new: R, old: R, nvt: R, vcrit: R) -> R {
         Buck::dithered_width(&mut b, rev3);
         // §1 rule 6: `-(a % b)` on `i16`; a cast from an integer; a real cast to an integer takes
         // the real's value; `min` and `clamp`
-        defined(&mut b, "negated_rem", &[("a", ValueAliases::i(16)), ("b", ValueAliases::i(16))], ValueAliases::i(16), |x| {
+        FunctionDefinition::defined(&mut b, "negated_rem", &[("a", ValueAliases::i(16)), ("b", ValueAliases::i(16))], ValueAliases::i(16), |x| {
             let (a, c) = (x.local(0, ValueAliases::i(16)), x.local(1, ValueAliases::i(16)));
             let rem = x.bin(BinaryOp::Rem, a, c, ValueAliases::i(16));
             x.un(UnaryOp::Neg, rem, ValueAliases::i(16))
         });
-        defined(&mut b, "widen", &[("x", ValueAliases::u(10))], ValueAliases::i(16), |x| {
+        FunctionDefinition::defined(&mut b, "widen", &[("x", ValueAliases::u(10))], ValueAliases::i(16), |x| {
             let v = x.local(0, ValueAliases::u(10));
             x.cast(v, ValueAliases::i(16), ValueAliases::i(16))
         });
-        defined(&mut b, "truncated", &[("x", ValueType::F64)], ValueAliases::u(10), |x| {
+        FunctionDefinition::defined(&mut b, "truncated", &[("x", ValueType::F64)], ValueAliases::u(10), |x| {
             let v = x.local(0, ValueType::F64);
             x.cast(v, ValueAliases::u(10), ValueAliases::u(10))
         });
-        defined(&mut b, "capped", &[("x", ValueAliases::u(8))], ValueAliases::u(8), |x| {
+        FunctionDefinition::defined(&mut b, "capped", &[("x", ValueAliases::u(8))], ValueAliases::u(8), |x| {
             let v = x.local(0, ValueAliases::u(8));
             let cap = x.int(168, ValueAliases::u(8));
             x.method(Method::Min, v, vec![cap], ValueAliases::u(8))
         });
-        defined(&mut b, "held", &[("x", ValueAliases::i(32))], ValueAliases::i(32), |x| {
+        FunctionDefinition::defined(&mut b, "held", &[("x", ValueAliases::i(32))], ValueAliases::i(32), |x| {
             let v = x.local(0, ValueAliases::i(32));
             let (lo, hi) = (x.int(0, ValueAliases::i(32)), x.int(2880, ValueAliases::i(32)));
             x.method(Method::Clamp, v, vec![lo, hi], ValueAliases::i(32))
@@ -1334,7 +1349,7 @@ fn rev3(k: rt::UInt<3>) -> rt::UInt<3> {
     (((k & rt::UInt::<3>::new(1)) << rt::Int::<32>::new(2)) | (k & rt::UInt::<3>::new(2))) | ((k >> rt::Int::<32>::new(2)) & rt::UInt::<3>::new(1))
 }
 ";
-        assert_eq!(function(&ir, "rev3"), rev3_text);
+        assert_eq!(FunctionPrint::function(&ir, "rev3"), rev3_text);
 
         // dpwm.msl:18-22: a cast is the type's method, `rev3(frame) < fine` compares the integers
         let dithered_text = "\
@@ -1349,10 +1364,10 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
     }
 }
 ";
-        assert_eq!(function(&ir, "dithered_width"), dithered_text);
+        assert_eq!(FunctionPrint::function(&ir, "dithered_width"), dithered_text);
 
         // the integer operators of §1
-        let text = |name: &str| function(&ir, name).lines().skip(1).collect::<Vec<_>>().join("\n");
+        let text = |name: &str| FunctionPrint::function(&ir, name).lines().skip(1).collect::<Vec<_>>().join("\n");
         assert_eq!(text("negated_rem"), "fn negated_rem(a: rt::Int<16>, b: rt::Int<16>) -> rt::Int<16> {\n    -(a % b)\n}");
         assert_eq!(text("widen"), "fn widen(x: rt::UInt<10>) -> rt::Int<16> {\n    x.to_int::<16>()\n}");
         assert_eq!(
@@ -1370,7 +1385,7 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
         let at = Origin { file: "dpwm.msl".into(), line: 1, col: 1 };
         for (ty, name) in [(ValueAliases::u(0), "UInt<0>"), (ValueAliases::i(0), "Int<0>")] {
             let mut b = IrBuilder::new();
-            let f = defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
+            let f = FunctionDefinition::defined(&mut b, "wide", &[("x", ty.clone())], ValueType::Bool, |x| x.boolean(true));
             let ir = Alone::finish_unchecked(b);
             assert_eq!(
                 ExpressionPrinter::function(&ir, f),
@@ -1384,7 +1399,7 @@ fn dithered_width(duty: rt::UInt<12>, frame: rt::UInt<3>) -> rt::UInt<9> {
         }
         // and `check()` refuses the same IR, so `Transpiler` never reaches a printer with it
         let mut b = IrBuilder::new();
-        defined(&mut b, "wide", &[("x", ValueAliases::u(0))], ValueType::Bool, |x| x.boolean(true));
+        FunctionDefinition::defined(&mut b, "wide", &[("x", ValueAliases::u(0))], ValueType::Bool, |x| x.boolean(true));
         assert!(!Alone::finish_unchecked(b).check().is_empty(), "check() names the type too");
     }
 }

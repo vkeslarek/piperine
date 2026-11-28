@@ -1,0 +1,10 @@
+[package]
+name = "piperine-lang-fixtures"
+version.workspace = true
+edition.workspace = true
+description = "The source texts, designs and readers the test suites of the Verilog-AMS front end share (dev-only)"
+publish = false
+
+[dependencies]
+piperine-lang = { path = "../piperine-lang" }
+piperine-ir = { path = "../piperine-ir" }

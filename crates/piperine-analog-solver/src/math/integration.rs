@@ -9,23 +9,6 @@
 
 use crate::tolerances::Tolerances;
 
-/// BDF2 (non-uniform) coefficients for `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}`.
-///
-/// `dt0 = t_n − t_{n-1}` is the current step; `dt1 = t_{n-1} − t_{n-2}` is the
-/// previous step. With `dt1 = 0` (first step), the formula collapses to
-/// backward-Euler to avoid division by zero.
-fn bdf2_coeffs(dt0: f64, dt1: f64) -> (f64, f64, f64) {
-    if dt1 <= 0.0 || !dt1.is_finite() {
-        // First step (no history) — fall back to backward-Euler.
-        return (1.0 / dt0, -1.0 / dt0, 0.0);
-    }
-    let sum = dt0 + dt1;
-    let c0 = (2.0 * dt0 + dt1) / (dt0 * sum);
-    let c1 = -sum / (dt0 * dt1);
-    let c2 = dt0 / (dt1 * sum);
-    (c0, c1, c2)
-}
-
 // ── TR-BDF2 (sole transient integration scheme) ────────────────────────────
 //
 // TR-BDF2 (Hosea & Shampine, 1996) advances `[t_n, t_{n+1}]` in two stages
@@ -63,6 +46,23 @@ pub struct DdtState {
 pub struct TrBdf2;
 
 impl TrBdf2 {
+    /// BDF2 (non-uniform) coefficients for `dQ/dt ≈ c0·Q_n + c1·Q_{n-1} + c2·Q_{n-2}`.
+    ///
+    /// `dt0 = t_n − t_{n-1}` is the current step; `dt1 = t_{n-1} − t_{n-2}` is the
+    /// previous step. With `dt1 = 0` (first step), the formula collapses to
+    /// backward-Euler to avoid division by zero.
+    fn bdf2_coeffs(dt0: f64, dt1: f64) -> (f64, f64, f64) {
+        if dt1 <= 0.0 || !dt1.is_finite() {
+            // First step (no history) — fall back to backward-Euler.
+            return (1.0 / dt0, -1.0 / dt0, 0.0);
+        }
+        let sum = dt0 + dt1;
+        let c0 = (2.0 * dt0 + dt1) / (dt0 * sum);
+        let c1 = -sum / (dt0 * dt1);
+        let c2 = dt0 / (dt1 * sum);
+        (c0, c1, c2)
+    }
+
     /// The damping parameter γ = 2 − √2 (Hosea & Shampine). With this value
     /// both stages share equal weight and the method is L-stable. Pre-computed
     /// because `f64::sqrt` is not `const` on stable Rust.
@@ -84,7 +84,7 @@ impl TrBdf2 {
             }
             // The BDF2 stage reuses the existing non-uniform formula with the
             // current sub-step `(1−γ)h` and the previous sub-step `γh`.
-            TrBdf2Phase::Bdf2 => bdf2_coeffs((1.0 - Self::GAMMA) * h, Self::GAMMA * h),
+            TrBdf2Phase::Bdf2 => Self::bdf2_coeffs((1.0 - Self::GAMMA) * h, Self::GAMMA * h),
         }
     }
 
@@ -258,7 +258,7 @@ mod tests {
     #[test]
     fn bdf2_uniform_collapses_to_canonical_form() {
         let dt = 1e-3_f64;
-        let (c0, c1, c2) = bdf2_coeffs(dt, dt);
+        let (c0, c1, c2) = TrBdf2::bdf2_coeffs(dt, dt);
         // Uniform-step BDF2: c0 = 3/(2·dt), c1 = −2/dt, c2 = 1/(2·dt).
         assert!((c0 - 1500.0).abs() < 1e-9, "c0 = {c0}");
         assert!((c1 + 2000.0).abs() < 1e-9, "c1 = {c1}");
@@ -268,7 +268,7 @@ mod tests {
     #[test]
     fn bdf2_first_step_falls_back_to_backward_euler() {
         // dt1 = 0 → no history → backward-Euler.
-        let (c0, c1, c2) = bdf2_coeffs(1e-3, 0.0);
+        let (c0, c1, c2) = TrBdf2::bdf2_coeffs(1e-3, 0.0);
         assert!((c0 - 1000.0).abs() < 1e-9);
         assert!((c1 + 1000.0).abs() < 1e-9);
         assert_eq!(c2, 0.0);
@@ -278,7 +278,7 @@ mod tests {
     fn bdf2_non_uniform_uses_three_point_formula() {
         let dt0 = 1e-3;
         let dt1 = 2e-3;
-        let (c0, c1, c2) = bdf2_coeffs(dt0, dt1);
+        let (c0, c1, c2) = TrBdf2::bdf2_coeffs(dt0, dt1);
         // Hand-computed from the non-uniform formula with dt0=1e-3, dt1=2e-3.
         let sum = dt0 + dt1;
         assert!((c0 - (2.0 * dt0 + dt1) / (dt0 * sum)).abs() < 1e-9);
@@ -288,10 +288,10 @@ mod tests {
 
     // ── TR-BDF2 ───────────────────────────────────────────────────────────
 
-    /// Builds the tolerances the tests vary.
-    struct ToleranceCases;
+    /// Tolerances with a charge tolerance varied.
+    struct ChargeTolerance;
 
-    impl ToleranceCases {
+    impl ChargeTolerance {
         /// Tolerances with `chgtol` as given and every other value as the run's default.
         fn with_chgtol(chgtol: f64) -> Tolerances {
             Tolerances { chgtol, ..Tolerances::default() }
@@ -306,8 +306,8 @@ mod tests {
         let state = DdtState { q: [0.0, 1e-16, 3e-16], i: [0.0, 0.0], abstol: Some(0.0) };
         let slope_scale = (1.0 - TrBdf2::GAMMA) / TrBdf2::GAMMA;
         let error = 3e-16 - (1e-16 + slope_scale * 1e-16);
-        let under = TrBdf2::state_lte(&[state], &ToleranceCases::with_chgtol(1e-14), 1e-9);
-        let above = TrBdf2::state_lte(&[state], &ToleranceCases::with_chgtol(1e-16), 1e-9);
+        let under = TrBdf2::state_lte(&[state], &ChargeTolerance::with_chgtol(1e-14), 1e-9);
+        let above = TrBdf2::state_lte(&[state], &ChargeTolerance::with_chgtol(1e-16), 1e-9);
         assert!((under - error / 1e-17).abs() < 1e-6 * under, "chgtol above the charge: {under}");
         assert!((above - error / 3e-19).abs() < 1e-6 * above, "chgtol below the charge: {above}");
         assert!(above > 10.0 * under);
@@ -403,7 +403,7 @@ mod tests {
         let h = 1e-3;
         let dt0 = (1.0 - TrBdf2::GAMMA) * h;
         let dt1 = TrBdf2::GAMMA * h;
-        let expected = bdf2_coeffs(dt0, dt1);
+        let expected = TrBdf2::bdf2_coeffs(dt0, dt1);
         let got = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, h);
         assert!((got.0 - expected.0).abs() < 1e-6 * expected.0.abs(), "c0 {} vs {}", got.0, expected.0);
         assert!((got.1 - expected.1).abs() < 1e-6 * expected.1.abs(), "c1 {} vs {}", got.1, expected.1);

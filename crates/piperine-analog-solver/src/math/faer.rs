@@ -264,10 +264,10 @@ mod tests {
         }
     }
 
-    /// Builds the stamped systems the tests solve.
-    struct SystemCases;
+    /// A stamped system the tests solve.
+    struct StampedSystem;
 
-    impl SystemCases {
+    impl StampedSystem {
         /// Build a stamped system + its symbolic pattern from raw `(r, c, v)`
         /// rows plus an RHS — the smallest legible assembly of a Jacobian.
         fn assemble(size: usize, matrix: &[(usize, usize, f64)], rhs: &[f64])
@@ -299,7 +299,7 @@ mod tests {
     // Hand-derived expected: λ = [3, −5].
     #[test]
     fn real_transpose_solve_matches_a_hand_computed_lambda() {
-        let (system, symbolic) = SystemCases::assemble(
+        let (system, symbolic) = StampedSystem::assemble(
             2,
             &[(0, 0, 2.0), (0, 1, 5.0), (1, 0, 1.0), (1, 1, 3.0)],
             &[1.0, 0.0],
@@ -336,7 +336,7 @@ mod tests {
         // (det = 1). Forward solve Jx = b for b = [4, 1] → x = J⁻¹ b = [7, −2].
         // Transpose solve Jᵀλ = c for c = [1, 0] → λ = [3, −5] (hand-derived
         // above).
-        let (system, symbolic) = SystemCases::assemble(
+        let (system, symbolic) = StampedSystem::assemble(
             2,
             &[(0, 0, 2.0), (0, 1, 5.0), (1, 0, 1.0), (1, 1, 3.0)],
             &[4.0, 1.0],
@@ -382,7 +382,7 @@ mod tests {
     // silent NaN.
     #[test]
     fn singular_system_fails_loud_through_the_existing_error_family() {
-        let (system, symbolic) = SystemCases::assemble(
+        let (system, symbolic) = StampedSystem::assemble(
             2,
             &[(0, 0, 1.0), (0, 1, 1.0), (1, 0, 1.0), (1, 1, 1.0)],
             &[1.0, 0.0],

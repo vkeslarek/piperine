@@ -5,17 +5,7 @@
 //! model of `piperine_lang::pom`. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use piperine_lang::pom::Design;
 use support::chapter::Chapter;

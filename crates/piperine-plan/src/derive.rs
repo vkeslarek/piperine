@@ -153,56 +153,73 @@ mod tests {
 
     use super::*;
 
-    fn origin() -> Origin {
-        Origin { file: "derive.rs".into(), line: 1, col: 1 }
-    }
+    /// Hand-built expressions and bodies the derivation tests read.
+    struct DerivedBodies;
 
-    fn param(name: &str) -> Param {
-        Param { name: name.into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1.0))), check: None, structural: false, origin: origin() }
-    }
+    impl DerivedBodies {
+        fn origin() -> Origin {
+            Origin { file: "derive.rs".into(), line: 1, col: 1 }
+        }
 
-    fn spec(name: &str, params: Vec<Param>, children: Vec<Child>) -> BodySpec {
-        BodySpec { name: name.into(), origin: origin(), params, nodes: Vec::new(), branches: Vec::new(), limits: Vec::new(), stims: Vec::new(), locals: Vec::new(), analog: None, children }
-    }
+        fn param(name: &str) -> Param {
+            Param { name: name.into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1.0))), check: None, structural: false, origin: DerivedBodies::origin() }
+        }
 
-    fn placed(name: &str, body: piperine_ir::BodyId) -> Child {
-        Child { name: name.into(), body, nodes: Vec::new(), params: Vec::new(), origin: origin() }
-    }
+        fn spec(name: &str, params: Vec<Param>, children: Vec<Child>) -> BodySpec {
+            BodySpec { name: name.into(), origin: DerivedBodies::origin(), params, nodes: Vec::new(), branches: Vec::new(), limits: Vec::new(), stims: Vec::new(), locals: Vec::new(), analog: None, children }
+        }
 
-    fn instance(path: &str, name: &str, body: piperine_ir::BodyId, parent: Option<piperine_ir::InstanceId>, params: Vec<Constant>) -> InstanceSpec {
-        InstanceSpec { path: path.into(), name: name.into(), body, parent, nodes: Vec::new(), params, origin: origin() }
-    }
+        fn placed(name: &str, body: piperine_ir::BodyId) -> Child {
+            Child { name: name.into(), body, nodes: Vec::new(), params: Vec::new(), origin: DerivedBodies::origin() }
+        }
 
-    fn real(v: f64) -> Constant {
-        Constant::Real(Real::new(v))
-    }
+        fn instance(path: &str, name: &str, body: piperine_ir::BodyId, parent: Option<piperine_ir::InstanceId>, params: Vec<Constant>) -> InstanceSpec {
+            InstanceSpec { path: path.into(), name: name.into(), body, parent, nodes: Vec::new(), params, origin: DerivedBodies::origin() }
+        }
 
-    /// `Leaf { r }`, `Mid { rr } { m: Leaf { r: rr * 2.0 } }`, `Top { rr } { m: Mid { rr: top * 3.0, other: 7.0 } }`:
-    /// the leaf derives from Mid and Mid derives from Top.
-    fn chain() -> Ir {
-        let mut b = IrBuilder::new();
-        let leaf = b.body(spec("Leaf", vec![param("r")], Vec::new()));
-        let mid = b.body(spec("Mid", vec![param("rr"), param("other")], vec![placed("l", leaf)]));
-        let top = b.body(spec("Top", vec![param("t")], vec![placed("m", mid)]));
-        let two = b.expr(Expr::Real(Real::new(2.0)), ValueType::F64, origin());
-        let rr = b.expr(Expr::Param(0), ValueType::F64, origin());
-        let doubled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: rr, rhs: two }, ValueType::F64, origin());
-        b.child_param(mid, 0, 0, ChildValue::Expr(doubled));
-        let three = b.expr(Expr::Real(Real::new(3.0)), ValueType::F64, origin());
-        let t = b.expr(Expr::Param(0), ValueType::F64, origin());
-        let tripled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: t, rhs: three }, ValueType::F64, origin());
-        b.child_param(top, 0, 0, ChildValue::Expr(tripled));
-        b.child_param(top, 0, 1, ChildValue::Const(Constant::Real(Real::new(7.0))));
-        let t_i = b.instance(instance("Top", "Top", top, None, vec![real(1.0)]));
-        let m_i = b.instance(instance("Top.m", "m", mid, Some(t_i), vec![real(3.0), real(7.0)]));
-        b.instance(instance("Top.m.l", "l", leaf, Some(m_i), vec![real(6.0)]));
-        b.finish(t_i)
+        fn real(v: f64) -> Constant {
+            Constant::Real(Real::new(v))
+        }
+
+        /// `Leaf { r }`, `Mid { rr } { m: Leaf { r: rr * 2.0 } }`, `Top { rr } { m: Mid { rr: top * 3.0, other: 7.0 } }`:
+        /// the leaf derives from Mid and Mid derives from Top.
+        fn chain() -> Ir {
+            let mut b = IrBuilder::new();
+            let leaf = b.body(DerivedBodies::spec("Leaf", vec![DerivedBodies::param("r")], Vec::new()));
+            let mid = b.body(DerivedBodies::spec("Mid", vec![DerivedBodies::param("rr"), DerivedBodies::param("other")], vec![DerivedBodies::placed("l", leaf)]));
+            let top = b.body(DerivedBodies::spec("Top", vec![DerivedBodies::param("t")], vec![DerivedBodies::placed("m", mid)]));
+            let two = b.expr(Expr::Real(Real::new(2.0)), ValueType::F64, DerivedBodies::origin());
+            let rr = b.expr(Expr::Param(0), ValueType::F64, DerivedBodies::origin());
+            let doubled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: rr, rhs: two }, ValueType::F64, DerivedBodies::origin());
+            b.child_param(mid, 0, 0, ChildValue::Expr(doubled));
+            let three = b.expr(Expr::Real(Real::new(3.0)), ValueType::F64, DerivedBodies::origin());
+            let t = b.expr(Expr::Param(0), ValueType::F64, DerivedBodies::origin());
+            let tripled = b.expr(Expr::Binary { op: piperine_ir::BinaryOp::Mul, lhs: t, rhs: three }, ValueType::F64, DerivedBodies::origin());
+            b.child_param(top, 0, 0, ChildValue::Expr(tripled));
+            b.child_param(top, 0, 1, ChildValue::Const(Constant::Real(Real::new(7.0))));
+            let t_i = b.instance(DerivedBodies::instance("Top", "Top", top, None, vec![DerivedBodies::real(1.0)]));
+            let m_i = b.instance(DerivedBodies::instance("Top.m", "m", mid, Some(t_i), vec![DerivedBodies::real(3.0), DerivedBodies::real(7.0)]));
+            b.instance(DerivedBodies::instance("Top.m.l", "l", leaf, Some(m_i), vec![DerivedBodies::real(6.0)]));
+            b.finish(t_i)
+        }
+
+        /// A body with one param `a` (index 0): the expressions the walk must see through.
+        fn read_by(build: impl FnOnce(&mut IrBuilder, ExprId) -> Expr) -> Vec<u32> {
+            let mut b = IrBuilder::new();
+            let body = b.body(DerivedBodies::spec("Body", vec![DerivedBodies::param("a")], Vec::new()));
+            let a = b.expr(Expr::Param(0), ValueType::F64, DerivedBodies::origin());
+            let form = build(&mut b, a);
+            let root = b.expr(form, ValueType::F64, DerivedBodies::origin());
+            let instance = b.instance(DerivedBodies::instance("Body", "Body", body, None, vec![DerivedBodies::real(1.0)]));
+            let ir = b.finish(instance);
+            ParamReads::of(&ir, root)
+        }
     }
 
     #[test]
     fn a_derived_child_param_is_a_binding_of_its_parent() {
         // HII-18 AC 1: `rr` of `Top.m` is `t * 3.0` over the params of `Top`, and reads `t`
-        let plan = DerivePlan::of(&chain());
+        let plan = DerivePlan::of(&DerivedBodies::chain());
         let first = &plan.bindings()[0];
         assert_eq!((first.parent.as_str(), first.child.as_str(), first.param.as_str()), ("Top", "Top.m", "rr"));
         assert_eq!(first.reads, ["t"]);
@@ -216,7 +233,7 @@ mod tests {
     fn a_chain_derives_top_down() {
         // HII-18 AC 1: a parent's binding comes before its children's, so applying them in plan
         // order gives the grandchild its value from the already recomputed middle param
-        let plan = DerivePlan::of(&chain());
+        let plan = DerivePlan::of(&DerivedBodies::chain());
         let order: Vec<(&str, &str)> = plan.bindings().iter().map(|b| (b.child.as_str(), b.param.as_str())).collect();
         assert_eq!(order, [("Top.m", "rr"), ("Top.m.l", "r")]);
         assert_eq!(plan.bindings().iter().map(|b| b.k).collect::<Vec<_>>(), [0, 1]);
@@ -226,31 +243,19 @@ mod tests {
     #[test]
     fn a_constant_placement_is_no_binding() {
         // `other: 7.0` is a `ChildValue::Const`: the instance table holds it, nothing derives it
-        let plan = DerivePlan::of(&chain());
+        let plan = DerivePlan::of(&DerivedBodies::chain());
         assert!(plan.giving("Top.m", "other").is_none());
         assert_eq!(plan.bindings().len(), 2);
-    }
-
-    /// A body with one param `a` (index 0): the expressions the walk must see through.
-    fn read_by(build: impl FnOnce(&mut IrBuilder, ExprId) -> Expr) -> Vec<u32> {
-        let mut b = IrBuilder::new();
-        let body = b.body(spec("Body", vec![param("a")], Vec::new()));
-        let a = b.expr(Expr::Param(0), ValueType::F64, origin());
-        let form = build(&mut b, a);
-        let root = b.expr(form, ValueType::F64, origin());
-        let instance = b.instance(instance("Body", "Body", body, None, vec![real(1.0)]));
-        let ir = b.finish(instance);
-        ParamReads::of(&ir, root)
     }
 
     #[test]
     fn every_form_that_holds_an_operand_reports_the_params_it_reads() {
         // F1: the forms the walk once skipped (a method call) and the ones it kept, each over `a`
-        let constant = |b: &mut IrBuilder| b.expr(Expr::Real(Real::new(0.0)), ValueType::F64, origin());
-        assert_eq!(read_by(|_, a| Expr::Method { method: piperine_ir::Method::Max, receiver: a, args: Vec::new() }), [0]);
-        assert_eq!(read_by(|b, a| Expr::Method { method: piperine_ir::Method::Max, receiver: constant(b), args: vec![a] }), [0]);
-        assert_eq!(read_by(|_, a| Expr::Cast { expr: a, to: ValueType::F64 }), [0]);
-        assert_eq!(read_by(|_, a| Expr::Block { stmts: Vec::new(), value: Some(a) }), [0]);
-        assert_eq!(read_by(|_, _| Expr::Real(Real::new(1.0))), Vec::<u32>::new());
+        let constant = |b: &mut IrBuilder| b.expr(Expr::Real(Real::new(0.0)), ValueType::F64, DerivedBodies::origin());
+        assert_eq!(DerivedBodies::read_by(|_, a| Expr::Method { method: piperine_ir::Method::Max, receiver: a, args: Vec::new() }), [0]);
+        assert_eq!(DerivedBodies::read_by(|b, a| Expr::Method { method: piperine_ir::Method::Max, receiver: constant(b), args: vec![a] }), [0]);
+        assert_eq!(DerivedBodies::read_by(|_, a| Expr::Cast { expr: a, to: ValueType::F64 }), [0]);
+        assert_eq!(DerivedBodies::read_by(|_, a| Expr::Block { stmts: Vec::new(), value: Some(a) }), [0]);
+        assert_eq!(DerivedBodies::read_by(|_, _| Expr::Real(Real::new(1.0))), Vec::<u32>::new());
     }
 }

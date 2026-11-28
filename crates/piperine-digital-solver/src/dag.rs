@@ -44,27 +44,32 @@ impl Dag {
         // net that one function writes and another reads are an edge only when they share an element
         let edges: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |_| true)).collect();
 
-        // abi.md §9 D1: every directed cycle passes through a RELAX net. Take the edges through
-        // RELAX nets away; what remains must have no cycle.
-        let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |net| !nets[net.0 as usize].relax)).collect();
-        for members in components(&strict) {
+        Self::refuse_cycles_outside_relax(&functions, &readers, nets)?;
+
+        let comps = Self::components(&edges);
+        let steps = Self::group_steps(&functions, &readers, nets, &comps, &edges)?;
+        let order = Self::order_groups(&comps, &edges, steps);
+        Ok(Dag { functions, order, readers })
+    }
+
+    /// abi.md §9 D1: every directed cycle passes through a RELAX net. Takes the edges through RELAX nets away; what
+    /// remains must have no cycle, else the `cycle` bind error naming its functions.
+    fn refuse_cycles_outside_relax(functions: &[FnNode], readers: &[Vec<usize>], nets: &[NetSpec]) -> Result<(), DigitalError> {
+        let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(functions, readers, f, |net| !nets[net.0 as usize].relax)).collect();
+        for members in Self::components(&strict) {
             if members.len() > 1 || strict[members[0]].contains(&members[0]) {
                 let what = members.iter().map(|m| functions[*m].name.clone()).collect();
                 return Err(DigitalError::Bind { rule: "cycle", what });
             }
         }
+        Ok(())
+    }
 
-        let comps = components(&edges);
-        let mut comp_of = vec![0usize; functions.len()];
-        for (c, members) in comps.iter().enumerate() {
-            for m in members {
-                comp_of[*m] = c;
-            }
-        }
-
-        // a group of several functions, or one that feeds itself, is a cycle
+    /// The step of each group of `comps`: a function that feeds nothing of its own group runs; a group of several
+    /// functions, or one that feeds itself, is a cycle and relaxes the RELAX nets it writes and reads (none: the `cycle` error).
+    fn group_steps(functions: &[FnNode], readers: &[Vec<usize>], nets: &[NetSpec], comps: &[Vec<usize>], edges: &[Vec<usize>]) -> Result<Vec<Option<Step>>, DigitalError> {
         let mut steps: Vec<Option<Step>> = Vec::with_capacity(comps.len());
-        for members in &comps {
+        for members in comps {
             let cyclic = members.len() > 1 || edges[members[0]].contains(&members[0]);
             if !cyclic {
                 steps.push(Some(Step::Run(members[0])));
@@ -90,8 +95,17 @@ impl Dag {
             relaxed.sort();
             steps.push(Some(Step::Relax { fns: members.clone(), nets: relaxed }));
         }
+        Ok(steps)
+    }
 
-        // topological order of the groups, ties broken by the smallest member
+    /// The topological order of the groups, ties broken by the smallest member.
+    fn order_groups(comps: &[Vec<usize>], edges: &[Vec<usize>], mut steps: Vec<Option<Step>>) -> Vec<Step> {
+        let mut comp_of = vec![0usize; edges.len()];
+        for (c, members) in comps.iter().enumerate() {
+            for m in members {
+                comp_of[*m] = c;
+            }
+        }
         let mut indegree = vec![0usize; comps.len()];
         let mut succ: Vec<Vec<usize>> = vec![Vec::new(); comps.len()];
         for (f, to) in edges.iter().enumerate() {
@@ -115,7 +129,7 @@ impl Dag {
                 }
             }
         }
-        Ok(Dag { functions, order, readers })
+        order
     }
 
     /// The functions that read a part of a net `f` writes, through the nets `through` admits, in increasing order.
@@ -154,62 +168,62 @@ impl Dag {
     pub fn readers(&self, net: NetId) -> &[usize] {
         self.readers.get(net.0 as usize).map(Vec::as_slice).unwrap_or(&[])
     }
-}
 
-/// Tarjan's strongly connected components, iterative. Each component lists its
-/// members in increasing order.
-fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let n = edges.len();
-    let mut index = vec![usize::MAX; n];
-    let mut low = vec![0usize; n];
-    let mut on_stack = vec![false; n];
-    let mut stack: Vec<usize> = Vec::new();
-    let mut comps: Vec<Vec<usize>> = Vec::new();
-    let mut next = 0usize;
-    for root in 0..n {
-        if index[root] != usize::MAX {
-            continue;
-        }
-        // (node, position of the next edge to follow)
-        let mut call: Vec<(usize, usize)> = vec![(root, 0)];
-        index[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&(v, e)) = call.last() {
-            if let Some(&w) = edges[v].get(e) {
-                call.last_mut().expect("non-empty").1 += 1;
-                if index[w] == usize::MAX {
-                    index[w] = next;
-                    low[w] = next;
-                    next += 1;
-                    stack.push(w);
-                    on_stack[w] = true;
-                    call.push((w, 0));
-                } else if on_stack[w] {
-                    low[v] = low[v].min(index[w]);
-                }
-            } else {
-                call.pop();
-                if let Some(&(parent, _)) = call.last() {
-                    low[parent] = low[parent].min(low[v]);
-                }
-                if low[v] == index[v] {
-                    let mut members = Vec::new();
-                    loop {
-                        let w = stack.pop().expect("v is on the stack");
-                        on_stack[w] = false;
-                        members.push(w);
-                        if w == v {
-                            break;
-                        }
+    /// Tarjan's strongly connected components, iterative. Each component lists its
+    /// members in increasing order.
+    fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+        let n = edges.len();
+        let mut index = vec![usize::MAX; n];
+        let mut low = vec![0usize; n];
+        let mut on_stack = vec![false; n];
+        let mut stack: Vec<usize> = Vec::new();
+        let mut comps: Vec<Vec<usize>> = Vec::new();
+        let mut next = 0usize;
+        for root in 0..n {
+            if index[root] != usize::MAX {
+                continue;
+            }
+            // (node, position of the next edge to follow)
+            let mut call: Vec<(usize, usize)> = vec![(root, 0)];
+            index[root] = next;
+            low[root] = next;
+            next += 1;
+            stack.push(root);
+            on_stack[root] = true;
+            while let Some(&(v, e)) = call.last() {
+                if let Some(&w) = edges[v].get(e) {
+                    call.last_mut().expect("non-empty").1 += 1;
+                    if index[w] == usize::MAX {
+                        index[w] = next;
+                        low[w] = next;
+                        next += 1;
+                        stack.push(w);
+                        on_stack[w] = true;
+                        call.push((w, 0));
+                    } else if on_stack[w] {
+                        low[v] = low[v].min(index[w]);
                     }
-                    members.sort_unstable();
-                    comps.push(members);
+                } else {
+                    call.pop();
+                    if let Some(&(parent, _)) = call.last() {
+                        low[parent] = low[parent].min(low[v]);
+                    }
+                    if low[v] == index[v] {
+                        let mut members = Vec::new();
+                        loop {
+                            let w = stack.pop().expect("v is on the stack");
+                            on_stack[w] = false;
+                            members.push(w);
+                            if w == v {
+                                break;
+                            }
+                        }
+                        members.sort_unstable();
+                        comps.push(members);
+                    }
                 }
             }
         }
+        comps
     }
-    comps
 }

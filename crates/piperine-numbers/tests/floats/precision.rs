@@ -2,17 +2,15 @@
 //! against exact rational arithmetic (`ExactRational` over `num-bigint`) and committed
 //! published digits (CV-31). Every bound is checked exactly: no tolerance.
 
-use crate::exact;
-use crate::random;
 
-use exact::ExactRational;
+use piperine_numbers_fixtures::exact::ExactRational;
 use num_bigint::{BigInt, BigUint};
 use piperine_numbers::constants::ReferenceConstants;
 use piperine_numbers::quad::Float128;
 use piperine_numbers::reduction::ArgumentReduction;
 use piperine_numbers::ziv::ZivRounding;
 use piperine_numbers::precision::{Interval, MultiPrecision, Rounding};
-use random::Xorshift;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 use std::cmp::Ordering;
 use std::fs;
 use std::path::PathBuf;
@@ -20,21 +18,21 @@ use std::path::PathBuf;
 /// The scenario of the directed-rounding test.
 struct DirectedScenario {
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
 }
 
 impl DirectedScenario {
     /// A scenario with a seeded generator.
     fn new(seed: u64) -> Self {
-        DirectedScenario { random: Xorshift::new(seed) }
+        DirectedScenario { random: ShiftGenerator::new(seed) }
     }
 
     /// A random value of up to `bits` bits with a random exponent.
     fn operand(&mut self, bits: u64) -> MultiPrecision {
-        let width = 1 + self.random.next_u64() % bits;
-        let limbs: Vec<u64> = (0..width.div_ceil(64)).map(|_| self.random.next_u64()).collect();
-        let exponent = (self.random.next_u64() % 400) as i64 - 200;
-        MultiPrecision::exact(self.random.next_u64() & 1 == 1, &limbs, exponent)
+        let width = 1 + self.random.next_bits() % bits;
+        let limbs: Vec<u64> = (0..width.div_ceil(64)).map(|_| self.random.next_bits()).collect();
+        let exponent = (self.random.next_bits() % 400) as i64 - 200;
+        MultiPrecision::exact(self.random.next_bits() & 1 == 1, &limbs, exponent)
     }
 
     /// The exact rational of a value.
@@ -96,7 +94,7 @@ impl DirectedScenario {
         for _ in 0..count {
             let widen = |scenario: &mut DirectedScenario| {
                 let centre = scenario.operand(precision as u64);
-                let radius = MultiPrecision::exact(false, &[1 + scenario.random.next_u64() % 1000], -((scenario.random.next_u64() % 200) as i64) - 20);
+                let radius = MultiPrecision::exact(false, &[1 + scenario.random.next_bits() % 1000], -((scenario.random.next_bits() % 200) as i64) - 20);
                 (Interval::new(centre.subtract(&radius, precision, Rounding::Down), centre.add(&radius, precision, Rounding::Up), precision), centre)
             };
             let ((first, first_point), (second, second_point)) = (widen(self), widen(self));
@@ -185,7 +183,7 @@ fn reference_constants_contain_their_published_digits() {
 /// Argument reduction against exact rational arithmetic with pi at 20 000 bits and ln 2 at 1000 decimals.
 struct ReductionScenario {
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
     /// `floor(pi * 2^20000)`.
     pi_scaled: BigUint,
 }
@@ -193,7 +191,7 @@ struct ReductionScenario {
 impl ReductionScenario {
     /// A scenario with a seeded generator and pi from the committed file.
     fn new(seed: u64) -> Self {
-        ReductionScenario { random: Xorshift::new(seed), pi_scaled: PublishedConstants::pi_bits() }
+        ReductionScenario { random: ShiftGenerator::new(seed), pi_scaled: PublishedConstants::pi_bits() }
     }
 
     /// pi/2 as a rational, within `2^-20001` of the truth.
@@ -219,11 +217,11 @@ impl ReductionScenario {
 
     /// A random finite pattern: random bits, a window of exponents around 1, or any exponent.
     fn random_argument(&mut self) -> u128 {
-        let word = (self.random.next_u64() as u128) << 64 | self.random.next_u64() as u128;
-        let field = match self.random.next_u64() % 3 {
+        let word = (self.random.next_bits() as u128) << 64 | self.random.next_bits() as u128;
+        let field = match self.random.next_bits() % 3 {
             0 => (word >> 112) & 0x7FFE,
-            1 => 0x3FFF - 20 + (self.random.next_u64() % 60) as u128,
-            _ => (self.random.next_u64() % 0x7FFE) as u128,
+            1 => 0x3FFF - 20 + (self.random.next_bits() % 60) as u128,
+            _ => (self.random.next_bits() % 0x7FFE) as u128,
         };
         (word & (1u128 << 127 | ((1u128 << 112) - 1))) | field << 112
     }
@@ -303,7 +301,7 @@ fn reduction_keeps_full_precision_for_every_finite_argument() {
         scenario.check(bits, &[160, 400]);
     }
     for _ in 0..500 {
-        let value = (scenario.random_argument() & !(0x7FFFu128 << 112)) | (0x3FFF - 20 + (scenario.random.next_u64() % 35) as u128) << 112;
+        let value = (scenario.random_argument() & !(0x7FFFu128 << 112)) | (0x3FFF - 20 + (scenario.random.next_bits() % 35) as u128) << 112;
         scenario.check_ln_two(value, 160);
         scenario.check_ln_two(value, 400);
     }

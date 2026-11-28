@@ -1,0 +1,24 @@
+# T89: the 21 chapter targets book_<chapter> and the two guards book_inventory and book_claims of the root become the target `book`, one module per chapter (`book_buck` stays a target of its own that is not run by cargo test).
+move piperine/book_abi piperine/book::abi
+move piperine/book_analog piperine/book::analog
+move piperine/book_cheatsheet piperine/book::cheatsheet
+move piperine/book_cli piperine/book::cli
+move piperine/book_compiler piperine/book::compiler
+move piperine/book_core_std piperine/book::core_std
+move piperine/book_digital piperine/book::digital
+move piperine/book_errors piperine/book::errors
+move piperine/book_generics piperine/book::generics
+move piperine/book_language piperine/book::language
+move piperine/book_mixed piperine/book::mixed
+move piperine/book_modules piperine/book::modules
+move piperine/book_natures piperine/book::natures
+move piperine/book_packages piperine/book::packages
+move piperine/book_pom piperine/book::pom
+move piperine/book_simulation piperine/book::simulation
+move piperine/book_solver piperine/book::solver
+move piperine/book_structure piperine/book::structure
+move piperine/book_types piperine/book::types
+move piperine/book_values piperine/book::values
+move piperine/book_welcome piperine/book::welcome
+move piperine/book_inventory piperine/book::inventory_guard
+move piperine/book_claims piperine/book::claims_guard

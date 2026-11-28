@@ -55,7 +55,7 @@ fn the_output_and_input_flags_win_over_the_keys() {
     assert!(matches!(merged.analysis, Analysis::Noise { ref output, input: Some(ref input), .. } if output == "b" && input == "v2"));
 }
 
-mod resolution {
+pub mod resolution {
     //! The output and input of a noise run, resolved when the session opens (before anything
     //! compiles), against the AC RC twin.
     use std::path::{Path, PathBuf};
@@ -64,12 +64,17 @@ mod resolution {
     use piperine_transpile::Settings;
 
     /// The AC RC twin, opened for noise runs.
-    struct Twin;
+    pub struct Twin;
 
     impl Twin {
         /// Opens a noise run of the AC RC twin with `output` and `input`.
-        fn open(output: &str, input: Option<&str>) -> Result<Session, Failure> {
-            let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/ac_rc.msl");
+        pub fn open(output: &str, input: Option<&str>) -> Result<Session, Failure> {
+            Twin::open_file("../../tests/e2e/twins/ac_rc.msl", output, input)
+        }
+
+        /// Opens a noise run of the design in `file` (relative to this crate) with `output` and `input`.
+        pub fn open_file(file: &str, output: &str, input: Option<&str>) -> Result<Session, Failure> {
+            let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join(file);
             let project = Project::file(&path).unwrap_or_else(|f| panic!("{f}"));
             let overrides = Overrides {
                 analysis: Some("noise".into()),
@@ -99,6 +104,32 @@ mod resolution {
                 Err(other) => panic!("{output} {input:?}: {other}"),
                 Ok(_) => panic!("{output} {input:?} opened"),
             }
+        }
+    }
+}
+
+mod ground_spellings {
+    //! `gnd` is the only core name (S21): `GND`, `vss` and `VSS` are ordinary identifiers, refused as an output only
+    //! when the design declares nothing under them.
+    use piperine_api::Failure;
+
+    use super::resolution::Twin;
+
+    #[test]
+    fn a_node_named_like_a_ground_alias_is_an_output() {
+        let session = Twin::open_file("tests/fixtures/noise_vss.msl", "vss", None).unwrap_or_else(|f| panic!("{f}"));
+        assert!(session.noise_probe().is_some());
+    }
+
+    #[test]
+    fn a_ground_alias_naming_nothing_is_e0801_naming_gnd() {
+        match Twin::open("GND", None) {
+            Err(Failure::Host { code, message }) => {
+                assert_eq!(code, "E0801");
+                assert!(message.contains("spelled `gnd`"), "{message}");
+            }
+            Err(other) => panic!("{other}"),
+            Ok(_) => panic!("`GND` opened"),
         }
     }
 }

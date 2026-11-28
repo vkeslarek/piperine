@@ -4,7 +4,7 @@
 use piperine_abi::layout::{BIT, F64, HIGH, LOW};
 use piperine_abi::raw::{ArrayView, Cell, Statement, WHOLE, cell, part, pin_flag, role};
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
-use piperine_abi::validate::{Rule, validate};
+use piperine_abi::validate::{Rule, Validator};
 
 /// Builds the shapes this target validates: one `Bit` array pin, one reaction that reads it.
 struct ArrayShapes;
@@ -33,33 +33,33 @@ impl ArrayShapes {
 #[test]
 fn array_pins_validate_their_count_and_init() {
     // `count` 0 is one carrier: the shapes before arrays of carriers stay valid.
-    let one = validate(ArrayShapes::shape(0, &[], vec![]).shape());
+    let one = Validator::validate(ArrayShapes::shape(0, &[], vec![]).shape());
     assert!(one.is_ok(), "count 0 is one carrier: {one:?}");
     // §3.1: an init of one element (`[x; K]`) or of `count` elements (`[a, b, c]`).
     static ONE: [u8; 1] = [1];
     static EACH: [u8; 3] = [0, 1, 1];
-    assert!(validate(ArrayShapes::shape(3, &ONE, vec![]).shape()).is_ok(), "one element repeats");
-    assert!(validate(ArrayShapes::shape(3, &EACH, vec![]).shape()).is_ok(), "every element is given");
-    let wrong = validate(ArrayShapes::shape(3, &EACH[..2], vec![]).shape()).expect_err("two bytes for three elements");
+    assert!(Validator::validate(ArrayShapes::shape(3, &ONE, vec![]).shape()).is_ok(), "one element repeats");
+    assert!(Validator::validate(ArrayShapes::shape(3, &EACH, vec![]).shape()).is_ok(), "every element is given");
+    let wrong = Validator::validate(ArrayShapes::shape(3, &EACH[..2], vec![]).shape()).expect_err("two bytes for three elements");
     assert_eq!(wrong.rule, Rule::ArrayInitLength);
     // an array pin is DISCRETE: `count` on a continuous pin is refused by name.
     let mut buffer = ShapeBuf::new();
     buffer.pin(PinSpec { origin: "a.msl:1:1", count: 4, ..PinSpec::continuous("v", role::PORT) });
-    let continuous = validate(buffer.freeze().shape()).expect_err("a continuous array pin");
+    let continuous = Validator::validate(buffer.freeze().shape()).expect_err("a continuous array pin");
     assert_eq!((continuous.rule, continuous.entry.as_str()), (Rule::ArrayNotDiscrete, "pin v"));
     // a read names an element below `count`, or WHOLE; one at `count` is refused.
-    assert!(validate(ArrayShapes::shape(4, &[], vec![0, 3, WHOLE]).shape()).is_ok());
-    let past = validate(ArrayShapes::shape(4, &[], vec![4]).shape()).expect_err("element 4 of 4");
+    assert!(Validator::validate(ArrayShapes::shape(4, &[], vec![0, 3, WHOLE]).shape()).is_ok());
+    let past = Validator::validate(ArrayShapes::shape(4, &[], vec![4]).shape()).expect_err("element 4 of 4");
     assert_eq!((past.rule, past.entry.as_str()), (Rule::ElementOutOfRange, "reaction write"));
     // WHOLE on a pin that is no array is refused too.
-    let scalar = validate(ArrayShapes::shape(0, &[], vec![WHOLE]).shape()).expect_err("WHOLE of one carrier");
+    let scalar = Validator::validate(ArrayShapes::shape(0, &[], vec![WHOLE]).shape()).expect_err("WHOLE of one carrier");
     assert_eq!(scalar.rule, Rule::ElementOutOfRange);
     // an `elements` list of another length than `reads` is refused.
     let mut buffer = ShapeBuf::new();
     buffer.pin(PinSpec { count: 4, ..PinSpec::discrete("mem", role::PORT, &F64) });
     buffer.pin(PinSpec::event("tick", role::PRIVATE));
     buffer.reaction(ReactionSpec { name: "r", on: vec![1], elements: vec![0], ..ReactionSpec::default() });
-    let lengths = validate(buffer.freeze().shape()).expect_err("one element for no read");
+    let lengths = Validator::validate(buffer.freeze().shape()).expect_err("one element for no read");
     assert_eq!(lengths.rule, Rule::ElementOutOfRange);
     assert_eq!(HIGH.len(), LOW.len(), "a BIT is one byte");
 }

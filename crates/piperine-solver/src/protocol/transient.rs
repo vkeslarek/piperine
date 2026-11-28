@@ -29,11 +29,11 @@ use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use super::host::Waiter;
 use super::retake::JumpRetake;
 use super::sides::{
-    Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Origin, Outcome, ProposalBound, Restart, Tick,
+    Accepted, Advance, AnalogSide, AnalysisKind, Attempt, DiscreteSide, Horizon, InstantMode, Origin, Outcome, ProposalBound, Restart, Tick,
 };
 use super::statistics::{InstantCause, StepEnd, StepStatistics};
 use super::sink::{Delivery, Sink};
-use super::step::{StepObserver, observe};
+use super::step::{StepObserver, StepView};
 
 /// How the protocol maps time and bounds its loops.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -99,6 +99,43 @@ pub struct Protocol<D: DiscreteSide, A: AnalogSide> {
     pub(super) statistics: StepStatistics,
 }
 
+/// What one analog attempt of a step came to.
+enum StepAttempt {
+    /// Attempt again to the tick (`Some`), or propose again (`None`), from the restored checkpoint.
+    Retake(Option<Tick>),
+    /// The attempt converged and was accepted.
+    Accepted(Accepted),
+}
+
+/// The step the protocol is about to attempt: where it ends and why.
+struct PlannedStep {
+    /// The tick the step ends on.
+    tick: Tick,
+    /// Whether its instant is a time point, so the settle phase runs.
+    settle: bool,
+    /// Whether the discrete side marked it the final instant.
+    final_mark: bool,
+    /// What cut the analog proposal.
+    bound: ProposalBound,
+    /// What the discrete side found before it.
+    advance: Advance,
+}
+
+/// The accepted step's end: the instant the protocol runs there.
+#[derive(Clone, Copy)]
+struct StepInstant {
+    /// The tick the step ends on.
+    tick: Tick,
+    /// Its time, seconds.
+    time: f64,
+    /// Whether the instant is a time point, so its settle phase runs.
+    settle: bool,
+    /// Whether the analog side has unknowns.
+    unknowns: bool,
+    /// The tick the run ends on.
+    stop_tick: Tick,
+}
+
 /// The three marks of one checkpoint.
 struct Checkpoint<D, A> {
     discrete: D,
@@ -137,7 +174,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     /// Hands the observer the sides as they stand at `time`: after each flush, and for the start
     /// of a transient (called by its driver).
     pub(crate) fn observe_step(&mut self, time: f64) {
-        observe(&mut self.observer, time, &self.discrete, &self.analog);
+        StepView::observe(&mut self.observer, time, &self.discrete, &self.analog);
     }
 
     /// Sends every observation to `sink` from now on.
@@ -315,27 +352,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
     }
 
     fn transient_loop(&mut self, stop: f64) -> Result<Ended> {
-        // Every step ends on the tick grid, so the instant run at a step's end
-        // is that tick's own (an instant runs only at its own tick). The stop
-        // takes the steps' own rounding: rounded up, a stop off the grid lies a
-        // tick past the step that reaches it, and the loop would run once more.
-        let stop_tick = self.floor_tick(stop);
-        if stop > self.now && stop_tick <= self.now_tick {
-            // Every step ends on a later tick, past this stop: a run that took
-            // no step would end short of it with no error.
-            return Err(Error::simple(
-                SolverDomain::Transient,
-                format!(
-                    "the stop {stop:e} s lies after t = {:e} s but inside its tick {}: no step reaches it",
-                    self.now, self.now_tick
-                ),
-            ));
-        }
-        // A run error carries its own code and time: it is stamped, never wrapped.
-        let at = |t: f64, e: Error| match e {
-            Error::Run(_) => e.with_time(t),
-            other => Error::wrap(SolverDomain::Transient, format!("at t = {t:e} s"), other),
-        };
+        let stop_tick = self.stop_tick(stop)?;
         let mut forced: Option<Tick> = None;
         let mut rejections = 0u32;
         let mut jump = JumpRetake::new(self.settle_delivered);
@@ -345,37 +362,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let now_tick = self.now_tick;
             let unknowns = self.analog.has_unknowns();
             let retaken = forced.is_some();
-            let mut bound = ProposalBound::Stop;
-            let mut tick_c = match forced.take() {
-                Some(t) => t,
-                None if unknowns => {
-                    let next_due = self.discrete.next_due().map(|tick| self.offset(tick));
-                    let proposed = self.analog.propose(self.now_offset(), self.offset(stop_tick), next_due);
-                    bound = self.analog.proposal_bound();
-                    self.floor_offset(proposed).clamp((now_tick + 1).min(stop_tick), stop_tick)
-                }
-                None => stop_tick,
-            };
-            // Step 2: the discrete instants before t_c, stopping before a landing.
-            let (mut settle, mut final_mark) = (true, false);
-            let advanced = self.discrete.advance(tick_c).map_err(|e| at(self.time(tick_c), e))?;
-            match advanced {
-                Advance::Reached => {}
-                Advance::Landing { tick, cause } => {
-                    tick_c = tick;
-                    settle = cause.is_time_point();
-                }
-                Advance::Final(tick) => {
-                    tick_c = tick;
-                    final_mark = true;
-                }
-            }
-            if tick_c <= now_tick {
-                return Err(Error::simple(
-                    SolverDomain::Transient,
-                    format!("a landing at tick {tick_c} does not advance from tick {now_tick} ({:e} s)", self.now),
-                ));
-            }
+            let PlannedStep { tick: tick_c, settle, final_mark, bound, advance: advanced } = self.plan_step(forced.take(), stop_tick, unknowns)?;
             let t_c = self.step_time(tick_c);
             self.collect(AnalysisKind::Transient);
 
@@ -383,99 +370,31 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             let mut crossings = Vec::new();
             let samples = if unknowns {
                 let landing = !matches!(advanced, Advance::Reached) || self.settle_delivered;
-                let attempt = self.analog.attempt(self.offset(tick_c), landing).map_err(|e| at(t_c, e))?;
-                let analog = &mut self.analog;
-                self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
-                // A retry: `Some(tick)` to attempt again (`None`: propose again).
-                let retry = match attempt {
-                    Attempt::Converged => None,
-                    Attempt::Rejected => Some(None),
-                    Attempt::LandedEarlier(t) => {
-                        let nearest = self.nearest_offset(t);
-                        let shortest = now_tick + 1;
-                        if t >= self.offset(tick_c) || tick_c - 1 < shortest {
-                            // The crossing lies at or past the step's end, or the step is
-                            // too short for a shorter one to fit in it: the step is taken at
-                            // its end and the analog side reports the crossing in
-                            // `Accepted::fired`.
-                            None
-                        } else {
-                            // The nearest tick inside the step, at least one tick shorter.
-                            Some(Some(nearest.clamp(shortest, tick_c - 1)))
+                match self.attempt_step(tick_c, t_c, landing, now_tick)? {
+                    StepAttempt::Retake(target) => {
+                        self.restore(&c);
+                        self.release(c);
+                        rejections += 1;
+                        if target.is_some() {
+                            self.statistics.record_retake();
                         }
+                        self.refuse_rejections(rejections, t_c)?;
+                        forced = target;
+                        continue;
                     }
-                };
-                if let Some(target) = retry {
-                    self.restore(&c);
-                    self.release(c);
-                    rejections += 1;
-                    if target.is_some() {
-                        self.statistics.record_retake();
+                    StepAttempt::Accepted(accepted) => {
+                        rejections = 0;
+                        crossings = accepted.fired;
+                        accepted.samples
                     }
-                    if rejections >= self.options.max_rejections {
-                        return Err(Error::simple(
-                            SolverDomain::Transient,
-                            format!(
-                                "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
-                                 the step does not converge",
-                                self.now
-                            ),
-                        ));
-                    }
-                    forced = target;
-                    continue;
                 }
-                // Step 5: accept, fire the crossings at (t_c, 0).
-                let accepted = self.analog.accept().map_err(|e| at(t_c, e))?;
-                rejections = 0;
-                self.settle_delivered = false;
-                for net in &accepted.fired {
-                    self.discrete.fire(*net, tick_c).map_err(|e| at(t_c, e))?;
-                }
-                crossings = accepted.fired;
-                accepted.samples
             } else {
                 Vec::new()
             };
             self.samples.clone_from(&samples);
-            let mode = InstantMode { is_static: false, settle };
-            let crossing = if unknowns { tick_c } else { stop_tick };
-            let limit = Horizon { stop: stop_tick, crossing };
-            self.land_settle_commits(tick_c, settle);
-            // A step that may be retaken settles once, after its last round (§15 step 4): its
-            // instant runs without the settle phase, and the phase follows the retakes.
-            let deferred = unknowns && settle && jump.possible(&crossings);
-            let rounds = InstantMode { settle: settle && !deferred, ..mode };
-            let mut outcome = if crossings.is_empty() && self.discrete.is_idle_at(tick_c) {
-                self.discrete.pass_instant(tick_c);
-                Outcome::default()
-            } else {
-                self.statistics.record_instant(if crossings.is_empty() { InstantCause::Scheduled } else { InstantCause::Crossing });
-                self.run_whole_instant(tick_c, &samples, limit, rounds).map_err(|e| at(t_c, e))?
-            };
-            // a value passed through within the instant left the settle phase to follow its retake
-            let passed = !outcome.passing.is_empty();
-            if unknowns && (passed || jump.wanted(&crossings, &outcome)) {
-                let continued = InstantMode { settle: false, ..mode };
-                outcome = self
-                    .read_instant(&c.analog, tick_c, crossings, outcome, jump.reads_jump(), limit, continued)
-                    .map_err(|e| at(t_c, e))?;
-            }
-            if deferred || (passed && rounds.settle) {
-                // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
-                self.discrete.reopen(tick_c, false);
-                let samples = self.samples.clone();
-                let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| at(t_c, e))?;
-                outcome.absorb_settle(settled);
-            }
-            if unknowns {
-                jump.delivered(&outcome.boundary, &outcome.settle_boundary);
-            }
-            if unknowns && !outcome.boundary.is_empty() {
-                let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
-                self.analog.deliver(&outcome.boundary, restart);
-            }
-            self.deliver_settle_boundary(unknowns, &outcome);
+            let step = StepInstant { tick: tick_c, time: t_c, settle, unknowns, stop_tick };
+            let outcome = self.run_step_instant(&step, &samples, crossings, &mut jump, &c.analog)?;
+            self.deliver_outcome(&outcome, unknowns, &mut jump);
             // Step 6.
             self.statistics.record_end(Self::step_end(advanced, retaken, bound));
             self.collect(AnalysisKind::Transient);
@@ -494,6 +413,182 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
 }
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// The tick the run ends on. Every step ends on the tick grid, so the instant run at a step's end is that tick's own
+    /// (an instant runs only at its own tick). The stop takes the steps' own rounding: rounded up, a stop off the grid
+    /// lies a tick past the step that reaches it, and the loop would run once more.
+    fn stop_tick(&self, stop: f64) -> Result<Tick> {
+        let stop_tick = self.floor_tick(stop);
+        if stop > self.now && stop_tick <= self.now_tick {
+            // Every step ends on a later tick, past this stop: a run that took
+            // no step would end short of it with no error.
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                format!(
+                    "the stop {stop:e} s lies after t = {:e} s but inside its tick {}: no step reaches it",
+                    self.now, self.now_tick
+                ),
+            ));
+        }
+        Ok(stop_tick)
+    }
+
+    /// `error` of the step to `time`: a run error carries its own code and time, so it is stamped, never wrapped.
+    fn at(time: f64, error: Error) -> Error {
+        match error {
+            Error::Run(_) => error.with_time(time),
+            other => Error::wrap(SolverDomain::Transient, format!("at t = {time:e} s"), other),
+        }
+    }
+
+    /// Steps 1 and 2 of a step from the accepted time: the tick `t_c` aims at (the retake's `forced` tick, else the analog
+    /// proposal clamped to the grid, else the stop) and the discrete instants before it, which stop before a landing and
+    /// shorten the step to its tick. A landing that does not advance is the solver's error.
+    fn plan_step(&mut self, forced: Option<Tick>, stop_tick: Tick, unknowns: bool) -> Result<PlannedStep> {
+        let now_tick = self.now_tick;
+        let mut bound = ProposalBound::Stop;
+        let mut tick_c = match forced {
+            Some(t) => t,
+            None if unknowns => {
+                let next_due = self.discrete.next_due().map(|tick| self.offset(tick));
+                let proposed = self.analog.propose(self.now_offset(), self.offset(stop_tick), next_due);
+                bound = self.analog.proposal_bound();
+                self.floor_offset(proposed).clamp((now_tick + 1).min(stop_tick), stop_tick)
+            }
+            None => stop_tick,
+        };
+        // Step 2: the discrete instants before t_c, stopping before a landing.
+        let (mut settle, mut final_mark) = (true, false);
+        let advanced = self.discrete.advance(tick_c).map_err(|e| Self::at(self.time(tick_c), e))?;
+        match advanced {
+            Advance::Reached => {}
+            Advance::Landing { tick, cause } => {
+                tick_c = tick;
+                settle = cause.is_time_point();
+            }
+            Advance::Final(tick) => {
+                tick_c = tick;
+                final_mark = true;
+            }
+        }
+        if tick_c <= now_tick {
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                format!("a landing at tick {tick_c} does not advance from tick {now_tick} ({:e} s)", self.now),
+            ));
+        }
+        Ok(PlannedStep { tick: tick_c, settle, final_mark, bound, advance: advanced })
+    }
+
+    /// The failure of a step retaken `rejections` times in a row from the accepted time, last toward `t_c`.
+    fn refuse_rejections(&self, rejections: u32, t_c: f64) -> Result<()> {
+        if rejections >= self.options.max_rejections {
+            return Err(Error::simple(
+                SolverDomain::Transient,
+                format!(
+                    "{rejections} consecutive rejected attempts from t = {:e} s (last toward {t_c:e} s): \
+                     the step does not converge",
+                    self.now
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// What the instant changed reaches the analog side: the jump the retake read is recorded, the boundary nets are
+    /// delivered with the restart the next step starts from, and the settle commits follow.
+    fn deliver_outcome(&mut self, outcome: &Outcome, unknowns: bool, jump: &mut JumpRetake) {
+        if unknowns {
+            jump.delivered(&outcome.boundary, &outcome.settle_boundary);
+        }
+        if unknowns && !outcome.boundary.is_empty() {
+            let restart = if outcome.host_param_write { Restart::IntegratorSmall } else { Restart::Integrator };
+            self.analog.deliver(&outcome.boundary, restart);
+        }
+        self.deliver_settle_boundary(unknowns, outcome);
+    }
+
+    /// Steps 3 to 5 up to the accept: one analog attempt to `tick_c` (`t_c` seconds, a `landing` when it is a scheduled
+    /// instant) after the traces it drew are kept. A rejected attempt, or a crossing that landed earlier inside the step
+    /// (a tick at least one shorter), is a retake; a converged one is accepted and its crossings fired at `(t_c, 0)`.
+    fn attempt_step(&mut self, tick_c: Tick, t_c: f64, landing: bool, now_tick: Tick) -> Result<StepAttempt> {
+        let attempt = self.analog.attempt(self.offset(tick_c), landing).map_err(|e| Self::at(t_c, e))?;
+        let analog = &mut self.analog;
+        self.delivery.keep_traces(AnalysisKind::Transient, |out| analog.drain_traces(out));
+        // A retry: `Some(tick)` to attempt again (`None`: propose again).
+        let retry = match attempt {
+            Attempt::Converged => None,
+            Attempt::Rejected => Some(None),
+            Attempt::LandedEarlier(t) => {
+                let nearest = self.nearest_offset(t);
+                let shortest = now_tick + 1;
+                if t >= self.offset(tick_c) || tick_c - 1 < shortest {
+                    // The crossing lies at or past the step's end, or the step is
+                    // too short for a shorter one to fit in it: the step is taken at
+                    // its end and the analog side reports the crossing in
+                    // `Accepted::fired`.
+                    None
+                } else {
+                    // The nearest tick inside the step, at least one tick shorter.
+                    Some(Some(nearest.clamp(shortest, tick_c - 1)))
+                }
+            }
+        };
+        if let Some(target) = retry {
+            return Ok(StepAttempt::Retake(target));
+        }
+        // Step 5: accept, fire the crossings at (t_c, 0).
+        let accepted = self.analog.accept().map_err(|e| Self::at(t_c, e))?;
+        self.settle_delivered = false;
+        for net in &accepted.fired {
+            self.discrete.fire(*net, tick_c).map_err(|e| Self::at(t_c, e))?;
+        }
+        Ok(StepAttempt::Accepted(accepted))
+    }
+
+    /// Step 5 after the accept: runs the instant of `step` on `samples`, then the retake the jump or a value passed
+    /// through calls for (from the analog mark `analog_mark`) and the settle phase that follows it.
+    fn run_step_instant(
+        &mut self,
+        step: &StepInstant,
+        samples: &[f64],
+        crossings: Vec<u32>,
+        jump: &mut JumpRetake,
+        analog_mark: &A::Mark,
+    ) -> Result<Outcome> {
+        let StepInstant { tick: tick_c, time: t_c, settle, unknowns, stop_tick } = *step;
+        let mode = InstantMode { is_static: false, settle };
+        let crossing = if unknowns { tick_c } else { stop_tick };
+        let limit = Horizon { stop: stop_tick, crossing };
+        self.land_settle_commits(tick_c, settle);
+        // A step that may be retaken settles once, after its last round (§15 step 4): its
+        // instant runs without the settle phase, and the phase follows the retakes.
+        let deferred = unknowns && settle && jump.possible(&crossings);
+        let rounds = InstantMode { settle: settle && !deferred, ..mode };
+        let mut outcome = if crossings.is_empty() && self.discrete.is_idle_at(tick_c) {
+            self.discrete.pass_instant(tick_c);
+            Outcome::default()
+        } else {
+            self.statistics.record_instant(if crossings.is_empty() { InstantCause::Scheduled } else { InstantCause::Crossing });
+            self.run_whole_instant(tick_c, samples, limit, rounds).map_err(|e| Self::at(t_c, e))?
+        };
+        // a value passed through within the instant left the settle phase to follow its retake
+        let passed = !outcome.passing.is_empty();
+        if unknowns && (passed || jump.wanted(&crossings, &outcome)) {
+            let continued = InstantMode { settle: false, ..mode };
+            outcome = self
+                .read_instant(analog_mark, tick_c, crossings, outcome, jump.reads_jump(), limit, continued)
+                .map_err(|e| Self::at(t_c, e))?;
+        }
+        if deferred || (passed && rounds.settle) {
+            // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
+            self.discrete.reopen(tick_c, false);
+            let samples = self.samples.clone();
+            let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| Self::at(t_c, e))?;
+            outcome.absorb_settle(settled);
+        }
+        Ok(outcome)
+    }
+
     /// How the accepted step ended: on the landing the discrete side found, on the crossing it was
     /// retaken to, or where the analog side's proposal ended (`bound` says what cut it). A step
     /// that ends on the instant that finishes the analysis ends at the stop.

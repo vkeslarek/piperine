@@ -18,11 +18,9 @@ use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
-#[allow(dead_code)]
-#[path = "buck/support.rs"]
-mod support;
 
-use support::{build, decode, value_at, with_buck};
+use piperine_parity::buck_fixture::{BuckProject, ByteInteger, NetChanges};
+use piperine_parity::mixed::BuiltDesign;
 
 /// The run: 600 us (DIG-16).
 const STOP: f64 = 600e-6;
@@ -74,8 +72,48 @@ struct SeenSink {
     kept: Rc<RefCell<Kept>>,
 }
 
-fn ticks(seconds: f64) -> i64 {
-    (seconds * 1e15).round() as i64
+/// The closed-loop bench of the buck, run once for every test.
+struct ClosedLoopRun;
+
+impl ClosedLoopRun {
+    /// The one run of this test binary.
+    fn outcome() -> &'static Outcome {
+        static RUN: OnceLock<Outcome> = OnceLock::new();
+        RUN.get_or_init(|| {
+            let built = BuiltDesign::of(&BuckProject::with_buck("closed_loop.msl"), "LoopBench");
+            let vout = NodeIdentifier::Anonymous(built.ir.node_at("LoopBench.buck.vout").expect("the output node").id().index());
+            let kept = Rc::new(RefCell::new(Kept { nets: NETS.iter().map(|p| (p.to_string(), Vec::new())).collect(), ..Kept::default() }));
+            let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
+            let mut options = TransientAnalysisOptions::new(STOP, STEP);
+            options.dt_max = STEP;
+            // only the last 20 periods are read as analog values: earlier steps are not kept (each
+            // kept step holds every unknown; the whole run would hold hundreds of thousands)
+            options.record_from = STOP - 20.0 * PERIOD;
+            let sink = SeenSink { ir: built.ir.clone(), kept: kept.clone() };
+            let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
+            let start = std::time::Instant::now();
+            let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("the closed loop does not run: {e}"));
+            let seconds = start.elapsed().as_secs_f64();
+            let vout = result.iter().map(|s| (s.time(), s.get_node(&vout).expect("v(vout)"))).collect();
+            let kept = kept.take();
+            eprintln!("closed loop: {STOP:e} s simulated in {seconds:.1} s of wall clock");
+            Outcome { nets: kept.nets, checks: kept.checks, vout, seconds }
+        })
+    }
+}
+
+/// Seconds in ticks and the last value of a path of a closed-loop run.
+struct ClosedLoopReading;
+
+impl ClosedLoopReading {
+    fn ticks(seconds: f64) -> i64 {
+        (seconds * 1e15).round() as i64
+    }
+
+    /// The value of a net of `bytes` value bytes at the end of the run.
+    fn last(o: &Outcome, path: &str, bytes: usize) -> i32 {
+        ByteInteger::decode(NetChanges::value_at(o.series(path), ClosedLoopReading::ticks(STOP)), bytes, false)
+    }
 }
 
 impl Sink for SeenSink {
@@ -84,7 +122,7 @@ impl Sink for SeenSink {
         match &o.kind {
             ObservationKind::Change { bytes } => {
                 if let Some((_, s)) = kept.nets.iter_mut().find(|(p, _)| *p == o.path) {
-                    s.push((ticks(o.time), bytes.clone()));
+                    s.push((ClosedLoopReading::ticks(o.time), bytes.clone()));
                 }
             }
             ObservationKind::Record { site: Some((reaction, statement)), bytes }
@@ -93,73 +131,43 @@ impl Sink for SeenSink {
                 // the record names its own site (abi.md C5): decoded on its own, no pairing
                 let (_, site) = self.ir.record_at(&o.path, *reaction, *statement).expect("a record decodes to its emit");
                 let texts = site.texts.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-                kept.checks.push((ticks(o.time), bytes.clone(), texts));
+                kept.checks.push((ClosedLoopReading::ticks(o.time), bytes.clone(), texts));
             }
             _ => {}
         }
     }
 }
 
-/// The one run of this test binary.
-fn outcome() -> &'static Outcome {
-    static RUN: OnceLock<Outcome> = OnceLock::new();
-    RUN.get_or_init(|| {
-        let built = build(&with_buck("closed_loop.msl"), "LoopBench");
-        let vout = NodeIdentifier::Anonymous(built.ir.node_at("LoopBench.buck.vout").expect("the output node").id().index());
-        let kept = Rc::new(RefCell::new(Kept { nets: NETS.iter().map(|p| (p.to_string(), Vec::new())).collect(), ..Kept::default() }));
-        let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
-        let mut options = TransientAnalysisOptions::new(STOP, STEP);
-        options.dt_max = STEP;
-        // only the last 20 periods are read as analog values: earlier steps are not kept (each
-        // kept step holds every unknown; the whole run would hold hundreds of thousands)
-        options.record_from = STOP - 20.0 * PERIOD;
-        let sink = SeenSink { ir: built.ir.clone(), kept: kept.clone() };
-        let mut solver = Solver::new(circuit).with_tran_opts(options).with_sink(Box::new(sink)).build();
-        let start = std::time::Instant::now();
-        let result = solver.tran().unwrap_or_else(|e| panic!("{e}")).solve().unwrap_or_else(|e| panic!("the closed loop does not run: {e}"));
-        let seconds = start.elapsed().as_secs_f64();
-        let vout = result.iter().map(|s| (s.time(), s.get_node(&vout).expect("v(vout)"))).collect();
-        let kept = kept.take();
-        eprintln!("closed loop: {STOP:e} s simulated in {seconds:.1} s of wall clock");
-        Outcome { nets: kept.nets, checks: kept.checks, vout, seconds }
-    })
-}
-
-/// The value of a net of `bytes` value bytes at the end of the run.
-fn last(o: &Outcome, path: &str, bytes: usize) -> i32 {
-    decode(value_at(o.series(path), ticks(STOP)), bytes, false)
-}
-
 #[test]
 fn the_buck_starts_and_reaches_regulate() {
-    let o = outcome();
+    let o = ClosedLoopRun::outcome();
     // SPEC §7.1: the setpoint register takes the code 0 on the host's write
-    assert_eq!(last(o, "LoopBench.buck.ctl.setpoint", 1), 0, "the setpoint is code 0");
+    assert_eq!(ClosedLoopReading::last(o, "LoopBench.buck.ctl.setpoint", 1), 0, "the setpoint is code 0");
     // SPEC §8: `Off` until enabled, `SoftStart` at the next sample, `Regulate` when the ramp
     // reaches the target; no `Hiccup` (tags 0, 1, 2, 3)
-    let modes: Vec<i32> = o.series("LoopBench.mode").iter().map(|(_, b)| decode(b, 1, false)).collect();
+    let modes: Vec<i32> = o.series("LoopBench.mode").iter().map(|(_, b)| ByteInteger::decode(b, 1, false)).collect();
     let mut distinct = modes.clone();
     distinct.dedup();
     assert_eq!(distinct, vec![0, 1, 2], "mode goes Off, SoftStart, Regulate: {modes:?}");
     // SPEC §7.1 and §7.2: the reference ramps one code per sample to 128 + 4 * 0 = 128 and stays
     let reference = o.series("LoopBench.buck.ctl.reference");
-    assert_eq!(last(o, "LoopBench.buck.ctl.reference", 2), 128, "the reference rests at 128");
-    let peak = reference.iter().map(|(_, b)| decode(b, 2, false)).max();
+    assert_eq!(ClosedLoopReading::last(o, "LoopBench.buck.ctl.reference", 2), 128, "the reference rests at 128");
+    let peak = reference.iter().map(|(_, b)| ByteInteger::decode(b, 2, false)).max();
     assert_eq!(peak, Some(128), "it never passes the target");
 }
 
 #[test]
 fn power_good_is_high_and_no_fault_is_latched() {
-    let o = outcome();
+    let o = ClosedLoopRun::outcome();
     // DIG-16 AC 2, SPEC §8.5 and §8.6: at 600 us power-good is high and the fault code is `Clear`
-    assert_eq!(last(o, "LoopBench.pgood", 1), 1, "pgood is true at 600 us");
-    assert_eq!(last(o, "LoopBench.fault", 1), 0, "fault is Clear at 600 us");
-    assert!(o.series("LoopBench.fault").iter().all(|(_, b)| decode(b, 1, false) == 0), "no fault was ever latched");
+    assert_eq!(ClosedLoopReading::last(o, "LoopBench.pgood", 1), 1, "pgood is true at 600 us");
+    assert_eq!(ClosedLoopReading::last(o, "LoopBench.fault", 1), 0, "fault is Clear at 600 us");
+    assert!(o.series("LoopBench.fault").iter().all(|(_, b)| ByteInteger::decode(b, 1, false) == 0), "no fault was ever latched");
 }
 
 #[test]
 fn the_output_settles_within_10_mv_of_0v8() {
-    let o = outcome();
+    let o = ClosedLoopRun::outcome();
     // DIG-16 AC 3: the mean of v(vout) over the last 20 switching periods, each accepted point
     // weighted by the step that ends at it
     let from = STOP - 20.0 * PERIOD;
@@ -181,7 +189,7 @@ fn the_output_settles_within_10_mv_of_0v8() {
 
 #[test]
 fn no_shoot_through_during_the_start() {
-    let o = outcome();
+    let o = ClosedLoopRun::outcome();
     // SPEC §5.3 and §10 S10: the monitor checks at each rising clock edge (200 MHz) that both
     // commands are never on together: one record per edge, `pass` true
     // the 200 MHz clock rises at 2.5 ns + 5 ns (k - 1): 600 us holds edges 1 to 120 000, the

@@ -54,26 +54,36 @@ impl Counting {
     }
 }
 
-/// The solver node of the design node at `path`.
-fn node(ir: &Ir, path: &str) -> NodeIdentifier {
-    NodeIdentifier::Anonymous(ir.node_at(path).unwrap_or_else(|| panic!("no node {path}")).id().index())
+/// The solver node of a design path.
+struct SessionNode;
+
+impl SessionNode {
+    /// The solver node of the design node at `path`.
+    fn node(ir: &Ir, path: &str) -> NodeIdentifier {
+        NodeIdentifier::Anonymous(ir.node_at(path).unwrap_or_else(|| panic!("no node {path}")).id().index())
+    }
 }
 
-fn dc(circuit: &mut CircuitInstance, id: &NodeIdentifier) -> f64 {
-    let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
-    result.get_node(id).expect("the node is solved")
-}
+/// A circuit read at a node: its DC value, its AC magnitude, its transient.
+struct CircuitReading;
 
-fn ac_magnitude(circuit: &mut CircuitInstance, id: &NodeIdentifier, hz: f64) -> f64 {
-    let opts = AcSweepAnalysisOptions { start_frequency: hz, stop_frequency: hz, steps: 1, logarithmic: false };
-    let mut ac = circuit.ac(Context::default()).expect("ac");
-    ac.solve_sweep(opts).expect("sweep").get(0).expect("one point").get_node(id).expect("the node").norm()
-}
+impl CircuitReading {
+    fn dc(circuit: &mut CircuitInstance, id: &NodeIdentifier) -> f64 {
+        let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
+        result.get_node(id).expect("the node is solved")
+    }
 
-fn follow(circuit: &mut CircuitInstance, id: &NodeIdentifier, stop: f64) -> Vec<(f64, f64)> {
-    let opts = TransientAnalysisOptions::new(stop, stop / 400.0);
-    let result = circuit.transient(opts, Context::default()).expect("transient").solve().expect("solve");
-    result.iter().map(|s| (s.time(), s.get_node(id).expect("the node"))).collect()
+    fn ac_magnitude(circuit: &mut CircuitInstance, id: &NodeIdentifier, hz: f64) -> f64 {
+        let opts = AcSweepAnalysisOptions { start_frequency: hz, stop_frequency: hz, steps: 1, logarithmic: false };
+        let mut ac = circuit.ac(Context::default()).expect("ac");
+        ac.solve_sweep(opts).expect("sweep").get(0).expect("one point").get_node(id).expect("the node").norm()
+    }
+
+    fn follow(circuit: &mut CircuitInstance, id: &NodeIdentifier, stop: f64) -> Vec<(f64, f64)> {
+        let opts = TransientAnalysisOptions::new(stop, stop / 400.0);
+        let result = circuit.transient(opts, Context::default()).expect("transient").solve().expect("solve");
+        result.iter().map(|s| (s.time(), s.get_node(id).expect("the node"))).collect()
+    }
 }
 
 // RS-04 AC 6: `Dc` on the diode circuit and the RC, `Ac` on the RC and a transient of the held
@@ -90,20 +100,20 @@ fn no_analysis_runs_the_compiler() {
     assert!(built >= 3, "the builds called the compiler ({built} calls)");
 
     let mut circuit = diode.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let a = node(&diode_ir, "DiodeCircuit.a");
+    let a = SessionNode::node(&diode_ir, "DiodeCircuit.a");
     let vd = circuit.dc(Context { tolerances: Tolerances { reltol: 1e-12, vntol: 1e-14, abstol: 1e-16, ..Tolerances::default() }, ..Context::default() })
         .expect("dc").solve().expect("solve").get_node(&a).expect("v(a)");
     assert!(vd > 0.3 && vd < 0.8, "a forward-biased junction: v(a) = {vd}");
 
     let mut circuit = rc.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let out = node(&rc_ir, "RcLowpass.out");
-    let m = ac_magnitude(&mut circuit, &out, 100e3);
+    let out = SessionNode::node(&rc_ir, "RcLowpass.out");
+    let m = CircuitReading::ac_magnitude(&mut circuit, &out, 100e3);
     assert!((m - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9, "-3 dB at the corner: |v(out)| = {m}");
 
     let mut circuit = held.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let out = node(&held_ir, "RcHeld.out");
+    let out = SessionNode::node(&held_ir, "RcHeld.out");
     let rc_time = 1000.0 * HandCircuits::FARADS;
-    let steps = follow(&mut circuit, &out, rc_time);
+    let steps = CircuitReading::follow(&mut circuit, &out, rc_time);
     let (_, v) = *steps.last().expect("steps");
     assert!((v - (1.0 - (-1.0_f64).exp())).abs() < 1e-3, "out at RC: {v}");
 
@@ -123,20 +133,20 @@ fn a_set_between_analyses_runs_no_compiler_and_applies() {
     let built = compiler.calls();
 
     let mut circuit = diode.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let a = node(&diode_ir, "DiodeCircuit.a");
-    let before = dc(&mut circuit, &a);
+    let a = SessionNode::node(&diode_ir, "DiodeCircuit.a");
+    let before = CircuitReading::dc(&mut circuit, &a);
     circuit.set("DiodeCircuit.v1", "dc", ParamValue::Real(0.5)).expect("set the source");
-    let after = dc(&mut circuit, &a);
+    let after = CircuitReading::dc(&mut circuit, &a);
     assert!(after < before, "a lower source gives a lower junction voltage: {before} then {after}");
     circuit.set("DiodeCircuit.v1", "dc", ParamValue::Real(0.8)).expect("set the source back");
-    assert_eq!(dc(&mut circuit, &a).to_bits(), before.to_bits(), "the same param gives the same result");
+    assert_eq!(CircuitReading::dc(&mut circuit, &a).to_bits(), before.to_bits(), "the same param gives the same result");
 
     // 1 k and 1.59 nF: -3 dB at 100 kHz; 2 k halves the corner, so at 100 kHz the gain falls.
     let mut circuit = rc.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-    let out = node(&rc_ir, "RcLowpass.out");
-    let corner = ac_magnitude(&mut circuit, &out, 100e3);
+    let out = SessionNode::node(&rc_ir, "RcLowpass.out");
+    let corner = CircuitReading::ac_magnitude(&mut circuit, &out, 100e3);
     circuit.set("RcLowpass.r1", "r", ParamValue::Real(2000.0)).expect("set the resistor");
-    let doubled = ac_magnitude(&mut circuit, &out, 100e3);
+    let doubled = CircuitReading::ac_magnitude(&mut circuit, &out, 100e3);
     let expected = 1.0 / (1.0 + (2.0 * std::f64::consts::PI * 100e3 * 2000.0 * HandCircuits::FARADS).powi(2)).sqrt();
     assert!((doubled - expected).abs() < 1e-9, "|v(out)| with 2 k: {doubled} vs {expected}");
     assert!(doubled < corner, "{doubled} < {corner}");

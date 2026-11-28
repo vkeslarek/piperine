@@ -95,7 +95,7 @@ impl Written {
     pub fn eval(h: &Handle, k: u32, input: &[Vec<u8>], seed: Option<&[u8]>) -> Result<Written, CallError> {
         let shape = h.shape();
         let f = shape.functions.get(k as usize).unwrap_or_else(|| panic!("no function {k}"));
-        let lens = piperine_abi::device::cell_lens(shape, &f.writes, piperine_abi::device::Access::FunctionWrite).expect("write lens");
+        let lens = shape.cell_lens(&f.writes, piperine_abi::device::Access::FunctionWrite).expect("write lens");
         let n = f.partials.len();
         let reads: Vec<&[u8]> = input.iter().map(Vec::as_slice).collect();
         let mut cells: Vec<Vec<u8>> = lens.iter().map(|len| vec![0u8; *len]).collect();

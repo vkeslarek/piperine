@@ -13,20 +13,20 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/value-semantics/design.md`
 **Status**: Approved
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run errors**: `cargo test -p piperine-lang --test msl_errors`
-**Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
-**Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
+**Run errors**: `cargo test -p piperine-lang --test msl errors::`
+**Run typesvs**: `cargo test -p piperine-lang --test types_values value_semantics::`
+**Run srcvs**: `cargo test -p piperine-parity --test source_values value_semantics::`
 **Run iragg**: `cargo test -p piperine-ir --test model aggregates::`
-**Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
-**Run stdlib**: `cargo test -p piperine-lang --test std_library`
+**Run excerpts**: `cargo test -p piperine-lang --test std excerpts::`
+**Run stdlib**: `cargo test -p piperine-lang --test std library::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run print**: `cargo test -p piperine-lang --test msl_print`
-**Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
+**Run print**: `cargo test -p piperine-lang --test msl print::`
+**Run resolve**: `cargo test -p piperine-lang --test pom resolve::`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run goldens**: `cargo test -p piperine-transpile --test golden`
-**Run booklang**: `cargo test -p piperine --test book_language`
-**Run booktypes**: `cargo test -p piperine --test book_types`
+**Run booklang**: `cargo test -p piperine --test book language::`
+**Run booktypes**: `cargo test -p piperine --test book types::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

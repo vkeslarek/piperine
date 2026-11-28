@@ -3,9 +3,9 @@
 //! fields; layout equality ignores names and nothing else (P4); an `Option<T>` pin is a presence
 //! field then the payload (P3, P5).
 
-use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW, layout_eq, leaf_size};
+use piperine_abi::layout::{BIT, BYTE, F64, HIGH, LOW};
 use piperine_abi::raw::{Field, Layout, List, Str, leaf};
-use piperine_abi::validate::validate;
+use piperine_abi::validate::Validator;
 
 #[test]
 fn the_shipped_layouts_hold_the_value_only() {
@@ -27,10 +27,10 @@ fn the_shipped_layouts_hold_the_value_only() {
         (leaf::F64, 8),
     ];
     for (l, size) in sizes {
-        assert_eq!(leaf_size(l), Some(size), "leaf {l}");
+        assert_eq!(Field::leaf_size(l), Some(size), "leaf {l}");
     }
-    assert_eq!(leaf_size(0), None);
-    assert_eq!(leaf_size(12), None);
+    assert_eq!(Field::leaf_size(0), None);
+    assert_eq!(Field::leaf_size(12), None);
 }
 
 #[test]
@@ -38,20 +38,20 @@ fn layout_equality_ignores_names() {
     let base = [LayoutReading::field("v", leaf::F64, 0, 1), LayoutReading::field("w", leaf::I32, 12, 1)];
     let renamed = [LayoutReading::field("value", leaf::F64, 0, 1), LayoutReading::field("other", leaf::I32, 12, 1)];
     let a = LayoutReading::layout(16, 8, &base);
-    assert!(layout_eq(&a, &a));
-    assert!(layout_eq(&a, &LayoutReading::layout(16, 8, &renamed)), "names do not count");
+    assert!(Layout::equals(&a, &a));
+    assert!(Layout::equals(&a, &LayoutReading::layout(16, 8, &renamed)), "names do not count");
     // A field-less pair of equal size and alignment is equal.
-    assert!(layout_eq(&LayoutReading::layout(0, 1, &[]), &LayoutReading::layout(0, 1, &[])));
+    assert!(Layout::equals(&LayoutReading::layout(0, 1, &[]), &LayoutReading::layout(0, 1, &[])));
 
     let leaf_differs = [LayoutReading::field("v", leaf::I64, 0, 1), LayoutReading::field("w", leaf::I32, 12, 1)];
     let offset_differs = [LayoutReading::field("v", leaf::F64, 0, 1), LayoutReading::field("w", leaf::I32, 9, 1)];
     let count_differs = [LayoutReading::field("v", leaf::F64, 0, 1), LayoutReading::field("w", leaf::I32, 12, 2)];
     for (what, other) in [("leaf", &leaf_differs), ("offset", &offset_differs), ("count", &count_differs)] {
-        assert!(!layout_eq(&a, &LayoutReading::layout(16, 8, other)), "a differing {what} is unequal");
+        assert!(!Layout::equals(&a, &LayoutReading::layout(16, 8, other)), "a differing {what} is unequal");
     }
-    assert!(!layout_eq(&a, &LayoutReading::layout(24, 8, &base)), "a differing size is unequal");
-    assert!(!layout_eq(&a, &LayoutReading::layout(16, 4, &base)), "a differing alignment is unequal");
-    assert!(!layout_eq(&a, &LayoutReading::layout(16, 8, &base[..1])), "a differing field count is unequal");
+    assert!(!Layout::equals(&a, &LayoutReading::layout(24, 8, &base)), "a differing size is unequal");
+    assert!(!Layout::equals(&a, &LayoutReading::layout(16, 4, &base)), "a differing alignment is unequal");
+    assert!(!Layout::equals(&a, &LayoutReading::layout(16, 8, &base[..1])), "a differing field count is unequal");
 }
 
 #[test]
@@ -61,9 +61,9 @@ fn an_option_pin_is_presence_then_payload() {
     let fields = [LayoutReading::field("some", leaf::BOOL, 0, 1), LayoutReading::field("v", leaf::U8, 1, 1)];
     let option = LayoutReading::layout(2, 1, &fields);
     assert_eq!(LayoutReading::fields_of(&option), [("some".to_string(), leaf::BOOL, 0, 1), ("v".to_string(), leaf::U8, 1, 1)]);
-    assert!(!layout_eq(&option, &BYTE), "an `Option<u8>` is not a `u8`: its size and its fields differ");
+    assert!(!Layout::equals(&option, &BYTE), "an `Option<u8>` is not a `u8`: its size and its fields differ");
     let widest = [LayoutReading::field("some", leaf::BOOL, 0, 1), LayoutReading::field("v", leaf::F64, 1, 1)];
-    assert_eq!(LayoutReading::layout(9, 1, &widest).size, 1 + leaf_size(leaf::F64).expect("a leaf") as u32, "the payload follows the presence byte");
+    assert_eq!(LayoutReading::layout(9, 1, &widest).size, 1 + Field::leaf_size(leaf::F64).expect("a leaf") as u32, "the payload follows the presence byte");
     assert_eq!(LayoutReading::validate_layout(&option), Ok(()));
 }
 
@@ -82,7 +82,7 @@ fn a_logic_pin_is_two_planes() {
     for pin in [&four, &sixty_four] {
         assert_eq!(LayoutReading::validate_layout(pin), Ok(()), "a plane pair is a valid layout of size {}", pin.size);
     }
-    assert!(!layout_eq(&four, &sixty_four), "two widths are two layouts");
+    assert!(!Layout::equals(&four, &sixty_four), "two widths are two layouts");
 }
 
 /// Reads layouts back for the layout tests.
@@ -111,6 +111,6 @@ impl LayoutReading {
         let mut shape = ShapeBuf::new();
         shape.pin(PinSpec::discrete("o", role::PORT, layout));
         let frozen = shape.freeze();
-        validate(frozen.shape()).map_err(|e| e.to_string())
+        Validator::validate(frozen.shape()).map_err(|e| e.to_string())
     }
 }

@@ -14,11 +14,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Done
 **Verdict**: PASS
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run entry**: `cargo test -p piperine-lang --test types_entry`
-**Run values**: `cargo test -p piperine-lang --test types_values`
-**Run modules**: `cargo test -p piperine-lang --test types_modules`
-**Run analog**: `cargo test -p piperine-lang --test types_analog`
-**Run subset**: `cargo test -p piperine-lang --test types_subset`
+**Run entry**: `cargo test -p piperine-lang --test types_modules entry::`
+**Run values**: `cargo test -p piperine-lang --test types_values values::`
+**Run modules**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run analog**: `cargo test -p piperine-lang --test types_analog analog::`
+**Run subset**: `cargo test -p piperine-lang --test types_modules subset::`
 
 Executors: Sonnet implements every task; Opus verifies the feature. The worktree and branch are told at dispatch. This feature has no dependency on another M1 feature: it runs in wave 1. `msl-elab` is written against the `Types` interface of `design.md`; keep its names.
 

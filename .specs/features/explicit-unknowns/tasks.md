@@ -12,13 +12,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: In Progress
 **Approved**: 2026-11-21 - user: "Aceito os recomendados" (Q4: no separate strength trait, `impl Resolve<Driven>` carries it; Q5: Strength set B, five levels HighZ < Weak < Pull < Strong < Supply), after R1–R10, Q1–Q3 and the ABI (major 1, edited in place) the same day; D1–D21 stand.
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run bookvalues**: `cargo test -p piperine --test book_values`
-**Run booklang**: `cargo test -p piperine --test book_language`
-**Run booknatures**: `cargo test -p piperine --test book_natures`
-**Run bookabi**: `cargo test -p piperine --test book_abi`
-**Run bookinv**: `cargo test -p piperine --test book_inventory`
-**Run types**: `cargo test -p piperine-lang --test types_explicit`
-**Run src**: `cargo test -p piperine-parity --test source_explicit`
+**Run bookvalues**: `cargo test -p piperine --test book values::`
+**Run booklang**: `cargo test -p piperine --test book language::`
+**Run booknatures**: `cargo test -p piperine --test book natures::`
+**Run bookabi**: `cargo test -p piperine --test book abi::`
+**Run bookinv**: `cargo test -p piperine --test book inventory_guard::`
+**Run types**: `cargo test -p piperine-lang --test types_values explicit::`
+**Run src**: `cargo test -p piperine-parity --test source_values explicit::`
 **Run ir**: `cargo test -p piperine-ir --test model digital::`
 **Run abi**: `cargo test -p piperine-abi --test contract layouts::`
 **Run plan**: `cargo test -p piperine-plan --test shape digital_shape::`
@@ -29,13 +29,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run session**: `cargo test -p piperine-api --test session session::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
+**Run excerpts**: `cargo test -p piperine-lang --test std excerpts::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
 **Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
-**Run ops**: `cargo test -p piperine-lang --test types_operators`
-**Run logic**: `cargo test -p piperine-parity --test source_logic`
+**Run ops**: `cargo test -p piperine-lang --test types_values operators::`
+**Run logic**: `cargo test -p piperine-parity --test source_stdlib logic::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: **every task is Sonnet**. Opus verifies each batch and the feature.

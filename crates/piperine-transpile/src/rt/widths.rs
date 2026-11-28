@@ -569,47 +569,38 @@ impl Convert {
 
 #[cfg(test)]
 mod tests {
+    use crate::rt::panic_text::PanicText;
     use super::*;
-
-    /// The helpers of the tests of this file.
-    struct Fixture;
-
-    impl Fixture {
-        /// The text of the panic `run` raises, `None` when it does not.
-        fn panic_of(run: impl FnOnce() + std::panic::UnwindSafe) -> Option<String> {
-            std::panic::catch_unwind(run).err().map(|payload| payload.downcast_ref::<String>().cloned().or_else(|| payload.downcast_ref::<&str>().map(|text| text.to_string())).unwrap_or_default())
-        }
-    }
 
     #[test]
     fn the_runtime_raises_msl_panics_and_carries_every_width() {
         // §1 rule 11: an integer `/` or `%` by zero, and `clamp` with crossed bounds, name the operation
-        let divided = Fixture::panic_of(|| {
+        let divided = PanicText::panic_of(|| {
             let _ = WideUInt::<200, 4>::from_u64(7) / WideUInt::ZERO;
         })
         .expect("a zero divisor panics");
         assert!(divided.contains("integer division by zero") && divided.contains("UInt<200>") && divided.contains("7 / 0"), "{divided}");
-        let remainder = Fixture::panic_of(|| {
+        let remainder = PanicText::panic_of(|| {
             let _ = WideInt::<100, 2>::from_i64(-7) % WideInt::ZERO;
         })
         .expect("a zero divisor panics");
         assert!(remainder.contains("integer remainder by zero") && remainder.contains("Int<100>") && remainder.contains("-7 % 0"), "{remainder}");
-        let euclid = Fixture::panic_of(|| {
+        let euclid = PanicText::panic_of(|| {
             let _ = WideUInt::<65, 2>::from_u64(5).rem_euclid(WideUInt::ZERO);
         })
         .expect("a zero divisor panics");
         assert!(euclid.contains("`rem_euclid`") && euclid.contains("UInt<65>"), "{euclid}");
-        let crossed = Fixture::panic_of(|| {
+        let crossed = PanicText::panic_of(|| {
             let _ = WideInt::<70, 2>::from_i64(0).clamp(WideInt::from_i64(2), WideInt::from_i64(1));
         })
         .expect("crossed bounds panic");
         assert!(crossed.contains("`clamp`") && crossed.contains("Int<70>"), "{crossed}");
-        let nan_bound = Fixture::panic_of(|| {
+        let nan_bound = PanicText::panic_of(|| {
             let _ = Float16::from_f32(1.0).clamp(Float16::NAN, Float16::from_f32(2.0));
         })
         .expect("a NaN bound panics");
         assert!(nan_bound.contains("`clamp` on f16"), "{nan_bound}");
-        let quad_crossed = Fixture::panic_of(|| {
+        let quad_crossed = PanicText::panic_of(|| {
             let _ = Float128::ONE.clamp(Float128::ONE + Float128::ONE, Float128::ONE);
         })
         .expect("crossed bounds panic");

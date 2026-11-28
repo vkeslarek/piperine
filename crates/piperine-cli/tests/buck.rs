@@ -11,42 +11,52 @@ use std::sync::OnceLock;
 use piperine_api::Project;
 use piperine_parity::compile_cache::CompileCache;
 
-/// `examples/buck`.
-fn buck() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck")
+/// A run of the `examples/buck` project on the binary.
+struct BuckRun;
+
+impl BuckRun {
+    /// `examples/buck`.
+    fn buck() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck")
+    }
+
+    /// `piperine run <name>` in `examples/buck`, its standard output; the run must have completed.
+    fn run(name: &str) -> String {
+        let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).args(["run", name]).current_dir(BuckRun::buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+        assert_eq!(out.status.code(), Some(0), "{name}: stderr:\n{}", String::from_utf8_lossy(&out.stderr));
+        String::from_utf8(out.stdout).expect("text")
+    }
+
+    /// The one run of `startup` of this target.
+    fn startup() -> &'static str {
+        static OUT: OnceLock<String> = OnceLock::new();
+        OUT.get_or_init(|| BuckRun::run("startup"))
+    }
 }
 
-/// `piperine run <name>` in `examples/buck`, its standard output; the run must have completed.
-fn run(name: &str) -> String {
-    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).args(["run", name]).current_dir(buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
-    assert_eq!(out.status.code(), Some(0), "{name}: stderr:\n{}", String::from_utf8_lossy(&out.stderr));
-    String::from_utf8(out.stdout).expect("text")
-}
+/// The table a run printed, split into its header and rows.
+struct RunTable;
 
-/// The one run of `startup` of this target.
-fn startup() -> &'static str {
-    static OUT: OnceLock<String> = OnceLock::new();
-    OUT.get_or_init(|| run("startup"))
-}
+impl RunTable {
+    /// The table of a run: its header row and data rows, as cells.
+    fn table(out: &str) -> (Vec<&str>, Vec<Vec<&str>>) {
+        let mut lines = out.lines().skip_while(|l| !l.is_empty()).skip(1);
+        let header = lines.next().unwrap_or_else(|| panic!("no table in the output")).split_whitespace().collect();
+        (header, lines.map(|l| l.split_whitespace().collect()).collect())
+    }
 
-/// The table of a run: its header row and data rows, as cells.
-fn table(out: &str) -> (Vec<&str>, Vec<Vec<&str>>) {
-    let mut lines = out.lines().skip_while(|l| !l.is_empty()).skip(1);
-    let header = lines.next().unwrap_or_else(|| panic!("no table in the output")).split_whitespace().collect();
-    (header, lines.map(|l| l.split_whitespace().collect()).collect())
-}
-
-/// The cells of the column `name` of a table.
-fn column<'a>(header: &[&str], rows: &'a [Vec<&'a str>], name: &str) -> Vec<&'a str> {
-    let at = header.iter().position(|h| *h == name).unwrap_or_else(|| panic!("no column `{name}` in {header:?}"));
-    rows.iter().map(|r| r[at]).collect()
+    /// The cells of the column `name` of a table.
+    fn column<'a>(header: &[&str], rows: &'a [Vec<&'a str>], name: &str) -> Vec<&'a str> {
+        let at = header.iter().position(|h| *h == name).unwrap_or_else(|| panic!("no column `{name}` in {header:?}"));
+        rows.iter().map(|r| r[at]).collect()
+    }
 }
 
 #[test]
 fn the_buck_has_its_bench_and_two_runs() {
     // CLI-08 AC 1: `benches/startup.msl` and the runs `idle` and `startup`
-    assert!(buck().join("benches/startup.msl").is_file(), "benches/startup.msl");
-    let project = Project::at(&buck()).unwrap_or_else(|f| panic!("{f}"));
+    assert!(BuckRun::buck().join("benches/startup.msl").is_file(), "benches/startup.msl");
+    let project = Project::at(&BuckRun::buck()).unwrap_or_else(|f| panic!("{f}"));
     let mut names: Vec<&str> = project.runs().iter().map(|r| r.name.as_str()).collect();
     names.sort();
     assert_eq!(names, ["idle", "startup"]);
@@ -58,15 +68,15 @@ fn startup_ends_with_the_reference_at_128() {
     // CLI-08 AC 2: the run completes on the Rust backend and the last row of its table gives 128
     // for the controller's reference (SPEC §7.2: 0.8 V is code 0, reference 128), and SPEC §2's
     // DC regulation, 1 % or 10 mV whichever is larger, holds for `vout` in that row
-    let out = startup();
+    let out = BuckRun::startup();
     assert_eq!(out.lines().next(), Some("run startup: transient, top Startup, backend rust"));
-    let (header, rows) = table(out);
-    let reference = column(&header, &rows, "Startup.buck.ctl.reference");
+    let (header, rows) = RunTable::table(out);
+    let reference = RunTable::column(&header, &rows, "Startup.buck.ctl.reference");
     assert_eq!(reference.last(), Some(&"128"), "{header:?} {:?}", rows.last());
-    let vout: f64 = column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
+    let vout: f64 = RunTable::column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
     assert!((vout - 0.8).abs() <= 10e-3, "vout at the end: {vout}");
     // the supervisor ended in `Regulate` (after `Off` and `SoftStart`, SPEC §8), printed by its name
-    assert_eq!(column(&header, &rows, "Startup.mode").last(), Some(&"Regulate"));
+    assert_eq!(RunTable::column(&header, &rows, "Startup.mode").last(), Some(&"Regulate"));
 }
 
 #[test]
@@ -75,8 +85,8 @@ fn startup_ends_within_3_mv_of_0_8_volts() {
     // Book chapter 15, "an output within 3 mV of 0.8 V (0.8025)" in the last row of `startup`, and chapter 10,
     // "regulates at 0.8 V within 3 mV": the end of the start is tighter than the 10 mV of SPEC section 2 that
     // `startup_ends_with_the_reference_at_128` holds. The run is the shared one of this target
-    let (header, rows) = table(startup());
-    let vout: f64 = column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
+    let (header, rows) = RunTable::table(BuckRun::startup());
+    let vout: f64 = RunTable::column(&header, &rows, "Startup.buck.vout").last().expect("a row").parse().expect("a number");
     assert!((vout - 0.8).abs() <= 3e-3, "vout at the end: {vout}");
     assert_eq!(format!("{vout:.4}"), "0.8025", "the Book prints the value it reads");
 }
@@ -86,9 +96,9 @@ fn startup_prints_the_whole_start_on_its_grid() {
     // Book claims held here: cli~418fd42b
     // LR-13: with no `from`, `startup` prints the whole start, 0 to 600 us, on its 0.5 us grid:
     // 1 201 rows, the time of row k being k * 0.5e-6
-    let (header, rows) = table(startup());
+    let (header, rows) = RunTable::table(BuckRun::startup());
     assert_eq!(rows.len(), 1201, "{header:?}");
-    let times: Vec<f64> = column(&header, &rows, "time").iter().map(|t| t.parse().expect("a time")).collect();
+    let times: Vec<f64> = RunTable::column(&header, &rows, "time").iter().map(|t| t.parse().expect("a time")).collect();
     assert_eq!(times[0], 0.0);
     assert!((times[1200] - 600e-6).abs() <= 1e-12, "last row at {}", times[1200]);
     for (k, t) in times.iter().enumerate() {
@@ -103,13 +113,13 @@ fn startup_prints_no_failed_check() {
     // would print, so no ` checks ` line on standard output means no failed check; the claim is
     // not vacuous: the DPWM's no-shoot-through monitor checks at every clock of the 600 us, and
     // `--records` keeps every record, all of them passing
-    assert!(!startup().lines().any(|l| l.starts_with('@') && l.split_whitespace().nth(2) == Some("checks")), "a checks line was printed");
+    assert!(!BuckRun::startup().lines().any(|l| l.starts_with('@') && l.split_whitespace().nth(2) == Some("checks")), "a checks line was printed");
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("startup.jsonl");
     let out = Command::new(env!("CARGO_BIN_EXE_piperine"))
         .args(["run", "startup", "--records"])
         .arg(&file)
-        .current_dir(buck())
+        .current_dir(BuckRun::buck())
         .env("PIPERINE_CACHE_DIR", CompileCache::shared().path())
         .env_remove("PIPERINE_BACKEND")
         .output()
@@ -126,19 +136,19 @@ fn startup_prints_no_failed_check() {
 fn the_buck_runs_print_at_most_16_lines() {
     // CLI-08 AC 6: with no flag, `idle` prints at most 16 lines; `startup` prints the whole
     // start (long-run Q2): the run line, a blank line, the header and 1 201 rows
-    let out = run("idle");
+    let out = BuckRun::run("idle");
     assert!(out.lines().count() <= 16, "idle printed {} lines", out.lines().count());
-    assert_eq!(startup().lines().count(), 3 + 1201);
+    assert_eq!(BuckRun::startup().lines().count(), 3 + 1201);
 }
 
 #[test]
 fn idle_keeps_the_mode_off() {
     // CLI-08 AC 4: with `en` low the supervisor stays `Off`, printed by its name in every row (SPEC §8; CV-22)
-    let out = run("idle");
+    let out = BuckRun::run("idle");
     assert_eq!(out.lines().next(), Some("run idle: transient, top Idle, backend rust"));
-    let (header, rows) = table(&out);
+    let (header, rows) = RunTable::table(&out);
     assert!(!rows.is_empty());
-    let mode = column(&header, &rows, "Idle.mode");
+    let mode = RunTable::column(&header, &rows, "Idle.mode");
     assert!(mode.iter().all(|m| *m == "Off"), "a row where the mode is not Off: {:?}", mode.iter().find(|m| **m != "Off"));
 }
 
@@ -146,7 +156,7 @@ fn idle_keeps_the_mode_off() {
 fn piperine_test_passes_on_the_buck() {
     // CLI-08 AC 5: `piperine test` in `examples/buck` exits 0, both runs judged by the DPWM's
     // monitor (the passing checks are hidden on a terminal, but they are counted)
-    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).arg("test").current_dir(buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).arg("test").current_dir(BuckRun::buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     let stdout = String::from_utf8(out.stdout).expect("text");
     assert_eq!(out.status.code(), Some(0), "stdout:\n{stdout}\nstderr:\n{}", String::from_utf8_lossy(&out.stderr));
     let lines: Vec<&str> = stdout.lines().collect();

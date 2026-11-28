@@ -7,7 +7,7 @@ use piperine_abi::raw::{Cell, Module, Shape, Statement, WHOLE, cell, part, role}
 use piperine_abi::shape::{PinSpec, ReactionSpec, ShapeBuf, ShapeRef};
 use piperine_abi::thunk::module;
 
-/// Writes `1` to its scalar pin `bit` when `go` fires.
+/// Writes `1` to its scalar pin `bit` when `go` fires; the digital engine's `array_nets` target binds it to one element of an array net.
 pub struct Poker;
 static POKER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 static POKER: OnceLock<Module> = OnceLock::new();

@@ -226,6 +226,16 @@ impl Error {
         }
     }
 
+    /// A device-side error of the analog assembly.
+    pub(crate) fn device(detail: String) -> Error {
+        Error::simple(SolverDomain::Device, detail)
+    }
+
+    /// The device error of one entry of one instance: `what` `name` (`origin`) fails with `detail`.
+    pub(crate) fn device_entry(path: &str, what: &str, name: &str, origin: &str, detail: String) -> Error {
+        Error::device(format!("instance `{path}`: {what} `{name}` ({origin}): {detail}"))
+    }
+
     pub fn cause(
         domain: SolverDomain,
         description: impl Into<String>,

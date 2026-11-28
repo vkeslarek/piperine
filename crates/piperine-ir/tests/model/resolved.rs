@@ -7,25 +7,20 @@ use piperine_ir::{
     BodyId, BodySpec, Broken, Carrier, Child, CarrierRole, Drive, Expr, ExprId, FunctionId, FunctionSpec, Holder, InstanceId, InstanceSpec, Ir, IrBuilder, Local, NetSpec, Origin, Resolution, ValueType,
 };
 
-/// The bodies and designs this target checks, each beside the MSL it transcribes:
-///
-/// ```text
-/// nature Count { value: u8 }            // impl Resolve<bool, u8> for Count: how many drives are true
-/// module Source() { signal w: Count; w = true; signal seen: Bit<u8> = 0; seen = w.others(); }
-/// ```
-struct Fixture;
+/// The designs of the resolved-nets tests: a source, a resolver, and the instances of the `Resolve` that join them.
+struct ResolvedNets;
 
-impl Fixture {
+impl ResolvedNets {
     const FILE: &'static str = "count.msl";
 
     fn origin(line: u32) -> Origin {
-        Origin { file: Fixture::FILE.into(), line, col: 5 }
+        Origin { file: ResolvedNets::FILE.into(), line, col: 5 }
     }
 
     fn spec(name: &str) -> BodySpec {
         BodySpec {
             name: name.into(),
-            origin: Fixture::origin(1),
+            origin: ResolvedNets::origin(1),
             params: vec![],
             nodes: vec![],
             branches: vec![],
@@ -38,7 +33,7 @@ impl Fixture {
     }
 
     fn expr(b: &mut IrBuilder, kind: Expr, ty: ValueType, line: u32) -> ExprId {
-        b.expr(kind, ty, Fixture::origin(line))
+        b.expr(kind, ty, ResolvedNets::origin(line))
     }
 
     /// `resolve::<k>` of the nature, for each `k` in `0..=2`: it takes `[bool; k]` and returns `u8`; `returns` is the
@@ -47,10 +42,10 @@ impl Fixture {
         (0..=2usize)
             .map(|count| {
                 let ret = wrong.as_ref().filter(|(at, _)| *at == count).map_or(ValueType::UInt(8), |(_, ty)| ty.clone());
-                let body = Fixture::expr(b, Expr::Int(0), ret.clone(), 2);
+                let body = ResolvedNets::expr(b, Expr::Int(0), ret.clone(), 2);
                 b.function(FunctionSpec {
                     name: format!("resolve~{count}"),
-                    origin: Fixture::origin(2),
+                    origin: ResolvedNets::origin(2),
                     params: vec![Local { name: "drives".into(), ty: ValueType::Array(Box::new(ValueType::Bool), count as u64), mutable: false }],
                     ret,
                     locals: vec![],
@@ -63,71 +58,76 @@ impl Fixture {
     /// The resolver body `Count$resolve~2`: two `in` drives of the driven type and the `out` value, defined as the
     /// `Resolve` of both drives through `by_count`.
     fn resolver(b: &mut IrBuilder, by_count: Vec<FunctionId>, drives: Vec<u32>) -> BodyId {
-        let body = b.body(Fixture::spec("Count$resolve~2"));
+        let body = b.body(ResolvedNets::spec("Count$resolve~2"));
         for name in ["d0", "d1"] {
-            b.carrier(body, Carrier { name: name.into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: Fixture::origin(3), count: None });
+            b.carrier(body, Carrier { name: name.into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(3), count: None });
         }
-        b.carrier(body, Carrier { name: "v".into(), ty: ValueType::UInt(8), role: CarrierRole::Out, init: None, origin: Fixture::origin(3), count: None });
-        let value = Fixture::expr(b, Expr::Resolve { by_count, drives, except: None }, ValueType::UInt(8), 3);
-        b.drive(body, Drive { carrier: 2, value, after: None, origin: Fixture::origin(3), element: None, path: vec![] });
+        b.carrier(body, Carrier { name: "v".into(), ty: ValueType::UInt(8), role: CarrierRole::Out, init: None, origin: ResolvedNets::origin(3), count: None });
+        let value = ResolvedNets::expr(b, Expr::Resolve { by_count, drives, except: None }, ValueType::UInt(8), 3);
+        b.drive(body, Drive { carrier: 2, value, after: None, origin: ResolvedNets::origin(3), element: None, path: vec![] });
         body
     }
 
     /// The holder body `Source`: `w` is resolved (value `u8`, driven `bool`), driven with `true`, and `seen` follows
     /// `w.others()`.
     fn source(b: &mut IrBuilder, driven: ValueType, drive_value: Expr, drive_ty: ValueType) -> BodyId {
-        let body = b.body(Fixture::spec("Source"));
-        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven, port: true }, init: None, origin: Fixture::origin(4), count: None });
-        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(5), count: None });
-        let drive = Fixture::expr(b, drive_value, drive_ty, 4);
-        b.drive(body, Drive { carrier: 0, value: drive, after: None, origin: Fixture::origin(4), element: None, path: vec![] });
-        let others = Fixture::expr(b, Expr::Others(0), ValueType::UInt(8), 5);
-        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: Fixture::origin(5), element: None, path: vec![] });
+        let body = b.body(ResolvedNets::spec("Source"));
+        b.carrier(body, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven, port: true }, init: None, origin: ResolvedNets::origin(4), count: None });
+        b.carrier(body, Carrier { name: "seen".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(5), count: None });
+        let drive = ResolvedNets::expr(b, drive_value, drive_ty, 4);
+        b.drive(body, Drive { carrier: 0, value: drive, after: None, origin: ResolvedNets::origin(4), element: None, path: vec![] });
+        let others = ResolvedNets::expr(b, Expr::Others(0), ValueType::UInt(8), 5);
+        b.drive(body, Drive { carrier: 1, value: others, after: None, origin: ResolvedNets::origin(5), element: None, path: vec![] });
         body
     }
 
     /// The design: `Source` is the top, its resolver the child `Source.w$resolve` over two drive nets, the first held
     /// by the top's carrier `w` and the second by the host.
     fn design(b: IrBuilder, source: BodyId, resolver: BodyId) -> Ir {
-        Fixture::design_held(b, source, resolver, &|root| vec![Some(Holder { instance: root, carrier: 0 }), None])
+        ResolvedNets::design_held(b, source, resolver, &|root| vec![Some(Holder { instance: root, carrier: 0 }), None])
     }
 
-    /// [`Fixture::design`] with the net's holders given by `holders` from the top's instance: what a test of a wrong holder
+    /// [`ResolvedNets::design`] with the net's holders given by `holders` from the top's instance: what a test of a wrong holder
     /// writes.
     fn design_held(mut b: IrBuilder, source: BodyId, resolver: BodyId, holders: &dyn Fn(InstanceId) -> Vec<Option<Holder>>) -> Ir {
         let top = b.next_instance_id();
-        let value = b.net(NetSpec { path: "Source.w".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: Fixture::origin(4) });
-        let seen = b.net(NetSpec { path: "Source.seen".into(), ty: ValueType::UInt(8), declared_by: top, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(5) });
-        let drive = |b: &mut IrBuilder, k: u32| b.net(NetSpec { path: format!("Source.w$drive{k}"), ty: ValueType::Bool, declared_by: top, init: None, origin: Fixture::origin(4) });
+        let value = b.net(NetSpec { path: "Source.w".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: ResolvedNets::origin(4) });
+        let seen = b.net(NetSpec { path: "Source.seen".into(), ty: ValueType::UInt(8), declared_by: top, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(5) });
+        let drive = |b: &mut IrBuilder, k: u32| b.net(NetSpec { path: format!("Source.w$drive{k}"), ty: ValueType::Bool, declared_by: top, init: None, origin: ResolvedNets::origin(4) });
         let (first, second) = (drive(&mut b, 0), drive(&mut b, 1));
-        let others = b.net(NetSpec { path: "Source.w$others0".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: Fixture::origin(4) });
-        let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: source, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
+        let others = b.net(NetSpec { path: "Source.w$others0".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: ResolvedNets::origin(4) });
+        let root = b.instance(InstanceSpec { path: "Source".into(), name: "Source".into(), body: source, parent: None, nodes: vec![], params: vec![], origin: ResolvedNets::origin(1) });
         b.bind_nets(root, vec![value, seen]).unwrap();
-        let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(4) });
+        let child = b.instance(InstanceSpec { path: "Source.w$resolve".into(), name: "w$resolve".into(), body: resolver, parent: Some(root), nodes: vec![], params: vec![], origin: ResolvedNets::origin(4) });
         b.bind_nets(child, vec![first, second, value]).unwrap();
         b.resolve_net(value, Resolution { resolver: child, driven: ValueType::Bool, drives: vec![first, second], holders: holders(root), others: vec![(0, others)] }).unwrap();
         b.finish(root)
-    }
-
-    /// The check of the design whose net's holders `holders` gives, everything else well formed.
-    fn held(holders: &dyn Fn(InstanceId) -> Vec<Option<Holder>>) -> Vec<Broken> {
-        let mut b = IrBuilder::new();
-        let by_count = Fixture::instances(&mut b, None);
-        let resolver = Fixture::resolver(&mut b, by_count, vec![0, 1]);
-        let source = Fixture::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
-        Fixture::design_held(b, source, resolver, holders).check()
     }
 
     /// The whole design with the drive written as `drive_value` of type `drive_ty` for a carrier driven with `driven`,
     /// and the `Resolve` of the resolver given by `by_count` over `drives`.
     fn checked(driven: ValueType, drive_value: Expr, drive_ty: ValueType, wrong: Option<(usize, ValueType)>, drives: Vec<u32>) -> (Ir, Vec<Broken>) {
         let mut b = IrBuilder::new();
-        let by_count = Fixture::instances(&mut b, wrong);
-        let resolver = Fixture::resolver(&mut b, by_count, drives);
-        let source = Fixture::source(&mut b, driven, drive_value, drive_ty);
-        let ir = Fixture::design(b, source, resolver);
+        let by_count = ResolvedNets::instances(&mut b, wrong);
+        let resolver = ResolvedNets::resolver(&mut b, by_count, drives);
+        let source = ResolvedNets::source(&mut b, driven, drive_value, drive_ty);
+        let ir = ResolvedNets::design(b, source, resolver);
         let broken = ir.check();
         (ir, broken)
+    }
+}
+
+/// The check of a design whose net's holders are given.
+struct NetHolders;
+
+impl NetHolders {
+    /// The check of the design whose net's holders `holders` gives, everything else well formed.
+    fn held(holders: &dyn Fn(InstanceId) -> Vec<Option<Holder>>) -> Vec<Broken> {
+        let mut b = IrBuilder::new();
+        let by_count = ResolvedNets::instances(&mut b, None);
+        let resolver = ResolvedNets::resolver(&mut b, by_count, vec![0, 1]);
+        let source = ResolvedNets::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
+        ResolvedNets::design_held(b, source, resolver, holders).check()
     }
 }
 
@@ -135,7 +135,7 @@ impl Fixture {
 fn a_resolved_net_is_built_checked_and_printed() {
     // RN-03: a `Resolved` carrier is driven with its driven type, `others()` reads the value type, `Resolve` is typed by
     // its instances' result, and the net records its resolver, drives and holders.
-    let (ir, broken) = Fixture::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 1]);
+    let (ir, broken) = ResolvedNets::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 1]);
     assert_eq!(broken, vec![], "a well formed resolved net");
 
     let printed = ir.to_string();
@@ -162,27 +162,27 @@ fn a_resolved_net_is_built_checked_and_printed() {
 #[test]
 fn a_resolve_with_a_missing_count_or_another_type_is_refused() {
     // RN-03: `by_count` has one instance per count `0..=drives`, each taking `[X; k]` and returning `V`.
-    let (_, short) = Fixture::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 1, 1]);
+    let (_, short) = ResolvedNets::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 1, 1]);
     assert!(short.iter().any(|e| e.what.contains("names 3 instances of the function for 3 drives; it needs one per count 0..=3")), "a missing count: {short:#?}");
 
-    let (_, other) = Fixture::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, Some((1, ValueType::F64)), vec![0, 1]);
+    let (_, other) = ResolvedNets::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, Some((1, ValueType::F64)), vec![0, 1]);
     assert!(other.iter().any(|e| e.what.contains("instance 1 (`resolve~1`) returns f64")), "an instance of another result type: {other:#?}");
 
-    let (_, mixed) = Fixture::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 2]);
+    let (_, mixed) = ResolvedNets::checked(ValueType::Bool, Expr::Bool(true), ValueType::Bool, None, vec![0, 2]);
     assert!(mixed.iter().any(|e| e.what.contains("`resolve` drives hold two types, bool and u8")), "drives of two types: {mixed:#?}");
 
     // a drive of a resolved carrier writes the driven type, not the value type
-    let (_, wrong_drive) = Fixture::checked(ValueType::Bool, Expr::Int(1), ValueType::UInt(8), None, vec![0, 1]);
+    let (_, wrong_drive) = ResolvedNets::checked(ValueType::Bool, Expr::Int(1), ValueType::UInt(8), None, vec![0, 1]);
     assert!(wrong_drive.iter().any(|e| e.what.contains("the value of a drive must be bool, found u8")), "a drive of the value type is refused: {wrong_drive:#?}");
 
     // `others()` reads a resolved carrier only
     let mut b = IrBuilder::new();
-    let by_count = Fixture::instances(&mut b, None);
-    let resolver = Fixture::resolver(&mut b, by_count, vec![0, 1]);
-    let source = Fixture::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
-    let signal_others = Fixture::expr(&mut b, Expr::Others(1), ValueType::UInt(8), 6);
-    b.drive(source, Drive { carrier: 1, value: signal_others, after: None, origin: Fixture::origin(6), element: None, path: vec![] });
-    let broken = Fixture::design(b, source, resolver).check();
+    let by_count = ResolvedNets::instances(&mut b, None);
+    let resolver = ResolvedNets::resolver(&mut b, by_count, vec![0, 1]);
+    let source = ResolvedNets::source(&mut b, ValueType::Bool, Expr::Bool(true), ValueType::Bool);
+    let signal_others = ResolvedNets::expr(&mut b, Expr::Others(1), ValueType::UInt(8), 6);
+    b.drive(source, Drive { carrier: 1, value: signal_others, after: None, origin: ResolvedNets::origin(6), element: None, path: vec![] });
+    let broken = ResolvedNets::design(b, source, resolver).check();
     assert!(broken.iter().any(|e| e.what.contains("`others()` of carrier 1, which is not a resolved carrier")), "others() of a signal: {broken:#?}");
 }
 
@@ -194,20 +194,20 @@ impl Placement {
     /// The check of the design: `Parent` places `Holder` with `bound` carriers.
     fn broken(port: bool, bound: Vec<Option<u32>>) -> Vec<Broken> {
         let mut b = IrBuilder::new();
-        let holder = b.body(Fixture::spec("Holder"));
-        b.carrier(holder, Carrier { name: "a".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: Fixture::origin(2), count: None });
-        b.carrier(holder, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven: ValueType::Bool, port }, init: None, origin: Fixture::origin(3), count: None });
-        let parent = b.body(BodySpec { children: vec![Child { name: "h".into(), body: holder, nodes: vec![], params: vec![], origin: Fixture::origin(5) }], ..Fixture::spec("Parent") });
-        b.carrier(parent, Carrier { name: "x".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Bool(false)), origin: Fixture::origin(4), count: None });
-        b.carrier(parent, Carrier { name: "y".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: Fixture::origin(4), count: None });
+        let holder = b.body(ResolvedNets::spec("Holder"));
+        b.carrier(holder, Carrier { name: "a".into(), ty: ValueType::Bool, role: CarrierRole::In, init: None, origin: ResolvedNets::origin(2), count: None });
+        b.carrier(holder, Carrier { name: "w".into(), ty: ValueType::UInt(8), role: CarrierRole::Resolved { driven: ValueType::Bool, port }, init: None, origin: ResolvedNets::origin(3), count: None });
+        let parent = b.body(BodySpec { children: vec![Child { name: "h".into(), body: holder, nodes: vec![], params: vec![], origin: ResolvedNets::origin(5) }], ..ResolvedNets::spec("Parent") });
+        b.carrier(parent, Carrier { name: "x".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Bool(false)), origin: ResolvedNets::origin(4), count: None });
+        b.carrier(parent, Carrier { name: "y".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: Some(piperine_ir::Constant::Int(0)), origin: ResolvedNets::origin(4), count: None });
         b.bind_child_carriers(parent, 0, bound);
         let top = b.next_instance_id();
-        let net = |b: &mut IrBuilder, path: &str, ty: ValueType, init: piperine_ir::Constant| b.net(NetSpec { path: path.into(), ty, declared_by: top, init: Some(init), origin: Fixture::origin(4) });
+        let net = |b: &mut IrBuilder, path: &str, ty: ValueType, init: piperine_ir::Constant| b.net(NetSpec { path: path.into(), ty, declared_by: top, init: Some(init), origin: ResolvedNets::origin(4) });
         let x = net(&mut b, "Parent.x", ValueType::Bool, piperine_ir::Constant::Bool(false));
         let y = net(&mut b, "Parent.y", ValueType::UInt(8), piperine_ir::Constant::Int(0));
-        let root = b.instance(InstanceSpec { path: "Parent".into(), name: "Parent".into(), body: parent, parent: None, nodes: vec![], params: vec![], origin: Fixture::origin(1) });
+        let root = b.instance(InstanceSpec { path: "Parent".into(), name: "Parent".into(), body: parent, parent: None, nodes: vec![], params: vec![], origin: ResolvedNets::origin(1) });
         b.bind_nets(root, vec![x, y]).unwrap();
-        let child = b.instance(InstanceSpec { path: "Parent.h".into(), name: "h".into(), body: holder, parent: Some(root), nodes: vec![], params: vec![], origin: Fixture::origin(5) });
+        let child = b.instance(InstanceSpec { path: "Parent.h".into(), name: "h".into(), body: holder, parent: Some(root), nodes: vec![], params: vec![], origin: ResolvedNets::origin(5) });
         b.bind_nets(child, vec![x, y]).unwrap();
         b.finish(root).check()
     }
@@ -229,15 +229,15 @@ fn a_resolved_signal_is_no_port_of_a_child_binding() {
 fn a_resolution_whose_holders_do_not_fit_its_drives_is_refused() {
     // RN-03: a net's `Resolution` has one holder per drive, each an instance of the design and a carrier of that instance's body
     // that is a resolved carrier (the host's drive has none): every other holder is refused by `Ir::check`
-    assert_eq!(Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None]), vec![], "the well formed holders");
-    let short = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 })]);
+    assert_eq!(NetHolders::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None]), vec![], "the well formed holders");
+    let short = NetHolders::held(&|root| vec![Some(Holder { instance: root, carrier: 0 })]);
     assert!(short.iter().any(|e| e.what.contains("1 holders for 2 drives")), "a holder too few: {short:#?}");
-    let long = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None, None]);
+    let long = NetHolders::held(&|root| vec![Some(Holder { instance: root, carrier: 0 }), None, None]);
     assert!(long.iter().any(|e| e.what.contains("3 holders for 2 drives")), "a holder too many: {long:#?}");
-    let nobody = Fixture::held(&|_| vec![Some(Holder { instance: InstanceId(99), carrier: 0 }), None]);
+    let nobody = NetHolders::held(&|_| vec![Some(Holder { instance: InstanceId(99), carrier: 0 }), None]);
     assert!(nobody.iter().any(|e| e.what.contains("holder instance 99 out of range (2 instances)")), "an instance the design does not have: {nobody:#?}");
-    let past = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 2 }), None]);
+    let past = NetHolders::held(&|root| vec![Some(Holder { instance: root, carrier: 2 }), None]);
     assert!(past.iter().any(|e| e.what.contains("holder carrier 2 out of range for instance Source")), "a carrier the body does not have: {past:#?}");
-    let signal = Fixture::held(&|root| vec![Some(Holder { instance: root, carrier: 1 }), None]);
+    let signal = NetHolders::held(&|root| vec![Some(Holder { instance: root, carrier: 1 }), None]);
     assert!(signal.iter().any(|e| e.what.contains("holder carrier 1 (`seen`) of instance Source is no resolved carrier")), "a carrier in range that is a plain signal: {signal:#?}");
 }

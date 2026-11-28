@@ -31,7 +31,7 @@ fn a_resistor_divider_has_its_thermal_noise_on_devices() {
     }
     let mut circuit = b.build().expect("build");
     let out = CircuitBuilding::node_id(&mid);
-    let result = circuit.noise(AbiNoiseCases::options(out), Context::default()).expect("noise").solve().expect("solve");
+    let result = circuit.noise(NoiseOptions::options(out), Context::default()).expect("noise").solve().expect("solve");
 
     let analytic = 4.0 * K_B * Tolerances::default().temperature * (r1 * r2 / (r1 + r2));
     for (i, density) in result.out_noise_sq.iter().enumerate() {
@@ -54,7 +54,7 @@ fn a_shared_noise_input_cancels_across_the_pair() {
         b.device(circuit::NoisePair::module(), "x1", &[("k", ParamValue::Real(k))], &[Port::Node(node.clone())]);
         let mut circuit = b.build().expect("build");
         let out = CircuitBuilding::node_id(&node);
-        let result = circuit.noise(AbiNoiseCases::options(out), Context::default()).expect("noise").solve().expect("solve");
+        let result = circuit.noise(NoiseOptions::options(out), Context::default()).expect("noise").solve().expect("solve");
         result.out_noise_sq[0]
     };
     // Gains 1 and -1 on one source: the same current in and out, nothing reaches the node.
@@ -124,10 +124,10 @@ fn test_per_source_noise_reporting_and_conservation() {
     assert!((res.integrated_noise - manual_int.sqrt()).abs() < 1e-12);
 }
 
-/// The helpers of the abi_noise tests.
-pub struct AbiNoiseCases;
+/// The options a noise run of an ABI device is asked with.
+struct NoiseOptions;
 
-impl AbiNoiseCases {
+impl NoiseOptions {
     /// The options helper `options`.
     fn options(output: NodeIdentifier) -> NoiseAnalysisOptions {
         NoiseAnalysisOptions {
@@ -140,5 +140,4 @@ impl AbiNoiseCases {
     }
 
     // ─── A resistor with a thermal and a flicker source ─────────────────────────
-
 }

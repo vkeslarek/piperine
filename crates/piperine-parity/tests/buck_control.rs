@@ -14,43 +14,122 @@ use piperine_parity::project::Project;
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
-#[allow(dead_code)]
-#[path = "buck/support.rs"]
-mod support;
 
 use mixed::Seen;
-use support::{build, decode, series, transient, value_at, with_buck};
+use piperine_parity::buck_fixture::{BuckProject, ByteInteger, NetChanges};
+use piperine_parity::mixed::BuiltDesign;
 
 /// The samples: one per rising edge of the oscillator.
 const SAMPLES: i64 = 200;
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
 
-fn project() -> Project {
-    with_buck("control.msl")
+/// The `control.msl` bench of the buck tests, loaded as a project.
+struct BuckControlModels;
+
+impl BuckControlModels {
+    fn project() -> Project {
+        BuckProject::with_buck("control.msl")
+    }
 }
 
-/// The inputs of sample `s`: `(run, target, meas)`, as `Script` of `tests/buck/control.msl`
-/// computes them from its counter; the test asserts the two agree before it judges the loop.
-///
-/// - `s < 8`: `run` low, the loop at rest.
-/// - `8 <= s < 170`: `run` high (soft-start from sample 8); `170 <= s < 180`: `run` dropped;
-///   `s >= 180`: raised again (a second soft-start).
-/// - `target` is 150 codes, 100 from sample 120 (the reference ramps back down after it).
-/// - `meas` is 0 up to sample 39, a step to 20, then to 1023 (the output at full scale: the
-///   error clamps at -256 and the output saturates low), then back to 0 (the error jumps up by
-///   hundreds of codes: the derivative saturates the output high), then 100.
-fn script(s: i64) -> (bool, i64, i64) {
-    let run = !(s < 8 || (170..180).contains(&s));
-    let target = if s < 120 { 150 } else { 100 };
-    let meas = match s {
-        0..=39 => 0,
-        40..=79 => 20,
-        80..=109 => 1023,
-        110..=139 => 0,
-        _ => 100,
-    };
-    (run, target, meas)
+/// The difference equations of the ramp and the PID, the oracle of the control tests.
+struct ControlReference;
+
+impl ControlReference {
+    /// The inputs of sample `s`: `(run, target, meas)`, as `Script` of `tests/buck/control.msl`
+    /// computes them from its counter; the test asserts the two agree before it judges the loop.
+    ///
+    /// - `s < 8`: `run` low, the loop at rest.
+    /// - `8 <= s < 170`: `run` high (soft-start from sample 8); `170 <= s < 180`: `run` dropped;
+    ///   `s >= 180`: raised again (a second soft-start).
+    /// - `target` is 150 codes, 100 from sample 120 (the reference ramps back down after it).
+    /// - `meas` is 0 up to sample 39, a step to 20, then to 1023 (the output at full scale: the
+    ///   error clamps at -256 and the output saturates low), then back to 0 (the error jumps up by
+    ///   hundreds of codes: the derivative saturates the output high), then 100.
+    fn script(s: i64) -> (bool, i64, i64) {
+        let run = !(s < 8 || (170..180).contains(&s));
+        let target = if s < 120 { 150 } else { 100 };
+        let meas = match s {
+            0..=39 => 0,
+            40..=79 => 20,
+            80..=109 => 1023,
+            110..=139 => 0,
+            _ => 100,
+        };
+        (run, target, meas)
+    }
+
+    /// Sample by sample, the SPEC's equations. Both bodies react to the same rising edge, so each
+    /// reads the other's value from before the edge: the PID reads the reference the ramp committed
+    /// at the previous sample (SPEC §9: a delay of exactly one sample).
+    fn model() -> Vec<State> {
+        let mut s = State { reference: 0, duty: 0, integ: 0, deriv: 0, e_prev: 0 };
+        let mut states = Vec::new();
+        for sample in 0..SAMPLES {
+            let (run, target, meas) = ControlReference::script(sample);
+            let (target, meas) = (target as i32, meas as i32);
+            let old_reference = s.reference;
+            // SPEC §7.2: the reference moves one code per sample towards the target, and rests at 0
+            // while `run` is low
+            s.reference = if !run {
+                0
+            } else if old_reference < target {
+                old_reference + 1
+            } else if old_reference > target {
+                old_reference - 1
+            } else {
+                old_reference
+            };
+            if !run {
+                // SPEC §6.4: not running resets the integrator, the derivative state and the output
+                s.integ = 0;
+                s.deriv = 0;
+                s.e_prev = 0;
+                s.duty = 0;
+            } else {
+                let e = (old_reference - meas).clamp(E_MIN, E_MAX);
+                let p = KP * e;
+                let d = (s.deriv >> D_SHIFT) + KD * (e - s.e_prev);
+                let u = (p + s.integ + d) >> Q_SHIFT;
+                let windup = (u > DUTY_MAX && e > 0) || (u < 0 && e < 0);
+                if !windup {
+                    s.integ = (s.integ + KI * e).clamp(0, DUTY_MAX << Q_SHIFT);
+                }
+                s.deriv = d;
+                s.e_prev = e;
+                s.duty = u.clamp(0, DUTY_MAX);
+            }
+            states.push(s.clone());
+        }
+        states
+    }
+}
+
+/// The state of the control bench read back from a run.
+struct ControlReading;
+
+impl ControlReading {
+    fn observed(seen: &Seen) -> Vec<State> {
+        let reference = NetChanges::series(seen, "ControlBench.reference");
+        let duty = NetChanges::series(seen, "ControlBench.duty");
+        let integ = NetChanges::series(seen, "ControlBench.pid.integ");
+        let deriv = NetChanges::series(seen, "ControlBench.pid.deriv");
+        let e_prev = NetChanges::series(seen, "ControlBench.pid.e_prev");
+        (0..SAMPLES)
+            .map(|s| {
+                // sample `s` is the rising edge `s + 1`; its commits apply at that instant
+                let at = TopDesign::rising_edge(s + 1);
+                State {
+                    reference: ByteInteger::decode(NetChanges::value_at(&reference, at), 2, false),
+                    duty: ByteInteger::decode(NetChanges::value_at(&duty, at), 2, false),
+                    integ: ByteInteger::decode(NetChanges::value_at(&integ, at), 4, true),
+                    deriv: ByteInteger::decode(NetChanges::value_at(&deriv, at), 4, true),
+                    e_prev: ByteInteger::decode(NetChanges::value_at(&e_prev, at), 2, true),
+                }
+            })
+            .collect()
+    }
 }
 
 /// The state of the two bodies after one sample.
@@ -73,75 +152,9 @@ const E_MIN: i32 = -256;
 const E_MAX: i32 = 255;
 const DUTY_MAX: i32 = 2880;
 
-/// Sample by sample, the SPEC's equations. Both bodies react to the same rising edge, so each
-/// reads the other's value from before the edge: the PID reads the reference the ramp committed
-/// at the previous sample (SPEC §9: a delay of exactly one sample).
-fn model() -> Vec<State> {
-    let mut s = State { reference: 0, duty: 0, integ: 0, deriv: 0, e_prev: 0 };
-    let mut states = Vec::new();
-    for sample in 0..SAMPLES {
-        let (run, target, meas) = script(sample);
-        let (target, meas) = (target as i32, meas as i32);
-        let old_reference = s.reference;
-        // SPEC §7.2: the reference moves one code per sample towards the target, and rests at 0
-        // while `run` is low
-        s.reference = if !run {
-            0
-        } else if old_reference < target {
-            old_reference + 1
-        } else if old_reference > target {
-            old_reference - 1
-        } else {
-            old_reference
-        };
-        if !run {
-            // SPEC §6.4: not running resets the integrator, the derivative state and the output
-            s.integ = 0;
-            s.deriv = 0;
-            s.e_prev = 0;
-            s.duty = 0;
-        } else {
-            let e = (old_reference - meas).clamp(E_MIN, E_MAX);
-            let p = KP * e;
-            let d = (s.deriv >> D_SHIFT) + KD * (e - s.e_prev);
-            let u = (p + s.integ + d) >> Q_SHIFT;
-            let windup = (u > DUTY_MAX && e > 0) || (u < 0 && e < 0);
-            if !windup {
-                s.integ = (s.integ + KI * e).clamp(0, DUTY_MAX << Q_SHIFT);
-            }
-            s.deriv = d;
-            s.e_prev = e;
-            s.duty = u.clamp(0, DUTY_MAX);
-        }
-        states.push(s.clone());
-    }
-    states
-}
-
-fn observed(seen: &Seen) -> Vec<State> {
-    let reference = series(seen, "ControlBench.reference");
-    let duty = series(seen, "ControlBench.duty");
-    let integ = series(seen, "ControlBench.pid.integ");
-    let deriv = series(seen, "ControlBench.pid.deriv");
-    let e_prev = series(seen, "ControlBench.pid.e_prev");
-    (0..SAMPLES)
-        .map(|s| {
-            // sample `s` is the rising edge `s + 1`; its commits apply at that instant
-            let at = TopDesign::rising_edge(s + 1);
-            State {
-                reference: decode(value_at(&reference, at), 2, false),
-                duty: decode(value_at(&duty, at), 2, false),
-                integ: decode(value_at(&integ, at), 4, true),
-                deriv: decode(value_at(&deriv, at), 4, true),
-                e_prev: decode(value_at(&e_prev, at), 2, true),
-            }
-        })
-        .collect()
-}
-
 #[test]
 fn the_ramp_and_the_pid_follow_their_difference_equations() {
-    let expected = model();
+    let expected = ControlReference::model();
     // the script reaches what it is for, so a loop that did nothing could not match: both rails,
     // the integrator's hold while saturated, the resets, the ramp both ways
     assert!(expected.iter().any(|s| s.duty == DUTY_MAX), "saturates high");
@@ -151,21 +164,21 @@ fn the_ramp_and_the_pid_follow_their_difference_equations() {
     assert!(expected.windows(2).any(|w| w[1].reference < w[0].reference && w[1].reference > 0), "the ramp goes down");
     assert!(expected.iter().any(|s| s.e_prev == E_MIN) && expected.iter().any(|s| s.e_prev == E_MAX || s.e_prev > 100));
 
-    let seen = build(&project(), "ControlBench").run(1.0e-6, 1e-8);
+    let seen = BuiltDesign::of(&BuckControlModels::project(), "ControlBench").run(1.0e-6, 1e-8);
 
     // the stimulus in MSL and the Rust reference compute the same `run`, `target` and `meas` from
     // the sample index: the value each carried when the rising edge of sample `s` read it
     let (run, target, meas) =
-        (series(&seen, "ControlBench.run"), series(&seen, "ControlBench.target"), series(&seen, "ControlBench.meas"));
+        (NetChanges::series(&seen, "ControlBench.run"), NetChanges::series(&seen, "ControlBench.target"), NetChanges::series(&seen, "ControlBench.meas"));
     for s in 0..SAMPLES {
         let at = TopDesign::rising_edge(s + 1);
-        let (want_run, want_target, want_meas) = script(s);
-        assert_eq!(decode(value_at(&run, at - 1), 1, false) != 0, want_run, "run at sample {s}");
-        assert_eq!(decode(value_at(&target, at - 1), 2, false) as i64, want_target, "target at sample {s}");
-        assert_eq!(decode(value_at(&meas, at - 1), 2, false) as i64, want_meas, "meas at sample {s}");
+        let (want_run, want_target, want_meas) = ControlReference::script(s);
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&run, at - 1), 1, false) != 0, want_run, "run at sample {s}");
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&target, at - 1), 2, false) as i64, want_target, "target at sample {s}");
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&meas, at - 1), 2, false) as i64, want_meas, "meas at sample {s}");
     }
 
-    let observed = observed(&seen);
+    let observed = ControlReading::observed(&seen);
     for (sample, (want, got)) in expected.iter().zip(&observed).enumerate() {
         assert_eq!(want, got, "sample {sample}");
     }
@@ -176,10 +189,10 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     // `tests/buck/control.msl` `Writes`: `wr` rises at the rising edges 2, 5, 8 and 11 (the
     // 2nd, 5th, 8th and 11th of the oscillator, 1 + 3k of its counter), with the data 7, 100,
     // 200 and 200 again presented before
-    let seen = build(&project(), "SetpointBench").run(70e-9, 1e-9);
+    let seen = BuiltDesign::of(&BuckControlModels::project(), "SetpointBench").run(70e-9, 1e-9);
     // SPEC §7.1: the register resets to 100; a write of 7 takes 7; 100 takes 100 (a change from
     // 7); 200 saturates to 168; a second 200 commits the held 168, which is no change
-    let code = transient(&seen, "SetpointBench.code");
+    let code = NetChanges::transient(&seen, "SetpointBench.code");
     assert_eq!(
         code,
         vec![(TopDesign::rising_edge(2), vec![7]), (TopDesign::rising_edge(5), vec![100]), (TopDesign::rising_edge(8), vec![168])],
@@ -187,7 +200,7 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     );
     // the fourth write rose `wr` at the 11th edge and committed the held 168: `wr` rose there, and the
     // register's commits are the three above and a fourth that changes nothing
-    let wr = transient(&seen, "SetpointBench.wr");
+    let wr = NetChanges::transient(&seen, "SetpointBench.wr");
     assert_eq!(wr.iter().filter(|(_, b)| b[0] == 1).count(), 4, "wr rose four times: {wr:?}");
     let made = seen.commits("SetpointBench.reg");
     assert_eq!(made.len(), 4, "four commits: the fourth is the held value: {made:?}");

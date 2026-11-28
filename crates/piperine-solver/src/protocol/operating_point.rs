@@ -8,16 +8,17 @@ use piperine_analog_solver::error::{Error, Result, SolverDomain};
 use super::sides::{AnalogSide, AnalysisKind, DiscreteSide, Horizon, InstantMode, Restart, Tick};
 use super::transient::{Ended, Protocol};
 
-/// The `E0506` error: the rounds of an operating point exceeded `max`;
-/// `nets` names the nets still changing.
-fn too_many_rounds(max: u32, nets: &[String]) -> Error {
-    Error::simple(
-        SolverDomain::Dc,
-        format!("E0506: the operating point did not settle in {max} rounds; nets still changing: {}", nets.join(", ")),
-    )
-}
 
 impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
+    /// The `E0506` error: the rounds of an operating point exceeded `max`;
+    /// `nets` names the nets still changing.
+    fn too_many_rounds(max: u32, nets: &[String]) -> Error {
+        Error::simple(
+            SolverDomain::Dc,
+            format!("E0506: the operating point did not settle in {max} rounds; nets still changing: {}", nets.join(", ")),
+        )
+    }
+
     /// Solves the operating point at the current time (abi.md §10, steps 1 to 4).
     /// A reaction that returns `FINISH` there ends the run: the result is
     /// `Ended::Finish` and a later `transient` does nothing.
@@ -55,7 +56,7 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
             if rounds >= self.options.max_rounds {
                 let nets: Vec<String> = outcome.boundary.iter().map(|b| self.discrete.net_name(b.slot)).collect();
                 self.delivery.flush_all();
-                return Err(too_many_rounds(self.options.max_rounds, &nets));
+                return Err(Self::too_many_rounds(self.options.max_rounds, &nets));
             }
             self.analog.deliver(&outcome.boundary, Restart::None);
         }

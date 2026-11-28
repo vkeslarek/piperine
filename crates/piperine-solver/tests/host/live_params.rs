@@ -16,7 +16,7 @@ use piperine_solver::prelude::{
 
 #[test]
 fn unknown_label_fails_loud_with_the_path() {
-    let (mut circuit, _) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, _) = LiveDivider::divider(1000.0, 1000.0);
     let err = circuit.set("nope", "r", ParamValue::Real(1.0)).expect_err("unknown label must fail");
     assert!(err.to_string().contains("nope"), "error names the path: {err}");
 }
@@ -25,7 +25,7 @@ fn unknown_label_fails_loud_with_the_path() {
 
 #[test]
 fn unknown_param_fails_loud_and_lists_available_params() {
-    let (mut circuit, _) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, _) = LiveDivider::divider(1000.0, 1000.0);
     let err = circuit.set("r1", "bogus", ParamValue::Real(1.0)).expect_err("unknown param must fail");
     let msg = err.to_string();
     assert!(msg.contains("r1"), "error names the element: {msg}");
@@ -48,9 +48,9 @@ fn unknown_param_on_paramless_element_says_so() {
 
 #[test]
 fn idle_set_applies_to_the_next_analysis_run() {
-    let (mut circuit, mid) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, mid) = LiveDivider::divider(1000.0, 1000.0);
     let first = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    assert!((LiveParamsCases::v_mid(&first, &mid) - 5.0).abs() < 1e-9, "10·1k/2k = 5 V");
+    assert!((LiveDivider::v_mid(&first, &mid) - 5.0).abs() < 1e-9, "10·1k/2k = 5 V");
 
     // No analysis running — the set simply lands on the element and the
     // next run picks it up.
@@ -58,22 +58,22 @@ fn idle_set_applies_to_the_next_analysis_run() {
 
     let second = circuit.dc(Context::default()).unwrap().solve().unwrap();
     assert!(
-        (LiveParamsCases::v_mid(&second, &mid) - 7.5).abs() < 1e-9,
+        (LiveDivider::v_mid(&second, &mid) - 7.5).abs() < 1e-9,
         "10·3k/4k = 7.5 V after the set, got {}",
-        LiveParamsCases::v_mid(&second, &mid)
+        LiveDivider::v_mid(&second, &mid)
     );
 
     // A source-value set and the next run reflects it.
     circuit.set("v1", "dc", ParamValue::Real(20.0)).expect("source set");
     let third = circuit.dc(Context::default()).unwrap().solve().unwrap();
-    assert!((LiveParamsCases::v_mid(&third, &mid) - 15.0).abs() < 1e-9, "20·3k/4k = 15 V, got {}", LiveParamsCases::v_mid(&third, &mid));
+    assert!((LiveDivider::v_mid(&third, &mid) - 15.0).abs() < 1e-9, "20·3k/4k = 15 V, got {}", LiveDivider::v_mid(&third, &mid));
 }
 
 // ── LIVE-06/09: scheduled sets land on breakpoints mid-transient ─────────────
 
 #[test]
 fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
-    let (mut circuit, mid) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, mid) = LiveDivider::divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
 
@@ -105,7 +105,7 @@ fn scheduled_op_strength_set_resolves_consistently_at_the_breakpoint() {
 
 #[test]
 fn same_param_sets_at_one_time_apply_last_write_wins_with_one_breakpoint() {
-    let (mut circuit, mid) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, mid) = LiveDivider::divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(10e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
 
@@ -128,12 +128,12 @@ fn same_param_sets_at_one_time_apply_last_write_wins_with_one_breakpoint() {
     );
 
     drop(result);
-    assert_eq!(LiveParamsCases::param(&circuit, "r2", "r"), 3000.0);
+    assert_eq!(LiveDivider::param(&circuit, "r2", "r"), 3000.0);
 }
 
 #[test]
 fn scheduled_set_at_or_before_zero_applies_to_the_whole_run() {
-    let (mut circuit, mid) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, mid) = LiveDivider::divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
     tran.schedule_set(0.0, "r2", "r", Value::Real(3000.0));
@@ -146,7 +146,7 @@ fn scheduled_set_at_or_before_zero_applies_to_the_whole_run() {
 
 #[test]
 fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
-    let (mut circuit, _) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, _) = LiveDivider::divider(1000.0, 1000.0);
     let opts = TransientAnalysisOptions::new(2e-6, 0.5e-6);
     let mut tran = circuit.transient(opts, Context::default()).unwrap();
     tran.schedule_set(1e-6, "r2", "bogus", Value::Real(1.0));
@@ -158,11 +158,11 @@ fn scheduled_set_with_bad_addressing_fails_the_run_loud() {
 
 #[test]
 fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
-    let (mut circuit, _) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (mut circuit, _) = LiveDivider::divider(1000.0, 1000.0);
     // The parameter nets hold their values once an analysis has started.
     circuit.dc(Context::default()).unwrap().solve().unwrap();
-    assert_eq!(LiveParamsCases::param(&circuit, "r1", "r"), 1000.0);
-    assert_eq!(LiveParamsCases::param(&circuit, "v1", "dc"), 10.0);
+    assert_eq!(LiveDivider::param(&circuit, "r1", "r"), 1000.0);
+    assert_eq!(LiveDivider::param(&circuit, "v1", "dc"), 10.0);
     let bound = circuit.bound();
     let r1_params: Vec<_> = bound.names.params.keys().filter(|(p, _)| p == "r1").collect();
     assert_eq!(r1_params.len(), 1);
@@ -171,14 +171,14 @@ fn device_introspect_reaches_the_labeled_devices_introspect_surface() {
 
 #[test]
 fn device_introspect_returns_none_for_an_unknown_label() {
-    let (circuit, _) = LiveParamsCases::divider(1000.0, 1000.0);
+    let (circuit, _) = LiveDivider::divider(1000.0, 1000.0);
     assert!(!circuit.bound().names.params.keys().any(|(p, _)| p == "nope"));
 }
 
-/// The helpers of the live_params tests.
-pub struct LiveParamsCases;
+/// The divider whose params change live, its middle voltage and a param.
+struct LiveDivider;
 
-impl LiveParamsCases {
+impl LiveDivider {
     /// 10 V source over r1 (top→mid) and r2 (mid→gnd): v(mid) = 10·r2/(r1+r2).
     fn divider(r1: f64, r2: f64) -> (CircuitInstance, AnalogReference) {
         let mut b = CircuitBuilder::new("divider");
@@ -202,5 +202,4 @@ impl LiveParamsCases {
         let net = bound.names.params[&(path.to_string(), name.to_string())];
         f64::from_le_bytes(bound.digital.read(net)[..8].try_into().expect("an F64 param"))
     }
-
 }

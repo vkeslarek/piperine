@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 use piperine_abi::raw::Module;
-use piperine_abi::thunk::module_with;
+use piperine_abi::thunk::Thunk;
 use crate::device::BodyFactory;
 use crate::rejected::Rejected;
 use std::collections::HashSet;
@@ -79,7 +79,7 @@ impl Interpreter {
             let factory = BodyFactory { ir: Arc::clone(&ir), body: body.id(), plan: Arc::new(plan) };
             let factory: &'static BodyFactory = Box::leak(Box::new(factory));
             let name: &'static str = Box::leak(body.name().to_string().into_boxed_str());
-            let module: &'static Module = Box::leak(Box::new(module_with(name, factory)));
+            let module: &'static Module = Box::leak(Box::new(Thunk::module_with(name, factory)));
             modules.push(Some(module));
         }
         Ok(Interpreter { ir, modules })

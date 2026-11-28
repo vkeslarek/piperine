@@ -1,0 +1,2 @@
+# T83: S21, the ground is spelled `gnd` only. The test that `GND` routes to ground becomes the test that it is refused.
+replace piperine-solver/builder::edge_gnd_name_routes_to_ground piperine-solver/builder::edge_a_ground_alias_is_refused

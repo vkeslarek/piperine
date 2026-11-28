@@ -2,13 +2,11 @@
 //! `sqrt` rounded once, and every exact H.2 method, on special values, subnormals, ties,
 //! overflow, cancellation and deterministic random operands (CV-31; IEEE 754-2019 clause 5, H.2).
 
-use crate::oracle;
-use crate::random;
 
-use oracle::ExactOracle;
+use piperine_numbers_fixtures::oracle::ExactOracle;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::quad::Float128;
-use random::Xorshift;
+use piperine_numbers_fixtures::random::ShiftGenerator;
 use std::cmp::Ordering;
 
 /// Operand generation and comparison for binary128 tests.
@@ -16,18 +14,18 @@ struct QuadScenario {
     /// The reference operations.
     oracle: ExactOracle,
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
 }
 
 impl QuadScenario {
     /// A scenario with a seeded generator.
     fn new(seed: u64) -> Self {
-        QuadScenario { oracle: ExactOracle::new(BinaryFormat::QUAD), random: Xorshift::new(seed) }
+        QuadScenario { oracle: ExactOracle::new(BinaryFormat::QUAD), random: ShiftGenerator::new(seed) }
     }
 
     /// 128 random bits.
     fn word(&mut self) -> u128 {
-        (self.random.next_u64() as u128) << 64 | self.random.next_u64() as u128
+        (self.random.next_bits() as u128) << 64 | self.random.next_bits() as u128
     }
 
     /// Asserts two results are the same value: equal bits, or both NaN.
@@ -50,17 +48,17 @@ impl QuadScenario {
         let sign = (self.word() & 1) << 127;
         let fraction = self.word() & ((1u128 << 112) - 1);
         let anchor_field = ((anchor >> 112) & 0x7FFF) as u64;
-        let field = match self.random.next_u64() % 8 {
+        let field = match self.random.next_bits() % 8 {
             0 => (self.word() as u128) % 0x7FFF,
-            1 | 2 => ((anchor_field + (self.random.next_u64() % 5)).saturating_sub(2).min(0x7FFE)) as u128,
-            3 => ((anchor_field + (self.random.next_u64() % 240)).saturating_sub(120).min(0x7FFE)) as u128,
-            4 => (self.random.next_u64() % 4) as u128,
-            5 => 0x7FFE - (self.random.next_u64() % 4) as u128,
-            _ => ((anchor_field + (self.random.next_u64() % 120)).saturating_sub(60).min(0x7FFE)) as u128,
+            1 | 2 => ((anchor_field + (self.random.next_bits() % 5)).saturating_sub(2).min(0x7FFE)) as u128,
+            3 => ((anchor_field + (self.random.next_bits() % 240)).saturating_sub(120).min(0x7FFE)) as u128,
+            4 => (self.random.next_bits() % 4) as u128,
+            5 => 0x7FFE - (self.random.next_bits() % 4) as u128,
+            _ => ((anchor_field + (self.random.next_bits() % 120)).saturating_sub(60).min(0x7FFE)) as u128,
         };
-        let kept = match self.random.next_u64() % 4 {
-            0 => fraction & !((1u128 << (self.random.next_u64() % 112)) - 1),
-            1 => fraction >> (self.random.next_u64() % 112) << (self.random.next_u64() % 4),
+        let kept = match self.random.next_bits() % 4 {
+            0 => fraction & !((1u128 << (self.random.next_bits() % 112)) - 1),
+            1 => fraction >> (self.random.next_bits() % 112) << (self.random.next_bits() % 4),
             _ => fraction,
         } & ((1u128 << 112) - 1);
         sign | field << 112 | kept
@@ -132,7 +130,7 @@ fn f128_arithmetic_and_square_root_are_correctly_rounded() {
     }
     for _ in 0..50_000 {
         let left = scenario.pattern(0x3FFF << 112);
-        let anchor = if scenario.random.next_u64() & 1 == 0 { left } else { 0x3FFF << 112 };
+        let anchor = if scenario.random.next_bits() & 1 == 0 { left } else { 0x3FFF << 112 };
         let right = scenario.pattern(anchor);
         scenario.check_arithmetic(left, right);
         scenario.check_square_root(left & !(1u128 << 127));

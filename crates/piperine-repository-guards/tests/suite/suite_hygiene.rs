@@ -710,9 +710,7 @@ const WORKSPACE_CRATE_IDENTS: [&str; 10] = [
 /// fails, and a registered entry that vanishes or stops needing its exemption
 /// fails just as loudly.
 ///
-/// Registered now: `book/claims_guard.rs`, the Book claim guard (feature `root-e2e`, RE-03), the same text-only
-/// policy proof over the Book's sentences; `book/inventory_guard.rs`, which is the Book inventory guard (feature `root-e2e`, RE-01):
-/// the Book's blocks against `tests/book/inventory.tsv`, a text-only policy proof. Registered before it: `ngspice_parity_matrix.rs` is the ngspice model × domain
+/// None registered now (the Book target's root names `piperine::`, so it satisfies the rule). Registered before: `ngspice_parity_matrix.rs` is the ngspice model × domain
 /// coverage registry (NGP-15/MD-31): a repo-policy proof in the
 /// `capabilities_contract.rs` shape — a data table plus a filesystem walk of
 /// `tests/e2e/twins/` and the golden targets — so it links no workspace crate,
@@ -727,18 +725,7 @@ const WORKSPACE_CRATE_IDENTS: [&str; 10] = [
 /// source scrape, no workspace crate linked either. An entry added here must move the expected
 /// set in [`root_targets_match_the_naming_rule`] with it, so the exemption
 /// cannot be granted quietly.
-const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 2] = [
-    (
-        "book/inventory_guard.rs",
-        "the Book inventory guard (root-e2e T12): a repo-policy proof over `docs/book/content.html` and \
-         `tests/book/inventory.tsv`, so it links no workspace crate",
-    ),
-    (
-        "book/claims_guard.rs",
-        "the Book claim guard (root-e2e T14): a repo-policy proof over the sentences of \
-         `docs/book/content.html` and `tests/book/inventory.tsv`, so it links no workspace crate",
-    ),
-];
+const ROOT_TARGET_EXEMPTIONS: [(&str, &str); 0] = [];
 
 #[test]
 fn root_targets_match_the_naming_rule() {

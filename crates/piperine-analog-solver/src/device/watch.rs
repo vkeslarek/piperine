@@ -13,8 +13,7 @@ use piperine_abi::raw::watch;
 use crate::error::Error;
 
 use super::assembly::{FnState, InstanceState};
-use super::cell::RealCell;
-use super::device_error;
+use super::slot_view::SlotView;
 use super::plan::{FnPlan, InstancePlan, WatchPlan};
 
 /// What an accepted solution reports.
@@ -47,103 +46,100 @@ pub(crate) struct Watched {
     pub cross: Option<f64>,
 }
 
-/// The `ttol` or `etol` of `CROSS` watch `w` (`which` names it) from its pin's slot: `None`
-/// for `DEFAULT`, and for a pin the discrete side has not written yet (the operating point's
-/// first solve comes before the parameter cone's first run: the tolerance is unknown, §17.3
-/// rule 5). A value that is not finite and positive is `E0510` (§17.3).
-pub(crate) fn tolerance(
-    inst: &InstancePlan,
-    w: &WatchPlan,
-    which: &str,
-    slot: Option<usize>,
-    slots: &[Vec<u8>],
-    written: &[bool],
-) -> Result<Option<f64>, Error> {
-    let Some(s) = slot else { return Ok(None) };
-    if !written[s] {
-        return Ok(None);
-    }
-    let v = RealCell::read(&slots[s]);
-    if !(v.is_finite() && v > 0.0) {
-        return Err(device_error(format!(
-            "E0510: instance `{}`: crossing watch `{}` ({}) has {which} = {v}, not finite and positive (§17.3)",
-            inst.path, w.name, w.origin
-        )));
-    }
-    Ok(Some(v))
+/// The watches of one instance: the part of the plan the accept step reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Watches<'a> {
+    /// The instance whose watches these are.
+    instance: &'a InstancePlan,
 }
 
-/// Applies the accepted solution's watches of instance `index`; `slots` are the assembly's
-/// discrete slots (a `CROSS` watch's tolerances).
-pub(crate) fn accept_watches(
-    index: usize,
-    inst: &InstancePlan,
-    st: &mut InstanceState,
-    slots: &[Vec<u8>],
-    written: &[bool],
-    acc: &mut Accepted,
-) -> Result<(), Error> {
-    for (wi, w) in inst.watches.iter().enumerate() {
-        let Some((fi, slot)) = w.value else { continue };
-        let fs = &st.fns[fi];
-        if w.kind == watch::VAR {
-            st.watched[wi].var = Some(fs.out[slot].clone());
-            continue;
+impl<'a> Watches<'a> {
+    /// The watches of `instance`.
+    pub fn new(instance: &'a InstancePlan) -> Self {
+        Self { instance }
+    }
+
+    /// The `ttol` or `etol` of `CROSS` watch `w` (`which` names it) from its pin's slot: `None`
+    /// for `DEFAULT`, and for a pin the discrete side has not written yet (the operating point's
+    /// first solve comes before the parameter cone's first run: the tolerance is unknown, §17.3
+    /// rule 5). A value that is not finite and positive is `E0510` (§17.3).
+    pub fn tolerance(&self, w: &WatchPlan, which: &str, slot: Option<usize>, slots: &SlotView<'_>) -> Result<Option<f64>, Error> {
+        let Some(v) = slot.and_then(|s| slots.written_real(s)) else { return Ok(None) };
+        if !(v.is_finite() && v > 0.0) {
+            return Err(Error::device(format!(
+                "E0510: instance `{}`: crossing watch `{}` ({}) has {which} = {v}, not finite and positive (§17.3)",
+                self.instance.path, w.name, w.origin
+            )));
         }
-        if w.kind != watch::CROSS && w.kind != watch::CAP {
-            continue;
-        }
-        let v = fs.f64(slot);
-        if w.kind == watch::CAP {
-            // A `bound_step` not executed at this solution writes +∞: it caps nothing (abi.md, the
-            // `CAP` row; analog-structure AS-01 AC 5).
-            if v == f64::INFINITY {
+        Ok(Some(v))
+    }
+
+    /// Applies the accepted solution's watches of instance `index`; `slots` are the assembly's
+    /// discrete slots (a `CROSS` watch's tolerances).
+    pub fn accept(&self, index: usize, st: &mut InstanceState, slots: &SlotView<'_>, acc: &mut Accepted) -> Result<(), Error> {
+        let inst = self.instance;
+        for (wi, w) in inst.watches.iter().enumerate() {
+            let Some((fi, slot)) = w.value else { continue };
+            let fs = &st.fns[fi];
+            if w.kind == watch::VAR {
+                st.watched[wi].var = Some(fs.out[slot].clone());
                 continue;
             }
-            // docs/spec §17.2 rule 5 and its resolution: any other cap that is not finite and
-            // positive.
-            if !(v.is_finite() && v > 0.0) {
-                return Err(device_error(format!(
-                    "E0509: instance `{}`: step cap watch `{}` ({}) is {v}, neither finite and positive nor +inf (§17.2)",
+            if w.kind != watch::CROSS && w.kind != watch::CAP {
+                continue;
+            }
+            let v = fs.f64(slot);
+            if w.kind == watch::CAP {
+                // A `bound_step` not executed at this solution writes +∞: it caps nothing (abi.md, the
+                // `CAP` row; analog-structure AS-01 AC 5).
+                if v == f64::INFINITY {
+                    continue;
+                }
+                // docs/spec §17.2 rule 5 and its resolution: any other cap that is not finite and
+                // positive.
+                if !(v.is_finite() && v > 0.0) {
+                    return Err(Error::device(format!(
+                        "E0509: instance `{}`: step cap watch `{}` ({}) is {v}, neither finite and positive nor +inf (§17.2)",
+                        inst.path, w.name, w.origin
+                    )));
+                }
+                acc.cap = acc.cap.min(v);
+                continue;
+            }
+            // abi.md A4: NaN is an unknown value, not a failure; it fires nothing at this solution
+            // and, with no previous value kept, nothing at the next one. Only an infinity fails.
+            if v.is_infinite() {
+                return Err(Error::device(format!(
+                    "instance `{}`: watch `{}` ({}) is not finite: {v} (abi.md A4)",
                     inst.path, w.name, w.origin
                 )));
             }
-            acc.cap = acc.cap.min(v);
-            continue;
+            self.tolerance(w, "ttol", w.ttol, slots)?;
+            self.tolerance(w, "etol", w.etol, slots)?;
+            if v.is_nan() {
+                st.watched[wi].cross = None;
+                continue;
+            }
+            let before = st.watched[wi].cross.replace(v);
+            if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
+                acc.fired.push((index, w.event));
+            }
         }
-        // abi.md A4: NaN is an unknown value, not a failure; it fires nothing at this solution
-        // and, with no previous value kept, nothing at the next one. Only an infinity fails.
-        if v.is_infinite() {
-            return Err(device_error(format!(
-                "instance `{}`: watch `{}` ({}) is not finite: {v} (abi.md A4)",
-                inst.path, w.name, w.origin
-            )));
-        }
-        tolerance(inst, w, "ttol", w.ttol, slots, written)?;
-        tolerance(inst, w, "etol", w.etol, slots, written)?;
-        if v.is_nan() {
-            st.watched[wi].cross = None;
-            continue;
-        }
-        let before = st.watched[wi].cross.replace(v);
-        if before.is_some_and(|b| b <= 0.0) && v > 0.0 {
-            acc.fired.push((index, w.event));
-        }
+        Ok(())
     }
-    Ok(())
-}
 
-/// Appends the `TRACE` records function `f` wrote in the call just made.
-pub(crate) fn record_traces(inst: &InstancePlan, f: &FnPlan, fs: &FnState, iteration: u64, out: &mut Vec<TraceRecord>) {
-    for (slot, wi) in &f.traces {
-        let bytes = &fs.out[*slot];
-        if bytes.iter().any(|b| *b != 0) {
-            out.push(TraceRecord {
-                instance: inst.path.clone(),
-                watch: inst.watches[*wi].name.clone(),
-                iteration,
-                bytes: bytes.clone(),
-            });
+    /// Appends the `TRACE` records function `f` wrote in the call just made.
+    pub fn record_traces(&self, f: &FnPlan, fs: &FnState, iteration: u64, out: &mut Vec<TraceRecord>) {
+        for (slot, wi) in &f.traces {
+            let bytes = &fs.out[*slot];
+            if bytes.iter().any(|b| *b != 0) {
+                out.push(TraceRecord {
+                    instance: self.instance.path.clone(),
+                    watch: self.instance.watches[*wi].name.clone(),
+                    iteration,
+                    bytes: bytes.clone(),
+                });
+            }
         }
     }
 }

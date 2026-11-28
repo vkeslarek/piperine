@@ -9,6 +9,7 @@ mod ddt;
 mod delay;
 mod flow;
 mod limit;
+mod slot_view;
 mod small_signal;
 mod watch;
 pub mod plan;
@@ -19,10 +20,3 @@ pub use limit::LimitState;
 pub use small_signal::{ComplexStamps, NoiseColumn, StimulusColumn, TermLinearization};
 pub use watch::{Accepted, TraceRecord};
 pub use plan::{AnalogBinding, AnalogInstance, AnalogPlan};
-
-use crate::error::{Error, SolverDomain};
-
-/// A device-side error of the analog assembly.
-pub(crate) fn device_error(detail: String) -> Error {
-    Error::simple(SolverDomain::Device, detail)
-}

@@ -12,13 +12,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine -p piperine-parity -p piperine-cli -p piperine-api --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
-**Run inventory**: `cargo test --test book_inventory`
-**Run claims**: `cargo test --test book_claims`
-**Run errors**: `cargo test --test book_errors`
-**Run welcome**: `cargo test --test book_welcome`
+**Run inventory**: `cargo test --test book inventory_guard::`
+**Run claims**: `cargo test --test book claims_guard::`
+**Run errors**: `cargo test --test book errors::`
+**Run welcome**: `cargo test --test book welcome::`
 **Run scenarios**: `env -u PIPERINE_NGSPICE cargo test --test scenarios -- --nocapture`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run corpus**: `cargo test -p piperine-parity --test parity corpus::`
 **Run paritylib**: `cargo test -p piperine-parity --lib`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
@@ -1163,7 +1163,7 @@ Proof: run corpus | test tests_ngspice_holds_no_twin ... ok
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_move ... ok
 
 **C16** - Every `parity_*` target passes, reading the new paths. (RE-04, AC 3; T3)
-Proof: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'`
+Proof: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity`
 
 **C17** - `ToleranceContract` and the comparison targets are unedited by the feature. (RE-04, AC 3; T3)
 Proof: `git diff --quiet $(git merge-base HEAD origin/main) -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_tf.rs crates/piperine-parity/tests/parity_pz.rs crates/piperine-parity/tests/parity_sens.rs crates/piperine-parity/tests/parity_pss.rs crates/piperine-parity/tests/parity_temp.rs`

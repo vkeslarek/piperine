@@ -16,12 +16,12 @@ fn a_device_fault_in_the_pole_zero_assembly_is_an_error_naming_the_instance() {
     let n = b.node("n");
     // A source-driven node so the analysis reaches the AC probes.
     b.device(
-        PzDeviceFaultCases::piperine_abi_test_vsrc(),
+        FaultyDevice::piperine_abi_test_vsrc(),
         "v1",
         &[],
         &[Port::Node(n.clone()), Port::Node(gnd)],
     );
-    b.device(PzDeviceFaultCases::module_fault(), "bad1", &[], &[Port::Node(n)]);
+    b.device(FaultyDevice::module_fault(), "bad1", &[], &[Port::Node(n)]);
     let mut circuit = b.build().expect("build");
     let options = PoleZeroOptions {
         input_source: BranchIdentifier::new("v1", "f"),
@@ -32,10 +32,10 @@ fn a_device_fault_in_the_pole_zero_assembly_is_an_error_naming_the_instance() {
     assert!(err.to_string().contains("bad1"), "{err}");
 }
 
-/// The helpers of the pz_device_fault tests.
-pub struct PzDeviceFaultCases;
+/// The device whose pole-zero run faults, and the module that declares it.
+struct FaultyDevice;
 
-impl PzDeviceFaultCases {
+impl FaultyDevice {
 
     /// The module fault helper `module_fault`.
     fn module_fault() -> &'static Module {

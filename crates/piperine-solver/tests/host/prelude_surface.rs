@@ -9,12 +9,12 @@ use piperine_solver::prelude::*;
 
 #[test]
 fn prelude_voltage_divider() {
-    let (mut circuit, mid) = PreludeSurfaceCases::host_circuit();
+    let (mut circuit, mid) = HostCircuit::host_circuit();
     let ctx = Context::default();
     let mut dc = circuit.dc(ctx).unwrap();
     let res = dc.solve().unwrap();
 
-    let mid_val = res.get_net(&PreludeSurfaceCases::net_of(&mid)).unwrap();
+    let mid_val = res.get_net(&HostCircuit::net_of(&mid)).unwrap();
     assert!((mid_val - 5.0).abs() < 1e-9);
 
     // Use SolverStats and Error to verify they are available
@@ -23,17 +23,17 @@ fn prelude_voltage_divider() {
 
 #[test]
 fn prelude_transient_holds_the_divider() {
-    let (mut circuit, mid) = PreludeSurfaceCases::host_circuit();
+    let (mut circuit, mid) = HostCircuit::host_circuit();
     let mut tran = circuit.transient(TransientAnalysisOptions::new(1.0e-6, 1.0e-7), Context::default()).unwrap();
     let res = tran.solve().unwrap();
     let last = res.last().expect("steps");
-    assert!((last.get_net(&PreludeSurfaceCases::net_of(&mid)).unwrap() - 5.0).abs() < 1e-6);
+    assert!((last.get_net(&HostCircuit::net_of(&mid)).unwrap() - 5.0).abs() < 1e-6);
 }
 
-/// The helpers of the prelude_surface tests.
-pub struct PreludeSurfaceCases;
+/// The circuit the prelude surface tests build and its nets.
+struct HostCircuit;
 
-impl PreludeSurfaceCases {
+impl HostCircuit {
     /// 10 V over `r1` (top→mid) and `r2` (mid→gnd), with a capacitor on `mid`.
     fn host_circuit() -> (CircuitInstance, AnalogReference) {
         let mut b = CircuitBuilder::new("test");

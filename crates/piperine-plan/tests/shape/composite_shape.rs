@@ -4,7 +4,7 @@
 //! expected offset is the byte offset §2's table gives: the parts' value bytes one after another,
 //! the first lowest, and nothing else (abi.md P3).
 
-use piperine_abi::layout::layout_eq;
+use piperine_abi::raw::Layout;
 use piperine_abi::raw::leaf;
 use piperine_ir::{
     AggregateData, BodySpec, Constant, Derives, Expr, FieldsForm, FunctionSpec, InstanceSpec, Ir, IrBuilder, Local, Origin, Real, ReprForm, TypeData, TypeId, TypeKind, ValueType, VariantData,
@@ -148,10 +148,10 @@ fn two_pins_of_a_composite_net_have_equal_layouts() {
     let ty = ValueType::Struct(t.pair);
     let (a, b) = (PinLayout::in_ir(&ir, &ty).expect("a layout"), PinLayout::in_ir(&ir, &ty).expect("a layout"));
     let (fa, fb) = (a.fields(), b.fields());
-    assert!(layout_eq(&a.layout(&fa), &b.layout(&fb)), "equal layouts for one type");
+    assert!(Layout::equals(&a.layout(&fa), &b.layout(&fb)), "equal layouts for one type");
     let other = PinLayout::in_ir(&ir, &ValueType::Tuple(vec![ValueType::F64, ValueType::Bool])).expect("a layout");
     let other_fields = other.fields();
-    assert!(layout_eq(&a.layout(&fa), &other.layout(&other_fields)), "names do not count: a struct and a tuple of the same leaves are equal");
+    assert!(Layout::equals(&a.layout(&fa), &other.layout(&other_fields)), "names do not count: a struct and a tuple of the same leaves are equal");
 }
 
 #[test]
@@ -244,5 +244,5 @@ fn a_hand_written_repr_is_one_leaf_of_its_width() {
     let ty = ValueType::Enum(one_hot);
     let (a, b) = (PinLayout::in_ir(&ir, &ty).expect("a layout"), PinLayout::in_ir(&ir, &ty).expect("a layout"));
     let (fa, fb) = (a.fields(), b.fields());
-    assert!(layout_eq(&a.layout(&fa), &b.layout(&fb)), "equal layouts for one hand-written type");
+    assert!(Layout::equals(&a.layout(&fa), &b.layout(&fb)), "equal layouts for one hand-written type");
 }

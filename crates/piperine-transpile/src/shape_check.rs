@@ -131,24 +131,29 @@ mod tests {
 
     use super::ShapeCheck;
 
-    fn shape(pin: &str, read: u32) -> ShapeBuf {
-        let mut b = ShapeBuf::new();
-        b.pin(PinSpec::continuous(pin, role::PORT));
-        b.function(FunctionSpec {
-            name: "terms",
-            origin: "t.msl:1:1",
-            flags: 0,
-            reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
-            writes: vec![],
-            partials: vec![],
-            elements: vec![],
-        });
-        b
+    /// A shape of one pin and its reads, as bytes.
+    struct PinShape;
+
+    impl PinShape {
+        fn shape(pin: &str, read: u32) -> ShapeBuf {
+            let mut b = ShapeBuf::new();
+            b.pin(PinSpec::continuous(pin, role::PORT));
+            b.function(FunctionSpec {
+                name: "terms",
+                origin: "t.msl:1:1",
+                flags: 0,
+                reads: vec![Cell { kind: cell::PIN, index: read, part: part::VALUE }],
+                writes: vec![],
+                partials: vec![],
+                elements: vec![],
+            });
+            b
+        }
     }
 
     #[test]
     fn equal_shapes_have_no_difference_and_a_changed_entry_is_named() {
-        let (a, same, other_name, other_read) = (shape("p", 0), shape("p", 0), shape("q", 0), shape("p", 1));
+        let (a, same, other_name, other_read) = (PinShape::shape("p", 0), PinShape::shape("p", 0), PinShape::shape("q", 0), PinShape::shape("p", 1));
         assert_eq!(ShapeCheck::first_difference(a.shape(), same.shape()), None);
         let name = ShapeCheck::first_difference(a.shape(), other_name.shape()).expect("a pin name differs");
         assert!(name.starts_with("pin 0:") && name.contains("`p`") && name.contains("`q`"), "{name}");

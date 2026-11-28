@@ -17,9 +17,9 @@ use probe::Probe;
 const FILE: &str = "aggregates.msl";
 
 /// The types and the functions of this file, built by hand from the MSL each one transcribes.
-struct Fixtures;
+struct AggregateTypes;
 
-impl Fixtures {
+impl AggregateTypes {
     fn origin(line: u32) -> Origin {
         Origin { file: FILE.into(), line, col: 1 }
     }
@@ -75,8 +75,8 @@ fn each_source_type_prints_as_one_rust_item_naming_its_path() {
     // CV-20 AC 4: a struct, a tuple struct, a unit struct and two enums each print as one Rust item
     // under a doc comment naming the MSL path and the origin; the type that holds a real is generic
     // over `R`, the ones that do not are plain; the derives are the source's.
-    let ir = Fixtures::design();
-    let texts = Fixtures::texts(&ir);
+    let ir = AggregateTypes::design();
+    let texts = AggregateTypes::texts(&ir);
     let text = texts.join("\n");
     for line in [
         "/// MSL `m::Pair`, a struct, written at aggregates.msl:1:1.",
@@ -136,12 +136,12 @@ impl Library {
 
     /// An aggregate form at `line`, of type `ty`.
     fn e(b: &mut IrBuilder, kind: Expr, ty: ValueType, line: u32) -> ExprId {
-        b.expr(kind, ty, Fixtures::origin(line))
+        b.expr(kind, ty, AggregateTypes::origin(line))
     }
 
     /// `fn name(params) -> ret { body }`; `locals` start with the params.
     fn define(b: &mut IrBuilder, name: &str, line: u32, locals: Vec<Local>, params: usize, ret: ValueType, body: ExprId) {
-        b.function(FunctionSpec { name: name.into(), origin: Fixtures::origin(line), params: locals[..params].to_vec(), ret, locals, body });
+        b.function(FunctionSpec { name: name.into(), origin: AggregateTypes::origin(line), params: locals[..params].to_vec(), ret, locals, body });
     }
 
     /// `place = value;`
@@ -154,11 +154,11 @@ impl Library {
         let mut b = IrBuilder::new();
         let (u8t, boolean) = (ValueAliases::u(8), ValueType::Bool);
         let pair_fields = vec![("a".to_string(), ValueType::F64), ("b".to_string(), ValueType::Bool)];
-        let pair = Fixtures::entry(&mut b, "Pair", 1, TypeKind::Struct { form: FieldsForm::Named, fields: pair_fields }, Derives { clone: true, copy: true, default: true, ..Derives::default() });
-        let level = vec![Fixtures::variant("Low", 0, FieldsForm::Unit, &[]), Fixtures::variant("High", 1, FieldsForm::Unit, &[])];
-        let level = Fixtures::entry(&mut b, "Level", 3, TypeKind::Enum { tag_levels: 1, variants: level }, Derives { clone: true, copy: true, partial_eq: true, eq: true, partial_ord: true, ord: true, ..Derives::default() });
-        let tx = vec![Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]), Fixtures::variant("Data", 1, FieldsForm::Named, &[("n", ValueAliases::u(3))])];
-        let tx = Fixtures::entry(&mut b, "Tx", 5, TypeKind::Enum { tag_levels: 1, variants: tx }, Derives { clone: true, copy: true, ..Derives::default() });
+        let pair = AggregateTypes::entry(&mut b, "Pair", 1, TypeKind::Struct { form: FieldsForm::Named, fields: pair_fields }, Derives { clone: true, copy: true, default: true, ..Derives::default() });
+        let level = vec![AggregateTypes::variant("Low", 0, FieldsForm::Unit, &[]), AggregateTypes::variant("High", 1, FieldsForm::Unit, &[])];
+        let level = AggregateTypes::entry(&mut b, "Level", 3, TypeKind::Enum { tag_levels: 1, variants: level }, Derives { clone: true, copy: true, partial_eq: true, eq: true, partial_ord: true, ord: true, ..Derives::default() });
+        let tx = vec![AggregateTypes::variant("Idle", 0, FieldsForm::Unit, &[]), AggregateTypes::variant("Data", 1, FieldsForm::Named, &[("n", ValueAliases::u(3))])];
+        let tx = AggregateTypes::entry(&mut b, "Tx", 5, TypeKind::Enum { tag_levels: 1, variants: tx }, Derives { clone: true, copy: true, ..Derives::default() });
         let (pair_t, level_t, tx_t) = (ValueType::Struct(pair), ValueType::Enum(level), ValueType::Enum(tx));
         let array3 = ValueType::Array(Box::new(u8t.clone()), 3);
         let array4 = ValueType::Array(Box::new(u8t.clone()), 4);
@@ -341,22 +341,22 @@ impl Carried {
         let mut b = IrBuilder::new();
         let repr = Derives { clone: true, copy: true, partial_eq: true, debug: true, repr: true, ..Derives::default() };
         let named = |fields: &[(&str, ValueType)]| TypeKind::Struct { form: FieldsForm::Named, fields: fields.iter().map(|(n, ty)| (n.to_string(), ty.clone())).collect() };
-        Fixtures::entry(&mut b, "Bits", 1, named(&[("a", ValueType::Bool), ("n", ValueAliases::u(2))]), repr);
+        AggregateTypes::entry(&mut b, "Bits", 1, named(&[("a", ValueType::Bool), ("n", ValueAliases::u(2))]), repr);
         let tx = vec![
-            Fixtures::variant("Idle", 0, FieldsForm::Unit, &[]),
-            Fixtures::variant("Start", 1, FieldsForm::Unit, &[]),
-            Fixtures::variant("Data", 2, FieldsForm::Named, &[("n", ValueAliases::u(3))]),
-            Fixtures::variant("Stop", 3, FieldsForm::Unit, &[]),
+            AggregateTypes::variant("Idle", 0, FieldsForm::Unit, &[]),
+            AggregateTypes::variant("Start", 1, FieldsForm::Unit, &[]),
+            AggregateTypes::variant("Data", 2, FieldsForm::Named, &[("n", ValueAliases::u(3))]),
+            AggregateTypes::variant("Stop", 3, FieldsForm::Unit, &[]),
         ];
-        let tx = Fixtures::entry(&mut b, "Tx", 3, TypeKind::Enum { tag_levels: 2, variants: tx }, repr);
-        Fixtures::entry(&mut b, "Frame", 5, named(&[("state", ValueType::Enum(tx)), ("ok", ValueType::Bool)]), repr);
-        Fixtures::entry(&mut b, "Sample", 7, named(&[("v", ValueType::F64), ("valid", ValueType::Bool)]), repr);
-        let solo = vec![Fixtures::variant("Only", 0, FieldsForm::Named, &[("x", ValueAliases::u(2))])];
-        Fixtures::entry(&mut b, "Solo", 9, TypeKind::Enum { tag_levels: 0, variants: solo }, repr);
-        let three = vec![Fixtures::variant("A", 0, FieldsForm::Unit, &[]), Fixtures::variant("B", 1, FieldsForm::Unit, &[]), Fixtures::variant("C", 2, FieldsForm::Unit, &[])];
-        Fixtures::entry(&mut b, "Three", 11, TypeKind::Enum { tag_levels: 2, variants: three }, repr);
+        let tx = AggregateTypes::entry(&mut b, "Tx", 3, TypeKind::Enum { tag_levels: 2, variants: tx }, repr);
+        AggregateTypes::entry(&mut b, "Frame", 5, named(&[("state", ValueType::Enum(tx)), ("ok", ValueType::Bool)]), repr);
+        AggregateTypes::entry(&mut b, "Sample", 7, named(&[("v", ValueType::F64), ("valid", ValueType::Bool)]), repr);
+        let solo = vec![AggregateTypes::variant("Only", 0, FieldsForm::Named, &[("x", ValueAliases::u(2))])];
+        AggregateTypes::entry(&mut b, "Solo", 9, TypeKind::Enum { tag_levels: 0, variants: solo }, repr);
+        let three = vec![AggregateTypes::variant("A", 0, FieldsForm::Unit, &[]), AggregateTypes::variant("B", 1, FieldsForm::Unit, &[]), AggregateTypes::variant("C", 2, FieldsForm::Unit, &[])];
+        AggregateTypes::entry(&mut b, "Three", 11, TypeKind::Enum { tag_levels: 2, variants: three }, repr);
         let pair = vec![("0".to_string(), ValueAliases::u(2)), ("1".to_string(), ValueType::Bool)];
-        Fixtures::entry(&mut b, "Pair", 13, TypeKind::Struct { form: FieldsForm::Tuple, fields: pair }, repr);
+        AggregateTypes::entry(&mut b, "Pair", 13, TypeKind::Struct { form: FieldsForm::Tuple, fields: pair }, repr);
         let ir = Alone::finish(b);
         TypeItems::new(&ir).items().unwrap_or_else(|e| panic!("{e}"))
     }

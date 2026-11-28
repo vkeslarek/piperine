@@ -3,18 +3,7 @@
 //! the compiled backend's cache, and the one about the command line (a `binary` row). The chapter has no
 //! block. Each test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod manifests;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;

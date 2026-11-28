@@ -55,9 +55,14 @@ mod tests {
     use super::Settings;
     use crate::error::Error;
 
-    fn resolve(table: &[(&str, &str)]) -> Result<Settings, Error> {
-        let map: HashMap<String, String> = table.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-        Settings::resolve(&|name| map.get(name).cloned())
+    /// The settings a table of variables resolves to.
+    struct SettingsTable;
+
+    impl SettingsTable {
+        fn resolve(table: &[(&str, &str)]) -> Result<Settings, Error> {
+            let map: HashMap<String, String> = table.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
+            Settings::resolve(&|name| map.get(name).cloned())
+        }
     }
 
     // RS-04 AC 9: PIPERINE_CACHE_DIR, else $XDG_CACHE_HOME/piperine, else
@@ -70,25 +75,25 @@ mod tests {
             ("HOME", "/home/u"),
             ("LOCALAPPDATA", "/local"),
         ];
-        assert_eq!(resolve(&all).unwrap().cache, PathBuf::from("/pc"));
-        assert_eq!(resolve(&all[1..]).unwrap().cache, PathBuf::from("/xdg/piperine"));
-        assert_eq!(resolve(&all[2..]).unwrap().cache, PathBuf::from("/home/u/.cache/piperine"));
-        assert_eq!(resolve(&all[3..]).unwrap().cache, PathBuf::from("/local/piperine"));
+        assert_eq!(SettingsTable::resolve(&all).unwrap().cache, PathBuf::from("/pc"));
+        assert_eq!(SettingsTable::resolve(&all[1..]).unwrap().cache, PathBuf::from("/xdg/piperine"));
+        assert_eq!(SettingsTable::resolve(&all[2..]).unwrap().cache, PathBuf::from("/home/u/.cache/piperine"));
+        assert_eq!(SettingsTable::resolve(&all[3..]).unwrap().cache, PathBuf::from("/local/piperine"));
         // an empty value is unset
         assert_eq!(
-            resolve(&[("PIPERINE_CACHE_DIR", ""), ("HOME", "/home/u")]).unwrap().cache,
+            SettingsTable::resolve(&[("PIPERINE_CACHE_DIR", ""), ("HOME", "/home/u")]).unwrap().cache,
             PathBuf::from("/home/u/.cache/piperine")
         );
         // none of the four: an error naming the setting
-        assert!(matches!(resolve(&[]), Err(Error::Setting { name: "PIPERINE_CACHE_DIR", .. })));
+        assert!(matches!(SettingsTable::resolve(&[]), Err(Error::Setting { name: "PIPERINE_CACHE_DIR", .. })));
     }
 
     // RS-03 AC 1: PIPERINE_RUSTC, else `rustc` on PATH (None here).
     #[test]
     fn the_compiler_is_the_variable_then_the_path() {
         let home = ("HOME", "/h");
-        assert_eq!(resolve(&[("PIPERINE_RUSTC", "/opt/rustc"), home]).unwrap().rustc, Some(PathBuf::from("/opt/rustc")));
-        assert_eq!(resolve(&[home]).unwrap().rustc, None);
-        assert_eq!(resolve(&[("PIPERINE_RUSTC", ""), home]).unwrap().rustc, None);
+        assert_eq!(SettingsTable::resolve(&[("PIPERINE_RUSTC", "/opt/rustc"), home]).unwrap().rustc, Some(PathBuf::from("/opt/rustc")));
+        assert_eq!(SettingsTable::resolve(&[home]).unwrap().rustc, None);
+        assert_eq!(SettingsTable::resolve(&[("PIPERINE_RUSTC", ""), home]).unwrap().rustc, None);
     }
 }
