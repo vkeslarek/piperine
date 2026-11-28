@@ -2655,8 +2655,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] One test per form, passing or asserting today's refusal by its code, each named on the Handoff; the target plan of the crate rises by one, named in the commit body
-- [ ] Gate check passes: Quick
+- [x] One test per form, passing or asserting today's refusal by its code, each named on the Handoff; the target plan of the crate rises by one, named in the commit body
+- [x] Gate check passes: Quick
 
 **Tests**: integration
 **Gate**: quick
@@ -4041,6 +4041,21 @@ The feature's live state, written as it happens - a compaction gives no warning.
 **Base:** `main` at 93c831ffc holds `generics` phase E (a8968de11) and no other feature is landing code; branch `feature/code-clarity` starts there (spec Assumption 2). The decision is MD-85 in `.specs/STATE.md`.
 **Questions answered:** the five of design.md are answered (spec Assumptions rows 13 to 17): OQ1 `name: value` fields and forwarding; OQ2 `RecordValue` and `RecordFields`; OQ3 `piperine-language` and `piperine-interpreter`; OQ4 `Analysis::Dc` and `is_static()`; OQ5 the serde derives stay.
 **Progress:** T1 to T8 done.
+
+**T100 contract (what `std` can declare today)**, target `std_declarations` (`crates/piperine-lang/tests/std_declarations.rs`, the lang plan 15 to 16; fixture `StdCrate`, `piperine-lang-fixtures/src/std_crate.rs`):
+
+| Form | Test | Today | Owner |
+|---|---|---|---|
+| inherent `impl` on a primitive, in `std` only | `an_inherent_impl_on_a_primitive_type_checks_in_std` | checks today (check and elaboration) | none |
+| `extern "intrinsic" fn` (free) | `an_extern_intrinsic_function_declares_in_std_and_only_there_but_a_call_is_refused_p0001` | declaration checks in `std`, `E0125` elsewhere; a call is `P0001` "`extern` function" - missing | T101 (the five), T105 (the rest) |
+| `extern "intrinsic"` on a method | `an_extern_intrinsic_method_is_refused_p0001` | missing: `P0001` | T112 |
+| `extern "intrinsic"` on a module | `an_extern_intrinsic_module_is_refused_p0001_where_it_is_used` | declaration checks; placing it is `P0001` "`extern` module" (any ABI string) - missing | T107 |
+| trait with default type parameters | `a_trait_with_default_type_parameters_declares_but_an_omitted_argument_is_refused_p0001` | declaration and `impl Plus<u8, u8> for u8` check; `impl Plus for u8` (omitted defaults) is `P0001` "`trait` item used as a type" - missing | T103 |
+| generic method with an `Fn` bound | `a_generic_function_with_an_fn_bound_checks_but_a_generic_method_is_refused_e0180` | free `fn apply<F: Fn(..)>` checks; on a method `E0180` (`E0181` for an untyped closure on a user type); any generic method, bound or not, is `E0180` - missing | T113 (first needed by T112's generic rows) |
+| trait bound satisfied by the compiler | `a_trait_bound_the_compiler_satisfies_checks_and_refuses_by_e0187` | `T: Repr` checks (u8) and refuses `str` by `E0187`; `T: BitAnd` is `E0161` "not a trait" until declared | `Repr` checks; `BitAnd` etc. T103 |
+
+**§19 rule 11 field types** (test `section_19_rule_11_field_types_are_repr_types_or_str`): the value types of §1 - `bool`, the integers, the floats, `str`, `()`, tuples, arrays, structs, enums, `Option<T>`. All are accepted as an `emit!` field today; all but two are `Repr` (an `in` port of type `Bit<T>` checks). `str` is the spec's one non-`Repr` field type (§1 rule 8). `()` is the exception: `E0112` today and no row in the §2 table. T116 (`RecordValue` for `Repr` types and `str`) must either give `()` a `Repr` of width 0 or refuse it as a field.
+
 **Dispatched:** none
 **Walked:** none - the feature has no screen; each story's Independent Test is a guard target of `## Checks`.
 

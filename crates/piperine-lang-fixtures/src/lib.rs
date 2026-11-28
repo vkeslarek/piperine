@@ -9,6 +9,7 @@
 //! - `fragments`: `FragmentSource`, a fragment of MSL wrapped into the smallest context that parses it; `prelude_design`:
 //!   `PreludeDesign`, a design over the embedded standard library and the reads of its diagnostics; `refusals`:
 //!   `ElaborationRefusals`, the codes and messages a source's elaboration refuses with.
+//! - `std_crate`: `StdCrate`, a standard library written in a test and a root crate over it.
 //! - `twin`: `TwinSource`, a twin of `tests/e2e/twins/` loaded from disk.
 //! - `spec_corpus` and `spec_tables`: the fenced blocks and the tables of the specification's markdown.
 
@@ -25,6 +26,7 @@ pub mod nested_reach;
 pub mod pom;
 pub mod prelude_design;
 pub mod refusals;
+pub mod std_crate;
 pub mod spec_corpus;
 pub mod spec_tables;
 pub mod twin;
