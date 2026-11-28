@@ -69,12 +69,14 @@ impl NoiseProbe {
         if GroundName::names(path) {
             return Ok(NodeIdentifier::Gnd);
         }
-        if let Some(refusal) = GroundName::refusal(path) {
-            return Err(NoiseProbe::nothing(entry, &refusal));
-        }
-        match Probe::resolve(ir, top, path)? {
-            Probe::Node { id, .. } => Ok(id),
-            _ => Err(NoiseProbe::nothing(entry, &format!("`{path}` is not a node")))
+        match Probe::resolve(ir, top, path) {
+            Ok(Probe::Node { id, .. }) => Ok(id),
+            Ok(_) => Err(NoiseProbe::nothing(entry, &format!("`{path}` is not a node"))),
+            // `GND`, `vss` and `VSS` are ordinary names (only `gnd` is core): refused only when the design declares none
+            Err(unresolved) => match GroundName::refusal(path) {
+                Some(refusal) => Err(NoiseProbe::nothing(entry, &refusal)),
+                None => Err(unresolved),
+            },
         }
     }
 

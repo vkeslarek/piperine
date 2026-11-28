@@ -83,7 +83,9 @@ impl CircuitBuilder {
 
     /// Named analog node. Same name → same reference (idempotent lookup).
     /// `gnd` (see [`GroundName`]) routes to ground; `GND`, `vss` and `VSS` are refused: [`build`](Self::build)
-    /// fails naming `gnd`.
+    /// fails naming `gnd`. The builder only sees resolved names (the full path of a design's node, `Top.vss`, never a
+    /// bare `vss`), so a design that declares a node `vss` is never refused here; a host that resolves names itself
+    /// refuses an alias only when the design has none (the noise request does).
     pub fn node(&mut self, name: &str) -> AnalogReference {
         if GroundName::names(name) {
             return self.ground();
