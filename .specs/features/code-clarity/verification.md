@@ -2067,3 +2067,66 @@ But the commit body says "call paths only", and T78's box says "the layout tests
 | P11-8 T78 file-path test edits unrecorded | Low | open |
 | P11-9 `Validator` owner departure unrecorded | Low | open |
 | P11-10 T83 subject and note wording | Low | open |
+
+## Phase 11 — re-verification
+
+**Verdict**: PASS. All four Medium and all six Low findings of round 1 are closed. Three Low notes stay open and block nothing.
+**Head**: d2d0d5429 on `feature/code-clarity-p11` (fix round 1: 48865eb1d, d2d0d5429), against the round 1 head 03bb32368
+**Verifier**: independent sub-agent (Opus; author != verifier). I reran the gates with target dir `-d`, after touching the guard sources first.
+
+### Gates at d2d0d5429
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line (`cargo build --workspace --all-targets`, filtered for `^(warning|error)`) | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 121 passed |
+| `cargo test --no-fail-fast -p` abi, device-fixtures, analog-solver, digital-solver, solver, interp, plan, transpile, api, parity | 0 test failures. In the first run, 80 targets of plan/solver/transpile/parity were "never executed": their binaries were removed from the shared target dir under the run, as in P8. A rerun of `-p piperine-plan -p piperine-solver -p piperine-transpile -p piperine-parity` gives 115 result lines, 1 222 passed, 0 failed. The other six crates passed in the first run (998 passed across its 89 result lines) |
+| `cargo test -p piperine-cli --test twins` | 6 passed |
+| `cargo test -p piperine --test book_inventory --test integrated` | 18 + 42 passed |
+| `cargo test -p piperine --test book_claims` | 6 passed, 1 failed. The only cause is the stale row `structure~58f974e3`, as before |
+| CC-09: `git diff 03bb32368..HEAD` over `docs/`, `examples/`, `.msl` corpora, goldens and `crates/piperine-parity` | empty. The one new file is the test fixture `api/tests/fixtures/noise_vss.msl`. `NodeIdentifier::Gnd` now displays `gnd`, and no golden, twin or Book value moved (the gates above) |
+
+### Tests, allowances
+
+- **Test names.** Per crate, 03bb32368 against HEAD, the sets differ by exactly the two declared additions, both in `api/tests/noise.rs` module `ground_spellings`: `a_node_named_like_a_ground_alias_is_an_output` and `a_ground_alias_naming_nothing_is_e0801_naming_gnd`. T83's note cites both, so they leave the uncited inventory, as P8-5 round 2 established.
+- **Test edits.** No other test file changed. The `noise.rs` refactor (`Twin::open` → `Twin::open_file`, made `pub` for the sibling module) keeps every assertion of `an_output_or_input_that_names_nothing_is_e0801`.
+- **Allowances.** No file grows. Only `repeated_type_names` shrinks: solver `sensitivity.rs::Key` and its pair transpile `cache.rs::Key` go, because the local `Key` is now `StampPosition`. All 12 long-function rows of the phase are deleted, and the guard's own check, that a row's item is still long, passes.
+
+### Closure of round 1
+
+| Finding | Evidence |
+| --- | --- |
+| P11-1 | `noise.rs::node_of` now calls `Probe::resolve` first, and refuses `GND`/`vss`/`VSS` only on `Err` (it keeps the base resolution error otherwise). The new fixture's top node `vss` is a noise output. `GND` naming nothing is E0801 with "spelled `gnd`". Both cases are pinned by the two new tests. The builder note (a design's node reaches the builder as `Top.vss`) is true: no host path calls `CircuitBuilder::node` with a bare design name |
+| P11-2 | The Newton solves are split verbatim. `iterate` and `iterate_timed` are the base bodies unchanged. `seed_guess` is the base `match`. `damp` and `failing_unknowns` are verbatim; the base assigned `failing` only on the last iteration and only with a latest row, and `None → Vec::new()` equals the unassigned value. `exhausted_after` is the shared tail. Their rows are deleted |
+| P11-3 | All ten rows are split and deleted. I compared each extraction with its base (see below) |
+| P11-4 | `thunk::{module, library}` are a findings.md §1.2 CC-04 exception row with the reason. T77's first box stays unticked, with the annotation |
+| P11-5 | T80's box is restored to the approved text, and the departure is an annotation under it |
+| P11-6 | `ReactionRun`, `FunctionRun`, `CommitCheck`, `CellReader`, `Bind`, `InstanceBinding`, `InstanceInput`, `RunStart`, `RunEnd`, `TransientRun` and `HostCommit` fields carry `///` |
+| P11-7 | `netlist.rs:28` displays `gnd`. design.md:176 names T83 and the label move |
+| P11-8, P11-9 | annotations under T78 and T77 |
+| P11-10 | T83's stale "uncited verdict" phrase is gone, and a plain "Behaviour change (S21)" annotation is added. The subject of the landed commit stays; rewriting it would mean rewriting pushed history, so the annotation is the right fix |
+
+**The extractions, sampled against the base.**
+- `Protocol::transient_loop`: `stop_tick`, then `plan_step`, which keeps the steps 1–2 body and the "does not advance" error. Then `attempt_step`: the retry match and accept are verbatim. Its only reorder is that `rejections = 0` now follows `settle_delivered = false` and the crossing fires instead of preceding them; it is a loop-local, so nothing observes it. Then `refuse_rejections`, keeping the retake order (restore, release, count, `record_retake`, refuse, `forced`). Then `run_step_instant` (the instant, retake read and deferred settle, verbatim) and `deliver_outcome` (jump, boundary delivery, settle boundary, in order). The `at` closure is `Self::at`.
+- `Digital::microsteps`:
+  - The loop is preserved: `resume_microstep`, `begin_microstep` (apply-due, then ambient), functions, `scan_nets` (same fired/boundary/passing scan), `landing_after_functions` (only under look-ahead), reactions, host suspension, `live_at`, `not_quiet`.
+  - `suspended_for_host` keeps the base early return; it sets no `settle_boundary`, as before.
+  - `report` is the base tail.
+  - `last_run` is unchanged under look-ahead.
+- `PssSolver::solve`: `starting_step` and `check_orbit_repeats` are verbatim, the latter followed by digital periodicity and then the trace shot, in the base order. `finite_difference_jacobian` and `update_jacobian` (`n = g.len() = vars.len()`), `solve_update` and `damp_update` are verbatim.
+- `TransientSolver::device_attempt`: `refuse_exhausted_budget`, then `target_time`, then `predict` (which sets `attempted`, rejects a non-advancing step, and sets the jump position), then the base attempt body. Same order.
+- `Dag::build`: the strict-cycle refusal comes before the groups, as in the base. `comp_of` moves after `group_steps`, which is pure and does not read it.
+- `AdjointSolver`, `NoiseSolver::contributions`, `SpSolver::{validate_ports, resolve_ports}` (the DC solve still sits between the two, as before), and `ParamStampCollector::{tally, row_contributions, requested_net, analytic_stamps}`: verbatim, the same order of errors.
+
+**T77's unticked box.** I accept it for a phase PASS. CC-04 AC 1 is phrased over "the exceptions listed in `findings.md` with their reason", and the two functions are now such a listed exception. So T152's check passes as written, and the box honestly records that its own wording ("exactly the 10 `extern "C"`") is not met. What closes it is the user's review of the exception row:
+
+- accepted → the box is annotated as met by the recorded exception and ticked;
+- or refused → a What-may-move row for T132 moves them, and the goldens move by path.
+
+The row should name one decision point (T155), not "T155 / device-abi-simplification".
+
+### Round 2 notes (Low, not blocking)
+
+- **R2-1.** `solver/src/protocol/transient.rs:559-583`: the body of `run_step_instant` keeps the indentation of its old place, 24 and 12 spaces inside an 8-space body. It is cosmetic; `cargo fmt -p piperine-solver` on the file fixes it.
+- **R2-2.** T84's fix note names `collect_device`'s extraction `param_net`; the method is `requested_net` (`sensitivity.rs`). T81's note lists 3 of the 9 methods `microsteps` became. These are wording only.
+- **R2-3.** findings.md §1.2's new exception row gives two owners. Name T155 (the user's review) alone.
