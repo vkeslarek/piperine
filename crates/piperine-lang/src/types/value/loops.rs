@@ -80,7 +80,7 @@ impl ExpressionTyping<'_, '_> {
     /// The pattern of a `for`: irrefutable (§1.6.11), its names typed as the element.
     fn for_binding(&mut self, pat: PatId, element: &Ty) {
         let file = self.state.design.decl_data(self.state.design.pat_node(pat).owner).file;
-        self.irrefutable_pattern(file, pat, element, "a `for`");
+        self.patterns().irrefutable_pattern(file, pat, element, "a `for`");
     }
 
     /// `break` or `break value` (§1.8.10): leaves the innermost loop; the value is allowed in a

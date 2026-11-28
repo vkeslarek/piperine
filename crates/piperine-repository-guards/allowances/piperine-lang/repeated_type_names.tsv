@@ -97,7 +97,7 @@ crates/piperine-lang/src/pom/reflect/attribute.rs::Attr	1
 crates/piperine-lang/src/pom/resolution.rs::Resolution	1
 crates/piperine-lang/src/pom/resolve/context.rs::Ctx	1
 crates/piperine-lang/src/pom/resolve/names.rs::Frame	1
-crates/piperine-lang/src/types/aggregate_patterns.rs::Shape	1
+crates/piperine-lang/src/types/pattern/aggregate_patterns.rs::Shape	1
 crates/piperine-lang/src/types/catalogue.rs::Arg	1
 crates/piperine-lang/src/types/catalogue.rs::Lookup	1
 crates/piperine-lang/src/types/check.rs::Checker	1
@@ -108,8 +108,8 @@ crates/piperine-lang/src/types/element_target.rs::Step	1
 crates/piperine-lang/src/types/value/flow.rs::Flow	1
 crates/piperine-lang/src/types/value/flow.rs::LoopFrame	1
 crates/piperine-lang/src/types/generics.rs::Bound	1
-crates/piperine-lang/src/types/patterns.rs::Bound	1
-crates/piperine-lang/src/types/patterns.rs::Number	1
+crates/piperine-lang/src/types/pattern/patterns.rs::Bound	1
+crates/piperine-lang/src/types/pattern/patterns.rs::Number	1
 crates/piperine-lang/src/types/record.rs::Site	1
 crates/piperine-lang/src/types/table.rs::Continuity	1
 crates/piperine-lang/src/types/table.rs::Method	1

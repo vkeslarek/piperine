@@ -10,9 +10,9 @@ use crate::refusal::RefusedForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclKind, ExprId, ExprKind, FileId, LitKind, Name, PatId, PatKind, Resolution, UnOp};
 
-use super::check::Checker;
+use super::PatternTyping;
 use super::cover::{Coverage, Covers};
-use super::Ty;
+use crate::types::Ty;
 
 /// One name a pattern binds, with its type.
 #[derive(Debug, Clone, PartialEq)]
@@ -30,8 +30,8 @@ impl Bound {
 
 /// What matching one pattern against a value covers of it and binds.
 #[derive(Debug, Clone)]
-pub(super) struct Matched {
-    pub(super) covers: Vec<Covers>,
+pub(in crate::types) struct Matched {
+    pub(in crate::types) covers: Vec<Covers>,
     pub(super) bound: Vec<Bound>,
 }
 
@@ -54,10 +54,10 @@ enum Number {
     Float(f64),
 }
 
-impl Checker<'_> {
+impl PatternTyping<'_, '_> {
     /// What pattern `pat` covers of a scrutinee of type `scrut`, its bindings typed. `None` after
     /// a diagnostic.
-    pub(super) fn pattern(&mut self, file: FileId, pat: PatId, scrut: &Ty) -> Option<Matched> {
+    pub(in crate::types) fn pattern(&mut self, file: FileId, pat: PatId, scrut: &Ty) -> Option<Matched> {
         let node = self.state.design.pat_node(pat).clone();
         match &node.kind {
             PatKind::Wild => Some(Matched::covering(Covers::All)),
@@ -71,7 +71,7 @@ impl Checker<'_> {
             PatKind::Range { lo, hi, inclusive } => self.range_pattern(file, node.span, *lo, *hi, *inclusive, scrut),
             PatKind::TupleStruct { path, pats } if matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some") => {
                 let Ty::Option(inner) = scrut else {
-                    self.mismatch_text(file, node.span, &scrut.name(self.state.design), "an `Option`");
+                    self.checker.mismatch_text(file, node.span, &scrut.name(self.checker.state.design), "an `Option`");
                     return None;
                 };
                 let [p] = pats.as_slice() else {
@@ -96,7 +96,7 @@ impl Checker<'_> {
     /// `pat` where §1.6.11 requires an irrefutable pattern (`what` names the place: a `let`, a
     /// `for`, a closure parameter): the pattern against a value of type `ty`, or `E0184` naming a
     /// value it does not match.
-    pub(super) fn irrefutable_pattern(&mut self, file: FileId, pat: PatId, ty: &Ty, what: &str) -> Option<Matched> {
+    pub(in crate::types) fn irrefutable_pattern(&mut self, file: FileId, pat: PatId, ty: &Ty, what: &str) -> Option<Matched> {
         let matched = self.pattern(file, pat, ty)?;
         let missing = Coverage::new(self.state.design, &self.state.result.layouts).missing(ty, &matched.covers);
         if let Some(missing) = missing {
@@ -111,7 +111,7 @@ impl Checker<'_> {
     /// `let pat = init;` and `let pat = init else { .. };` for a pattern that is not a plain name
     /// (§1.7.3, §1.7.6): without `else` the pattern is irrefutable (`E0184`); with it the pattern
     /// may be refutable and the `else` block must not complete (`E0185`).
-    pub(super) fn let_pattern(&mut self, file: FileId, pat: PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
+    pub(in crate::types) fn let_pattern(&mut self, file: FileId, pat: PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let span = self.state.design.pat_node(pat).span;
         let Some(init) = init else {
             self.refuse(file, span, PatternForm::LetWithPatternAndNoValue);
@@ -212,7 +212,7 @@ impl Checker<'_> {
     /// plain mismatch.
     fn range_pattern(&mut self, file: FileId, span: Span, lo: Option<ExprId>, hi: Option<ExprId>, inclusive: bool, scrut: &Ty) -> Option<Matched> {
         if !(scrut.is_integer() || *scrut == Ty::F64) {
-            self.mismatch_text(file, span, &scrut.name(self.state.design), "a range pattern");
+            self.checker.mismatch_text(file, span, &scrut.name(self.checker.state.design), "a range pattern");
             return None;
         }
         for bound in lo.iter().chain(hi.iter()) {
@@ -278,7 +278,7 @@ impl Checker<'_> {
             Resolution::Builtin(id) if id.info().name == "None" => match scrut {
                 Ty::Option(_) => Some(Matched::covering(Covers::Nothing)),
                 other => {
-                    self.mismatch_text(file, span, &other.name(self.state.design), "`None`");
+                    self.checker.mismatch_text(file, span, &other.name(self.checker.state.design), "`None`");
                     None
                 }
             },

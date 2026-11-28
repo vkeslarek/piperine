@@ -1935,8 +1935,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Checker` in `types/pattern/`
-- [ ] Gate check passes: Golden
+- [x] No `impl Checker` in `types/pattern/` (no test edited; every moved item was `pub(super)`)
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

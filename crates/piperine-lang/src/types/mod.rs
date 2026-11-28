@@ -7,7 +7,7 @@
 //!
 //! The result is a table or the reasons there is none, never both.
 
-mod aggregate_patterns;
+
 mod analog;
 mod attributes;
 mod bounds;
@@ -16,9 +16,10 @@ mod bundle_handles;
 mod carrier;
 mod catalogue;
 mod check;
+mod pattern;
 mod coherence;
 mod continuity;
-mod cover;
+
 mod coverage;
 mod definition;
 mod derives;
@@ -29,7 +30,7 @@ mod generic_values;
 mod generics;
 mod handles;
 mod inference;
-mod logic_pattern;
+
 mod model;
 mod module;
 mod module_bounds;
@@ -38,7 +39,7 @@ mod nature;
 mod nature_rules;
 mod obligations;
 mod param_requirement;
-mod patterns;
+
 mod reach;
 mod reaction;
 mod record;
@@ -53,6 +54,6 @@ mod ty;
 mod value;
 
 pub(crate) use self::coverage::ElementCoverage;
-pub use self::logic_pattern::{LogicPattern, PatternFault};
+pub use self::pattern::logic_pattern::{LogicPattern, PatternFault};
 pub use self::{nature::ResolveImpl, traits::{BoundOracle, ImplEntry, ImplTable, ImplTarget}, value::aggregate::FieldType, value::enums::EnumTag, value::intrinsic::Intrinsic, value::widths::FloatText, obligations::Obligation, substitution::Substitution, param_requirement::ParamRequirement};
 pub use self::{generics::{Bound, ConstType, GenericParameter, GenericSignature, ParameterDefault, ParameterKind}, table::{Builtin, Callee, Continuity, Instantiation, Method, Types}, ty::{ConstTerm, GenericValue, Length, Nominal, Ty}};

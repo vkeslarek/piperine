@@ -11,12 +11,12 @@ use std::collections::BTreeMap;
 
 use crate::pom::{DeclId, DeclKind, Design};
 
-use super::value::aggregate::FieldType;
-use super::{Length, Nominal, Ty};
+use crate::types::value::aggregate::FieldType;
+use crate::types::{Length, Nominal, Ty};
 
 /// What one alternative of a pattern covers of its scrutinee.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) enum Covers {
+pub(in crate::types) enum Covers {
     /// Every value: `_` and a binding.
     All,
     /// One variant of an enum, without fields.
@@ -42,20 +42,20 @@ pub(super) enum Covers {
 type Row = Vec<Covers>;
 
 /// The judgement of coverage over one design.
-pub(super) struct Coverage<'d> {
+pub(in crate::types) struct Coverage<'d> {
     design: &'d Design,
     layouts: &'d BTreeMap<DeclId, Vec<FieldType>>,
 }
 
 impl<'d> Coverage<'d> {
     /// The coverage over `design`, with the typed fields of each struct and variant in `layouts`.
-    pub(super) fn new(design: &'d Design, layouts: &'d BTreeMap<DeclId, Vec<FieldType>>) -> Self {
+    pub(in crate::types) fn new(design: &'d Design, layouts: &'d BTreeMap<DeclId, Vec<FieldType>>) -> Self {
         Coverage { design, layouts }
     }
 
     /// The first value of `scrut` that `covered` leaves out, written as the pattern that would
     /// cover it; `None` when every value is covered.
-    pub(super) fn missing(&self, scrut: &Ty, covered: &[Covers]) -> Option<String> {
+    pub(in crate::types) fn missing(&self, scrut: &Ty, covered: &[Covers]) -> Option<String> {
         let rows: Vec<Row> = covered.iter().map(|c| vec![c.clone()]).collect();
         self.missing_rows(std::slice::from_ref(scrut), &rows).and_then(|found| found.into_iter().next())
     }

@@ -435,8 +435,8 @@ crates/piperine-lang/src/types/value/exits.rs::try_expr	1
 crates/piperine-lang/src/types/generation.rs::runtime_read	1
 crates/piperine-lang/src/types/generics.rs::decl	1
 crates/piperine-lang/src/types/value/iterators.rs::range_expr	1
-crates/piperine-lang/src/types/logic_pattern.rs::X	1
-crates/piperine-lang/src/types/logic_pattern.rs::Z	1
+crates/piperine-lang/src/types/pattern/logic_pattern.rs::X	1
+crates/piperine-lang/src/types/pattern/logic_pattern.rs::Z	1
 crates/piperine-lang/src/types/value/loops.rs::break_expr	1
 crates/piperine-lang/src/types/value/loops.rs::continue_expr	1
 crates/piperine-lang/src/types/value/loops.rs::loop_expr	1
@@ -446,8 +446,8 @@ crates/piperine-lang/src/types/mod.rs::ty	1
 crates/piperine-lang/src/types/module.rs::untyped_module_let	1
 crates/piperine-lang/src/types/nature.rs::ResolveImpls	1
 crates/piperine-lang/src/types/param_requirement.rs::ty	1
-crates/piperine-lang/src/types/patterns.rs::Int	1
-crates/piperine-lang/src/types/patterns.rs::ty	1
+crates/piperine-lang/src/types/pattern/patterns.rs::Int	1
+crates/piperine-lang/src/types/pattern/patterns.rs::ty	1
 crates/piperine-lang/src/types/result.rs::reads_decl	1
 crates/piperine-lang/src/types/table.rs::IntAbs	1
 crates/piperine-lang/src/types/table.rs::carrier_drive_impls	2

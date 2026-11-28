@@ -13,6 +13,7 @@ use super::definition::DriveBook;
 use super::value::flow::ExitFrame;
 use super::value::tables::ValueTables;
 use super::value::ExpressionTyping;
+use super::pattern::PatternTyping;
 use super::nature_rules::NatureRules;
 use super::record::Records;
 use super::{ConstTerm, Ty, Types};
@@ -193,6 +194,11 @@ impl<'d> Checker<'d> {
     /// The view that types value expressions.
     pub(super) fn expressions(&mut self) -> ExpressionTyping<'_, 'd> {
         ExpressionTyping::new(self)
+    }
+
+    /// The view that types patterns.
+    pub(super) fn patterns(&mut self) -> PatternTyping<'_, 'd> {
+        PatternTyping::new(self)
     }
 
     /// Whether the project itself defines a method called `name`, in an `impl` or a `trait`.

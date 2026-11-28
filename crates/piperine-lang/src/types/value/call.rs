@@ -501,7 +501,7 @@ impl ExpressionTyping<'_, '_> {
             let pat = self.state.design.pat_node(param.pat).clone();
             let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat.kind else {
                 // §1.6.11: a closure parameter takes an irrefutable pattern
-                self.irrefutable_pattern(file, param.pat, ty, "a closure parameter");
+                self.patterns().irrefutable_pattern(file, param.pat, ty, "a closure parameter");
                 continue;
             };
             if let Some(annotation) = param.ty

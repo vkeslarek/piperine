@@ -74,7 +74,6 @@ crates/piperine-lang/src/pom/reflect/index.rs::Signal	1
 crates/piperine-lang/src/pom/reflect/lookups.rs::Design	1
 crates/piperine-lang/src/pom/resolve/classify.rs::Design	1
 crates/piperine-lang/src/pom/to_ast.rs::SourceFile	1
-crates/piperine-lang/src/types/aggregate_patterns.rs::Checker	1
 crates/piperine-lang/src/types/analog.rs::Checker	2
 crates/piperine-lang/src/types/attributes.rs::Checker	1
 crates/piperine-lang/src/types/bounds.rs::Checker	1
@@ -98,7 +97,6 @@ crates/piperine-lang/src/types/module_bounds.rs::Checker	1
 crates/piperine-lang/src/types/module_generics.rs::Checker	1
 crates/piperine-lang/src/types/nature.rs::Checker	2
 crates/piperine-lang/src/types/obligations.rs::Checker	1
-crates/piperine-lang/src/types/patterns.rs::Checker	1
 crates/piperine-lang/src/types/reach.rs::Checker	1
 crates/piperine-lang/src/types/reaction.rs::Checker	1
 crates/piperine-lang/src/types/record.rs::Checker	1

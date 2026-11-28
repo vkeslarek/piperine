@@ -6,10 +6,10 @@ use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{DeclId, DeclKind, FieldPatNode, FileId, PatId, PatKind, PathId, Resolution};
 
-use super::check::Checker;
+use super::PatternTyping;
 use super::cover::Covers;
 use super::patterns::{Bound, Matched};
-use super::{Length, Ty};
+use crate::types::{Length, Ty};
 
 /// How the covers of one pattern's fields make the cover of the whole: a tuple, a struct and an
 /// array are a product of their fields, a variant is a constructor over its own.
@@ -33,12 +33,12 @@ impl Shape {
 /// them (`Covers::Opaque`): an or-pattern in every field multiplies.
 const MOST_ROWS: usize = 512;
 
-impl Checker<'_> {
+impl PatternTyping<'_, '_> {
     /// `(a, b)`, `(a, .., z)` (§1.6.5): one pattern per field of a tuple, `..` standing for the
     /// fields between.
     pub(super) fn tuple_pattern(&mut self, file: FileId, span: Span, pats: &[PatId], scrut: &Ty) -> Option<Matched> {
         let Ty::Tuple(items) = scrut else {
-            self.mismatch_text(file, span, &scrut.name(self.state.design), "a tuple pattern");
+            self.checker.mismatch_text(file, span, &scrut.name(self.checker.state.design), "a tuple pattern");
             return None;
         };
         let columns = self.positions(file, span, pats, items.len())?;
@@ -147,7 +147,7 @@ impl Checker<'_> {
 
     /// `E0184`-free mismatch for an array pattern over a value that is no array.
     fn not_an_array(&mut self, file: FileId, span: Span, scrut: &Ty) -> Option<Matched> {
-        self.mismatch_text(file, span, &scrut.name(self.state.design), "an array pattern");
+        self.checker.mismatch_text(file, span, &scrut.name(self.checker.state.design), "an array pattern");
         None
     }
 

@@ -9,7 +9,7 @@ use crate::refusal::forms::ValueForm;
 use crate::pom::{Arm, ExprId, ExprKind, PatKind, Resolution};
 
 use super::ExpressionTyping;
-use crate::types::cover::Coverage;
+use crate::types::pattern::cover::Coverage;
 use super::flow::Assigned;
 use crate::types::Ty;
 
@@ -32,7 +32,7 @@ impl ExpressionTyping<'_, '_> {
         let mut patterns_typed = true;
         for arm in arms {
             let Some(t) = &scrut else { continue };
-            match self.pattern(file, arm.pat, t) {
+            match self.patterns().pattern(file, arm.pat, t) {
                 Some(matched) => {
                     // §1.8.3: the guard sees the pattern's names; a guarded arm covers nothing (§1.8.6).
                     match arm.guard {
@@ -123,7 +123,7 @@ impl ExpressionTyping<'_, '_> {
                 let span = self.state.design.expr_node(*expr).span;
                 self.checker.mismatch_text(file, span, "an `Option`", &found.name(self.checker.state.design));
             } else {
-                self.pattern(file, *pat, &found);
+                self.patterns().pattern(file, *pat, &found);
             }
         }
         self.state.result.exprs[cond.index()] = Some(Ty::Bool);

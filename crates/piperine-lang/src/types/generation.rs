@@ -133,7 +133,7 @@ impl Checker<'_> {
                 let element = self.const_position(*iter, "a generation range").then(|| self.within(Context::Const, |this| this.generation_element(*iter))).flatten();
                 match element {
                     Some(element) => {
-                        self.irrefutable_pattern(file, *pat, &element, "a generation `for`");
+                        self.patterns().irrefutable_pattern(file, *pat, &element, "a generation `for`");
                     }
                     None => self.poison_pattern(*pat),
                 }

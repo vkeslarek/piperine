@@ -785,11 +785,11 @@ impl ExpressionTyping<'_, '_> {
     fn let_statement(&mut self, file: crate::pom::FileId, pat: crate::pom::PatId, ty: Option<crate::pom::TypeId>, init: Option<ExprId>, else_: Option<&BlockNode>) {
         let pat_node = self.state.design.pat_node(pat).clone();
         let PatKind::Ident { sub: None, binding, res: Resolution::Unresolved, .. } = &pat_node.kind else {
-            self.let_pattern(file, pat, ty, init, else_);
+            self.patterns().let_pattern(file, pat, ty, init, else_);
             return;
         };
         if else_.is_some() {
-            self.let_pattern(file, pat, ty, init, else_);
+            self.patterns().let_pattern(file, pat, ty, init, else_);
             return;
         }
         let annotated = match ty {
