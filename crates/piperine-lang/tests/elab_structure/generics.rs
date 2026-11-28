@@ -47,7 +47,7 @@ fn the_elaborator_reads_types_only_through_the_substitution() {
     for (path, text) in ElabSources::files() {
         for (number, line) in text.lines().enumerate() {
             let reads = [".types.ty(", ".types.local(", ".types.written("].iter().any(|read| line.contains(read));
-            if reads && !path.starts_with("src/elab/consts") {
+            if reads && !path.starts_with("src/elab/consts/evaluator") {
                 direct.push(format!("{}:{}: {}", path.display(), number + 1, line.trim()));
             }
         }
