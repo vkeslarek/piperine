@@ -1841,8 +1841,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] 6 targets, not 5: `session`, `host`, `records`, `params`, `analyses` and `memory` (the buck one stays `test = false`); every test keeps its name. `memory` is a target of its own because its counting allocator is the whole process's: the two tests that measure take its turn (`Counting::alone`) and nothing else runs beside them in that process. The shared sinks and the settings are `piperine_parity::sinks::{Ignore, Kept}` and `CompileCache::settings`, not a support module of the crate
-- [x] Plan lowered (api 26 to 6); Gate check passes: Ledger
+- [x] 5 targets (the buck one stays `test = false`); every test keeps its name
+  - Departure: 6 targets, `session`, `host`, `records`, `params`, `analyses` and `memory`. `memory` needs its own process because its counting `#[global_allocator]` measures the whole process: the two tests that measure take its turn (`Counting::alone`) and nothing else runs beside them. The shared sinks and settings are `piperine_parity::sinks::{Ignore, Kept}` and `CompileCache::settings`, not a support module of the crate. T67's commit subject says "five targets" for a commit that makes six.
+- [x] Plan lowered; Gate check passes: Ledger
+  - Departure: api went 26 to 6, not 5.
 
 **Tests**: integration
 **Gate**: ledger
@@ -1863,7 +1865,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [x] 6 default targets across the three crates (cli 3: `commands`, `book`, `twins`; numbers 2; project 1); every test keeps its name; `binary` and `shared_cache` exist no more: a call is `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` or `CompileCache::shared().path()` (T66's one cache), so no copy of either is left to keep once
+- [x] 6 default targets across the three crates; every test keeps its name; `binary` and `shared_cache` exist once
+  - Departure: they exist no more. A call is `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` or `CompileCache::shared().path()` (T66's one cache), so no copy of either is left. The cli has 3 targets (`commands`, `book`, `twins`), numbers 2, project 1.
 - [x] Plans lowered; Gate check passes: Ledger
 
 **Tests**: integration

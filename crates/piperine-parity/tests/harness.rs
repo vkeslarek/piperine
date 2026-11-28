@@ -108,9 +108,9 @@ impl CacheWriters {
     const DIRECTORY: &'static str = "PIPERINE_CACHE_WRITER_DIRECTORY";
 
     /// The writer: compiles the resistor design into the directory the environment names.
-    fn write(directory: &str) {
+    fn write(directory: &std::path::Path) {
         let (ir, _) = Alone::design(Devices::resistor);
-        let settings = Settings { rustc: None, cache: PathBuf::from(directory) };
+        let settings = Settings { rustc: None, cache: directory.to_path_buf() };
         Transpiler::new(Arc::new(ir)).unwrap_or_else(|error| panic!("{error}")).compile(&settings).unwrap_or_else(|error| panic!("{error}"));
     }
 
@@ -126,10 +126,65 @@ impl CacheWriters {
 
 #[test]
 fn a_process_that_writes_the_cache() {
-    // Run on its own this is a no-op; `two_processes_share_one_cache` starts it with the directory named.
-    if let Ok(directory) = std::env::var(CacheWriters::DIRECTORY) {
-        CacheWriters::write(&directory);
+    // Started by `two_processes_share_one_cache` it builds into the directory the environment names; run on
+    // its own it builds into a directory of its own under the run's cache. Either way one entry results.
+    let directory = match std::env::var(CacheWriters::DIRECTORY) {
+        Ok(directory) => PathBuf::from(directory),
+        Err(_) => CompileCache::shared().path().join(format!("one-writer-{}", std::process::id())),
+    };
+    CacheWriters::write(&directory);
+    let entries = std::fs::read_dir(directory.join("rust")).expect("the cache's rust directory").count();
+    assert!(entries > 0, "the writer left nothing in {}", directory.display());
+}
+
+#[test]
+fn two_calls_of_the_shared_cache_give_one_directory_of_the_run() {
+    let first = CompileCache::shared();
+    let second = CompileCache::shared();
+    assert!(std::ptr::eq(first, second));
+    assert_eq!(first.path(), second.path());
+    assert_eq!(first.path().file_name().and_then(|name| name.to_str()), Some(std::os::unix::process::parent_id().to_string().as_str()));
+    assert_eq!(first.path().parent().and_then(|base| base.file_name()).and_then(|name| name.to_str()), Some("piperine-compile-cache"));
+}
+
+/// A base directory that holds one folder per run.
+struct PlantedRuns {
+    base: tempfile::TempDir,
+}
+
+impl PlantedRuns {
+    /// A base holding the folders `names`.
+    fn named(names: &[String]) -> PlantedRuns {
+        let base = tempfile::tempdir().expect("a base directory");
+        for name in names {
+            std::fs::create_dir_all(base.path().join(name).join("rust")).expect("a planted run");
+        }
+        PlantedRuns { base }
     }
+
+    /// Whether the folder `name` is still in the base after the cleanup a run does at its start.
+    fn remains(&self, name: &str) -> bool {
+        CompileCache::remove_finished_runs(self.base.path());
+        self.base.path().join(name).exists()
+    }
+}
+
+#[test]
+fn a_live_process_keeps_its_folder_at_the_cleanup() {
+    let live = std::process::id().to_string();
+    assert!(PlantedRuns::named(&[live.clone()]).remains(&live));
+}
+
+#[test]
+fn the_folder_of_a_finished_process_is_removed() {
+    let finished = "4294967294".to_string();
+    assert!(!PlantedRuns::named(&[finished.clone()]).remains(&finished));
+}
+
+#[test]
+fn a_folder_that_is_no_process_number_is_removed() {
+    let stray = "notapid".to_string();
+    assert!(!PlantedRuns::named(&[stray.clone()]).remains(&stray));
 }
 
 #[test]

@@ -43,11 +43,10 @@ impl HostRun {
         session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| fail("run", &f))
     }
 
-    /// The compiler settings of every run of this process: one temporary cache, so a test run
-    /// never writes the user's own cache.
+    /// The compiler settings of every run of this process: the run's one compile cache under the
+    /// target directory, so a test run never writes the user's own cache.
     pub fn settings() -> Settings {
-        let dir = CompileCache::shared();
-        Settings { rustc: None, cache: dir.path().to_path_buf() }
+        CompileCache::shared().settings()
     }
 
     /// The real number of `cell`; any other cell is a failure of the table's shape.

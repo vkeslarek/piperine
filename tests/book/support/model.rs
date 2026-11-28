@@ -162,11 +162,10 @@ impl Model {
         Ok(Ran { table, records, metadata })
     }
 
-    /// The settings of every run of this target: the compiled backend builds into one cache directory
-    /// shared by the target, as the host library's own tests do.
+    /// The settings of every run of this target: the compiled backend builds into the run's one
+    /// compile cache, as the host library's own tests do.
     fn settings() -> Settings {
-        let cache = CompileCache::shared();
-        Settings { rustc: None, cache: cache.path().to_path_buf() }
+        CompileCache::shared().settings()
     }
 
     /// A new directory for a model.

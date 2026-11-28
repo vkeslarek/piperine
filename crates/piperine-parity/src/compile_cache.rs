@@ -46,8 +46,9 @@ impl CompileCache {
         executable.ancestors().nth(3).unwrap_or_else(|| panic!("{} is not inside a target directory", executable.display())).to_path_buf()
     }
 
-    /// Removes the cache directories of runs whose `cargo` no longer exists.
-    fn remove_finished_runs(base: &Path) {
+    /// Removes the directories of `base` that name no running process: a finished run's, or one whose
+    /// name is not a process number at all. A running process's directory stays.
+    pub fn remove_finished_runs(base: &Path) {
         let Ok(entries) = std::fs::read_dir(base) else { return };
         for entry in entries.flatten() {
             let running = entry.file_name().to_str().and_then(|name| name.parse::<u32>().ok()).is_some_and(|process| Path::new("/proc").join(process.to_string()).exists());

@@ -1158,7 +1158,6 @@ dependencies = [
  "piperine-api",
  "piperine-cli",
  "piperine-ir",
- "piperine-ir-fixtures",
  "piperine-lang",
  "piperine-parity",
  "piperine-plan",

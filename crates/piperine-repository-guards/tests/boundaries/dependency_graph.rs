@@ -70,7 +70,8 @@ fn every_crate_of_the_tree_has_a_documented_row() {
 fn the_leaves_and_the_sub_solvers_keep_their_dev_dependencies_out_of_the_tree() {
     for name in ["piperine-abi", "piperine-ir", "piperine-numbers", "piperine-analog-solver", "piperine-digital-solver", "piperine-repository-guards"] {
         let dev = SourceTree::manifest_section(&ManifestArrows::manifest_of(name), "dev-dependencies");
-        let held = dev.lines().filter(|line| line.trim().starts_with("piperine-") && !line.trim().starts_with("piperine-device-fixtures") && !line.trim().starts_with("piperine-ir-fixtures"));
+        let ir_fixtures_allowed = name == "piperine-ir";
+        let held = dev.lines().filter(|line| line.trim().starts_with("piperine-") && !line.trim().starts_with("piperine-device-fixtures") && !(ir_fixtures_allowed && line.trim().starts_with("piperine-ir-fixtures")));
         assert!(held.count() == 0, "{name} has an in-tree dev-dependency other than a fixtures crate:\n{dev}");
     }
 }

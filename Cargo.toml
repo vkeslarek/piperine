@@ -36,7 +36,6 @@ piperine-api = { path = "crates/piperine-api" }
 # The tests of record stay on this crate importing `piperine::…` — they are
 # the proof the shell re-exports the full host surface.
 [dev-dependencies]
-piperine-ir-fixtures = { path = "crates/piperine-ir-fixtures" }
 # The suites also reach lang directly (SourceMap setup) — dev-only edges, not part of the shell's public story.
 piperine-lang = { path = "crates/piperine-lang" }
 piperine-solver = { path = "crates/piperine-solver" }

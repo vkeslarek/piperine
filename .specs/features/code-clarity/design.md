@@ -256,6 +256,11 @@ No tolerance moves, `crates/piperine-parity/src/contract.rs` is not edited, and 
 | `piperine-ir-fixtures` | the hand-built IR bodies as types (`Buck`, `Mixed`, the device bodies) | `ir/tests/support/{digital,devices}.rs`, `transpile/tests/support/mixed.rs`, the `#[cfg(test)] #[path]` includes in `transpile/src/lib.rs` and `interp/src/lib.rs` | ir, plan, interp, transpile |
 | `piperine-parity` (exists) | `CompileCache::shared()`: one cache directory per test run under the target directory, in place of 32 `static CACHE: OnceLock<TempDir>` | the per-target caches and the 2.5 GB they leak | parity, api, cli, root |
 
+Departures recorded in P9 (fix round 1):
+
+- The run half of the mixed fixtures (`BuiltDesign`, `Seen`) lives in `piperine_parity::mixed`, not in `piperine-ir-fixtures`. The fixtures crate depends on `piperine-ir` alone and a run needs the transpiler, so the body half (`Mixed`) stays in the fixtures crate and the run half goes where the compile cache already is. `piperine-transpile` therefore gains a dev-dependency on `piperine-parity`, which brings `piperine-lang` and `piperine-api` into transpile's test build. Only `piperine-ir` may dev-depend on `piperine-ir-fixtures` among the leaves (the dependency-graph guard says so); plan, interp and transpile are above the leaves.
+- `CompileCache` is Linux-only: it keys a run by `std::os::unix::process::parent_id` and tells a live run by `/proc/<pid>`, so `piperine-parity` does not build off Linux. The project is Linux-only today.
+
 `Device::react` gains a default body `Ok(Flow::Continue)` (A1, Q8): a trait default changes no `#[repr(C)]` layout; 102 no-op bodies leave.
 
 Target counts after the merges (CC-12 AC 3), each merged target one `mod` per former target and a `//!` header:
@@ -270,7 +275,7 @@ Target counts after the merges (CC-12 AC 3), each merged target one `mod` per fo
 | `piperine-plan`, `piperine-interp`, `piperine-project` | 9, 7, 5 | 2, 1, 1 | `shape` + `circuit`; `interpreter`; `project` |
 | `piperine-numbers` | 8 | 2 | `integers`, `floats` (the optimised exhaustive tests keep their profile) |
 | `piperine-transpile` | 29 | 5 | `print`, `compile`, `digital`, `analog`, `golden` |
-| `piperine-api` | 27 | 5 | `session`, `host`, `records`, `params`, `analyses` |
+| `piperine-api` | 27 | 6 (departure from 5, T67) | `session`, `host`, `records`, `params`, `analyses`, `memory` (its counting `#[global_allocator]` measures the whole process, so the two tests that measure need a process of their own) |
 | `piperine-cli` | 10 (+2 buck) | 3 (+2) | `commands`, `book`, `twins` |
 | `piperine-lang` | 80 | 15 | `msl`, `pom`, `types_values`, `types_patterns`, `types_modules`, `types_analog`, `types_carriers`, `types_generics`, `elab_values`, `elab_analog`, `elab_digital`, `elab_structure`, `std`, `spec_structure`, `refusals` (+ `std_declarations`, `named_variadics` from B7, B8) |
 | `piperine-parity` | 61 (+7 buck) | 11 (+7) | `source_values`, `source_carriers`, `source_structure`, `source_behavior`, `source_execution`, `source_io`, `source_stdlib`, `source_host`, `parity`, `harness`, `boundary` |
