@@ -29,10 +29,18 @@ impl OwnershipRules {
         Self::functions_of(scan, CodeOrigin::Test)
     }
 
-    /// The free and nested functions of code of the given origin that are not permitted.
+    /// Whether the file is a golden: under a crate's `tests/golden/`. A golden is generated transpiler output pinned
+    /// byte for byte (CC-09), so the free functions it holds are the generator's, not a test's helpers; this is the
+    /// one named exclusion of `test_helper_functions`.
+    fn is_golden(file: &Path) -> bool {
+        let parts: Vec<_> = file.components().map(|c| c.as_os_str()).collect();
+        parts.windows(2).any(|pair| pair[0] == "tests" && pair[1] == "golden")
+    }
+
+    /// The free and nested functions of code of the given origin that are not permitted (a golden's are left out).
     fn functions_of(scan: &ItemScan, origin: CodeOrigin) -> Findings {
         let mut findings = Findings::new();
-        for item in scan.items().iter().filter(|item| item.origin == origin) {
+        for item in scan.items().iter().filter(|item| item.origin == origin && !(origin == CodeOrigin::Test && Self::is_golden(&item.file))) {
             let loose = item.is_unpermitted_free_function() || item.kind == ScannedKind::NestedFunction;
             if loose {
                 findings.add(&item.crate_name, Self::file_key(item));
@@ -113,5 +121,23 @@ impl OwnershipRules {
             }
         }
         findings
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_files_under_tests_golden_are_left_out_of_the_helper_guard() {
+        let scan = ItemScan::of(&SourceTree::of_sources(&[
+            ("crates/demo/tests/golden/diode.rs", "fn generated() {}\n"),
+            ("crates/demo/tests/other/helper.rs", "fn planted() {}\n"),
+            ("crates/demo/tests/golden_like/helper.rs", "fn lookalike() {}\n"),
+        ]));
+        let findings = OwnershipRules::test_helper_functions(&scan);
+        assert_eq!(findings.count(), 2);
+        assert!(!OwnershipRules::is_golden(Path::new("crates/demo/tests/other/helper.rs")));
+        assert!(OwnershipRules::is_golden(Path::new("crates/demo/tests/golden/diode.rs")));
     }
 }

@@ -2405,11 +2405,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three allowances are empty for every crate
-- [ ] `no_crate_has_more_targets_than_its_plan` passes with the plan at design.md's table (73; phases 14 and 17 add one target each, raising it to 75)
-- [ ] Gate check passes: Quick for the crates the task touched
+- [x] The three allowances are empty for every crate
+- [x] `no_crate_has_more_targets_than_its_plan` passes with the plan at design.md's table (73; phases 14 and 17 add one target each, raising it to 75)
+- [x] Gate check passes: Quick for the crates the task touched
 
-> Progress (executor, Opus): every crate is converted and committed (`refactor(tests): <crate> helpers become fixture types (T91 part)`); the three allowances are empty for every crate but `piperine-transpile`, whose two rows (`tests/golden/diode.rs::{pnjlim,vt}`) are a golden of generated code that holds free functions by construction and may not be edited. The box stays open until the guard stops scanning goldens or the rows get a verdict. Departures: design.md, "Departures of T91". The plan table's total gains the row of `piperine-lang-fixtures` (1).
+> Progress (executor, Opus): every crate is converted and committed (`refactor(tests): <crate> helpers become fixture types (T91 part)`); the three allowances are now empty for every crate (goldens are excluded from the test-helper guard by name, design.md). Departures: design.md, "Departures of T91". The plan table's total gains the row of `piperine-lang-fixtures` (1).
 
 **Tests**: integration
 **Gate**: quick
