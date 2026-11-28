@@ -17,7 +17,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run booknatures**: `cargo test -p piperine --test book_natures`
 **Run bookabi**: `cargo test -p piperine --test book_abi`
 **Run bookinv**: `cargo test -p piperine --test book_inventory`
-**Run types**: `cargo test -p piperine-lang --test types_explicit`
+**Run types**: `cargo test -p piperine-lang --test types_values explicit::`
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run ir**: `cargo test -p piperine-ir --test model digital::`
 **Run abi**: `cargo test -p piperine-abi --test contract layouts::`
@@ -34,7 +34,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
 **Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
-**Run ops**: `cargo test -p piperine-lang --test types_operators`
+**Run ops**: `cargo test -p piperine-lang --test types_values operators::`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 

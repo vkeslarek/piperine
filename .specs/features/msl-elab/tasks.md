@@ -13,11 +13,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-elab/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `test ! -d crates/piperine-ir || cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run entry**: `cargo test -p piperine-lang --test elab_entry`
-**Run params**: `cargo test -p piperine-lang --test elab_params`
-**Run instances**: `cargo test -p piperine-lang --test elab_instances`
-**Run analog**: `cargo test -p piperine-lang --test elab_analog`
-**Run unlowered**: `cargo test -p piperine-lang --test elab_unlowered`
+**Run entry**: `cargo test -p piperine-lang --test elab_values entry::`
+**Run params**: `cargo test -p piperine-lang --test elab_values params::`
+**Run instances**: `cargo test -p piperine-lang --test elab_structure instances::`
+**Run analog**: `cargo test -p piperine-lang --test elab_analog analog::`
+**Run unlowered**: `cargo test -p piperine-lang --test elab_structure unlowered::`
 
 Executors: Sonnet implements T1 to T6 and T8 to T10; Opus implements T7 (the contribution split: a wrong sign or a misplaced `ddt` is a silent wrong answer); Opus verifies the feature. The worktree and branch are told at dispatch. This feature runs in wave 2: it needs `msl-ir` (the crate `piperine-ir`, its `IrBuilder`, printer, `check()` and structural golden texts) and `msl-typeck` (`piperine_lang::types`) merged into the worktree first.
 

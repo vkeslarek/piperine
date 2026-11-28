@@ -12,15 +12,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
-**Run tmod**: `cargo test -p piperine-lang --test types_modules`
-**Run tvalues**: `cargo test -p piperine-lang --test types_values`
-**Run tint**: `cargo test -p piperine-lang --test types_integers`
-**Run tcomp**: `cargo test -p piperine-lang --test types_compound`
-**Run tevents**: `cargo test -p piperine-lang --test types_events`
-**Run tanalog**: `cargo test -p piperine-lang --test types_analog`
-**Run evalues**: `cargo test -p piperine-lang --test elab_values`
-**Run eanalog**: `cargo test -p piperine-lang --test elab_analog`
-**Run edig**: `cargo test -p piperine-lang --test elab_digital`
+**Run tmod**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run tvalues**: `cargo test -p piperine-lang --test types_values values::`
+**Run tint**: `cargo test -p piperine-lang --test types_values integers::`
+**Run tcomp**: `cargo test -p piperine-lang --test types_patterns compound::`
+**Run tevents**: `cargo test -p piperine-lang --test types_analog events::`
+**Run tanalog**: `cargo test -p piperine-lang --test types_analog analog::`
+**Run evalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run eanalog**: `cargo test -p piperine-lang --test elab_analog analog::`
+**Run edig**: `cargo test -p piperine-lang --test elab_digital digital::`
 **Run iramend**: `cargo test -p piperine-ir --test model amendments::`
 **Run plan**: `cargo test -p piperine-plan --test shape amended_shape::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`

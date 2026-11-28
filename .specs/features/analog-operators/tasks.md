@@ -22,15 +22,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tops**: `cargo test -p piperine-transpile --test analog operators::`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`
-**Run elabops**: `cargo test -p piperine-lang --test elab_operators`
-**Run subset**: `cargo test -p piperine-lang --test types_subset`
+**Run typeops**: `cargo test -p piperine-lang --test types_analog analog_operators::`
+**Run elabops**: `cargo test -p piperine-lang --test elab_analog operators::`
+**Run subset**: `cargo test -p piperine-lang --test types_modules subset::`
 **Run spartial**: `cargo test -p piperine-parity --test source_partial`
 **Run sdelay**: `cargo test -p piperine-parity --test source_delay`
 **Run snoise**: `cargo test -p piperine-parity --test source_noise`
 **Run ssession**: `cargo test -p piperine-parity --test source_session`
 **Run straces**: `cargo test -p piperine-parity --test source_traces`
-**Run tevents**: `cargo test -p piperine-lang --test types_events`
+**Run tevents**: `cargo test -p piperine-lang --test types_analog events::`
 **Run sslew**: `cargo test -p piperine-parity --test source_slew`
 **Run partran**: `cargo test -p piperine-parity --test parity_tran`
 **Run parac**: `cargo test -p piperine-parity --test parity_ac`

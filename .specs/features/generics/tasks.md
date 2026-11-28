@@ -12,12 +12,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesmodel**: `cargo test -p piperine-lang --test types_model`
-**Run typesgen**: `cargo test -p piperine-lang --test types_generics`
-**Run typestraits**: `cargo test -p piperine-lang --test types_traits`
-**Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
-**Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
-**Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
+**Run typesmodel**: `cargo test -p piperine-lang --test types_modules model::`
+**Run typesgen**: `cargo test -p piperine-lang --test types_generics generics::`
+**Run typestraits**: `cargo test -p piperine-lang --test types_generics traits::`
+**Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
+**Run elabgen**: `cargo test -p piperine-lang --test elab_structure generics::`
+**Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`

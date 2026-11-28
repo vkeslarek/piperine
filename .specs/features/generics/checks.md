@@ -3,12 +3,12 @@
 The `**Build**` line, the union of the `**Run**` lines and every check of `tasks.md` (phases A and B), `tasks-c.md`, `tasks-d.md` and `tasks-e.md` with its proofs; the GN-30 checks (the ngspice twins, the warning-free build) stand once for every phase. `check_proofs.py generics` runs this file.
 
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesmodel**: `cargo test -p piperine-lang --test types_model`
-**Run typesgen**: `cargo test -p piperine-lang --test types_generics`
-**Run typestraits**: `cargo test -p piperine-lang --test types_traits`
-**Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
-**Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
-**Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
+**Run typesmodel**: `cargo test -p piperine-lang --test types_modules model::`
+**Run typesgen**: `cargo test -p piperine-lang --test types_generics generics::`
+**Run typestraits**: `cargo test -p piperine-lang --test types_generics traits::`
+**Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
+**Run elabgen**: `cargo test -p piperine-lang --test elab_structure generics::`
+**Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`
@@ -21,10 +21,10 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std galleries::`
-**Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
-**Run typesgenr**: `cargo test -p piperine-lang --test types_generation`
-**Run elabmods**: `cargo test -p piperine-lang --test elab_generic_modules`
-**Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
+**Run typesmods**: `cargo test -p piperine-lang --test types_generics generic_modules::`
+**Run typesgenr**: `cargo test -p piperine-lang --test types_generics generation::`
+**Run elabmods**: `cargo test -p piperine-lang --test elab_structure generic_modules::`
+**Run elabgenr**: `cargo test -p piperine-lang --test elab_structure generation::`
 **Run srcmods**: `cargo test -p piperine-parity --test source_generic_modules`
 **Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
@@ -36,27 +36,27 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run bookgenerics**: `cargo test -p piperine --test book_generics`
 **Run bookwelcome**: `cargo test -p piperine --test book_welcome`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run typescarrarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
-**Run elabcarrarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
+**Run typescarrarr**: `cargo test -p piperine-lang --test types_carriers carrier_arrays::`
+**Run elabcarrarr**: `cargo test -p piperine-lang --test elab_digital carrier_arrays::`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
 **Run dag**: `cargo test -p piperine-digital-solver --test plan dag::`
 **Run apicarrarr**: `cargo test -p piperine-api --test host carrier_arrays::`
 **Run bookcompiler**: `cargo test -p piperine --test book_compiler`
-**Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
-**Run elabresults**: `cargo test -p piperine-lang --test elab_results`
-**Run typestempl**: `cargo test -p piperine-lang --test types_templates`
-**Run typesimplicit**: `cargo test -p piperine-lang --test types_implicit`
-**Run elabtempl**: `cargo test -p piperine-lang --test elab_templates`
-**Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
+**Run typesmodules**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run elabresults**: `cargo test -p piperine-lang --test elab_digital results::`
+**Run typestempl**: `cargo test -p piperine-lang --test types_generics templates::`
+**Run typesimplicit**: `cargo test -p piperine-lang --test types_modules implicit::`
+**Run elabtempl**: `cargo test -p piperine-lang --test elab_structure templates::`
+**Run elabimplicit**: `cargo test -p piperine-lang --test elab_values implicit::`
 **Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
-**Run elabparams**: `cargo test -p piperine-lang --test elab_params`
+**Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`
 **Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
-**Run typesresults**: `cargo test -p piperine-lang --test types_results`
-**Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
+**Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`
+**Run elabtemplates**: `cargo test -p piperine-lang --test elab_structure templates::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 **Run suite**: `cargo test -p piperine-repository-guards --test suite`
 

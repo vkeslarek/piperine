@@ -2307,8 +2307,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 15 targets in the crate (design.md's table); every test keeps its name
-- [ ] Plan lowered to 15; Gate check passes: Ledger
+- [x] 15 targets in the crate (design.md's table); every test keeps its name
+  - Annotation: the crate held 31 `types_*` and 27 `elab_*` targets, not the 30 and 26 of the text. `book` and `spec_codes` (named by no task) became modules of `spec_structure`, and `elab_buck` is the module `buck_converter` (its support module `buck` keeps the name). The plan counts them: msl, pom, std, six types, four elab, spec_structure, refusals = 15. Counts per target equal the `#[test]` count of their former files: types 88/56/72/69/80/88, elab 75/49/95/193, spec_structure 29.
+- [x] Plan lowered to 15; Gate check passes: Ledger
+  - Annotation: the one `Checked` fixture for `design_of`/`diagnostics`/`snippet` (T86's What) is not done here: the fourteen copies differ in signature (some return the source with the diagnostics, some take items and a body) and are free helpers of the files, so they close with T91 as methods of fixture types, together with every other helper.
 
 **Tests**: integration
 **Gate**: ledger

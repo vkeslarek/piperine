@@ -18,8 +18,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run typestruct**: `cargo test -p piperine-lang --test types_structure`
-**Run elabstruct**: `cargo test -p piperine-lang --test elab_structure`
+**Run typestruct**: `cargo test -p piperine-lang --test types_modules structure::`
+**Run elabstruct**: `cargo test -p piperine-lang --test elab_structure structure::`
 **Run sswitch**: `cargo test -p piperine-parity --test source_switch`
 **Run sderiv**: `cargo test -p piperine-parity --test source_derivative`
 **Run smodules**: `cargo test -p piperine-parity --test source_modules`

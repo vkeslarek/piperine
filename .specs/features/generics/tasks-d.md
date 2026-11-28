@@ -12,21 +12,21 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Draft
 **Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typestempl**: `cargo test -p piperine-lang --test types_templates`
-**Run typesimplicit**: `cargo test -p piperine-lang --test types_implicit`
-**Run typestraits**: `cargo test -p piperine-lang --test types_traits`
-**Run elabtempl**: `cargo test -p piperine-lang --test elab_templates`
-**Run elabimplicit**: `cargo test -p piperine-lang --test elab_implicit`
+**Run typestempl**: `cargo test -p piperine-lang --test types_generics templates::`
+**Run typesimplicit**: `cargo test -p piperine-lang --test types_modules implicit::`
+**Run typestraits**: `cargo test -p piperine-lang --test types_generics traits::`
+**Run elabtempl**: `cargo test -p piperine-lang --test elab_structure templates::`
+**Run elabimplicit**: `cargo test -p piperine-lang --test elab_values implicit::`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
-**Run typesgen**: `cargo test -p piperine-lang --test types_generics`
+**Run typesgen**: `cargo test -p piperine-lang --test types_generics generics::`
 **Run srctempl**: `cargo test -p piperine-parity --test source_templates`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
-**Run elabparams**: `cargo test -p piperine-lang --test elab_params`
-**Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
-**Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
+**Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
+**Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
+**Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`

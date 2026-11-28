@@ -12,19 +12,19 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-project -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-**Run typesvalues**: `cargo test -p piperine-lang --test types_values`
-**Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
-**Run typescarriers**: `cargo test -p piperine-lang --test types_carriers`
-**Run typesresults**: `cargo test -p piperine-lang --test types_results`
+**Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
+**Run typesvalues**: `cargo test -p piperine-lang --test types_values values::`
+**Run typesmodules**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run typescarriers**: `cargo test -p piperine-lang --test types_carriers carriers::`
+**Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesstructure**: `cargo test -p piperine-lang --test types_structure`
-**Run elabvalues**: `cargo test -p piperine-lang --test elab_values`
-**Run elabanalog**: `cargo test -p piperine-lang --test elab_analog`
-**Run elabentry**: `cargo test -p piperine-lang --test elab_entry`
-**Run elabinstances**: `cargo test -p piperine-lang --test elab_instances`
-**Run elabparams**: `cargo test -p piperine-lang --test elab_params`
-**Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
+**Run typesstructure**: `cargo test -p piperine-lang --test types_modules structure::`
+**Run elabvalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run elabanalog**: `cargo test -p piperine-lang --test elab_analog analog::`
+**Run elabentry**: `cargo test -p piperine-lang --test elab_values entry::`
+**Run elabinstances**: `cargo test -p piperine-lang --test elab_structure instances::`
+**Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
+**Run elabfiles**: `cargo test -p piperine-lang --test elab_structure files::`
 **Run msformat**: `cargo test -p piperine-lang --test msl format::`
 **Run stdgalleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run irchecks**: `cargo test -p piperine-ir --test model check::`

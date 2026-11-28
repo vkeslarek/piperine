@@ -13,17 +13,17 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-digital/design.md`
 **Status**: Approved
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-ir --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-interp --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-plan --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-transpile --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo build -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run tint**: `cargo test -p piperine-lang --test types_integers`
-**Run tcomp**: `cargo test -p piperine-lang --test types_compound`
-**Run tcar**: `cargo test -p piperine-lang --test types_carriers`
-**Run tev**: `cargo test -p piperine-lang --test types_events`
-**Run tres**: `cargo test -p piperine-lang --test types_results`
-**Run tbuck**: `cargo test -p piperine-lang --test types_buck`
-**Run evalues**: `cargo test -p piperine-lang --test elab_values`
-**Run edig**: `cargo test -p piperine-lang --test elab_digital`
-**Run eres**: `cargo test -p piperine-lang --test elab_results`
-**Run emix**: `cargo test -p piperine-lang --test elab_mixed`
-**Run ebuck**: `cargo test -p piperine-lang --test elab_buck`
+**Run tint**: `cargo test -p piperine-lang --test types_values integers::`
+**Run tcomp**: `cargo test -p piperine-lang --test types_patterns compound::`
+**Run tcar**: `cargo test -p piperine-lang --test types_carriers carriers::`
+**Run tev**: `cargo test -p piperine-lang --test types_analog events::`
+**Run tres**: `cargo test -p piperine-lang --test types_modules results::`
+**Run tbuck**: `cargo test -p piperine-lang --test types_modules buck::`
+**Run evalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run edig**: `cargo test -p piperine-lang --test elab_digital digital::`
+**Run eres**: `cargo test -p piperine-lang --test elab_digital results::`
+**Run emix**: `cargo test -p piperine-lang --test elab_analog mixed::`
+**Run ebuck**: `cargo test -p piperine-lang --test elab_structure buck_converter::`
 **Run iramend**: `cargo test -p piperine-ir --test model amendments::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planamend**: `cargo test -p piperine-plan --test shape amended_shape::`

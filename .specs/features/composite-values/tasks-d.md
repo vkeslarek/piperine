@@ -26,8 +26,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run planw**: `cargo test -p piperine-plan --test shape number_widths::`
 **Run rtw**: `cargo test -p piperine-transpile --lib rt::widths`
 **Run tw**: `cargo test -p piperine-transpile --test print number_widths::`
-**Run typesw**: `cargo test -p piperine-lang --test types_number_widths`
-**Run elabw**: `cargo test -p piperine-lang --test elab_number_widths`
+**Run typesw**: `cargo test -p piperine-lang --test types_values number_widths::`
+**Run elabw**: `cargo test -p piperine-lang --test elab_values number_widths::`
 **Run srcw**: `cargo test -p piperine-parity --release --test source_number_widths`
 **Run apiw**: `cargo test -p piperine-api --test host number_widths::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`

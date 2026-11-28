@@ -20,9 +20,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run checkpoint**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol protocol_transient::`
 **Run protoop**: `cargo test -p piperine-solver --test protocol protocol_operating_point::`
-**Run typesevents**: `cargo test -p piperine-lang --test types_events`
-**Run typesanalog**: `cargo test -p piperine-lang --test types_analog`
-**Run elabdigital**: `cargo test -p piperine-lang --test elab_digital`
+**Run typesevents**: `cargo test -p piperine-lang --test types_analog events::`
+**Run typesanalog**: `cargo test -p piperine-lang --test types_analog analog::`
+**Run elabdigital**: `cargo test -p piperine-lang --test elab_digital digital::`
 **Run sourceevents**: `cargo test -p piperine-parity --test source_events`
 **Run sourcelimexp**: `cargo test -p piperine-parity --test source_limexp`
 **Run paritytran**: `cargo test -p piperine-parity --test parity_tran`

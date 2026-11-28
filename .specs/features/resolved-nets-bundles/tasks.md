@@ -13,8 +13,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 as planned then; the amendment of B2 onward has no approval yet)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run pombundles**: `cargo test -p piperine-lang --test pom bundles::`
-**Run typesbundles**: `cargo test -p piperine-lang --test types_bundles`
-**Run elabbundles**: `cargo test -p piperine-lang --test elab_bundles`
+**Run typesbundles**: `cargo test -p piperine-lang --test types_carriers bundles::`
+**Run elabbundles**: `cargo test -p piperine-lang --test elab_digital bundles::`
 **Run sourcebundles**: `cargo test -p piperine-parity --test source_bundles`
 **Run apimetadata**: `cargo test -p piperine-api --test session metadata::`
 **Run pomreflect**: `cargo test -p piperine-lang --test pom reflect::`
@@ -22,7 +22,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
+**Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
 **Run msl_parser**: `cargo test -p piperine-lang --test msl parser::`
 **Run digitalinstant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run sourcewraps**: `cargo test -p piperine-parity --test source_wraps`

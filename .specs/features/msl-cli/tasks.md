@@ -30,12 +30,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run commands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run book**: `cargo test -p piperine-lang --test book`
+**Run book**: `cargo test -p piperine-lang --test spec_structure book::`
 **Run format**: `cargo test -p piperine-lang --test msl format::`
 **Run print**: `cargo test -p piperine-lang --test msl print::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 **Run suite**: `cargo test -p piperine-repository-guards --test suite`
-**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`
+**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure structure::`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number or a wrong page with no error, or deletes a user's comment: T1, T6, T14, T21, T25, T36, T41, T42, T44, T45, T46, T47. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources.
 

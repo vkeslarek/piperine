@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run reflect**: `cargo test -p piperine-lang --test pom reflect::`
 **Run docs**: `cargo test -p piperine-lang --test pom docs::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
-**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`
+**Run spec_structure**: `cargo test -p piperine-lang --test spec_structure structure::`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-polish`. Do not set `CARGO_TARGET_DIR` (the environment provides it). Never pass `--workspace`: the other crates do not build and are out of scope. `CLAUDE.md` still describes the retired Verilog-AMS pipeline; for this feature the facts are in `spec.md` and `design.md`.
 
