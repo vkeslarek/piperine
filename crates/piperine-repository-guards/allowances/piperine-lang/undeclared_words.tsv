@@ -506,13 +506,12 @@ crates/piperine-lang/tests/elab_structure/instances.rs::a_node_init_is_recorded_
 crates/piperine-lang/tests/elab_structure/instances.rs::a_node_init_that_reads_a_param_is_folded_per_variant	1
 crates/piperine-lang/tests/elab_structure/instances.rs::an_unnamed_placement_is_module_hash_k	1
 crates/piperine-lang/tests/elab_structure/instances.rs::instances_come_in_pre_order	1
-crates/piperine-lang/tests/elab_structure/main.rs::unlowered	1
 crates/piperine-lang/tests/elab_structure/structure.rs::the_stdlib_idt_is_the_generic_module_at_its_default_nature	1
 crates/piperine-lang/tests/elab_structure/templates.rs::inst_name_in_the_module_that_places_the_template_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_structure/templates.rs::inst_name_through_a_template_param_reads_the_concrete_module	1
 crates/piperine-lang/tests/elab_structure/templates.rs::templates_fold_from_consts_functions_and_two_levels_of_params	1
-crates/piperine-lang/tests/elab_structure/unlowered.rs::m_or_dtemp_at_a_placement_is_e0320	1
-crates/piperine-lang/tests/elab_structure/unlowered.rs::src	1
+crates/piperine-lang/tests/elab_structure/refused_placements.rs::m_or_dtemp_at_a_placement_is_e0320	1
+crates/piperine-lang/tests/elab_structure/refused_placements.rs::src	1
 crates/piperine-lang/tests/elab_values/aggregates.rs::n	1
 crates/piperine-lang/tests/elab_values/aggregates.rs::the_stdlib_polynomial_helpers_fold	1
 crates/piperine-lang/tests/elab_values/control.rs::an_unfoldable_recursion_from_analog_is_e0126	1

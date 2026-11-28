@@ -257,15 +257,15 @@ block	simulation#7	5068c25da271a189	shown	-	-	-
 block	simulation#8	bb39a1d477539ba8	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis transient --stop 40e-6 --print b --print-step 10e-6
 block	simulation#9	e9f2e26422078619	shown	-	-	-
 block	simulation#10	93d9904c6f268314	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run divider.msl --analysis ac --from 1e3 --to 1e6 --per-decade 1 --print b
-block	cheatsheet#1	a91c1587123be4d7	run	piperine/book::cheatsheet::the_nature_card_is_the_standard_librarys	-	-
-block	cheatsheet#2	69490dc245b2826e	run	piperine/book::cheatsheet::the_module_card_runs_with_its_value_input_and_its_out_carrier	-	-
-block	cheatsheet#3	46efd56252751d3d	run	piperine/book::cheatsheet::the_body_items_card_runs_with_its_generation	-	-
-block	cheatsheet#4	dbde27824bc2538e	run	piperine/book::cheatsheet::the_analog_card_runs	-	-
-block	cheatsheet#5	61d8b738cee24c41	run	piperine/book::cheatsheet::the_digital_card_runs	-	-
+block	cheatsheet#1	a91c1587123be4d7	run	piperine/book::cheat_sheet::the_nature_card_is_the_standard_librarys	-	-
+block	cheatsheet#2	69490dc245b2826e	run	piperine/book::cheat_sheet::the_module_card_runs_with_its_value_input_and_its_out_carrier	-	-
+block	cheatsheet#3	46efd56252751d3d	run	piperine/book::cheat_sheet::the_body_items_card_runs_with_its_generation	-	-
+block	cheatsheet#4	dbde27824bc2538e	run	piperine/book::cheat_sheet::the_analog_card_runs	-	-
+block	cheatsheet#5	61d8b738cee24c41	run	piperine/book::cheat_sheet::the_digital_card_runs	-	-
 block	cheatsheet#6	11929fb57ae578b1	fragment	mixed#7	-	-
-block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book::cheatsheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
-block	cheatsheet#8	c2d75bfd6e731da6	run	piperine/book::cheatsheet::the_template_card_runs	-	-
-block	cheatsheet#9	922342b0e4390458	run	piperine/book::cheatsheet::the_files_card_runs	-	-
+block	cheatsheet#7	610d8e0e5f75dd38	run	piperine/book::cheat_sheet::the_debug_prints_card_runs_with_its_analog_trace	-	-
+block	cheatsheet#8	c2d75bfd6e731da6	run	piperine/book::cheat_sheet::the_template_card_runs	-	-
+block	cheatsheet#9	922342b0e4390458	run	piperine/book::cheat_sheet::the_files_card_runs	-	-
 block	cheatsheet#10	6aa7d49559ddcad2	shown	-	-	-
 block	cheatsheet#11	7b3f0b719a47144e	shown	-	-	-
 block	cheatsheet#12	1fbd01e9a89541fd	shown	-	-	-
@@ -726,7 +726,7 @@ claim	simulation~eca3157d	eca3157d52247a87	holds	piperine/book::simulation::a_lo
 claim	simulation~445b2b41	445b2b413d788619	holds	piperine/book::simulation::a_longer_stop_scales_both_bounds_and_the_error_control_sets_the_steps	-	The first 40 µs now have 41 rows instead of 112.
 claim	simulation~10fcbb44	10fcbb449738685a	prose	-	-	In step 2 the digital side stops before it, and in step 3 the analog side solves a step that ends there.
 claim	simulation~72aa1cfc	72aa1cfcbb676de0	prose	-	-	It is the jump of step 5, with its short first step, and it is what closes the loop: the analog side raises the instant, the digital side answers in it, and the answer reaches the analog side in the step after.
-claim	cheatsheet~a9561024	a956102475bf9f2b	holds	piperine/book::cheatsheet::a_name_of_yours_hides_the_library_but_not_the_core	-	Yours hides both, except a core name (E0457).
+claim	cheatsheet~a9561024	a956102475bf9f2b	holds	piperine/book::cheat_sheet::a_name_of_yours_hides_the_library_but_not_the_core	-	Yours hides both, except a core name (E0457).
 claim	welcome~37aa8247	37aa824721bf86c4	holds	piperine/book::welcome::the_rc_project_holds_its_operating_point_and_its_netlist	-	At rest no current flows, so the output sits at the source's 1 V.
 claim	welcome~937d7801	937d7801efa02527	holds	piperine/book::welcome::the_rc_step_charges_as_the_book_says	-	The second run is a transient of 5 µs, printed every microsecond:
 claim	welcome~566f4f37	566f4f373e49124b	holds	piperine/book::welcome::the_rc_step_charges_as_the_book_says	-	That is a capacitor charging through a resistor: 63 % after one time constant r · c = 1 µs, 86 % after two.

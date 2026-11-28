@@ -22,7 +22,7 @@ mod support {
 
 mod abi;
 mod analog;
-mod cheatsheet;
+mod cheat_sheet;
 mod claims_guard;
 mod cli;
 mod compiler;

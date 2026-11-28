@@ -3,4 +3,4 @@
 
 mod catalogue;
 mod logic;
-mod stdlib_generic;
+mod standard_library_generic;

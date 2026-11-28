@@ -11,7 +11,7 @@ mod noise;
 mod op;
 mod pss;
 mod pz;
-mod sens;
+mod sensitivity;
 mod temp;
 mod tf;
 mod tran;

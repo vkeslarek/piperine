@@ -59,7 +59,7 @@ in the IR or in a separate side table, never in the authored module/instance tre
 | `piperine-parity` | Test-only: ngspice parity of the MSL twins under one `ToleranceContract`, runs MSL from source, the buck targets. |
 | `piperine-device-fixtures` | Test-only: the hand-written ABI devices the back-end test suites share, one type per device, and `PartialsCheck`. Depends on `piperine-abi` alone. |
 | `piperine-ir-fixtures` | Test-only: the hand-built IR bodies the tests of ir, plan, interp, transpile and parity share (`Buck`, `Devices`, the expression builders, `TopDesign`). Depends on `piperine-ir` alone. |
-| `piperine-lang-fixtures` | Test-only: the source texts, designs and readers the tests of `piperine-lang` share (`PomSource`, `CheckedSource`, `Elab`, `BuckSource`, `SpecCorpus`). Depends on `piperine-lang` and `piperine-ir`. |
+| `piperine-lang-fixtures` | Test-only: the source texts, designs and readers the tests of `piperine-lang` share (`PomSource`, `CheckedSource`, `LoweringCodes`, `SourceElaboration`, `ElaborationForms`, `IrReading`, `BuckSource`, `GenericSources`, `SpecCorpus`, `SpecTables`). Depends on `piperine-lang` and `piperine-ir`. |
 | `piperine-repository-guards` | Test-only: the guards over the repository itself (workspace boundaries, suite hygiene, the proof ledger) and the source scan they share. |
 
 ## Build and test

@@ -4,7 +4,7 @@
 mod delay;
 mod derivative;
 mod environment;
-mod limexp;
+mod limited_exponential;
 mod partial;
 mod slew;
 mod switch;
