@@ -321,25 +321,15 @@ impl ValueLowering<'_, '_, '_> {
             ExprKind::Paren(inner) => self.lower_option(scope, *inner),
             // one element of an array of carriers that hold `Option`s: its two halves, each unpacked from the element read
             ExprKind::Index { .. } if let Lookup::Found(element) = self.digital().element_lookup(scope, expr) => {
-                let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
-                    let packed = this.digital().carrier_element_read(scope, element, origin.clone());
-                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
-                };
-                let is = half(self, LevelPart::Is, ValueType::Bool)?;
-                let val = half(self, LevelPart::Value, payload.clone())?;
-                Some(Pair { is, val, literal: None })
+                self.option_halves(&payload, &origin, |this| Some(this.digital().carrier_element_read(scope, element, origin.clone())))
             }
             // one element of an array of `Option`s: the two halves of the packed element, each unpacked from the read
             ExprKind::Index { expr: base, index } if matches!(self.typed(*base), Some(Ty::Array(..))) => {
-                let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                self.option_halves(&payload, &origin, |this| {
                     let whole = this.lower_expr(scope, *base)?;
                     let at = this.lower_expr(scope, *index)?;
-                    let packed = this.emit(Expr::Index { expr: whole, index: at }, ValueType::Option(Box::new(payload.clone())), origin.clone());
-                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
-                };
-                let is = half(self, LevelPart::Is, ValueType::Bool)?;
-                let val = half(self, LevelPart::Value, payload.clone())?;
-                Some(Pair { is, val, literal: None })
+                    Some(this.emit(Expr::Index { expr: whole, index: at }, ValueType::Option(Box::new(payload.clone())), origin.clone()))
+                })
             }
             ExprKind::Path(path) => self.lower_option_path(scope, expr, *path, &payload, origin),
             // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
@@ -373,14 +363,10 @@ impl ValueLowering<'_, '_, '_> {
             // field read where it stands.
             ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) => {
                 let index = self.field_index(&self.typed(*recv)?, &name.text)?;
-                let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+                self.option_halves(&payload, &origin, |this| {
                     let base = this.lower_expr(scope, *recv)?;
-                    let packed = this.emit(Expr::Field { expr: base, index }, ValueType::Option(Box::new(payload.clone())), origin.clone());
-                    Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
-                };
-                let is = half(self, LevelPart::Is, ValueType::Bool)?;
-                let val = half(self, LevelPart::Value, payload.clone())?;
-                Some(Pair { is, val, literal: None })
+                    Some(this.emit(Expr::Field { expr: base, index }, ValueType::Option(Box::new(payload.clone())), origin.clone()))
+                })
             }
             // `a.first()`, `a.last()`, `a.get(i)` of an array (H.5).
             ExprKind::MethodCall { recv, args, .. } if matches!(self.state.types.method(expr), Some(Method::ArrayFirst | Method::ArrayLast | Method::ArrayGet)) => {
@@ -427,6 +413,18 @@ impl ValueLowering<'_, '_, '_> {
             },
             _ => refused(self),
         }
+    }
+
+    /// The pair of an `Option` read where it stands: its two halves, each unpacked from a fresh read of the packed value that
+    /// `read_packed` lowers (the flag first, then the payload of type `payload`). `None` after a diagnostic.
+    fn option_halves(&mut self, payload: &ValueType, origin: &Origin, mut read_packed: impl FnMut(&mut Self) -> Option<LoweredExpr>) -> Option<Pair> {
+        let mut half = |this: &mut Self, part: LevelPart, ty: ValueType| {
+            let packed = read_packed(this)?;
+            Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
+        };
+        let is = half(self, LevelPart::Is, ValueType::Bool)?;
+        let val = half(self, LevelPart::Value, payload.clone())?;
+        Some(Pair { is, val, literal: None })
     }
 
     /// The pair a name of `Option` type lowers to: `None`, an `Option` local or input, a param, a carrier, or the initializer

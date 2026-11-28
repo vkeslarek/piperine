@@ -193,81 +193,8 @@ impl DigitalLowering<'_, '_, '_> {
                 }
                 Some(all)
             }
-            ExprKind::MethodCall { recv, .. } => match self.state.types.builtin(expr) {
-                Some(Builtin::Changed) if let Some(param) = self.param_of(scope, *recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
-                Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) if let Lookup::Found(element) = self.element_lookup(scope, *recv) => {
-                    // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
-                    let at = self.folded_element(scope, *recv, element)?;
-                    let discrete = match edge {
-                        Builtin::Rise => vec![self.element_rise_guard(scope, element, origin.clone())],
-                        Builtin::Fall => vec![self.element_fall_guard(scope, element, origin.clone())],
-                        _ => Vec::new(),
-                    };
-                    Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
-                }
-                Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) => {
-                    let carrier = self.carrier_of(scope, *recv)?;
-                    let discrete = match edge {
-                        Builtin::Rise => vec![self.rise_guard(carrier, origin.clone())],
-                        Builtin::Fall => vec![self.fall_guard(carrier, origin.clone())],
-                        _ => Vec::new(),
-                    };
-                    Some(vec![Disjunct { source: EventSource::Changed(carrier), discrete, continuous: Vec::new(), origin }])
-                }
-                _ if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
-                _ => {
-                    self.refuse(scope.values.file, node.span, AnalogForm::MethodAsEvent);
-                    None
-                }
-            },
-            ExprKind::Call { args, .. } => match self.state.types.callee(expr) {
-                // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
-                Some(Callee::Function(function)) if self.functions().is_event_function(function) => self.functions().event_function_disjuncts(scope, expr, function),
-                // The same through a method: `Trait::fires(x)` and a call through a bound.
-                Some(Callee::Method(_) | Callee::Bound { .. }) if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
-                Some(Callee::Core(id)) if id.info().name == "cross" => {
-                    // `cross(e, ttol, etol)`: positionally or by name (§3.2)
-                    let (mut watched, mut ttol, mut etol) = (None, None, None);
-                    for (i, a) in args.iter().enumerate() {
-                        let slot = match a.name.as_ref().map(|n| n.text.as_str()) {
-                            Some("e") => 0,
-                            Some("ttol") => 1,
-                            Some("etol") => 2,
-                            Some(_) => continue,
-                            None => i,
-                        };
-                        match slot {
-                            0 => watched = Some(a.value),
-                            1 => ttol = Some(a.value),
-                            2 => etol = Some(a.value),
-                            _ => {}
-                        }
-                    }
-                    let watched = self.event_argument(scope, watched?)?;
-                    let ttol = self.tolerance(scope, ttol)?;
-                    let etol = self.tolerance(scope, etol)?;
-                    Some(vec![Disjunct { source: EventSource::Cross { e: watched, ttol, etol }, discrete: Vec::new(), continuous: Vec::new(), origin }])
-                }
-                Some(Callee::Core(id)) if id.info().name == "at" => {
-                    let time = self.event_argument(scope, args[0].value)?;
-                    Some(vec![Disjunct { source: EventSource::At(time), discrete: Vec::new(), continuous: Vec::new(), origin }])
-                }
-                // A module with an `Event` result (`above`, `init`): its result, in its frame.
-                Some(Callee::Module(_)) | None if self.structure().result_callee(expr).is_some() => {
-                    let frame = self.structure().frame_of(scope, expr)?;
-                    let module = self.state.structure.frames[frame].module;
-                    let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return None };
-                    let result = m.result?;
-                    let entry = self.structure().enter_frame(scope, frame);
-                    let lowered = self.disjuncts(scope, result);
-                    self.structure().leave_frame(scope, entry);
-                    lowered
-                }
-                _ => {
-                    self.refuse(scope.values.file, node.span, AnalogForm::CallAsEvent);
-                    None
-                }
-            },
+            ExprKind::MethodCall { recv, .. } => self.method_event_disjuncts(scope, expr, *recv, origin, node.span),
+            ExprKind::Call { args, .. } => self.call_event_disjuncts(scope, expr, args, origin, node.span),
             // A module-body `let` of an event (`let tick = at(..); tick`): its value, in place;
             // and `settle`, the event of the settle phase (§13 rules 10, 14, 17).
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
@@ -285,6 +212,91 @@ impl DigitalLowering<'_, '_, '_> {
             },
             _ => {
                 self.refuse(scope.values.file, node.span, AnalogForm::FormOfEvent);
+                None
+            }
+        }
+    }
+
+    /// The disjuncts of the method call `expr` on `recv` as an event (`c.changed()`, `c.rise()`, `c.fall()`, a method returning
+    /// `Event`). `None` after a diagnostic.
+    fn method_event_disjuncts(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, origin: Origin, span: crate::msl::Span) -> Option<Vec<Disjunct>> {
+        match self.state.types.builtin(expr) {
+            Some(Builtin::Changed) if let Some(param) = self.param_of(scope, recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
+            Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) if let Lookup::Found(element) = self.element_lookup(scope, recv) => {
+                // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
+                let at = self.folded_element(scope, recv, element)?;
+                let discrete = match edge {
+                    Builtin::Rise => vec![self.element_rise_guard(scope, element, origin.clone())],
+                    Builtin::Fall => vec![self.element_fall_guard(scope, element, origin.clone())],
+                    _ => Vec::new(),
+                };
+                Some(vec![Disjunct { source: EventSource::ElementChanged { carrier: element.carrier, element: at }, discrete, continuous: Vec::new(), origin }])
+            }
+            Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) => {
+                let carrier = self.carrier_of(scope, recv)?;
+                let discrete = match edge {
+                    Builtin::Rise => vec![self.rise_guard(carrier, origin.clone())],
+                    Builtin::Fall => vec![self.fall_guard(carrier, origin.clone())],
+                    _ => Vec::new(),
+                };
+                Some(vec![Disjunct { source: EventSource::Changed(carrier), discrete, continuous: Vec::new(), origin }])
+            }
+            _ if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
+            _ => {
+                self.refuse(scope.values.file, span, AnalogForm::MethodAsEvent);
+                None
+            }
+        }
+    }
+
+    /// The disjuncts of the call `expr` with `args` as an event (a function returning `Event`, `cross`, `at`, a module with an
+    /// `Event` result). `None` after a diagnostic.
+    fn call_event_disjuncts(&mut self, scope: &mut Scope, expr: ExprId, args: &[crate::pom::Arg], origin: Origin, span: crate::msl::Span) -> Option<Vec<Disjunct>> {
+        match self.state.types.callee(expr) {
+            // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
+            Some(Callee::Function(function)) if self.functions().is_event_function(function) => self.functions().event_function_disjuncts(scope, expr, function),
+            // The same through a method: `Trait::fires(x)` and a call through a bound.
+            Some(Callee::Method(_) | Callee::Bound { .. }) if self.functions().is_event_method(expr) => self.functions().event_method_disjuncts(scope, expr),
+            Some(Callee::Core(id)) if id.info().name == "cross" => {
+                // `cross(e, ttol, etol)`: positionally or by name (§3.2)
+                let (mut watched, mut ttol, mut etol) = (None, None, None);
+                for (i, a) in args.iter().enumerate() {
+                    let slot = match a.name.as_ref().map(|n| n.text.as_str()) {
+                        Some("e") => 0,
+                        Some("ttol") => 1,
+                        Some("etol") => 2,
+                        Some(_) => continue,
+                        None => i,
+                    };
+                    match slot {
+                        0 => watched = Some(a.value),
+                        1 => ttol = Some(a.value),
+                        2 => etol = Some(a.value),
+                        _ => {}
+                    }
+                }
+                let watched = self.event_argument(scope, watched?)?;
+                let ttol = self.tolerance(scope, ttol)?;
+                let etol = self.tolerance(scope, etol)?;
+                Some(vec![Disjunct { source: EventSource::Cross { e: watched, ttol, etol }, discrete: Vec::new(), continuous: Vec::new(), origin }])
+            }
+            Some(Callee::Core(id)) if id.info().name == "at" => {
+                let time = self.event_argument(scope, args[0].value)?;
+                Some(vec![Disjunct { source: EventSource::At(time), discrete: Vec::new(), continuous: Vec::new(), origin }])
+            }
+            // A module with an `Event` result (`above`, `init`): its result, in its frame.
+            Some(Callee::Module(_)) | None if self.structure().result_callee(expr).is_some() => {
+                let frame = self.structure().frame_of(scope, expr)?;
+                let module = self.state.structure.frames[frame].module;
+                let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return None };
+                let result = m.result?;
+                let entry = self.structure().enter_frame(scope, frame);
+                let lowered = self.disjuncts(scope, result);
+                self.structure().leave_frame(scope, entry);
+                lowered
+            }
+            _ => {
+                self.refuse(scope.values.file, span, AnalogForm::CallAsEvent);
                 None
             }
         }

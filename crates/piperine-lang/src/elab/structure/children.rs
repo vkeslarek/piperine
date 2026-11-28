@@ -259,12 +259,7 @@ impl StructureLowering<'_, '_, '_> {
         let node = self.state.design.expr_node(call).clone();
         let file = self.state.design.decl_data(node.owner).file;
         let ExprKind::Call { args, class, .. } = &node.kind else { return None };
-        let placed = match class {
-            CallClass::Instance { module: Some(m), .. } => *m == module,
-            CallClass::Instance { module: None, via: Some(via) } => self.is_module_param(*via),
-            _ => false,
-        };
-        if !placed {
+        if !self.is_placement_of(class, module) {
             self.refuse(file, node.span, StructureForm::PlacementThroughTemplateValue);
             return None;
         }
@@ -272,13 +267,47 @@ impl StructureLowering<'_, '_, '_> {
         let fields = if through.is_some() { Vec::new() } else { self.placement_fields(call, module) };
         let module_name = self.state.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
+        let ports: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
+        let (bound, ok) = self.bind_child_ports(scope, &name, &ports, args);
+        let PortBindings { terminals, carriers, windows } = bound;
+        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
+        let (given, key_values) = self.child_given_and_keys(scope, (module, instance.as_ref()), (through, &fields, ok), index, (file, node.span))?;
+        if !self.port_shapes_agree(scope, &ports, args, &key_values) {
+            return None;
+        }
+        let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
+        let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
+        let origin = self.state.locator.origin(file, node.span);
+        // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
+        let child = Child { name: name.clone(), body, nodes: terminals.clone(), params, origin };
+        // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
+        if !carriers.is_empty() {
+            self.state.digital.structure.child_carriers.push((index, carriers.clone()));
+        }
+        // the part of an array of carriers each port is given (`elements.rs`)
+        if windows.iter().any(Option::is_some) {
+            self.state.digital.structure.child_windows.push((index, windows));
+        }
+        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call, unrolled: scope.values.unrolled.clone() }))
+    }
+
+    /// Whether the call class `class` places `module` itself, or a module-valued parameter (a placement through a template value).
+    fn is_placement_of(&self, class: &CallClass, module: DeclId) -> bool {
+        match class {
+            CallClass::Instance { module: Some(m), .. } => *m == module,
+            CallClass::Instance { module: None, via: Some(via) } => self.is_module_param(*via),
+            _ => false,
+        }
+    }
+
+    /// The bindings of the child `name`'s `ports` to the placement's arguments, and whether every port bound (`false` after a diagnostic).
+    fn bind_child_ports(&mut self, scope: &Scope, name: &str, ports: &[DeclId], args: &[crate::pom::Arg]) -> (PortBindings, bool) {
         let mut ok = true;
         let mut bound = PortBindings { terminals: Vec::new(), carriers: Vec::new(), windows: Vec::new() };
-        let ports: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
             // a bundle port is given each field in turn (`bundles.rs`)
             if self.state.design.is_bundle_owner(*port) {
-                ok &= self.bind_bundle_port(scope, &name, *port, arg.value, &mut bound);
+                ok &= self.bind_bundle_port(scope, name, *port, arg.value, &mut bound);
                 continue;
             }
             let (terminals, carriers, windows) = (&mut bound.terminals, &mut bound.carriers, &mut bound.windows);
@@ -294,7 +323,7 @@ impl StructureLowering<'_, '_, '_> {
                 continue;
             }
             if self.state.types.carrier(*port).is_some() {
-                match self.lower_carrier_argument(scope, &name, *port, arg.value) {
+                match self.lower_carrier_argument(scope, name, *port, arg.value) {
                     Some((carrier, window)) => {
                         if matches!(&self.state.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
                             self.state.digital.structure.handed.push((carrier, window));
@@ -315,10 +344,16 @@ impl StructureLowering<'_, '_, '_> {
                 None => ok = false,
             }
         }
-        let PortBindings { terminals, carriers, windows } = bound;
-        let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
+        (bound, ok)
+    }
+
+    /// The given parameters and the key values of the child at `index`: from its template value when it is placed through one, from
+    /// its fields otherwise. `ports_bound` is the verdict of the port bindings, checked once the given parameters are lowered.
+    /// `None` after a diagnostic.
+    fn child_given_and_keys(&mut self, scope: &Scope, (module, instance): (DeclId, Option<&Instance>), (through, fields, ports_bound): (Option<TemplateValue>, &[FieldInit], bool), index: u32, (file, span): (FileId, crate::msl::Span)) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
+        let mut ok = ports_bound;
         let templated = match &through {
-            Some(template) => match self.template_values(template, instance.as_ref(), file, node.span) {
+            Some(template) => match self.template_values(template, instance, file, span) {
                 Some(values) => Some(values),
                 None => return None,
             },
@@ -326,7 +361,7 @@ impl StructureLowering<'_, '_, '_> {
         };
         let given = match &templated {
             Some((given, _)) => Some(given.clone()),
-            None => self.lower_given(scope, file, module, index, &fields),
+            None => self.lower_given(scope, file, module, index, fields),
         };
         let given = match given {
             Some(given) => given,
@@ -340,29 +375,18 @@ impl StructureLowering<'_, '_, '_> {
         }
         let key_values = match templated {
             Some((_, keys)) => keys,
-            None => self.child_key_values(scope, (module, instance.as_ref()), &fields, file, node.span)?,
+            None => self.child_key_values(scope, (module, instance), fields, file, span)?,
         };
+        Some((given, key_values))
+    }
+
+    /// Whether every array argument of the placement agrees in shape with its port, under the key values.
+    fn port_shapes_agree(&mut self, scope: &Scope, ports: &[DeclId], args: &[crate::pom::Arg], key_values: &Bindings) -> bool {
         let mut shapes_agree = true;
         for (port, arg) in ports.iter().zip(args) {
-            shapes_agree &= self.digital().check_array_argument(scope, *port, arg.value, &key_values);
+            shapes_agree &= self.digital().check_array_argument(scope, *port, arg.value, key_values);
         }
-        if !shapes_agree {
-            return None;
-        }
-        let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
-        let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
-        let origin = self.state.locator.origin(file, node.span);
-        // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
-        let child = Child { name: name.clone(), body, nodes: terminals.clone(), params, origin };
-        // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
-        if !carriers.is_empty() {
-            self.state.digital.structure.child_carriers.push((index, carriers.clone()));
-        }
-        // the part of an array of carriers each port is given (`elements.rs`)
-        if windows.iter().any(Option::is_some) {
-            self.state.digital.structure.child_windows.push((index, windows));
-        }
-        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call, unrolled: scope.values.unrolled.clone() }))
+        shapes_agree
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement

@@ -10,15 +10,13 @@ crates/piperine-ir/src/print/expression.rs::Printer::stmt	kept: one arm per vari
 crates/piperine-ir/src/statements.rs::Statements::of	-
 crates/piperine-lang/src/elab/structure/body.rs::StructureLowering::lower_body_under_substitution	kept: the pass order of one body, each step a call into its concern
 crates/piperine-lang/src/elab/digital/carriers.rs::DigitalLowering::lower_carrier	kept: one carrier built in the order its parts depend on each other (role and initial value, nature, type, array shape, initializer, name), each stage reading the one before
-crates/piperine-lang/src/elab/structure/children.rs::StructureLowering::lower_child	kept: one placement in the order the IR needs it (classify the call, bind each port, fold the key params, request the body, build the child), each stage's result feeding the next
-crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option	kept: an exhaustive match over the forms of an `Option` expression, one arm per form, the long ones already methods
+crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option	kept: an exhaustive match over the forms of an `Option` expression, one arm per form; the repeated unpacking of a packed read is `option_halves`, the long arms already methods
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_method	kept: an exhaustive match over the Option methods of Appendix H, one arm per method
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_row	kept: an exhaustive match over the Option rows of Appendix H.4, one arm per row
 crates/piperine-lang/src/elab/consts/evaluator/methods.rs::ConstEval::known_method	kept: one arm per method row of Appendix H, each folding its constants
 crates/piperine-lang/src/elab/consts/evaluator/sequences.rs::ConstEval::run_row	kept: one arm per sequence row of Appendix H.7
 crates/piperine-lang/src/elab/digital/element_commits.rs::DigitalLowering::place_target	kept: one place read from its root outward (reached place, root, carrier, element, then each path step), the steps sharing the type being narrowed
 crates/piperine-lang/src/elab/digital/elements.rs::DigitalLowering::node_run	kept: one name resolved to a run of nodes in order (peel the indexes, find the frame and declaration, the shape, the implicit generation ordinals, each index folded into the flat position), the stages sharing the shape's dims
-crates/piperine-lang/src/elab/digital/events.rs::DigitalLowering::disjuncts	kept: an exhaustive match over the forms of an event expression (part IV §13 rule 1), one arm per form
 crates/piperine-lang/src/elab/functions/declarations.rs::FunctionLowering::lower_function	kept: one variant in the order its IR function needs (name, parameters, declared result, body, half-specific locals), the stages sharing the scope and the flag the parameters set
 crates/piperine-lang/src/elab/structure/hoist.rs::StructureLowering::hoist	kept: one hoisted placement in the order its frame needs (the callee and the cycle check, the params under the caller's substitution, the frame, the out and node ports, the lowering inside it), the substitution swapped around two of the stages
 crates/piperine-lang/src/elab/value/iterators.rs::ValueLowering::prepare	kept: the source of the sequence, then each adaptor in order, the stages and the length built up by both
