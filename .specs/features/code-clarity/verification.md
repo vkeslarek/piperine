@@ -2329,3 +2329,56 @@ Need a home:
 
 - **N3.** The old `buck_enum` panicked without a `#[derive`. `BuckSource::item` accepts an enum without one. The assertions of `carriers_of_bit_are_typed_by_their_value` are unchanged.
 - **N4.** `Poker`/`Summer` are declared both in `device-fixtures/src/solver_devices/array_windows.rs` and in `digital-solver/tests/plan/array_nets.rs`. This predates phase 12; it belongs to the device-fixtures work.
+
+## Phase 12 — re-verification 2
+
+**Verdict**: PASS (two notes, not blocking)
+**Head**: e9325bec3 on `feature/code-clarity-p12` (fix commit e9325bec3 on 38693a963)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment: target-t, guard sources touched first, one cargo command at a time.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `piperine-repository-guards` | 122 passed |
+| `piperine-device-fixtures` | 4 passed |
+| `piperine-digital-solver` | 161 passed |
+| `piperine-transpile` | 168 passed |
+| `piperine-lang-fixtures` | 7 passed |
+| `piperine --test book` | 357 passed |
+| `piperine-parity` (the whole crate, with ngspice) | 653 passed, no `SKIP` |
+
+### Against e1bb2be77
+
+- The test names are identical in every crate.
+- The only `assert` lines the diff removes are the three bodies of the deleted chapter copies of `Printed::holds`. The kept `support/printed.rs` holds the same assertion with the same message.
+- No test body changed beyond the call site.
+
+### Closure of round 2
+
+| Item | Closed by | Evidence |
+| --- | --- | --- |
+| R12-1 `holds` | e9325bec3 | `welcome.rs`, `values.rs` and `natures.rs` call `support::printed::Printed::holds`, whose parse and `rounds_from` assertion are byte-equal to the three copies removed |
+| R12-1 `pnjlim` | e9325bec3 | Both device-fixtures diodes call `examples::LimitingDiode::limit_junction`, with the same body. The two `undeclared_words` rows go with the copies |
+| R12-1 `decode` | e9325bec3 | `pid.rs` calls `piperine_parity::buck_fixture::ByteInteger::decode`, with the same body |
+| R12-1 `run_cells` | e9325bec3 | The transpile `analog::structure` copy of the whole `Device` is gone, and every call is `CompiledDevice::of_body(ir, "Sw")` or `of_body(ir, "Lag")`. `of_body` builds the same way as the removed type: its own tempdir cache, `rustc: None`, the body found by name, the module from `Modules`, and `Handle::create`. `run_with_partials` is added with the removed body, and its `test_only_items` row is honest |
+| R12-2 | e9325bec3 | `EnvironmentKinds` is documented as the four kind nodes of `KindsBench` |
+| N3 | e9325bec3 | `BuckSource::item` panics when a `pub enum` has no derive, as `buck_enum` did, and keeps the derive optional for other items |
+| N4 | e9325bec3 | See below |
+| `DesignBuilder::std_source` | e9325bec3 | Its verdict is `kept: the host seam that replaces the embedded standard library`. That is honest: the builder method is public API, and only tests call it |
+
+How N4 was closed:
+
+- `array_nets.rs` uses `piperine_device_fixtures::solver_devices::array_windows::Poker`, through its `module()`.
+- The fixture's shape equals the removed copy's:
+  - `bit`: `BIT`, `PORT`;
+  - `go`: an event, `PRIVATE`;
+  - reaction `poke` writes `Statement { pin: bit, offset 0, len 1, flags 0, min_after 0 }`, which is what `Kit::statement` built;
+  - `react` commits `[1]`.
+- The two `Summer` devices differ, so keeping both is right.
+
+### Notes (not blocking)
+
+- **N5.** `array_nets.rs`'s new `Kit::placed` repeats the last line of `Kit::instance`. `instance` could end in `Kit::placed(path, module, pins)`.
+- **N6.** In `parity/src/compiled.rs`, `run` and the new `run_with_partials` each map the cells to `f64`. `run` could be `run_with_partials(..).map(|(values, _)| values)`, as the removed transpile copy wrote it.
