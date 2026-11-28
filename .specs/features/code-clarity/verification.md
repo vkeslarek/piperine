@@ -1758,3 +1758,63 @@ All the probes were reverted, and `git status` is clean.
 - **N1.** T63's What reads "(`Buck::dpwm`, 173 lines, one method per block)". `Buck::dpwm` is still 173 lines (`ir-fixtures/src/digital.rs:550-722`), with one method per buck block as at the base. If the text meant splitting `dpwm` itself, that was not done. It is a fixture outside the product length worklist.
 - **N2.** `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` is spelled 18 times in the cli tests. `Command::new` takes the `&str` as is.
 - **N3.** `CompileCache` uses `std::os::unix::process::parent_id` and `/proc`, so `piperine-parity` no longer builds off Linux. The project is Linux-only today.
+
+## Phase 9 — re-verification
+
+**Verdict**: PASS (one Low note, not blocking)
+**Head**: 3af5a76a0 on `feature/code-clarity-p9` (fix commits cf16edbaa and 3af5a76a0 on 1e7d2b75c)
+**Verifier**: independent sub-agent (Opus; author != verifier). Same environment as round 1: target-t, guard sources touched first, one cargo command at a time, no stash or clean.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line | 0 warnings, 0 errors |
+| `piperine-repository-guards` | 121 passed |
+| `piperine-ir-fixtures`, `ir`, `plan`, `interp` | 2, 162, 68, 72 passed |
+| `piperine-transpile` | 172 passed |
+| `piperine-api` | 307 passed |
+| `piperine-cli` | 144 passed |
+| `piperine-numbers`, `piperine-project` | 22, 53 passed |
+| `piperine-parity` (the whole crate) | 653 passed (649 + the four new cache tests) |
+| `piperine --test integrated` | 42 passed |
+| `piperine --test book_inventory` | 20 passed (18 + the two planted directory-target tests) |
+| `piperine --test book_claims` | 7 passed |
+
+### Closure of round 1
+
+| Finding | Closed by | Evidence |
+| --- | --- | --- |
+| P9-1 | cf16edbaa | `Coverage::resolve` (`tests/book/support/inventory.rs:248-259`) reads `<crate>/<target>::<module>::<fn>` as `tests/<target>/<module>.rs` when `tests/<target>` is a directory, and keeps the file form otherwise. `a_test_of_a_directory_target_resolves_through_its_module` and `a_missing_module_or_function_of_a_directory_target_fails` plant both cases. `book_inventory` is green, with all 30 cli rows resolving |
+| P9-2 | cf16edbaa | The approved Done-when text of T67 ("5 targets") and T68 ("`binary` and `shared_cache` exist once") is restored word for word, and each departure is written beneath it as a `Departure:` line. design.md's target table says "6 (departure from 5, T67)" with the reason |
+| P9-3 | cf16edbaa | `dependency_graph.rs:73-74` exempts `piperine-ir-fixtures` for `piperine-ir` only |
+| P9-4 | cf16edbaa | The root's `piperine-ir-fixtures` dev-dependency is gone (and its `Cargo.lock` line) |
+| P9-5 | cf16edbaa, 3af5a76a0 | The four rules each have a test. |
+| P9-6 | cf16edbaa | `host.rs:46` and `model.rs:165` describe the run's one compile cache, and both call `CompileCache::shared().settings()` |
+| P9-7 | cf16edbaa | design.md records the run half in `piperine_parity::mixed`, the transpile→parity dev edge and what it pulls in, and the Linux-only cache |
+
+The four tests that close P9-5:
+
+- `two_calls_of_the_shared_cache_give_one_directory_of_the_run` asserts the pointer identity and that the directory is `piperine-compile-cache/<parent pid>`.
+- `a_live_process_keeps_its_folder_when_finished_runs_are_removed`, `the_folder_of_a_finished_process_is_removed` (pid 4294967294, above Linux's `pid_max`, so it is never live) and `a_folder_that_is_no_process_number_is_removed` plant each case into a temporary base through the now-public `remove_finished_runs`.
+- Each would fail if the rule were inverted.
+- `a_process_that_writes_the_cache` now builds and asserts an entry even when run alone.
+- The new tests carry `uncited_tests.tsv` verdict rows.
+
+### Judgements on the fixer's choices
+
+1. **`structure~58f974e3` was stale, and deleting it loses no claim.**
+   - The sentence was "Until it is, piperine check gives the same diagnostics on the command line." It belonged to the Book's paragraph on the language server not yet built.
+   - 68351dfcd ("remove the language server and the vscode extension", an ancestor of d68de6cd5) deleted that paragraph from the Book. The removed line is shown in its diff at the Book's crate-map paragraph.
+   - No Book page carries the sentence at HEAD. `git grep "Until it is"` finds only an unrelated line in `design-verification/ideal.md`.
+   - So the row held a claim the Book no longer makes. Its test, `check_renders_every_diagnostic_and_exits_1`, still holds `errors~a1afa480`.
+   - `book_claims` is green with the row gone.
+2. **`Buck::dpwm` left unsplit is accepted.**
+   - T63's Done-when has no length criterion: it asks for the crate to build with `deny(missing_docs)`, no free function, and bodies passing `Ir::check`, and all three hold.
+   - The What's parenthesis "(`Buck::dpwm`, 173 lines, one method per block)" reads as well as a description of the fixture (one method per buck block, `dpwm` among them) as an instruction to split it. findings.md §T2 uses the same "173-line function" as a measure, not a target.
+   - The length worklist covers product code only, and the fixtures crate is test code.
+   - If the user wants it split, the owner is the god-method work (B5), not T63.
+
+### Note (Low, not blocking)
+
+- **R2-1.** `crates/piperine-cli/tests/commands/commands.rs:107` still says `// Book claims held here: errors~a1afa480, structure~58f974e3`. The second id no longer exists in the inventory. Fix: drop it from the comment.
