@@ -10,9 +10,9 @@ use piperine_lang_fixtures::pom::PomSource;
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
 /// Sources of this target: every one is `HEAD` followed by the items under test, checked from `Top`.
-struct RunSources;
+struct RunSettingSource;
 
-impl RunSources {
+impl RunSettingSource {
     /// The design of `items`, which must parse and resolve.
     fn design(items: &str) -> Design {
         let design = PomSource::build(&format!("{HEAD}{items}"));
@@ -45,10 +45,10 @@ fn temperature_is_an_option_of_the_run() {
     // GN-25 AC 1 (§8.5.2, §14.4): `temperature()` is `Option<f64>`; `unwrap_or` gives the `f64` the recommended fallback
     // reads; a const context is still refused (`E0323`, §8.1.21)
     let items = "module Top() { let t = temperature(); let k = temperature().unwrap_or(300.15); }";
-    assert_eq!(RunSources::local(items, "t"), Ty::Option(Box::new(Ty::F64)));
-    assert_eq!(RunSources::local(items, "k"), Ty::F64);
-    assert_eq!(RunSources::codes("module Top() { a: f64 = temperature().unwrap_or(1.0); }"), ["E0323"], "a param default is a const context");
-    assert_eq!(RunSources::codes("module Top() { a: f64 = temperature(); }").len(), 1, "an `f64` is not an `Option<f64>`");
+    assert_eq!(RunSettingSource::local(items, "t"), Ty::Option(Box::new(Ty::F64)));
+    assert_eq!(RunSettingSource::local(items, "k"), Ty::F64);
+    assert_eq!(RunSettingSource::codes("module Top() { a: f64 = temperature().unwrap_or(1.0); }"), ["E0323"], "a param default is a const context");
+    assert_eq!(RunSettingSource::codes("module Top() { a: f64 = temperature(); }").len(), 1, "an `f64` is not an `Option<f64>`");
 }
 
 #[test]
@@ -57,20 +57,20 @@ fn m_and_dtemp_are_ordinary_names() {
     // one that does not declare `m` refuses the binding as it refuses any unknown param (`E0320`)
     let own = "module Resistor(a: E, b: E) { r: f64 = 1k; m: Option<f64>; dtemp: f64 = 0.0; let count = m.unwrap_or(1.0); }\n\
                module Top() { signal a: E; let r1 = Resistor(a, gnd) { r: 1k, m: Some(4.0), dtemp: 5.0 }; }";
-    assert_eq!(RunSources::codes(own), Vec::<String>::new());
+    assert_eq!(RunSettingSource::codes(own), Vec::<String>::new());
     let none = PomSource::build(&format!("{HEAD}module Resistor(a: E, b: E) {{ r: f64 = 1k; }}\nmodule Top() {{ signal a: E; let r1 = Resistor(a, gnd) {{ r: 1k, m: Some(4.0) }}; }}"));
     assert_eq!(PomSource::codes(&none), ["E0320"], "no implicit param exists");
 }
 
 /// Sources over the real standard library (`multiplicity()` and the constants live there).
-struct StdSources;
+struct StandardRunSettingSource;
 
-impl StdSources {
+impl StandardRunSettingSource {
     /// The type of the binding `name` of `Top` in a clean check of the module `items` over the real `std`.
     fn local(items: &str, name: &str) -> Ty {
         let design = Design::builder().source("top.msl", &format!("{HEAD}{items}")).build();
         assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
-        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{items}", RunSources::messages(&d)));
+        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{items}", RunSettingSource::messages(&d)));
         let decl = design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Binding(_))).unwrap_or_else(|| panic!("no binding `{name}`")).id();
         types.local(decl).unwrap_or_else(|| panic!("no type for `{name}`")).clone()
     }
@@ -87,7 +87,7 @@ fn multiplicity_is_a_stdlib_function_over_simparam() {
     // GN-24 AC 1, AC 3 (§8.5.2, §22.2.2): `multiplicity()` is an ordinary `Option<f64>` function of `std`; a module
     // combines its own `m` with it in a body `let` (the same read in a param default is `E0321` at elaboration, §8.1.16)
     let items = "module Top() { m: Option<f64>; let run = multiplicity(); let count = m.or(multiplicity()).unwrap_or(DEFAULT_MULTIPLICITY); }";
-    assert_eq!(StdSources::local(items, "run"), Ty::Option(Box::new(Ty::F64)));
-    assert_eq!(StdSources::local(items, "count"), Ty::F64);
-    assert_eq!(StdSources::codes(items), Vec::<String>::new(), "the whole module checks clean");
+    assert_eq!(StandardRunSettingSource::local(items, "run"), Ty::Option(Box::new(Ty::F64)));
+    assert_eq!(StandardRunSettingSource::local(items, "count"), Ty::F64);
+    assert_eq!(StandardRunSettingSource::codes(items), Vec::<String>::new(), "the whole module checks clean");
 }

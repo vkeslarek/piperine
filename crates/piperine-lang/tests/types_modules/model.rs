@@ -9,6 +9,7 @@ use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
 use piperine_lang::types::Types;
 use piperine_lang_fixtures::generic_sources::GenericSources;
 use piperine_lang_fixtures::pom::PomSource;
+use piperine_lang_fixtures::checked::CheckedSource;
 
 /// The natures every source below places in the open.
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
@@ -22,10 +23,10 @@ const LIMIT: bool = 1.0;\n\
 struct Holder { a: f64 }\n\
 impl Holder { fn make() -> bool { 1.0 } }\n";
 
-/// What a model-check test reads from a source: the diagnostics of the check, the text they point at, their codes.
-struct ModelSources;
+/// What a model-check test reads from a source: the diagnostics of the check and the text they point at.
+struct ModelCheck;
 
-impl ModelSources {
+impl ModelCheck {
     /// The diagnostics of the model check of `src` after `HEAD`, with `src`.
     fn errors(src: &str) -> (String, Vec<DesignDiagnostic>) {
         let src = format!("{HEAD}{src}");
@@ -38,11 +39,6 @@ impl ModelSources {
     /// The text each diagnostic points at, in source order.
     fn snippets<'a>(src: &'a str, found: &[DesignDiagnostic]) -> Vec<&'a str> {
         found.iter().map(|d| &src[d.diagnostic.span().range()]).collect()
-    }
-
-    /// The code of each diagnostic.
-    fn codes(found: &[DesignDiagnostic]) -> Vec<String> {
-        found.iter().map(|d| d.diagnostic.code.to_string()).collect()
     }
 }
 
@@ -71,29 +67,29 @@ fn every_item_kind_of_every_crate_is_checked_unreached() {
 #[test]
 fn an_unreached_function_with_an_error_fails_the_model_check() {
     // GN-08 AC 3: `broken` is called by nothing, and the model check names it
-    let (src, found) = ModelSources::errors("fn broken(x: f64) -> bool { x + 1.0 }\nmodule Top() { }");
-    assert_eq!(ModelSources::snippets(&src, &found), ["x + 1.0"]);
-    assert_eq!(ModelSources::codes(&found), ["E0180"]);
+    let (src, found) = ModelCheck::errors("fn broken(x: f64) -> bool { x + 1.0 }\nmodule Top() { }");
+    assert_eq!(ModelCheck::snippets(&src, &found), ["x + 1.0"]);
+    assert_eq!(CheckedSource::codes(&found), ["E0180"]);
 }
 
 #[test]
 fn an_unplaced_module_calling_ddt_from_a_function_is_e0350() {
     // GN-08 AC 4: nothing places `Lonely`, and its function places the core module `ddt`
-    let (src, found) = ModelSources::errors("fn rate(x: f64) -> f64 { ddt(x) }\nmodule Lonely(a: E) { }\nanalog for Lonely { let y = rate(v(a)); }");
-    assert_eq!(ModelSources::codes(&found), ["E0350"]);
-    assert_eq!(ModelSources::snippets(&src, &found), ["ddt(x)"]);
+    let (src, found) = ModelCheck::errors("fn rate(x: f64) -> f64 { ddt(x) }\nmodule Lonely(a: E) { }\nanalog for Lonely { let y = rate(v(a)); }");
+    assert_eq!(CheckedSource::codes(&found), ["E0350"]);
+    assert_eq!(ModelCheck::snippets(&src, &found), ["ddt(x)"]);
 }
 
 #[test]
 fn an_unreached_item_has_the_code_it_has_when_reached() {
     // the same function, once unreached under the model check and once reached from `Top`
     let function = "fn broken(x: f64) -> bool { x + 1.0 }\n";
-    let (src, unreached) = ModelSources::errors(&format!("{function}module Top() {{ }}"));
+    let (src, unreached) = ModelCheck::errors(&format!("{function}module Top() {{ }}"));
     let reached_src = format!("{HEAD}{function}module Top() {{ }}\nanalog for Top {{ let b = broken(1.0); }}");
     let design = PomSource::build(&reached_src);
     let reached = Types::check(&design, "Top").expect_err("reached, it fails");
-    assert_eq!(ModelSources::codes(&unreached), ModelSources::codes(&reached));
-    assert_eq!(ModelSources::snippets(&src, &unreached), ModelSources::snippets(&reached_src, &reached));
+    assert_eq!(CheckedSource::codes(&unreached), CheckedSource::codes(&reached));
+    assert_eq!(ModelCheck::snippets(&src, &unreached), ModelCheck::snippets(&reached_src, &reached));
 }
 
 #[test]
@@ -102,14 +98,14 @@ fn the_standard_library_is_checked_whole_with_no_instantiation() {
     let design = Design::builder().source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
     assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let found = Types::check_model(&design).err().unwrap_or_default();
-    assert!(found.is_empty(), "{:?}", ModelSources::codes(&found));
+    assert!(found.is_empty(), "{:?}", CheckedSource::codes(&found));
     // and an error in a `std` item that nothing reaches is reported like the same error in the project (D2 retired)
     let std_error = "pub fn broken(x: f64) -> bool { x + 1.0 }\n";
     let design = Design::builder().std_source("lib.msl", format!("pub mod prelude;\n{std_error}")).std_source("prelude.msl", "").source("top.msl", format!("{HEAD}module Top() {{ }}")).build();
     assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let in_std = Types::check_model(&design).expect_err("an unreached `std` error is now found");
-    let (_, in_project) = ModelSources::errors(&format!("{std_error}module Top() {{ }}"));
-    assert_eq!(ModelSources::codes(&in_std), ModelSources::codes(&in_project));
+    let (_, in_project) = ModelCheck::errors(&format!("{std_error}module Top() {{ }}"));
+    assert_eq!(CheckedSource::codes(&in_std), CheckedSource::codes(&in_project));
 }
 
 #[test]

@@ -67,22 +67,17 @@ fn a_const_is_typed_once_by_its_declared_type() {
 // ---- the M1 corpus (TYP-01, TYP-06) --------------------------------------------------------
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 use piperine_lang::pom::{CallClass, DeclId, ExprId, ExprKind};
+use piperine_lang_fixtures::twin::TwinSource;
 
 /// The six twins of `tests/e2e/twins/` and the module each places.
 const TWINS: &[(&str, &str)] = &[("divider", "Divider"), ("diode_iv", "DiodeIv"), ("diode_series", "DiodeSeries"), ("ac_rc", "AcRc"), ("tran_rc", "TranRc"), ("isrc_r", "IsrcR")];
 
-/// Associated test helpers of `entry`, grouped on one fixture type.
-struct EntryFixture;
+/// The declarations under one declaration of a design.
+struct DeclarationTree;
 
-impl EntryFixture {
-    fn twin(file: &str) -> Design {
-        let path: PathBuf = [env!("CARGO_MANIFEST_DIR"), "..", "..", "tests", "e2e", "twins", &format!("{file}.msl")].iter().collect();
-        Design::builder().root_file(path).build()
-    }
-
+impl DeclarationTree {
     /// A declaration and everything under it, with the behavior blocks bound to a module.
     fn with_descendants(design: &Design, decl: DeclId, out: &mut BTreeSet<DeclId>) {
         if !out.insert(decl) {
@@ -90,11 +85,11 @@ impl EntryFixture {
         }
         let data = design.decl_data(decl);
         for child in &data.children {
-            EntryFixture::with_descendants(design, *child, out);
+            DeclarationTree::with_descendants(design, *child, out);
         }
         if let DeclKind::Module(m) = &data.kind {
             for behavior in &m.behaviors {
-                EntryFixture::with_descendants(design, *behavior, out);
+                DeclarationTree::with_descendants(design, *behavior, out);
             }
         }
     }
@@ -103,7 +98,7 @@ impl EntryFixture {
 #[test]
 fn the_reachable_set_of_a_twin_is_typed() {
     for (file, top) in TWINS {
-        let design = EntryFixture::twin(file);
+        let design = TwinSource::design(file);
         assert!(design.diagnostics().is_empty(), "{file}: {:?}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         let types = Types::check(&design, top).unwrap_or_else(|d| panic!("{file}: {:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
 
@@ -111,7 +106,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
         // core primitive is called through: that is a name, not a value.
         let mut owned = BTreeSet::new();
         for decl in types.reached() {
-            EntryFixture::with_descendants(&design, *decl, &mut owned);
+            DeclarationTree::with_descendants(&design, *decl, &mut owned);
         }
         let mut names = BTreeSet::new();
         for i in 0..design.expr_count() {
@@ -135,7 +130,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
     }
 
     // The diode's own expressions: the method call is resolved, the limiter closure is typed.
-    let design = EntryFixture::twin("diode_iv");
+    let design = TwinSource::design("diode_iv");
     let types = Types::check(&design, "DiodeIv").expect("the diode twin");
     let exp = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(&design.expr_node(*e).kind, ExprKind::MethodCall { method, .. } if method.text == "exp")).expect("`.exp()` of the diode");
     assert_eq!(types.method(exp), Some(piperine_lang::types::Method::Exp));
@@ -150,7 +145,7 @@ fn the_reachable_set_of_a_twin_is_typed() {
 #[test]
 fn the_design_is_unchanged_by_the_check() {
     for (file, top) in TWINS {
-        let design = EntryFixture::twin(file);
+        let design = TwinSource::design(file);
         let before = design.dump();
         Types::check(&design, top).unwrap_or_else(|d| panic!("{file}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
         assert_eq!(before, design.dump(), "{file}: the POM is read, never written");

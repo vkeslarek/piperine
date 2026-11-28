@@ -40,16 +40,14 @@ const ROWS: &[Row] = &[
     // `trait` left this table when generics T25 typed a trait's methods (`types_traits::methods_associated_functions_and_constants_type_check`).
 ];
 
-/// Associated test helpers of `subset`, grouped on one fixture type.
-struct SubsetFixture;
-
-impl SubsetFixture {
-    fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
-        let src = format!("{HEAD}{}", row.source);
+impl Row {
+    /// The source of the row after `HEAD`, and the diagnostics of checking it, which must not check clean.
+    fn check(&self) -> (String, Vec<DesignDiagnostic>) {
+        let src = format!("{HEAD}{}", self.source);
         let design = PomSource::build(&src);
-        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, PomSource::codes(&design));
+        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", self.construct, PomSource::codes(&design));
         match Types::check(&design, "Top") {
-            Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", row.construct),
+            Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", self.construct),
             Err(d) => (src, d),
         }
     }
@@ -58,7 +56,7 @@ impl SubsetFixture {
 #[test]
 fn a_construct_outside_the_subset_is_p0001() {
     for row in ROWS {
-        let (src, d) = SubsetFixture::check(row);
+        let (src, d) = row.check();
         assert_eq!(d.len(), 1, "{}: one diagnostic per construct, got {:?}\n{src}", row.construct, d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         assert_eq!(d[0].diagnostic.code, "P0001", "{}: {}", row.construct, d[0].diagnostic.message);
         let span = d[0].diagnostic.span();
@@ -69,7 +67,7 @@ fn a_construct_outside_the_subset_is_p0001() {
 #[test]
 fn p0001_names_the_construct() {
     for row in ROWS {
-        let (_, d) = SubsetFixture::check(row);
+        let (_, d) = row.check();
         let message = &d[0].diagnostic.message;
         assert!(message.contains(row.names), "{}: `{message}` does not name `{}`", row.construct, row.names);
     }

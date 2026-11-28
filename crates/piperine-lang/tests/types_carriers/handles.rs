@@ -6,21 +6,7 @@
 use piperine_lang::pom::{DeclId, DeclKind, Design, ExprId};
 use piperine_lang::types::{GenericValue, Types};
 use piperine_lang_fixtures::generic_sources::GenericSources;
-
-/// MSL sources over the standard library, checked from `Top`.
-struct HandleSources;
-
-impl HandleSources {
-    /// The `(code, message)` pairs of the design and of the check of `Top` of `src`.
-    fn found(src: &str) -> Vec<(String, String)> {
-        let design = Design::builder().source("top.msl", src).build();
-        let mut found: Vec<(String, String)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
-        if let Err(refused) = Types::check(&design, "Top") {
-            found.extend(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())));
-        }
-        found
-    }
-}
+use piperine_lang_fixtures::checked::CheckedSource;
 
 #[test]
 fn a_handle_is_read_probed_passed_on_and_has_carrier_methods_in_the_checker() {
@@ -28,11 +14,11 @@ fn a_handle_is_read_probed_passed_on_and_has_carrier_methods_in_the_checker() {
     // discrete one is read as its value and has carrier methods (`a.prev()`); `self` of an `impl` on a nature is a handle
     // (`temp(self)`)
     let probed = "fn level(a: Electrical) -> f64 { v(a) }\nfn through(a: Electrical) -> f64 { level(a) }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> through(o); }\n";
-    assert_eq!(HandleSources::found(probed), []);
+    assert_eq!(CheckedSource::standard_findings(probed), []);
     let discrete = "fn held(a: Bit) -> bool { a }\nfn before(a: Bit) -> bool { a.prev() }\nfn both(a: Bit) -> bool { held(a) && before(a) }\nmodule Top() { signal c: Bit = false; signal d: Bit = false; }\ndigital for Top { on c.rise() { d <- both(c); } }\n";
-    assert_eq!(HandleSources::found(discrete), []);
+    assert_eq!(CheckedSource::standard_findings(discrete), []);
     let method = "impl Thermal { fn celsius(self) -> f64 { temp(self) - 273.15 } }\nmodule Top() { signal t: Thermal; signal o: Electrical; }\nanalog for Top { v(o) +> t.celsius(); }\n";
-    assert_eq!(HandleSources::found(method), []);
+    assert_eq!(CheckedSource::standard_findings(method), []);
     let design = Design::builder().source("top.msl", probed).build();
     let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{found:?}"));
     let parameter = (0..design.decl_count()).map(|index| DeclId(index as u32)).find(|decl| matches!(design.decl_data(*decl).kind, DeclKind::FnParam(_)) && design.decl_data(*decl).name.as_ref().is_some_and(|name| name.text == "a")).expect("a parameter `a`");
@@ -44,12 +30,12 @@ fn a_probe_of_a_handle_in_a_function_is_not_e0450() {
     // GN-12 AC 3, V3: the `E0450` of a probe in a function leaves for a probe whose operands are handles; a probe of
     // anything else keeps it, and so does a function that is not reached through a handle
     let handle = "fn level(a: Electrical) -> f64 { v(a) }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> level(o); }\n";
-    assert!(HandleSources::found(handle).iter().all(|(code, _)| code != "E0450"));
+    assert!(CheckedSource::standard_findings(handle).iter().all(|(code, _)| code != "E0450"));
     let other = "fn level(a: Electrical) -> f64 { let b = a; potential(gnd) }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> level(o); }\n";
-    let found = HandleSources::found(other);
+    let found = CheckedSource::standard_findings(other);
     assert!(found.iter().any(|(code, _)| code == "E0450"), "{found:?}");
     let number = "fn level(x: f64) -> f64 { potential(x) }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> level(1.0); }\n";
-    let found = HandleSources::found(number);
+    let found = CheckedSource::standard_findings(number);
     assert!(found.iter().any(|(code, _)| code == "E0450" || code == "E0180"), "{found:?}");
 }
 
@@ -74,7 +60,7 @@ fn a_handle_returned_stored_or_written_is_e0133() {
         ("fn pick(a: Electrical) -> f64 { let h = ({ a }, 1.0); 1.0 }", "stored in a tuple element"),
         ("fn pick(a: Electrical) -> f64 { return { a }; }", "returned"),
     ] {
-        let found = HandleSources::found(&format!("{function}\nfn call(x: Electrical) -> f64 {{ pick(x) }}\n{tail}"));
+        let found = CheckedSource::standard_findings(&format!("{function}\nfn call(x: Electrical) -> f64 {{ pick(x) }}\n{tail}"));
         let e0133: Vec<&String> = found.iter().filter(|(code, _)| code == "E0133").map(|(_, message)| message).collect();
         assert!(!e0133.is_empty() && e0133.iter().any(|message| message.contains(how) || how == "returned"), "{function}: {found:?}");
     }
@@ -89,11 +75,11 @@ fn a_handle_returned_stored_or_written_is_e0133() {
         "fn pick(a: Bit) -> bool { let c = match 1 { _ => a }; c }",
         "fn pick(a: Bit) -> bool { let h = (a, 1.0); h.0 }",
     ] {
-        let found = HandleSources::found(&format!("{function}\nmodule Top(in clk: Bit, out d: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ d <- pick(clk); }} }}\n"));
+        let found = CheckedSource::standard_findings(&format!("{function}\nmodule Top(in clk: Bit, out d: Bit = false) {{ }}\ndigital for Top {{ on clk.rise() {{ d <- pick(clk); }} }}\n"));
         assert!(found.iter().all(|(code, _)| code != "E0133"), "{function}: {found:?}");
     }
     let passed = "fn level(a: Electrical) -> f64 { v(a) }\nfn call(a: Electrical) -> f64 { level(a) + level(a) }\n";
-    assert_eq!(HandleSources::found(&format!("{passed}{tail}")), []);
+    assert_eq!(CheckedSource::standard_findings(&format!("{passed}{tail}")), []);
 }
 
 #[test]
@@ -101,7 +87,7 @@ fn a_carrier_method_call_follows_the_lookup_order() {
     // GN-10 / §3.1.7: a method called on a carrier is the carrier's own, then the `impl`s of its nature (inherent and
     // trait, a project nature or a prelude one, `impl Bit` being `impl Bit<bool>`), then the methods of the value read;
     // `self` of such an `impl` is a handle
-    let clean = |src: &str| assert_eq!(HandleSources::found(src), [], "{src}");
+    let clean = |src: &str| assert_eq!(CheckedSource::standard_findings(src), [], "{src}");
     // a trait impl and an inherent impl on a prelude nature
     clean("trait Describe { fn tag(self) -> f64; }\nimpl Describe for Thermal { fn tag(self) -> f64 { temp(self) } }\nmodule Top() { signal t: Thermal; signal o: Electrical; }\nanalog for Top { v(o) +> t.tag(); }\n");
     clean("impl Electrical { fn volts(self) -> f64 { v(self) } }\nmodule Top() { signal a: Electrical; signal o: Electrical; }\nanalog for Top { v(o) +> a.volts(); }\n");
@@ -109,7 +95,7 @@ fn a_carrier_method_call_follows_the_lookup_order() {
     clean("impl Bit { fn flipped(self) -> bool { !self } }\nmodule Top() { signal c: Bit = false; signal d: Bit = false; }\ndigital for Top { on c.rise() { d <- c.flipped(); } }\n");
     clean("impl Bit<f64> { fn doubled(self) -> f64 { self * 2.0 } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit<f64> = 1.0; }\ndigital for Top { on s.changed() { d <- s.doubled(); } }\n");
     let wrong_value = "impl Bit { fn flipped(self) -> bool { !self } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit = false; }\ndigital for Top { on s.changed() { d <- s.flipped(); } }\n";
-    assert!(!HandleSources::found(wrong_value).is_empty(), "`impl Bit` is not written for a carrier of `f64`");
+    assert!(!CheckedSource::standard_findings(wrong_value).is_empty(), "`impl Bit` is not written for a carrier of `f64`");
     // the impl of the nature comes before the value's own method: the `abs` of `Bit<f64>` below gives a `bool`, which `f64::abs` never does
     clean("impl Bit<f64> { fn abs(self) -> bool { true } }\nmodule Top() { signal s: Bit<f64> = 1.0; signal d: Bit = false; }\ndigital for Top { on s.changed() { d <- s.abs(); } }\n");
     // with no impl, the value's method answers
@@ -125,13 +111,13 @@ fn solve_reading_functions_are_accepted_where_the_table_allows() {
     // calls are accepted in `analog`, a reaction body, a body `let` and a value input
     let level = "fn level(a: Electrical) -> f64 { v(a) }\nfn clock() -> f64 { now() }\nfn through(a: Electrical) -> f64 { level(a) + clock() }\n";
     let in_analog = format!("{level}module Top() {{ signal o: Electrical; }}\nanalog for Top {{ v(o) +> through(o); }}\n");
-    assert_eq!(HandleSources::found(&in_analog), []);
+    assert_eq!(CheckedSource::standard_findings(&in_analog), []);
     let in_let = format!("{level}module Top() {{ signal o: Electrical; let t = clock(); }}\nanalog for Top {{ v(o) +> t; }}\n");
-    assert_eq!(HandleSources::found(&in_let), []);
+    assert_eq!(CheckedSource::standard_findings(&in_let), []);
     let in_reaction = format!("{level}module Top() {{ signal c: Bit = false; signal d: Bit<f64> = 0.0; }}\ndigital for Top {{ on c.rise() {{ d <- clock(); }} }}\n");
-    assert_eq!(HandleSources::found(&in_reaction), []);
+    assert_eq!(CheckedSource::standard_findings(&in_reaction), []);
     let in_input = format!("{level}module Leaf(x: f64) {{ }}\nmodule Top() {{ let l = Leaf(clock()); }}\n");
-    assert_eq!(HandleSources::found(&in_input), []);
+    assert_eq!(CheckedSource::standard_findings(&in_input), []);
 }
 
 #[test]
@@ -144,12 +130,12 @@ fn a_solve_reading_call_in_a_const_context_is_e0122() {
         ("const T0: f64 = viaclock();\nmodule Top() { let x = T0; }\n", "a const context"),
         ("module Top() { p: f64 = clock(); }\n", "a const context"),
     ] {
-        let found = HandleSources::found(&format!("{level}{item}"));
+        let found = CheckedSource::standard_findings(&format!("{level}{item}"));
         assert!(found.iter().any(|(code, message)| code == "E0122" && message.contains("solve-reading") && (message.contains("`clock`") || message.contains("`viaclock`"))), "{item}: {found:?}");
     }
     // a function that reads nothing of the solve is pure, and a const may call it
     let pure = "fn double(x: f64) -> f64 { x * 2.0 }\nconst T0: f64 = double(1.0);\nmodule Top() { let x = T0; }\n";
-    assert_eq!(HandleSources::found(pure), []);
+    assert_eq!(CheckedSource::standard_findings(pure), []);
 }
 
 #[test]
@@ -162,7 +148,7 @@ fn a_nature_generic_handle_function_type_checks_and_records_its_nature() {
     let thermal = probe("Thermal", "temp(a)");
     for (src, nature) in [(electrical, "Electrical"), (thermal, "Thermal")] {
         let design = Design::builder().source("top.msl", src.clone()).build();
-        assert_eq!(HandleSources::found(&src), [], "{src}");
+        assert_eq!(CheckedSource::standard_findings(&src), [], "{src}");
         let types = Types::check(&design, "Top").unwrap_or_else(|found| panic!("{found:?}"));
         let call = (0..design.expr_count()).map(|index| ExprId(index as u32)).find(|expr| types.instantiation(*expr).is_some()).expect("a generic call");
         let instantiation = types.instantiation(call).expect("its instantiation");
@@ -170,19 +156,19 @@ fn a_nature_generic_handle_function_type_checks_and_records_its_nature() {
         assert_eq!(argument.name(&design), format!("node of nature {nature}"), "{src}");
     }
     let capability = "trait Drive { fn push(self) -> f64; }\nimpl Drive for Electrical { fn push(self) -> f64 { v(self) } }\nfn go<W: Nature + Drive>(a: W) -> f64 { a.push() }\nmodule Top() { signal o: Electrical; }\nanalog for Top { v(o) +> go(o); }\n";
-    assert_eq!(HandleSources::found(capability), []);
+    assert_eq!(CheckedSource::standard_findings(capability), []);
     let refused = "trait Drive { fn push(self) -> f64; }\nimpl Drive for Electrical { fn push(self) -> f64 { v(self) } }\nfn go<W: Nature + Drive>(a: W) -> f64 { 0.0 }\nmodule Top() { signal t: Thermal; signal o: Electrical; }\nanalog for Top { v(o) +> go(t); }\n";
-    assert!(HandleSources::found(refused).iter().any(|(code, _)| code == "E0187"), "{:?}", HandleSources::found(refused));
+    assert!(CheckedSource::standard_findings(refused).iter().any(|(code, _)| code == "E0187"), "{:?}", CheckedSource::standard_findings(refused));
     // a discrete carrier is a nature too: the call's nature is the carrier, not the value it reads
     let discrete = "fn tick<N: Nature>(a: N) -> f64 { 1.0 }\nmodule Top() { signal c: Bit = false; signal o: Electrical; }\nanalog for Top { v(o) +> tick(c); }\n";
-    assert_eq!(HandleSources::found(discrete), []);
+    assert_eq!(CheckedSource::standard_findings(discrete), []);
 }
 
 #[test]
 fn a_carrier_generic_over_its_value_type_is_a_handle() {
     // GN-11: `fn earlier<T: Repr>(a: Bit<T>) -> T` is a handle of a carrier whose value type is the parameter; `a.prev()` is a `T`
     let src = "fn earlier<T: Repr>(a: Bit<T>) -> T { a.prev() }\nmodule Top() { signal c: Bit<u8> = 0; signal d: Bit<u8> = 1; }\ndigital for Top { on c.changed() { d <- earlier(c); } }\n";
-    assert_eq!(HandleSources::found(src), []);
+    assert_eq!(CheckedSource::standard_findings(src), []);
 }
 
 #[test]
@@ -195,7 +181,7 @@ fn a_let_bound_to_a_node_keeps_its_nature_for_a_probe() {
         format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; }}\nanalog for Top {{ let y = c0.sn; i(p, gnd) +> v(y); }}"),
         format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v(y); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
     ] {
-        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+        assert_eq!(CheckedSource::standard_findings(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
 
@@ -208,7 +194,7 @@ fn a_let_bound_to_a_node_is_a_contribution_target() {
         "module Top() { signal x: Electrical; }\nanalog for Top { let y = x; v(y) +> 1.0; }".to_string(),
         format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); }}\nanalog<C> for Bank<C> {{ let y = c0.sn; v(y) +> 1.0; }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
     ] {
-        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+        assert_eq!(CheckedSource::standard_findings(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
 
@@ -223,7 +209,7 @@ fn an_access_a_let_bound_nodes_nature_lacks_is_refused_as_for_the_node() {
     ] {
         for statement in [direct, alias] {
             let src = format!("{signal_flow}module Top() {{ signal t: Thermal; signal s: Th; signal p: Electrical; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(p); }}");
-            let mut codes: Vec<String> = HandleSources::found(&src).into_iter().map(|(code, _)| code).collect();
+            let mut codes: Vec<String> = CheckedSource::standard_findings(&src).into_iter().map(|(code, _)| code).collect();
             codes.dedup();
             assert_eq!(codes, [code], "{statement}");
         }
@@ -239,7 +225,7 @@ fn parentheses_around_a_node_argument_name_the_node() {
         format!("{child}module Top() {{ signal x: Electrical; let c0 = Dram(x); signal p: Electrical; signal q: Electrical; }}\nanalog for Top {{ let y = x; i(p, gnd) +> v((x)) + v((y)) + v((c0.sn)) + v((x), (p)); v((q)) +> 1.0; }}"),
         format!("{child}module Bank<C: Fn(Electrical)>(a: Electrical) {{ cell: C; let c0 = cell(a); signal p: Electrical; }}\nanalog<C> for Bank<C> {{ let y = c0.sn; i(p, gnd) +> v((c0.sn)) + v((y)); }}\nmodule Top() {{ signal x: Electrical; let bank = Bank::<_>(x) {{ cell: Dram {{ }} }}; }}"),
     ] {
-        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{src}");
+        assert_eq!(CheckedSource::standard_findings(&src), Vec::<(String, String)>::new(), "{src}");
     }
 }
 
@@ -257,7 +243,7 @@ fn a_node_chosen_by_the_run_is_e0133() {
         ("let y = if now() > 1.0 { x } else { p };", "an `if`"),
     ] {
         let src = format!("module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; }}\nanalog for Top {{ {statement} i(p, gnd) +> v(y); }}");
-        let found = HandleSources::found(&src);
+        let found = CheckedSource::standard_findings(&src);
         assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
         assert!(found[0].1.starts_with(&format!("{form} whose result is a node chooses it by")), "{statement}: {found:?}");
     }
@@ -281,9 +267,9 @@ fn a_cycle_of_node_connections_through_any_depth_of_reach_is_hardware() {
         "module Top() { let p = Deep(q.mid.c0.sn); let q = Deep(p.mid.c0.sn); }",
         "module Top() { let p = Deep(p.mid.c0.sn); }",
     ] {
-        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+        assert_eq!(CheckedSource::standard_findings(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
-    let value = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = VBank::<_>(x, p.c0.cs) {{ cell: Dram {{ }} }}; }}"));
+    let value = CheckedSource::standard_findings(&format!("{modules}module Top() {{ signal x: Electrical; let p = VBank::<_>(x, p.c0.cs) {{ cell: Dram {{ }} }}; }}"));
     assert_eq!(value.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{value:?}");
     assert!(value[0].1.contains("the `let` `p` reads its own name"), "{value:?}");
 }
@@ -303,7 +289,7 @@ fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
         "let s = sel; let c = { s = !s; s };",
     ] {
         let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
-        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{statement}");
+        assert_eq!(CheckedSource::standard_findings(&src), Vec::<(String, String)>::new(), "{statement}");
     }
     for (statement, read) in [
         ("let s = sel; s = v(x) > 0.5;", "it reads a probe"),
@@ -313,7 +299,7 @@ fn a_let_assigned_only_values_of_elaboration_chooses_a_node() {
         ("let t = v(x) > 0.5; let s = sel; s = t;", "it reads the variable `t`, whose value depends on the run: it reads a probe"),
     ] {
         let src = format!("{module}\nanalog for Top {{ {statement} let y = if s {{ x }} else {{ p }}; i(p, gnd) +> v(y); }}");
-        let found = HandleSources::found(&src);
+        let found = CheckedSource::standard_findings(&src);
         assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{statement}: {found:?}");
         assert!(found[0].1.contains(&format!("by the variable `s`, whose value depends on the run: {read}")), "{statement}: {found:?}");
     }
@@ -341,7 +327,7 @@ fn a_node_chosen_at_elaboration_is_typed_as_the_node() {
         ("let h = H::<_>(x) { cell: R { } };", ""),
     ] {
         let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; n: u8 = 0; sel: bool = false; {body} }}\nanalog for Top {{ {analog} }}");
-        assert_eq!(HandleSources::found(&src), Vec::<(String, String)>::new(), "{body}{analog}");
+        assert_eq!(CheckedSource::standard_findings(&src), Vec::<(String, String)>::new(), "{body}{analog}");
     }
 }
 
@@ -363,7 +349,7 @@ fn a_node_chosen_at_a_node_argument_is_e0133_alone() {
         ("let h = H::<_>(x) { cell: R { } };", String::new()),
     ] {
         let src = format!("{modules}module Top() {{ signal x: Electrical; signal p: Electrical; k: f64 = 1.0; {body} }}\nanalog for Top {{ {analog} }}");
-        let found = HandleSources::found(&src);
+        let found = CheckedSource::standard_findings(&src);
         assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0133"], "{body}{analog}: {found:?}");
     }
 }
@@ -376,7 +362,7 @@ fn a_node_of_a_child_is_a_connection() {
         "module Top() { signal x: Electrical; let c0 = Dram(x); let th = Th(c0.sn); }",
         "module Bank<C: Fn(Electrical)>(a: Electrical) { cell: C; let c0 = cell(a); let th = Th(c0.sn); }\nmodule Top() { signal x: Electrical; let b = Bank::<_>(x) { cell: Dram { } }; }",
     ] {
-        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+        assert_eq!(CheckedSource::standard_findings(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
 }
 
@@ -390,12 +376,12 @@ fn a_module_body_is_typed_in_any_order() {
         "module Top() { signal x: Electrical; let th = Th(c0.sn); let c0 = Dram(x); }",
         "module Top() { let a = b * 2.0; let b = k + 1.0; k: f64 = 1.0; signal p: Electrical; }\nanalog for Top { i(p, gnd) +> v(p) * a; }",
     ] {
-        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+        assert_eq!(CheckedSource::standard_findings(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
-    let through_placements = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; let p = Gain(x, q.k); let q = Gain(x, p.k); }}"));
+    let through_placements = CheckedSource::standard_findings(&format!("{modules}module Top() {{ signal x: Electrical; let p = Gain(x, q.k); let q = Gain(x, p.k); }}"));
     assert_eq!(through_placements.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{through_placements:?}");
     assert!(through_placements[0].1.contains("reads its own name through other `let`s"), "{through_placements:?}");
-    let values = HandleSources::found(&format!("{modules}module Top() {{ let a = b + 1.0; let b = a * 2.0; signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * a; }}"));
+    let values = CheckedSource::standard_findings(&format!("{modules}module Top() {{ let a = b + 1.0; let b = a * 2.0; signal p: Electrical; }}\nanalog for Top {{ i(p, gnd) +> v(p) * a; }}"));
     assert_eq!(values.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), ["E0332"], "{values:?}");
 }
 
@@ -426,8 +412,8 @@ fn every_site_reads_a_body_let_written_later_as_one_written_before() {
         ("parameter value", "let b = R(x) { r: q };", "let q = 2.0;", &[]),
     ];
     for (site, read, written, codes) in sites {
-        let forward = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {written} {read} }}"));
-        let reverse = HandleSources::found(&format!("{modules}module Top() {{ signal x: Electrical; {read} {written} }}"));
+        let forward = CheckedSource::standard_findings(&format!("{modules}module Top() {{ signal x: Electrical; {written} {read} }}"));
+        let reverse = CheckedSource::standard_findings(&format!("{modules}module Top() {{ signal x: Electrical; {read} {written} }}"));
         assert_eq!(forward.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), codes, "{site}, forward: {forward:?}");
         assert_eq!(reverse, forward, "{site}: the reverse order gives what the forward order gives");
     }
@@ -447,6 +433,6 @@ fn a_cycle_of_node_connections_is_hardware() {
         "module Top() { let p = D2((q.sn)); let q = D2((p.sn)); }",
         "module Bank(a: Electrical) { pub let c0 = D2(a); }\nmodule Top() { let b = Bank(b.c0.sn); }",
     ] {
-        assert_eq!(HandleSources::found(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
+        assert_eq!(CheckedSource::standard_findings(&format!("{modules}{top}")), Vec::<(String, String)>::new(), "{top}");
     }
 }

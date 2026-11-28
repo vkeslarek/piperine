@@ -661,12 +661,10 @@ crates/piperine-lang/tests/types_analog/analog.rs::potential_probes_are_f64	1
 crates/piperine-lang/tests/types_analog/analog.rs::the_std_vt_checks_clean	1
 crates/piperine-lang/tests/types_analog/analog_operators.rs::a_site_reached_from_analog_writing_sim_or_checks_is_e0603	1
 crates/piperine-lang/tests/types_analog/events.rs::a_delay_that_is_not_f64_is_e0433	1
-crates/piperine-lang/tests/types_analog/events.rs::exprs_reading	1
 crates/piperine-lang/tests/types_analog/natures.rs::connecting_byte_to_bit_u8_is_e0251_naming_both_natures	1
 crates/piperine-lang/tests/types_carriers/carrier_arrays.rs::an_initial_value_is_the_value_of_the_elements_no_undelayed_definition_names	1
 crates/piperine-lang/tests/types_carriers/carriers.rs::an_initial_value_under_an_undelayed_definition_is_e0338	1
 crates/piperine-lang/tests/types_carriers/carriers.rs::decl	1
-crates/piperine-lang/tests/types_carriers/carriers.rs::exprs_reading	1
 crates/piperine-lang/tests/types_generics/generics.rs::an_uninferred_generic_argument_is_e0181_naming_the_parameter	1
 crates/piperine-lang/tests/types_generics/generics.rs::an_unreached_method_of_a_generic_impl_is_checked_at_its_definition	1
 crates/piperine-lang/tests/types_generics/generics.rs::generic_structs_and_enums_type_check_per_instance	1
@@ -684,10 +682,8 @@ crates/piperine-lang/tests/types_modules/model.rs::an_unreached_generic_module_w
 crates/piperine-lang/tests/types_modules/model.rs::an_unreached_item_has_the_code_it_has_when_reached	1
 crates/piperine-lang/tests/types_modules/model.rs::every_item_kind_of_every_crate_is_checked_unreached	1
 crates/piperine-lang/tests/types_modules/modules.rs::a_node_init_that_is_not_f64_is_e0210	1
-crates/piperine-lang/tests/types_modules/modules.rs::expr_of	1
 crates/piperine-lang/tests/types_modules/modules.rs::params_are_f64_or_bool	1
 crates/piperine-lang/tests/types_modules/nested_reach.rs::an_item_that_is_not_pub_is_refused_three_and_four_levels_below_the_reader	1
-crates/piperine-lang/tests/types_modules/results.rs::exprs_reading	1
 crates/piperine-lang/tests/types_modules/structure.rs::a_parent_may_drive_a_childs_pub_resolved_signal	1
 crates/piperine-lang/tests/types_modules/structure.rs::inst_name_of_an_item_that_is_not_pub_is_e0343	1
 crates/piperine-lang/tests/types_modules/structure.rs::inst_name_types_as_the_pub_item	1
@@ -712,6 +708,5 @@ crates/piperine-lang/tests/types_values/values.rs::a_let_takes_its_initializer_t
 crates/piperine-lang/tests/types_values/values.rs::a_method_outside_h2_on_f64_is_e0161	1
 crates/piperine-lang/tests/types_values/values.rs::catalogue_methods_on_f64_are_f64	1
 crates/piperine-lang/tests/types_values/values.rs::every_h2_row_types_with_its_signature	1
-crates/piperine-lang/tests/types_values/values.rs::expr_at	1
 crates/piperine-lang/tests/types_values/values.rs::literals_are_f64_or_bool	1
 crates/piperine-lang/tests/types_values/values.rs::the_std_pnjlim_checks_clean	1

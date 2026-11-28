@@ -4,46 +4,19 @@
 
 
 
-use piperine_lang::pom::{Design, DesignDiagnostic};
 use piperine_lang::types::Types;
+use piperine_lang_fixtures::checked::CheckedSource;
 use piperine_lang_fixtures::elaboration::SourceElaboration;
-use piperine_lang_fixtures::pom::PomSource;
 
 const HEAD: &str = "nature E { potential: V { access: v, units: \"V\", abstol: 1u }, flow: I { access: i, units: \"A\", abstol: 1p } }\n";
 
-/// The sources of the tests and how each is checked.
-struct Sources;
+/// The sources of a module `Top(a: E, b: E)` with an `analog` block under test, after the nature `E` (`HEAD`).
+struct ElectricalPairSource;
 
-impl Sources {
+impl ElectricalPairSource {
     /// The source of a module `Top(a: E, b: E)` with `items` before it and `body` as its `analog` block.
     fn source(items: &str, body: &str) -> String {
         format!("{HEAD}{items}\nmodule Top(a: E, b: E) {{ }}\nanalog for Top {{ {body} }}")
-    }
-
-    /// The design of `src`, which must parse and resolve.
-    fn design_of(src: &str) -> Design {
-        let design = PomSource::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
-        design
-    }
-
-    /// The diagnostics of checking `src`'s `Top`; empty when it is clean.
-    fn diagnostics(src: &str) -> Vec<DesignDiagnostic> {
-        let design = Self::design_of(src);
-        match Types::check(&design, "Top") {
-            Ok(_) => Vec::new(),
-            Err(d) => d,
-        }
-    }
-
-    /// The codes of `diagnostics`, in order.
-    fn codes_of(diagnostics: &[DesignDiagnostic]) -> Vec<String> {
-        diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect()
-    }
-
-    /// The text the primary span of `d` covers.
-    fn snippet<'a>(src: &'a str, d: &DesignDiagnostic) -> &'a str {
-        &src[d.diagnostic.span().range()]
     }
 }
 
@@ -56,8 +29,8 @@ fn ddx_types_against_a_potential_or_a_flow_probe() {
         "let x: f64 = ddx(v(a), i(a, b));",
         "let x: f64 = ddx(ddx(v(a) * v(a), v(a)), v(a));",
     ] {
-        let src = Sources::source("", body);
-        assert_eq!(Sources::codes_of(&Sources::diagnostics(&src)), Vec::<String>::new(), "{body}");
+        let src = ElectricalPairSource::source("", body);
+        assert_eq!(CheckedSource::codes(&CheckedSource::diagnostics(&src)), Vec::<String>::new(), "{body}");
     }
 }
 
@@ -69,10 +42,10 @@ fn ddx_against_a_non_probe_is_e0451() {
         ("let y = v(a); let x = ddx(v(a), y);", "y"),
         ("let x = ddx(v(a), a.inflow());", "a.inflow()"),
     ] {
-        let src = Sources::source("", body);
-        let d = Sources::diagnostics(&src);
-        assert_eq!(Sources::codes_of(&d), ["E0451"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(Sources::snippet(&src, &d[0]), at, "{body}");
+        let src = ElectricalPairSource::source("", body);
+        let d = CheckedSource::diagnostics(&src);
+        assert_eq!(CheckedSource::codes(&d), ["E0451"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), at, "{body}");
     }
 }
 
@@ -80,11 +53,11 @@ fn ddx_against_a_non_probe_is_e0451() {
 fn ddx_outside_analog_or_read_by_a_definition_is_e0450() {
     // a `fn`, a module body `let` read by a definition, and a param default are not `analog`
     let in_fn = format!("{HEAD}fn f(x: f64) -> f64 {{ ddx(x, v(gnd)) }}\nmodule Top(a: E, b: E) {{ }}\nanalog for Top {{ let y = f(1.0); }}");
-    let d = Sources::diagnostics(&in_fn);
-    assert!(Sources::codes_of(&d).iter().any(|c| c == "E0450"), "{:?}", Sources::codes_of(&d));
+    let d = CheckedSource::diagnostics(&in_fn);
+    assert!(CheckedSource::codes(&d).iter().any(|c| c == "E0450"), "{:?}", CheckedSource::codes(&d));
     let in_body = format!("{HEAD}module Top(a: E, b: E) {{ let y = ddx(v(a), v(a)); }}");
-    let d = Sources::diagnostics(&in_body);
-    assert!(Sources::codes_of(&d).iter().any(|c| c == "E0450"), "{:?}", Sources::codes_of(&d));
+    let d = CheckedSource::diagnostics(&in_body);
+    assert!(CheckedSource::codes(&d).iter().any(|c| c == "E0450"), "{:?}", CheckedSource::codes(&d));
 }
 
 #[test]
@@ -101,20 +74,20 @@ fn delay_noise_and_simparam_type_and_wait_for_lowering() {
         "let x: Option<f64> = simparam(\"gmin\");",
         "let x: f64 = simparam(\"gmin\").unwrap_or(1e-12);",
     ] {
-        let src = Sources::source("", body);
-        assert_eq!(Sources::codes_of(&Sources::diagnostics(&src)), Vec::<String>::new(), "{body}");
+        let src = ElectricalPairSource::source("", body);
+        assert_eq!(CheckedSource::codes(&CheckedSource::diagnostics(&src)), Vec::<String>::new(), "{body}");
     }
     // `simparam` is allowed where a definition reads: a module body `let` is no `E0450`.
     let in_body = format!("{HEAD}module Top(a: E, b: E) {{ let g = simparam(\"gmin\").unwrap_or(1e-12); }}");
-    assert_eq!(Sources::codes_of(&Sources::diagnostics(&in_body)), Vec::<String>::new());
+    assert_eq!(CheckedSource::codes(&CheckedSource::diagnostics(&in_body)), Vec::<String>::new());
     // `delay` and `noise` are core modules: a `fn` is `E0350`, as for `ddt`.
     for form in ["delay(x, 1n)", "noise(x)"] {
         let src = format!("{HEAD}fn f(x: f64) -> f64 {{ {form} }}\nmodule Top(a: E, b: E) {{ }}\nanalog for Top {{ let y = f(1.0); }}");
-        assert!(Sources::codes_of(&Sources::diagnostics(&src)).iter().any(|c| c == "E0350"), "{form}: {:?}", Sources::codes_of(&Sources::diagnostics(&src)));
+        assert!(CheckedSource::codes(&CheckedSource::diagnostics(&src)).iter().any(|c| c == "E0350"), "{form}: {:?}", CheckedSource::codes(&CheckedSource::diagnostics(&src)));
     }
     // the arguments are typed: a text where an `f64` goes, and a number where the name goes
-    assert_eq!(Sources::codes_of(&Sources::diagnostics(&Sources::source("", "let x = delay(\"v\", 1n);"))).len(), 1);
-    assert_eq!(Sources::codes_of(&Sources::diagnostics(&Sources::source("", "let x = simparam(1.0);"))).len(), 1);
+    assert_eq!(CheckedSource::codes(&CheckedSource::diagnostics(&ElectricalPairSource::source("", "let x = delay(\"v\", 1n);"))).len(), 1);
+    assert_eq!(CheckedSource::codes(&CheckedSource::diagnostics(&ElectricalPairSource::source("", "let x = simparam(1.0);"))).len(), 1);
     // `delay` lowers since T33, `noise` since T34 and `simparam` since T35: `elab_operators`
 }
 
@@ -130,10 +103,10 @@ fn a_value_of_another_type_given_to_delay_or_noise_is_a_type_mismatch() {
         ("let x = noise(true);", "true"),
         ("let x = noise(\"v\");", "\"v\""),
     ] {
-        let src = Sources::source("", body);
-        let d = Sources::diagnostics(&src);
-        assert_eq!(Sources::codes_of(&d), ["E0180"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(Sources::snippet(&src, &d[0]), at, "{body}");
+        let src = ElectricalPairSource::source("", body);
+        let d = CheckedSource::diagnostics(&src);
+        assert_eq!(CheckedSource::codes(&d), ["E0180"], "{body}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), at, "{body}");
     }
 }
 
@@ -151,8 +124,8 @@ fn a_site_reached_from_analog_writing_sim_or_checks_is_e0603() {
     ] {
         let design = SourceElaboration::design(&src);
         let d = Types::check(&design, "Top").expect_err(&src);
-        assert_eq!(Sources::codes_of(&d), ["E0603"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
-        assert_eq!(Sources::snippet(&src, &d[0]), at, "{src}");
+        assert_eq!(CheckedSource::codes(&d), ["E0603"], "{src}: {:?}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>());
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), at, "{src}");
     }
     let trace = "module Top(p: Electrical) { }\nanalog for Top { emit!(\"trace\", vp = v(p)); }";
     let design = SourceElaboration::design(trace);

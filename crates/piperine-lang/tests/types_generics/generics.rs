@@ -8,6 +8,7 @@ use piperine_lang::pom::{DeclId, DeclKind, Design, TypeId};
 use piperine_lang::types::{Bound, ConstTerm, ConstType, GenericSignature, GenericValue, Length, Instantiation, Nominal, Obligation, ParameterDefault, ParameterKind, Substitution, Ty, Types};
 use piperine_lang_fixtures::generic_sources::GenericSources;
 use piperine_lang_fixtures::pom::PomSource;
+use piperine_lang_fixtures::checked::CheckedSource;
 
 /// The natures every source below places in the open.
 const HEAD: &str = GenericSources::HEAD;
@@ -423,23 +424,13 @@ fn a_generic_repr_type_over_an_argument_without_repr_is_e0110() {
     assert_eq!(Types::check_model(&design), Ok(()), "u8 and a tuple of a float and a bool have layouts");
 }
 
-/// The forms of generics phases C, D and E, each on the smallest model that writes it.
-struct LaterPhases;
+/// The forms of generics phases C, D and E that stay refused by name.
+struct RefusedForms;
 
-impl LaterPhases {
-    /// The `(code, message)` pairs of the design and of the check of `Top` of `src`, over the standard library.
-    fn found(src: &str) -> Vec<(String, String)> {
-        let design = Design::builder().source("top.msl", src).build();
-        let mut found: Vec<(String, String)> = design.diagnostics().iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect();
-        if let Err(refused) = Types::check(&design, "Top") {
-            found.extend(refused.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())));
-        }
-        found
-    }
-
+impl RefusedForms {
     /// Whether the check of `src` holds `P0001` with a message that contains `form`.
     fn refuses(src: &str, form: &str) -> bool {
-        Self::found(src).iter().any(|(code, message)| code == "P0001" && message.contains(form))
+        CheckedSource::standard_findings(src).iter().any(|(code, message)| code == "P0001" && message.contains(form))
     }
 }
 
@@ -449,24 +440,24 @@ fn phase_d_and_e_forms_stay_p0001_by_name() {
     // value and a placement through one (phase D, GN-21 to GN-23); the generic module and generation (a body and a `digital`
     // block) left this list when generics T71, T77 and T80 typed and lowered them
     let generic_module = "module Hold<T: Repr>(in d: Bit<T>) {}\nmodule Top() { signal d: Bit<u8> = 0; let h = Hold::<u8>(d); }\n";
-    assert!(!LaterPhases::refuses(generic_module, "generic module"), "{:?}", LaterPhases::found(generic_module));
+    assert!(!RefusedForms::refuses(generic_module, "generic module"), "{:?}", CheckedSource::standard_findings(generic_module));
     let generation = "module Top() { signal o: Electrical; for k in 0..2 { let r = 1; } }\n";
-    assert!(!LaterPhases::refuses(generation, "generation"), "{:?}", LaterPhases::found(generation));
+    assert!(!RefusedForms::refuses(generation, "generation"), "{:?}", CheckedSource::standard_findings(generation));
     let template = "module Cell(a: Electrical) {}\nmodule Top() { signal a: Electrical; let c = Cell { }; }\n";
     // a template is a value from generics T84 on (GN-21): it is no longer refused
-    assert!(!LaterPhases::refuses(template, "module template"), "{:?}", LaterPhases::found(template));
+    assert!(!RefusedForms::refuses(template, "module template"), "{:?}", CheckedSource::standard_findings(template));
     let through = "module Cell(a: Electrical) {}\nmodule Top(cell: Cell) { signal a: Electrical; let p = cell(a); }\n";
     // a placement through a value input of module type is refused by the input's type alone: the phase-C message
     // "placement through a template value or a function" is gone (finding 35), and no cascade follows the refusal
-    assert!(LaterPhases::refuses(through, "value input port of type"), "{:?}", LaterPhases::found(through));
-    assert_eq!(LaterPhases::found(through).len(), 1, "{:?}", LaterPhases::found(through));
+    assert!(RefusedForms::refuses(through, "value input port of type"), "{:?}", CheckedSource::standard_findings(through));
+    assert_eq!(CheckedSource::standard_findings(through).len(), 1, "{:?}", CheckedSource::standard_findings(through));
     // a template parameter (`C: Fn(..)`, GN-23): a module whose ports differ from `P` is `E0360` (T88), and one left to inference is `E0181`
     let bound = "module Cell(a: Electrical) {}\nmodule Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner::<Cell>(); }\n";
-    assert!(LaterPhases::found(bound).iter().all(|(code, _)| code == "E0360"), "{:?}", LaterPhases::found(bound));
-    assert_eq!(LaterPhases::found(bound).len(), 1, "{:?}", LaterPhases::found(bound));
+    assert!(CheckedSource::standard_findings(bound).iter().all(|(code, _)| code == "E0360"), "{:?}", CheckedSource::standard_findings(bound));
+    assert_eq!(CheckedSource::standard_findings(bound).len(), 1, "{:?}", CheckedSource::standard_findings(bound));
     let open = "module Inner<C: Fn(f64)>() {}\nmodule Top() { let i = Inner(); }\n";
-    assert!(LaterPhases::found(open).iter().all(|(code, _)| code == "E0181"), "{:?}", LaterPhases::found(open));
-    assert_eq!(LaterPhases::found(open).len(), 1, "{:?}", LaterPhases::found(open));
+    assert!(CheckedSource::standard_findings(open).iter().all(|(code, _)| code == "E0181"), "{:?}", CheckedSource::standard_findings(open));
+    assert_eq!(CheckedSource::standard_findings(open).len(), 1, "{:?}", CheckedSource::standard_findings(open));
 }
 
 #[test]
@@ -474,7 +465,7 @@ fn m_and_dtemp_bound_in_a_param_block_are_e0320_like_any_unknown_param() {
     // GN-25 AC 3 (phase D): `m` and `dtemp` are ordinary names, so binding one the module does not declare is `E0320`,
     // `no param`, as for any unknown param
     let src = "module Resistor(a: Electrical, b: Electrical) { r: f64 = 1k; }\nmodule Top() { signal a: Electrical; let r1 = Resistor(a, gnd) { r: 1k, m: 4.0 }; }\n";
-    let found = LaterPhases::found(src);
+    let found = CheckedSource::standard_findings(src);
     assert!(found.iter().any(|(code, message)| code == "E0320" && message == "no param `m` in `Resistor`"), "{found:?}");
 }
 

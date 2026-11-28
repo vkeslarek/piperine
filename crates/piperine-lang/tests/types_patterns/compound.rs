@@ -3,51 +3,16 @@
 //! The positive cases are the buck's own enums and the stdlib's `Severity`, read as written.
 
 
-use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
-use piperine_lang::types::{Method, Ty, Types};
-use piperine_lang_fixtures::pom::PomSource;
+use piperine_lang::pom::{DeclId, DeclKind, Design, ExprId, ExprKind, Reflect};
+use piperine_lang::types::{Method, Ty};
+use piperine_lang_fixtures::checked::CheckedSource;
+use piperine_lang_fixtures::buck::BuckSource;
 
-/// Associated test helpers of `compound`, grouped on one fixture type.
-struct CompoundFixture;
+/// Declarations of a checked design looked up by name: an enum or a binding.
+struct NamedDeclaration;
 
-impl CompoundFixture {
-    /// A design of `Top` with `body` as its analog block and `items` before it, over an empty std.
-    fn source(items: &str, body: &str) -> String {
-        format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}")
-    }
-
-    fn design_of(src: &str) -> Design {
-        let design = PomSource::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
-        design
-    }
-
-    /// The same over the embedded standard library.
-    fn design_with_std(src: &str) -> Design {
-        let design = Design::builder().source("top.msl", src).build();
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
-        design
-    }
-
-    fn checked<'d>(design: &'d Design, src: &str) -> Types<'d> {
-        Types::check(design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()))
-    }
-
-    fn diagnostics(items: &str, body: &str) -> (String, Vec<DesignDiagnostic>) {
-        let src = CompoundFixture::source(items, body);
-        let design = CompoundFixture::design_of(&src);
-        let err = Types::check(&design, "Top").expect_err("expected diagnostics");
-        (src, err)
-    }
-
-    fn codes(d: &[DesignDiagnostic]) -> Vec<String> {
-        d.iter().map(|d| d.diagnostic.code.to_string()).collect()
-    }
-
-    fn snippet<'a>(src: &'a str, d: &DesignDiagnostic) -> &'a str {
-        &src[d.diagnostic.span().range()]
-    }
-
+impl NamedDeclaration {
+    /// The enum (`enum_`) or the binding named `name`.
     fn decl(design: &Design, name: &str, enum_: bool) -> DeclId {
         design
             .decls()
@@ -56,33 +21,15 @@ impl CompoundFixture {
             .unwrap_or_else(|| panic!("no `{name}`"))
             .id()
     }
+}
 
-    /// The text of `item` (an `enum` or a `fn`) in `examples/buck/src/<file>`, its doc and attribute
-    /// lines included, through its closing brace.
-    fn buck_item(file: &str, head: &str) -> String {
-        let path = format!("{}/../../examples/buck/src/{file}", env!("CARGO_MANIFEST_DIR"));
-        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-        let at = text.find(head).unwrap_or_else(|| panic!("no `{head}` in {file}"));
-        let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}')).unwrap_or(at);
-        let mut depth = 0usize;
-        for (i, c) in text[at..].char_indices() {
-            match c {
-                '{' => depth += 1,
-                '}' => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return text[start..at + i + 1].to_string();
-                    }
-                }
-                _ => {}
-            }
-        }
-        panic!("`{head}` in {file} does not close")
-    }
+/// The buck's supervisor items as the sources of the compound-value tests.
+struct SupervisorItems;
 
+impl SupervisorItems {
     /// `Mode` and `Fault` of the buck, and the supervisor's `match` and the setpoint register's
     /// `if let` written as functions over values (`supervisor.msl`, `control.msl`).
-    fn supervisor_items() -> String {
+    fn source() -> String {
         format!(
             "{}\n{}\nconst SETPOINT_MAX: u8 = 168;\n\
              fn next_mode(m: Mode, retry: u11, fault_now: Option<Fault>, at_target: bool) -> Mode {{\n\
@@ -95,8 +42,8 @@ impl CompoundFixture {
                  }}\n\
              }}\n\
              fn setpoint_next(data: Option<u8>, code: u8) -> u8 {{ if let Some(d) = data {{ d.min(SETPOINT_MAX) }} else {{ code }} }}",
-            CompoundFixture::buck_item("supervisor.msl", "pub enum Mode"),
-            CompoundFixture::buck_item("supervisor.msl", "pub enum Fault"),
+            BuckSource::item("supervisor.msl", "pub enum Mode"),
+            BuckSource::item("supervisor.msl", "pub enum Fault"),
         )
     }
 }
@@ -105,30 +52,30 @@ impl CompoundFixture {
 fn unit_enums_and_their_variants_are_typed() {
     // DIG-03 AC 1: an enum of unit variants deriving `Repr`, its variant paths, and `==`/`!=`
     // when it derives `PartialEq` (part I §2 rule 5). `Mode` and `Fault` as the buck writes them.
-    let items = format!("{}\n{}", CompoundFixture::buck_item("supervisor.msl", "pub enum Mode"), CompoundFixture::buck_item("supervisor.msl", "pub enum Fault"));
+    let items = format!("{}\n{}", BuckSource::item("supervisor.msl", "pub enum Mode"), BuckSource::item("supervisor.msl", "pub enum Fault"));
     let body = "let m = Mode::Regulate; let f = Fault::Clear; let same = m == Mode::Off; let other = f != Fault::OverVoltage;";
-    let src = CompoundFixture::source(&items, body);
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
-    let (mode, fault) = (CompoundFixture::decl(&design, "Mode", true), CompoundFixture::decl(&design, "Fault", true));
-    let got: Vec<Ty> = ["m", "f", "same", "other"].iter().map(|n| types.local(CompoundFixture::decl(&design, n, false)).cloned().expect("typed")).collect();
+    let src = CheckedSource::source(&items, body);
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
+    let (mode, fault) = (NamedDeclaration::decl(&design, "Mode", true), NamedDeclaration::decl(&design, "Fault", true));
+    let got: Vec<Ty> = ["m", "f", "same", "other"].iter().map(|n| types.local(NamedDeclaration::decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [Ty::enumeration(mode), Ty::enumeration(fault), Ty::Bool, Ty::Bool]);
     assert_eq!(Ty::enumeration(mode).name(&design), "Mode");
 
     // `Severity` of the stdlib, through the prelude.
     let src = "module Top() { }\nanalog for Top { let s = Severity::Warning; let w = s == Severity::Error; }";
-    let design = CompoundFixture::design_with_std(src);
-    let types = CompoundFixture::checked(&design, src);
+    let design = CheckedSource::standard_design_of(src);
+    let types = CheckedSource::checked(&design, src);
     let severity = design.decls().into_iter().find(|d| d.name() == Some("Severity") && matches!(d.kind(), DeclKind::Enum(_))).expect("std Severity").id();
-    assert_eq!(types.local(CompoundFixture::decl(&design, "s", false)), Some(&Ty::enumeration(severity)));
-    assert_eq!(types.local(CompoundFixture::decl(&design, "w", false)), Some(&Ty::Bool));
+    assert_eq!(types.local(NamedDeclaration::decl(&design, "s", false)), Some(&Ty::enumeration(severity)));
+    assert_eq!(types.local(NamedDeclaration::decl(&design, "w", false)), Some(&Ty::Bool));
 
     // Two enums do not compare, and one without `PartialEq` does not compare at all.
-    let (src, d) = CompoundFixture::diagnostics(&items, "let x = Mode::Off == Fault::Clear;");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "Fault::Clear");
-    let (_, d) = CompoundFixture::diagnostics("#[derive(Repr)]\nenum E { A, B }", "let x = E::A == E::B;");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
+    let (src, d) = CheckedSource::body_diagnostics(&items, "let x = Mode::Off == Fault::Clear;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "Fault::Clear");
+    let (_, d) = CheckedSource::body_diagnostics("#[derive(Repr)]\nenum E { A, B }", "let x = E::A == E::B;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
     assert!(d[0].diagnostic.message.contains("PartialEq"), "{}", d[0].diagnostic.message);
 }
 
@@ -138,9 +85,9 @@ fn an_enum_that_derives_no_repr_is_a_value() {
     // that does not derive `Repr` is built and compared like any other, and only a carrier of it needs the `Repr`
     // (`a_carried_type_without_repr_is_e0112`); a payload, an explicit discriminant and `#[repr]` are accepted since
     // composite-values T41.
-    let src = CompoundFixture::source("#[derive(PartialEq)]\nenum E { A, B }", "let x = E::B; let y = x == E::A;");
-    let design = CompoundFixture::design_of(&src);
-    CompoundFixture::checked(&design, &src);
+    let src = CheckedSource::source("#[derive(PartialEq)]\nenum E { A, B }", "let x = E::B; let y = x == E::A;");
+    let design = CheckedSource::design_of(&src);
+    CheckedSource::checked(&design, &src);
 }
 
 #[test]
@@ -148,31 +95,31 @@ fn option_values_and_their_methods_are_typed() {
     // DIG-03 AC 3: `Option<T>`, `Some(e)`, `None` and `is_some`, `is_none`, `unwrap_or`
     // (Appendix H). `None` takes the type its position expects: an annotation, the other arm of
     // an `if`, a parameter.
-    let items = CompoundFixture::buck_item("supervisor.msl", "pub enum Fault");
+    let items = BuckSource::item("supervisor.msl", "pub enum Fault");
     let body = "let a = Some(2.5); let b: Option<u8> = None; let c: Option<u8> = Some(7); \
                 let f = if true { Some(Fault::OverCurrent) } else if false { Some(Fault::OverVoltage) } else { None }; \
                 let g = if true { None } else { Some(1.0) }; \
                 let s = a.is_some(); let n = f.is_none(); let u = b.unwrap_or(3); let v = a.unwrap_or(0.0);";
-    let src = CompoundFixture::source(&items, body);
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
-    let fault = CompoundFixture::decl(&design, "Fault", true);
+    let src = CheckedSource::source(&items, body);
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
+    let fault = NamedDeclaration::decl(&design, "Fault", true);
     let opt = |t: Ty| Ty::Option(Box::new(t));
-    let got: Vec<Ty> = ["a", "b", "c", "f", "g", "s", "n", "u", "v"].iter().map(|n| types.local(CompoundFixture::decl(&design, n, false)).cloned().expect("typed")).collect();
+    let got: Vec<Ty> = ["a", "b", "c", "f", "g", "s", "n", "u", "v"].iter().map(|n| types.local(NamedDeclaration::decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [opt(Ty::F64), opt(Ty::UInt(8)), opt(Ty::UInt(8)), opt(Ty::enumeration(fault)), opt(Ty::F64), Ty::Bool, Ty::Bool, Ty::UInt(8), Ty::F64]);
     assert_eq!(opt(Ty::UInt(8)).name(&design), "Option<u8>");
 
     // `None` with nothing to take a type from, and `unwrap_or` of another type, are mismatches.
-    let (src, d) = CompoundFixture::diagnostics("", "let x = None;");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "None");
-    let (src, d) = CompoundFixture::diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap_or(1.0);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "1.0");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = None;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "None");
+    let (src, d) = CheckedSource::body_diagnostics("", "let o: Option<u8> = Some(1); let x = o.unwrap_or(1.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "1.0");
     // A method `Option` has no row for is named with the type (`E0161`, Appendix H rule 1: the
     // `Option` catalogue is complete since `unwrap` is a row).
-    let (_, d) = CompoundFixture::diagnostics("", "let o: Option<u8> = Some(1); let x = o.flatten();");
-    assert_eq!(CompoundFixture::codes(&d), ["E0161"]);
+    let (_, d) = CheckedSource::body_diagnostics("", "let o: Option<u8> = Some(1); let x = o.flatten();");
+    assert_eq!(CheckedSource::codes(&d), ["E0161"]);
     assert!(d[0].diagnostic.message.contains("flatten") && d[0].diagnostic.message.contains("Option<u8>"), "{}", d[0].diagnostic.message);
 }
 
@@ -180,31 +127,31 @@ fn option_values_and_their_methods_are_typed() {
 fn a_tuple_let_names_each_component() {
     // DIG-03 AC 7: `let (a, b) = (x, y);` names each component, in a function, an `analog` block
     // and a module body. `in_window` as the buck writes it.
-    let items = format!("{}\nfn swap(a: u8, b: u8) -> u8 {{ let (x, y) = (b, a); x - y }}", CompoundFixture::buck_item("supervisor.msl", "pub fn in_window"));
+    let items = format!("{}\nfn swap(a: u8, b: u8) -> u8 {{ let (x, y) = (b, a); x - y }}", BuckSource::item("supervisor.msl", "pub fn in_window"));
     let body = "let w = in_window(130, 128); let s = swap(1, 2); let (p, q) = (1.5, true);";
-    let src = CompoundFixture::source(&items, body);
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
-    let got: Vec<Ty> = ["w", "s", "p", "q", "m", "r", "x", "y"].iter().map(|n| types.local(CompoundFixture::decl(&design, n, false)).cloned().expect("typed")).collect();
+    let src = CheckedSource::source(&items, body);
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
+    let got: Vec<Ty> = ["w", "s", "p", "q", "m", "r", "x", "y"].iter().map(|n| types.local(NamedDeclaration::decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [Ty::Bool, Ty::UInt(8), Ty::F64, Ty::Bool, Ty::UInt(11), Ty::UInt(11), Ty::UInt(8), Ty::UInt(8)]);
 
     let src = "module Top() { let (a, b) = (2.0, 3.0); }";
-    let design = CompoundFixture::design_of(src);
-    let types = CompoundFixture::checked(&design, src);
-    assert_eq!([types.local(CompoundFixture::decl(&design, "a", false)), types.local(CompoundFixture::decl(&design, "b", false))], [Some(&Ty::F64), Some(&Ty::F64)]);
+    let design = CheckedSource::design_of(src);
+    let types = CheckedSource::checked(&design, src);
+    assert_eq!([types.local(NamedDeclaration::decl(&design, "a", false)), types.local(NamedDeclaration::decl(&design, "b", false))], [Some(&Ty::F64), Some(&Ty::F64)]);
 
     // A tuple is a value anywhere (§1.2.4, composite-values T40): bound whole, destructured from a
     // variable, and a type that is not a tuple is a plain mismatch; a count that differs is a
     // mismatch at the pattern.
     for body in ["let t = (1.0, 2.0);", "let x = (1.0, 2.0); let (a, b) = x;"] {
-        let src = CompoundFixture::source("", body);
-        CompoundFixture::checked(&CompoundFixture::design_of(&src), &src);
+        let src = CheckedSource::source("", body);
+        CheckedSource::checked(&CheckedSource::design_of(&src), &src);
     }
-    let (src, d) = CompoundFixture::diagnostics("", "let t: (f64, f64) = 1.0;");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"], "{src}");
-    let (src, d) = CompoundFixture::diagnostics("", "let (a, b) = (1.0, 2.0, 3.0);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "(a, b)");
+    let (src, d) = CheckedSource::body_diagnostics("", "let t: (f64, f64) = 1.0;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("", "let (a, b) = (1.0, 2.0, 3.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "(a, b)");
 }
 
 #[test]
@@ -213,9 +160,9 @@ fn a_value_for_an_option_parameter_is_some_of_it() {
     // as `Some` of it; an `Option<T>`, `Some(..)` and `None` are passed as they are.
     let items = "fn pick(td: Option<f64>) -> f64 { td.unwrap_or(0.0) }\nfn count(n: Option<u8>) -> u8 { n.unwrap_or(1) }";
     let body = "let x = 2.0; let o: Option<f64> = None; let a = pick(x); let b = pick(o); let c = pick(None); let d = pick(Some(1.0)); let e = count(5);";
-    let src = CompoundFixture::source(items, body);
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
+    let src = CheckedSource::source(items, body);
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
     let calls: Vec<_> = (0..design.expr_count())
         .map(|i| piperine_lang::pom::ExprId(i as u32))
         .filter(|e| matches!(&design.expr_node(*e).kind, piperine_lang::pom::ExprKind::Call { .. }) && types.callee(*e).is_some())
@@ -230,9 +177,9 @@ fn a_value_for_an_option_parameter_is_some_of_it() {
     assert_eq!(types.ty(argument(calls[4])), Some(&Ty::UInt(8)), "the literal takes the payload's type");
 
     // A value of another type is a mismatch naming the parameter's type.
-    let (src, d) = CompoundFixture::diagnostics(items, "let a = pick(true);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "true");
+    let (src, d) = CheckedSource::body_diagnostics(items, "let a = pick(true);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "true");
     assert!(d[0].diagnostic.message.contains("Option<f64>"), "{}", d[0].diagnostic.message);
 }
 
@@ -240,18 +187,18 @@ fn a_value_for_an_option_parameter_is_some_of_it() {
 fn match_is_typed_over_enums_bools_integers_and_options() {
     // DIG-03 AC 4: `match` over an enum, a `bool`, an integer and an `Option`, with path,
     // literal, `Some(p)`, `None`, or- and wildcard patterns, its arms of one type.
-    let items = format!("{}\nconst TWO: u2 = 2;", CompoundFixture::supervisor_items());
+    let items = format!("{}\nconst TWO: u2 = 2;", SupervisorItems::source());
     let body = "let m = next_mode(Mode::Off, 0, None, false); let s = setpoint_next(Some(200), 100); \
                 let b = match true { true => 1.0, false => 2.0 }; \
                 let k: u2 = 1; let i = match k { 0 => 5, 1 | TWO => 6, _ => 7 }; \
                 let o: Option<Fault> = None; let fo = match o { Some(Fault::Clear) => 1, Some(_) => 2, None => 3 }; \
                 let g = match o { Some(x) => x, None => Fault::Clear }; \
                 let w: u9 = 4; let h = match w { 0 => 9, _ => w };";
-    let src = CompoundFixture::source(&items, body);
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
-    let (mode, fault) = (CompoundFixture::decl(&design, "Mode", true), CompoundFixture::decl(&design, "Fault", true));
-    let got: Vec<Ty> = ["m", "s", "b", "i", "fo", "g", "h", "x"].iter().map(|n| types.local(CompoundFixture::decl(&design, n, false)).cloned().expect("typed")).collect();
+    let src = CheckedSource::source(&items, body);
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
+    let (mode, fault) = (NamedDeclaration::decl(&design, "Mode", true), NamedDeclaration::decl(&design, "Fault", true));
+    let got: Vec<Ty> = ["m", "s", "b", "i", "fo", "g", "h", "x"].iter().map(|n| types.local(NamedDeclaration::decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [Ty::enumeration(mode), Ty::UInt(8), Ty::F64, Ty::Int(32), Ty::Int(32), Ty::enumeration(fault), Ty::UInt(9), Ty::enumeration(fault)]);
 
     // DIG-01 AC 2, the `match` arm position: a bare literal arm takes the type of the first arm
@@ -264,16 +211,16 @@ fn match_is_typed_over_enums_bools_integers_and_options() {
 
     // §1 rule 14: a name that resolves to a constant is a path pattern and binds nothing; a name
     // that resolves to nothing binds, at any depth (§1.6.2).
-    let src = CompoundFixture::source("", "let k: u2 = 1; let i = match k { x => 1.0 };");
-    CompoundFixture::checked(&CompoundFixture::design_of(&src), &src);
+    let src = CheckedSource::source("", "let k: u2 = 1; let i = match k { x => 1.0 };");
+    CheckedSource::checked(&CheckedSource::design_of(&src), &src);
 
     // Arms of different types, and a pattern of another type, are mismatches.
-    let (src, d) = CompoundFixture::diagnostics("", "let b = match true { true => 1.0, false => false };");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "false");
-    let (src, d) = CompoundFixture::diagnostics(&CompoundFixture::supervisor_items(), "let m = Mode::Off; let x = match m { Fault::Clear => 1.0, _ => 2.0 };");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"]);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "Fault::Clear");
+    let (src, d) = CheckedSource::body_diagnostics("", "let b = match true { true => 1.0, false => false };");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "false");
+    let (src, d) = CheckedSource::body_diagnostics(&SupervisorItems::source(), "let m = Mode::Off; let x = match m { Fault::Clear => 1.0, _ => 2.0 };");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "Fault::Clear");
 }
 
 #[test]
@@ -288,18 +235,18 @@ fn a_match_that_is_not_exhaustive_is_e0180() {
         // a signed type: `-2` left out of an `i2`
         "let s: i2 = 0; let x = match s { -1 => 1.0, 0 => 2.0, 1 => 3.0 };",
     ] {
-        let (src, d) = CompoundFixture::diagnostics(&CompoundFixture::supervisor_items(), body);
-        assert_eq!(CompoundFixture::codes(&d), ["E0184"], "{src}");
-        assert!(CompoundFixture::snippet(&src, &d[0]).starts_with("match "), "{src}: {}", CompoundFixture::snippet(&src, &d[0]));
+        let (src, d) = CheckedSource::body_diagnostics(&SupervisorItems::source(), body);
+        assert_eq!(CheckedSource::codes(&d), ["E0184"], "{src}");
+        assert!(CheckedSource::snippet(&src, &d[0]).starts_with("match "), "{src}: {}", CheckedSource::snippet(&src, &d[0]));
     }
     // Every value, and only then, passes: all four variants; every value of a `u2` by literals;
     // every value of an `i2` and of an `i3` by literals, the negative ones among them
     // (verification F6).
-    let ok = CompoundFixture::source(&CompoundFixture::supervisor_items(), "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0, Mode::Hiccup => 4.0 }; \
+    let ok = CheckedSource::source(&SupervisorItems::source(), "let m = Mode::Off; let x = match m { Mode::Off => 1.0, Mode::SoftStart => 2.0, Mode::Regulate => 3.0, Mode::Hiccup => 4.0 }; \
                                          let k: u2 = 1; let y = match k { 0 => 1.0, 1 => 2.0, 2 | 3 => 3.0 }; \
                                          let s: i2 = 0; let z = match s { -2 => 1.0, -1 => 2.0, 0 | 1 => 3.0 }; \
                                          let t: i3 = 0; let u = match t { -4 | -3 => 1.0, -2 => 2.0, -1 | 0 => 3.0, 1 | 2 | 3 => 4.0 };");
-    CompoundFixture::checked(&CompoundFixture::design_of(&ok), &ok);
+    CheckedSource::checked(&CheckedSource::design_of(&ok), &ok);
 }
 
 #[test]
@@ -307,43 +254,43 @@ fn a_nested_pattern_inside_some_covers_its_payload() {
     // msl-digital T66 (DIG-03 AC 4 and 5): `Some(true)` and `Some(false)` together cover the
     // payload of an `Option<bool>` as `Some(_)` does, so with `None` the `match` is exhaustive;
     // a variant inside `Some` covers its enum the same way.
-    let ok = CompoundFixture::source(&CompoundFixture::supervisor_items(), "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }; \
+    let ok = CheckedSource::source(&SupervisorItems::source(), "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, Some(false) => 0.0, None => 0.5 }; \
                                          let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) | Some(Fault::OverVoltage) => 2, None => 3 };");
-    CompoundFixture::checked(&CompoundFixture::design_of(&ok), &ok);
+    CheckedSource::checked(&CheckedSource::design_of(&ok), &ok);
     // A payload left out is still a missing value: `E0184` at the `match` (§1.8.6).
     for body in [
         "let o: Option<bool> = None; let x = match o { Some(true) => 1.0, None => 0.5 };",
         "let f: Option<Fault> = None; let y = match f { Some(Fault::Clear) => 1, Some(Fault::OverCurrent) => 2, None => 3 };",
     ] {
-        let (src, d) = CompoundFixture::diagnostics(&CompoundFixture::supervisor_items(), body);
-        assert_eq!(CompoundFixture::codes(&d), ["E0184"], "{src}");
-        assert!(CompoundFixture::snippet(&src, &d[0]).starts_with("match "), "{src}: {}", CompoundFixture::snippet(&src, &d[0]));
+        let (src, d) = CheckedSource::body_diagnostics(&SupervisorItems::source(), body);
+        assert_eq!(CheckedSource::codes(&d), ["E0184"], "{src}");
+        assert!(CheckedSource::snippet(&src, &d[0]).starts_with("match "), "{src}: {}", CheckedSource::snippet(&src, &d[0]));
     }
     // The stdlib `D2A` writes the nested `match` in a module-body `let`: its `None` is the
     // built-in variant, not a name bound by another arm, and the design checks with no
     // diagnostic.
     let src = "module Top() { signal d: Bit = false; signal a: Electrical; signal vdd: Electrical; let x = D2A(d, a, vdd); }";
-    let design = CompoundFixture::design_with_std(src);
-    CompoundFixture::checked(&design, src);
+    let design = CheckedSource::standard_design_of(src);
+    CheckedSource::checked(&design, src);
 }
 
 #[test]
 fn if_let_some_binds_the_payload() {
     // DIG-03 AC 6: `if let Some(x) = e` binds `x` to the payload in the first block; the
     // setpoint register's `if let` as `setpoint_next` writes it.
-    let src = CompoundFixture::source(&CompoundFixture::supervisor_items(), "let s = setpoint_next(None, 100); let o: Option<f64> = Some(1.5); let y = if let Some(v) = o { v * 2.0 } else { 0.0 };");
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
-    let got: Vec<Ty> = ["s", "y", "v", "d"].iter().map(|n| types.local(CompoundFixture::decl(&design, n, false)).cloned().expect("typed")).collect();
+    let src = CheckedSource::source(&SupervisorItems::source(), "let s = setpoint_next(None, 100); let o: Option<f64> = Some(1.5); let y = if let Some(v) = o { v * 2.0 } else { 0.0 };");
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
+    let got: Vec<Ty> = ["s", "y", "v", "d"].iter().map(|n| types.local(NamedDeclaration::decl(&design, n, false)).cloned().expect("typed")).collect();
     assert_eq!(got, [Ty::UInt(8), Ty::F64, Ty::F64, Ty::UInt(8)]);
 
     // The value must be an `Option`; the pattern must be `Some(p)`.
-    let (src, d) = CompoundFixture::diagnostics("", "let x = 1.0; let y = if let Some(v) = x { v } else { 0.0 };");
-    assert_eq!(CompoundFixture::codes(&d)[0], "E0180", "{src}");
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "x");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = 1.0; let y = if let Some(v) = x { v } else { 0.0 };");
+    assert_eq!(CheckedSource::codes(&d)[0], "E0180", "{src}");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "x");
     // `if let` takes any refutable pattern (§1.8.2): `None` is one.
-    let src = CompoundFixture::source("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
-    CompoundFixture::checked(&CompoundFixture::design_of(&src), &src);
+    let src = CheckedSource::source("", "let o: Option<f64> = None; let y = if let None = o { 1.0 } else { 0.0 };");
+    CheckedSource::checked(&CheckedSource::design_of(&src), &src);
 }
 
 #[test]
@@ -367,33 +314,33 @@ fn every_option_and_bool_row_types_with_a_closure_or_value() {
         ("c.then_some(7)", Method::ThenSome, opt(Ty::Int(32))),
     ];
     let lets: String = rows.iter().enumerate().map(|(i, (call, ..))| format!("let r{i} = {call}; ")).collect();
-    let src = CompoundFixture::source("", &format!("let o: Option<u8> = Some(3); let p: Option<u8> = None; let c = 2.0 > 1.0; {lets}"));
-    let design = CompoundFixture::design_of(&src);
-    let types = CompoundFixture::checked(&design, &src);
+    let src = CheckedSource::source("", &format!("let o: Option<u8> = Some(3); let p: Option<u8> = None; let c = 2.0 > 1.0; {lets}"));
+    let design = CheckedSource::design_of(&src);
+    let types = CheckedSource::checked(&design, &src);
     for (i, (call, method, ty)) in rows.iter().enumerate() {
-        assert_eq!(types.local(CompoundFixture::decl(&design, &format!("r{i}"), false)), Some(ty), "{call}");
+        assert_eq!(types.local(NamedDeclaration::decl(&design, &format!("r{i}"), false)), Some(ty), "{call}");
         let at = (0..design.expr_count()).map(|e| ExprId(e as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. }) && src[design.expr_node(*e).span.range()] == **call).unwrap_or_else(|| panic!("{call}"));
         assert_eq!(types.method(at), Some(*method), "{call}");
     }
     // The closure of `map` has the payload as its parameter: `x` is a `u8`, so `x + 2.5` is a
     // mismatch; the body of `and_then` must be an `Option`.
-    let (src, d) = CompoundFixture::diagnostics("", "let o: Option<u8> = Some(3); let r = o.map(|x| x + 2.5);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"], "{src}");
-    let (src, d) = CompoundFixture::diagnostics("", "let o: Option<u8> = Some(3); let r = o.and_then(|x| x);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("", "let o: Option<u8> = Some(3); let r = o.map(|x| x + 2.5);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("", "let o: Option<u8> = Some(3); let r = o.and_then(|x| x);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"], "{src}");
     // A default that is not the payload's type is a mismatch.
-    let (src, d) = CompoundFixture::diagnostics("", "let o: Option<u8> = Some(3); let r = o.unwrap_or_else(|| 2.5);");
-    assert_eq!(CompoundFixture::codes(&d), ["E0180"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("", "let o: Option<u8> = Some(3); let r = o.unwrap_or_else(|| 2.5);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"], "{src}");
 }
 
 #[test]
 fn expect_with_a_non_literal_message_is_p0001() {
     // CAT-03 AC 8: the message of `expect` is a string literal, so the fault names it at compile
     // time; anything else is `P0001` naming `expect`.
-    let (src, d) = CompoundFixture::diagnostics("fn h(o: Option<u8>, s: str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
-    assert_eq!(CompoundFixture::codes(&d), ["P0001"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("fn h(o: Option<u8>, s: str) -> u8 { o.expect(s) }", "let r = h(Some(3), \"msg\");");
+    assert_eq!(CheckedSource::codes(&d), ["P0001"], "{src}");
     assert!(d[0].diagnostic.message.contains("expect"), "{}", d[0].diagnostic.message);
-    assert_eq!(CompoundFixture::snippet(&src, &d[0]), "s");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "s");
 }
 
 #[test]
@@ -406,10 +353,10 @@ fn a_method_outside_h3_h4_is_e0161() {
         ("let c = 1.0 > 0.0; let r = c.not();", "not", "`bool`"),
         ("let c = 1.0 > 0.0; let r = c.then_none();", "then_none", "`bool`"),
     ] {
-        let (src, d) = CompoundFixture::diagnostics("", body);
-        assert_eq!(CompoundFixture::codes(&d), ["E0161"], "{src}");
+        let (src, d) = CheckedSource::body_diagnostics("", body);
+        assert_eq!(CheckedSource::codes(&d), ["E0161"], "{src}");
         let message = &d[0].diagnostic.message;
         assert!(message.contains(name) && message.contains(ty), "{message}");
-        assert_eq!(CompoundFixture::snippet(&src, &d[0]), name);
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), name);
     }
 }

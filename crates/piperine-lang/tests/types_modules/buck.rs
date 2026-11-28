@@ -2,9 +2,9 @@
 //! outside is `P0001` naming the construct, and `Buck` of `examples/buck`, loaded from disk as
 //! `buck_example.rs` loads it, type-checks with no diagnostic.
 
-use std::path::PathBuf;
 
-use piperine_lang::pom::{CrateGraph, Design, DesignDiagnostic};
+use piperine_lang::pom::{Design, DesignDiagnostic};
+use piperine_lang_fixtures::buck::BuckSource;
 use piperine_lang::types::Types;
 
 /// One construct of DIG-07 AC 1: its name, a source that reaches it from `Top` and the words the
@@ -39,33 +39,16 @@ const ROWS: &[Row] = &[
     Row { construct: "an extern module", source: "#[link(\"x.osdi\", model = \"x\")]\nextern \"osdi\" module X(a: Electrical) { }\nmodule Top(a: Electrical) { let x = X(a); }", names: "`extern` module" },
 ];
 
-/// Associated test helpers of `buck`, grouped on one fixture type.
-struct BuckFixture;
-
-impl BuckFixture {
-    fn check(row: &Row) -> (String, Vec<DesignDiagnostic>) {
-        let src = format!("{NODE}{}", row.source);
+impl Row {
+    /// The source of the row after `NODE`, and the diagnostics of checking it, which must not check clean.
+    fn check(&self) -> (String, Vec<DesignDiagnostic>) {
+        let src = format!("{NODE}{}", self.source);
         let design = Design::builder().source("top.msl", &src).build();
-        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", row.construct, design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
+        assert!(design.diagnostics().is_empty(), "{}: the source must parse and resolve: {:?}\n{src}", self.construct, design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         match Types::check(&design, "Top") {
-            Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", row.construct),
+            Ok(_) => panic!("{}: expected a P0001, the check passed\n{src}", self.construct),
             Err(d) => (src, d),
         }
-    }
-
-    /// `examples/buck` as a one-crate graph named by its manifest, over the embedded standard library.
-    fn buck() -> Design {
-        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-        let manifest = std::fs::read_to_string(dir.join("Piperine.toml")).expect("examples/buck/Piperine.toml");
-        let name = manifest
-            .lines()
-            .map(str::trim)
-            .skip_while(|l| *l != "[package]")
-            .find_map(|l| l.strip_prefix("name").and_then(|r| r.trim_start().strip_prefix('=')).map(|v| v.trim().trim_matches('"').to_string()))
-            .expect("a [package] name in Piperine.toml");
-        let mut graph = CrateGraph::new();
-        graph.add_crate(&name, dir.join("src/lib.msl")).expect("a valid crate name");
-        Design::load_crates(graph)
     }
 }
 
@@ -73,7 +56,7 @@ impl BuckFixture {
 fn what_stays_outside_is_p0001_by_name() {
     // DIG-07 AC 1: each construct is one `P0001` that names it, at the construct.
     for row in ROWS {
-        let (src, d) = BuckFixture::check(row);
+        let (src, d) = row.check();
         assert_eq!(d.len(), 1, "{}: one diagnostic per construct, got {:?}\n{src}", row.construct, d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
         assert_eq!(d[0].diagnostic.code, "P0001", "{}: {}", row.construct, d[0].diagnostic.message);
         assert!(d[0].diagnostic.message.contains(row.names), "{}: `{}` does not name `{}`", row.construct, d[0].diagnostic.message, row.names);
@@ -95,7 +78,7 @@ fn the_buck_type_checks_with_no_diagnostic() {
     let design = Design::builder().source("top.msl", &other).build();
     let d = Types::check(&design, "Top").expect_err("another branch");
     assert_eq!((d[0].diagnostic.code.as_ref(), d[0].diagnostic.message.contains("flow probe")), ("P0001", true));
-    let design = BuckFixture::buck();
+    let design = BuckSource::design();
     assert!(design.diagnostics().is_empty(), "the package must parse and resolve: {:?}", design.diagnostics().iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>());
     match Types::check(&design, "Buck") {
         Ok(types) => {

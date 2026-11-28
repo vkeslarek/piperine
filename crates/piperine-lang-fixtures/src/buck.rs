@@ -1,5 +1,9 @@
 //! The text of items of `examples/buck/src`, read as written, so a test checks the buck's own modules and never a retyped copy.
 
+use std::path::PathBuf;
+
+use piperine_lang::pom::{CrateGraph, Design};
+
 /// The text of items of `examples/buck/src`, read as written, so a test checks the buck's own modules and never a retyped copy.
 pub struct BuckSource;
 
@@ -72,5 +76,34 @@ impl BuckSource {
         let path = format!("{}/../piperine-ir/tests/golden/buck/{name}.txt", env!("CARGO_MANIFEST_DIR"));
         std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
     }
-}
 
+    /// The text of `fn name` of `file`, from `fn` through its closing brace.
+    pub fn function(file: &str, name: &str) -> String {
+        let text = BuckSource::read(file);
+        let start = text.find(&format!("fn {name}(")).unwrap_or_else(|| panic!("no fn {name} in {file}"));
+        text[start..BuckSource::through_closing_brace(&text, start)].to_string()
+    }
+
+    /// `examples/buck` as a one-crate graph named `buck` over the embedded standard library.
+    pub fn library_design() -> Design {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+        let mut graph = CrateGraph::new();
+        graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
+        Design::load_crates(graph)
+    }
+
+    /// `examples/buck` as a one-crate graph named by its manifest, over the embedded standard library.
+    pub fn design() -> Design {
+        let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
+        let manifest = std::fs::read_to_string(dir.join("Piperine.toml")).expect("examples/buck/Piperine.toml");
+        let name = manifest
+            .lines()
+            .map(str::trim)
+            .skip_while(|l| *l != "[package]")
+            .find_map(|l| l.strip_prefix("name").and_then(|r| r.trim_start().strip_prefix('=')).map(|v| v.trim().trim_matches('"').to_string()))
+            .expect("a [package] name in Piperine.toml");
+        let mut graph = CrateGraph::new();
+        graph.add_crate(&name, dir.join("src/lib.msl")).expect("a valid crate name");
+        Design::load_crates(graph)
+    }
+}

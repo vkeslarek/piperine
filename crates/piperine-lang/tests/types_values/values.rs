@@ -4,64 +4,22 @@
 //! `Top` whose `analog` block holds the expressions under test.
 
 
-use piperine_lang::pom::{DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, Reflect};
+use piperine_lang::pom::{Design, ExprId, ExprKind, Reflect};
 use piperine_lang::types::{Callee, Method, Ty, Types};
 use piperine_lang_fixtures::pom::PomSource;
+use piperine_lang_fixtures::checked::CheckedSource;
 
-/// Associated test helpers of `values`, grouped on one fixture type.
-struct ValuesFixture;
+/// A call of the function with optional slots (`OPTIONALS`), read back as the source of each slot's argument.
+struct OptionalCall;
 
-impl ValuesFixture {
-    /// A design of `Top` with `body` as its analog block and `items` before it.
-    fn source(items: &str, body: &str) -> String {
-        format!("{items}\nmodule Top() {{ }}\nanalog for Top {{ {body} }}")
-    }
-
-    fn design_of(src: &str) -> Design {
-        let design = PomSource::build(src);
-        assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {:?}\n{src}", PomSource::codes(&design));
-        design
-    }
-
-    fn binding(design: &Design, name: &str) -> DeclId {
-        design.decls().into_iter().find(|d| d.name() == Some(name) && matches!(d.kind(), DeclKind::Binding(_))).unwrap_or_else(|| panic!("no binding `{name}`")).id()
-    }
-
-    /// The type of each named `let` binding of the analog block.
-    fn local_types(items: &str, body: &str, names: &[&str]) -> Vec<Ty> {
-        let src = ValuesFixture::source(items, body);
-        let design = ValuesFixture::design_of(&src);
-        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
-        names.iter().map(|n| types.local(ValuesFixture::binding(&design, n)).unwrap_or_else(|| panic!("no type for `{n}`")).clone()).collect()
-    }
-
-    fn diagnostics(items: &str, body: &str) -> (String, Vec<DesignDiagnostic>) {
-        let src = ValuesFixture::source(items, body);
-        let design = ValuesFixture::design_of(&src);
-        let err = Types::check(&design, "Top").expect_err("expected diagnostics");
-        (src, err)
-    }
-
-    fn codes_of(diagnostics: &[DesignDiagnostic]) -> Vec<String> {
-        diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect()
-    }
-
-    fn snippet<'a>(src: &'a str, d: &DesignDiagnostic) -> &'a str {
-        &src[d.diagnostic.span().range()]
-    }
-
-    /// The expression whose source text is exactly `text`.
-    fn expr_at(design: &Design, src: &str, text: &str) -> ExprId {
-        (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| &src[design.expr_node(*e).span.range()] == text).unwrap_or_else(|| panic!("no expression `{text}`"))
-    }
-
+impl OptionalCall {
     /// The binding of the call `call` as the source text of each slot's argument (`None` for a slot
     /// left out), and the call's type.
     fn binding_of(call: &str) -> (Vec<Option<String>>, Option<Ty>) {
-        let src = ValuesFixture::source(OPTIONALS, &format!("let r = {call};"));
-        let design = ValuesFixture::design_of(&src);
-        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", ValuesFixture::codes_of(&d)));
-        let expr = ValuesFixture::expr_at(&design, &src, call);
+        let src = CheckedSource::source(OPTIONALS, &format!("let r = {call};"));
+        let design = CheckedSource::design_of(&src);
+        let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("expected a clean check: {:?}\n{src}", CheckedSource::codes(&d)));
+        let expr = CheckedSource::expression_of(&design, &src, call);
         let slots = types.binding(expr).unwrap_or_else(|| panic!("no binding for `{call}`")).iter().map(|s| s.map(|e| src[design.expr_node(e).span.range()].to_string())).collect();
         (slots, types.ty(expr).cloned())
     }
@@ -73,18 +31,18 @@ impl ValuesFixture {
 
 #[test]
 fn literals_are_f64_or_bool() {
-    let t = ValuesFixture::local_types("", "let a = 1.0; let b = 1.0_f64; let c = 2k; let d = 1e-14; let e = true; let f = false;", &["a", "b", "c", "d", "e", "f"]);
+    let t = CheckedSource::local_types("", "let a = 1.0; let b = 1.0_f64; let c = 2k; let d = 1e-14; let e = true; let f = false;", &["a", "b", "c", "d", "e", "f"]);
     assert_eq!(t, [Ty::F64, Ty::F64, Ty::F64, Ty::F64, Ty::Bool, Ty::Bool]);
 
     // An unsuffixed integer literal where `f64` is required is a type error, not a coercion.
-    let (src, d) = ValuesFixture::diagnostics("", "let x: f64 = 100;");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "100");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x: f64 = 100;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "100");
 }
 
 #[test]
 fn operators_type_as_rust_types_them() {
-    let t = ValuesFixture::local_types(
+    let t = CheckedSource::local_types(
         "",
         "let a = 1.0 + 2.0; let b = 1.0 - 2.0; let c = 1.0 * 2.0; let d = 1.0 / 2.0; let e = -1.0; \
          let f = 1.0 < 2.0; let g = 1.0 <= 2.0; let h = 1.0 > 2.0; let i = 1.0 >= 2.0; let j = 1.0 == 2.0; let k = 1.0 != 2.0; \
@@ -96,60 +54,60 @@ fn operators_type_as_rust_types_them() {
 
     // Each operator refuses the other type.
     for body in ["let x = 1.0 + true;", "let x = true && 1.0;", "let x = !1.0;", "let x = -true;", "let x = 1.0 < true;"] {
-        let (_, d) = ValuesFixture::diagnostics("", body);
-        assert_eq!(ValuesFixture::codes_of(&d), ["E0180"], "{body}");
+        let (_, d) = CheckedSource::body_diagnostics("", body);
+        assert_eq!(CheckedSource::codes(&d), ["E0180"], "{body}");
     }
 }
 
 #[test]
 fn if_and_block_take_their_value_type() {
-    let t = ValuesFixture::local_types("", "let a = if true { 1.0 } else { 2.0 }; let b = { 1.0 }; let c = { let z = 1.0; }; let d = if 1.0 > 0.0 { true } else if false { false } else { true };", &["a", "b", "c", "d"]);
+    let t = CheckedSource::local_types("", "let a = if true { 1.0 } else { 2.0 }; let b = { 1.0 }; let c = { let z = 1.0; }; let d = if 1.0 > 0.0 { true } else if false { false } else { true };", &["a", "b", "c", "d"]);
     assert_eq!(t, [Ty::F64, Ty::F64, Ty::Unit, Ty::Bool]);
 
     // The arms of an `if` have one type.
-    let (src, d) = ValuesFixture::diagnostics("", "let x = if true { 1.0 } else { false };");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "false");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = if true { 1.0 } else { false };");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "false");
 }
 
 #[test]
 fn a_let_takes_its_initializer_type() {
-    let t = ValuesFixture::local_types("", "let a = true; let b = a; let c: f64 = 1.0; let d = c * 2.0;", &["a", "b", "c", "d"]);
+    let t = CheckedSource::local_types("", "let a = true; let b = a; let c: f64 = 1.0; let d = c * 2.0;", &["a", "b", "c", "d"]);
     assert_eq!(t, [Ty::Bool, Ty::Bool, Ty::F64, Ty::F64]);
 }
 
 #[test]
 fn a_mismatch_names_both_types() {
-    let (src, d) = ValuesFixture::diagnostics("", "let a = 1.0; let x: f64 = if a > 0.0 { a } else { true };");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "true");
+    let (src, d) = CheckedSource::body_diagnostics("", "let a = 1.0; let x: f64 = if a > 0.0 { a } else { true };");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "true");
     let message = &d[0].diagnostic.message;
     assert!(message.contains("f64") && message.contains("bool"), "{message}");
 
     // A `let` and its annotation.
-    let (src, d) = ValuesFixture::diagnostics("", "let x: bool = 1.0;");
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "1.0");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x: bool = 1.0;");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "1.0");
     let message = &d[0].diagnostic.message;
     assert!(message.contains("f64") && message.contains("bool"), "{message}");
 }
 
 #[test]
 fn diagnostics_come_in_source_order_one_per_expression() {
-    let (src, d) = ValuesFixture::diagnostics("", "let a: bool = 1.0; let b: f64 = true; let c: f64 = 1.0 + true;");
+    let (src, d) = CheckedSource::body_diagnostics("", "let a: bool = 1.0; let b: f64 = true; let c: f64 = 1.0 + true;");
     assert_eq!(d.len(), 3, "{d:?}");
     let starts: Vec<usize> = d.iter().map(|d| d.diagnostic.span().start).collect();
     assert!(starts.windows(2).all(|w| w[0] < w[1]), "{starts:?}");
-    assert_eq!([ValuesFixture::snippet(&src, &d[0]), ValuesFixture::snippet(&src, &d[1]), ValuesFixture::snippet(&src, &d[2])], ["1.0", "true", "true"]);
+    assert_eq!([CheckedSource::snippet(&src, &d[0]), CheckedSource::snippet(&src, &d[1]), CheckedSource::snippet(&src, &d[2])], ["1.0", "true", "true"]);
 
     // One mistake inside nested parentheses is one diagnostic, not one per level.
-    let (_, d) = ValuesFixture::diagnostics("", "let x: f64 = ((true));");
+    let (_, d) = CheckedSource::body_diagnostics("", "let x: f64 = ((true));");
     assert_eq!(d.len(), 1, "{d:?}");
 
     // `Top` is checked first, then `lower` (declared above it), so the worklist meets the
     // later span first; the sort puts them back in source order.
-    let (src, d) = ValuesFixture::diagnostics("fn lower() -> f64 { true }", "let a: bool = 1.0; let y = lower();");
+    let (src, d) = CheckedSource::body_diagnostics("fn lower() -> f64 { true }", "let a: bool = 1.0; let y = lower();");
     assert_eq!(d.len(), 2, "{d:?}");
-    assert_eq!([ValuesFixture::snippet(&src, &d[0]), ValuesFixture::snippet(&src, &d[1])], ["true", "1.0"]);
+    assert_eq!([CheckedSource::snippet(&src, &d[0]), CheckedSource::snippet(&src, &d[1])], ["true", "1.0"]);
 
     // Across files: the worklist goes top.msl, helper.msl, top.msl again.
     let design = Design::builder()
@@ -171,12 +129,12 @@ const FUNCTIONS: &str = "fn half(a: f64) -> f64 { a / 2.0 }\nfn positive(a: f64)
 
 #[test]
 fn a_call_takes_its_declared_result() {
-    let t = ValuesFixture::local_types(FUNCTIONS, "let a = half(1.0); let b = positive(a);", &["a", "b"]);
+    let t = CheckedSource::local_types(FUNCTIONS, "let a = half(1.0); let b = positive(a);", &["a", "b"]);
     assert_eq!(t, [Ty::F64, Ty::Bool]);
 
     // The callee is recorded and the function is reached.
-    let src = ValuesFixture::source(FUNCTIONS, "let a = half(1.0);");
-    let design = ValuesFixture::design_of(&src);
+    let src = CheckedSource::source(FUNCTIONS, "let a = half(1.0);");
+    let design = CheckedSource::design_of(&src);
     let types = Types::check(&design, "Top").expect("clean");
     let half = design.function("half").expect("half").decl().id();
     let call = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::Call { .. }) && src[design.expr_node(*e).span.range()].starts_with("half(")).expect("a call");
@@ -186,44 +144,44 @@ fn a_call_takes_its_declared_result() {
     assert!(!types.reached().contains(&design.function("apply").unwrap().decl().id()));
 
     // Each argument is checked against its parameter, and the count is checked.
-    let (src, d) = ValuesFixture::diagnostics(FUNCTIONS, "let a = half(true);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "true");
+    let (src, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let a = half(true);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "true");
     // A wrong count is `E0141` (§3.2.6), no longer the plain mismatch.
-    let (_, d) = ValuesFixture::diagnostics(FUNCTIONS, "let a = half(1.0, 2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"]);
-    let (_, d) = ValuesFixture::diagnostics(FUNCTIONS, "let a = half();");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"]);
+    let (_, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let a = half(1.0, 2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"]);
+    let (_, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let a = half();");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"]);
 
     // A function takes positional arguments only: the POM refuses a named one (`E0140`).
-    let named = PomSource::build(&ValuesFixture::source(FUNCTIONS, "let a = half(a: 1.0);"));
+    let named = PomSource::build(&CheckedSource::source(FUNCTIONS, "let a = half(a: 1.0);"));
     assert_eq!(PomSource::codes(&named), ["E0140"]);
 }
 
 #[test]
 fn a_closure_takes_its_types_from_the_parameter() {
-    let t = ValuesFixture::local_types(FUNCTIONS, "let r = apply(|a, b| a + b, 2.0); let s = apply(|a: f64, b: f64| a * b, 2.0);", &["r", "s"]);
+    let t = CheckedSource::local_types(FUNCTIONS, "let r = apply(|a, b| a + b, 2.0); let s = apply(|a: f64, b: f64| a * b, 2.0);", &["r", "s"]);
     assert_eq!(t, [Ty::F64, Ty::F64]);
 
     // The body is checked against the declared result.
-    let (src, d) = ValuesFixture::diagnostics(FUNCTIONS, "let r = apply(|a, b| a > b, 2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "a > b");
+    let (src, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let r = apply(|a, b| a > b, 2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "a > b");
     // A parameter type written in the closure must be the declared one.
-    let (src, d) = ValuesFixture::diagnostics(FUNCTIONS, "let r = apply(|a: bool, b| b, 2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "bool");
+    let (src, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let r = apply(|a: bool, b| b, 2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "bool");
     // And so must the parameter count.
-    let (_, d) = ValuesFixture::diagnostics(FUNCTIONS, "let r = apply(|a| a, 2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
+    let (_, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let r = apply(|a| a, 2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
 }
 
 #[test]
 fn a_recursive_function_is_typed_from_its_signature() {
-    let t = ValuesFixture::local_types(FUNCTIONS, "let r = fact(5.0);", &["r"]);
+    let t = CheckedSource::local_types(FUNCTIONS, "let r = fact(5.0);", &["r"]);
     assert_eq!(t, [Ty::F64]);
-    let src = ValuesFixture::source(FUNCTIONS, "let r = fact(5.0);");
-    let design = ValuesFixture::design_of(&src);
+    let src = CheckedSource::source(FUNCTIONS, "let r = fact(5.0);");
+    let design = CheckedSource::design_of(&src);
     let types = Types::check(&design, "Top").expect("clean");
     let fact = design.function("fact").unwrap().decl().id();
     assert_eq!(types.reached().iter().filter(|d| **d == fact).count(), 1);
@@ -234,44 +192,44 @@ fn a_closure_takes_its_parameter_types_from_where_it_stands() {
     // §1.5.14: written parameters type the closure wherever it stands (T16); one with no written
     // type and no expected function type is `E0181`, and a closure where a plain value is expected
     // is a mismatch.
-    let (src, d) = ValuesFixture::diagnostics(FUNCTIONS, "let a = half(|x| x);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0181"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "|x| x");
-    let (src, d) = ValuesFixture::diagnostics(FUNCTIONS, "let a = half(|x: f64| x);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "|x: f64| x");
+    let (src, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let a = half(|x| x);");
+    assert_eq!(CheckedSource::codes(&d), ["E0181"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "|x| x");
+    let (src, d) = CheckedSource::body_diagnostics(FUNCTIONS, "let a = half(|x: f64| x);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "|x: f64| x");
 }
 
 #[test]
 fn a_deferred_method_is_resolved() {
     // The M1 diode's own form: `(vd / nvt).exp()`, in a function the module calls.
     let items = "fn shockley(vd: f64, nvt: f64) -> f64 { (vd / nvt).exp() - 1.0 }";
-    let src = ValuesFixture::source(items, "let i = shockley(0.5, 0.026);");
-    let design = ValuesFixture::design_of(&src);
+    let src = CheckedSource::source(items, "let i = shockley(0.5, 0.026);");
+    let design = CheckedSource::design_of(&src);
     let types = Types::check(&design, "Top").expect("clean");
     let call = (0..design.expr_count()).map(|i| ExprId(i as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. })).expect("a method call");
     assert_eq!(types.method(call), Some(Method::Exp));
     assert_eq!(types.ty(call), Some(&Ty::F64));
 
     // A method outside Appendix H.2 is `E0161` by name (CAT-01 AC 6).
-    let (src, d) = ValuesFixture::diagnostics("fn p(a: f64) -> f64 { a.cbrt() }", "let x = p(1.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0161"]);
+    let (src, d) = CheckedSource::body_diagnostics("fn p(a: f64) -> f64 { a.cbrt() }", "let x = p(1.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0161"]);
     assert!(d[0].diagnostic.message.contains("cbrt"), "{}", d[0].diagnostic.message);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "cbrt");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "cbrt");
 }
 
 #[test]
 fn catalogue_methods_on_f64_are_f64() {
     let items = "fn all(a: f64) -> f64 { a.exp() + a.ln() + a.sqrt() + a.abs() + 2.0_f64.sqrt() }";
-    let t = ValuesFixture::local_types(items, "let r = all(1.0);", &["r"]);
+    let t = CheckedSource::local_types(items, "let r = all(1.0);", &["r"]);
     assert_eq!(t, [Ty::F64]);
 
     // A method takes no argument; a bool receiver has no `exp` row (`E0161`: H.3 is complete).
     // The count is `E0141` (§3.2.6), the code that replaces the plain mismatch for it (spec.md PI-06 AC 2).
-    let (_, d) = ValuesFixture::diagnostics("fn p(a: f64) -> f64 { a.exp(1.0) }", "let x = p(1.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"]);
-    let (_, d) = ValuesFixture::diagnostics("fn p(a: bool) -> f64 { a.exp() }", "let x = p(true);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0161"]);
+    let (_, d) = CheckedSource::body_diagnostics("fn p(a: f64) -> f64 { a.exp(1.0) }", "let x = p(1.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"]);
+    let (_, d) = CheckedSource::body_diagnostics("fn p(a: bool) -> f64 { a.exp() }", "let x = p(true);");
+    assert_eq!(CheckedSource::codes(&d), ["E0161"]);
 }
 
 #[test]
@@ -286,36 +244,36 @@ fn the_std_pnjlim_checks_clean() {
 #[test]
 fn an_unsupported_form_does_not_hide_an_independent_error() {
     // A generic function used as a value is refused (its calls are typed, generics T20) and its body is checked as well.
-    let (src, d) = ValuesFixture::diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g;");
-    assert_eq!(ValuesFixture::codes_of(&d), ["P0001", "E0180"]);
+    let (src, d) = CheckedSource::body_diagnostics("fn g<T>(x: f64) -> f64 { x + true }", "let x = g;");
+    assert_eq!(CheckedSource::codes(&d), ["P0001", "E0180"]);
     assert!(d[0].diagnostic.message.contains("generic function"));
-    assert_eq!(ValuesFixture::snippet(&src, &d[1]), "true");
+    assert_eq!(CheckedSource::snippet(&src, &d[1]), "true");
 
     // A body that ends in a statement lacks its result whatever else it got wrong.
-    let (src, d) = ValuesFixture::diagnostics("fn f(a: f64) -> f64 { let y = a + true; }", "let z = f(1.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180", "E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "{ let y = a + true; }");
-    assert_eq!(ValuesFixture::snippet(&src, &d[1]), "true");
+    let (src, d) = CheckedSource::body_diagnostics("fn f(a: f64) -> f64 { let y = a + true; }", "let z = f(1.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180", "E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "{ let y = a + true; }");
+    assert_eq!(CheckedSource::snippet(&src, &d[1]), "true");
 
     // A last statement that is not itself refused leaves the missing result its own error,
     // whatever it holds that is refused.
-    let (src, d) = ValuesFixture::diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180", "P0001"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "{ a % 2.0; }");
-    assert_eq!(ValuesFixture::snippet(&src, &d[1]), "a % 2.0");
+    let (src, d) = CheckedSource::body_diagnostics("fn f(a: f64) -> f64 { a % 2.0; }", "let z = f(1.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180", "P0001"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "{ a % 2.0; }");
+    assert_eq!(CheckedSource::snippet(&src, &d[1]), "a % 2.0");
 }
 
 #[test]
 fn comparing_an_enum_without_partial_ord_is_e0180() {
     // FIX-07 AC 2: `<`, `<=`, `>` and `>=` over an enum that does not derive `PartialOrd`.
     for op in ["<", "<=", ">", ">="] {
-        let (src, d) = ValuesFixture::diagnostics("#[derive(Repr, PartialEq)]\nenum Md { Lo, Hi }", &format!("let x = Md::Lo {op} Md::Hi;"));
-        assert_eq!(ValuesFixture::codes_of(&d), ["E0180"], "{op}");
-        assert_eq!(ValuesFixture::snippet(&src, &d[0]), "Md::Lo", "{op}");
+        let (src, d) = CheckedSource::body_diagnostics("#[derive(Repr, PartialEq)]\nenum Md { Lo, Hi }", &format!("let x = Md::Lo {op} Md::Hi;"));
+        assert_eq!(CheckedSource::codes(&d), ["E0180"], "{op}");
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), "Md::Lo", "{op}");
         assert!(d[0].diagnostic.message.contains("a type that derives `PartialOrd`"), "{}", d[0].diagnostic.message);
     }
     // FIX-07 AC 1: deriving `PartialOrd` types the comparison as `bool`.
-    let got = ValuesFixture::local_types("#[derive(Repr, PartialEq, PartialOrd)]\nenum Md { Lo, Hi }", "let a = Md::Lo < Md::Hi; let b = Md::Hi >= Md::Lo;", &["a", "b"]);
+    let got = CheckedSource::local_types("#[derive(Repr, PartialEq, PartialOrd)]\nenum Md { Lo, Hi }", "let a = Md::Lo < Md::Hi; let b = Md::Hi >= Md::Lo;", &["a", "b"]);
     assert_eq!(got, [Ty::Bool, Ty::Bool]);
 }
 
@@ -326,23 +284,23 @@ const OPTIONALS: &str = "fn f(x: f64, y: Option<f64>, z: Option<f64>) -> f64 { x
 fn a_left_out_optional_argument_types() {
     // FIX-06 AC 1: trailing optional parameters left out; the call is the declared `f64` and the
     // binding leaves their slots empty.
-    assert_eq!(ValuesFixture::binding_of("f(1.0)"), (vec![ValuesFixture::some("1.0"), None, None], Some(Ty::F64)));
-    assert_eq!(ValuesFixture::binding_of("f(1.0, 2.0)"), (vec![ValuesFixture::some("1.0"), ValuesFixture::some("2.0"), None], Some(Ty::F64)));
+    assert_eq!(OptionalCall::binding_of("f(1.0)"), (vec![OptionalCall::some("1.0"), None, None], Some(Ty::F64)));
+    assert_eq!(OptionalCall::binding_of("f(1.0, 2.0)"), (vec![OptionalCall::some("1.0"), OptionalCall::some("2.0"), None], Some(Ty::F64)));
     // AC 4: `None` and `Some(v)` pass as they are.
-    assert_eq!(ValuesFixture::binding_of("f(1.0, None, Some(3.0))"), (vec![ValuesFixture::some("1.0"), ValuesFixture::some("None"), ValuesFixture::some("Some(3.0)")], Some(Ty::F64)));
+    assert_eq!(OptionalCall::binding_of("f(1.0, None, Some(3.0))"), (vec![OptionalCall::some("1.0"), OptionalCall::some("None"), OptionalCall::some("Some(3.0)")], Some(Ty::F64)));
 }
 
 #[test]
 fn a_named_optional_argument_types() {
     // FIX-06 AC 2: `z: 3.0` binds the last parameter and leaves `y` out; named arguments bind in
     // any order (`f(1.0, z: 3.0, y: 2.0)`); a plain value for an `Option<f64>` is `Some` of it (AC 3).
-    assert_eq!(ValuesFixture::binding_of("f(1.0, z: 3.0)"), (vec![ValuesFixture::some("1.0"), None, ValuesFixture::some("3.0")], Some(Ty::F64)));
-    assert_eq!(ValuesFixture::binding_of("f(1.0, z: 3.0, y: 2.0)"), (vec![ValuesFixture::some("1.0"), ValuesFixture::some("2.0"), ValuesFixture::some("3.0")], Some(Ty::F64)));
-    let src = ValuesFixture::source(OPTIONALS, "let r = f(1.0, 2.0);");
-    let design = ValuesFixture::design_of(&src);
+    assert_eq!(OptionalCall::binding_of("f(1.0, z: 3.0)"), (vec![OptionalCall::some("1.0"), None, OptionalCall::some("3.0")], Some(Ty::F64)));
+    assert_eq!(OptionalCall::binding_of("f(1.0, z: 3.0, y: 2.0)"), (vec![OptionalCall::some("1.0"), OptionalCall::some("2.0"), OptionalCall::some("3.0")], Some(Ty::F64)));
+    let src = CheckedSource::source(OPTIONALS, "let r = f(1.0, 2.0);");
+    let design = CheckedSource::design_of(&src);
     let types = Types::check(&design, "Top").expect("a plain value for an Option");
-    assert!(types.implicit_some(ValuesFixture::expr_at(&design, &src, "2.0")), "a plain value for an `Option<T>` is read as `Some`");
-    assert!(!types.implicit_some(ValuesFixture::expr_at(&design, &src, "1.0")), "the required argument is no `Some`");
+    assert!(types.implicit_some(CheckedSource::expression_of(&design, &src, "2.0")), "a plain value for an `Option<T>` is read as `Some`");
+    assert!(!types.implicit_some(CheckedSource::expression_of(&design, &src, "1.0")), "the required argument is no `Some`");
 }
 
 #[test]
@@ -355,7 +313,7 @@ fn a_named_argument_that_is_not_optional_or_bound_is_e0140() {
         ("f(1.0, 2.0, y: 3.0)", "y", "already bound"),
         ("f(1.0, z: 2.0, z: 3.0)", "z", "already bound"),
     ] {
-        let design = PomSource::build(&ValuesFixture::source(OPTIONALS, &format!("let r = {call};")));
+        let design = PomSource::build(&CheckedSource::source(OPTIONALS, &format!("let r = {call};")));
         assert_eq!(PomSource::codes(&design), ["E0140"], "{call}");
         let message = &design.diagnostics()[0].diagnostic.message;
         assert!(message.contains(&format!("`{name}`")) && message.contains(reason), "{call}: {message}");
@@ -367,9 +325,9 @@ fn a_wrong_argument_count_is_e0141() {
     // FIX-06 AC 6: too few positional arguments for the required parameters, or more arguments
     // than parameters, is E0141 naming the call, not the plain mismatch.
     for call in ["f()", "f(1.0, 2.0, 3.0, 4.0)"] {
-        let (src, d) = ValuesFixture::diagnostics(OPTIONALS, &format!("let r = {call};"));
-        assert_eq!(ValuesFixture::codes_of(&d), ["E0141"], "{call}");
-        assert_eq!(ValuesFixture::snippet(&src, &d[0]), call);
+        let (src, d) = CheckedSource::body_diagnostics(OPTIONALS, &format!("let r = {call};"));
+        assert_eq!(CheckedSource::codes(&d), ["E0141"], "{call}");
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), call);
     }
 }
 
@@ -379,16 +337,16 @@ fn an_option_before_a_required_parameter_is_positional_only() {
     // out is E0141, and so is leaving out `b`; both given positionally is accepted, with `None`
     // or a plain value for `a`.
     let items = "fn g(a: Option<f64>, b: f64) -> f64 { b }";
-    let (src, d) = ValuesFixture::diagnostics(items, "let r = g(1.0);");
-    assert_eq!((ValuesFixture::codes_of(&d), ValuesFixture::snippet(&src, &d[0])), (vec!["E0141".to_string()], "g(1.0)"));
-    let (_, d) = ValuesFixture::diagnostics(items, "let r = g();");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"]);
-    ValuesFixture::local_types(items, "let r = g(None, 2.0); let s = g(1.0, 2.0);", &["r", "s"]);
+    let (src, d) = CheckedSource::body_diagnostics(items, "let r = g(1.0);");
+    assert_eq!((CheckedSource::codes(&d), CheckedSource::snippet(&src, &d[0])), (vec!["E0141".to_string()], "g(1.0)"));
+    let (_, d) = CheckedSource::body_diagnostics(items, "let r = g();");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"]);
+    CheckedSource::local_types(items, "let r = g(None, 2.0); let s = g(1.0, 2.0);", &["r", "s"]);
     // Named, `a` is not an optional parameter either: E0140 at the name (and the required `b` is
     // still unbound, E0141).
-    let (src, d) = ValuesFixture::diagnostics(items, "let r = g(a: 1.0);");
-    assert!(ValuesFixture::codes_of(&d).contains(&"E0140".to_string()), "{:?}", ValuesFixture::codes_of(&d));
-    assert!(d.iter().any(|d| d.diagnostic.code == "E0140" && ValuesFixture::snippet(&src, d) == "a: 1.0"), "at the named argument");
+    let (src, d) = CheckedSource::body_diagnostics(items, "let r = g(a: 1.0);");
+    assert!(CheckedSource::codes(&d).contains(&"E0140".to_string()), "{:?}", CheckedSource::codes(&d));
+    assert!(d.iter().any(|d| d.diagnostic.code == "E0140" && CheckedSource::snippet(&src, d) == "a: 1.0"), "at the named argument");
 }
 
 #[test]
@@ -431,39 +389,39 @@ fn every_h2_row_types_with_its_signature() {
         ("x.is_infinite()", IsInfinite, Ty::Bool),
     ];
     let lets: String = rows.iter().enumerate().map(|(i, (call, ..))| format!("let r{i} = {call}; ")).collect();
-    let src = ValuesFixture::source("", &format!("let x = 0.5; let y = 2.0; {lets}"));
-    let design = ValuesFixture::design_of(&src);
+    let src = CheckedSource::source("", &format!("let x = 0.5; let y = 2.0; {lets}"));
+    let design = CheckedSource::design_of(&src);
     let types = Types::check(&design, "Top").unwrap_or_else(|d| panic!("{:?}\n{src}", d.iter().map(|d| &d.diagnostic.message).collect::<Vec<_>>()));
     for (i, (call, method, ty)) in rows.iter().enumerate() {
-        assert_eq!(types.local(ValuesFixture::binding(&design, &format!("r{i}"))), Some(ty), "{call}");
+        assert_eq!(types.local(CheckedSource::binding(&design, &format!("r{i}"))), Some(ty), "{call}");
         let at = (0..design.expr_count()).map(|e| ExprId(e as u32)).find(|e| matches!(design.expr_node(*e).kind, ExprKind::MethodCall { .. }) && src[design.expr_node(*e).span.range()] == **call).unwrap_or_else(|| panic!("{call}"));
         assert_eq!(types.method(at), Some(*method), "{call}");
     }
     // `powi` takes an `i32`: an `f64` exponent is a mismatch.
-    let (src, d) = ValuesFixture::diagnostics("", "let x = 0.5; let r = x.powi(2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"]);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "2.0");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = 0.5; let r = x.powi(2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"]);
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "2.0");
 }
 
 #[test]
 fn a_method_outside_h2_on_f64_is_e0161() {
     // CAT-01 AC 6: `cbrt` is not a row of Appendix H.2; the closed catalogue refuses it naming
     // the method and `f64` (Appendix H rule 1).
-    let (src, d) = ValuesFixture::diagnostics("", "let x = 0.5; let y = x.cbrt();");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0161"]);
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = 0.5; let y = x.cbrt();");
+    assert_eq!(CheckedSource::codes(&d), ["E0161"]);
     let message = &d[0].diagnostic.message;
     assert!(message.contains("cbrt") && message.contains("`f64`"), "{message}");
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "cbrt");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "cbrt");
 }
 
 #[test]
 fn an_as_between_types_without_a_row_is_e0182() {
     // §1.4.5: an `as` between two types that are not a row of the table is `E0182`, naming both types.
-    let (src, d) = ValuesFixture::diagnostics("", "let a = true as f64; let b = 1.5 as bool;");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0182", "E0182"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("", "let a = true as f64; let b = 1.5 as bool;");
+    assert_eq!(CheckedSource::codes(&d), ["E0182", "E0182"], "{src}");
     assert!(d[0].diagnostic.message.contains("`bool`") && d[0].diagnostic.message.contains("`f64`"), "{}", d[0].diagnostic.message);
     assert!(d[1].diagnostic.message.contains("`f64`") && d[1].diagnostic.message.contains("`bool`"), "{}", d[1].diagnostic.message);
-    assert_eq!(ValuesFixture::snippet(&src, &d[1]), "1.5");
+    assert_eq!(CheckedSource::snippet(&src, &d[1]), "1.5");
 }
 
 #[test]
@@ -471,21 +429,21 @@ fn a_call_through_a_function_value_with_the_wrong_arity_is_e0141() {
     // §3.2.6: the count of a call through a function value is `E0141` naming the expected and
     // found counts (PI-06 AC 2); a method call and a probe count the same way.
     let items = "fn through(f: fn(f64, f64) -> f64) -> f64 { f(1.0) }";
-    let src = ValuesFixture::source(items, "let a = through(|x, y| x + y);");
-    let design = ValuesFixture::design_of(&src);
+    let src = CheckedSource::source(items, "let a = through(|x, y| x + y);");
+    let design = CheckedSource::design_of(&src);
     let d = Types::check(&design, "Top").expect_err("expected diagnostics");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"], "{src}");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"], "{src}");
     assert!(d[0].diagnostic.message.contains("expected 2 argument(s), found 1"), "{}", d[0].diagnostic.message);
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "f(1.0)");
-    let (src, d) = ValuesFixture::diagnostics("", "let x = 0.5; let r = x.abs(1.0, 2.0);");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"], "{src}");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "f(1.0)");
+    let (src, d) = CheckedSource::body_diagnostics("", "let x = 0.5; let r = x.abs(1.0, 2.0);");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"], "{src}");
     assert!(d[0].diagnostic.message.contains("expected 0 argument(s), found 2"), "{}", d[0].diagnostic.message);
     // A probe with three nodes counts as a call does (PI-06 AC 6).
     let src = "module Top(p: Electrical, q: Electrical) {\n    let a = v(p, q, p);\n}".to_string();
     let design = Design::builder().source("top.msl", &src).build();
     assert!(design.diagnostics().is_empty(), "the source must parse and resolve: {src}");
     let d = Types::check(&design, "Top").expect_err("expected diagnostics");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0141"], "{src}");
+    assert_eq!(CheckedSource::codes(&d), ["E0141"], "{src}");
     assert!(d[0].diagnostic.message.contains("expected 1 to 2 argument(s), found 3"), "{}", d[0].diagnostic.message);
 }
 
@@ -493,10 +451,10 @@ fn a_call_through_a_function_value_with_the_wrong_arity_is_e0141() {
 fn a_mismatch_no_row_names_is_e0180_naming_both_types() {
     // Part I `E0180`: an expression whose type is not the one its position requires, and the
     // diagnostic names both types (PI-06 AC 1); the provisional `E0180` no longer exists.
-    let (src, d) = ValuesFixture::diagnostics("fn half(a: f64) -> f64 { a / 2.0 }", "let a = half(true); let b: bool = 1.0;");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180", "E0180"], "{src}");
+    let (src, d) = CheckedSource::body_diagnostics("fn half(a: f64) -> f64 { a / 2.0 }", "let a = half(true); let b: bool = 1.0;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180", "E0180"], "{src}");
     assert_eq!(d[0].diagnostic.message, "mismatched types: expected `f64`, found `bool`");
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "true");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "true");
     assert_eq!(d[1].diagnostic.message, "mismatched types: expected `bool`, found `f64`");
 }
 
@@ -507,11 +465,11 @@ fn a_param_hiding_a_function_is_e0180_with_a_note_at_the_function() {
     // function, found `<type>`" with a note at the function's declaration.
     for hider in ["half: f64 = 1.0;", "let half = 1.0;"] {
         let src = format!("fn half(a: f64) -> f64 {{ a / 2.0 }}\nmodule Top() {{ {hider} }}\nanalog for Top {{ let a = half(2.0); }}");
-        let design = ValuesFixture::design_of(&src);
+        let design = CheckedSource::design_of(&src);
         let d = Types::check(&design, "Top").expect_err("expected diagnostics");
-        assert_eq!(ValuesFixture::codes_of(&d), ["E0180"], "{hider}\n{src}");
+        assert_eq!(CheckedSource::codes(&d), ["E0180"], "{hider}\n{src}");
         assert_eq!(d[0].diagnostic.message, "expected a function, found `f64`", "{hider}");
-        assert_eq!(ValuesFixture::snippet(&src, &d[0]), "half", "{hider}");
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), "half", "{hider}");
         let (note, _) = &d[0].diagnostic.secondary[0];
         assert_eq!(&src[note.range()], "half", "{hider}: the note stands at the declaration of the function");
         assert!(note.range().start < src.find("module Top").unwrap(), "{hider}: the note is on the `fn`");
@@ -524,15 +482,15 @@ fn include_str_outside_a_const_is_e0610() {
     // only; in an `analog` expression, or in a module's `let`, it is `E0610`, and the `P0001`
     // "`include_str!`" is gone.
     let call = "include_str!(\"data.txt\")";
-    let analog = ValuesFixture::source("", &format!("let a = {call};"));
+    let analog = CheckedSource::source("", &format!("let a = {call};"));
     let module_let = format!("module Top() {{\n    let a = {call};\n}}");
     let param_default = format!("module Top() {{ a: f64 = {call}; }}");
-    let fn_body = ValuesFixture::source(&format!("fn read() -> f64 {{ let a = {call}; 1.0 }}"), "let x = read();");
+    let fn_body = CheckedSource::source(&format!("fn read() -> f64 {{ let a = {call}; 1.0 }}"), "let x = read();");
     for (position, src) in [("an `analog` let", analog), ("a module `let`", module_let), ("a param default", param_default), ("a `fn` body", fn_body)] {
-        let design = ValuesFixture::design_of(&src);
+        let design = CheckedSource::design_of(&src);
         let d = Types::check(&design, "Top").expect_err("expected diagnostics");
-        assert_eq!(ValuesFixture::codes_of(&d), ["E0610"], "{position}: {src}");
-        assert_eq!(ValuesFixture::snippet(&src, &d[0]), call, "{position}");
+        assert_eq!(CheckedSource::codes(&d), ["E0610"], "{position}: {src}");
+        assert_eq!(CheckedSource::snippet(&src, &d[0]), call, "{position}");
         assert!(!d[0].diagnostic.message.contains("`include_str!` is not supported"), "{position}: {}", d[0].diagnostic.message);
     }
 }
@@ -547,9 +505,9 @@ fn include_str_in_a_const_is_a_str() {
     assert!(design.diagnostics().is_empty(), "{:?}", PomSource::codes(&design));
     let checked = Types::check(&design, "Top");
     assert!(checked.is_ok(), "an `include_str!` const is a `str`: {src}\n{:?}", checked.err().map(|d| d.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect::<Vec<_>>()));
-    let (src, d) = ValuesFixture::diagnostics("const T: f64 = include_str!(\"data.txt\");", "let a = T;");
-    assert_eq!(ValuesFixture::codes_of(&d), ["E0180"], "{src}");
-    assert_eq!(ValuesFixture::snippet(&src, &d[0]), "include_str!(\"data.txt\")");
+    let (src, d) = CheckedSource::body_diagnostics("const T: f64 = include_str!(\"data.txt\");", "let a = T;");
+    assert_eq!(CheckedSource::codes(&d), ["E0180"], "{src}");
+    assert_eq!(CheckedSource::snippet(&src, &d[0]), "include_str!(\"data.txt\")");
 }
 
 #[test]
@@ -557,11 +515,11 @@ fn a_borrow_outside_a_call_argument_is_not_e0102() {
     // PI-13, value-semantics V1 (G.71): `E0102` is retired, so a `&` in the position it used to
     // guard (outside a call argument) never raises it; the form is refused by another code or
     // by the parser, and the guard of spec codes lists no row for `E0102`.
-    let src = ValuesFixture::source("", "let x = 1.0; let r = &x;");
+    let src = CheckedSource::source("", "let x = 1.0; let r = &x;");
     let design = PomSource::build(&src);
     let mut found = PomSource::codes(&design);
     if let Err(diagnostics) = Types::check(&design, "Top") {
-        found.extend(ValuesFixture::codes_of(&diagnostics));
+        found.extend(CheckedSource::codes(&diagnostics));
     }
     assert!(!found.is_empty(), "a `&` outside a call argument is refused: {src}");
     assert!(found.iter().all(|code| code != "E0102"), "E0102 is retired (value-semantics V1): {found:?}");
@@ -578,10 +536,10 @@ fn a_named_emitting_fn_where_emit_is_not_allowed_is_e0122() {
         (format!("{items}module Top() {{ let y = through(1.0); }}"), "through(1.0)"),
         (format!("{items}const C: f64 = note(1.0);\nmodule Top() {{ k: f64 = C; }}"), "note(1.0)"),
     ] {
-        let design = ValuesFixture::design_of(&src);
+        let design = CheckedSource::design_of(&src);
         let found = Types::check(&design, "Top").expect_err("the call is refused");
-        assert_eq!(ValuesFixture::codes_of(&found), ["E0122"], "{src}");
-        assert_eq!(ValuesFixture::snippet(&src, &found[0]), at, "{src}");
+        assert_eq!(CheckedSource::codes(&found), ["E0122"], "{src}");
+        assert_eq!(CheckedSource::snippet(&src, &found[0]), at, "{src}");
         let message = &found[0].diagnostic.message;
         assert!(message.contains("`note`") || message.contains("`through`"), "names the function: {message}");
         assert!(message.contains("emitting"), "names the class: {message}");
@@ -597,12 +555,12 @@ fn a_named_solve_reading_fn_in_a_const_is_e0122() {
         (format!("{items}const C: f64 = clock();\nmodule Top() {{ k: f64 = C; }}"), "clock()", "clock"),
         (format!("{items}module Top() {{ k: f64 = later(); }}"), "later()", "later"),
     ] {
-        let design = ValuesFixture::design_of(&src);
+        let design = CheckedSource::design_of(&src);
         let found = Types::check(&design, "Top").expect_err("the call is refused");
-        assert_eq!(ValuesFixture::codes_of(&found), ["E0122"], "{src}");
-        assert_eq!(ValuesFixture::snippet(&src, &found[0]), at, "{src}");
+        assert_eq!(CheckedSource::codes(&found), ["E0122"], "{src}");
+        assert_eq!(CheckedSource::snippet(&src, &found[0]), at, "{src}");
         assert!(found[0].diagnostic.message.contains(&format!("`{name}`")) && found[0].diagnostic.message.contains("solve-reading"), "{}", found[0].diagnostic.message);
     }
-    let src = ValuesFixture::source(items, "let t = clock();");
-    Types::check(&ValuesFixture::design_of(&src), "Top").expect("a solve-reading function is callable in `analog`");
+    let src = CheckedSource::source(items, "let t = clock();");
+    Types::check(&CheckedSource::design_of(&src), "Top").expect("a solve-reading function is callable in `analog`");
 }
