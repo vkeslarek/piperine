@@ -2382,8 +2382,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Each removed test's proof rows name the source-level survivor
-- [ ] Gate check passes: Ledger
+- [x] Each removed test's proof rows name the source-level survivor
+- [x] Gate check passes: Ledger
+  - Annotation: the four tests (`two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`) were the whole of `transpile/tests/digital/commits.rs`, which went with them; their four worklist rows of `duplicate_tests.tsv` went because the names are no longer duplicated, and `ir-rust` C86 to C89 now run `piperine-parity --test source_execution` (`replace` rows of `repoints/T90.tsv`, applied by the tool). Kept with their verdicts: the hand-built twins whose source side is a buck target (`the_adc_commits_the_rounded_code_after_tconv` and the other rows still in the worklist) and `parity_*` (now the modules of `parity`) with `tests/scenarios.rs` as both kept (Q9, design.md).
 
 **Tests**: integration
 **Gate**: ledger

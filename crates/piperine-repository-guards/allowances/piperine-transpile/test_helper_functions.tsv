@@ -1,6 +1,10 @@
 crates/piperine-transpile/src/print/analog.rs::library	1
 crates/piperine-transpile/src/print/analog.rs::terms	1
 crates/piperine-transpile/src/print/digital.rs::printed	1
+crates/piperine-transpile/src/print/expression.rs::contributed	1
+crates/piperine-transpile/src/print/expression.rs::defined	1
+crates/piperine-transpile/src/print/expression.rs::function	1
+crates/piperine-transpile/src/print/expression.rs::library	1
 crates/piperine-transpile/src/print/limit.rs::hold	1
 crates/piperine-transpile/src/print/limit.rs::printed	1
 crates/piperine-transpile/src/print/shape.rs::entries	1
@@ -9,10 +13,6 @@ crates/piperine-transpile/src/print/site.rs::phased	1
 crates/piperine-transpile/src/print/site.rs::printed	1
 crates/piperine-transpile/src/print/text.rs::round_trips_shortest	1
 crates/piperine-transpile/src/print/text.rs::significant	1
-crates/piperine-transpile/src/print/expression.rs::contributed	1
-crates/piperine-transpile/src/print/expression.rs::defined	1
-crates/piperine-transpile/src/print/expression.rs::function	1
-crates/piperine-transpile/src/print/expression.rs::library	1
 crates/piperine-transpile/src/rt/commits.rs::react_with	1
 crates/piperine-transpile/src/rt/control.rs::message	1
 crates/piperine-transpile/src/rt/int.rs::panic_of	1
@@ -76,14 +76,6 @@ crates/piperine-transpile/tests/digital/amended.rs::timer	1
 crates/piperine-transpile/tests/digital/carrierless.rs::at	1
 crates/piperine-transpile/tests/digital/carrierless.rs::monitor	1
 crates/piperine-transpile/tests/digital/carrierless.rs::step	1
-crates/piperine-transpile/tests/digital/commits.rs::clock	1
-crates/piperine-transpile/tests/digital/commits.rs::count	1
-crates/piperine-transpile/tests/digital/commits.rs::input	1
-crates/piperine-transpile/tests/digital/commits.rs::latch	1
-crates/piperine-transpile/tests/digital/commits.rs::later	1
-crates/piperine-transpile/tests/digital/commits.rs::output	1
-crates/piperine-transpile/tests/digital/commits.rs::pulse	1
-crates/piperine-transpile/tests/digital/commits.rs::swap	1
 crates/piperine-transpile/tests/digital/digital_circuit.rs::at	1
 crates/piperine-transpile/tests/digital/digital_circuit.rs::buck_slice	1
 crates/piperine-transpile/tests/digital/digital_circuit.rs::oscillator_into_flip_flop	1

@@ -1,0 +1,5 @@
+# T90: the four tests of transpile's commits module run from source in parity's source_execution::commits module by default; the hand-built twins go (the proofs of ir-rust C86 to C89 name the source-level survivors).
+replace piperine-transpile/digital::commits::two_commits_exchange_two_carriers piperine-parity/source_execution::commits::two_commits_exchange_two_carriers
+replace piperine-transpile/digital::commits::the_later_statement_wins piperine-parity/source_execution::commits::the_later_statement_wins
+replace piperine-transpile/digital::commits::two_statements_make_a_pulse piperine-parity/source_execution::commits::two_statements_make_a_pulse
+replace piperine-transpile/digital::commits::an_unchanged_commit_fires_nothing piperine-parity/source_execution::commits::an_unchanged_commit_fires_nothing

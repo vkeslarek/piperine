@@ -3,7 +3,6 @@
 mod amended;
 mod carrier_arrays;
 mod carrierless;
-mod commits;
 mod digital_circuit;
 mod dpwm;
 mod environment;
