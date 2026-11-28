@@ -349,7 +349,7 @@ impl ValueLowering<'_, '_, '_> {
                 }
                 // an `Option` parameter or `let` of a `fn` expanded in a differentiated value: the pair it holds
                 Resolution::Decl(decl) if let Some((is, val)) = scope.analog.option_values.get(&decl).copied() => Some(Pair { is, val, literal: None }),
-                Resolution::Decl(decl) => match (scope.values.options.get(&decl).copied(), self.input_of(scope, decl)) {
+                Resolution::Decl(decl) => match (scope.values.options.get(&decl).copied(), self.structure().input_of(scope, decl)) {
                     (Some((is, val)), _) => {
                         let (is_ty, val_ty) = (scope.values.locals[is as usize].ty.clone(), scope.values.locals[val as usize].ty.clone());
                         let is = self.emit(Expr::Local(is), is_ty, origin.clone());
@@ -358,7 +358,7 @@ impl ValueLowering<'_, '_, '_> {
                     }
                     // An `Option` value input of a hoisted module: the caller's argument, in the
                     // caller's frame (an `f64` given there is `Some` of it, §3.2.3).
-                    (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.values().lower_option(scope, given)),
+                    (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_option(scope, given)),
                     // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
                     (None, Some(None)) => {
                         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
@@ -378,7 +378,7 @@ impl ValueLowering<'_, '_, '_> {
                         let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, payload.clone(), origin);
                         Some(Pair { is, val, literal: None })
                     }
-                    (None, None) if let Some(carrier) = self.frame_carrier(scope.values.frame, decl) => {
+                    (None, None) if let Some(carrier) = self.structure().frame_carrier(scope.values.frame, decl) => {
                         let half = |this: &mut Self, part: LevelPart, ty: ValueType| {
                             let packed = this.digital().carrier_read(carrier, origin.clone());
                             Some(this.emit(Expr::OptionPart { option: packed, part }, ty, origin.clone()))
@@ -395,7 +395,7 @@ impl ValueLowering<'_, '_, '_> {
                 _ => refused(self),
             },
             // a placement of a module with an `Option` result: the pair of its result expression, read in the callee's frame (`hoist.rs`)
-            ExprKind::Call { .. } if self.result_callee(expr).is_some() => self.lower_result_pair(scope, expr),
+            ExprKind::Call { .. } if self.structure().result_callee(expr).is_some() => self.structure().lower_result_pair(scope, expr),
             // `simparam(name)`: the two halves of the session parameter's packed read (`session.rs`)
             ExprKind::Call { .. } if matches!(self.state.types.callee(expr), Some(crate::types::Callee::Core(id)) if id.info().name == "simparam") => self.analog().lower_session_pair(scope, expr, origin),
             // `temperature()`: whether the run set it and the run's kelvin, the two environment reads (`session.rs`)

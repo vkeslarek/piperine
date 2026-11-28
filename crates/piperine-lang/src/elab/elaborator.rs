@@ -4,6 +4,7 @@
 use crate::elab::analog::AnalogLowering;
 use crate::elab::digital::DigitalLowering;
 use crate::elab::functions::FunctionLowering;
+use crate::elab::structure::StructureLowering;
 use crate::elab::value::ValueLowering;
 use std::collections::BTreeMap;
 
@@ -18,14 +19,14 @@ use super::digital::loops::DriveLoops;
 use super::value::expressions::ValueTypes;
 use super::origin::Locator;
 use super::analog::signal_flow::SignalFlowCheck;
-use super::structural::{BodyKey, BodyVariants, Overrides};
-use super::structure_state::StructureTables;
+use super::structure::structural::{BodyKey, BodyVariants, Overrides};
+use super::structure::state::StructureTables;
 use super::value::state::{ExpressionTables, ValueScope};
 use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{self, BlockNode, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, PatKind, Resolution, StmtKind};
-use crate::types::{ConstTerm, GenericSignature, GenericValue, Length, Substitution, Ty, Types};
+use crate::pom::{self, BlockNode, CallClass, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, ExprKind, FileId, GenerationData, PatKind, Resolution, StmtKind};
+use crate::types::{Callee, ConstTerm, GenericSignature, GenericValue, Length, Substitution, Ty, Types};
 
 /// The entry point: `Elaborator::new(&design).run("Top")`.
 #[derive(Debug, Clone)]
@@ -65,7 +66,7 @@ impl<'d> Elaborator<'d> {
         // the reads the text names through children of children are the demands of the first run (`reach/seed.rs`); a run that meets
         // one its tables lack (a hop through a type-parameter template) says so, and is made again with it
         // (`reach/demands.rs`)
-        let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).static_demands();
+        let mut demands = Elaboration::new(self.design, &types, overrides.clone(), Vec::new()).structure().static_demands();
         loop {
             let (result, wanted) = Elaboration::new(self.design, &types, overrides.clone(), demands.clone()).run(top_decl);
             statistics.passes += 1;
@@ -169,7 +170,7 @@ pub(super) struct ElaborationState<'d, 't> {
 impl<'d, 't> ElaborationState<'d, 't> {
     /// The state of a run over `design`, typed as `types`, with the params the host bound (`overrides`) and the reads
     /// through a child of a child the runs before it found (`demands`).
-    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach::demands::NestedDemand>) -> Self {
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::structure::reach::demands::NestedDemand>) -> Self {
         ElaborationState {
             design,
             types,
@@ -199,6 +200,11 @@ impl<'d, 't> Elaboration<'d, 't> {
         DigitalLowering::new(self)
     }
 
+    /// The view that lowers module structure.
+    pub(super) fn structure(&mut self) -> StructureLowering<'_, 'd, 't> {
+        StructureLowering::new(self)
+    }
+
     /// The view that lowers analog code.
     pub(super) fn analog(&mut self) -> AnalogLowering<'_, 'd, 't> {
         AnalogLowering::new(self)
@@ -211,7 +217,7 @@ impl<'d, 't> Elaboration<'d, 't> {
 
     /// A run over `design`, typed as `types`, with the params the host bound (`overrides`) and the reads through a child
     /// of a child the runs before it found (`demands`).
-    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::reach::demands::NestedDemand>) -> Self {
+    fn new(design: &'d Design, types: &'t Types<'d>, overrides: Overrides, demands: Vec<super::structure::reach::demands::NestedDemand>) -> Self {
         Elaboration { state: ElaborationState::new(design, types, overrides, demands) }
     }
 
@@ -226,7 +232,7 @@ impl<'d, 't> Elaboration<'d, 't> {
 
     /// The run, and the demands it found that its tables did not hold (`reach/demands.rs`): when there are any, the
     /// result is not the run's and the caller runs again with them.
-    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::reach::demands::NestedDemand>) {
+    fn run(mut self, top: DeclId) -> (Result<Ir, Vec<DesignDiagnostic>>, Vec<super::structure::reach::demands::NestedDemand>) {
         let result = self.elaborate(top);
         (result, self.state.structure.nested_demands.into_wanted())
     }
@@ -242,13 +248,13 @@ impl<'d, 't> Elaboration<'d, 't> {
         let modules: Vec<DeclId> = reached.iter().copied().filter(|d| !self.is_hoisted(*d)).collect();
         // a generic module has no body of its own: each instance a placement makes is one (`generic_bodies.rs`)
         let with_generic = modules.clone();
-        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.is_generic_module(*m)).collect();
+        let modules: Vec<DeclId> = modules.into_iter().filter(|m| !self.structure().is_generic_module(*m)).collect();
         self.values().read_included_files();
         self.values().build_type_arena();
-        self.plan_params(&modules);
-        self.classify_module_param_keys(&with_generic);
-        self.classify_folded_param_keys(&with_generic);
-        self.classify_key_params(&modules);
+        self.structure().plan_params(&modules);
+        self.structure().classify_module_param_keys(&with_generic);
+        self.structure().classify_folded_param_keys(&with_generic);
+        self.structure().classify_key_params(&modules);
         // An unkeyed module keeps the id of its place in first-reach order; a keyed module's
         // variants take the ids after them, on request.
         let unkeyed: Vec<DeclId> = modules.iter().copied().filter(|m| self.state.structure.keys.of(*m).is_empty()).collect();
@@ -257,14 +263,14 @@ impl<'d, 't> Elaboration<'d, 't> {
         self.analog().lower_natures(&reached);
         for module in &unkeyed {
             if let Some(id) = self.state.structure.body_ids.get(module).copied() {
-                self.lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
+                self.structure().lower_body(*module, &Bindings::new(), BodyKey::unkeyed(*module), id);
             }
         }
-        self.lower_pending_bodies();
-        self.pad_child_nodes();
-        let top_instance = self.place_top(top);
+        self.structure().lower_pending_bodies();
+        self.structure().pad_child_nodes();
+        let top_instance = self.structure().place_top(top);
         // a body variant the placement asked for after the first padding (the top's own, keyed by a host override) is padded too
-        self.pad_child_nodes();
+        self.structure().pad_child_nodes();
         self.digital().build_resolvers();
         let reprs = self.values().lower_hand_written_reprs();
         self.functions().add_functions();
@@ -821,6 +827,97 @@ impl<'d, 't> Elaboration<'d, 't> {
         }
         let driven = &self.state.types.resolve_impls(picked).first()?.driven;
         self.state.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
+    }
+
+    /// The values the params a frame's initial values may read take: the body's key params for the body's
+    /// own module (frame 0, `body_keys`), the constants the placement bound for a hoisted module.
+    pub(in crate::elab) fn frame_bindings(&self, frame: usize) -> Bindings {
+        if frame == 0 {
+            return self.state.structure.body_keys.clone();
+        }
+        let mut bindings = Bindings::new();
+        for (param, value) in &self.state.structure.frames[frame].params {
+            self.bind_param(&mut bindings, *param, *value);
+        }
+        bindings
+    }
+
+    /// The ordinals of the iteration `ordinals` the code being lowered sits in, for the generation `for`s around `decl` it is
+    /// inside (a prefix of them, outermost first).
+    pub(in crate::elab) fn implicit_ordinals(&self, decl: DeclId, ordinals: &[(DeclId, u32)]) -> Vec<u64> {
+        self.generation_loops(decl).iter().map_while(|generation| ordinals.iter().find(|(held, _)| held == generation).map(|(_, ordinal)| u64::from(*ordinal))).collect()
+    }
+
+    /// The module `call` places when that module is hoisted: one with a result or with a value input. A call through a param of
+    /// a generic type bounded by `Fn(..)` (`s(5.0)` with `s: C`) places the module of the template the param holds in the frame
+    /// being lowered.
+    pub(in crate::elab) fn hoisted_callee(&self, call: ExprId) -> Option<DeclId> {
+        self.placed_module(call, self.state.consts.frame_params()).filter(|m| self.is_hoisted(*m))
+    }
+
+    /// The value a module-body `let` binding stands for: the whole value of an identifier
+    /// pattern, the matching component of a tuple pattern over a tuple expression.
+    pub(in crate::elab) fn body_let_value(&self, binding: DeclId) -> Option<ExprId> {
+        crate::elab::consts::ConstEval::body_let_value(self.state.design, binding)
+    }
+
+    /// The generation `for`s around `decl`, outermost first.
+    pub(in crate::elab) fn generation_loops(&self, decl: DeclId) -> Vec<DeclId> {
+        let mut loops = Vec::new();
+        let mut at = self.state.design.decl_data(decl).parent;
+        while let Some(current) = at {
+            let data = self.state.design.decl_data(current);
+            if matches!(data.kind, DeclKind::Generation(GenerationData::For { .. })) {
+                loops.push(current);
+            }
+            if matches!(data.kind, DeclKind::Module(_)) {
+                break;
+            }
+            at = data.parent;
+        }
+        loops.reverse();
+        loops
+    }
+
+    /// The module the placement `call` places: the one the checker names, else (a call of a callable param, `cell(a)` with
+    /// `cell: C` and `C: Fn(..)`) the module of the template the param holds in `keys`. `None` for a call that places nothing, or a
+    /// param no template is bound to.
+    pub(in crate::elab) fn placed_module(&self, call: ExprId, keys: &Bindings) -> Option<DeclId> {
+        if let Some(Callee::Module(module)) = self.state.types.callee(call) {
+            return Some(module);
+        }
+        let ExprKind::Call { class: CallClass::Instance { module: None, via: Some(via) }, .. } = &self.state.design.expr_node(call).kind else { return None };
+        if !self.is_module_param(*via) {
+            return None;
+        }
+        keys.get(*via).and_then(|number| self.state.consts.templates().get(number)).map(|template| template.module)
+    }
+
+    /// Whether a placement of `module` is hoisted into the body that places it (Appendix C.1.1): it
+    /// declares a result or takes a value input. Every other module keeps its own body.
+    pub(in crate::elab) fn is_hoisted(&self, module: DeclId) -> bool {
+        let data = self.state.design.decl_data(module);
+        matches!(&data.kind, DeclKind::Module(m) if m.ret.is_some()) || data.children.iter().any(|c| self.is_value_input(*c))
+    }
+
+    /// Whether `param` is declared with a module type, or with a type parameter bounded by `Fn(..)`: its value is a template.
+    pub(super) fn is_module_param(&self, param: DeclId) -> bool {
+        self.template_array_length(param).is_none()
+            && matches!(&self.state.design.decl_data(param).kind, DeclKind::Param(p) if matches!(self.state.design.type_resolution(p.ty), Resolution::Decl(m) if matches!(self.state.design.decl_data(m).kind, DeclKind::Module(_)) || crate::types::GenericSignature::is_callable(self.state.design, m)))
+    }
+
+    /// Whether `decl` is a port of a value type: a value input.
+    pub(in crate::elab) fn is_value_input(&self, decl: DeclId) -> bool {
+        super::structure::structural::ParamReads::new(self.state.design, self.state.types).is_value_input(decl)
+    }
+
+    /// The length of the array of templates `param` is declared as, `None` for a param of any other type.
+    pub(super) fn template_array_length(&self, param: DeclId) -> Option<usize> {
+        let DeclKind::Param(p) = &self.state.design.decl_data(param).kind else { return None };
+        match self.typed_written(p.ty)? {
+            crate::types::Ty::Array(element, crate::types::Length::Fixed(length)) if matches!(*element, crate::types::Ty::Module(_)) => usize::try_from(length).ok(),
+            _ => None,
+        }
     }
 }
 

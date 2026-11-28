@@ -15,9 +15,9 @@ crates/piperine-lang/src/elab/value/iterators.rs::Source	1
 crates/piperine-lang/src/elab/value/iterators.rs::Stage	1
 crates/piperine-lang/src/elab/elaborator.rs::Scope	1
 crates/piperine-lang/src/elab/value/patterns.rs::Subject	1
-crates/piperine-lang/src/elab/structural.rs::Given	1
-crates/piperine-lang/src/elab/structural.rs::Overrides	1
-crates/piperine-lang/src/elab/structural.rs::ParamReads	1
+crates/piperine-lang/src/elab/structure/structural.rs::Given	1
+crates/piperine-lang/src/elab/structure/structural.rs::Overrides	1
+crates/piperine-lang/src/elab/structure/structural.rs::ParamReads	1
 crates/piperine-lang/src/elab/analog/symbolic.rs::Flow	1
 crates/piperine-lang/src/elab/analog/symbolic.rs::Step	1
 crates/piperine-lang/src/elab/analog/unroll.rs::Held	1

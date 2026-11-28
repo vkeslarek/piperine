@@ -11,10 +11,10 @@
 //! name a module for (a read through a type-parameter template) is left to the run, which asks for what it meets
 //! (`NestedDemands::require`).
 
+use crate::elab::structure::StructureLowering;
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::elab::consts::Bindings;
-use crate::elab::elaborator::Elaboration;
 use super::demands::NestedDemand;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
@@ -51,7 +51,7 @@ struct ReadChain {
     names: Vec<ReadName>,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The demands the text of the design names, in the order of its reads, without duplicates.
     pub(in crate::elab) fn static_demands(&self) -> Vec<NestedDemand> {
         let chains = self.outermost_chains();

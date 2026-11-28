@@ -6,11 +6,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use piperine_ir::BodyId;
 
 use super::body::{ModulePlan, ParamPlan};
-use super::digital::carriers::Frame;
-use super::consts::Bindings;
+use crate::elab::digital::carriers::Frame;
+use crate::elab::consts::Bindings;
 use super::generation::GeneratedItems;
 use super::hoist::PlacementKey;
-use super::functions::instances::Instance;
+use crate::elab::functions::instances::Instance;
 use super::reach::demands::{NestedDemand, NestedDemands};
 use super::structural::{BodyKey, BodyVariants, KeyParams};
 use crate::pom::{DeclId, ExprId};
@@ -22,7 +22,7 @@ pub(in crate::elab) struct StructureTables {
     /// placement can name its child's body before that body exists.
     pub(in crate::elab) body_ids: BTreeMap<DeclId, BodyId>,
     /// The plan of every body lowered, by module and values of its key params.
-    pub(super) plans: BTreeMap<BodyKey, ModulePlan>,
+    pub(in crate::elab) plans: BTreeMap<BodyKey, ModulePlan>,
     /// The params of each reached module with a body, planned before any body is lowered.
     pub(super) param_plans: BTreeMap<DeclId, Vec<ParamPlan>>,
     /// The params of each instance of a generic module requested so far, planned under its arguments (`generic_bodies.rs`).

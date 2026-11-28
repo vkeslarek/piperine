@@ -149,7 +149,7 @@ impl AnalogLowering<'_, '_, '_> {
     fn selected_arm(&mut self, within: &mut ChoiceScope, scrutinee: ExprId, arms: &[Arm]) -> Option<ExprId> {
         let subject = self.choice_value(within, scrutinee).ok()?;
         for arm in arms {
-            if !self.constant_pattern_holds(&within.bindings, arm.pat, subject)? {
+            if !self.structure().constant_pattern_holds(&within.bindings, arm.pat, subject)? {
                 continue;
             }
             let guarded = match arm.guard {

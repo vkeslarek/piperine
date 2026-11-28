@@ -5,26 +5,25 @@
 //! they select one body variant (`structural.rs`); a placement through the param (`cell(c)`)
 //! places the template's module with the template's values (`children.rs`).
 
+use super::StructureLowering;
 use piperine_ir::{AggregateData, Constant, ValueType};
 
-use super::consts::{Bindings, ConstFault, ConstTree};
-use super::elaborator::Elaboration;
-use super::functions::instances::ConcreteValue;
+use crate::elab::consts::{Bindings, ConstFault, ConstTree};
+use crate::elab::functions::instances::ConcreteValue;
 use crate::refusal::forms::StructureForm;
-use crate::pom::{CallClass, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
-use crate::types::Callee;
+use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind, StructClass};
 
 /// A template folded: the module it names and the value each param of its block gives.
 #[derive(Debug, Clone, PartialEq)]
 pub(in crate::elab) struct TemplateValue {
     /// The module the template places.
-    pub(super) module: DeclId,
+    pub(in crate::elab) module: DeclId,
     /// The generic arguments of the module, in the order of its parameters (§8.4.3); empty for a module that is not generic.
-    pub(super) arguments: Vec<ConcreteValue>,
+    pub(in crate::elab) arguments: Vec<ConcreteValue>,
     /// The params the block binds: the param, its folded value and the expression that gave it. The value is held taken apart
     /// (`ConstTree`), so it belongs to no arena (the evaluator's and the IR's composites are numbered separately) and two
     /// templates with equal values are equal (§8.4: two equal templates are one value).
-    pub(super) fields: Vec<(DeclId, ConstTree, ExprId)>,
+    pub(in crate::elab) fields: Vec<(DeclId, ConstTree, ExprId)>,
 }
 
 /// What holds the elements of an array of templates.
@@ -55,7 +54,7 @@ impl Templates {
     }
 
     /// The template `number` names, `None` for a number that was never handed out.
-    pub(super) fn get(&self, number: Constant) -> Option<&TemplateValue> {
+    pub(in crate::elab) fn get(&self, number: Constant) -> Option<&TemplateValue> {
         match number {
             Constant::Int(n) => usize::try_from(n).ok().and_then(|n| self.values.get(n)),
             _ => None,
@@ -63,7 +62,7 @@ impl Templates {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The constants the params of `template` are bound to, each added to the IR's arena: what a placement through the template
     /// binds (`children.rs`, `hoist.rs`). A value the placement's `Option` param takes from a bare `T` is `Some` of it (§3.2.3).
     pub(super) fn template_constants(&mut self, template: &TemplateValue) -> Result<Vec<(DeclId, Constant, ExprId)>, ConstFault> {
@@ -178,43 +177,14 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The length of the array of templates `param` is declared as, `None` for a param of any other type.
-    pub(super) fn template_array_length(&self, param: DeclId) -> Option<usize> {
-        let DeclKind::Param(p) = &self.state.design.decl_data(param).kind else { return None };
-        match self.typed_written(p.ty)? {
-            crate::types::Ty::Array(element, crate::types::Length::Fixed(length)) if matches!(*element, crate::types::Ty::Module(_)) => usize::try_from(length).ok(),
-            _ => None,
-        }
-    }
-
     /// Whether `param` holds a template or an array of them: it fixes structure (§8.4.6).
     pub(super) fn is_template_param(&self, param: DeclId) -> bool {
         self.is_module_param(param) || self.template_array_length(param).is_some()
     }
 
-    /// Whether `param` is declared with a module type, or with a type parameter bounded by `Fn(..)`: its value is a template.
-    pub(super) fn is_module_param(&self, param: DeclId) -> bool {
-        self.template_array_length(param).is_none()
-            && matches!(&self.state.design.decl_data(param).kind, DeclKind::Param(p) if matches!(self.state.design.type_resolution(p.ty), Resolution::Decl(m) if matches!(self.state.design.decl_data(m).kind, DeclKind::Module(_)) || crate::types::GenericSignature::is_callable(self.state.design, m)))
-    }
-
-    /// The module the placement `call` places: the one the checker names, else (a call of a callable param, `cell(a)` with
-    /// `cell: C` and `C: Fn(..)`) the module of the template the param holds in `keys`. `None` for a call that places nothing, or a
-    /// param no template is bound to.
-    pub(super) fn placed_module(&self, call: ExprId, keys: &Bindings) -> Option<DeclId> {
-        if let Some(Callee::Module(module)) = self.state.types.callee(call) {
-            return Some(module);
-        }
-        let ExprKind::Call { class: CallClass::Instance { module: None, via: Some(via) }, .. } = &self.state.design.expr_node(call).kind else { return None };
-        if !self.is_module_param(*via) {
-            return None;
-        }
-        keys.get(*via).and_then(|number| self.state.consts.templates().get(number)).map(|template| template.module)
-    }
-
     /// The value `expr` gives a param: a template folded and interned (`Constant::Int` of its
     /// number), any other expression as `ConstEval::value` folds it over `bindings`.
-    pub(super) fn fold_param_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
+    pub(in crate::elab) fn fold_param_value(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         // one element of an array of templates: the array's items, the index folded over `bindings` (§8.4.1, GAPS L88)
         if let ExprKind::Index { expr: array, index } = self.state.design.expr_node(expr).kind.clone()
             && self.typed(expr).is_some_and(|ty| matches!(ty, crate::types::Ty::Module(_)))

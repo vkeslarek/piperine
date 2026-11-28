@@ -16,12 +16,12 @@
 //! * The reader makes a reach frame for each hop (`reach/fields.rs`), and the slot of a node or carrier of the last is the entry of the
 //!   first hop's module that names it (`Elaboration::nested_slot`).
 
+use crate::elab::structure::StructureLowering;
 use piperine_ir::Constant;
 
 use crate::refusal::forms::ValueForm;
 use crate::elab::consts::Bindings;
-use crate::elab::elaborator::Elaboration;
-use crate::elab::generation::Iteration;
+use crate::elab::structure::generation::Iteration;
 use crate::elab::elaborator::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind};
 
@@ -95,7 +95,7 @@ pub(in crate::elab) struct DemandEntry {
     pub(in crate::elab) item: DeclId,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// Whether the `let` binding `binding` of a module's body is a placement.
     pub(in crate::elab) fn is_placement_binding(&self, binding: DeclId) -> bool {
         let Some(value) = self.body_let_value(binding) else { return false };
@@ -341,7 +341,7 @@ impl Elaboration<'_, '_> {
         let outer_generated = std::mem::take(&mut self.state.structure.generated);
         let outer_keys = std::mem::replace(&mut self.state.structure.body_keys, keys.clone());
         let outer_params = self.state.consts.set_frame_params(keys.clone());
-        let outer_substitution = self.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
+        let outer_substitution = self.elaboration.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
         self.expand_generation(module);
         let found = read(self, &keys);
         self.state.consts.set_substitution(outer_substitution);

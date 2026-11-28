@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use piperine_ir::{AggregateData, BodyId, BodyNode, Carrier, CarrierRole, ChildValue, Constant, Derivative, Drive, Event, Hoisted, Reach, Reaction, Stream, Terminal, ValueType};
 
-use crate::elab::body::NodePlan;
+use crate::elab::structure::body::NodePlan;
 use crate::elab::consts::Bindings;
 use crate::refusal::forms::{DigitalForm, ValueForm};
 use crate::pom::{DeclId, DeclKind, Dir, ExprId};
@@ -106,14 +106,14 @@ pub(in crate::elab) struct Frame {
     pub(in crate::elab) params: BTreeMap<DeclId, Constant>,
     /// The params of a reach frame's module whose value does not fold (a value over a param of the reader that is not a key): the
     /// expression each is read as, where a `let` of the child reads it (`reach/placement_params.rs`).
-    pub(in crate::elab) deferred_params: BTreeMap<DeclId, crate::elab::reach::placement_params::DeferredParam>,
+    pub(in crate::elab) deferred_params: BTreeMap<DeclId, crate::elab::structure::reach::placement_params::DeferredParam>,
     /// A hoisted module's value inputs: the caller's expression, read in the parent frame, or
     /// `None` for a trailing `Option` input left out.
     pub(in crate::elab) inputs: BTreeMap<DeclId, Option<ExprId>>,
     /// The frames of the placements of modules with a result that `module` writes, by call and generation iteration.
-    pub(in crate::elab) placements: BTreeMap<crate::elab::hoist::PlacementKey, usize>,
+    pub(in crate::elab) placements: BTreeMap<crate::elab::structure::hoist::PlacementKey, usize>,
     /// The placements whose hoisting failed, already reported.
-    pub(in crate::elab) failed: BTreeSet<crate::elab::hoist::PlacementKey>,
+    pub(in crate::elab) failed: BTreeSet<crate::elab::structure::hoist::PlacementKey>,
     /// The derivative site of each `ddt` call read in the frame (`derivatives.rs`): one call, one site.
     pub(in crate::elab) derivatives: BTreeMap<ExprId, u32>,
     /// The delay site of each `delay` call read in the frame (`delays.rs`): one call, one site.
@@ -130,7 +130,7 @@ pub(in crate::elab) struct Frame {
     pub(in crate::elab) unrolled: Bindings,
     /// What the generation of the frame's module unrolls into while the frame is not the one being lowered (parked by `enter_frame`;
     /// `Elaboration::generated` holds the active frame's, `hoist.rs`).
-    pub(in crate::elab) generated: crate::elab::generation::GeneratedItems,
+    pub(in crate::elab) generated: crate::elab::structure::generation::GeneratedItems,
     /// The iteration of the generation `for`s the placement sat in when it was hoisted: what the caller's expressions of
     /// its inputs read of the carriers and `let`s declared in those loops (§8.2.23).
     pub(in crate::elab) ordinals: Vec<(DeclId, u32)>,
@@ -148,7 +148,7 @@ impl Frame {
 
     /// The frame of the body's own module.
     pub(in crate::elab) fn root(module: DeclId) -> Frame {
-        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), deferred_params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: crate::elab::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
+        Frame { module, parent: None, call: None, prefix: String::new(), carriers: BTreeMap::new(), nodes: BTreeMap::new(), node_shapes: BTreeMap::new(), empty_arrays: BTreeSet::new(), params: BTreeMap::new(), deferred_params: BTreeMap::new(), inputs: BTreeMap::new(), placements: BTreeMap::new(), failed: BTreeSet::new(), derivatives: BTreeMap::new(), delays: BTreeMap::new(), noise_sources: BTreeMap::new(), child: None, placement: None, unrolled: Bindings::new(), generated: crate::elab::structure::generation::GeneratedItems::default(), ordinals: Vec::new(), substitution: crate::types::Substitution::new() }
     }
 }
 
@@ -170,7 +170,7 @@ impl DigitalLowering<'_, '_, '_> {
                 self.give_initial_value(frame, decl, held);
                 continue;
             }
-            self.generated_items_complete(decl);
+            self.structure().generated_items_complete(decl);
             if self.is_empty_array(frame, decl) {
                 self.state.structure.frames[frame].empty_arrays.insert(decl);
                 self.record_empty_array(frame, decl);

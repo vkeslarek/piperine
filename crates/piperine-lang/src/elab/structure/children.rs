@@ -4,16 +4,16 @@
 //! expression over the parent's params (`ChildValue::Expr`, beside the child, contract D4), which
 //! placement evaluates per instance into the flat table (DIG-09 AC 11).
 
+use super::StructureLowering;
 use std::collections::BTreeSet;
 
 use piperine_ir::{Child, ChildValue, Constant, NodeRole, Terminal, ValueType};
 
 use super::bundles::PortBindings;
-use super::consts::{Bindings, ConstFault};
-use super::elaborator::Elaboration;
+use crate::elab::consts::{Bindings, ConstFault};
 use super::generation::Iteration;
-use super::functions::instances::Instance;
-use super::elaborator::Scope;
+use crate::elab::functions::instances::Instance;
+use crate::elab::elaborator::Scope;
 use super::templates::TemplateValue;
 use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
@@ -22,35 +22,35 @@ use crate::types::Ty;
 
 /// A placement, as instance placement needs it.
 #[derive(Clone)]
-pub(super) struct ChildPlan {
-    pub(super) name: String,
-    pub(super) module: DeclId,
+pub(in crate::elab) struct ChildPlan {
+    pub(in crate::elab) name: String,
+    pub(in crate::elab) module: DeclId,
     /// The arguments of the instance of a generic module the child places.
-    pub(super) instance: Option<Instance>,
+    pub(in crate::elab) instance: Option<Instance>,
     /// The body the child places: the variant of the module its key params select.
-    pub(super) body: piperine_ir::BodyId,
-    pub(super) terminals: Vec<Terminal>,
+    pub(in crate::elab) body: piperine_ir::BodyId,
+    pub(in crate::elab) terminals: Vec<Terminal>,
     /// What each carrier port of the child's body is bound to, in port order: a carrier of the
     /// parent's body.
-    pub(super) carriers: Vec<Option<u32>>,
+    pub(in crate::elab) carriers: Vec<Option<u32>>,
     /// The param values written, as (index in the child's params, the value when it folds alone,
     /// the value's expression): one that reads the parent's params is evaluated per instance.
-    pub(super) given: Vec<(u32, Option<Constant>, ExprId)>,
+    pub(in crate::elab) given: Vec<(u32, Option<Constant>, ExprId)>,
     /// The call expression of the placement.
-    pub(super) call: ExprId,
+    pub(in crate::elab) call: ExprId,
     /// The loop variables of the generation the placement is written in, each the iteration's constant: what a value of `given`
     /// that reads the parent's params reads besides them (`k: m + (j as f64)`).
-    pub(super) unrolled: Bindings,
+    pub(in crate::elab) unrolled: Bindings,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// Gives every authored child the node slots of its body that are no port, now that every body is
     /// built (`Ir::check` asks for one slot per node of the child's body): each names the child's own
     /// node, `Terminal::Own(k)` with `k` the node's index in the child's body, so the authored tree
     /// shows the child's signals and never ground where a node exists (S4, AS-16). A node the child
     /// reaches into a grandchild (`NodeRole::Reached`) is the child's own view of it, so its slot
     /// names it too.
-    pub(super) fn pad_child_nodes(&mut self) {
+    pub(in crate::elab) fn pad_child_nodes(&mut self) {
         let nodes: std::collections::BTreeMap<piperine_ir::BodyId, Vec<NodeRole>> = self.state.structure.plans.values().map(|plan| (plan.body, plan.nodes.iter().map(|n| n.role).collect())).collect();
         let slots: Vec<(piperine_ir::BodyId, u32, Vec<Terminal>)> = self
             .state.structure.plans
@@ -298,8 +298,8 @@ impl Elaboration<'_, '_> {
                         if matches!(&self.state.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
                             self.state.digital.structure.handed.push((carrier, window));
                             let span = self.state.design.expr_node(arg.value).span;
-                            let reach = super::digital::drive_overlaps::ElementReach::of_window(window);
-                            self.state.digital.structure.drive_sites.push(super::digital::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::digital::drive_overlaps::DriveWay::Handed, file: scope.values.file, span });
+                            let reach = crate::elab::digital::drive_overlaps::ElementReach::of_window(window);
+                            self.state.digital.structure.drive_sites.push(crate::elab::digital::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: crate::elab::digital::drive_overlaps::DriveWay::Handed, file: scope.values.file, span });
                         }
                         carriers.push(Some(carrier));
                         windows.push(window);
@@ -452,7 +452,7 @@ impl Elaboration<'_, '_> {
                             out.push((index as u32, None, field.value));
                         }
                         Some(_) => {
-                            self.refuse(file, self.state.design.expr_node(field.value).span, StructureForm::LetInParamValue);
+                            self.elaboration.refuse(file, self.state.design.expr_node(field.value).span, StructureForm::LetInParamValue);
                             ok = false;
                         }
                         None => ok = false,

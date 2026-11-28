@@ -16,15 +16,16 @@
 //!   lowered in id order with their key params bound to constants (`Scope::keys`): a condition
 //!   that reads only key params and constants folds (`lower.rs`).
 
+use super::StructureLowering;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use piperine_ir::{BodyId, Constant};
 
-use super::consts::Bindings;
-use super::functions::instances::Instance;
+use crate::elab::consts::Bindings;
+use crate::elab::functions::instances::Instance;
 use super::body::ModulePlan;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Elaboration;
+use crate::elab::elaborator::Scope;
 use piperine_ir::Terminal;
 use crate::pom::{Arm, FileId, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::Types;
@@ -32,29 +33,29 @@ use crate::types::Types;
 /// A body to lower: a module and the values of its key params, one text per key param in the
 /// order of the module's params (the text of a `Constant` tells two values apart exactly).
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct BodyKey {
-    pub(super) module: DeclId,
+pub(in crate::elab) struct BodyKey {
+    pub(in crate::elab) module: DeclId,
     /// The generic arguments of the instance of a generic module the body lowers; `None` for a module as written.
-    pub(super) instance: Option<Instance>,
-    pub(super) values: Vec<String>,
+    pub(in crate::elab) instance: Option<Instance>,
+    pub(in crate::elab) values: Vec<String>,
 }
 
 impl BodyKey {
     /// The key of the one body of a module with no key param.
-    pub(super) fn unkeyed(module: DeclId) -> BodyKey {
+    pub(in crate::elab) fn unkeyed(module: DeclId) -> BodyKey {
         BodyKey { module, instance: None, values: Vec::new() }
     }
 }
 
 /// The key params of each reached module with a body, in the order the module declares its params.
 #[derive(Default)]
-pub(super) struct KeyParams {
+pub(in crate::elab) struct KeyParams {
     by_module: BTreeMap<DeclId, Vec<DeclId>>,
 }
 
 impl KeyParams {
     /// The key params of `module`.
-    pub(super) fn of(&self, module: DeclId) -> &[DeclId] {
+    pub(in crate::elab) fn of(&self, module: DeclId) -> &[DeclId] {
         self.by_module.get(&module).map_or(&[], Vec::as_slice)
     }
 
@@ -78,7 +79,7 @@ impl KeyParams {
 /// The variants of bodies requested so far: the id handed out to each, in request order, and the
 /// ones not yet lowered. A variant is lowered after every unkeyed body, in id order.
 #[derive(Default)]
-pub(super) struct BodyVariants {
+pub(in crate::elab) struct BodyVariants {
     ids: BTreeMap<BodyKey, BodyId>,
     pending: VecDeque<(BodyKey, Bindings)>,
     /// The id the next variant takes: one past the unkeyed bodies, then one past each request.
@@ -87,7 +88,7 @@ pub(super) struct BodyVariants {
 
 impl BodyVariants {
     /// Variants take ids from `first` on.
-    pub(super) fn starting_at(first: u32) -> BodyVariants {
+    pub(in crate::elab) fn starting_at(first: u32) -> BodyVariants {
         BodyVariants { next: first, ..BodyVariants::default() }
     }
 
@@ -103,7 +104,7 @@ impl BodyVariants {
 /// them: what a condition that depends on params only is made of. An expression written in a
 /// hoisted frame reads through the placements that lead to it (`within`): a value input is the
 /// caller's argument, so it reads what that argument reads.
-pub(super) struct ParamReads<'a, 'd> {
+pub(in crate::elab) struct ParamReads<'a, 'd> {
     design: &'d Design,
     types: &'a Types<'d>,
     /// The placements, outermost first, between the body's own module and the frame the expression
@@ -115,12 +116,12 @@ pub(super) struct ParamReads<'a, 'd> {
 
 impl<'a, 'd> ParamReads<'a, 'd> {
     /// A reader of expressions written in the body's own module.
-    pub(super) fn new(design: &'d Design, types: &'a Types<'d>) -> Self {
+    pub(in crate::elab) fn new(design: &'d Design, types: &'a Types<'d>) -> Self {
         ParamReads::within(design, types, &[])
     }
 
     /// A reader of expressions written in the frame that `placements` lead to.
-    pub(super) fn within(design: &'d Design, types: &'a Types<'d>, placements: &'a [ExprId]) -> Self {
+    pub(in crate::elab) fn within(design: &'d Design, types: &'a Types<'d>, placements: &'a [ExprId]) -> Self {
         ParamReads { design, types, placements, through_input: std::cell::Cell::new(false) }
     }
 
@@ -130,7 +131,7 @@ impl<'a, 'd> ParamReads<'a, 'd> {
     }
 
     /// Whether `decl` is a port of a value type: a value input.
-    pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
+    pub(in crate::elab) fn is_value_input(&self, decl: DeclId) -> bool {
         matches!(&self.design.decl_data(decl).kind, DeclKind::Port(p) if self.types.carrier(decl).is_none() && self.design.nature_of(p.ty).is_none() && !self.is_nature_parameter_type(p.ty)) && !self.design.is_bundle_owner(decl)
     }
 
@@ -141,7 +142,7 @@ impl<'a, 'd> ParamReads<'a, 'd> {
 
     /// The params of the body's own module `expr` reads; `None` when it reads a probe, a carrier,
     /// the environment, a local or calls anything but a method of the catalogue.
-    pub(super) fn of(&self, expr: ExprId) -> Option<BTreeSet<DeclId>> {
+    pub(in crate::elab) fn of(&self, expr: ExprId) -> Option<BTreeSet<DeclId>> {
         let mut params = BTreeSet::new();
         self.collect(expr, self.placements.len(), &mut params).then_some(params)
     }
@@ -197,15 +198,15 @@ impl<'a, 'd> ParamReads<'a, 'd> {
 /// One contribution of a module's `analog` blocks as written: the two ends of its branch (`None`
 /// is ground, the pair is sorted), its quantity, and the `if` and `match` conditions that enclose
 /// it, outermost first.
-pub(super) struct WrittenContribution {
-    pub(super) ends: [Option<DeclId>; 2],
-    pub(super) quantity: crate::pom::QuantityRole,
-    pub(super) conditions: Vec<ExprId>,
+pub(in crate::elab) struct WrittenContribution {
+    pub(in crate::elab) ends: [Option<DeclId>; 2],
+    pub(in crate::elab) quantity: crate::pom::QuantityRole,
+    pub(in crate::elab) conditions: Vec<ExprId>,
     /// The right side of the contribution.
-    pub(super) rhs: ExprId,
+    pub(in crate::elab) rhs: ExprId,
     /// The placements, outermost first, of the hoisted frame the contribution is written in (the
     /// conditions and the right side are read there); empty for the module's own.
-    pub(super) placements: Vec<ExprId>,
+    pub(in crate::elab) placements: Vec<ExprId>,
 }
 
 /// The walk that lists the contributions of statements with the conditions around them.
@@ -233,9 +234,9 @@ impl ContributionWalk<'_, '_, '_> {
             }
         }
         for call in calls {
-            let Some(callee) = self.elaboration.hoisted_callee(call) else { continue };
+            let Some(callee) = self.elaboration.structure().hoisted_callee(call) else { continue };
             // a module that places itself is reported when it is hoisted (`E0341`), not walked forever
-            if self.placements.iter().any(|p| self.elaboration.hoisted_callee(*p) == Some(callee)) {
+            if self.placements.iter().any(|p| self.elaboration.structure().hoisted_callee(*p) == Some(callee)) {
                 continue;
             }
             self.placements.push(call);
@@ -262,7 +263,7 @@ impl ContributionWalk<'_, '_, '_> {
             ExprKind::Paren(inner) => self.expression(inner),
             ExprKind::Block(block) => self.statements(&block.stmts),
             // A condition over the key params folds: only the arm it selects is written (`lower.rs`).
-            ExprKind::If { cond, then, else_ } => match self.elaboration.folded_condition(&self.keys, &self.placements, cond) {
+            ExprKind::If { cond, then, else_ } => match self.elaboration.structure().folded_condition(&self.keys, &self.placements, cond) {
                 Some(true) => self.statements(&then.stmts),
                 Some(false) => {
                     if let Some(otherwise) = else_ {
@@ -280,7 +281,7 @@ impl ContributionWalk<'_, '_, '_> {
             },
             // A scrutinee over the key params folds like an `if` condition (§11 rule 3): only the
             // arm it selects is written.
-            ExprKind::Match { scrutinee, arms } => match self.elaboration.folded_arm(&self.keys, &self.placements, scrutinee, &arms) {
+            ExprKind::Match { scrutinee, arms } => match self.elaboration.structure().folded_arm(&self.keys, &self.placements, scrutinee, &arms) {
                 Some(selected) => self.expression(arms[selected].body),
                 None => {
                     self.conditions.push(scrutinee);
@@ -304,7 +305,7 @@ impl ContributionWalk<'_, '_, '_> {
         let Some(quantity) = self.elaboration.quantity_role(*callee) else { return };
         let mut ends: Vec<Option<DeclId>> = Vec::new();
         for arg in args {
-            let Some(end) = self.elaboration.terminal_in(arg.value, &self.placements) else { return };
+            let Some(end) = self.elaboration.structure().terminal_in(arg.value, &self.placements) else { return };
             ends.push(end);
         }
         let mut ends = match ends[..] {
@@ -317,7 +318,7 @@ impl ContributionWalk<'_, '_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The node `arg` names as an end of a branch: `Some(None)` for ground, `Some(Some(decl))` for
     /// a port or a signal, `None` for anything else.
     pub(super) fn terminal_decl(&self, arg: ExprId) -> Option<Option<DeclId>> {
@@ -337,7 +338,7 @@ impl Elaboration<'_, '_> {
     /// The contributions `module` writes in its `analog` blocks and `analog` blocks of the modules it
     /// hoists (a module with a value input or a result), with the conditions that enclose each; a
     /// condition over the key params `keys` folds and is not one of them.
-    pub(super) fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
+    pub(in crate::elab) fn written_contributions(&mut self, module: DeclId, keys: &Bindings) -> Vec<WrittenContribution> {
         let mut walk = ContributionWalk { elaboration: self, keys: keys.clone(), conditions: Vec::new(), found: Vec::new(), placements: Vec::new() };
         walk.module(module);
         walk.found
@@ -365,7 +366,7 @@ impl Elaboration<'_, '_> {
 
     /// A param of module type is structural (§8.4.6): its template selects what is placed. Every reached module has such keys, a
     /// generic module's too: each instance of it is one body per template (`modules` holds the generic ones).
-    pub(super) fn classify_module_param_keys(&mut self, modules: &[DeclId]) {
+    pub(in crate::elab) fn classify_module_param_keys(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for param in order.clone() {
@@ -379,7 +380,7 @@ impl Elaboration<'_, '_> {
     /// The params of every reached module, a generic one's too, that elaboration folds wherever they are read: those the condition
     /// of a node chosen at elaboration reads (the body names one node, §1.4.7) and those the default of a later param reads (the
     /// default is folded, §8.1.16). Both are structural (§8.1.2).
-    pub(super) fn classify_folded_param_keys(&mut self, modules: &[DeclId]) {
+    pub(in crate::elab) fn classify_folded_param_keys(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             let read: Vec<DeclId> = self.params_read_by_node_choices(*module).into_iter().chain(self.params_read_by_defaults(*module)).collect();
@@ -391,7 +392,7 @@ impl Elaboration<'_, '_> {
 
     /// Classifies the key params of `modules` (the reached modules with a body): see the module
     /// documentation. Run once, before any body is lowered.
-    pub(super) fn classify_key_params(&mut self, modules: &[DeclId]) {
+    pub(in crate::elab) fn classify_key_params(&mut self, modules: &[DeclId]) {
         for module in modules {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {
@@ -659,7 +660,7 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The key of the body `module` gets when its params hold `values`, and the id of that body:
     /// a module with no key param has its one body; a variant takes the next id the first time its
     /// values are asked for and is lowered by `lower_pending_bodies`. `None` when a key param has
@@ -693,7 +694,7 @@ impl Elaboration<'_, '_> {
 
     /// Lowers every variant requested and not yet lowered, in id order; a variant may request
     /// more, which follow.
-    pub(super) fn lower_pending_bodies(&mut self) {
+    pub(in crate::elab) fn lower_pending_bodies(&mut self) {
         while let Some((key, values, id)) = self.state.structure.body_variants.next_pending() {
             self.lower_body(key.module, &values, key, id);
         }
@@ -722,12 +723,12 @@ impl Elaboration<'_, '_> {
 }
 
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The value of the condition `cond`, written in the frame `placements` lead to, when it reads
     /// only the key params `keys` binds and constants (through the value inputs of the placements:
     /// the caller's arguments, which read key params only); `None` for any other condition, which is
     /// lowered as written.
-    pub(super) fn folded_condition(&mut self, keys: &Bindings, placements: &[ExprId], cond: ExprId) -> Option<bool> {
+    pub(in crate::elab) fn folded_condition(&mut self, keys: &Bindings, placements: &[ExprId], cond: ExprId) -> Option<bool> {
         let bindings = self.fold_bindings(keys, placements, cond)?;
         match self.state.consts.value(cond, &bindings) {
             Ok(Constant::Bool(holds)) => Some(holds),
@@ -780,13 +781,13 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The position of the arm a `match` on `scrutinee` selects when the scrutinee reads only the
     /// key params `keys` binds and constants (§11 rule 3: a selector over params only is fixed at
     /// elaboration, an `if` and a `match` alike). `None` when the scrutinee is not such a value,
     /// an arm has a guard or a pattern that binds, or no arm matches: the `match` is then lowered
     /// as written, a run-time selector.
-    pub(super) fn folded_arm(&mut self, keys: &Bindings, placements: &[ExprId], scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
+    pub(in crate::elab) fn folded_arm(&mut self, keys: &Bindings, placements: &[ExprId], scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
         let keys = &self.fold_bindings(keys, placements, scrutinee)?;
         let subject = self.state.consts.value(scrutinee, keys).ok()?;
         for (position, arm) in arms.iter().enumerate() {
@@ -802,7 +803,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether the pattern `pat` accepts the constant `subject`; `None` for a pattern that binds
     /// or destructures, which no fold can decide.
-    pub(super) fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
+    pub(in crate::elab) fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
         match self.state.design.pat_node(pat).kind.clone() {
             PatKind::Wild => Some(true),
             PatKind::Lit(expr) => Some(self.state.consts.value(expr, keys).ok()? == subject),
@@ -838,7 +839,7 @@ impl Elaboration<'_, '_> {
         let Resolution::Decl(decl) = res else { return None };
         match self.state.design.decl_data(decl).kind {
             DeclKind::Const(_) => self.state.consts.constant(decl).ok(),
-            DeclKind::Variant(_) => super::value::compound::EnumLayout::variant_tag(self.state.design, decl).map(Constant::Int),
+            DeclKind::Variant(_) => crate::elab::value::compound::EnumLayout::variant_tag(self.state.design, decl).map(Constant::Int),
             _ => None,
         }
     }
@@ -862,7 +863,7 @@ impl Elaboration<'_, '_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The branches the body of `module`, lowered with the key params `scope.keys`, merges: a branch
     /// whose every contribution is a potential contribution of the constant zero that no condition
     /// selects (after the folds), and whose flow no expression reads (§11 rule 3). Their
@@ -982,7 +983,7 @@ impl Overrides {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The value the host bound before the run (`overrides`) to the key param `plans[index]` of the instance `path` of `module`,
     /// of the type of the param's default; `None` when it bound none or after a diagnostic.
     pub(super) fn host_override(&mut self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], index: usize, at: (FileId, crate::msl::Span)) -> Option<Constant> {

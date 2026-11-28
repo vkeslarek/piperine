@@ -12,7 +12,7 @@
 use super::AnalogLowering;
 use piperine_ir::{Addend, Branch, BranchKind, BodyNode, Constant, Expr, ExprId as LoweredExpr, Inflow, Operator, Origin, QuantityRole, Real, Stmt, StmtId as LoweredStmt, Terminal, ValueType};
 
-use crate::elab::body::NodePlan;
+use crate::elab::structure::body::NodePlan;
 use crate::elab::elaborator::Scope;
 use super::selectors::ContributionRecord;
 use crate::refusal::forms::ValueForm;

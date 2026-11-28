@@ -52,9 +52,9 @@ impl AnalogLowering<'_, '_, '_> {
             ExprKind::Paren(inner) => return self.noise_group(scope, Some(*inner)),
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
-                Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
+                Some(Resolution::Decl(decl)) => match self.structure().input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.analog().noise_group(scope, Some(given))),
+                    Some(Some(given)) => return self.structure().in_caller(scope, |this, scope| this.analog().noise_group(scope, Some(given))),
                     None => {}
                 },
                 _ => {}

@@ -4,12 +4,12 @@
 //! carrier or terminal of the child, in the order of the port's leaves, the order `Design::module_items` gives the
 //! child's own body.
 
+use super::StructureLowering;
 use piperine_ir::{CarrierWindow, ExprId as LoweredExpr, Origin, Terminal};
 
-use super::digital::drive_overlaps::{DriveSite, DriveWay, ElementReach};
-use super::digital::elements::Lookup;
-use super::elaborator::Elaboration;
-use super::elaborator::Scope;
+use crate::elab::digital::drive_overlaps::{DriveSite, DriveWay, ElementReach};
+use crate::elab::digital::elements::Lookup;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{BundlePlace, DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
 
@@ -17,11 +17,11 @@ use crate::pom::{BundlePlace, DeclId, DeclKind, Dir, ExprId, ExprKind, Resolutio
 /// and the window of an array of them each is given, each in port order.
 pub(super) struct PortBindings {
     /// The terminal each node port is given.
-    pub(super) terminals: Vec<Terminal>,
+    pub(in crate::elab) terminals: Vec<Terminal>,
     /// The carrier of the parent each carrier port is given.
-    pub(super) carriers: Vec<Option<u32>>,
+    pub(in crate::elab) carriers: Vec<Option<u32>>,
     /// The part of an array of carriers each carrier port is given.
-    pub(super) windows: Vec<Option<CarrierWindow>>,
+    pub(in crate::elab) windows: Vec<Option<CarrierWindow>>,
 }
 
 /// What one field of a bundle port is given.
@@ -34,7 +34,7 @@ enum LeafSource {
     Leaf(BundlePlace),
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// What the chain `expr` names of a bundle in `scope` (`tx.valid`, `rx[k]`, `self.valid` of a handle an inlined function was
     /// given, `handles.rs`, which is the place the call named, §7 rule 13): a leaf, a group or a bundle, with the element indexes
     /// of the array of bundles it is in, left for the array machinery to fold over the iteration `scope` is in.
@@ -46,18 +46,18 @@ impl Elaboration<'_, '_> {
 
     /// The leaf the field access `expr` stands for in `scope` (`tx.valid`, `self.valid`, `rx[k].valid` at its element): the place
     /// of a carrier, a node or a group, never of a bundle port or signal itself.
-    pub(super) fn bundle_leaf(&mut self, scope: &Scope, expr: ExprId) -> Option<BundlePlace> {
+    pub(in crate::elab) fn bundle_leaf(&mut self, scope: &Scope, expr: ExprId) -> Option<BundlePlace> {
         self.bundle_place_in(scope, expr).filter(|place| self.state.design.leaf_owner(place.decl).is_some())
     }
 
     /// The read of a field of an element of an array of bundles (`ps[k].b`): the element `k` of the leaf `ps.b`. `None` after a
     /// diagnostic.
-    pub(super) fn lower_bundle_element(&mut self, scope: &mut Scope, expr: ExprId, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_bundle_element(&mut self, scope: &mut Scope, expr: ExprId, origin: Origin) -> Option<LoweredExpr> {
         match self.digital().element_lookup(scope, expr) {
             Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
             Lookup::Failed => None,
             Lookup::No => {
-                self.refuse(scope.values.file, self.state.design.expr_node(expr).span, DigitalForm::FieldOfElementOfArrayOfBundles);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, DigitalForm::FieldOfElementOfArrayOfBundles);
                 None
             }
         }

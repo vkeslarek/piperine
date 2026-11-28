@@ -2,9 +2,9 @@
 //! value selects the body's variant before any host can write it. An integer literal (decimal, `0x`, `0b`, `_`), a variant name of a
 //! unit enum, `None`, `Some(value)` or a plain value of `T` for an `Option<T>`, a number, a flag.
 
+use super::StructureLowering;
 use piperine_ir::{AggregateData, Constant, Real};
 
-use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind};
 use crate::types::Ty;
 
@@ -39,7 +39,7 @@ impl LiteralText {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The constant the text `text` is for the param `param`, read by the param's type; the reason it is none otherwise.
     pub(super) fn constant_of_text(&mut self, param: DeclId, text: &str) -> Result<Constant, String> {
         let DeclKind::Param(declared) = &self.state.design.decl_data(param).kind else { return Err("it is no param".to_string()) };

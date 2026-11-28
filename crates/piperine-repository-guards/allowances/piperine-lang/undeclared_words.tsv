@@ -2,8 +2,8 @@ crates/piperine-lang/src/elab/value/aggregate.rs::constructed_decl	1
 crates/piperine-lang/src/elab/value/aggregate.rs::expr	1
 crates/piperine-lang/src/elab/value/aggregate.rs::lower_struct_expr	1
 crates/piperine-lang/src/elab/analog/blocks.rs::lower_stim	1
-crates/piperine-lang/src/elab/body.rs::decl	1
-crates/piperine-lang/src/elab/body.rs::init	1
+crates/piperine-lang/src/elab/structure/body.rs::decl	1
+crates/piperine-lang/src/elab/structure/body.rs::init	1
 crates/piperine-lang/src/elab/digital/carrier_arrays.rs::array_init	1
 crates/piperine-lang/src/elab/digital/carrier_arrays.rs::element_init_parts	1
 crates/piperine-lang/src/elab/digital/carrier_arrays.rs::generated_array_init	1
@@ -34,9 +34,9 @@ crates/piperine-lang/src/elab/digital/element_commits.rs::root_decl	1
 crates/piperine-lang/src/elab/digital/element_commits.rs::ty	1
 crates/piperine-lang/src/elab/digital/elements.rs::ElementRef	1
 crates/piperine-lang/src/elab/value/files.rs::NotUtf8	1
-crates/piperine-lang/src/elab/generation.rs::mark_untaken	1
-crates/piperine-lang/src/elab/generation.rs::mark_untaken_else	1
-crates/piperine-lang/src/elab/generic_bodies.rs::nature_decl_of	1
+crates/piperine-lang/src/elab/structure/generation.rs::mark_untaken	1
+crates/piperine-lang/src/elab/structure/generation.rs::mark_untaken_else	1
+crates/piperine-lang/src/elab/structure/generic_bodies.rs::nature_decl_of	1
 crates/piperine-lang/src/elab/analog/host_sources.rs::T0	1
 crates/piperine-lang/src/elab/analog/host_sources.rs::T1	1
 crates/piperine-lang/src/elab/analog/host_sources.rs::V0	1
@@ -55,7 +55,7 @@ crates/piperine-lang/src/elab/mod.rs::consts	1
 crates/piperine-lang/src/elab/elaborator.rs::let_initializer	1
 crates/piperine-lang/src/elab/origin.rs::Locator	1
 crates/piperine-lang/src/elab/origin.rs::decl	1
-crates/piperine-lang/src/elab/reach/seed.rs::decl_name	1
+crates/piperine-lang/src/elab/structure/reach/seed.rs::decl_name	1
 crates/piperine-lang/src/elab/value/repr.rs::encoded_init	1
 crates/piperine-lang/src/elab/value/repr.rs::lower_hand_written_reprs	1
 crates/piperine-lang/src/elab/value/repr.rs::set_hand_written_reprs	1
@@ -67,9 +67,9 @@ crates/piperine-lang/src/elab/value/returns.rs::val	1
 crates/piperine-lang/src/elab/analog/selectors.rs::report_unseparated	1
 crates/piperine-lang/src/elab/analog/selectors.rs::standalone_guard	1
 crates/piperine-lang/src/elab/analog/selectors.rs::unselected	1
-crates/piperine-lang/src/elab/structural.rs::rhs	1
-crates/piperine-lang/src/elab/structural.rs::terminal_decl	1
-crates/piperine-lang/src/elab/structural.rs::unkeyed	1
+crates/piperine-lang/src/elab/structure/structural.rs::rhs	1
+crates/piperine-lang/src/elab/structure/structural.rs::terminal_decl	1
+crates/piperine-lang/src/elab/structure/structural.rs::unkeyed	1
 crates/piperine-lang/src/elab/elaborator.rs::body_exprs	1
 crates/piperine-lang/src/elab/analog/unroll.rs::unfoldable_recursion	1
 crates/piperine-lang/src/elab/functions/variants.rs::specs	1

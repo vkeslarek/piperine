@@ -81,7 +81,7 @@ impl DigitalLowering<'_, '_, '_> {
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = self.generated_carrier_levels(scope, at);
         // a field of an element of an array of bundles (`rx[k].valid`) is that element of its leaf (struct of arrays, `bundles.rs`)
-        let bundled = self.bundle_leaf(scope, at);
+        let bundled = self.structure().bundle_leaf(scope, at);
         // a handle bound to an element is that element
         if indexes.is_empty() && generated.is_empty() && bundled.as_ref().is_none_or(|place| place.elements.is_empty()) {
             let bound = match &self.state.design.expr_node(at).kind {
@@ -114,7 +114,7 @@ impl DigitalLowering<'_, '_, '_> {
             self.element_of_empty_array(scope.values.file, span);
             return Lookup::Failed;
         }
-        let Some(carrier) = self.frame_carrier(scope.values.frame, decl) else { return Lookup::No };
+        let Some(carrier) = self.structure().frame_carrier(scope.values.frame, decl) else { return Lookup::No };
         let Some(shape) = self.shape_in(&array, scope.values.frame) else {
             self.refuse(scope.values.file, span, DigitalForm::ElementOfArrayWhoseLengthIsNot);
             return Lookup::Failed;
@@ -355,13 +355,13 @@ impl DigitalLowering<'_, '_, '_> {
                 let Some(Resolution::Decl(decl)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
                 (scope.values.frame, decl)
             }
-            ExprKind::Field { .. } if let Some(place) = self.bundle_leaf(scope, at) => {
+            ExprKind::Field { .. } if let Some(place) = self.structure().bundle_leaf(scope, at) => {
                 indexes.splice(0..0, place.elements);
                 (scope.values.frame, place.decl)
             }
             ExprKind::Field { .. } => {
-                let (frame, item) = self.reached_item(scope, at)?;
-                if !self.reach_node_array(frame, item) {
+                let (frame, item) = self.structure().reached_item(scope, at)?;
+                if !self.structure().reach_node_array(frame, item) {
                     return Some(None);
                 }
                 (frame, item)
@@ -371,13 +371,14 @@ impl DigitalLowering<'_, '_, '_> {
         let Some(shape) = self.state.structure.frames.get(frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
             // a node of an arm that was not elaborated (§8.2.24)
             if self.state.structure.generated.of(decl).is_some_and(Vec::is_empty) {
-                self.elaboration.refer_outside_generation(scope.values.file, self.state.design.expr_node(arg).span, decl, None);
+                let span = self.state.design.expr_node(arg).span;
+                self.elaboration.structure().refer_outside_generation(scope.values.file, span, decl, None);
                 return None;
             }
             return Some(None);
         };
         let span = self.state.design.expr_node(arg).span;
-        let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(frame, decl) else { return Some(None) };
+        let Some(piperine_ir::Terminal::Node(first)) = self.structure().frame_node(frame, decl) else { return Some(None) };
         let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
         // inside the generation `for`s that declare the array, the name is the iteration's element (§8.2.23)
         let implicit = self.implicit_ordinals(decl, &scope.digital.ordinals);
@@ -402,7 +403,7 @@ impl DigitalLowering<'_, '_, '_> {
             };
             if at >= *length {
                 if generated {
-                    self.refer_outside_generation(scope.values.file, span, decl, Some((at, *length)));
+                    self.structure().refer_outside_generation(scope.values.file, span, decl, Some((at, *length)));
                 } else {
                     let message = format!("the element {at} is out of range for an array of {length} nodes (§1 rule 11)");
                     self.report(scope.values.file, Diagnostic::new("E0104", message, span, "index out of range"));
@@ -456,7 +457,7 @@ impl DigitalLowering<'_, '_, '_> {
         }
         indexes.reverse();
         // a field of an element of an array of bundles (`rx[k].valid`) is that element of its leaf (struct of arrays, `bundles.rs`)
-        let decl = match self.bundle_leaf(scope, at) {
+        let decl = match self.structure().bundle_leaf(scope, at) {
             Some(place) => {
                 indexes.splice(0..0, place.elements);
                 place.decl
@@ -473,7 +474,7 @@ impl DigitalLowering<'_, '_, '_> {
             self.element_of_empty_array(scope.values.file, span);
             return Some(None);
         }
-        let carrier = self.frame_carrier(scope.values.frame, decl)?;
+        let carrier = self.structure().frame_carrier(scope.values.frame, decl)?;
         let shape = self.shape_in(&array, scope.values.frame)?;
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = self.generated_carrier_levels(scope, at);

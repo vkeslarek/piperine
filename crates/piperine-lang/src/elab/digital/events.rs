@@ -56,7 +56,7 @@ impl DigitalLowering<'_, '_, '_> {
             if behavior.kind != crate::pom::BehaviorKind::Digital {
                 continue;
             }
-            for (child, iteration) in self.digital_sequence(&decl.children) {
+            for (child, iteration) in self.structure().digital_sequence(&decl.children) {
                 if !matches!(self.state.design.decl_data(child).kind, DeclKind::Reaction(_)) {
                     continue;
                 }
@@ -253,14 +253,14 @@ impl DigitalLowering<'_, '_, '_> {
                     Some(vec![Disjunct { source: EventSource::At(time), discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
                 // A module with an `Event` result (`above`, `init`): its result, in its frame.
-                Some(Callee::Module(_)) | None if self.result_callee(expr).is_some() => {
-                    let frame = self.frame_of(scope, expr)?;
+                Some(Callee::Module(_)) | None if self.structure().result_callee(expr).is_some() => {
+                    let frame = self.structure().frame_of(scope, expr)?;
                     let module = self.state.structure.frames[frame].module;
                     let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return None };
                     let result = m.result?;
-                    let entry = self.enter_frame(scope, frame);
+                    let entry = self.structure().enter_frame(scope, frame);
                     let lowered = self.disjuncts(scope, result);
-                    self.leave_frame(scope, entry);
+                    self.structure().leave_frame(scope, entry);
                     lowered
                 }
                 _ => {
@@ -368,9 +368,9 @@ impl DigitalLowering<'_, '_, '_> {
             ExprKind::Paren(inner) => return self.optional_constant(scope, Some(*inner), what),
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
-                Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
+                Some(Resolution::Decl(decl)) => match self.structure().input_of(scope, decl) {
                     Some(None) => return Some(None),
-                    Some(Some(given)) => return self.in_caller(scope, |this, scope| this.digital().optional_constant(scope, Some(given), what)),
+                    Some(Some(given)) => return self.structure().in_caller(scope, |this, scope| this.digital().optional_constant(scope, Some(given), what)),
                     None => {}
                 },
                 _ => {}
@@ -399,9 +399,9 @@ impl DigitalLowering<'_, '_, '_> {
             ExprKind::Binary { lhs, rhs, .. } => self.constant_or_param(scope, *lhs) && self.constant_or_param(scope, *rhs),
             ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(_)) => true,
-                Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
+                Some(Resolution::Decl(decl)) => match self.structure().input_of(scope, decl) {
                     Some(None) => false,
-                    Some(Some(given)) => self.in_caller(scope, |this, scope| Some(this.digital().constant_or_param(scope, given))).unwrap_or(false),
+                    Some(Some(given)) => self.structure().in_caller(scope, |this, scope| Some(this.digital().constant_or_param(scope, given))).unwrap_or(false),
                     None => matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_) | DeclKind::Const(_)),
                 },
                 _ => false,
@@ -425,7 +425,8 @@ impl DigitalLowering<'_, '_, '_> {
     pub(super) fn carrier_of(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
         let node = self.state.design.expr_node(self.peel_parens(expr)).clone();
         if let ExprKind::Field { .. } = &node.kind {
-            return self.elaboration.reached_carrier(scope, self.peel_parens(expr));
+            let peeled = self.peel_parens(expr);
+            return self.elaboration.structure().reached_carrier(scope, peeled);
         }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
@@ -435,7 +436,7 @@ impl DigitalLowering<'_, '_, '_> {
         }
         if let ExprKind::Path(path) = &node.kind
             && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
-            && let Some(index) = self.frame_carrier(scope.values.frame, decl)
+            && let Some(index) = self.structure().frame_carrier(scope.values.frame, decl)
         {
             return Some(index);
         }

@@ -23,9 +23,9 @@ crates/piperine-ir/src/print/arenas.rs::Printer::form	kept: one arm per variant
 crates/piperine-ir/src/print/expression.rs::Printer::expr	kept: one arm per variant
 crates/piperine-ir/src/print/expression.rs::Printer::stmt	kept: one arm per variant
 crates/piperine-ir/src/statements.rs::Statements::of	-
-crates/piperine-lang/src/elab/body.rs::Elaboration::lower_body_under_substitution	-
+crates/piperine-lang/src/elab/structure/body.rs::StructureLowering::lower_body_under_substitution	-
 crates/piperine-lang/src/elab/digital/carriers.rs::DigitalLowering::lower_carrier	-
-crates/piperine-lang/src/elab/children.rs::Elaboration::lower_child	-
+crates/piperine-lang/src/elab/structure/children.rs::StructureLowering::lower_child	-
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option	-
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_method	-
 crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_row	-
@@ -35,17 +35,17 @@ crates/piperine-lang/src/elab/digital/element_commits.rs::DigitalLowering::place
 crates/piperine-lang/src/elab/digital/elements.rs::DigitalLowering::node_run	-
 crates/piperine-lang/src/elab/digital/events.rs::DigitalLowering::disjuncts	-
 crates/piperine-lang/src/elab/functions/declarations.rs::FunctionLowering::lower_function	-
-crates/piperine-lang/src/elab/hoist.rs::Elaboration::hoist	-
+crates/piperine-lang/src/elab/structure/hoist.rs::StructureLowering::hoist	-
 crates/piperine-lang/src/elab/value/iterators.rs::ValueLowering::prepare	-
 crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_call	kept: the dispatch over the callee the checker resolved, one arm per callee kind
 crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_expr_unchecked	kept: an exhaustive match over ExprKind, one arm per expression kind, each arm a call into its family
 crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_path	-
 crates/piperine-lang/src/elab/value/patterns.rs::ValueLowering::test_pattern	-
-crates/piperine-lang/src/elab/place.rs::Elaboration::bind_params	-
-crates/piperine-lang/src/elab/place.rs::Elaboration::place_instance	-
+crates/piperine-lang/src/elab/structure/placement.rs::StructureLowering::bind_params	-
+crates/piperine-lang/src/elab/structure/placement.rs::StructureLowering::place_instance	-
 crates/piperine-lang/src/elab/digital/records.rs::DigitalLowering::lower_emit	-
 crates/piperine-lang/src/elab/value/returns.rs::ValueLowering::lower_inlined_option_call	-
-crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
+crates/piperine-lang/src/elab/structure/structural.rs::StructureLowering::classify_key_params	-
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	kept: an exhaustive match over the expression kinds, one short arm per kind; splitting it would only scatter the arms
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::statement	kept: an exhaustive match over the statement kinds, one short arm per kind
 crates/piperine-lang/src/msl/parser/entry.rs::SourceParser::lex_limited	kept: one scan over the token vector with a single cursor and the two E0910 counters; every branch is a few lines of one state machine

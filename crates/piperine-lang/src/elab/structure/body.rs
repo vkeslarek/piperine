@@ -2,15 +2,15 @@
 //! over the body's own params), its nodes (ports first, then signals, with nature and initial
 //! potential). A body is a function of its module alone: one variant per module in M1.
 
+use super::StructureLowering;
 use piperine_ir::{BodyId, BodyNode, BodySpec, Carrier, Child, Constant, NatureId, NodeRole, Origin, Merge, Param, Real, Terminal, ValueType};
 
-use super::digital::carriers::{Frame, Structure};
+use crate::elab::digital::carriers::{Frame, Structure};
 use super::children::ChildPlan;
-use super::consts::{Bindings, ConstFault};
-use super::elaborator::Elaboration;
-use super::functions::instances::Instance;
+use crate::elab::consts::{Bindings, ConstFault};
+use crate::elab::functions::instances::Instance;
 use super::structural::BodyKey;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use crate::types::Ty;
@@ -18,9 +18,9 @@ use crate::types::Ty;
 /// A param of a module, as placement needs it.
 #[derive(Clone)]
 pub(super) struct ParamPlan {
-    pub(super) decl: DeclId,
-    pub(super) name: String,
-    pub(super) default: Option<Constant>,
+    pub(in crate::elab) decl: DeclId,
+    pub(in crate::elab) name: String,
+    pub(in crate::elab) default: Option<Constant>,
     /// A default that reads earlier params (`g: f64 = 1.0 / r`, §8.1.16): folded at each placement over the values the
     /// params before it take there, so `default` is `None`. Every param it reads is structural (`structural.rs`).
     pub(super) default_over_params: Option<ExprId>,
@@ -30,49 +30,49 @@ pub(super) struct ParamPlan {
 
 /// A node of a module: a port or a signal.
 #[derive(Clone)]
-pub(super) struct NodePlan {
-    pub(super) name: String,
-    pub(super) role: NodeRole,
-    pub(super) nature: NatureId,
-    pub(super) init: Option<Real>,
-    pub(super) origin: Origin,
+pub(in crate::elab) struct NodePlan {
+    pub(in crate::elab) name: String,
+    pub(in crate::elab) role: NodeRole,
+    pub(in crate::elab) nature: NatureId,
+    pub(in crate::elab) init: Option<Real>,
+    pub(in crate::elab) origin: Origin,
 }
 
 /// What placement reads of a lowered module: its nodes and carriers in body order, and
 /// the placements it writes.
 #[derive(Clone)]
-pub(super) struct ModulePlan {
-    pub(super) body: piperine_ir::BodyId,
-    pub(super) nodes: Vec<NodePlan>,
+pub(in crate::elab) struct ModulePlan {
+    pub(in crate::elab) body: piperine_ir::BodyId,
+    pub(in crate::elab) nodes: Vec<NodePlan>,
     /// The branches the body merges: in every instance their two ends are one node.
-    pub(super) merges: Vec<(Terminal, Terminal)>,
+    pub(in crate::elab) merges: Vec<(Terminal, Terminal)>,
     /// Every carrier of the body, in its order: each is bound to one net per instance.
-    pub(super) carriers: Vec<Carrier>,
+    pub(in crate::elab) carriers: Vec<Carrier>,
     /// How many of the leading carriers are ports of the module itself.
-    pub(super) port_carriers: usize,
+    pub(in crate::elab) port_carriers: usize,
     /// What the body says of each of its resolved carriers (`resolvers.rs`).
-    pub(super) resolved: Vec<super::digital::resolvers::ResolvedPlan>,
-    pub(super) children: Vec<ChildPlan>,
+    pub(in crate::elab) resolved: Vec<crate::elab::digital::resolvers::ResolvedPlan>,
+    pub(in crate::elab) children: Vec<ChildPlan>,
     /// The nodes and carriers of children the body reads: placement binds each once the child is placed.
-    pub(super) reaches: Vec<piperine_ir::Reach>,
+    pub(in crate::elab) reaches: Vec<piperine_ir::Reach>,
 }
 
 impl ModulePlan {
     /// Whether carrier `carrier` of the body stands for a carrier of a child (`inst.name`): a resolved one is a drive of the
     /// child's net, with no net of its own.
-    pub(super) fn is_reached(&self, carrier: u32) -> bool {
+    pub(in crate::elab) fn is_reached(&self, carrier: u32) -> bool {
         self.reaches.iter().any(|reach| matches!(reach.item, piperine_ir::ReachedItem::Carrier { carrier: reached, .. } if reached == carrier))
     }
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// What the body being lowered says of each resolved carrier: its nature, the `impl` its drives picked, whether it
     /// holds a drive of the net and whether it reads `others()`.
-    fn resolved_plans(&self) -> Vec<super::digital::resolvers::ResolvedPlan> {
+    fn resolved_plans(&self) -> Vec<crate::elab::digital::resolvers::ResolvedPlan> {
         self.state.digital.structure
             .resolved_carriers
             .iter()
-            .map(|(carrier, decl, nature)| super::digital::resolvers::ResolvedPlan {
+            .map(|(carrier, decl, nature)| crate::elab::digital::resolvers::ResolvedPlan {
                 carrier: *carrier,
                 decl: *decl,
                 nature: *nature,
@@ -85,7 +85,7 @@ impl Elaboration<'_, '_> {
 
     /// The plan of every param of the modules in `modules`: its name, its folded default and its
     /// `where`, which placement reads. A default that does not fold is reported once, here.
-    pub(super) fn plan_params(&mut self, modules: &[DeclId]) {
+    pub(in crate::elab) fn plan_params(&mut self, modules: &[DeclId]) {
         for module in modules {
             let plans = self.plan_module_params(*module);
             self.state.structure.param_plans.insert(*module, plans);
@@ -164,9 +164,9 @@ impl Elaboration<'_, '_> {
 
     /// Lower the body `key` of the module `module`, whose key params hold `keys`, and remember
     /// its plan. `expected` is the id the body was promised (`body_ids`, `BodyVariants`).
-    pub(super) fn lower_body(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
+    pub(in crate::elab) fn lower_body(&mut self, module: DeclId, keys: &Bindings, key: BodyKey, expected: BodyId) {
         // an instance of a generic module is lowered under its own arguments (`generic_bodies.rs`)
-        let outer = key.instance.as_ref().map(|instance| self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let outer = key.instance.as_ref().map(|instance| self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
         let enclosing = std::mem::replace(&mut self.state.structure.lowering, Some(key.clone()));
         self.lower_body_under_substitution(module, keys, key, expected);
         self.state.structure.lowering = enclosing;
@@ -227,7 +227,7 @@ impl Elaboration<'_, '_> {
         let reaches = self.state.digital.structure.reaches.clone();
         let merged = scope.analog.merged.clone();
         let (node_specs, node_plans): (Vec<BodyNode>, Vec<NodePlan>) = std::mem::take(&mut self.state.digital.structure.nodes).into_iter().unzip();
-        let body = self.state.builder.body(BodySpec {
+        let body = self.elaboration.state.builder.body(BodySpec {
             name,
             origin: self.state.locator.decl(module),
             params: param_specs,
@@ -241,7 +241,7 @@ impl Elaboration<'_, '_> {
         });
         debug_assert_eq!(body, expected, "bodies are built in the order of their ids");
         if let Some(instance) = &key.instance {
-            self.state.builder.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
+            self.elaboration.state.builder.mark_body_instance(body, piperine_ir::GenericInstance { item: instance.item_name(self), arguments: instance.argument_names(self) });
         }
         self.digital().finish_structure(body);
         for (plus, minus) in &merged {
@@ -289,19 +289,6 @@ impl Elaboration<'_, '_> {
         stored
     }
 
-    /// The values the params a frame's initial values may read take: the body's key params for the body's
-    /// own module (frame 0, `body_keys`), the constants the placement bound for a hoisted module.
-    pub(super) fn frame_bindings(&self, frame: usize) -> Bindings {
-        if frame == 0 {
-            return self.state.structure.body_keys.clone();
-        }
-        let mut bindings = Bindings::new();
-        for (param, value) in &self.state.structure.frames[frame].params {
-            self.bind_param(&mut bindings, *param, *value);
-        }
-        bindings
-    }
-
     /// What the generation of the frame `from` unrolled into is parked in it, and that of the frame `to` becomes the active one
     /// (`Elaboration::generated`): each hoisted frame unrolls the generation of its own module (`hoist.rs`).
     pub(super) fn switch_generation(&mut self, from: usize, to: usize) {
@@ -314,16 +301,16 @@ impl Elaboration<'_, '_> {
 
     /// Lowers code of `frame` from here on: `scope` reads its names and the types read its params. The state of the
     /// frame left comes back with `leave_frame`.
-    pub(super) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
+    pub(in crate::elab) fn enter_frame(&mut self, scope: &mut Scope, frame: usize) -> FrameEntry {
         let params = self.frame_bindings(frame);
-        let substitution = self.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
+        let substitution = self.elaboration.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
         let outer = std::mem::replace(&mut scope.values.frame, frame);
         self.switch_generation(outer, frame);
         FrameEntry { outer, params: self.state.consts.set_frame_params(params), substitution }
     }
 
     /// Back to the frame `entry` left.
-    pub(super) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
+    pub(in crate::elab) fn leave_frame(&mut self, scope: &mut Scope, entry: FrameEntry) {
         self.switch_generation(scope.values.frame, entry.outer);
         scope.values.frame = entry.outer;
         self.state.consts.set_frame_params(entry.params);
@@ -370,7 +357,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The node `decl` named `name` in the body: one node, or one element of an array of nodes (`carrier_arrays.rs`).
-    pub(super) fn lower_node_named(&mut self, decl: DeclId, role: NodeRole, name: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
+    pub(in crate::elab) fn lower_node_named(&mut self, decl: DeclId, role: NodeRole, name: &str, frame: usize) -> Option<(BodyNode, NodePlan)> {
         let data = self.state.design.decl_data(decl).clone();
         let name = name.to_string();
         let (ty, init) = match &data.kind {
@@ -387,18 +374,18 @@ impl Elaboration<'_, '_> {
             (init, false) => init,
         };
         let init = match init {
-            Some(expr) => match self.state.consts.value(expr, &self.frame_bindings(frame)) {
+            Some(expr) => match self.elaboration.state.consts.value(expr, &self.frame_bindings(frame)) {
                 Ok(Constant::Real(value)) => Some(value),
                 Ok(Constant::Bool(_)) => {
-                    self.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::BoolInitialValue);
+                    self.elaboration.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::BoolInitialValue);
                     return None;
                 }
                 Ok(Constant::Int(_) | Constant::FloatBits(_) | Constant::Wide(_)) => {
-                    self.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::IntegerOrNumberWidthInitialValue);
+                    self.elaboration.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::IntegerOrNumberWidthInitialValue);
                     return None;
                 }
                 Ok(Constant::Aggregate(_)) => {
-                    self.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::CompositeInitialValue);
+                    self.elaboration.refuse(data.file, self.state.design.expr_node(expr).span, StructureForm::CompositeInitialValue);
                     return None;
                 }
                 Err(fault) => {
@@ -415,7 +402,7 @@ impl Elaboration<'_, '_> {
 }
 
 /// The frame a lowering left when it entered another (`Elaboration::enter_frame`).
-pub(super) struct FrameEntry {
+pub(in crate::elab) struct FrameEntry {
     /// The frame `scope` read before.
     outer: usize,
     /// The module params the types read before.

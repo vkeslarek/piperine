@@ -45,7 +45,7 @@ enum Step {
 impl DigitalLowering<'_, '_, '_> {
     /// The place `place` of a commit or a definition, lowered. `None` after a diagnostic.
     pub(super) fn place_target(&mut self, scope: &mut Scope, place: ExprId) -> Option<PlaceTarget> {
-        if let Some(reached) = self.reached_place_target(scope, place) {
+        if let Some(reached) = self.structure().reached_place_target(scope, place) {
             return reached;
         }
         let (root, steps) = self.place_steps(place);
@@ -137,7 +137,7 @@ impl DigitalLowering<'_, '_, '_> {
 
     /// The port or signal declaration a root expression names.
     fn root_decl(&mut self, scope: &Scope, root: ExprId) -> Option<crate::pom::DeclId> {
-        if let Some(leaf) = self.bundle_leaf(scope, root) {
+        if let Some(leaf) = self.structure().bundle_leaf(scope, root) {
             return Some(leaf.decl);
         }
         let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return None };

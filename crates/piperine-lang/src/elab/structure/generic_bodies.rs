@@ -3,11 +3,11 @@
 //! `where` and length obligations for them, and asks for the body of that instance. Equal arguments share one body; a
 //! chain of instances that grows without end is `E0341` at depth [`MOST_NESTED_MODULE_INSTANCES`] (D7).
 
+use super::StructureLowering;
 use piperine_ir::Constant;
 
-use super::elaborator::Elaboration;
-use super::functions::instances::Instance;
-use super::elaborator::Scope;
+use crate::elab::functions::instances::Instance;
+use crate::elab::elaborator::Scope;
 use super::structural::BodyKey;
 use crate::refusal::forms::GenericsForm;
 use crate::msl::{Diagnostic, Span};
@@ -17,9 +17,9 @@ use crate::types::Ty;
 /// How many instances of generic modules may place one another before the chain is cut (D7, as for functions).
 const MOST_NESTED_MODULE_INSTANCES: usize = 1024;
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// Whether `module` is a generic module: it has no body of its own, each instance is one.
-    pub(super) fn is_generic_module(&self, module: DeclId) -> bool {
+    pub(in crate::elab) fn is_generic_module(&self, module: DeclId) -> bool {
         let data = self.state.design.decl_data(module);
         matches!(data.kind, DeclKind::Module(_)) && data.generics_span.is_some()
     }
@@ -71,7 +71,7 @@ impl Elaboration<'_, '_> {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Some(()) };
         let Some(condition) = data.where_ else { return Some(()) };
         let bindings = self.functions().instance_bindings(instance);
-        let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
         let value = self.state.consts.value(condition, &bindings);
         self.state.consts.set_substitution(outer);
         match value {
@@ -93,7 +93,7 @@ impl Elaboration<'_, '_> {
         if self.state.structure.instance_param_plans.contains_key(instance) {
             return;
         }
-        let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
         let plans = self.plan_module_params(module);
         self.state.consts.set_substitution(outer);
         self.state.structure.instance_param_plans.insert(instance.clone(), plans);

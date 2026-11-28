@@ -325,14 +325,14 @@ impl ValueLowering<'_, '_, '_> {
 
     /// A field read: of a struct or tuple value, of one element of an array of bundles, or of a node of a bundle.
     fn lower_field_expression(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, name: &str, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        if matches!(self.typed(recv), Some(Ty::Struct(_) | Ty::Tuple(_))) && self.bundle_leaf(scope, expr).is_none() {
+        if matches!(self.typed(recv), Some(Ty::Struct(_) | Ty::Tuple(_))) && self.structure().bundle_leaf(scope, expr).is_none() {
             return self.lower_field_value(scope, recv, name, ty, origin);
         }
         // a field of an element of an array of bundles (`ps[k].b`) is one element of its leaf (struct of arrays, `elements.rs`)
-        if self.bundle_leaf(scope, expr).is_some_and(|place| !place.elements.is_empty()) {
-            return self.lower_bundle_element(scope, expr, origin);
+        if self.structure().bundle_leaf(scope, expr).is_some_and(|place| !place.elements.is_empty()) {
+            return self.structure().lower_bundle_element(scope, expr, origin);
         }
-        self.lower_field(scope, expr, ty, origin)
+        self.structure().lower_field(scope, expr, ty, origin)
     }
 
     /// A method call, by what the checker resolved it to: a method of the project, a method through a bound, a row of the
@@ -447,7 +447,7 @@ impl ValueLowering<'_, '_, '_> {
             }
             (_, Some(Callee::Core(id))) => self.analog().lower_core(scope, expr, id, args, ty, origin),
             // A module with a result is hoisted: its result is read where the placement stands.
-            (_, Some(Callee::Module(_)) | None) if self.result_callee(expr).is_some() => self.lower_result(scope, expr),
+            (_, Some(Callee::Module(_)) | None) if self.structure().result_callee(expr).is_some() => self.structure().lower_result(scope, expr),
             (_, Some(Callee::Module(_))) => {
                 self.refuse(scope.values.file, span, ValueForm::PlacementUsedAsValue);
                 None
@@ -754,7 +754,7 @@ impl ValueLowering<'_, '_, '_> {
                 // A param of a hoisted module is the constant its placement bound (`hoist.rs`).
                 (_, Some(value)) => Some(self.constant_expr(value, ty, origin)),
                 // a param of a reach frame whose given value does not fold is read in place (`reach/placement_params.rs`)
-                _ if scope.values.frame != 0 && self.state.structure.frames.get(scope.values.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.lower_deferred_param(scope, decl),
+                _ if scope.values.frame != 0 && self.state.structure.frames.get(scope.values.frame).is_some_and(|frame| frame.deferred_params.contains_key(&decl)) => self.structure().lower_deferred_param(scope, decl),
                 _ => {
                     self.refuse(scope.values.file, node.span, ValueForm::ParamOfAnotherModule);
                     None
@@ -765,11 +765,11 @@ impl ValueLowering<'_, '_, '_> {
                 crate::elab::digital::elements::Lookup::Found(element) => Some(self.digital().carrier_element_read(scope, element, origin)),
                 _ => None,
             },
-            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.values.frame, decl), self.input_of(scope, decl)) {
+            DeclKind::Port(_) | DeclKind::Signal(_) => match (self.structure().frame_carrier(scope.values.frame, decl), self.structure().input_of(scope, decl)) {
                 (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.digital().elements_of_array(scope, index, ElementPart::Value, origin)),
                 (Some(index), _) => Some(self.digital().carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
-                (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
+                (None, Some(Some(given))) => self.structure().in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
                 (None, Some(None)) => {
                     self.refuse(scope.values.file, node.span, ValueForm::ValueInputLeftOutReadAsValue);
                     None
@@ -793,11 +793,11 @@ impl ValueLowering<'_, '_, '_> {
                     Some(self.emit(Expr::Local(*index), ty, origin))
                 }
                 // a `let` written in generation: the iteration's value inside its loops, the array of them outside (§8.2.23)
-                None if self.body_let_value(decl).is_some() && self.state.structure.generated.of(self.state.design.decl_data(decl).parent?).is_some() => self.lower_generated_let(scope, expr, decl, ty, origin),
+                None if self.body_let_value(decl).is_some() && self.state.structure.generated.of(self.state.design.decl_data(decl).parent?).is_some() => self.structure().lower_generated_let(scope, expr, decl, ty, origin),
                 // A module-body `let`: inlined at each read (Appendix C.1.1, `hoist.rs`).
                 None if self.body_let_value(decl).is_some() => {
                     let value = self.body_let_value(decl)?;
-                    self.lower_body_let(scope, value)
+                    self.structure().lower_body_let(scope, value)
                 }
                 // A block-local `let` in a standalone scope is its source expression (`derivatives.rs`).
                 None if scope.digital.no_locals && scope.values.let_sources.contains_key(&decl) => {

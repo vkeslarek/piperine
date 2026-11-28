@@ -251,8 +251,8 @@ impl AnalogLowering<'_, '_, '_> {
     /// Whether the condition `cond` is decided at elaboration: it reads only the key params and
     /// constants (§11 rule 3), or the loop variables and parameters an unrolling has bound.
     pub(in crate::elab) fn folded_decision(&mut self, scope: &Scope, cond: ExprId) -> Option<bool> {
-        let chain = self.placement_chain(scope.values.frame);
-        if let Some(holds) = self.folded_condition(&scope.values.keys.clone(), &chain, cond) {
+        let chain = self.structure().placement_chain(scope.values.frame);
+        if let Some(holds) = self.structure().folded_condition(&scope.values.keys.clone(), &chain, cond) {
             return Some(holds);
         }
         let bindings = self.unrolled_bindings(scope)?;
@@ -264,8 +264,8 @@ impl AnalogLowering<'_, '_, '_> {
 
     /// The arm a `match` on `scrutinee` selects at elaboration, by the same two rules.
     pub(in crate::elab) fn folded_selection(&mut self, scope: &Scope, scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
-        let chain = self.placement_chain(scope.values.frame);
-        if let Some(selected) = self.folded_arm(&scope.values.keys.clone(), &chain, scrutinee, arms) {
+        let chain = self.structure().placement_chain(scope.values.frame);
+        if let Some(selected) = self.structure().folded_arm(&scope.values.keys.clone(), &chain, scrutinee, arms) {
             return Some(selected);
         }
         let bindings = self.unrolled_bindings(scope)?;
@@ -274,7 +274,7 @@ impl AnalogLowering<'_, '_, '_> {
             if arm.guard.is_some() {
                 return None;
             }
-            if self.constant_pattern_holds(&bindings, arm.pat, subject)? {
+            if self.structure().constant_pattern_holds(&bindings, arm.pat, subject)? {
                 return Some(position);
             }
         }

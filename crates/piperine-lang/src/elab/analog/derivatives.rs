@@ -69,7 +69,7 @@ impl AnalogLowering<'_, '_, '_> {
         let all: BTreeSet<DeclId> = candidates.iter().copied().collect();
         let rules = LeafRules { whole_addends: true, lets: &all };
         let mut leaves: BTreeSet<ExprId> = BTreeSet::new();
-        for contribution in self.written_contributions(module, &scope.values.keys).into_iter().filter(|c| c.conditions.is_empty()) {
+        for contribution in self.structure().written_contributions(module, &scope.values.keys).into_iter().filter(|c| c.conditions.is_empty()) {
             let mut found = Vec::new();
             self.leaf_exprs(&rules, contribution.rhs, &mut found);
             leaves.extend(found);

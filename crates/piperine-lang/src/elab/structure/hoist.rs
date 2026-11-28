@@ -19,13 +19,13 @@
 //! frame driven by the caller's expression, an anonymous definition. `cross` and `at` are core:
 //! a placement of one is an event of the enclosing body, not a frame.
 
+use super::StructureLowering;
 use piperine_ir::{Constant, Drive, ExprId as LoweredExpr, Hoisted, NodeRole, StmtId as LoweredStmt};
 
-use super::digital::carriers::Frame;
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
+use crate::elab::digital::carriers::Frame;
+use crate::elab::consts::Bindings;
 use super::generation::Iteration;
-use super::elaborator::Scope;
+use crate::elab::elaborator::Scope;
 use super::reach::placement_params::PlacementSite;
 use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
@@ -36,16 +36,16 @@ use crate::types::Callee;
 /// `for`s around it, outermost first (§8.2.23): each iteration of a placement written in generation is a frame of its own.
 /// Empty outside generation.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub(super) struct PlacementKey {
+pub(in crate::elab) struct PlacementKey {
     /// The placement as written.
-    pub(super) call: ExprId,
+    pub(in crate::elab) call: ExprId,
     /// The ordinals of its iteration.
-    pub(super) iteration: Vec<u64>,
+    pub(in crate::elab) iteration: Vec<u64>,
 }
 
 impl PlacementKey {
     /// The subscripts of the iteration, appended to the placement's name: `[1]`, `[0][2]`; empty outside generation.
-    pub(super) fn subscripts(&self) -> String {
+    pub(in crate::elab) fn subscripts(&self) -> String {
         self.iteration.iter().map(|ordinal| format!("[{ordinal}]")).collect()
     }
 }
@@ -67,7 +67,7 @@ struct OpenedFrame<'a> {
     bound: &'a PortArguments<'a>,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The key of the placement `call` read or hoisted in `scope`: the iteration of the generation `for`s around it that the
     /// code being lowered sits in.
     pub(super) fn placement_key(&self, scope: &Scope, call: ExprId) -> PlacementKey {
@@ -77,22 +77,8 @@ impl Elaboration<'_, '_> {
 
     /// The module with a result that `call` places, if it places one. A call through a callable param reads the template the param
     /// holds in the frame being lowered (a hoisted module's own `s: C` holds what its placement bound).
-    pub(super) fn result_callee(&self, call: ExprId) -> Option<DeclId> {
+    pub(in crate::elab) fn result_callee(&self, call: ExprId) -> Option<DeclId> {
         self.placed_module(call, self.state.consts.frame_params()).filter(|m| matches!(&self.state.design.decl_data(*m).kind, DeclKind::Module(d) if d.ret.is_some()))
-    }
-
-    /// The module `call` places when that module is hoisted: one with a result or with a value input. A call through a param of
-    /// a generic type bounded by `Fn(..)` (`s(5.0)` with `s: C`) places the module of the template the param holds in the frame
-    /// being lowered.
-    pub(super) fn hoisted_callee(&self, call: ExprId) -> Option<DeclId> {
-        self.placed_module(call, self.state.consts.frame_params()).filter(|m| self.is_hoisted(*m))
-    }
-
-    /// Whether a placement of `module` is hoisted into the body that places it (Appendix C.1.1): it
-    /// declares a result or takes a value input. Every other module keeps its own body.
-    pub(super) fn is_hoisted(&self, module: DeclId) -> bool {
-        let data = self.state.design.decl_data(module);
-        matches!(&data.kind, DeclKind::Module(m) if m.ret.is_some()) || data.children.iter().any(|c| self.is_value_input(*c))
     }
 
     /// Whether `decl` is a carrier port declared `out`.
@@ -100,14 +86,9 @@ impl Elaboration<'_, '_> {
         matches!(&self.state.design.decl_data(decl).kind, DeclKind::Port(p) if self.state.types.carrier(decl).is_some() && p.dir == Some(crate::pom::Dir::Out))
     }
 
-    /// Whether `decl` is a port of a value type: a value input.
-    pub(super) fn is_value_input(&self, decl: DeclId) -> bool {
-        super::structural::ParamReads::new(self.state.design, self.state.types).is_value_input(decl)
-    }
-
     /// The placements, outermost first, that open the frame `frame`: the calls that lead from the
     /// body's own module to it. Empty for the body's own module.
-    pub(super) fn placement_chain(&self, frame: usize) -> Vec<ExprId> {
+    pub(in crate::elab) fn placement_chain(&self, frame: usize) -> Vec<ExprId> {
         let mut chain = Vec::new();
         let mut at = frame;
         while let Some(call) = self.state.structure.frames[at].call {
@@ -151,7 +132,7 @@ impl Elaboration<'_, '_> {
 
     /// The frame of the placement `call`, written in the frame `scope.frame`; hoisted the first
     /// time it is asked for. `None` after a diagnostic.
-    pub(super) fn frame_of(&mut self, scope: &Scope, call: ExprId) -> Option<usize> {
+    pub(in crate::elab) fn frame_of(&mut self, scope: &Scope, call: ExprId) -> Option<usize> {
         let key = self.placement_key(scope, call);
         if let Some(frame) = self.state.structure.frames[scope.values.frame].placements.get(&key) {
             return Some(*frame);
@@ -168,7 +149,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `call`'s result, lowered where it is read: the callee's result expression in its frame.
-    pub(super) fn lower_result(&mut self, scope: &mut Scope, call: ExprId) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_result(&mut self, scope: &mut Scope, call: ExprId) -> Option<LoweredExpr> {
         let frame = self.frame_of(scope, call)?;
         let module = self.state.structure.frames[frame].module;
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
@@ -181,7 +162,7 @@ impl Elaboration<'_, '_> {
 
     /// `call`'s result of `Option` type as the pair of its two halves, lowered where it is read: the callee's result expression in its
     /// frame (the `Option` form of [`Elaboration::lower_result`]).
-    pub(super) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<super::value::compound::Pair> {
+    pub(in crate::elab) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<crate::elab::value::compound::Pair> {
         let frame = self.frame_of(scope, call)?;
         let module = self.state.structure.frames[frame].module;
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
@@ -194,13 +175,13 @@ impl Elaboration<'_, '_> {
 
     /// A read of the value input `decl` of the frame `scope.frame`: the caller's expression,
     /// lowered in the caller's frame. `None` when the frame has no such input (the read is not one).
-    pub(super) fn input_of(&self, scope: &Scope, decl: DeclId) -> Option<Option<ExprId>> {
+    pub(in crate::elab) fn input_of(&self, scope: &Scope, decl: DeclId) -> Option<Option<ExprId>> {
         self.state.structure.frames.get(scope.values.frame).and_then(|f| f.inputs.get(&decl)).copied()
     }
 
     /// Lower `expr`, the caller's expression of an input of the frame `scope.frame`, in the
     /// caller's frame, with `lower`.
-    pub(super) fn in_caller<T>(&mut self, scope: &mut Scope, lower: impl FnOnce(&mut Self, &mut Scope) -> Option<T>) -> Option<T> {
+    pub(in crate::elab) fn in_caller<T>(&mut self, scope: &mut Scope, lower: impl FnOnce(&mut Self, &mut Scope) -> Option<T>) -> Option<T> {
         let parent = self.state.structure.frames[scope.values.frame].parent?;
         // the caller's expression reads the loop variables it was written under (`unroll.rs`)
         let seen = self.state.structure.frames[scope.values.frame].unrolled.clone();
@@ -215,15 +196,9 @@ impl Elaboration<'_, '_> {
         lowered
     }
 
-    /// The value a module-body `let` binding stands for: the whole value of an identifier
-    /// pattern, the matching component of a tuple pattern over a tuple expression.
-    pub(super) fn body_let_value(&self, binding: DeclId) -> Option<ExprId> {
-        super::consts::ConstEval::body_let_value(self.state.design, binding)
-    }
-
     /// A read of a module-body `let`: the result of the placement it binds, else its value
     /// lowered where the read stands (Appendix C.1.1: inlined at each read).
-    pub(super) fn lower_body_let(&mut self, scope: &mut Scope, value: ExprId) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_body_let(&mut self, scope: &mut Scope, value: ExprId) -> Option<LoweredExpr> {
         let value = self.peel_parens(value);
         if matches!(self.state.design.expr_node(value).kind, ExprKind::Call { .. }) && self.result_callee(value).is_some() {
             return self.lower_result(scope, value);
@@ -397,7 +372,7 @@ impl Elaboration<'_, '_> {
         }
         let mut inner = Scope::sub_scope(scope);
         inner.values.frame = index;
-        let outer_params = self.state.consts.set_frame_params(self.frame_bindings(index));
+        let outer_params = self.elaboration.state.consts.set_frame_params(self.frame_bindings(index));
         self.digital().lower_definitions(&inner);
         self.hoist_placements(&inner);
         self.digital().lower_digital(&mut inner, module);
@@ -489,7 +464,7 @@ impl Elaboration<'_, '_> {
     /// coefficients, a table) is a constant of the IR's arena, bound taken apart by `bind_param` (`frame_bindings`); an array of
     /// templates is the aggregate of their numbers, held as a key of the frame (§8.4.6).
     /// A value the placement gives is written in the caller, so it folds under the caller's generic arguments (`caller`).
-    pub(super) fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, super::consts::ConstFault> {
+    pub(super) fn param_constant(&mut self, expr: ExprId, read: &Bindings, caller: Option<&crate::types::Substitution>) -> Result<Constant, crate::elab::consts::ConstFault> {
         let callee = caller.map(|substitution| self.state.consts.set_substitution(substitution.clone()));
         // the fold of a placement that keeps its body (`fold_param_value`): a template or an array of them is the number(s) it interns
         let folded = self.fold_param_value(expr, read);

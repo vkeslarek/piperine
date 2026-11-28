@@ -199,7 +199,7 @@ impl DigitalLowering<'_, '_, '_> {
         let inner = ArrayShape { dims: shape.dims[loops.min(shape.dims.len())..].to_vec() };
         let mut parts = Vec::with_capacity(shape.count() as usize);
         for iteration in &iterations {
-            let bindings = self.iteration_bindings(Some(iteration));
+            let bindings = self.structure().iteration_bindings(Some(iteration));
             parts.extend(self.element_init_parts(decl, init, &inner, element, &bindings)?);
         }
         Some(Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: ValueType::Array(Box::new(element.clone()), parts.len() as u64), variant: None, parts })))
@@ -244,7 +244,7 @@ impl DigitalLowering<'_, '_, '_> {
         let inits = self.node_array_init(decl, init, &shape, frame)?;
         for flat in 0..shape.count() {
             let element = format!("{name}{}", shape.subscripts(flat));
-            let (mut spec, mut plan) = self.lower_node_named(decl, role, &element, frame)?;
+            let (mut spec, mut plan) = self.structure().lower_node_named(decl, role, &element, frame)?;
             spec.init = inits[flat as usize];
             plan.init = inits[flat as usize];
             self.state.digital.structure.nodes.push((spec, plan));

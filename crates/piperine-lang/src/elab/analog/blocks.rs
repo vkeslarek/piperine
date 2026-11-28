@@ -363,13 +363,13 @@ impl AnalogLowering<'_, '_, '_> {
         let file = self.state.design.decl_data(node.owner).file;
         if let ExprKind::Field { .. } = &node.kind {
             // a node field of an element of an array of bundles (`d[k].p`) is that node of its leaf (struct of arrays, `bundles.rs`)
-            if self.bundle_leaf(scope, arg).is_some_and(|place| !place.elements.is_empty()) {
+            if self.structure().bundle_leaf(scope, arg).is_some_and(|place| !place.elements.is_empty()) {
                 return self.digital().node_element(scope, arg)?.or_else(|| {
                     self.refuse(file, node.span, AnalogForm::FieldOfElementOfArrayOfBundles);
                     None
                 });
             }
-            return self.reached_terminal(scope, arg);
+            return self.structure().reached_terminal(scope, arg);
         }
         if let ExprKind::Index { .. } = &node.kind {
             // one node of an array of nodes: its index folds, per iteration of an unrolled loop (CV-26)
@@ -388,7 +388,7 @@ impl AnalogLowering<'_, '_, '_> {
             // a node declared in generation: the iteration's element, or the arm was not elaborated (`generation.rs`)
             Resolution::Decl(decl) if self.state.structure.generated.of(decl).is_some_and(|iterations| iterations.is_empty() || self.state.types.node_array(decl).is_some()) && matches!(self.state.design.decl_data(decl).kind, DeclKind::Signal(_)) => {
                 if self.state.structure.generated.of(decl).is_some_and(Vec::is_empty) {
-                    self.refer_outside_generation(file, node.span, decl, None);
+                    self.structure().refer_outside_generation(file, node.span, decl, None);
                     return None;
                 }
                 self.digital().node_element(scope, arg)?.or_else(|| {
@@ -396,7 +396,7 @@ impl AnalogLowering<'_, '_, '_> {
                     None
                 })
             }
-            Resolution::Decl(decl) => match self.frame_node(scope.values.frame, decl) {
+            Resolution::Decl(decl) => match self.structure().frame_node(scope.values.frame, decl) {
                 Some(terminal) => Some(terminal),
                 None => {
                     self.refuse(file, node.span, AnalogForm::NameThatIsNotNodeOfThis);

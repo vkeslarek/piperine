@@ -1,6 +1,6 @@
-crates/piperine-lang/src/elab/body.rs::Elaboration::lower_node	1
+crates/piperine-lang/src/elab/structure/body.rs::StructureLowering::lower_node	1
 crates/piperine-lang/src/elab/digital/carriers.rs::DigitalLowering::lower_carrier	1
-crates/piperine-lang/src/elab/children.rs::Elaboration::lower_child	1
+crates/piperine-lang/src/elab/structure/children.rs::StructureLowering::lower_child	1
 crates/piperine-lang/src/elab/value/compound.rs::EnumLayout::of	1
 crates/piperine-lang/src/elab/consts.rs::Bindings::bind	1
 crates/piperine-lang/src/elab/consts.rs::Bindings::get	1

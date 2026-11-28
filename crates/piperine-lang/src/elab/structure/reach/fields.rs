@@ -15,22 +15,22 @@
 //! A hoisted child (a module with a value input) has no body of its own: its frame already holds
 //! the body's own nodes and carriers, and is used as it is.
 
+use crate::elab::structure::StructureLowering;
 use piperine_ir::{BodyNode, Carrier, CarrierRole, ExprId as LoweredExpr, NodeRole, Origin, Reach, ReachedItem, Terminal, ValueType};
 
 use crate::refusal::forms::ValueForm;
-use crate::elab::body::NodePlan;
+use crate::elab::structure::body::NodePlan;
 use crate::elab::consts::Bindings;
 use crate::elab::digital::carriers::Frame;
-use crate::elab::hoist::PlacementKey;
+use crate::elab::structure::hoist::PlacementKey;
 use crate::elab::digital::element_commits::PlaceTarget;
-use crate::elab::elaborator::Elaboration;
 use crate::elab::elaborator::Scope;
 use super::placement_params::{PlacementParams, PlacementSite};
 use super::demands::ReachedKind;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::Ty;
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The index each placement that is not hoisted takes in the body's children (`Child` order,
     /// the order `lower_children` follows), and a clean table of reach frames, for the body of
     /// `module` about to be lowered.
@@ -137,7 +137,7 @@ impl Elaboration<'_, '_> {
         if let Some(place) = self.bundle_leaf(scope, expr) {
             // a field of an element of an array of bundles is one element of its leaf: the element forms read it (`elements.rs`)
             if !place.elements.is_empty() {
-                self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::FieldOfElementOfArrayOfBundles);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::FieldOfElementOfArrayOfBundles);
                 return None;
             }
             return Some((scope.values.frame, place.decl));
@@ -224,7 +224,7 @@ impl Elaboration<'_, '_> {
             return Some(*frame);
         }
         // a placement of a reach frame is folded under that frame's generic arguments, not the body's (`GBlock<C>` placing `GBank<C>`)
-        let outer = (scope.values.frame != 0).then(|| self.state.consts.set_substitution(self.state.structure.frames[scope.values.frame].substitution.clone()));
+        let outer = (scope.values.frame != 0).then(|| self.elaboration.state.consts.set_substitution(self.state.structure.frames[scope.values.frame].substitution.clone()));
         let made = self.make_placement_frame(scope, binding, key, span);
         if let Some(outer) = outer {
             self.state.consts.set_substitution(outer);
@@ -340,7 +340,7 @@ impl Elaboration<'_, '_> {
             return true;
         }
         let Some(child) = self.state.structure.frames[frame].child else { return false };
-        let outer = self.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
+        let outer = self.elaboration.state.consts.set_substitution(self.state.structure.frames[frame].substitution.clone());
         let found = self.state.consts.typed_node_array(decl).map(|array| (self.digital().declared_shape(&array, frame, decl, "nodes"), self.own_node_offset(frame, decl), array));
         self.state.consts.set_substitution(outer);
         let Some((Some(shape), Some(offset), array)) = found else { return false };
@@ -393,7 +393,7 @@ impl Elaboration<'_, '_> {
         let found = data.children.iter().find(|child| matches!(self.state.design.decl_data(**child).kind, DeclKind::Generation(_)) && self.declares_node(**child));
         if let Some(generation) = found {
             self.state.structure.refused_modules.insert(module);
-            self.refuse(data.file, self.state.design.decl_data(*generation).span, ValueForm::NodeDeclaredInGenerationOfModuleParent);
+            self.elaboration.refuse(data.file, self.state.design.decl_data(*generation).span, ValueForm::NodeDeclaredInGenerationOfModuleParent);
         }
         found.is_some()
     }
@@ -630,7 +630,7 @@ impl Elaboration<'_, '_> {
             match &self.state.design.decl_data(*item).kind {
                 DeclKind::Param(_) => found.push((module, *item)),
                 DeclKind::Binding(_) => {
-                    if let Some(params) = self.body_let_value(*item).and_then(|value| crate::elab::structural::ParamReads::new(self.state.design, self.state.types).of(value)) {
+                    if let Some(params) = self.body_let_value(*item).and_then(|value| crate::elab::structure::structural::ParamReads::new(self.state.design, self.state.types).of(value)) {
                         found.extend(params.into_iter().map(|p| (module, p)));
                     }
                 }

@@ -7,15 +7,15 @@
 //! a carrier port is bound to the parent's net, and a discrete port of the top is a net of the
 //! top (DIG-09 AC 4 and 5).
 
+use super::StructureLowering;
 use piperine_ir::{CarrierRole, Constant, InstanceId, ReachedItem, InstanceSpec, NetId, NetSpec, NodeRef, NodeSpec, Origin, Terminal};
 
 use super::body::{ModulePlan, ParamPlan};
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
-use super::functions::instances::Instance;
+use crate::elab::consts::Bindings;
+use crate::elab::functions::instances::Instance;
 use super::structural::BodyKey;
-use super::analog::host_sources::{HostPort, HostSources};
-use super::digital::resolvers::{DeclaredNet, ResolvedUse};
+use crate::elab::analog::host_sources::{HostPort, HostSources};
+use crate::elab::digital::resolvers::{DeclaredNet, ResolvedUse};
 use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FileId};
@@ -61,9 +61,9 @@ struct Parent<'a> {
     bindings: &'a Bindings,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The top instance and, below it, the whole tree. `None` after a diagnostic.
-    pub(super) fn place_top(&mut self, top: DeclId) -> Option<InstanceId> {
+    pub(in crate::elab) fn place_top(&mut self, top: DeclId) -> Option<InstanceId> {
         let data = self.state.design.decl_data(top).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let span = data.name.as_ref().map_or(data.span, |n| n.span);
@@ -384,7 +384,7 @@ impl Elaboration<'_, '_> {
     /// The default of `param` at `placing`, folded over the values its earlier params take there (`bound`) under the arguments of
     /// the instance of a generic module it places. `Err` after the diagnostic of a default that does not fold.
     fn default_of_instance(&mut self, placing: &Placing, param: &ParamPlan, bound: &Bindings) -> Result<Option<Constant>, ()> {
-        let outer = placing.instance.as_ref().map(|instance| self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let outer = placing.instance.as_ref().map(|instance| self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
         let folded = self.default_at(param, bound);
         if let Some(outer) = outer {
             self.state.consts.set_substitution(outer);

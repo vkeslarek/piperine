@@ -8,12 +8,12 @@
 //! placement already reported them, so it reports none, and a param it could not fold (a value over a param of the reader that is
 //! not a key, `Cell(a) { k: m * 2.0 }`) is read where a `let` of the child reads it, lowered in its place (`lower_deferred_param`).
 
+use crate::elab::structure::StructureLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{Constant, ExprId as LoweredExpr};
 
 use crate::elab::consts::{Bindings, ConstFault};
-use crate::elab::elaborator::Elaboration;
 use crate::elab::elaborator::Scope;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution};
@@ -56,14 +56,14 @@ pub(in crate::elab) struct PlacementSite<'a> {
     /// The fields of the placement's param block.
     pub(in crate::elab) fields: &'a [FieldInit],
     /// The template the placement is written through, which fixes every param.
-    pub(in crate::elab) template: Option<&'a crate::elab::templates::TemplateValue>,
+    pub(in crate::elab) template: Option<&'a crate::elab::structure::templates::TemplateValue>,
     /// The caller's constants: its params that fold, its loop variables.
     pub(in crate::elab) caller: &'a Bindings,
     /// The caller's generic arguments.
     pub(in crate::elab) caller_substitution: &'a Substitution,
 }
 
-impl Elaboration<'_, '_> {
+impl StructureLowering<'_, '_, '_> {
     /// The params a placement of `module` at `site` binds, reporting nothing (see the module documentation).
     pub(in crate::elab) fn fold_placement_params(&mut self, module: DeclId, site: &PlacementSite) -> PlacementParams {
         let params: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Param(_))).collect();

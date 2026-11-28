@@ -2554,8 +2554,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/structure/`; no `#[allow]` in `crates/piperine-lang/src`
-- [ ] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_structure`
+- [x] No `impl Elaboration` in `elab/structure/`; no `#[allow]` in `crates/piperine-lang/src`
+  - Note: `place.rs` is `structure/placement.rs`; `reach/` moved whole to `structure/reach/`. The read-only queries that shared `&self` code reaches stay on `Elaboration` in `elaborator.rs`: `frame_bindings`, `implicit_ordinals`, `generation_loops`, `hoisted_callee`, `body_let_value`, `is_hoisted`, `is_value_input`, `placed_module`, `is_module_param`, `template_array_length`. The two `#[allow(clippy::too_many_arguments)]` became `GenerationRange` (`expand_range`) and `GeneratedLet` (`generated_let_level`); the guard row of `allow_attributes.tsv` is deleted.
+- [x] Gate check passes: Golden, and `cargo test -p piperine-parity --test source_structure`
+  - Note: no `source_structure` target exists; `source_modules`, `source_generation`, `source_generic_modules`, `source_nested_reach`, `source_reach`, `source_bundles` and `source_templates` ran in its place.
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

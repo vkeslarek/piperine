@@ -8,7 +8,7 @@ use piperine_ir::{Carrier, CarrierRole, Drive, ExprId as LoweredExpr, ValueType}
 
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::element_commits::PlaceTarget;
-use crate::elab::generation::Iteration;
+use crate::elab::structure::generation::Iteration;
 use crate::elab::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
@@ -65,7 +65,7 @@ impl DigitalLowering<'_, '_, '_> {
             return Some(*index);
         }
         // a field of a bundle port or signal is the carrier its leaf stands for (§7 rule 12)
-        if let Some(leaf) = self.bundle_leaf(scope, place)
+        if let Some(leaf) = self.structure().bundle_leaf(scope, place)
             && let Some(index) = self.state.structure.frames.get(scope.values.frame).and_then(|f| f.carriers.get(&leaf.decl))
         {
             return Some(*index);

@@ -7,7 +7,7 @@
 //! * `demands.rs`: what a read through a child of a child asks of each body on its path.
 //! * `seed.rs`: the demands the text names, found before the first run.
 
-pub(super) mod demands;
-pub(super) mod fields;
-pub(super) mod placement_params;
-pub(super) mod seed;
+pub(in crate::elab) mod demands;
+pub(in crate::elab) mod fields;
+pub(in crate::elab) mod placement_params;
+pub(in crate::elab) mod seed;
