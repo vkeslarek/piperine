@@ -2103,8 +2103,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every `piperine_abi::raw::…` path compiles unchanged; the layout tests pass unedited
-- [ ] Gate check passes: Golden
+- [x] Every `piperine_abi::raw::…` path compiles unchanged; the layout tests pass unedited
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

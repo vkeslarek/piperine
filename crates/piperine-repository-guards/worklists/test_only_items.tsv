@@ -1,4 +1,4 @@
-crates/piperine-abi/src/raw.rs::Module::prototype_ptr	kept: a device plugin host that calls the C `create` entry
+crates/piperine-abi/src/raw/calls.rs::Module::prototype_ptr	kept: a device plugin host that calls the C `create` entry
 crates/piperine-abi/src/verify.rs::Verdict::of_partials	kept: the parity host that verifies a device's declared partials (`piperine-parity` `tests/source_tables.rs`)
 crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_newton	kept: the host that swaps the Newton strategy
 crates/piperine-analog-solver/src/convergence.rs::ConvergencePlan::with_stepper	kept: the host that swaps the stepper

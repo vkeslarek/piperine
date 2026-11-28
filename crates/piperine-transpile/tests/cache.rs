@@ -172,10 +172,10 @@ fn an_entry_of_the_earlier_contract_is_rebuilt() {
     let current: Vec<(&str, &str)> = AbiSource::FILES.to_vec();
     let earlier: Vec<(String, String)> = current
         .iter()
-        .map(|(name, text)| (name.to_string(), if *name == "raw.rs" { text.replace("pub count: u32,\n}", "pub count: u32,\n    pub flags: u32,\n    pub known: u32,\n}") } else { text.to_string() }))
+        .map(|(name, text)| (name.to_string(), if *name == "raw/shape.rs" { text.replace("pub count: u32,\n}", "pub count: u32,\n    pub flags: u32,\n    pub known: u32,\n}") } else { text.to_string() }))
         .collect();
     let earlier: Vec<(&str, &str)> = earlier.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
-    assert_ne!(current, earlier, "the earlier contract's `Field` is found in `raw.rs` to be replaced");
+    assert_ne!(current, earlier, "the earlier contract's `Field` is found in `raw/shape.rs` to be replaced");
 
     let cache = Cache::at(root.path()).unwrap();
     let (current_key, _) = Transpiler::cache_keys(&source, &runtime, &version, &current);

@@ -4,12 +4,6 @@ crates/piperine-abi/src/device.rs::Eval::out_cell	1
 crates/piperine-abi/src/device.rs::Reads::cell	1
 crates/piperine-abi/src/device.rs::Reads::fixed	1
 crates/piperine-abi/src/device.rs::Values::new	1
-crates/piperine-abi/src/raw.rs::Module::create	1
-crates/piperine-abi/src/raw.rs::Module::data	1
-crates/piperine-abi/src/raw.rs::Module::destroy	1
-crates/piperine-abi/src/raw.rs::Module::eval	1
-crates/piperine-abi/src/raw.rs::Module::name	1
-crates/piperine-abi/src/raw.rs::Module::react	1
 crates/piperine-abi/src/shape.rs::PinSpec::with	1
 crates/piperine-abi/src/shape.rs::ShapeBuf::bytes	1
 crates/piperine-abi/src/shape.rs::ShapeBuf::layout	1
