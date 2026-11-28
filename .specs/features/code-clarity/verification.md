@@ -1717,3 +1717,122 @@ This comment was not one of M5's nine, the amendment predates this phase, and th
 | P7-5 T30/T32 deferral boxes unticked | Low | open |
 | P7-6 ELAB-06 AC 3 relabeled, not fixed | Low | open (user decision) |
 | P7-7 two `long_functions` rows renamed with no verdict | Low | open (debt to the closing task) |
+
+## Phase 10 (B6b `Checker` split into per-concern views, T69 to T76)
+
+**Verdict**: PASS (no Medium or High finding; seven Low findings and four notes)
+**Head**: fb5b86c57 on `feature/code-clarity-p10`, base c44a85b5a (`git merge-base feature/code-clarity-p10 feature/code-clarity`).
+**Verifier**: independent sub-agent (Opus; author != verifier). Sonnet wrote T70–T76, Opus wrote T69. I reran the gates myself, one at a time, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`, `CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=0`, after touching `crates/piperine-repository-guards/src/*.rs`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` (`**Run ownership**` included: `an_inherent_impl_lives_with_its_type`, `every_owner_of_the_design_exists_and_has_its_methods` ok) | 11 result lines, 121 passed, 0 failed |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed (the same 84/1 439 as Phase 7's head) |
+| `cargo test -p piperine-transpile` (goldens included) | 31 result lines, 172 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-api` | 28 result lines, 307 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory --test integrated` | 18 + 42 passed, 0 failed |
+| `cargo test -p piperine --test book_claims` | 6 passed, 1 failed: `every_claim_row_is_a_sentence_of_its_chapter`, its only offence `structure~58f974e3` (N3) |
+
+### Checks
+
+| Check | Test or probe | Holds |
+| --- | --- | --- |
+| No test lost, weakened or edited | `git diff --name-status c44a85b5a HEAD` outside `crates/piperine-lang/src/types/`, `allowances/`, `worklists/`, `.specs/`; `#[test]` names under `types/` base and head | yes. The diff touches nothing outside those four places: no `tests/` file, no golden, no `.msl`, no doc. `types/` holds no in-source test at base or head. So every crate's test-name set is unchanged, and lang's counts match the Phase 7 head exactly |
+| T69: `Checker` has two fields; each table documents what it holds | `check.rs:61-67`, `CheckState` at `:71-91`, each `*/tables.rs` | yes. `Checker { state, worklist }`. `CheckState` holds `design`, `diagnostics`, `values`, `modules`, `analog`, `carriers`, `generics`, `traits`, `result`; every field and every table struct has a `///`. There is no `PatternTables` (see P10-3) |
+| T70–T75: no `impl Checker` in `value/`, `pattern/`, `generics/`, `traits/`, `module/`, `analog/`, `carrier/` | `grep -rn '^impl.*Checker' crates/piperine-lang/src/types` | yes. The only one is `check.rs:132`. Each directory's `mod.rs` declares its view (`ExpressionTyping`, `PatternTyping`, `GenericsSolver`, `TraitTyping`, `ModuleTyping`, `AnalogTyping`, `CarrierTyping`), and every `impl` of it is below that `mod.rs` |
+| Table fields private to their directory | `*/tables.rs` | yes, by the compiler. Every table field is `pub(super)` from `<dir>/tables.rs`, so visible in that directory only; another concern asks through a method (`is_open_let`, `begin_placement`, `replace_generic_item`, `save`/`restore` …) |
+| T76: no `Checker` row in `an_inherent_impl_lives_with_its_type` | `allowances/piperine-lang/impls_away_from_their_type.tsv`; the guard | yes. All 55 `types/*::Checker` rows are deleted, the only `types/` row left is `traits/repr.rs::Types` (moved from `repr.rs`), and the guard passes |
+| T76: 8 root files and the directories of design.md's map | `ls crates/piperine-lang/src/types` | yes: `attributes`, `callee`, `catalogue`, `check`, `mod`, `result_table`, `ty`, `whole_model`, and seven directories. design.md:346-353 lists seven directories (`value`, `pattern`, `module`, `analog`, `carrier`, `generics`, `traits`), so the box's "6" was a slip in the box and "the real count" is right; how the box was changed is P10-1 |
+| CC-09 behaviour: `check_ahead` with `SavedValues`/`SavedModules` | base `check.rs` `check_ahead` against head `check.rs:250-263`, `value/tables.rs:211-230`, `module/tables.rs:87-95`, `carrier/tables.rs:56-63` | yes. The base saved `owner, context, event_slot, in_guard, fn_where` by copy and took `book, lets_open, placing, flow`, then set `context = Module`, `event_slot = None`, `in_guard = false`, `fn_where = false`. The head sets aside exactly those ten values (the four takes in `save`), resets the same four, leaves `owner` as the base did, and restores all ten. The order of takes is irrelevant (disjoint fields) |
+| CC-09 behaviour: E0904 now raised in `Checker::run` | base `attributes.rs::check_attributes`/`check_attribute` against head `AttributeCatalogue::misplaced`/`fault_of` and `check.rs:180-182` | yes, same text, code, label, span, file and order. Both walk declarations then statements in index order and call the same `coded(file, "E0904", span, message, "an attribute A.1 does not allow here")` before `reach(top)`; the message `match` is the same arm for arm. `run_model` did not check attributes before and does not now. `coded` is the base `module.rs` body verbatim, and `report`'s span dedupe is unchanged |
+| CC-09 behaviour: the pass order | base and head `run`, `drain`, `declaration`, `reach`, `within` | yes. `declaration` sets `owner` and resets `flow` (`ValueTables::begin_declaration`) as before; `run` calls attributes, reach, drain, unread template locals, node choices, then continuity in the same order. `Types::empty` starts every result field at the value the base `Checker::new` gave it, and the head fills `result` in place instead of moving the fields at the end |
+| CC-09 behaviour: the four split functions | base `expr.rs::path`, `analog.rs::{probe, core_call}`, `check.rs::lower_type_node` against head `value/expr.rs::{path, local_read}`, `analog/analog.rs::{probe, probe_access, core_call, judge_core_place}`, `check.rs::{lower_type_node, lower_builtin_type}` | yes. Each extracted method is the old arm or block verbatim (field reads re-pointed to the tables, calls re-pointed to the views), called from the same place, so no call is reordered. See note N1 |
+| Allowances and worklists: no growth, deletions closed, moves net-zero | row diff of every `allowances/piperine-lang/*.tsv` and `worklists/*.tsv` | yes. `impls_away` −55 +1 (moved `repr.rs::Types`); `owners` −7 (`CheckState`, the six views; each is now a declared type with methods, which `every_owner_of_the_design_exists_and_has_its_methods` checks); `undocumented_items` −11 +7, every `+` a moved twin, the 4 net deletions (`Checker::new`, `binary`, `infer_kind`, `literal`) now carry a `///`; `free_functions` 3 moved; `repeated_type_names` 11 moved; `undeclared_words` per identifier: no identifier grows, `exprs`, `impls`, `drive_impls`, `carrier_drive_impls` each −1 (806 → 802); `test_only_items` 2 moved; `long_functions` −13 +9 |
+| `owners.tsv` rows of `ModuleTyping`, `AnalogTyping`, `CarrierTyping` | `data/owners.tsv:25-27`; `module/mod.rs`, `analog/mod.rs`, `carrier/mod.rs` | yes. Each is declared once in its `mod.rs`, with `new` and the moved methods (144, 26, 54 per the commit bodies), so the guard's "declared and has a method" holds. The rows' task column is off by one (P10-7) |
+| `long_functions` verdicts under `types/` | `worklists/long_functions.tsv:85-93`; lengths measured at the head | partly; see P10-4. Four rows are closed by a real split (`Checker::new` by T69's partition, `path`, `core_call`, `lower_type_node`). Nine are `kept:`. `binary` (74 lines, one arm per operator rule) and `infer_kind` (84, an exhaustive dispatch) meet design.md:412. `let_statement` (74), `placement` (77), `connections` (62), `probe` (63) are close to the line and their reasons describe the code. `method_call` (123) and `check_as` (131, with its `closure` row) do not |
+| Implementer's decisions | tasks.md T70, T72, T76 annotations; commit bodies | see the judgements below |
+| No free fn, macro, `#[allow]`, `#[expect]`, `unwrap` added | `grep` of the `+` lines of `git diff c44a85b5a HEAD -- crates/` | yes, none (the one `unwrap()` hit is the doc of a moved method) |
+| Full words, `///` on new items | read of `CheckState`, `DeclarationWorklist`, `Diagnostics`, the seven views, the five `*Tables`, `SavedValues`, `SavedModules`, `MisplacedAttribute`, the accessors and the table methods | yes. All new items are documented (the `undocumented_items` guard passes with no new row) and spelled in full |
+| Visibility | `pub(in crate::types)` and `pub(crate)` on the `+` lines | no widening. A file at `types/` root wrote `pub(super)`, which is `crate::types`; a moved item another concern names is `pub(in crate::types)`, the same reach, and one used only in its directory stays `pub(super)`, which is narrower. The only `pub(crate)` is the existing `ElementCoverage` re-export. The `pub` re-exports of `types/mod.rs` name the same items by their new paths |
+| Commits, one per task, subjects as approved | `git log c44a85b5a..HEAD` | yes, eight commits with tasks.md's subjects. T72's is 74 characters and names "the trait table" while the commit gives the methods to the view `TraitTyping` (P10-6) |
+
+### Judgements on the eight decisions
+
+1. **Views borrow `&mut Checker` and deref to it** (T70 annotation). Agreed. `reach` and `check_ahead` re-enter `declaration()`, so a view over `&mut CheckState` could not reach the worklist without a rewrite of the control flow, which design.md:328 rejects. The cost is that the boundary is enforced for fields (the compiler keeps each table private to its directory) but only by convention for methods: through `Deref` a view can call any `Checker` method, including another view's accessor. The two-phase borrow workaround writes `self.checker.` in 87 places next to `self.` for the same thing; it is explained in the T70 body and is cosmetic.
+2. **One `tables.rs` per directory, no `PatternTables`** (T69 body). Agreed: no field belongs to patterns alone. The departure is not written under T69's box (P10-3).
+3. **`TraitTyping` instead of methods of `TraitTable`** (T72 annotation). Agreed. `TraitTable` does not exist; the data type is `ImplTable`, shared as `Rc` and built once. The moved methods report diagnostics and reach declarations, which a data type cannot. `ImplTable` keeps the methods that read only itself, and `traits.rs` → `traits/impl_table.rs` names the file for its type.
+4. **`coded` moved to `check.rs`** (T73 body). Agreed: it is `report` with a code, called from every concern; leaving it in `module/` would make every other view call it through `modules()`. Its body is unchanged.
+5. **`check_attributes` → `AttributeCatalogue::misplaced`** (T76). Agreed and verified behaviour-neutral (Checks). It also turns the walk into a function of the design alone, which is what the catalogue is.
+6. **Seven directories, not six** (T76 box). The count is right: design.md's map has seven rows under `types/`. The way the box was changed is not (P10-1).
+7. **`check.rs` left at 793 lines** (T76 annotation). Design is violated: design.md:346 says the root holds "`Checker` (the declaration worklist and the pass order, nothing else)", and T76's What says `check.rs` "holds the declaration worklist and the pass order". At the head it also holds reporting (13 methods, `file_of_expr` included), type lowering (`lower_type`, `lower_type_node`, `lower_builtin_type`, `writes_no_arguments_to_a_plain_type`, `sized_type`, `integer_type`, `is_std`), signatures (`signature`, `declared_signature`, `signature_parts{,_of}`), function and constant checking (`function{,_of,_body}`, `constant`), and the module pass (`module`, `module_of`, `module_item`, `inside_generation`). Base `check.rs` was 883 lines, so the file shrank by the 68-field struct only. No Done-when box requires more, the departure is declared, and T76's guard criterion (C7: no `impl Checker` outside its file) holds, so it is not a failed box. It is P10-2, with a proposed owner.
+8. **Visibility widening**. There is none (Checks): `pub(in crate::types)` restates the reach `pub(super)` had at the root.
+
+### P10-1 (Low): approved Done-when text rewritten in place (P5-6 again)
+
+- T76's second box read "`types/` holds 8 files at its root and 6 directories, as design.md's map". At the head it reads "… and 7 directories, as design.md's map (it lists seven: …; this box said six)". The number in the approved text was changed in the box itself.
+- T70–T76 append parentheticals inside the boxes ("(no test edited; every moved item was `pub(super)`)", "(the last one, `attributes.rs`, went when …)", "(and `cargo test -p piperine-cli --test twins`, …)").
+
+The substance is right (the count is seven, and the parentheticals are true). The rule is that approved text stays and a departure is an annotation under the box. Repro: `git diff c44a85b5a HEAD -- .specs/features/code-clarity/tasks.md`. Fix: restore the approved box texts and move each parenthetical to an indented `Note:` line under its box; for T76, keep "6 directories" struck or quoted and say under it that design.md:346-353 lists seven.
+
+### P10-2 (Low, for the user): `check.rs` holds more than the worklist and the pass order
+
+See judgement 7. A follow-up that finishes T76's What without behaviour risk, one concern per commit as T70–T75 did:
+
+- **Reporting** → methods of `Diagnostics` (already declared in `check.rs:106-112`, holding `list` and `reported_spans`): `report`, `report_distinct`, `coded`, `mark`/`annotate_since`, `reported`. `refuse*` and `mismatch*` need `design` for names and can take it as an argument, or stay as one-line `Checker` forwarders.
+- **Type lowering** (`lower_type*`, `lower_builtin_type`, `sized_type`, `integer_type`, `writes_no_arguments_to_a_plain_type`) → `ExpressionTyping` in `value/`, which already owns `tuple_type`, `array_type`, `option_type`, `enum_type` and `struct_type`, the methods `lower_type_node`'s arms call.
+- **Functions and constants** (`function*`, `constant`, `signature*`) → `ExpressionTyping` (or `GenericsSolver` for the generic signature part).
+- **The module pass** (`module`, `module_of`, `module_item`, `inside_generation`) → `ModuleTyping`.
+
+`check.rs` then keeps `run`, `run_model`, `drain`, `reach`, `check_ahead`, `declaration`, `within` and the seven accessors. Owner: a new Phase 10 task (T76a) or the first task of P14, which design.md:115 already gives lane F over `types/{value,generics,…}`; either way it amends T76 or adds a task, so it needs the user's approval.
+
+### P10-3 (Low): T69's `PatternTables` departure is recorded only in the commit body
+
+T69's What names `PatternTables`; none exists. The reason ("no field belongs to patterns alone", c0a1b5786) is sound, but tasks.md carries no annotation, while T70, T72 and T76 do. Fix: one `Note:` line under T69.
+
+### P10-4 (Low): two `kept:` verdicts are not the design's kind of reason
+
+design.md:412 gives "an exhaustive `match` with one-line arms" as the example reason. Two rows do not fit:
+
+- `value/call.rs::ExpressionTyping::method_call` (123 lines). The verdict says "each rule is a guard and a hand-off", but it holds a 30-line `match res` that computes the built-in and a 30-line miss arm that builds `E0161` with its help text. Both are self-contained blocks that a method each would take with no call reordered.
+- `value/expr.rs::ExpressionTyping::check_as` (131 lines) and its `closure` row. The verdict says the order of the guards is the order of the diagnostics. That holds, but a split keeps it: the `If` arm, the integer `Neg` arm and the trailing mismatch block are multi-line and independent.
+
+"The order is the order of the diagnostics" is a reason not to reorder, not a reason not to split, since this phase's own four splits kept the order. Fix: mark the two rows `split` and owe them to the P10-2 follow-up, or split them now.
+
+### P10-5 (Low): stale names in doc comments
+
+- `check.rs:204`: "the whole-model check (`model.rs`)". The file is now `whole_model.rs`.
+- `value/aggregate.rs:6`: "kept in `Checker::layouts`". `layouts` is a field of `Types` (`CheckState::result`) now.
+
+Repro: `grep -rn '\`model.rs\`\|Checker::layouts' crates/piperine-lang/src`.
+
+### P10-6 (Low): T72's subject is 74 characters and names the wrong owner
+
+`35662380c refactor(types): the generics solver and the trait table own their methods` is 74 characters, over the usual 72. It is the subject tasks.md approved, so the text is faithful to the plan, but after decision 3 the methods belong to the view `TraitTyping` and `ImplTable` is unchanged. The body says so. No action on history; note it for whoever writes the merge summary.
+
+### P10-7 (Low): `data/owners.tsv` task column is off by one for four rows
+
+`owners.tsv:25-28` assigns `ModuleTyping` to T72, `AnalogTyping` to T73, `CarrierTyping` to T74 and `GenericsSolver` to T75. They landed in T73, T74, T75 and T72 respectively. This is inherited from the base (the phase did not edit the file), and the guard reads only the crate and type columns, so it is cosmetic. Fix: correct the four task cells.
+
+### Notes (not findings)
+
+- **N1: the splits go beyond design.md:356.** design.md:356 says a commit "moves the files with `git mv`, changes the `impl` headers and the receivers, and nothing else". T70, T74 and T76 also split four long functions to close their `long_functions` rows. Each split is verbatim and reorders nothing (Checks), and each commit body declares it. It is a small, declared, behaviour-neutral departure.
+- **N2: merge with the integration branch.** `git merge-tree feature/code-clarity HEAD` reports one content conflict, in `worklists/long_functions.tsv`: Phase 9 edited rows next to the `types/` rows. `verification.md` will also conflict, since both branches append a section. Both are textual; keep both sides.
+- **N3: `book_claims`.** Red at this head for one reason only: the panic lists one offence, `structure~58f974e3: the chapter no longer has this sentence`. The row is in `tests/book/inventory.tsv:675` at the base, which this phase does not touch, and the integration branch removed it in cf16edbaa (P9-1). It goes green on merge; it is not a Phase 10 regression.
+- **N4:** The views' `Deref` lets a view reach any `Checker` method, so "a call into another concern goes through `Checker`'s accessor" is a convention, not a check. If the follow-up in P10-2 empties `check.rs`, the views will need only the worklist, the reporting and the accessors from it.
+
+### Phase 10 findings
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P10-1 approved box text rewritten in place (T70–T76) | Low | open |
+| P10-2 `check.rs` holds more than the worklist and pass order | Low | open (user decision; proposed T76a or P14) |
+| P10-3 `PatternTables` departure not annotated under T69 | Low | open |
+| P10-4 `method_call`, `check_as` `kept:` verdicts | Low | open (with P10-2) |
+| P10-5 stale `model.rs` / `Checker::layouts` docs | Low | open |
+| P10-6 T72 subject 74 characters, names `TraitTable` | Low | note |
+| P10-7 `owners.tsv` task column off by one | Low | open |
