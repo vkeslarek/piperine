@@ -2037,6 +2037,7 @@ T152 → T153 → T154 → T155
 ### T76: `Checker` keeps the worklist
 
 **What**: `types/table.rs` splits into `result_table.rs` (`Types`) and `callee.rs`; `model.rs` becomes `whole_model.rs`; `check.rs` holds the declaration worklist and the pass order; the allowance row of `Checker` in `an_inherent_impl_lives_with_its_type` is deleted; `types/`'s rows of `long_functions.tsv` have verdicts.
+**Note (coordinator, user AFK, pending review)**: `check.rs` still carries what every view asks of `Checker` and no task moves: the reporting methods (`report`, `refuse`, `coded`, `mismatch*`), type lowering (`lower_type`, `sized_type`, `integer_type`), the signatures and the declaration passes (`function`, `module`, `constant`); design.md's "the declaration worklist and the pass order, nothing else" would put them in owners no task names, so they stay and the question goes to the reviewer.
 **Where**: `crates/piperine-lang/src/types/check.rs`
 **Depends on**: T75
 **Reuses**: T69
@@ -2046,9 +2047,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `an_inherent_impl_lives_with_its_type` passes under `**Run ownership**` with no row for `Checker`
-- [ ] `types/` holds 8 files at its root and 6 directories, as design.md's map
-- [ ] Gate check passes: Golden
+- [x] `an_inherent_impl_lives_with_its_type` passes under `**Run ownership**` with no row for `Checker` (the last one, `attributes.rs`, went when `AttributeCatalogue::misplaced` took over `check_attributes`)
+- [x] `types/` holds 8 files at its root (`attributes`, `callee`, `catalogue`, `check`, `mod`, `result_table`, `ty`, `whole_model`) and 7 directories, as design.md's map (it lists seven: `value`, `pattern`, `module`, `analog`, `carrier`, `generics`, `traits`; this box said six)
+- [x] Gate check passes: Golden (and `cargo test -p piperine-cli --test twins`, `cargo test -p piperine-parity`)
 
 **Tests**: integration
 **Gate**: golden

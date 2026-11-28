@@ -6,8 +6,9 @@ use std::collections::{BTreeSet, VecDeque};
 use crate::refusal::forms::ValueForm;
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BehaviorKind, BlockNode, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
+use crate::pom::{BehaviorKind, BlockNode, BuiltinId, Decl, DeclData, DeclId, DeclKind, Design, DesignDiagnostic, ExprId, FileId, FnParamData, GenericArgNode, GenericArgsNode, PathId, Reflect, Resolution, TypeId, TypeKind};
 
+use super::attributes::AttributeCatalogue;
 use super::value::flow::ExitFrame;
 use super::generics::tables::GenericsTables;
 use super::analog::tables::AnalogTables;
@@ -176,7 +177,9 @@ impl<'d> Checker<'d> {
 
     /// Check `top` and everything it reaches: the table, or the diagnostics in source order.
     pub(super) fn run(mut self, top: DeclId) -> Result<Types<'d>, Vec<DesignDiagnostic>> {
-        self.check_attributes();
+        for misplaced in AttributeCatalogue::misplaced(self.state.design) {
+            self.coded(misplaced.file, "E0904", misplaced.span, misplaced.message, "an attribute A.1 does not allow here");
+        }
         self.reach(top);
         self.drain();
         self.modules().report_unread_template_locals();
@@ -379,29 +382,35 @@ impl<'d> Checker<'d> {
         false
     }
 
+    /// The type a built-in name written as a type stands for: a primitive, `Option` or `Event`; any other built-in is
+    /// refused.
+    fn lower_builtin_type(&mut self, id: BuiltinId, path: PathId, file: FileId, span: Span) -> Option<Ty> {
+        match (id.info().name, id.width()) {
+            ("fN", Some(w)) => Ty::float(u32::from(w)),
+            ("bool", _) => Some(Ty::Bool),
+            // §1.2.9: `str` is a value type, the type of a string.
+            ("str", _) => Some(Ty::Str),
+            ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
+            ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
+            // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
+            ("usize", _) => Some(Ty::UInt(64)),
+            ("isize", _) => Some(Ty::Int(64)),
+            (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, span, path, family),
+            ("Option", _) => self.expressions().option_type(file, span, path),
+            ("Event", _) => Some(Ty::Event),
+            _ => {
+                self.refuse_with(file, span, ValueForm::Type, [id.name().to_string()]);
+                None
+            }
+        }
+    }
+
     fn lower_type_node(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.state.design.type_node(ty).clone();
         let file = self.state.design.decl_data(node.owner).file;
         match &node.kind {
             TypeKind::Path(path) => match self.state.design.type_resolution(ty) {
-                Resolution::Builtin(id) => match (id.info().name, id.width()) {
-                    ("fN", Some(w)) => Ty::float(u32::from(w)),
-                    ("bool", _) => Some(Ty::Bool),
-                    // §1.2.9: `str` is a value type, the type of a string.
-                    ("str", _) => Some(Ty::Str),
-                    ("uN", Some(w)) => self.integer_type(file, node.span, Ty::UInt, u128::from(w), &id.name()),
-                    ("iN", Some(w)) => self.integer_type(file, node.span, Ty::Int, u128::from(w), &id.name()),
-                    // §1 Resolution: `usize` and `isize` are `UInt<64>` and `Int<64>` everywhere.
-                    ("usize", _) => Some(Ty::UInt(64)),
-                    ("isize", _) => Some(Ty::Int(64)),
-                    (family @ ("UInt" | "Int" | "Float"), _) => self.sized_type(file, node.span, *path, family),
-                    ("Option", _) => self.expressions().option_type(file, node.span, *path),
-                    ("Event", _) => Some(Ty::Event),
-                    _ => {
-                        self.refuse_with(file, node.span, ValueForm::Type, [id.name().to_string()]);
-                        None
-                    }
-                },
+                Resolution::Builtin(id) => self.lower_builtin_type(id, *path, file, node.span),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) && NatureRules::of(self.state.design, d).carries_values => self.carriers().discrete_carrier_type(d, file, node.span, *path),
                 Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Nature(_)) => Some(Ty::Node(d)),
                 // §3.8.5: a generic struct or enum is written with its arguments; its fields are typed where it is used

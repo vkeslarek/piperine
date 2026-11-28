@@ -43,8 +43,8 @@ crates/piperine-lang/src/pom/reflect/items.rs::Namespace::source_file	kept: the 
 crates/piperine-lang/src/pom/reflect/items.rs::Namespace::submodules	kept: the public reflection surface `docs/pom/reflection.md` documents
 crates/piperine-lang/src/pom/reflect/lookups.rs::Design::struct_named	kept: the public reflection surface `docs/pom/reflection.md` documents
 crates/piperine-lang/src/pom/reflect/handle.rs::Reflect::is_pub	kept: the public reflection surface `docs/pom/reflection.md` documents
-crates/piperine-lang/src/types/table.rs::Types::drive_impl	-
-crates/piperine-lang/src/types/table.rs::Types::written_instantiation	-
+crates/piperine-lang/src/types/result_table.rs::Types::drive_impl	-
+crates/piperine-lang/src/types/result_table.rs::Types::written_instantiation	-
 crates/piperine-numbers/src/convert.rs::NumberConversion::signed_to_float	-
 crates/piperine-numbers/src/convert.rs::NumberConversion::unsigned_to_float	-
 crates/piperine-numbers/src/decimal.rs::DecimalText::shortest_scientific	-

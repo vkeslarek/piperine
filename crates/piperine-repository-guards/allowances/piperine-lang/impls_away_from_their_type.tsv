@@ -74,5 +74,4 @@ crates/piperine-lang/src/pom/reflect/index.rs::Signal	1
 crates/piperine-lang/src/pom/reflect/lookups.rs::Design	1
 crates/piperine-lang/src/pom/resolve/classify.rs::Design	1
 crates/piperine-lang/src/pom/to_ast.rs::SourceFile	1
-crates/piperine-lang/src/types/attributes.rs::Checker	1
 crates/piperine-lang/src/types/traits/repr.rs::Types	1

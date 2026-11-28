@@ -111,5 +111,5 @@ crates/piperine-lang/src/types/generics/generics.rs::Bound	1
 crates/piperine-lang/src/types/pattern/patterns.rs::Bound	1
 crates/piperine-lang/src/types/pattern/patterns.rs::Number	1
 crates/piperine-lang/src/types/module/record.rs::Site	1
-crates/piperine-lang/src/types/table.rs::Continuity	1
-crates/piperine-lang/src/types/table.rs::Method	1
+crates/piperine-lang/src/types/result_table.rs::Continuity	1
+crates/piperine-lang/src/types/callee.rs::Method	1

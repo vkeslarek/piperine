@@ -2,9 +2,8 @@
 //! or a listed one on the wrong kind of item, is `E0904` (`#[cfg(..)]` and `#[allow(..)]` included:
 //! attributes are not an extension point).
 
-use crate::pom::{AttrNode, DeclId, DeclKind, Design, StmtId};
-
-use super::check::Checker;
+use crate::msl::Span;
+use crate::pom::{AttrNode, DeclId, DeclKind, Design, FileId, StmtId};
 
 /// The kind of item an attribute of A.1's table may sit on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,37 +65,49 @@ impl AttributeCatalogue {
     }
 }
 
-impl Checker<'_> {
-    /// One walk over every attribute of the design: each declaration's and each statement's. An
-    /// attribute A.1 does not list, or one on the wrong kind of item, is `E0904` naming both.
-    pub(super) fn check_attributes(&mut self) {
-        for index in 0..self.state.design.decl_count() {
+/// An attribute on an item that A.1 does not allow it on, or one A.1 does not list: where it is and what is wrong.
+pub(super) struct MisplacedAttribute {
+    /// The file the attribute is written in.
+    pub(super) file: FileId,
+    /// Where the attribute is written.
+    pub(super) span: Span,
+    /// What is wrong with it (`E0904`).
+    pub(super) message: String,
+}
+
+impl AttributeCatalogue {
+    /// One walk over every attribute of the design: each declaration's and each statement's. An attribute A.1 does not
+    /// list, or one on the wrong kind of item, is `E0904` naming both.
+    pub(super) fn misplaced(design: &Design) -> Vec<MisplacedAttribute> {
+        let mut misplaced = Vec::new();
+        for index in 0..design.decl_count() {
             let decl = DeclId(index as u32);
-            for attr in self.state.design.decl_data(decl).meta.attrs.clone() {
-                self.check_attribute(decl, &attr, true);
+            for attr in &design.decl_data(decl).meta.attrs {
+                misplaced.extend(Self::fault_of(design, decl, attr, true));
             }
         }
-        for index in 0..self.state.design.stmt_count() {
-            let node = self.state.design.stmt_node(StmtId(index as u32)).clone();
+        for index in 0..design.stmt_count() {
+            let node = design.stmt_node(StmtId(index as u32));
             for attr in &node.meta.attrs {
-                self.check_attribute(node.owner, attr, false);
+                misplaced.extend(Self::fault_of(design, node.owner, attr, false));
             }
         }
+        misplaced
     }
 
-    /// One attribute of `owner` (or of a statement in it, when `on_item` is false).
-    fn check_attribute(&mut self, owner: DeclId, attr: &AttrNode, on_item: bool) {
-        let path = self.state.design.path_node(attr.path).clone();
+    /// What is wrong with one attribute of `owner` (or of a statement in it, when `on_item` is false), when something is.
+    fn fault_of(design: &Design, owner: DeclId, attr: &AttrNode, on_item: bool) -> Option<MisplacedAttribute> {
+        let path = design.path_node(attr.path);
         let name = path.segments.iter().map(|s| s.name.text.as_str()).collect::<Vec<_>>().join("::");
-        let file = self.state.design.decl_data(owner).file;
-        let owner_name = self.state.design.decl_data(owner).name.as_ref().map_or_else(|| "an item".to_string(), |n| format!("`{}`", n.text));
-        let message = match AttributeCatalogue::site(&name) {
+        let file = design.decl_data(owner).file;
+        let owner_name = design.decl_data(owner).name.as_ref().map_or_else(|| "an item".to_string(), |n| format!("`{}`", n.text));
+        let message = match Self::site(&name) {
             None => format!("the attribute `#[{name}]` is not one A.1 lists: attributes are not an extension point"),
-            Some(site) if on_item && !site.holds(self.state.design, owner) => format!("the attribute `#[{name}]` sits on {owner_name}, but A.1 allows it only on {}", site.describe()),
-            Some(AttributeSite::Any) => return,
+            Some(site) if on_item && !site.holds(design, owner) => format!("the attribute `#[{name}]` sits on {owner_name}, but A.1 allows it only on {}", site.describe()),
+            Some(AttributeSite::Any) => return None,
             Some(site) if !on_item => format!("the attribute `#[{name}]` sits on a statement of {owner_name}, but A.1 allows it only on {}", site.describe()),
-            Some(_) => return,
+            Some(_) => return None,
         };
-        self.coded(file, "E0904", attr.span, message, "an attribute A.1 does not allow here");
+        Some(MisplacedAttribute { file, span: attr.span, message })
     }
 }
