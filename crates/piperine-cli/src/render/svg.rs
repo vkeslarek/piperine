@@ -113,21 +113,26 @@ mod tests {
     use super::*;
     use piperine_api::{Analysis, Grid, Table};
 
-    fn svg(table: &Table, analysis: &Analysis) -> String {
-        let plot = Plot::of(table, analysis).expect("a plot");
-        let mut out = Vec::new();
-        SvgPlot::write(&plot, &mut out).expect("a vector takes writes");
-        String::from_utf8(out).expect("text")
-    }
+    /// Associated test helpers of `svg`, grouped on one fixture type.
+    struct SvgFixture;
 
-    fn transient() -> Analysis {
-        Analysis::Transient { stop: 4.0, max_step: None, print_step: None, from: None }
-    }
+    impl SvgFixture {
+        fn svg(table: &Table, analysis: &Analysis) -> String {
+            let plot = Plot::of(table, analysis).expect("a plot");
+            let mut out = Vec::new();
+            SvgPlot::write(&plot, &mut out).expect("a vector takes writes");
+            String::from_utf8(out).expect("text")
+        }
 
-    /// time 0..4 and two real signals `a` (0..8) and `b` (8..0).
-    fn two_signals() -> Table {
-        let rows = (0..5).map(|k| vec![Cell::Real(f64::from(k)), Cell::Real(f64::from(2 * k)), Cell::Real(f64::from(8 - 2 * k))]).collect();
-        Table { columns: vec!["time".into(), "Top.a".into(), "Top.b".into()], rows }
+        fn transient() -> Analysis {
+            Analysis::Transient { stop: 4.0, max_step: None, print_step: None, from: None }
+        }
+
+        /// time 0..4 and two real signals `a` (0..8) and `b` (8..0).
+        fn two_signals() -> Table {
+            let rows = (0..5).map(|k| vec![Cell::Real(f64::from(k)), Cell::Real(f64::from(2 * k)), Cell::Real(f64::from(8 - 2 * k))]).collect();
+            Table { columns: vec!["time".into(), "Top.a".into(), "Top.b".into()], rows }
+        }
     }
 
     #[test]
@@ -135,7 +140,7 @@ mod tests {
         // CLI-22 AC 2: a `series` path per real signal carrying its full path in `data-signal`,
         // and a legend naming each; the first point of `Top.a` (time 0, value 0) is the plot
         // area's bottom left, (70, 430), the last (time 4, value 8) its top right, (780, 20)
-        let text = svg(&two_signals(), &transient());
+        let text = SvgFixture::svg(&SvgFixture::two_signals(), &SvgFixture::transient());
         assert_eq!(text.matches("<path class=\"series\"").count(), 2, "{text}");
         let a = text.lines().find(|l| l.contains("data-signal=\"Top.a\"")).expect("a path for Top.a");
         assert!(a.contains("d=\"M70.00 430.00 L247.50 327.50 L425.00 225.00 L602.50 122.50 L780.00 20.00\""), "{a}");
@@ -152,7 +157,7 @@ mod tests {
         // CLI-22 AC 4: x is `time` with ticks 0..4 (step 0.5 would be 9, step 1 is 5; the
         // smallest step with at most 10 ticks is 0.5), y has ticks 0..8 (step 1, 9 ticks); each
         // tick is a `<line>` and a `<text>`, and each axis has one title
-        let text = svg(&two_signals(), &transient());
+        let text = SvgFixture::svg(&SvgFixture::two_signals(), &SvgFixture::transient());
         let x_ticks = text.matches("class=\"tick x\"").count();
         let y_ticks = text.matches("class=\"tick y\"").count();
         assert_eq!((x_ticks, y_ticks), (9, 9), "{text}");
@@ -164,7 +169,7 @@ mod tests {
         // an ac plot has two panels, so two of each axis, `freq` titling both x axes
         let row = |f: f64, m: f64, p: f64| vec![Cell::Real(f), Cell::Real(m), Cell::Real(p)];
         let table = Table { columns: vec!["freq".into(), "mag(T.o)".into(), "phase(T.o)".into()], rows: vec![row(1e3, 1.0, 0.0), row(1e5, 0.5, -45.0), row(1e7, 0.1, -90.0)] };
-        let ac = svg(&table, &Analysis::Ac { from: 1e3, to: 1e7, grid: Grid::PerDecade(1) });
+        let ac = SvgFixture::svg(&table, &Analysis::Ac { from: 1e3, to: 1e7, grid: Grid::PerDecade(1) });
         assert_eq!(ac.matches("<rect class=\"panel\"").count(), 2);
         assert_eq!(ac.matches("class=\"axis-title x\"").count(), 2);
         assert_eq!(ac.matches(">freq</text>").count(), 2);
@@ -174,11 +179,11 @@ mod tests {
     #[test]
     fn the_same_plot_is_the_same_bytes() {
         // CLI-22 AC 10
-        assert_eq!(svg(&two_signals(), &transient()), svg(&two_signals(), &transient()));
+        assert_eq!(SvgFixture::svg(&SvgFixture::two_signals(), &SvgFixture::transient()), SvgFixture::svg(&SvgFixture::two_signals(), &SvgFixture::transient()));
         // a name with markup is escaped, never written raw
         let rows = vec![vec![Cell::Real(0.0), Cell::Real(1.0)], vec![Cell::Real(1.0), Cell::Real(2.0)]];
         let table = Table { columns: vec!["time".into(), "a<b&\"c\"".into()], rows };
-        let text = svg(&table, &transient());
+        let text = SvgFixture::svg(&table, &SvgFixture::transient());
         assert!(text.contains("data-signal=\"a&lt;b&amp;&quot;c&quot;\""), "{text}");
     }
 }
