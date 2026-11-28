@@ -24,10 +24,10 @@ crates/piperine-ir/src/deps/queries.rs::Body::param_changes	kept: an IR analysis
 crates/piperine-ir/src/print.rs::Ir::print_structural	kept: an IR printing host
 crates/piperine-lang/src/elab/consts.rs::ConstEval::files_read	-
 crates/piperine-lang/src/msl/parser/expr.rs::ExpressionGrammar::parse_block	kept: test surface of ExpressionGrammar
+crates/piperine-lang/src/pom/design.rs::DesignBuilder::std_source	-
 crates/piperine-lang/src/pom/design.rs::Design::dump	-
 crates/piperine-lang/src/pom/design.rs::Design::from_json	-
 crates/piperine-lang/src/pom/design.rs::Design::type_count	-
-crates/piperine-lang/src/pom/design.rs::DesignBuilder::std_source	-
 crates/piperine-lang/src/pom/reflect/handle.rs::Reflect::is_pub	kept: the public reflection surface `docs/pom/reflection.md` documents
 crates/piperine-lang/src/pom/reflect/instance.rs::Instance::is_anonymous	kept: the public reflection surface `docs/pom/reflection.md` documents
 crates/piperine-lang/src/pom/reflect/instance.rs::Instance::param_bindings	kept: the public reflection surface `docs/pom/reflection.md` documents
@@ -52,7 +52,6 @@ crates/piperine-numbers/src/precision.rs::Rounding::opposite	-
 crates/piperine-numbers/src/wide.rs::WideInt::minimum_of	-
 crates/piperine-numbers/src/wide.rs::WideUInt::low_u128	-
 crates/piperine-parity/src/buck_fixture.rs::BuckProject::with_buck	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
-crates/piperine-parity/src/probe.rs::OutputProbe::ac_magnitudes	kept: test support the structure tests of this crate share (P12-2, the one reading of the output node over an AC sweep)
 crates/piperine-parity/src/contract.rs::ToleranceContract::phase_applies	-
 crates/piperine-parity/src/corpus.rs::Twin::command_arguments	-
 crates/piperine-parity/src/corpus.rs::Twin::expected_stdout	-
@@ -62,6 +61,8 @@ crates/piperine-parity/src/golden.rs::Golden::printed_complex	-
 crates/piperine-parity/src/golden.rs::Golden::said	-
 crates/piperine-parity/src/golden.rs::Golden::same_grid	-
 crates/piperine-parity/src/golden.rs::Golden::scratch_path	-
+crates/piperine-parity/src/probe.rs::NodeVoltages::at_operating_point	kept: the parity targets read node voltages of an operating point through it
+crates/piperine-parity/src/probe.rs::OutputProbe::ac_magnitudes	kept: test support the structure tests of this crate share (P12-2, the one reading of the output node over an AC sweep)
 crates/piperine-parity/src/scenario/discrete.rs::DiscreteTrace::first_time	-
 crates/piperine-parity/src/scenario/discrete.rs::DiscreteTrace::of_enum	-
 crates/piperine-parity/src/scenario/run.rs::CompletedRun::wall	-
@@ -71,6 +72,7 @@ crates/piperine-parity/src/scenario/trace.rs::Trace::first_crossing	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::largest_rise	-
 crates/piperine-parity/src/scenario/trace.rs::Trace::settled_into	-
 crates/piperine-parity/src/source/bytes.rs::CarrierBytes::unsigned_64	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
+crates/piperine-parity/src/source/network.rs::UnitBranchNetwork::voltages	kept: the source_structure targets read the voltages of a unit-branch network through it
 crates/piperine-parity/src/source/run.rs::SourceRun::assert_commits	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
 crates/piperine-parity/src/source/run.rs::SourceRun::records_of	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
 crates/piperine-parity/src/source/widths.rs::ValueBytes::of_bool	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)

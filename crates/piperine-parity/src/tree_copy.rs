@@ -1,12 +1,12 @@
-//! A directory tree copied under a directory of its own, so a test runs a package (`examples/buck`) as the package it
+//! A directory tree copied to a directory of its own, so a test runs a package (`examples/buck`) as the package it
 //! is without writing into the repository.
 
 use std::path::Path;
 
 /// The copy of one directory tree.
-pub struct CopiedTree;
+pub struct TreeCopy;
 
-impl CopiedTree {
+impl TreeCopy {
     /// Copies the tree `from` to `to`, creating every directory it needs.
     pub fn copy(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).expect("a directory for the copy");

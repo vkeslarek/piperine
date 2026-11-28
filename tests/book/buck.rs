@@ -10,7 +10,7 @@ use std::rc::Rc;
 
 use piperine::{Cell, Overrides, Project, Record, RecordSink, Session, Table};
 use piperine_parity::compile_cache::CompileCache;
-use piperine_parity::copied_tree::CopiedTree;
+use piperine_parity::tree_copy::TreeCopy;
 use piperine_parity::table_columns::TableColumns;
 
 /// A sink that drops every record: the buck's start is read from the table.
@@ -34,7 +34,7 @@ impl BuckStart {
     fn open(name: &str, overrides: Overrides) -> BuckStart {
         let directory = tempfile::Builder::new().prefix("piperine-book-").tempdir().expect("a model directory");
         let root = directory.path().join("buck");
-        CopiedTree::copy(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/buck"), &root);
+        TreeCopy::copy(&Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/buck"), &root);
         let project = Project::at(&root).unwrap_or_else(|failure| panic!("{failure}"));
         let spec = project.request(Some(name), &overrides).unwrap_or_else(|failure| panic!("{failure}"));
         let session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|failure| panic!("{failure}"));

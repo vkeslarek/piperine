@@ -14,7 +14,7 @@ use super::book::Book;
 use super::inventory::Inventory;
 use super::records::KeptRecords;
 use piperine_parity::compile_cache::CompileCache;
-use piperine_parity::copied_tree::CopiedTree;
+use piperine_parity::tree_copy::TreeCopy;
 use piperine_parity::table_columns::TableColumns;
 
 /// What opens a model: a lone file, or the package in the model's directory.
@@ -74,7 +74,7 @@ impl Model {
             }
             Some((package, inside)) => {
                 let root = directory.path().join(package);
-                CopiedTree::copy(&Self::repository().join("examples").join(package), &root);
+                TreeCopy::copy(&Self::repository().join("examples").join(package), &root);
                 Self::write(&root, inside, &text);
                 let opening = Opening::File(root.join(inside));
                 Model { directory, opening, named: None }
@@ -104,7 +104,7 @@ impl Model {
     pub fn example(name: &str) -> Model {
         let directory = Self::directory();
         let root = directory.path().join(name);
-        CopiedTree::copy(&Self::repository().join("examples").join(name), &root);
+        TreeCopy::copy(&Self::repository().join("examples").join(name), &root);
         Model { directory, opening: Opening::Package(root), named: None }
     }
 
