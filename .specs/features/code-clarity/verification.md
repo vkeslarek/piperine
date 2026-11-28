@@ -1909,3 +1909,161 @@ The scenario diff above confirms these on real input.
 
 - **R2-1.** T96 is lane F, but its new Done-when line changes `ir/src/build.rs`, a lane K path. That is the mirror of T55's cross-lane edit. The design's Lanes table should name it when T96 is scheduled. The decision is the coordinator's and is pending the user's review.
 - **R2-2.** `Digital::declare_function` (`plan/src/digital/reactions.rs`) takes 7 parameters, past the design's "about 5" reviewer heuristic, which is not a rule. A small value carrying `(s, pins, body, functions)` would fold four of them. Leave it for B9/B10, or for T79–T82 if they touch `plan`.
+
+## Phase 11 (B5b Owners in abi, analog-solver, digital-solver, solver, T77 to T85)
+
+**Verdict**: FAIL (four Medium findings, six Low)
+**Head**: 22640559c on `feature/code-clarity-p11`, base 7b347a927 (`git merge-base feature/code-clarity-p11 feature/code-clarity`)
+**Verifier**: independent sub-agent (Opus; author != verifier). I reran the gates myself with target dir `-d`, after touching the guard sources first. No base snapshot was built.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, filtered for `^warning` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 121 passed, 0 failed |
+| `cargo test --no-fail-fast -p` abi, device-fixtures, analog-solver, digital-solver, solver, interp, plan, transpile (the `golden` target included), api, parity | 169 result lines, 1 936 passed, 0 failed. The `panicked at …/rt.rs:335` lines in the log come from expected-panic tests |
+| `cargo test -p piperine-cli --test twins` | 6 passed |
+| `cargo test -p piperine --test book_inventory --test integrated` | 18 + 42 passed |
+| `cargo test -p piperine --test book_claims` | 6 passed, 1 failed: `every_claim_row_is_a_sentence_of_its_chapter`. The panic names exactly one row, `structure~58f974e3`, which is the stale row the integration branch fixes. Nothing else is red |
+| CC-09: `git diff 7b347a927..HEAD` over `docs/`, `examples/`, `.msl`, goldens, twins and `crates/piperine-parity/src` | empty. The parity *tests* change only call paths (`Validator::validate`, `shape.cell_lens`, `Verdict::of_partials`) |
+
+### Behaviour (CC-09)
+
+- **Test names.** I collected the `#[test]` names per crate over the whole tree at the base and at the head: 4 357 each. The only difference is the declared replace row: `piperine-solver` `edge_gnd_name_routes_to_ground` → `edge_a_ground_alias_is_refused` (`repoints/T83.tsv`).
+- **Assertions.** Only the S21 ones changed: `net.rs` `ground_is_a_pseudo_net_with_no_index` (`"GND"` → `"gnd"`) and the replaced builder test. Every other test edit is a call path of a moved `pub` item, with one exception: T78's file-path edits (P11-8).
+- **T80, `bind_instance`.** The order is unchanged: terms (errors first), then pins (errors), then samples. `bind_watches` and `bind_inputs` are pure maps. In the function loop, `claim_writes` ("written by two functions") comes before `link_partials`, then sources, read lens, write lens: the base order.
+- **T81, digital execution.** `CommitCheck::plan_commit` checks in the base order: statement exists, then byte range, then `LATER` bound, then `Resolution::due` (with the NaN re-labelling), then the pin/element target, then P1 per element, then record, then settle. `call_all`/`cut_horizon` keep the base horizon algorithm: the reversible ones first; the fixed point at most `len+1` rounds; the instant on no fixed point; the irreversible cap formula unchanged. `queue_commits`/`queue_commit` keep the order (observe Commit → Record → `call += 1` → settle hold / queue push / cancel). `relax` keeps its order (functions that write no `RELAX` net first; zeroing; bounded passes; restore and one observed write per net; dirty clear; fires). `CellReader::inputs` is the duplicated `WHOLE` loop; `WHOLE` is a constant pattern, and the 0-warning build rules out a catch-all binding.
+- **T82.** `DigitalPlan::analyze` fails in the base order: validate/pin-count per input, `check_bindings`, `check_layouts`, `find_writers`.
+- **T83, binding order.** Instances are bound one by one in spec order (duplicate path → given values → `Handle::create` → pins in shape order → port count). The pin dispatch is the base `match`, with the same messages. Then `finish`: `mark_analog_reads` → `sample_numbers` (the same instance/reaction/read numbering) → `into_plans` per instance (slots are taken in the base site order) → `check_seeds` → `array_slots` → slot seeds → the two plans. The optional named `GLOBAL` that nobody set still gives `Site::Absent` and no merge.
+- **T85, `solve`.** `reentry_point` → `scheduled_commits` (text value, early `set`, early `write_net`, `param_bytes`, `net_bytes`: base order) → `check_reentry_binding` → `sides` (the digital engine taken out, continuation, settled, resume and rewrites) → `run_protocol` (`hooks.nets` read after the engine left the circuit, as before; enter, commits, `transient(stop)`; the engine is put back whatever the outcome) → `finish_solve`. Numerics are carried by the parity and twin gates above.
+- **T84** was checked by the gates and a skim of the call sites only.
+
+### Checks
+
+| Task | Box | Holds |
+| --- | --- | --- |
+| T77 | allowance = the extern "C"s; `unsafe` only in raw/thunk/caller | honestly unticked. 30 of 32 rows are closed. `unsafe` appears only in `raw/`, `thunk.rs` and `caller.rs` (`device.rs` and `lib.rs` mention it only in comments). The 2 rows left have no owner (P11-4). `Validator` departs from its What (P11-9) |
+| T77 | fixtures/transpiler follow; goldens byte-identical | yes |
+| T78 | every `raw::` path unchanged; layout tests unedited | paths: yes (`pub use` of the 4 sections, field visibility identical). "Unedited": no, see P11-8 |
+| T79, T82, T84 | the crate has no free-function row | yes: the analog-solver, digital-solver and solver `free_functions.tsv` are empty or deleted |
+| T80 | row `split`; the crate's rows have verdicts | the box text was rewritten (P11-5); the `kept` verdicts are not true (P11-2) |
+| T81 | no free fn, no `#[allow]`, ≤ 5 params | yes. The two-owner departure is sound (borrow split). `ReactionRun`'s pub fields are judged under P11-6 |
+| T83 | S21 | builder: yes (refusal recorded; `build` fails naming `gnd`, tested for all three). Label: yes. Noise request: refuses, but wrongly, and untested (P11-1). Corpora/Book/docs/goldens/examples: no alias used as ground (`git grep` clean apart from prose comments in `cli/tests/projects/pump_tolerance`) |
+| T83 | no free fn; `bind` row | yes; the deletion departure is annotated correctly |
+| T85 | public paths unchanged; transient/parity targets unedited | yes. The 584-line root is judged under the notes |
+
+**Allowances and worklists.** I summed every allowance file per item name, base against head. Nothing grows. The re-keys are net-zero: solver `undeclared_words` is 183 → 183 over 167 → 169 rows, because `dt`/`t`/`prev_h` split across the new files, and digital-solver `reachability` → `Reachability` is 1 → 1. Every deletion is real: the abi/analog/digital/solver `free_functions`, `owners`, the digital `allow_attributes`, and 54 `undocumented_items` rows. `test_only_items` rows are re-keyed 1:1. Dictionary `validator`: accepted. It is an ordinary English agent noun of `validate` (already a word), and naming the type in full is the point of CC-05. Adding it is no more than adding any full word.
+
+**Code rules on new code.** No new free fn (the 10 `extern "C"` thunks/trampolines and `thunk::{module, library}` only). No `#[allow]`/`#[expect]` and no macro added. New items carry `///` (the guard passes, and its rows only fall). Fields are the exception, see P11-6.
+
+### P11-1 (Medium): the noise request refuses a node the design has, and says it names nothing
+
+`crates/piperine-api/src/noise.rs:68-74`. `NoiseProbe::node_of` checks `GroundName::refusal(path)` *before* `Probe::resolve`. In MSL, `vss`, `VSS` and `GND` are ordinary identifiers: `gnd` is the only core name (spec part II §6 rule 1, appendix A rule 8). A design whose top node is `vss` therefore cannot be probed as `vss`, and the error is false.
+
+Repro (throwaway, reverted): copy `tests/e2e/twins/ac_rc.msl` with `r#out` renamed `vss`, then open a noise run with output `vss`. The result is `E0801 \`vss\` names nothing in the design: \`vss\` does not name the ground: the ground is spelled \`gnd\``. `AcRcVss.vss` opens. On the plain twin, `GND`, `vss`, `VSS` and `v(out, GND)` are each refused as intended.
+
+No test of the api crate covers the noise refusal: `GroundName::refusal` is tested only through the builder. S21 asked for "never silently a new node", not "never a node the design declares".
+
+**Fix**: resolve first, and refuse only when the name resolves to nothing (`names nothing in the design: the ground is spelled \`gnd\``). Add two noise tests: `GND` → E0801 naming `gnd`; a design node `vss` → it resolves.
+
+### P11-2 (Medium): the two Newton `kept` verdicts are not reasons, and close rows T80 did not work
+
+`worklists/long_functions.tsv`: `NewtonRaphsonSolver::solve` (63 lines, `analog-solver/src/math/newton_raphson.rs:313`) and `::solve_with_strategy` (about 105 lines, `:448`). The verdict reads "the convergence path is pinned by the numeric oracles, so a split is not this task's change". Extracting methods moves no number, and design.md:412 accepts as a reason only something like "an exhaustive `match` with one-line arms".
+
+`solve_with_strategy` has separable stages: the seed guess, assemble + solve with timing, damping, the convergence gate, the failing report. Both functions share an identical exhaustion tail. The file is outside T80's Where (`device/plan.rs`). The rows were given verdicts only so that "the crate's rows all have verdicts" would read true.
+
+**Fix**: split them (for example `seed_guess`, `iterate`, `damp`, and one `exhausted_after` shared by both), or set the rows back to `-` and name the owner task in a Done-when line.
+
+### P11-3 (Medium): ten long-function rows of this phase's files have no verdict (P8-2 again)
+
+design.md:412 asks each task to give the rows of its files a verdict. Still `-` at the head:
+
+| Row | Task |
+| --- | --- |
+| `digital-solver/src/instant.rs::Digital::microsteps` | T81 |
+| `digital-solver/src/dag.rs::Dag::build` | T82 |
+| `solver/src/analyses/adjoint.rs::AdjointSolver::solve` | T84 |
+| `solver/src/analyses/noise.rs::NoiseSolver::solve` | T84 |
+| `solver/src/analyses/pss.rs::PssSolver::solve` | T84 |
+| `solver/src/analyses/sensitivity.rs::ParamStampCollector::diff_residual` | T84 |
+| `solver/src/analyses/sensitivity.rs::ParamStampCollector::collect_device` | T84 |
+| `solver/src/analyses/sp.rs::SpSolver::new` | T84 |
+| `solver/src/protocol/transient.rs::Protocol::transient_loop` | T84 |
+| `solver/src/analyses/transient/attempt.rs::TransientSolver::device_attempt` (110 lines) | T85: its note says "keeps its row", but a row with `-` is not a verdict |
+
+Repro: `grep -P '\t-$' crates/piperine-repository-guards/worklists/long_functions.tsv | grep -E 'digital-solver|piperine-solver/'` (each file is in `git log 7b347a927..HEAD`).
+
+**Fix**: `split`, or `kept: <reason of the accepted kind>`, or an owner task named in a Done-when.
+
+### P11-4 (Medium): `thunk::module` and `thunk::library` are left without an owner in this feature
+
+T77 was right to stop: the "What may move" table (design.md:167-178) lets the abi names generated code spells move goldens only in T132/T137, and only by identifier. So T77 could not move them (CC-09). But the coordinator's default, "leave for device-abi-simplification", sends the two rows to a feature outside this spec. T152 ("the allowance holds exactly the exceptions of findings.md") will then fail on them.
+
+**Fix**: pick one.
+
+- Give T132 a Done-when line (`module`/`library` → `Thunk::module`/`Thunk::library`; the five transpile goldens move by path only) and amend the What-may-move row to name it.
+- Or record them in findings.md §1.2 as CC-04 exceptions with the reason, for the user's review.
+
+Point T77's open box at whichever is chosen.
+
+### P11-5 (Low): T80's approved box text was rewritten
+
+`tasks.md` T80. The approved line is "Its row of `long_functions.tsv` is `split`; the crate's rows all have verdicts". The implementer added a parenthetical to the box itself.
+
+Restore the box to that text, and put the departure as an annotation under it:
+
+> `  - Departure: the row is deleted, not marked `split`: `bind_instance` is no longer long, and the guard refuses a row whose item is not. `Assembly::param_stamps` was split too and its row deleted. The two Newton solves carry `kept` verdicts (open: Phase 11 P11-2).`
+
+The tick depends on P11-2.
+
+### P11-6 (Low): `ReactionRun`'s nine pub fields
+
+`digital-solver/src/run.rs:775-786`. The rule's intent is that the state a group of methods shares has an owner, rather than a long positional list. That is met here: `ReactionRun` *is* that owner, the crate builds it in one place (`Digital::reaction_run`, `instant.rs`), and named fields at construction are clearer than the base 10 positional arguments. I accept the departure.
+
+But the fields are `pub` only for the engine tests in `tests/engine/`, and 7 of 9 have no `///` (`plan`, `samples`, `ambient`, `at`, `queue`, `observer`, `call`, `settle_commits`; only `store` is documented). `FunctionRun` beside it uses a constructor with private fields. `Bind` and `InstanceBinding` (bind.rs) also leave most fields bare.
+
+**Fix**: document the fields (`call` → "the commit counter of the microstep (C2)").
+
+### P11-7 (Low): one more printed `GND`, and the S21 design row is stale
+
+- `analog-solver/src/netlist.rs:28` still has `NodeIdentifier::Gnd` display as `GND`. That is the last place ground is spelled otherwise. Fix: print `gnd`, and rerun goldens/twins.
+- design.md:176 "What may move" still gives S21 to T29 and says it "moves nothing in the corpora". T83 owns it, and it moves the host-visible ground label (`Net::ground().label()`). Fix: amend the row (task T83; moves: the ground net's label `GND` → `gnd`; `GND`/`vss`/`VSS` refused).
+
+### P11-8 (Low): T78's test edits are file paths, not call paths
+
+`abi/tests/contract/contract.rs` (`ContractReading::raw_sources`, and the `raw` dir skipped by the no-unsafe scan). `transpile/tests/abi_source.rs` (a recursive `SourceTree`). `transpile/tests/cache.rs` (`raw.rs` → `raw/shape.rs`, including one assertion message).
+
+I checked that none is weaker. The pointer-field scan reads all raw text. The unsafe scan still covers every non-raw file, and `seen >= 6` holds. The cache test still finds and replaces the `Field` struct.
+
+But the commit body says "call paths only", and T78's box says "the layout tests pass unedited". Fix: an annotation under T78's first box naming these three files and why (the split moves the text the tests read).
+
+### P11-9 (Low): `Validator` holds the shape, not "the `Rule` list it reports"
+
+`abi/src/validate.rs:267`. T77's What and F11 say the validator holds its `Rule` list. It holds `shape` and returns the first broken rule. That is the better owner, but the departure is unrecorded. Fix: one annotation line in T77.
+
+### P11-10 (Low): T83's commit and note wording
+
+- The subject `refactor(solver): binding one method per pin role` carries a behaviour change: S21 refusals and the ground label. The body says so, but the subject hides it. A `feat`/`fix` split, or naming S21 in the subject, would have matched content.
+- T83's note says the replace row comes "with its `uncited_tests.tsv` verdict". fd51c8c1f removed that row, correctly: the test is cited by the note, as P8-5 round 2 established. Fix: drop the phrase.
+
+### Notes (not findings)
+
+- **T85 layout.** The five files design.md names exist, each with its concern. `transient.rs` (584 lines) is the module root with `TransientSolver`, its setup, the recording helpers and the `solve` stages. That is a fair reading of G7. The recording group (`record_step`, `finish_run`, `snapshot`, `full_snapshot`, `collect_*`) could later be `transient/recording.rs`. `device_attempt` is covered by P11-3.
+- **T81's two owners.** The borrow argument is correct: D needs `&plan, &mut store`, R needs `&mut plan, &store`, and `Digital::shadow` has only `&self.plan`.
+- **T84.** The commit says 21 functions and the task says 22; the 26 base rows = 5 (T83) + 21 (T84), so all are closed.
+
+### Phase 11 findings
+
+| Finding | Severity | Closed |
+| --- | --- | --- |
+| P11-1 noise refusal pre-empts a real node `vss`/`GND`; untested | Medium | open |
+| P11-2 Newton `kept` verdicts are not reasons | Medium | open |
+| P11-3 ten `-` long-function rows of this phase's files | Medium | open |
+| P11-4 `thunk::{module, library}` without an in-feature owner | Medium | open |
+| P11-5 T80 box text rewritten | Low | open |
+| P11-6 `ReactionRun` (and `Bind`) fields undocumented | Low | open |
+| P11-7 `NodeIdentifier::Gnd` prints `GND`; design.md S21 row stale | Low | open |
+| P11-8 T78 file-path test edits unrecorded | Low | open |
+| P11-9 `Validator` owner departure unrecorded | Low | open |
+| P11-10 T83 subject and note wording | Low | open |
