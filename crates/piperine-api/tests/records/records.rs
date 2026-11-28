@@ -19,36 +19,108 @@ use piperine_parity::sinks::Kept;
 /// A source across a resistor: the analog part every fixture's top holds.
 const ANALOG: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
 
-/// `module Top() { <a source and a resistor>; <placements> }` over the modules `modules`.
-fn design(modules: &str, placements: &str) -> String {
-    format!("{ANALOG}\n{modules}\nmodule Top() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n{placements}}}\n")
-}
+/// Associated test helpers of `records`, grouped on one fixture type.
+struct RecordsFixture;
 
-/// The records of `analysis` (to `stop` for a transient) of the lone file `path`, top `Top`.
-fn records_of(path: &Path, top: &str, analysis: &str, stop: Option<f64>) -> Result<Vec<Record>, Failure> {
-    let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { analysis: Some(analysis.into()), stop, top: Some(top.into()), max_step: stop.map(|s| s / 100.0), ..Overrides::default() };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
-    let kept = Rc::new(RefCell::new(Kept::default()));
-    session.run(kept.clone())?;
-    let records = kept.borrow().0.clone();
-    Ok(records)
-}
+impl RecordsFixture {
+    /// `module Top() { <a source and a resistor>; <placements> }` over the modules `modules`.
+    fn design(modules: &str, placements: &str) -> String {
+        format!("{ANALOG}\n{modules}\nmodule Top() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n{placements}}}\n")
+    }
 
-/// The records of a 5 us transient of `text`.
-fn records(text: &str) -> Vec<Record> {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, text).expect("write");
-    records_of(&file, "Top", "transient", Some(5e-6)).unwrap_or_else(|f| panic!("{f}"))
+    /// The records of `analysis` (to `stop` for a transient) of the lone file `path`, top `Top`.
+    fn records_of(path: &Path, top: &str, analysis: &str, stop: Option<f64>) -> Result<Vec<Record>, Failure> {
+        let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { analysis: Some(analysis.into()), stop, top: Some(top.into()), max_step: stop.map(|s| s / 100.0), ..Overrides::default() };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
+        let kept = Rc::new(RefCell::new(Kept::default()));
+        session.run(kept.clone())?;
+        let records = kept.borrow().0.clone();
+        Ok(records)
+    }
+
+    /// The records of a 5 us transient of `text`.
+    fn records(text: &str) -> Vec<Record> {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, text).expect("write");
+        RecordsFixture::records_of(&file, "Top", "transient", Some(5e-6)).unwrap_or_else(|f| panic!("{f}"))
+    }
+
+    /// The records of a 5 us transient of `text`, the run keeping only the streams `keep` names.
+    fn kept_records(text: &str, keep: &[&str]) -> Result<Vec<Record>, Failure> {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, text).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            analysis: Some("transient".into()),
+            stop: Some(5e-6),
+            top: Some("Top".into()),
+            max_step: Some(5e-8),
+            streams: keep.iter().map(|s| s.to_string()).collect(),
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
+        let kept = Rc::new(RefCell::new(Kept::default()));
+        session.run(kept.clone())?;
+        let records = kept.borrow().0.clone();
+        Ok(records)
+    }
+
+    /// Two modules emitting `s` (at 1 us) and `t` (at 2 us), `M` placed as `m` and `n`, `N` as `o`.
+    fn two_streams() -> String {
+        RecordsFixture::design(
+            "module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.0); } }\nmodule N() {}\ndigital for N { on at(2u) { emit!(\"t\", a = 2.0); } }\n",
+            "    let m = M();\n    let n = M();\n    let o = N();\n",
+        )
+    }
+
+    /// The `<instance> <stream>` pairs of `records`, sorted.
+    fn named(records: &[Record]) -> Vec<(String, String)> {
+        let mut all: Vec<(String, String)> = records.iter().map(|r| (r.instance.clone(), r.stream.clone())).collect();
+        all.sort();
+        all
+    }
+
+    /// The table of a 5 us transient of `text` (max step 50 ns, `print_step` when given), or the failure.
+    fn table_of(text: &str, print_step: Option<f64>) -> Result<piperine_api::Table, Failure> {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, text).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides {
+            analysis: Some("transient".into()),
+            stop: Some(5e-6),
+            top: Some("Top".into()),
+            max_step: Some(5e-8),
+            print_step,
+            ..Overrides::default()
+        };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
+        session.run(Rc::new(RefCell::new(Kept::default())))
+    }
+
+    fn time_column(table: &piperine_api::Table) -> Vec<f64> {
+        table
+            .rows
+            .iter()
+            .map(|row| match &row[0] {
+                piperine_api::Cell::Real(t) => *t,
+                other => panic!("the time column holds a real, found {other:?}"),
+            })
+            .collect()
+    }
 }
 
 #[test]
 fn an_emit_gives_one_record_with_time_instance_stream_and_fields() {
     // CLI-06 AC 1: one timer at 1 us, one emit with `a` then `b`
-    let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.5, b = true); } }\n", "    let m = M();\n");
-    let all = records(&text);
+    let text = RecordsFixture::design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.5, b = true); } }\n", "    let m = M();\n");
+    let all = RecordsFixture::records(&text);
     assert_eq!(all.len(), 1, "{all:?}");
     let r = &all[0];
     assert!((r.time - 1e-6).abs() <= 1e-15, "the timer's instant, to the solver's tick: {}", r.time);
@@ -91,7 +163,7 @@ fn a_record_holds_its_declared_fields_only() {
     // carrier is its one value byte, so the record is 1 byte; one byte decodes as the record, and
     // the two bytes the layout once held (a value, then a trailing `maybe`) are a failure, never
     // a truncated or a padded record
-    let text = design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", ok = true); } }\n", "    let m = M();\n");
+    let text = RecordsFixture::design("module M() {}\ndigital for M { on at(1u) { emit!(\"s\", ok = true); } }\n", "    let m = M();\n");
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, &text).expect("write");
@@ -116,10 +188,10 @@ fn a_require_is_a_pass_or_a_fail() {
     // and the run is a pass; one that does not is `pass = false` and the verdict fails it. No
     // record is a third thing: `pass` is a `bool`
     let m = "module M() { ok: bool = true; }\ndigital for M { on at(1u) { require(\"held\", ok); } }\n";
-    let held = records(&design(m, "    let m = M();\n"));
+    let held = RecordsFixture::records(&RecordsFixture::design(m, "    let m = M();\n"));
     assert_eq!(held.iter().map(|r| r.fields[2].1.clone()).collect::<Vec<_>>(), [Field::Bool(true)], "{held:?}");
     assert!(Verdict::judge(&held).passed());
-    let failed = records(&design(m, "    let m = M() { ok: false };\n"));
+    let failed = RecordsFixture::records(&RecordsFixture::design(m, "    let m = M() { ok: false };\n"));
     assert_eq!(failed.iter().map(|r| r.fields[2].1.clone()).collect::<Vec<_>>(), [Field::Bool(false)], "{failed:?}");
     let verdict = Verdict::judge(&failed);
     assert!(!verdict.passed());
@@ -132,13 +204,13 @@ fn a_fatal_record_ends_the_run() {
     // a `sim` record that says `failed` is a failed verdict carrying the message, and the run
     // ends at its instant: the rows stop at 2 us in a run to 5 us
     let m = "module M() {}\ndigital for M { on at(2u) { fatal(\"boom\"); } }\n";
-    let text = design(m, "    let m = M();\n");
-    let all = records(&text);
+    let text = RecordsFixture::design(m, "    let m = M();\n");
+    let all = RecordsFixture::records(&text);
     let verdict = Verdict::judge(&all);
     assert!(!verdict.passed(), "{all:?}");
     let fatal = verdict.fatal().expect("the fatal record");
     assert_eq!(fatal.fields.last(), Some(&("msg".to_string(), Field::Text("boom".into()))));
-    let times = time_column(&table_of(&text, None).unwrap_or_else(|f| panic!("{f}")));
+    let times = RecordsFixture::time_column(&RecordsFixture::table_of(&text, None).unwrap_or_else(|f| panic!("{f}")));
     let last = *times.last().expect("rows");
     assert!((last - 2e-6).abs() <= 1e-12, "the last row is at the fatal instant, not 5 us: {last}");
 }
@@ -147,7 +219,7 @@ fn a_fatal_record_ends_the_run() {
 fn records_arrive_in_time_order() {
     // CLI-06 AC 3: timers written at 3 us, 1 us, 2 us arrive at 1, 2, 3 us
     let m = "module M() {}\ndigital for M {\n    on at(3u) { emit!(\"s\", k = 3); }\n    on at(1u) { emit!(\"s\", k = 1); }\n    on at(2u) { emit!(\"s\", k = 2); }\n}\n";
-    let all = records(&design(m, "    let m = M();\n"));
+    let all = RecordsFixture::records(&RecordsFixture::design(m, "    let m = M();\n"));
     let seen: Vec<(i64, Field)> = all.iter().map(|r| ((r.time * 1e9).round() as i64, r.fields[0].1.clone())).collect();
     assert_eq!(seen, [(1000, Field::Int(1)), (2000, Field::Int(2)), (3000, Field::Int(3))]);
 }
@@ -156,7 +228,7 @@ fn records_arrive_in_time_order() {
 fn a_text_field_is_the_sources_literal() {
     // CLI-06 AC 4: a text never crosses the ABI; it is the site's literal
     let m = "module M() {}\ndigital for M { on at(1u) { emit!(\"log\", msg = \"overrange\"); } }\n";
-    let all = records(&design(m, "    let m = M();\n"));
+    let all = RecordsFixture::records(&RecordsFixture::design(m, "    let m = M();\n"));
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!(all[0].fields, [("msg".to_string(), Field::Text("overrange".into()))]);
 }
@@ -166,7 +238,7 @@ fn a_failed_require_is_one_checks_record_with_pass_false() {
     // CLI-06 AC 6; std/io.msl: `require(name, pass)` is `emit!("checks", kind = "require",
     // name = name, pass = pass)`
     let m = "module M() {}\ndigital for M { on at(1u) { require(\"lim\", false); } }\n";
-    let all = records(&design(m, "    let m = M();\n"));
+    let all = RecordsFixture::records(&RecordsFixture::design(m, "    let m = M();\n"));
     assert_eq!(all.len(), 1, "{all:?}");
     assert_eq!(all[0].stream, "checks");
     assert_eq!(
@@ -179,7 +251,7 @@ fn a_failed_require_is_one_checks_record_with_pass_false() {
 fn a_design_without_emit_gives_no_record() {
     // CLI-06 AC 8: the divider twin has no `emit!` site
     let divider: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
-    let all = records_of(&divider, "Divider", "op", None).unwrap_or_else(|f| panic!("{f}"));
+    let all = RecordsFixture::records_of(&divider, "Divider", "op", None).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(all, []);
 }
 
@@ -188,47 +260,10 @@ fn a_reserved_stream_keeps_its_name_and_its_site() {
     // spec edge 7: `checks` is reserved (docs/spec/part_vi_io.md); its record keeps the stream
     // name and the instance path of the reaction that wrote it, here the second of two monitors
     let m = "module M() { ok: bool = true; }\ndigital for M { on at(1u) { require(\"held\", ok); } }\n";
-    let all = records(&design(m, "    let first = M();\n    let second = M() { ok: false };\n"));
+    let all = RecordsFixture::records(&RecordsFixture::design(m, "    let first = M();\n    let second = M() { ok: false };\n"));
     let mut seen: Vec<(&str, &str, &Field)> = all.iter().map(|r| (r.instance.as_str(), r.stream.as_str(), &r.fields[2].1)).collect();
     seen.sort_by_key(|(i, _, _)| *i);
     assert_eq!(seen, [("Top.first", "checks", &Field::Bool(true)), ("Top.second", "checks", &Field::Bool(false))]);
-}
-
-/// The records of a 5 us transient of `text`, the run keeping only the streams `keep` names.
-fn kept_records(text: &str, keep: &[&str]) -> Result<Vec<Record>, Failure> {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, text).expect("write");
-    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides {
-        analysis: Some("transient".into()),
-        stop: Some(5e-6),
-        top: Some("Top".into()),
-        max_step: Some(5e-8),
-        streams: keep.iter().map(|s| s.to_string()).collect(),
-        ..Overrides::default()
-    };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
-    let kept = Rc::new(RefCell::new(Kept::default()));
-    session.run(kept.clone())?;
-    let records = kept.borrow().0.clone();
-    Ok(records)
-}
-
-/// Two modules emitting `s` (at 1 us) and `t` (at 2 us), `M` placed as `m` and `n`, `N` as `o`.
-fn two_streams() -> String {
-    design(
-        "module M() {}\ndigital for M { on at(1u) { emit!(\"s\", a = 1.0); } }\nmodule N() {}\ndigital for N { on at(2u) { emit!(\"t\", a = 2.0); } }\n",
-        "    let m = M();\n    let n = M();\n    let o = N();\n",
-    )
-}
-
-/// The `<instance> <stream>` pairs of `records`, sorted.
-fn named(records: &[Record]) -> Vec<(String, String)> {
-    let mut all: Vec<(String, String)> = records.iter().map(|r| (r.instance.clone(), r.stream.clone())).collect();
-    all.sort();
-    all
 }
 
 #[test]
@@ -236,66 +271,36 @@ fn keep_matches_a_stream_name_or_its_full_path() {
     // CLI-12 AC 1: an entry is a stream's name (every instance's stream of that name) or one
     // stream's `<instance path>.<stream>`; two instances of `M` each emit `s` at 1 us, `o` emits
     // `t` at 2 us
-    let text = two_streams();
+    let text = RecordsFixture::two_streams();
     let pair = |i: &str, s: &str| (i.to_string(), s.to_string());
-    let all = kept_records(&text, &[]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&all), [pair("Top.m", "s"), pair("Top.n", "s"), pair("Top.o", "t")]);
-    let by_name = kept_records(&text, &["s"]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&by_name), [pair("Top.m", "s"), pair("Top.n", "s")]);
-    let by_path = kept_records(&text, &["Top.m.s"]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&by_path), [pair("Top.m", "s")]);
-    let both = kept_records(&text, &["Top.m.s", "t"]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&both), [pair("Top.m", "s"), pair("Top.o", "t")]);
+    let all = RecordsFixture::kept_records(&text, &[]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&all), [pair("Top.m", "s"), pair("Top.n", "s"), pair("Top.o", "t")]);
+    let by_name = RecordsFixture::kept_records(&text, &["s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&by_name), [pair("Top.m", "s"), pair("Top.n", "s")]);
+    let by_path = RecordsFixture::kept_records(&text, &["Top.m.s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&by_path), [pair("Top.m", "s")]);
+    let both = RecordsFixture::kept_records(&text, &["Top.m.s", "t"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&both), [pair("Top.m", "s"), pair("Top.o", "t")]);
     // the reserved stream is a stream like any other: `checks` of a design with a `require`
     // is kept by name and dropped by its absence
-    let checked = design("module R() {}\ndigital for R { on at(1u) { require(\"ok\", true); emit!(\"s\", a = 1.0); } }\n", "    let r = R();\n");
-    let only_s = kept_records(&checked, &["s"]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&only_s), [pair("Top.r", "s")]);
-    let only_checks = kept_records(&checked, &["checks"]).unwrap_or_else(|f| panic!("{f}"));
-    assert_eq!(named(&only_checks), [pair("Top.r", "checks")]);
+    let checked = RecordsFixture::design("module R() {}\ndigital for R { on at(1u) { require(\"ok\", true); emit!(\"s\", a = 1.0); } }\n", "    let r = R();\n");
+    let only_s = RecordsFixture::kept_records(&checked, &["s"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&only_s), [pair("Top.r", "s")]);
+    let only_checks = RecordsFixture::kept_records(&checked, &["checks"]).unwrap_or_else(|f| panic!("{f}"));
+    assert_eq!(RecordsFixture::named(&only_checks), [pair("Top.r", "checks")]);
 }
 
 #[test]
 fn a_filter_entry_that_matches_nothing_is_e0801() {
     // CLI-12 AC 2: E0801 naming the entry, at open, before any analysis; a name with the right
     // instance and the wrong stream, and a stream of no design, both match nothing
-    let text = two_streams();
+    let text = RecordsFixture::two_streams();
     for entry in ["nothing", "Top.m.t", "Top.zzz.s"] {
-        match kept_records(&text, &["s", entry]) {
+        match RecordsFixture::kept_records(&text, &["s", entry]) {
             Err(Failure::Host { code: "E0801", message }) => assert!(message.contains(entry), "{message}"),
             other => panic!("`{entry}`: expected E0801, found {:?}", other.map(|r| r.len())),
         }
     }
-}
-
-/// The table of a 5 us transient of `text` (max step 50 ns, `print_step` when given), or the failure.
-fn table_of(text: &str, print_step: Option<f64>) -> Result<piperine_api::Table, Failure> {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, text).expect("write");
-    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides {
-        analysis: Some("transient".into()),
-        stop: Some(5e-6),
-        top: Some("Top".into()),
-        max_step: Some(5e-8),
-        print_step,
-        ..Overrides::default()
-    };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings())?;
-    session.run(Rc::new(RefCell::new(Kept::default())))
-}
-
-fn time_column(table: &piperine_api::Table) -> Vec<f64> {
-    table
-        .rows
-        .iter()
-        .map(|row| match &row[0] {
-            piperine_api::Cell::Real(t) => *t,
-            other => panic!("the time column holds a real, found {other:?}"),
-        })
-        .collect()
 }
 
 #[test]
@@ -303,13 +308,13 @@ fn a_run_ended_by_finish_gives_its_rows_to_the_instant() {
     // FIX-02 AC 1: `finish()` at 2 us in a run to 5 us gives rows up to 2 us and no row past it,
     // and no short-run failure, with and without a print step (0.5 us: rows 0, 0.5, .., 2.0 us).
     let m = "module M() {}\ndigital for M { on at(2u) { finish(); } }\n";
-    let text = design(m, "    let m = M();\n");
-    let every_step = table_of(&text, None).unwrap_or_else(|f| panic!("{f}"));
-    let times = time_column(&every_step);
+    let text = RecordsFixture::design(m, "    let m = M();\n");
+    let every_step = RecordsFixture::table_of(&text, None).unwrap_or_else(|f| panic!("{f}"));
+    let times = RecordsFixture::time_column(&every_step);
     let last = *times.last().expect("rows");
     assert!((last - 2e-6).abs() <= 1e-12, "the last row is at the finish instant, not 5 us: {last}");
-    let gridded = table_of(&text, Some(0.5e-6)).unwrap_or_else(|f| panic!("{f}"));
-    let times = time_column(&gridded);
+    let gridded = RecordsFixture::table_of(&text, Some(0.5e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let times = RecordsFixture::time_column(&gridded);
     assert_eq!(times.len(), 5, "rows at 0, 0.5, 1.0, 1.5 and 2.0 us: {times:?}");
     assert!((times[4] - 2e-6).abs() <= 1e-12, "{times:?}");
 }
@@ -342,7 +347,7 @@ fn a_stream_named_like_a_signal_of_the_same_record_size_keeps_the_signals_change
     // run holds `q` at `Some(42)` from 1 us on, and the stream's two records show the value before and after
     let text = "module Top() { signal q: Bit<Option<u8>>; }\n\
                 digital for Top { on at(1u) { q <- Some(42); } on q.changed() { emit!(\"q\", v = q.unwrap_or(7u8), some = q.is_some()); } }\n";
-    let table = table_of(text, None).unwrap_or_else(|f| panic!("{f}"));
+    let table = RecordsFixture::table_of(text, None).unwrap_or_else(|f| panic!("{f}"));
     let column = table.columns.iter().position(|name| name == "Top.q").expect("the signal is a column");
     let last = table.rows.last().expect("rows")[column].clone();
     let held = Some(42u8);
@@ -350,7 +355,7 @@ fn a_stream_named_like_a_signal_of_the_same_record_size_keeps_the_signals_change
     let dir = tempfile::tempdir().expect("tmp");
     let file = dir.path().join("bench.msl");
     std::fs::write(&file, text).expect("write");
-    let seen = records_of(&file, "Top", "transient", Some(5e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let seen = RecordsFixture::records_of(&file, "Top", "transient", Some(5e-6)).unwrap_or_else(|f| panic!("{f}"));
     let values: Vec<(&Field, &Field)> = seen.iter().map(|r| (&r.fields[0].1, &r.fields[1].1)).collect();
     assert_eq!(values, [(&Field::Int(7), &Field::Bool(false)), (&Field::Int(42), &Field::Bool(true))], "None at the start, then Some(42)");
 }

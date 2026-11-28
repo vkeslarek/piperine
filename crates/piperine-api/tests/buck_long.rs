@@ -11,16 +11,14 @@ use std::rc::Rc;
 use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
+use piperine_device_fixtures::heap::HeapCounter;
 use piperine_digital_solver::landing::TimePointRule;
 use piperine_api::{Cell, Overrides, Project, Record, RecordSink, Session, Table, TransientStatistics};
 use piperine_solver::protocol::{LandingCause, StepEnd};
 use piperine_transpile::Settings;
 
-#[path = "memory/heap.rs"]
-mod heap;
-
 #[global_allocator]
-static HEAP: heap::Counting = heap::Counting::new();
+static HEAP: HeapCounter = HeapCounter::new();
 
 /// The `checks` records of the run: how many, and how many did not pass.
 #[derive(Default)]

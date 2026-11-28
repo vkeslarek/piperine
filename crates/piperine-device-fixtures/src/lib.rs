@@ -10,6 +10,7 @@
 //!   solves it tests with; `analyses`: the doubles of the small-signal unit tests.
 //! - `examples`: the worked examples of abi.md section 11 that exist nowhere else (the limiting diode, the
 //!   DAC) and the `ShapeParts` every shape is built from.
+//! - `heap`: `HeapCounter`, the allocator that measures a run's peak live memory.
 //! - `binding` binds placed devices into a digital plan, `circuits` places the `circuit` devices on a circuit
 //!   builder, `scripted` holds the scripted stand-ins of the two sub-solvers.
 //! - `solver_devices`: the devices of the solver's own integration targets, one module per target.
@@ -27,6 +28,7 @@ pub mod circuit;
 pub mod circuits;
 pub mod digital;
 pub mod examples;
+pub mod heap;
 pub mod mixed;
 pub mod partials;
 pub mod scripted;

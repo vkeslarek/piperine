@@ -1195,6 +1195,7 @@ dependencies = [
  "ndarray",
  "num-complex",
  "piperine-abi",
+ "piperine-device-fixtures",
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",

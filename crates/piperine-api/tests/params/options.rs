@@ -17,40 +17,82 @@ use piperine_parity::sinks::Kept;
 /// A source across a resistor, the modules the fixtures share.
 const PARTS: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
 
-/// The session of `text` (a lone file, top `Top`) with `overrides`.
-fn open(text: &str, overrides: Overrides) -> Result<Session, Failure> {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, text).expect("write");
-    open_file(&file, overrides)
-}
+/// Associated test helpers of `options`, grouped on one fixture type.
+struct OptionsFixture;
 
-fn open_file(path: &Path, overrides: Overrides) -> Result<Session, Failure> {
-    let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { top: Some("Top".into()), ..overrides };
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &CompileCache::shared().settings())
-}
+impl OptionsFixture {
+    /// The session of `text` (a lone file, top `Top`) with `overrides`.
+    fn open(text: &str, overrides: Overrides) -> Result<Session, Failure> {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, text).expect("write");
+        OptionsFixture::open_file(&file, overrides)
+    }
 
-/// The table of one run of `text`, and the records it delivered.
-fn run(text: &str, overrides: Overrides) -> Result<(Table, Vec<Record>), Failure> {
-    let mut session = open(text, overrides)?;
-    let kept = Rc::new(RefCell::new(Kept::default()));
-    let table = session.run(kept.clone())?;
-    let records = kept.borrow().0.clone();
-    Ok((table, records))
-}
+    fn open_file(path: &Path, overrides: Overrides) -> Result<Session, Failure> {
+        let project = Project::file(path).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some("Top".into()), ..overrides };
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        Session::open(&project, &spec, &CompileCache::shared().settings())
+    }
 
-fn op(print: &[&str]) -> Overrides {
-    Overrides { analysis: Some("op".into()), print: print.iter().map(|s| s.to_string()).collect(), backend: Some("interp".into()), ..Overrides::default() }
-}
+    /// The table of one run of `text`, and the records it delivered.
+    fn run(text: &str, overrides: Overrides) -> Result<(Table, Vec<Record>), Failure> {
+        let mut session = OptionsFixture::open(text, overrides)?;
+        let kept = Rc::new(RefCell::new(Kept::default()));
+        let table = session.run(kept.clone())?;
+        let records = kept.borrow().0.clone();
+        Ok((table, records))
+    }
 
-/// The value of the row named `signal` of an operating point.
-fn value(table: &Table, signal: &str) -> f64 {
-    let row = table.rows.iter().find(|r| r[0] == Cell::Text(signal.into())).unwrap_or_else(|| panic!("no row `{signal}` in {table:?}"));
-    match &row[1] {
-        Cell::Real(v) => *v,
-        other => panic!("a real, found {other:?}"),
+    fn op(print: &[&str]) -> Overrides {
+        Overrides { analysis: Some("op".into()), print: print.iter().map(|s| s.to_string()).collect(), backend: Some("interp".into()), ..Overrides::default() }
+    }
+
+    /// The value of the row named `signal` of an operating point.
+    fn value(table: &Table, signal: &str) -> f64 {
+        let row = table.rows.iter().find(|r| r[0] == Cell::Text(signal.into())).unwrap_or_else(|| panic!("no row `{signal}` in {table:?}"));
+        match &row[1] {
+            Cell::Real(v) => *v,
+            other => panic!("a real, found {other:?}"),
+        }
+    }
+
+    fn with_parts(rest: &str) -> String {
+        format!("{PARTS}{rest}")
+    }
+
+    fn rust(overrides: Overrides) -> Overrides {
+        Overrides { backend: Some("rust".into()), ..overrides }
+    }
+
+    /// `Top`: the analog part, and the placements of a digital module `m`.
+    fn mixed(modules: &str, placements: &str) -> String {
+        format!("{PARTS}\n{modules}\nmodule Top() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n{placements}}}\n")
+    }
+
+    /// The transient of `tran_rc` to 10 us at `trtol = 0.001` (3241 steps, `a_smaller_trtol_takes_more_steps`)
+    /// with the budget `max_steps`.
+    fn tran_rc_with_budget(max_steps: Option<u32>) -> Result<Table, Failure> {
+        let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
+        let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol: Some(0.001), max_steps, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
+        let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
+        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        Session::open(&project, &spec, &CompileCache::shared().settings())?.run(Rc::new(RefCell::new(Kept::default())))
+    }
+
+    /// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set
+    /// `rule` on the request (`None` leaves the solver's own).
+    fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
+        let dir = tempfile::tempdir().expect("tmp");
+        let file = dir.path().join("bench.msl");
+        std::fs::write(&file, OptionsFixture::with_parts(THERMOMETER)).expect("write");
+        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some("Top".into()), ..OptionsFixture::op(&["a"]) };
+        let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+        spec.options.time_point_rule = rule;
+        let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
+        session.circuit().expect("a circuit").bound().digital.time_point_rule()
     }
 }
 
@@ -61,14 +103,10 @@ const THERMOMETER: &str = "pub module Thermometer(p: Electrical, n: Electrical) 
 /// point it converges to depends on where Newton starts.
 const CUBIC: &str = "pub module Cubic(p: Electrical, n: Electrical) {}\nanalog for Cubic { i(p, n) +> (v(p, n) - 1.0) * (v(p, n) - 2.0) * (v(p, n) - 3.0); }\nmodule Top() {\n    signal a: Electrical;\n    let c = Cubic(a, gnd);\n}\n";
 
-fn with_parts(rest: &str) -> String {
-    format!("{PARTS}{rest}")
-}
-
 #[test]
 fn no_option_gives_the_default_context() {
     // HII-02 AC 1: a run with no option key builds the solver's own default context
-    let session = open(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
+    let session = OptionsFixture::open(&OptionsFixture::with_parts(THERMOMETER), OptionsFixture::op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
     let (got, want) = (session.context(), Context::default());
     assert_eq!(got.tolerances.reltol, want.tolerances.reltol);
     assert_eq!(got.tolerances.abstol, want.tolerances.abstol);
@@ -82,12 +120,12 @@ fn no_option_gives_the_default_context() {
 #[test]
 fn tolerance_keys_reach_the_context() {
     // HII-02 AC 2: each given tolerance replaces the default in the context, the others stay
-    let overrides = Overrides { reltol: Some(1e-5), abstol: Some(1e-14), vntol: Some(2e-7), trtol: Some(3.0), ..op(&["a"]) };
-    let session = open(&with_parts(THERMOMETER), overrides).unwrap_or_else(|f| panic!("{f}"));
+    let overrides = Overrides { reltol: Some(1e-5), abstol: Some(1e-14), vntol: Some(2e-7), trtol: Some(3.0), ..OptionsFixture::op(&["a"]) };
+    let session = OptionsFixture::open(&OptionsFixture::with_parts(THERMOMETER), overrides).unwrap_or_else(|f| panic!("{f}"));
     let got = &session.context().tolerances;
     assert_eq!((got.reltol, got.abstol, got.vntol, got.trtol), (1e-5, 1e-14, 2e-7, 3.0));
-    let only = Overrides { reltol: Some(1e-5), ..op(&["a"]) };
-    let session = open(&with_parts(THERMOMETER), only).unwrap_or_else(|f| panic!("{f}"));
+    let only = Overrides { reltol: Some(1e-5), ..OptionsFixture::op(&["a"]) };
+    let session = OptionsFixture::open(&OptionsFixture::with_parts(THERMOMETER), only).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(session.context().tolerances.abstol, Context::default().tolerances.abstol, "an option not given keeps its default");
 }
 
@@ -95,9 +133,9 @@ fn tolerance_keys_reach_the_context() {
 fn temp_is_celsius_read_by_temperature() {
     // HII-02 AC 3: `temp = 75` makes `temperature()` read 75 + 273.15 kelvin; a design whose source
     // is `temperature()` volts shows it
-    let hot = value(&run(&with_parts(THERMOMETER), Overrides { temp: Some(75.0), ..op(&["a"]) }).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
+    let hot = OptionsFixture::value(&OptionsFixture::run(&OptionsFixture::with_parts(THERMOMETER), Overrides { temp: Some(75.0), ..OptionsFixture::op(&["a"]) }).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
     let default = Context::default().tolerances.temperature;
-    let cold = value(&run(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
+    let cold = OptionsFixture::value(&OptionsFixture::run(&OptionsFixture::with_parts(THERMOMETER), OptionsFixture::op(&["a"])).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
     // The operating point stops Newton when the update is within `reltol * |x| + vntol` (the
     // solver's convergence criterion, `Tolerances::has_converged`), so a reading is exact only
     // to that bound: with `--reltol 1e-9 --vntol 1e-12` the same run reads 300.15 exactly. Each
@@ -108,8 +146,8 @@ fn temp_is_celsius_read_by_temperature() {
     assert!((cold - default).abs() <= bound(default), "no `temp` leaves the default {default} K: {cold}");
     assert!((hot - cold - (348.15 - default)).abs() <= bound(348.15) + bound(default), "the two runs differ by the 75 C step: {hot} against {cold}");
     // tightened, the same run converges to the exact value: the bound above is the criterion, not a defect
-    let tight = Overrides { temp: Some(75.0), reltol: Some(1e-9), vntol: Some(1e-12), ..op(&["a"]) };
-    let exact = value(&run(&with_parts(THERMOMETER), tight).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
+    let tight = Overrides { temp: Some(75.0), reltol: Some(1e-9), vntol: Some(1e-12), ..OptionsFixture::op(&["a"]) };
+    let exact = OptionsFixture::value(&OptionsFixture::run(&OptionsFixture::with_parts(THERMOMETER), tight).unwrap_or_else(|f| panic!("{f}")).0, "Top.a");
     assert!((exact - 348.15).abs() < 1e-6, "{exact}");
 }
 
@@ -119,8 +157,8 @@ fn a_nodeset_seeds_the_operating_point_and_keeps_its_solution() {
     // Newton there and converges to 3, a seed near 1 to 1, and each answer is still a root of the
     // circuit's own equation (the seed moved the start, not the equation)
     let at = |seed: f64| {
-        let overrides = Overrides { nodeset: vec![("a".into(), seed)], ..op(&["a"]) };
-        value(&run(&with_parts(CUBIC), overrides).unwrap_or_else(|f| panic!("{f}")).0, "Top.a")
+        let overrides = Overrides { nodeset: vec![("a".into(), seed)], ..OptionsFixture::op(&["a"]) };
+        OptionsFixture::value(&OptionsFixture::run(&OptionsFixture::with_parts(CUBIC), overrides).unwrap_or_else(|f| panic!("{f}")).0, "Top.a")
     };
     let high = at(3.4);
     assert!((high - 3.0).abs() < 1e-6, "seeded at 3.4: {high}");
@@ -130,25 +168,16 @@ fn a_nodeset_seeds_the_operating_point_and_keeps_its_solution() {
         assert!(((root - 1.0) * (root - 2.0) * (root - 3.0)).abs() < 1e-5, "{root} is a root of the circuit");
     }
     // the full path names the same node as the relative one
-    let full = Overrides { nodeset: vec![("Top.a".into(), 3.4)], ..op(&["a"]) };
-    assert!((value(&run(&with_parts(CUBIC), full).unwrap_or_else(|f| panic!("{f}")).0, "Top.a") - 3.0).abs() < 1e-6);
+    let full = Overrides { nodeset: vec![("Top.a".into(), 3.4)], ..OptionsFixture::op(&["a"]) };
+    assert!((OptionsFixture::value(&OptionsFixture::run(&OptionsFixture::with_parts(CUBIC), full).unwrap_or_else(|f| panic!("{f}")).0, "Top.a") - 3.0).abs() < 1e-6);
 }
 
 #[test]
 fn a_nodeset_naming_nothing_is_e0801() {
     // HII-01 AC 6: an entry that names no node is `E0801` naming it, before any analysis
-    let overrides = Overrides { nodeset: vec![("nowhere".into(), 1.0)], ..op(&["a"]) };
-    let error = open(&with_parts(CUBIC), overrides).err().expect("the entry names nothing");
+    let overrides = Overrides { nodeset: vec![("nowhere".into(), 1.0)], ..OptionsFixture::op(&["a"]) };
+    let error = OptionsFixture::open(&OptionsFixture::with_parts(CUBIC), overrides).err().expect("the entry names nothing");
     assert!(matches!(&error, Failure::Host { code: "E0801", message } if message.contains("nowhere")), "{error:?}");
-}
-
-fn rust(overrides: Overrides) -> Overrides {
-    Overrides { backend: Some("rust".into()), ..overrides }
-}
-
-/// `Top`: the analog part, and the placements of a digital module `m`.
-fn mixed(modules: &str, placements: &str) -> String {
-    format!("{PARTS}\n{modules}\nmodule Top() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n{placements}}}\n")
 }
 
 #[test]
@@ -156,9 +185,9 @@ fn resolution_rounds_an_at_to_its_tick() {
     // HII-02 AC 5: with `resolution = 1u` a timer written at 1.4 us fires on the tick, 1 us; with
     // the default tick it fires at 1.4 us
     let m = "module M() {}\ndigital for M { on at(1.4u) { emit!(\"s\", k = 1); } }\n";
-    let design = mixed(m, "    let m = M();\n");
+    let design = OptionsFixture::mixed(m, "    let m = M();\n");
     let time_of = |overrides: Overrides| {
-        let (_, records) = run(&design, Overrides { top: Some("Top".into()), max_step: Some(1e-7), ..rust(overrides) }).unwrap_or_else(|f| panic!("{f}"));
+        let (_, records) = OptionsFixture::run(&design, Overrides { top: Some("Top".into()), max_step: Some(1e-7), ..OptionsFixture::rust(overrides) }).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!(records.len(), 1, "{records:?}");
         records[0].time
     };
@@ -178,10 +207,10 @@ fn maxrounds_bounds_the_operating_point() {
     // HII-02 AC 6: with the default bound the point settles with the converter at 1 V; with
     // `maxrounds = 1` the second round it needs is past the bound and the run fails with E0506
     // naming 1
-    let design = with_parts(TWO_ROUNDS);
-    let (table, _) = run(&design, rust(op(&["a"]))).unwrap_or_else(|f| panic!("{f}"));
-    assert!((value(&table, "Top.a") - 1.0).abs() < 2e-3, "{table:?}");
-    let error = run(&design, rust(Overrides { maxrounds: Some(1), ..op(&["a"]) })).err().expect("one round is not enough");
+    let design = OptionsFixture::with_parts(TWO_ROUNDS);
+    let (table, _) = OptionsFixture::run(&design, OptionsFixture::rust(OptionsFixture::op(&["a"]))).unwrap_or_else(|f| panic!("{f}"));
+    assert!((OptionsFixture::value(&table, "Top.a") - 1.0).abs() < 2e-3, "{table:?}");
+    let error = OptionsFixture::run(&design, OptionsFixture::rust(Overrides { maxrounds: Some(1), ..OptionsFixture::op(&["a"]) })).err().expect("one round is not enough");
     let text = error.to_string();
     assert!(text.contains("E0506"), "{text}");
     assert!(text.contains("1 rounds"), "{text}");
@@ -194,11 +223,11 @@ const TOGGLER: &str = "module Flip(out q: Bit = false) {}\ndigital for Flip {\n 
 fn maxmicro_bounds_an_instant() {
     // HII-02 AC 7: with `maxmicro = 5` the zero-delay toggle fails naming 5; with no key it
     // fails naming the engine's 1000
-    let design = mixed(TOGGLER, "    signal q: Bit;\n    let f = Flip(q);\n");
-    let bounded = run(&design, rust(Overrides { maxmicro: Some(5), ..op(&["a"]) })).err().expect("5 microsteps are not enough");
+    let design = OptionsFixture::mixed(TOGGLER, "    signal q: Bit;\n    let f = Flip(q);\n");
+    let bounded = OptionsFixture::run(&design, OptionsFixture::rust(Overrides { maxmicro: Some(5), ..OptionsFixture::op(&["a"]) })).err().expect("5 microsteps are not enough");
     let text = bounded.to_string();
     assert!(text.contains("E0501") && text.contains("5 microsteps"), "{text}");
-    let default = run(&design, rust(op(&["a"]))).err().expect("an instant that never goes quiet fails");
+    let default = OptionsFixture::run(&design, OptionsFixture::rust(OptionsFixture::op(&["a"]))).err().expect("an instant that never goes quiet fails");
     assert!(default.to_string().contains("1000 microsteps"), "{default}");
 }
 
@@ -219,23 +248,13 @@ fn a_smaller_trtol_takes_more_steps() {
     assert!(tight > default, "trtol = 0.001 took {tight} steps, the default {default}");
 }
 
-/// The transient of `tran_rc` to 10 us at `trtol = 0.001` (3241 steps, `a_smaller_trtol_takes_more_steps`)
-/// with the budget `max_steps`.
-fn tran_rc_with_budget(max_steps: Option<u32>) -> Result<Table, Failure> {
-    let twin = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/tran_rc.msl");
-    let overrides = Overrides { analysis: Some("transient".into()), stop: Some(10e-6), trtol: Some(0.001), max_steps, backend: Some("interp".into()), top: Some("TranRc".into()), ..Overrides::default() };
-    let project = Project::file(&twin).unwrap_or_else(|f| panic!("{f}"));
-    let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    Session::open(&project, &spec, &CompileCache::shared().settings())?.run(Rc::new(RefCell::new(Kept::default())))
-}
-
 #[test]
 fn a_run_past_max_steps_fails_and_succeeds_when_raised() {
     // HII-02 AC 9: a transient that needs about 3300 attempts fails at a budget of 1000 with the
     // solver's own message naming it, and succeeds with the budget raised to 100000
-    let error = tran_rc_with_budget(Some(1000)).err().expect("1000 attempts are not enough");
+    let error = OptionsFixture::tran_rc_with_budget(Some(1000)).err().expect("1000 attempts are not enough");
     assert!(error.to_string().contains("exceeded the 1000 step budget"), "{error}");
-    let table = tran_rc_with_budget(Some(100_000)).unwrap_or_else(|f| panic!("{f}"));
+    let table = OptionsFixture::tran_rc_with_budget(Some(100_000)).unwrap_or_else(|f| panic!("{f}"));
     assert!(table.rows.len() > 1000, "{} rows", table.rows.len());
 }
 
@@ -243,7 +262,7 @@ fn a_run_past_max_steps_fails_and_succeeds_when_raised() {
 fn max_steps_defaults_to_two_million() {
     // HII-02 AC 9: with no `max_steps` the run gives the solver no budget of its own, and the
     // solver's default is 2,000,000 (the value before this feature)
-    let session = open(&with_parts(THERMOMETER), op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
+    let session = OptionsFixture::open(&OptionsFixture::with_parts(THERMOMETER), OptionsFixture::op(&["a"])).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(session.spec().options.max_steps, None);
     assert_eq!(piperine_solver::prelude::TransientAnalysisOptions::new(1.0, 1e-3).max_steps, 2_000_000);
 }
@@ -311,8 +330,8 @@ struct LongRun {
 impl LongRun {
     /// The instants of the `stream` records of the run.
     fn instants(&self, stream: &str) -> Vec<f64> {
-        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64 + self.past), ..rust(Overrides::default()) };
-        let (_, records) = run(SLOW_DESIGN, overrides).unwrap_or_else(|f| panic!("{f}"));
+        let overrides = Overrides { top: Some("Top".into()), max_step: Some(0.25), analysis: Some("transient".into()), stop: Some(self.seconds as f64 + self.past), ..OptionsFixture::rust(Overrides::default()) };
+        let (_, records) = OptionsFixture::run(SLOW_DESIGN, overrides).unwrap_or_else(|f| panic!("{f}"));
         records.iter().filter(|r| r.stream == stream).map(|r| r.time).collect()
     }
 
@@ -359,27 +378,13 @@ fn an_hour_long_transient_runs_at_the_default_resolution() {
     LongRun { seconds: 3600, past: 1e-6 }.assert_events_on_time(1e-12, crossing);
 }
 
-/// The rule the digital engine of the session of `THERMOMETER` was bound with, the host having set
-/// `rule` on the request (`None` leaves the solver's own).
-fn bound_rule(rule: Option<TimePointRule>) -> TimePointRule {
-    let dir = tempfile::tempdir().expect("tmp");
-    let file = dir.path().join("bench.msl");
-    std::fs::write(&file, with_parts(THERMOMETER)).expect("write");
-    let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { top: Some("Top".into()), ..op(&["a"]) };
-    let mut spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    spec.options.time_point_rule = rule;
-    let mut session = Session::open(&project, &spec, &CompileCache::shared().settings()).unwrap_or_else(|f| panic!("{f}"));
-    session.circuit().expect("a circuit").bound().digital.time_point_rule()
-}
-
 #[test]
 fn the_time_point_rule_is_a_host_option_with_no_run_key() {
     // TP-06 AC 3 and D8: a session lands by the observable rule unless the host sets the reference
     // mode on its request; a run table cannot name it (no key), and `every_run_key_has_its_flag` in
     // the CLI pins that no flag does either
-    assert_eq!(bound_rule(None), TimePointRule::Observable);
-    assert_eq!(bound_rule(Some(TimePointRule::Declared)), TimePointRule::Declared);
+    assert_eq!(OptionsFixture::bound_rule(None), TimePointRule::Observable);
+    assert_eq!(OptionsFixture::bound_rule(Some(TimePointRule::Declared)), TimePointRule::Declared);
     let faults = Manifest::run("time_point_rule = \"declared\"\n").expect_err("no such key");
     assert!(format!("{faults:?}").contains("unknown key `time_point_rule`"), "{faults:?}");
 }

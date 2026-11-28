@@ -1,5 +1,5 @@
 //! A counting allocator for the tests that bound a run's memory (feature `long-run`, LR-04,
-//! LR-12). The target that uses it installs one `#[global_allocator]` static of `Counting` and
+//! LR-12). The target that uses it installs one `#[global_allocator]` static of `HeapCounter` and
 //! calls `begin` before the run it measures and `peak_since` after it.
 
 use std::alloc::{GlobalAlloc, Layout, System};
@@ -7,15 +7,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 /// `System` that counts the bytes live and the most that were live since `begin`.
-pub struct Counting {
+pub struct HeapCounter {
     live: AtomicUsize,
     peak: AtomicUsize,
     turn: Mutex<()>,
 }
 
-impl Counting {
-    pub const fn new() -> Counting {
-        Counting { live: AtomicUsize::new(0), peak: AtomicUsize::new(0), turn: Mutex::new(()) }
+impl HeapCounter {
+    /// A counter at zero.
+    pub const fn new() -> HeapCounter {
+        HeapCounter { live: AtomicUsize::new(0), peak: AtomicUsize::new(0), turn: Mutex::new(()) }
     }
 
     /// The measuring turn: the allocator counts the whole process, so a test that measures holds the turn for its whole
@@ -36,6 +37,7 @@ impl Counting {
         self.peak.load(Ordering::SeqCst).saturating_sub(base)
     }
 
+    /// Counts `by` more live bytes and raises the peak.
     fn grew(&self, by: usize) {
         let now = self.live.fetch_add(by, Ordering::SeqCst) + by;
         self.peak.fetch_max(now, Ordering::SeqCst);
@@ -43,7 +45,7 @@ impl Counting {
 }
 
 // SAFETY: every call forwards to `System`; the counters only observe the sizes.
-unsafe impl GlobalAlloc for Counting {
+unsafe impl GlobalAlloc for HeapCounter {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         let ptr = unsafe { System.alloc(layout) };
         if !ptr.is_null() {

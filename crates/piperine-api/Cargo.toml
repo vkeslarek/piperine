@@ -19,6 +19,7 @@ toml = "1.1.2"
 [dev-dependencies]
 ndarray.workspace = true
 piperine-parity = { path = "../piperine-parity" }
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }
 tempfile.workspace = true
 num-complex.workspace = true
 serde_json = "1"

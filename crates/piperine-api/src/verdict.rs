@@ -112,40 +112,60 @@ impl RecordSink for Verdict {
 mod tests {
     use super::*;
 
-    fn check(name: &str, pass: Field) -> Record {
-        Record {
-            time: 1e-6,
-            instance: "Top.mon".into(),
-            stream: "checks".into(),
-            fields: vec![("kind".into(), Field::Text("require".into())), ("name".into(), Field::Text(name.into())), ("pass".into(), pass)],
-            iteration: None,
-            analysis: None,
-        }
-    }
+    /// Associated test helpers of `verdict`, grouped on one fixture type.
+    struct VerdictFixture;
 
-    fn other(stream: &str) -> Record {
-        Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))], iteration: None, analysis: None }
+    impl VerdictFixture {
+        fn check(name: &str, pass: Field) -> Record {
+            Record {
+                time: 1e-6,
+                instance: "Top.mon".into(),
+                stream: "checks".into(),
+                fields: vec![("kind".into(), Field::Text("require".into())), ("name".into(), Field::Text(name.into())), ("pass".into(), pass)],
+                iteration: None,
+                analysis: None,
+            }
+        }
+
+        fn other(stream: &str) -> Record {
+            Record { time: 0.0, instance: "Top.mon".into(), stream: stream.into(), fields: vec![("pass".into(), Field::Bool(false))], iteration: None, analysis: None }
+        }
+
+        fn sim(fields: Vec<(String, Field)>) -> Record {
+            Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields, iteration: None, analysis: None }
+        }
+
+        fn target(name: &str, margin: Field) -> Record {
+            Record {
+                time: 1e-6,
+                instance: "Top.mon".into(),
+                stream: "checks".into(),
+                fields: vec![("kind".into(), Field::Text("target".into())), ("name".into(), Field::Text(name.into())), ("margin".into(), margin)],
+                iteration: None,
+                analysis: None,
+            }
+        }
     }
 
     #[test]
     fn only_a_false_pass_fails_a_check() {
         // CLI-16 AC 1: every check record counts, the passing ones included; a record of
         // another stream is no check, even when it has a `pass` field that is false
-        let records = [check("a", Field::Bool(true)), other("trip"), check("b", Field::Bool(true)), other("sim")];
+        let records = [VerdictFixture::check("a", Field::Bool(true)), VerdictFixture::other("trip"), VerdictFixture::check("b", Field::Bool(true)), VerdictFixture::other("sim")];
         let verdict = Verdict::judge(&records);
         assert!(verdict.passed());
         assert_eq!(verdict.checks(), 2);
         assert!(verdict.failed().is_empty());
         // a run with no check at all passes with zero
-        let none = Verdict::judge(&[other("trip")]);
+        let none = Verdict::judge(&[VerdictFixture::other("trip")]);
         assert!(none.passed() && none.checks() == 0);
         // a `target` has no `pass`: it counts and does not fail
-        let target = Record { fields: vec![("kind".into(), Field::Text("target".into())), ("margin".into(), Field::Real(0.1))], ..check("m", Field::Bool(true)) };
+        let target = Record { fields: vec![("kind".into(), Field::Text("target".into())), ("margin".into(), Field::Real(0.1))], ..VerdictFixture::check("m", Field::Bool(true)) };
         let verdict = Verdict::judge(&[target]);
         assert!(verdict.passed() && verdict.checks() == 1);
         // a false `pass` fails, and the failing record is kept as written, in order
-        let (first, second) = (check("c", Field::Bool(false)), check("d", Field::Bool(false)));
-        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), first.clone(), check("b", Field::Bool(true)), second.clone()]);
+        let (first, second) = (VerdictFixture::check("c", Field::Bool(false)), VerdictFixture::check("d", Field::Bool(false)));
+        let verdict = Verdict::judge(&[VerdictFixture::check("a", Field::Bool(true)), first.clone(), VerdictFixture::check("b", Field::Bool(true)), second.clone()]);
         assert!(!verdict.passed());
         assert_eq!(verdict.checks(), 4);
         assert_eq!(verdict.failed(), [first, second]);
@@ -155,11 +175,11 @@ mod tests {
     fn a_verdict_counts_checks_and_keeps_only_the_failed_as_they_arrive() {
         // LR-16: the sink counts every check, keeps the failed in order
         let mut verdict = Verdict::new();
-        let bad = check("b", Field::Bool(false));
-        verdict.record(&check("a", Field::Bool(true)));
+        let bad = VerdictFixture::check("b", Field::Bool(false));
+        verdict.record(&VerdictFixture::check("a", Field::Bool(true)));
         assert_eq!((verdict.checks(), verdict.failed().len()), (1, 0));
         verdict.record(&bad);
-        verdict.record(&check("c", Field::Bool(true)));
+        verdict.record(&VerdictFixture::check("c", Field::Bool(true)));
         assert_eq!(verdict.checks(), 3);
         assert!(!verdict.passed());
         assert_eq!(verdict.failed(), [bad]);
@@ -169,24 +189,20 @@ mod tests {
     fn a_record_of_another_stream_never_decides() {
         // LR-16: a record of another stream is neither counted nor kept, whatever its `pass`
         let mut verdict = Verdict::new();
-        verdict.record(&other("trip"));
-        verdict.record(&other("sim"));
+        verdict.record(&VerdictFixture::other("trip"));
+        verdict.record(&VerdictFixture::other("sim"));
         assert!(verdict.passed());
         assert_eq!(verdict.checks(), 0);
         assert!(verdict.failed().is_empty());
-    }
-
-    fn sim(fields: Vec<(String, Field)>) -> Record {
-        Record { time: 2e-9, instance: "Top.m".into(), stream: "sim".into(), fields, iteration: None, analysis: None }
     }
 
     #[test]
     fn a_fatal_record_fails_the_verdict_with_its_message() {
         // FIX-02 AC 2 and 3: a `sim` record whose `failed` is true fails the run and
         // `fatal()` returns it with its `msg`; the first one is kept
-        let boom = sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
-        let later = sim(vec![("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("second".into()))]);
-        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), boom.clone(), later]);
+        let boom = VerdictFixture::sim(vec![("finish".into(), Field::Bool(true)), ("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("boom".into()))]);
+        let later = VerdictFixture::sim(vec![("failed".into(), Field::Bool(true)), ("msg".into(), Field::Text("second".into()))]);
+        let verdict = Verdict::judge(&[VerdictFixture::check("a", Field::Bool(true)), boom.clone(), later]);
         assert!(!verdict.passed());
         assert_eq!(verdict.fatal(), Some(&boom));
         assert_eq!(verdict.checks(), 1);
@@ -196,39 +212,28 @@ mod tests {
     #[test]
     fn a_finish_record_does_not_fail_the_verdict() {
         // FIX-02 AC 4: `finish()` writes `sim` with `finish = true` and no `failed`
-        let finish = sim(vec![("finish".into(), Field::Bool(true))]);
-        let verdict = Verdict::judge(&[check("a", Field::Bool(true)), finish]);
+        let finish = VerdictFixture::sim(vec![("finish".into(), Field::Bool(true))]);
+        let verdict = Verdict::judge(&[VerdictFixture::check("a", Field::Bool(true)), finish]);
         assert!(verdict.passed());
         assert_eq!(verdict.fatal(), None);
         // a `failed` that is false is no fatal either
-        assert!(Verdict::judge(&[sim(vec![("failed".into(), Field::Bool(false))])]).passed());
-    }
-
-    fn target(name: &str, margin: Field) -> Record {
-        Record {
-            time: 1e-6,
-            instance: "Top.mon".into(),
-            stream: "checks".into(),
-            fields: vec![("kind".into(), Field::Text("target".into())), ("name".into(), Field::Text(name.into())), ("margin".into(), margin)],
-            iteration: None,
-            analysis: None,
-        }
+        assert!(Verdict::judge(&[VerdictFixture::sim(vec![("failed".into(), Field::Bool(false))])]).passed());
     }
 
     #[test]
     fn the_last_record_of_each_target_is_kept_in_first_seen_order() {
         // HII-16 AC 1: the last margin of each name, in the order of each name's first record
-        let records = [target("gain", Field::Real(0.5)), target("power", Field::Real(2.0)), target("gain", Field::Real(0.25)), target("power", Field::Real(1.0)), target("gain", Field::Real(0.125))];
+        let records = [VerdictFixture::target("gain", Field::Real(0.5)), VerdictFixture::target("power", Field::Real(2.0)), VerdictFixture::target("gain", Field::Real(0.25)), VerdictFixture::target("power", Field::Real(1.0)), VerdictFixture::target("gain", Field::Real(0.125))];
         let verdict = Verdict::judge(&records);
         assert_eq!(verdict.targets(), [("gain".to_string(), 0.125), ("power".to_string(), 1.0)]);
         // a margin that is no real shows as NaN
-        assert!(Verdict::judge(&[target("x", Field::Bool(true))]).targets()[0].1.is_nan());
+        assert!(Verdict::judge(&[VerdictFixture::target("x", Field::Bool(true))]).targets()[0].1.is_nan());
     }
 
     #[test]
     fn a_negative_margin_does_not_fail() {
         // HII-16 AC 3 (decision X3): a target never fails a run, whatever its sign
-        let verdict = Verdict::judge(&[target("gain", Field::Real(-3.0))]);
+        let verdict = Verdict::judge(&[VerdictFixture::target("gain", Field::Real(-3.0))]);
         assert!(verdict.passed());
         assert_eq!(verdict.targets(), [("gain".to_string(), -3.0)]);
         assert_eq!(verdict.checks(), 1);
