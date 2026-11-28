@@ -11,11 +11,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use piperine_parity::compile_cache::CompileCache;
 
-/// The binary cargo built for this target.
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
 /// `examples/rc`.
 fn rc() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
@@ -26,28 +21,23 @@ fn fixture(name: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects").join(name)
 }
 
-/// One cache directory for every child that does not ask for its own.
-fn shared_cache() -> &'static Path {
-    CompileCache::shared().path()
-}
-
 /// `piperine <args>` in `dir`, on the cache `cache`, with a compiler path `rustc` when given.
 fn piperine_with(dir: &Path, cache: &Path, rustc: Option<&str>, args: &[&str]) -> Output {
-    let mut command = Command::new(binary());
+    let mut command = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")));
     command.args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").env_remove("PIPERINE_RUSTC");
     if let Some(rustc) = rustc {
         command.env("PIPERINE_RUSTC", rustc);
     }
-    command.output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    command.output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 fn piperine_in(dir: &Path, args: &[&str]) -> Output {
-    piperine_with(dir, shared_cache(), None, args)
+    piperine_with(dir, CompileCache::shared().path(), None, args)
 }
 
 /// `piperine <args>` in `dir` with `PIPERINE_BACKEND` set to `backend`.
 fn piperine_on(dir: &Path, backend: &str, args: &[&str]) -> Output {
-    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", shared_cache()).env("PIPERINE_BACKEND", backend).env_remove("PIPERINE_RUSTC").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env("PIPERINE_BACKEND", backend).env_remove("PIPERINE_RUSTC").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -602,7 +592,7 @@ fn clean_cache_refuses_a_directory_it_does_not_own() {
     refused(&piperine_with(&dir, tmp.path(), None, &["clean", "--cache"]), "a parent of the project");
     refused(&piperine_with(&dir.join("src"), &dir.join("src"), None, &["clean", "--cache"]), "the working directory");
     // the cache is the home directory
-    let home = Command::new(binary()).args(["clean", "--cache"]).current_dir(&dir).env("HOME", &cache).env("PIPERINE_CACHE_DIR", &cache).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let home = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["clean", "--cache"]).current_dir(&dir).env("HOME", &cache).env("PIPERINE_CACHE_DIR", &cache).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     refused(&home, "the home directory");
     // a directory with no `rust/` of the transpiler is no cache of compiled designs
     let foreign = tmp.path().join("foreign");

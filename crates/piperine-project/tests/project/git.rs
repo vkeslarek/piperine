@@ -3,9 +3,7 @@
 //! git cannot give, and a git package that resolves its own `path` dependencies. Every
 //! repository is a local one in a temporary directory; no test contacts the network.
 
-#[path = "support/mod.rs"]
-#[allow(dead_code)]
-mod support;
+use crate::support;
 
 use std::fs;
 

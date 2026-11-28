@@ -32,8 +32,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run senv**: `cargo test -p piperine-parity --test source_environment`
 **Run records**: `cargo test -p piperine-api --test records records::`
 **Run apilib**: `cargo test -p piperine-api --lib`
-**Run clirun**: `cargo test -p piperine-cli --test run`
-**Run clicmd**: `cargo test -p piperine-cli --test commands`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
+**Run clicmd**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

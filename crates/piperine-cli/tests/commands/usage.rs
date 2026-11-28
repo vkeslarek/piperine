@@ -5,13 +5,8 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-/// The binary cargo built for this target.
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
 fn piperine(args: &[&str]) -> Output {
-    Command::new(binary()).args(args).output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -21,7 +16,7 @@ fn text(bytes: &[u8]) -> String {
 #[test]
 fn the_binary_is_named_piperine() {
     // CLI-01 AC 2: the binary target of `piperine-cli` is `piperine`
-    let path = binary();
+    let path = PathBuf::from(env!("CARGO_BIN_EXE_piperine"));
     assert_eq!(path.file_stem().and_then(|s| s.to_str()), Some("piperine"), "{}", path.display());
     assert!(path.is_file(), "{} is not built", path.display());
 }

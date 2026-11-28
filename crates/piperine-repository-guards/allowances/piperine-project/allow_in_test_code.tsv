@@ -1,4 +1,0 @@
-crates/piperine-project/tests/git.rs::allow(dead_code)	1
-crates/piperine-project/tests/lock.rs::allow(dead_code)	1
-crates/piperine-project/tests/paths.rs::allow(dead_code)	1
-crates/piperine-project/tests/project.rs::allow(dead_code)	1

@@ -18,7 +18,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run parityproject**: `cargo test -p piperine-parity --test project`
 **Run apiproject**: `cargo test -p piperine-api --test session project::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
-**Run clicommands**: `cargo test -p piperine-cli --test commands`
+**Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`

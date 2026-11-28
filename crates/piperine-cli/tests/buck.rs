@@ -16,14 +16,9 @@ fn buck() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck")
 }
 
-/// One cache directory for both runs of this target.
-fn cache() -> &'static Path {
-    CompileCache::shared().path()
-}
-
 /// `piperine run <name>` in `examples/buck`, its standard output; the run must have completed.
 fn run(name: &str) -> String {
-    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).args(["run", name]).current_dir(buck()).env("PIPERINE_CACHE_DIR", cache()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).args(["run", name]).current_dir(buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     assert_eq!(out.status.code(), Some(0), "{name}: stderr:\n{}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8(out.stdout).expect("text")
 }
@@ -115,7 +110,7 @@ fn startup_prints_no_failed_check() {
         .args(["run", "startup", "--records"])
         .arg(&file)
         .current_dir(buck())
-        .env("PIPERINE_CACHE_DIR", cache())
+        .env("PIPERINE_CACHE_DIR", CompileCache::shared().path())
         .env_remove("PIPERINE_BACKEND")
         .output()
         .expect("run piperine");
@@ -151,7 +146,7 @@ fn idle_keeps_the_mode_off() {
 fn piperine_test_passes_on_the_buck() {
     // CLI-08 AC 5: `piperine test` in `examples/buck` exits 0, both runs judged by the DPWM's
     // monitor (the passing checks are hidden on a terminal, but they are counted)
-    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).arg("test").current_dir(buck()).env("PIPERINE_CACHE_DIR", cache()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
+    let out: Output = Command::new(env!("CARGO_BIN_EXE_piperine")).arg("test").current_dir(buck()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     let stdout = String::from_utf8(out.stdout).expect("text");
     assert_eq!(out.status.code(), Some(0), "stdout:\n{stdout}\nstderr:\n{}", String::from_utf8_lossy(&out.stderr));
     let lines: Vec<&str> = stdout.lines().collect();

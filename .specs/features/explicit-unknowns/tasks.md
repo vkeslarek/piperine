@@ -27,13 +27,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run relax**: `cargo test -p piperine-digital-solver --test engine relax::`
 **Run records**: `cargo test -p piperine-api --test records records::`
 **Run session**: `cargo test -p piperine-api --test session session::`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run buckcli**: `cargo test -p piperine-cli --test buck`
 **Run integrated**: `cargo test -p piperine --test integrated`
-**Run cliintegrated**: `cargo test -p piperine-cli --test integrated`
+**Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
 **Run ops**: `cargo test -p piperine-lang --test types_operators`
 **Run logic**: `cargo test -p piperine-parity --test source_logic`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

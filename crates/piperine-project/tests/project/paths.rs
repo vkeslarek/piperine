@@ -2,9 +2,7 @@
 //! each path relative to the manifest that names it, the graph that mirrors the manifests, a
 //! shared dependency as one crate, and the located package that is not there (`E0172`, `E0175`).
 
-#[path = "support/mod.rs"]
-#[allow(dead_code)]
-mod support;
+use crate::support;
 
 use piperine_project::{Manifest, Options, PackageError, PackageGraph, Requirement, Version, resolve};
 use support::{package, workspace};

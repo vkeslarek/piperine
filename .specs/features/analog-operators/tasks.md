@@ -43,8 +43,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apisession**: `cargo test -p piperine-api --test params session_parameters::`
 **Run apinatures**: `cargo test -p piperine-api --test session natures::`
 **Run apitraces**: `cargo test -p piperine-api --test records traces::`
-**Run clianalyses**: `cargo test -p piperine-cli --test analyses`
-**Run clioptions**: `cargo test -p piperine-cli --test options`
+**Run clianalyses**: `cargo test -p piperine-cli --test commands analyses::`
+**Run clioptions**: `cargo test -p piperine-cli --test commands options::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run inventory**: `cargo test -p piperine --test book_inventory`

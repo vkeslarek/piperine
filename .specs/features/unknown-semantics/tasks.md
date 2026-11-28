@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run planshape**: `cargo test -p piperine-plan --test shape digital_shape::`
 **Run records**: `cargo test -p piperine-api --test records records::`
 **Run verdict**: `cargo test -p piperine-api --lib verdict`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine-cli --test book`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`

@@ -2,14 +2,8 @@
 //! `num-bigint`) for every pair of widths, and against Rust's own `as` for the pairs Rust has:
 //! `f32` and `f64` to each other, and `u64`/`i64` with `f32`/`f64` (CV-30, CV-31, CV-32).
 
-#[path = "support/exact.rs"]
-mod exact;
-#[path = "support/exact_nearest.rs"]
-mod exact_nearest;
-#[path = "support/exact_values.rs"]
-mod exact_values;
-#[path = "support/random.rs"]
-mod random;
+use crate::exact;
+use crate::random;
 
 use exact::ExactRational;
 use num_bigint::{BigInt, BigUint, Sign};

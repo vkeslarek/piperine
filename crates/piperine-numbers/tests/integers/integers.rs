@@ -1,8 +1,7 @@
 //! `Limbs` and the wide integers against exact oracles: `num-bigint` for any width, `u128` and
 //! `i128` wrapping arithmetic for widths up to 128 bits (CV-32; design-d.md "Tech Decisions").
 
-#[path = "support/random.rs"]
-mod random;
+use crate::random;
 
 use num_bigint::BigUint;
 use piperine_numbers::limbs::{Limbs, ToLimbs};

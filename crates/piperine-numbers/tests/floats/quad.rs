@@ -2,24 +2,8 @@
 //! `sqrt` rounded once, and every exact H.2 method, on special values, subnormals, ties,
 //! overflow, cancellation and deterministic random operands (CV-31; IEEE 754-2019 clause 5, H.2).
 
-#[path = "support/exact.rs"]
-mod exact;
-#[path = "support/exact_nearest.rs"]
-mod exact_nearest;
-#[path = "support/exact_algebra.rs"]
-mod exact_algebra;
-#[path = "support/exact_integers.rs"]
-mod exact_integers;
-#[path = "support/exact_parts.rs"]
-mod exact_parts;
-#[path = "support/exact_root.rs"]
-mod exact_root;
-#[path = "support/exact_values.rs"]
-mod exact_values;
-#[path = "support/oracle.rs"]
-mod oracle;
-#[path = "support/random.rs"]
-mod random;
+use crate::oracle;
+use crate::random;
 
 use oracle::ExactOracle;
 use piperine_numbers::format::BinaryFormat;

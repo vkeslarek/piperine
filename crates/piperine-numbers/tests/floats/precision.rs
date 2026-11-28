@@ -2,16 +2,8 @@
 //! against exact rational arithmetic (`ExactRational` over `num-bigint`) and committed
 //! published digits (CV-31). Every bound is checked exactly: no tolerance.
 
-#[path = "support/exact.rs"]
-mod exact;
-#[path = "support/exact_algebra.rs"]
-mod exact_algebra;
-#[path = "support/exact_integers.rs"]
-mod exact_integers;
-#[path = "support/exact_text.rs"]
-mod exact_text;
-#[path = "support/random.rs"]
-mod random;
+use crate::exact;
+use crate::random;
 
 use exact::ExactRational;
 use num_bigint::{BigInt, BigUint};

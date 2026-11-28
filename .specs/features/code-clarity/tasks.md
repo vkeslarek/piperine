@@ -1863,8 +1863,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 6 default targets across the three crates; every test keeps its name; `binary` and `shared_cache` exist once
-- [ ] Plans lowered; Gate check passes: Ledger
+- [x] 6 default targets across the three crates (cli 3: `commands`, `book`, `twins`; numbers 2; project 1); every test keeps its name; `binary` and `shared_cache` exist no more: a call is `PathBuf::from(env!("CARGO_BIN_EXE_piperine"))` or `CompileCache::shared().path()` (T66's one cache), so no copy of either is left to keep once
+- [x] Plans lowered; Gate check passes: Ledger
 
 **Tests**: integration
 **Gate**: ledger

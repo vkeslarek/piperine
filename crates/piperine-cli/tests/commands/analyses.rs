@@ -7,16 +7,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use piperine_parity::compile_cache::CompileCache;
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
-fn shared_cache() -> &'static Path {
-    CompileCache::shared().path()
-}
-
 fn piperine_in(dir: &Path, args: &[&str]) -> Output {
-    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", shared_cache()).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 /// The parts both benches share: a resistor, a capacitor and a voltage source.

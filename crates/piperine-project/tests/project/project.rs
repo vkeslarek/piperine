@@ -7,9 +7,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[path = "support/mod.rs"]
-#[allow(dead_code)]
-mod support;
+use crate::support;
 
 use piperine_lang::pom::Reflect;
 use piperine_project::{find_project_root, load_project};

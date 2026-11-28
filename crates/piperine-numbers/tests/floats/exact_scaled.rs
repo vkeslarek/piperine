@@ -1,8 +1,8 @@
 //! Views of `ExactRational` for the decimal text tests: the value scaled to an integer with a
-//! sticky bit, the value of a pattern, the zero test and a decimal quotient.
+//! sticky bit, the value of a pattern and a decimal quotient.
 
 use super::exact::ExactRational;
-use num_bigint::{BigUint, Sign};
+use num_bigint::BigUint;
 use piperine_numbers::format::BinaryFormat;
 
 impl ExactRational {
@@ -26,11 +26,6 @@ impl ExactRational {
         let negative = pattern >> (format.bits - 1) == 1;
         let (significand, exponent) = if field == 0 { (fraction, format.minimum_exponent() as i64 - fraction_bits as i64) } else { (fraction | 1u128 << fraction_bits, field as i64 - format.maximum_exponent as i64 - fraction_bits as i64) };
         Some(Self::dyadic(negative, &BigUint::from(significand), exponent))
-    }
-
-    /// Whether the value is zero.
-    pub fn is_zero(&self) -> bool {
-        self.numerator.sign() == Sign::NoSign
     }
 
     /// `floor(|self| / 10^power)` (a negative power multiplies).

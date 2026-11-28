@@ -2,16 +2,8 @@
 //! over `num-bigint`), and for binary32 and binary64 also against Rust's own `f32`/`f64` parsing
 //! (CV-30, CV-31; IEEE 754-2019 sections 4.3.1 and 7.4).
 
-#[path = "support/exact.rs"]
-mod exact;
-#[path = "support/exact_nearest.rs"]
-mod exact_nearest;
-#[path = "support/exact_scaled.rs"]
-mod exact_scaled;
-#[path = "support/exact_text.rs"]
-mod exact_text;
-#[path = "support/random.rs"]
-mod random;
+use crate::exact;
+use crate::random;
 
 use num_bigint::BigUint;
 use num_bigint::BigInt;

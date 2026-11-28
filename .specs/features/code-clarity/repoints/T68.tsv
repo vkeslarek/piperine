@@ -1,0 +1,21 @@
+# T68: the cli targets `analyses`, `commands`, `info`, `integrated`, `options`, `run` and `usage` become `commands`; `book` and `twins` stay; the numbers targets become `integers` and `floats`; the project targets become `project`; one module per former target.
+move piperine-cli/commands piperine-cli/commands::commands
+move piperine-cli/analyses piperine-cli/commands::analyses
+move piperine-cli/info piperine-cli/commands::info
+move piperine-cli/integrated piperine-cli/commands::integrated
+move piperine-cli/options piperine-cli/commands::options
+move piperine-cli/run piperine-cli/commands::run
+move piperine-cli/usage piperine-cli/commands::usage
+move piperine-numbers/integers piperine-numbers/integers::integers
+move piperine-numbers/purity piperine-numbers/integers::purity
+move piperine-numbers/conversions piperine-numbers/floats::conversions
+move piperine-numbers/formats piperine-numbers/floats::formats
+move piperine-numbers/half piperine-numbers/floats::half
+move piperine-numbers/precision piperine-numbers/floats::precision
+move piperine-numbers/quad piperine-numbers/floats::quad
+move piperine-numbers/transcendental piperine-numbers/floats::transcendental
+move piperine-project/project piperine-project/project::project
+move piperine-project/git piperine-project/project::git
+move piperine-project/lock piperine-project/project::lock
+move piperine-project/manifest piperine-project/project::manifest
+move piperine-project/paths piperine-project/project::paths

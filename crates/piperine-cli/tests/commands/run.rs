@@ -11,28 +11,18 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use piperine_parity::compile_cache::CompileCache;
 
-/// The binary cargo built for this target.
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
 /// `examples/rc`, the project every test here runs.
 fn rc() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
 }
 
-/// One cache directory for every child of this target that does not ask for its own.
-fn shared_cache() -> &'static Path {
-    CompileCache::shared().path()
-}
-
 /// `piperine <args>` in `dir`, on the cache `cache`.
 fn piperine_in(dir: &Path, cache: &Path, args: &[&str]) -> Output {
-    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 fn piperine(args: &[&str]) -> Output {
-    piperine_in(&rc(), shared_cache(), args)
+    piperine_in(&rc(), CompileCache::shared().path(), args)
 }
 
 fn text(bytes: &[u8]) -> String {
@@ -166,7 +156,7 @@ fn a_first_compile_is_announced_on_stderr() {
     let store = cache.path().join("store");
     let run = |args: &[&str]| {
         let file = std::fs::File::create(&err).expect("a stderr file");
-        Command::new(binary()).args(args).current_dir(rc()).env("PIPERINE_CACHE_DIR", &store).env("PIPERINE_RUSTC", &wrapper).env_remove("PIPERINE_BACKEND").stderr(file).output().expect("run piperine")
+        Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(rc()).env("PIPERINE_CACHE_DIR", &store).env("PIPERINE_RUSTC", &wrapper).env_remove("PIPERINE_BACKEND").stderr(file).output().expect("run piperine")
     };
     let first = run(&["run", "op"]);
     let stderr = std::fs::read_to_string(&err).expect("stderr");
@@ -188,12 +178,12 @@ fn the_project_flag_uses_that_directory_and_never_searches() {
     // From an unrelated directory the run of `examples/rc` is found by `--project` alone...
     let elsewhere = tempfile::tempdir().expect("tmp");
     let project = rc();
-    let out = piperine_in(elsewhere.path(), shared_cache(), &["run", "op", "--project", &project.to_string_lossy()]);
+    let out = piperine_in(elsewhere.path(), CompileCache::shared().path(), &["run", "op", "--project", &project.to_string_lossy()]);
     assert_eq!(text(&out.stdout).lines().next(), Some("run op: op, top Step, backend rust"), "{}", text(&out.stderr));
     // ...and a directory of the package that holds no manifest is E0170 although `examples/rc`
     // is upward from it
     let benches = project.join("benches");
-    let out = piperine_in(&project, shared_cache(), &["run", "op", "--project", &benches.to_string_lossy()]);
+    let out = piperine_in(&project, CompileCache::shared().path(), &["run", "op", "--project", &benches.to_string_lossy()]);
     assert_eq!(out.status.code(), Some(1), "{}", text(&out.stderr));
     assert!(text(&out.stderr).contains("E0170"), "{}", text(&out.stderr));
     assert!(out.stdout.is_empty());
@@ -207,7 +197,7 @@ fn a_lone_file_run_is_named_by_its_stem() {
     // 7.5 for `Divider.mid`, the spec's independent test (`Divider.mid  7.500000e0`)
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
     let nowhere = tempfile::tempdir().expect("tmp");
-    let out = piperine_in(nowhere.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op"]);
+    let out = piperine_in(nowhere.path(), CompileCache::shared().path(), &["run", &file.to_string_lossy(), "--analysis", "op"]);
     let out = stdout_of(&out);
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines[0], "run divider: op, top Divider, backend rust", "{out}");
@@ -243,7 +233,7 @@ fn no_manifest_is_e0170_and_exit_1() {
     // Book claims held here: cli~4142e137, cli~39a2cb1d
     // CLI-02 AC 3: no manifest upward, and the command needs a project: E0170, exit 1
     let nowhere = tempfile::tempdir().expect("tmp");
-    let out = piperine_in(nowhere.path(), shared_cache(), &["run", "step"]);
+    let out = piperine_in(nowhere.path(), CompileCache::shared().path(), &["run", "step"]);
     let err = failed(&out, 1);
     assert!(err.contains("E0170"), "{err}");
     assert!(out.stdout.is_empty(), "{}", text(&out.stdout));
@@ -253,7 +243,7 @@ fn no_manifest_is_e0170_and_exit_1() {
 fn a_package_error_is_rendered_with_code_file_and_line() {
     // CLI-02 AC 6: the code, the file and the source line of a package error on standard error.
     // `missing_dependency/Piperine.toml` names a path no package is at, on its line 6.
-    let out = piperine_in(&fixture("missing_dependency"), shared_cache(), &["run", "main"]);
+    let out = piperine_in(&fixture("missing_dependency"), CompileCache::shared().path(), &["run", "main"]);
     let err = failed(&out, 1);
     assert!(err.contains("E0172"), "the code:\n{err}");
     assert!(err.contains("Piperine.toml:6:1"), "the file and the line:\n{err}");
@@ -266,12 +256,12 @@ fn no_name_with_no_run_or_several_lists_them_and_exits_2() {
     // Book claims held here: cli~07125ec2
     // CLI-03 AC 10: no name and several runs (`two_runs` has `first` and `second`), or no run at
     // all: exit 2, the run names listed on standard error
-    let several = piperine_in(&fixture("two_runs"), shared_cache(), &["run"]);
+    let several = piperine_in(&fixture("two_runs"), CompileCache::shared().path(), &["run"]);
     let err = failed(&several, 2);
     assert!(err.contains("first") && err.contains("second"), "{err}");
     assert!(several.stdout.is_empty());
     let none = written(&[("Piperine.toml", "[package]\nname = \"none\"\nversion = \"0.1.0\"\n"), ("src/lib.msl", "module Top() { signal a: Electrical; }\n")]);
-    let out = piperine_in(none.path(), shared_cache(), &["run"]);
+    let out = piperine_in(none.path(), CompileCache::shared().path(), &["run"]);
     let err = failed(&out, 2);
     assert!(err.contains("no run"), "{err}");
     assert!(out.stdout.is_empty());
@@ -280,7 +270,7 @@ fn no_name_with_no_run_or_several_lists_them_and_exits_2() {
 #[test]
 fn an_unknown_run_name_lists_the_runs_and_exits_2() {
     // CLI-03 AC 11
-    let out = piperine_in(&fixture("two_runs"), shared_cache(), &["run", "third"]);
+    let out = piperine_in(&fixture("two_runs"), CompileCache::shared().path(), &["run", "third"]);
     let err = failed(&out, 2);
     assert!(err.contains("third"), "it names what was asked:\n{err}");
     assert!(err.contains("first") && err.contains("second"), "it lists the runs:\n{err}");
@@ -291,7 +281,7 @@ fn an_unknown_run_name_lists_the_runs_and_exits_2() {
 fn a_lone_file_without_analysis_exits_2() {
     // CLI-03 AC 12: a run asked from flags alone with no --analysis exits 2 naming the flag
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/e2e/twins/divider.msl");
-    let out = piperine_in(&rc(), shared_cache(), &["run", &file.to_string_lossy()]);
+    let out = piperine_in(&rc(), CompileCache::shared().path(), &["run", &file.to_string_lossy()]);
     let err = failed(&out, 2);
     assert!(err.contains("--analysis"), "{err}");
     assert!(out.stdout.is_empty());
@@ -310,7 +300,7 @@ fn a_single_valued_flag_given_twice_exits_2() {
 fn a_type_error_is_rendered_with_its_stage_and_exits_1() {
     // CLI-04 AC 4: every diagnostic with its code, file, line and excerpt, the stage named,
     // exit 1. `type_error/src/lib.msl` puts a real where a `bool` is declared, at line 2.
-    let out = piperine_in(&fixture("type_error"), shared_cache(), &["run", "main"]);
+    let out = piperine_in(&fixture("type_error"), CompileCache::shared().path(), &["run", "main"]);
     let err = failed(&out, 1);
     assert!(err.contains("E0180"), "the code:\n{err}");
     assert!(err.contains("lib.msl:2:"), "the file and the line:\n{err}");
@@ -326,14 +316,14 @@ fn a_bad_backend_exits_2_for_the_flag_and_1_otherwise() {
     let flag = piperine(&["run", "op", "--backend", "spice"]);
     let err = failed(&flag, 2);
     assert!(err.contains("interp") && err.contains("rust"), "{err}");
-    let variable = Command::new(binary()).args(["run", "op"]).current_dir(rc()).env("PIPERINE_CACHE_DIR", shared_cache()).env("PIPERINE_BACKEND", "spice").output().expect("run");
+    let variable = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["run", "op"]).current_dir(rc()).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env("PIPERINE_BACKEND", "spice").output().expect("run");
     let err = failed(&variable, 1);
     assert!(err.contains("interp") && err.contains("rust"), "{err}");
     let key = written(&[
         ("Piperine.toml", "[package]\nname = \"keyed\"\nversion = \"0.1.0\"\n\n[run.main]\nanalysis = \"op\"\nbackend = \"spice\"\n"),
         ("src/lib.msl", "module Top() { signal a: Electrical; }\n"),
     ]);
-    let out = piperine_in(key.path(), shared_cache(), &["run", "main"]);
+    let out = piperine_in(key.path(), CompileCache::shared().path(), &["run", "main"]);
     let err = failed(&out, 1);
     assert!(err.contains("interp") && err.contains("rust"), "{err}");
     for out in [flag, variable, out] {
@@ -345,7 +335,7 @@ fn a_bad_backend_exits_2_for_the_flag_and_1_otherwise() {
 fn a_solver_failure_prints_no_table_and_exits_1() {
     // CLI-05 AC 9: the solver's error and the analysis on standard error, no table. Two ideal
     // sources of 1 V and 2 V across the same node (`two_sources`) have no operating point.
-    let out = piperine_in(&fixture("two_sources"), shared_cache(), &["run", "main"]);
+    let out = piperine_in(&fixture("two_sources"), CompileCache::shared().path(), &["run", "main"]);
     let err = failed(&out, 1);
     assert!(err.contains("op analysis failed"), "the analysis:\n{err}");
     let stdout = text(&out.stdout);
@@ -365,12 +355,12 @@ fn a_failure_before_the_analysis_prints_nothing_on_stdout() {
         ("two_runs", &["run", "first", "--print", "nothing"]),
     ];
     for (project, args) in cases {
-        let out = piperine_in(&fixture(project), shared_cache(), args);
+        let out = piperine_in(&fixture(project), CompileCache::shared().path(), args);
         let err = failed(&out, 1);
         assert!(out.stdout.is_empty(), "{project}: {}", text(&out.stdout));
         assert!(err.contains("error:"), "{project}: {err}");
     }
-    let bad_table = piperine_in(&fixture("bad_run_table"), shared_cache(), &["run", "main"]);
+    let bad_table = piperine_in(&fixture("bad_run_table"), CompileCache::shared().path(), &["run", "main"]);
     let err = text(&bad_table.stderr);
     assert!(err.contains("P0010") && err.contains("Piperine.toml:7:"), "the run table's fault points at `stopp`:\n{err}");
 }
@@ -381,7 +371,7 @@ fn records_stay_when_the_analysis_fails() {
     // CLI-07 AC 5: records already printed stay, the error goes to standard error, exit 1.
     // `fails_after_emit`: a node that starts at 0.1 V crosses the monitor's 0.5 V at 1.6 us
     // (0.1 * exp(t / 1 us)), emitting `trip`, then grows until the solver meets an infinity.
-    let out = piperine_in(&fixture("fails_after_emit"), shared_cache(), &["run", "grow"]);
+    let out = piperine_in(&fixture("fails_after_emit"), CompileCache::shared().path(), &["run", "grow"]);
     let err = failed(&out, 1);
     let stdout = text(&out.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
@@ -399,10 +389,10 @@ fn a_closed_stdout_ends_with_exit_1_and_no_panic() {
     // design.md "Error Handling Strategy": a closed standard output ends the command
     // with exit 1 and no panic message. The read end of the pipe is closed before the child
     // writes its header.
-    let mut child = Command::new(binary())
+    let mut child = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")))
         .args(["run", "step"])
         .current_dir(rc())
-        .env("PIPERINE_CACHE_DIR", shared_cache())
+        .env("PIPERINE_CACHE_DIR", CompileCache::shared().path())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
@@ -430,7 +420,7 @@ fn a_digital_only_transient_runs_to_its_stop_for_table_csv_and_plot() {
     let base = ["run", "blinky.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "count"];
     for extra in [&[][..], &["--csv", "out.csv"][..], &["--plot", "out.svg"][..]] {
         let args: Vec<&str> = base.iter().chain(extra).copied().collect();
-        let out = piperine_in(dir.path(), shared_cache(), &args);
+        let out = piperine_in(dir.path(), CompileCache::shared().path(), &args);
         let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
         assert_eq!(out.status.code(), Some(0), "{args:?}: {stdout}\n{stderr}");
         assert_eq!(stdout.lines().filter(|l| l.starts_with('@')).count(), 3, "{args:?}: the records:\n{stdout}");
@@ -453,7 +443,7 @@ fn a_digital_only_transient_runs_to_its_stop_for_table_csv_and_plot() {
 fn run_prints_the_fatal_line_and_exits_1() {
     // FIX-02 AC 2: `fatal("boom")` at 2 us in a run to 5 us: the table up to 2 us is printed,
     // `fatal at 2.000000e-6: boom` is the last line of standard error, and the exit code is 1
-    let out = piperine_in(&fixture("fatal_run"), shared_cache(), &["run", "fatal"]);
+    let out = piperine_in(&fixture("fatal_run"), CompileCache::shared().path(), &["run", "fatal"]);
     let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
     assert_eq!(out.status.code(), Some(1), "{stdout}\n{stderr}");
     assert_eq!(stderr.lines().last(), Some("fatal at 2.000000e-6: boom"), "{stderr}");
@@ -471,14 +461,14 @@ fn a_fatal_run_prints_its_msg_and_exits_1() {
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("brown.msl"), design("fatal(\"brownout\");")).expect("brown.msl");
     let args = ["run", "brown.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
-    let out = piperine_in(dir.path(), shared_cache(), &args);
+    let out = piperine_in(dir.path(), CompileCache::shared().path(), &args);
     let (stdout, stderr) = (text(&out.stdout), text(&out.stderr));
     assert_eq!(out.status.code(), Some(1), "{stdout}\n{stderr}");
     assert_eq!(stderr.lines().last(), Some("fatal at 1.000000e-6: brownout"), "the fatal line is the last of standard error:\n{stderr}");
     assert!(stdout.lines().any(|l| l.contains("note")), "the records already printed stay:\n{stdout}");
 
     std::fs::write(dir.path().join("fine.msl"), design("finish();")).expect("fine.msl");
-    let out = piperine_in(dir.path(), shared_cache(), &["run", "fine.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"]);
+    let out = piperine_in(dir.path(), CompileCache::shared().path(), &["run", "fine.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"]);
     assert_eq!(out.status.code(), Some(0), "finish is no failure: {}\n{}", text(&out.stdout), text(&out.stderr));
 }
 
@@ -490,7 +480,7 @@ fn a_guarded_record_prints_when_its_guard_holds_and_no_record_carries_a_maybe() 
     let dir = tempfile::tempdir().expect("tmp");
     std::fs::write(dir.path().join("maybe.msl"), design).expect("maybe.msl");
     let args = ["run", "maybe.msl", "--analysis", "transient", "--stop", "2e-6", "--top", "Top"];
-    let out = piperine_in(dir.path(), shared_cache(), &args);
+    let out = piperine_in(dir.path(), CompileCache::shared().path(), &args);
     let stdout = stdout_of(&out);
     let line = |stream: &str| stdout.lines().find(|l| l.contains(&format!(" {stream} "))).unwrap_or_else(|| panic!("no `{stream}` record in:\n{stdout}")).to_string();
     assert!(!stdout.contains(" unsure "), "the guard is false, so the record is not written:\n{stdout}");
@@ -504,7 +494,7 @@ fn run_of_a_top_with_a_node_port_is_e0810() {
     // standard output (the P0001 "continuous port" of the elaborator is gone)
     let files = written(&[("bench.msl", "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\nmodule Top(vin: Electrical) {\n    let r1 = Resistor(vin, gnd) { r: 1k };\n}\n")]);
     let file = files.path().join("bench.msl");
-    let out = piperine_in(files.path(), shared_cache(), &["run", &file.to_string_lossy(), "--analysis", "op", "--top", "Top"]);
+    let out = piperine_in(files.path(), CompileCache::shared().path(), &["run", &file.to_string_lossy(), "--analysis", "op", "--top", "Top"]);
     let err = failed(&out, 1);
     assert!(err.contains("E0810"), "{err}");
     assert!(err.contains("`vin`"), "the port is named:\n{err}");
@@ -541,7 +531,7 @@ impl CompositeRun {
             args.extend(["--csv", "out.csv", "--records", "out.jsonl", "--plot", "out.svg"].iter().map(|s| s.to_string()));
         }
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        let stdout = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &refs));
         CompositeRun { stdout, dir }
     }
 
@@ -599,7 +589,7 @@ impl ArrayRun {
             args.extend(["--csv", "out.csv", "--plot", "out.svg", "--records", "out.jsonl"].iter().map(|s| s.to_string()));
         }
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        let stdout = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &refs));
         (stdout, dir)
     }
 }
@@ -653,14 +643,14 @@ fn an_option_cell_prints_none_or_the_value() {
     // field of type `Option` (§19 rule 11): the record before the commit is `None`, after it `Some(7)`
     let dir = written(&[("bench.msl", OPTIONS)]);
     let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o"];
-    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let stdout = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &args));
     let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
     assert!(table.get(1).is_some_and(|row| row.ends_with("None")), "the first row holds the initial `None`: {table:?}");
     assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("Some(7)")), "the last row holds the committed value: {table:?}");
     assert!(!table.iter().any(|row| row.split_whitespace().any(|cell| cell == "x")), "no unknown cell: {stdout}");
     assert!(stdout.lines().any(|l| l.contains("Top.logger seen o=None")), "the record of an absent `Option` field: {stdout}");
     assert!(stdout.lines().any(|l| l.contains("Top.logger set o=Some(7)")), "the record of a present one is `Some`: {stdout}");
-    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
+    piperine_in(dir.path(), CompileCache::shared().path(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "o", "--csv", "out.csv"]);
     let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("out.csv");
     let mut rows = csv.lines();
     assert_eq!(rows.next(), Some("time,Top.o.some,Top.o.value"), "one CSV column per leaf: {csv}");
@@ -696,7 +686,7 @@ fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
     let file = file.to_str().expect("utf-8 path");
     let volts = |extra: &[&str]| {
         let args: Vec<&str> = ["run", file, "--analysis", "op", "--print", "a"].iter().chain(extra).copied().collect();
-        let out = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+        let out = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &args));
         let row = out.lines().find(|l| l.starts_with("Top.a")).unwrap_or_else(|| panic!("no row of `a` in\n{out}")).to_string();
         cells(&row)[1].parse::<f64>().expect("a number")
     };
@@ -706,7 +696,7 @@ fn param_of_an_integer_from_the_command_line_reads_from_the_start() {
     // PI-01 AC 4, D24: what is no integer literal of the type and range is `E0802` naming the param and the value, a number included
     for bad in ["300", "6.5", "1e1", "-1"] {
         let entry = format!("l.n={bad}");
-        let refused = piperine_in(dir.path(), shared_cache(), &["run", file, "--analysis", "op", "--param", &entry]);
+        let refused = piperine_in(dir.path(), CompileCache::shared().path(), &["run", file, "--analysis", "op", "--param", &entry]);
         assert_ne!(refused.status.code(), Some(0), "`{bad}` is no `u8`");
         assert!(text(&refused.stderr).contains("E0802") && text(&refused.stderr).contains("l.n") && text(&refused.stderr).contains(bad), "{bad}: {}", text(&refused.stderr));
     }
@@ -725,13 +715,13 @@ fn a_logic_cell_prints_its_pattern() {
     // first, in the text table (`xxxx` before the commit, `10xz` after), the record line and JSON Lines, and CSV
     let dir = written(&[("bench.msl", LOGICS)]);
     let args = ["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l"];
-    let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &args));
+    let stdout = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &args));
     let table: Vec<&str> = stdout.lines().skip_while(|l| !l.starts_with("time")).collect();
     assert!(table.get(1).is_some_and(|row| row.ends_with("xxxx")), "the first row holds the initial `xxxx`: {table:?}");
     assert!(table.iter().rev().find(|row| !row.is_empty()).is_some_and(|row| row.ends_with("10xz")), "the last row holds the committed pattern: {table:?}");
     let record = stdout.lines().find(|l| l.contains(" sample ")).unwrap_or_else(|| panic!("no record in\n{stdout}"));
     assert!(record.contains("w=10xz") && record.contains("n=0110"), "the record line: {record}");
-    piperine_in(dir.path(), shared_cache(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l", "--csv", "out.csv", "--records", "out.jsonl"]);
+    piperine_in(dir.path(), CompileCache::shared().path(), &["run", "bench.msl", "--analysis", "transient", "--stop", "1e-8", "--max-step", "1e-9", "--print", "l", "--csv", "out.csv", "--records", "out.jsonl"]);
     let json = std::fs::read_to_string(dir.path().join("out.jsonl")).expect("out.jsonl");
     let line = json.lines().next().unwrap_or_else(|| panic!("no JSON line"));
     assert!(line.contains("\"w\":\"10xz\"") && line.contains("\"n\":\"0110\""), "the JSON line: {line}");
@@ -765,7 +755,7 @@ impl WidthRun {
         }
         args.extend(extra.iter().map(|s| s.to_string()));
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let stdout = stdout_of(&piperine_in(dir.path(), shared_cache(), &refs));
+        let stdout = stdout_of(&piperine_in(dir.path(), CompileCache::shared().path(), &refs));
         CompositeRun { stdout, dir }
     }
 }

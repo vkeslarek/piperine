@@ -5,13 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
-fn binary() -> PathBuf {
-    PathBuf::from(env!("CARGO_BIN_EXE_piperine"))
-}
-
 /// `piperine <args>` in `dir`, on a cache of its own: `info` builds nothing, so the cache stays empty.
 fn piperine_in(dir: &Path, cache: &Path, args: &[&str]) -> Output {
-    Command::new(binary()).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", binary().display()))
+    Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
 }
 
 fn text(bytes: &[u8]) -> String {

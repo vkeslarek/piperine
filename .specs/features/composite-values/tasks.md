@@ -31,7 +31,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run apicomp**: `cargo test -p piperine-api --test host composites::`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

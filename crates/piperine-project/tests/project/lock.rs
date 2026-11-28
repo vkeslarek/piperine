@@ -4,9 +4,7 @@
 //! file, and the offline resolution of a locked checkout. Every repository is a local one in a
 //! temporary directory; no test contacts the network.
 
-#[path = "support/mod.rs"]
-#[allow(dead_code)]
-mod support;
+use crate::support;
 
 use std::fs;
 use std::path::Path;

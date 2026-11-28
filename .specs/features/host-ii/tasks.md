@@ -30,10 +30,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apiderived**: `cargo test -p piperine-api --test host derived::`
 **Run apireach**: `cargo test -p piperine-api --test params option_reach::`
 **Run clilib**: `cargo test -p piperine-cli --lib`
-**Run clianalyses**: `cargo test -p piperine-cli --test analyses`
-**Run cliinfo**: `cargo test -p piperine-cli --test info`
-**Run clirun**: `cargo test -p piperine-cli --test run`
-**Run clicommands**: `cargo test -p piperine-cli --test commands`
+**Run clianalyses**: `cargo test -p piperine-cli --test commands analyses::`
+**Run cliinfo**: `cargo test -p piperine-cli --test commands info::`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
+**Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run root**: `cargo test --test host_ii`

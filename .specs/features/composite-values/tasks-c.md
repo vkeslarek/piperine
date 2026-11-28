@@ -26,7 +26,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run src**: `cargo test -p piperine-parity --test source_explicit`
 **Run storage**: `cargo test -p piperine-api --test memory carrier_array_storage::`
 **Run apiarr**: `cargo test -p piperine-api --test host carrier_arrays::`
-**Run clirun**: `cargo test -p piperine-cli --test run`
+**Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine --test book_natures --test book_modules --test book_inventory`
 **Run galleries**: `cargo test -p piperine-lang --test std_galleries`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
