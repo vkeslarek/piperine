@@ -10,40 +10,45 @@ use piperine_parity::ngspice::{Lookup, Ngspice, Reference};
 use piperine_parity::operating_point::OperatingPoint;
 use piperine_solver::prelude::Context;
 
-/// Runs ngspice once for the twin and holds every selected backend to it.
-fn compare(twin: OperatingPoint) {
-    let reference = Ngspice::from_environment().run(twin.fixture);
-    for backend in BackendSelection::selected() {
-        twin.compare_on(&reference, backend);
+/// Associated test helpers of `op`, grouped on one fixture type.
+struct OpFixture;
+
+impl OpFixture {
+    /// Runs ngspice once for the twin and holds every selected backend to it.
+    fn compare(twin: OperatingPoint) {
+        let reference = Ngspice::from_environment().run(twin.fixture);
+        for backend in BackendSelection::selected() {
+            twin.compare_on(&reference, backend);
+        }
+    }
+
+    /// The backends that run a twin whose model selects its equations by a param: the compiled one (the
+    /// interpreter refuses a contribution under a selector by name, T15).
+    fn compiled_backends() -> Vec<Backend> {
+        BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
     }
 }
 
 #[test]
 fn divider() {
-    compare(OperatingPoint { fixture: "divider", nodes: &["vin", "mid"] });
+    OpFixture::compare(OperatingPoint { fixture: "divider", nodes: &["vin", "mid"] });
 }
 
 #[test]
 fn diode_series() {
-    compare(OperatingPoint { fixture: "diode_series", nodes: &["a", "b"] });
+    OpFixture::compare(OperatingPoint { fixture: "diode_series", nodes: &["a", "b"] });
 }
 
 #[test]
 fn isrc_r() {
-    compare(OperatingPoint { fixture: "isrc_r", nodes: &["a"] });
-}
-
-/// The backends that run a twin whose model selects its equations by a param: the compiled one (the
-/// interpreter refuses a contribution under a selector by name, T15).
-fn compiled_backends() -> Vec<Backend> {
-    BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    OpFixture::compare(OperatingPoint { fixture: "isrc_r", nodes: &["a"] });
 }
 
 #[test]
 fn diode_rs() {
     // `DiodeRs` with rs = 100 (`i(a, ai) +> v(a, ai) / rs`) against ngspice's diode with `rs=100`.
     let reference = Ngspice::from_environment().run("diode_rs");
-    for backend in compiled_backends() {
+    for backend in OpFixture::compiled_backends() {
         OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }.compare_on(&reference, backend);
     }
 }
@@ -55,7 +60,7 @@ fn diode_rs_with_rs_zero_merges_and_matches_rdiode() {
     // (one node fewer than the rs = 100 circuit) and the solve is `rdiode.cir`'s clamp: `v(a)` equals
     // ngspice's `v(out)` under `DC_VOLTAGE`.
     let reference = Ngspice::from_environment().run("rdiode");
-    for backend in compiled_backends() {
+    for backend in OpFixture::compiled_backends() {
         let series = Bench::load_on("diode_rs", backend);
         let mut merged = Bench::load_file_with_on("diode_rs", Bench::twin_path("diode_rs"), backend, &Overrides::new(&[("d1.rs".to_string(), 0.0)]));
         assert_eq!(merged.ir().nodes().count() + 1, series.ir().nodes().count(), "{}: rs = 0 merges a and ai", backend.name());
@@ -74,7 +79,7 @@ fn diode_rs_runs_and_prints_the_skip_line_without_ngspice() {
     // `Ngspice::run`) and the twin is still built and solved: both nodes are read, none is compared.
     let reference = Ngspice::new(Lookup::Skip).run("diode_rs");
     assert!(matches!(reference, Reference::Skipped));
-    for backend in compiled_backends() {
+    for backend in OpFixture::compiled_backends() {
         let outcome = OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }.compare_on(&reference, backend);
         assert_eq!((outcome.solved, outcome.compared), (2, 0), "{}", backend.name());
     }
@@ -84,5 +89,5 @@ fn diode_rs_runs_and_prints_the_skip_line_without_ngspice() {
 fn tnom_res() {
     // AO-08, withdrawn as a run key: the model's own `tnom` of 323.15 K (50 C) against ngspice's
     // `.options tnom=50`, both at 27 C, the lower leg 3k * (1 + 0.002 * (27 - 50))
-    compare(OperatingPoint { fixture: "tnom_res", nodes: &["mid"] });
+    OpFixture::compare(OperatingPoint { fixture: "tnom_res", nodes: &["mid"] });
 }

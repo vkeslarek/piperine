@@ -1,6 +1,6 @@
 //! The correctly rounded square root of an `ExactRational`.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use piperine_numbers::format::BinaryFormat;
 
 impl ExactRational {

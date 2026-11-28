@@ -15,33 +15,35 @@ use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use piperine_ir_fixtures::digital;
 use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
-#[allow(dead_code)]
-#[path = "buck/support.rs"]
-mod support;
 
 use mixed::{BuiltDesign, Seen};
-use support::{HIGH, LOW, build, series};
+use piperine_parity::buck_fixture::{BuckFixture, HIGH, LOW};
 
 /// 10 switching periods of 2 us (SPEC §2: 500 kHz).
 const STOP: f64 = 20e-6;
 
-/// The buck package as the root crate.
-fn project() -> Project {
-    Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck/src/lib.msl"))
-}
+/// Associated test helpers of `buck_whole`, grouped on one fixture type.
+struct BuckWholeFixture;
 
-/// `Buck` compiled and run for 10 periods, `en` not driven.
-fn idle() -> (BuiltDesign, Seen) {
-    let built = build(&project(), "Buck");
-    let seen = built.run(STOP, 1e-8);
-    (built, seen)
+impl BuckWholeFixture {
+    /// The buck package as the root crate.
+    fn project() -> Project {
+        Project::new(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck/src/lib.msl"))
+    }
+
+    /// `Buck` compiled and run for 10 periods, `en` not driven.
+    fn idle() -> (BuiltDesign, Seen) {
+        let built = BuckFixture::build(&BuckWholeFixture::project(), "Buck");
+        let seen = built.run(STOP, 1e-8);
+        (built, seen)
+    }
 }
 
 #[test]
 fn the_buck_compiles_with_no_warning_and_valid_shapes() {
     // DIG-15 AC 3: `BuiltDesign::new` compiles the generated source and asserts `rustc` printed no
     // warning; every body that runs has a shape `piperine_abi::validate` accepts
-    let built = build(&project(), "Buck");
+    let built = BuckFixture::build(&BuckWholeFixture::project(), "Buck");
     assert_eq!(built.ir.check(), vec![], "the IR passes check()");
     let mut shapes = 0;
     for body in built.ir.bodies() {
@@ -65,12 +67,12 @@ fn the_buck_compiles_with_no_warning_and_valid_shapes() {
 
 #[test]
 fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
-    let (_, seen) = idle();
+    let (_, seen) = BuckWholeFixture::idle();
     // DIG-15 AC 6, SPEC §8: with `en` unknown the supervisor is `Off` (tag 0, its initial value)
     // at every sample, power-good stays low, and nothing commits another value
-    let mode = series(&seen, "Buck.mode");
+    let mode = BuckFixture::series(&seen, "Buck.mode");
     assert_eq!(mode, vec![(0, vec![0])], "mode is Off from the first instant and never changes");
-    let pgood = series(&seen, "Buck.pgood");
+    let pgood = BuckFixture::series(&seen, "Buck.pgood");
     assert_eq!(pgood, vec![(0, LOW.to_vec())], "pgood is false from the first instant and never changes");
     // the DPWM does not switch while `run` is low (SPEC §8: `Off` holds both switches off), so
     // both gates are false; each is a drive delayed by `tpd` = 10 ns (SPEC §5.3). A carrier has
@@ -79,23 +81,23 @@ fn a_buck_that_is_not_enabled_stays_off_with_vin_ok_high() {
     // the carrier already holds is not a change" (part II §5.3.5). So the one entry is the
     // initial value at 0, false to the end
     for gate in ["Buck.power.hs_gate", "Buck.power.ls_gate"] {
-        let s = series(&seen, gate);
+        let s = BuckFixture::series(&seen, gate);
         assert_eq!(s, vec![(0, LOW.to_vec())], "{gate}: false from the first instant, never true");
     }
     // SPEC §8.1: Vin (12 V through 20 mohm, divided by 10: about 1.2 V) is above the UVLO
     // threshold 0.85 V at the operating point, so the `init` half of `above` (std `A2D` inside
     // `Sensing`, inside `Buck`) makes `vin_ok` true in the first instant, before time advances,
     // and it stays true
-    let vin_ok = series(&seen, "Buck.vin_ok");
+    let vin_ok = BuckFixture::series(&seen, "Buck.vin_ok");
     assert_eq!(vin_ok.last(), Some(&(0, HIGH.to_vec())), "vin_ok is true at time 0 and never changes after: {vin_ok:?}");
     // the clock ran the whole time: 10 periods of 400 counts at 200 MHz
-    let clk = series(&seen, "Buck.clk");
+    let clk = BuckFixture::series(&seen, "Buck.clk");
     assert!(clk.iter().any(|(t, _)| *t == TopDesign::rising_edge(4000)), "the clock's 4000th rising edge is at {} ticks", TopDesign::rising_edge(4000));
 }
 
 #[test]
 fn no_never_record_fails_while_not_enabled() {
-    let (built, seen) = idle();
+    let (built, seen) = BuckWholeFixture::idle();
     // SPEC §5.3 and §10 S10: the `Never` monitor of the DPWM checks at each rising clock edge
     // that both commands are never on together: one record of `checks` per edge, `pass` true
     // while neither switches. `pass` is a `bool`, one byte (part VII §19 rule 3: a pass or a

@@ -33,34 +33,39 @@ impl Roots {
     }
 }
 
-fn compare(reference: &Reference, backend: Backend) {
-    let mut bench = Bench::load_on("pz_lowpass", backend);
-    let options = PoleZeroOptions { input_source: bench.source("v1"), output: AnalogVariable::Node(bench.node("out")), output_ref: None };
-    let solver = bench.circuit().pz(options, Context::default()).unwrap_or_else(|error| panic!("pz_lowpass: the pencil does not extract on {}: {error}", backend.name()));
-    let found = [("pole", solver.poles()), ("zero", solver.zeros())];
-    let found: Vec<(&str, Vec<Complex>)> = found
-        .into_iter()
-        .map(|(kind, roots)| {
-            let roots = roots.unwrap_or_else(|error| panic!("pz_lowpass: no {kind}s on {}: {error}", backend.name()));
-            let mut roots: Vec<Complex> = roots.iter().map(|root| Complex { re: root.re, im: root.im }).collect();
-            Roots::sort(&mut roots);
-            (kind, roots)
-        })
-        .collect();
-    // the twin has one pole and one zero: a zero the solver loses is a miss even with no ngspice to compare
-    for (kind, roots) in &found {
-        assert_eq!(roots.len(), 1, "pz_lowpass: one finite {kind} on {}: {roots:?}", backend.name());
-    }
-    let Reference::Golden(golden) = reference else { return };
-    for (kind, actual) in found {
-        let wanted = Roots::printed(golden, kind);
-        assert_eq!(wanted.len(), actual.len(), "pz_lowpass: ngspice lists {} {kind}s, piperine gives {} on {}: {actual:?}", wanted.len(), actual.len(), backend.name());
-        for (k, (wanted, actual)) in wanted.iter().zip(&actual).enumerate() {
-            for (part, golden_value, actual_value) in [("re", wanted.re, actual.re), ("im", wanted.im, actual.im)] {
-                let quantity = format!("{kind}({}) {part}", k + 1);
-                let at = Point::new("pz_lowpass", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
-                eprintln!("pz_lowpass {quantity} on {}: ngspice {golden_value:e}, piperine {actual_value:e}, deviation {:e}", backend.name(), (golden_value - actual_value).abs());
-                ToleranceContract::PZ_ROOT.assert(&at, golden_value, actual_value);
+/// Associated test helpers of `pz`, grouped on one fixture type.
+struct PzFixture;
+
+impl PzFixture {
+    fn compare(reference: &Reference, backend: Backend) {
+        let mut bench = Bench::load_on("pz_lowpass", backend);
+        let options = PoleZeroOptions { input_source: bench.source("v1"), output: AnalogVariable::Node(bench.node("out")), output_ref: None };
+        let solver = bench.circuit().pz(options, Context::default()).unwrap_or_else(|error| panic!("pz_lowpass: the pencil does not extract on {}: {error}", backend.name()));
+        let found = [("pole", solver.poles()), ("zero", solver.zeros())];
+        let found: Vec<(&str, Vec<Complex>)> = found
+            .into_iter()
+            .map(|(kind, roots)| {
+                let roots = roots.unwrap_or_else(|error| panic!("pz_lowpass: no {kind}s on {}: {error}", backend.name()));
+                let mut roots: Vec<Complex> = roots.iter().map(|root| Complex { re: root.re, im: root.im }).collect();
+                Roots::sort(&mut roots);
+                (kind, roots)
+            })
+            .collect();
+        // the twin has one pole and one zero: a zero the solver loses is a miss even with no ngspice to compare
+        for (kind, roots) in &found {
+            assert_eq!(roots.len(), 1, "pz_lowpass: one finite {kind} on {}: {roots:?}", backend.name());
+        }
+        let Reference::Golden(golden) = reference else { return };
+        for (kind, actual) in found {
+            let wanted = Roots::printed(golden, kind);
+            assert_eq!(wanted.len(), actual.len(), "pz_lowpass: ngspice lists {} {kind}s, piperine gives {} on {}: {actual:?}", wanted.len(), actual.len(), backend.name());
+            for (k, (wanted, actual)) in wanted.iter().zip(&actual).enumerate() {
+                for (part, golden_value, actual_value) in [("re", wanted.re, actual.re), ("im", wanted.im, actual.im)] {
+                    let quantity = format!("{kind}({}) {part}", k + 1);
+                    let at = Point::new("pz_lowpass", &quantity, Coordinate::OperatingPoint).with_ngspice(golden.version()).with_backend(backend.name());
+                    eprintln!("pz_lowpass {quantity} on {}: ngspice {golden_value:e}, piperine {actual_value:e}, deviation {:e}", backend.name(), (golden_value - actual_value).abs());
+                    ToleranceContract::PZ_ROOT.assert(&at, golden_value, actual_value);
+                }
             }
         }
     }
@@ -70,7 +75,7 @@ fn compare(reference: &Reference, backend: Backend) {
 fn pz_lowpass() {
     let reference = Ngspice::from_environment().run("pz_lowpass");
     for backend in BackendSelection::selected() {
-        compare(&reference, backend);
+        PzFixture::compare(&reference, backend);
     }
 }
 

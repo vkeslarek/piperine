@@ -2,19 +2,19 @@
 //! same operands.
 
 /// xorshift64* with a fixed seed.
-pub struct Xorshift {
+pub struct ShiftGenerator {
     /// The generator state; never zero.
     state: u64,
 }
 
-impl Xorshift {
+impl ShiftGenerator {
     /// A generator seeded with `seed` (a zero seed is replaced by a fixed constant).
     pub fn new(seed: u64) -> Self {
-        Xorshift { state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed } }
+        ShiftGenerator { state: if seed == 0 { 0x9E37_79B9_7F4A_7C15 } else { seed } }
     }
 
     /// The next 64 pseudo-random bits.
-    pub fn next_u64(&mut self) -> u64 {
+    pub fn next_bits(&mut self) -> u64 {
         self.state ^= self.state >> 12;
         self.state ^= self.state << 25;
         self.state ^= self.state >> 27;

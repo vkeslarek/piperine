@@ -2,12 +2,11 @@
 //! operation over all 65 536 patterns and the binary operations over the special values and
 //! 2^22 deterministic pairs (CV-30; IEEE 754-2019 clause 5, H.2).
 
-use crate::oracle;
 
-use oracle::ExactOracle;
+use piperine_device_fixtures::oracle::ExactOracle;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::half::Float16;
-use piperine_device_fixtures::random::Xorshift;
+use piperine_device_fixtures::random::ShiftGenerator;
 use std::cmp::Ordering;
 
 /// The scenario of one test: the oracle and the comparison of patterns.
@@ -107,9 +106,9 @@ fn binary_f16_operations_are_correctly_rounded() {
             }
         }
     }
-    let mut random = Xorshift::new(95);
+    let mut random = ShiftGenerator::new(95);
     for index in 0..(1u32 << 22) {
-        let word = random.next_u64();
+        let word = random.next_bits();
         // `rem_euclid` and `hypot` cost two exact roots or divisions: one pair in eight.
         scenario.check_binary(word as u16, (word >> 32) as u16, index % 8 == 0);
     }

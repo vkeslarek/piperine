@@ -66,10 +66,27 @@ impl TranRun {
     }
 }
 
-/// A twin whose source reads the time: the compiled backend only (the interpreter runs the M1
-/// analog subset, which has no `now()`).
-fn compiled_backends() -> Vec<Backend> {
-    BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+/// Associated test helpers of `tran`, grouped on one fixture type.
+struct TranFixture;
+
+impl TranFixture {
+    /// A twin whose source reads the time: the compiled backend only (the interpreter runs the M1
+    /// analog subset, which has no `now()`).
+    fn compiled_backends() -> Vec<Backend> {
+        BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    }
+
+    /// The transient of the twin `fixture` on `backend`, reading `v(node)`, against the reference run
+    /// already made.
+    fn compare_on(fixture: &str, node: &str, reference: &Reference, backend: Backend) {
+        TranFixture::compare_with(fixture, node, reference, backend, 100, TranRun::options);
+    }
+
+    /// [`compare_on`] with the export's `expected_rows` and the options `options_of` makes from its times.
+    fn compare_with(fixture: &str, node: &str, reference: &Reference, backend: Backend, expected_rows: usize, options_of: impl Fn(&[f64]) -> TransientAnalysisOptions) {
+        let mut bench = Bench::load_on(fixture, backend);
+        TranRun::compare(&mut bench, node, reference, expected_rows, options_of);
+    }
 }
 
 /// The stop of the three floor twins and the print rows ngspice exports for it (a print step of
@@ -91,7 +108,7 @@ fn the_transient_step_cap_is_a_tenth_of_the_print_step() {
 fn tran_rc() {
     let reference = Ngspice::from_environment().run("tran_rc");
     for backend in BackendSelection::selected() {
-        compare_on("tran_rc", "out", &reference, backend);
+        TranFixture::compare_on("tran_rc", "out", &reference, backend);
     }
 }
 
@@ -99,7 +116,7 @@ fn tran_rc() {
 fn tran_dq() {
     let reference = Ngspice::from_environment().run("tran_dq");
     for backend in BackendSelection::selected() {
-        compare_on("tran_dq", "a", &reference, backend);
+        TranFixture::compare_on("tran_dq", "a", &reference, backend);
     }
 }
 
@@ -108,9 +125,9 @@ fn tran_jump() {
     // A hard 0 to 1 V step at 1.03 us across 1 nF, with the default floor: ngspice completes the
     // run (61 points), and so does piperine, accepting the step at the floor.
     let reference = Ngspice::from_environment().run("tran_jump");
-    for backend in compiled_backends() {
+    for backend in TranFixture::compiled_backends() {
         let options = |times: &[f64]| TranRun::options_to(times, FLOOR_STOP);
-        compare_with("tran_jump", "top", &reference, backend, FLOOR_ROWS, options);
+        TranFixture::compare_with("tran_jump", "top", &reference, backend, FLOOR_ROWS, options);
     }
 }
 
@@ -118,13 +135,13 @@ fn tran_jump() {
 fn tran_corner() {
     // A 5 ns tanh corner at 1.03 us with a 1 ns floor (ngspice's `delmin=1n`): both complete.
     let reference = Ngspice::from_environment().run("tran_corner");
-    for backend in compiled_backends() {
+    for backend in TranFixture::compiled_backends() {
         let options = |times: &[f64]| {
             let mut options = TranRun::options_to(times, FLOOR_STOP);
             options.dt_min = 1e-9;
             options
         };
-        compare_with("tran_corner", "top", &reference, backend, FLOOR_ROWS, options);
+        TranFixture::compare_with("tran_corner", "top", &reference, backend, FLOOR_ROWS, options);
     }
 }
 
@@ -136,7 +153,7 @@ fn tran_floor() {
     if let Reference::Golden(golden) = &reference {
         assert!(golden.said("Timestep too small"), "ngspice stops at the floor:\n{}", golden.captured());
     }
-    for backend in compiled_backends() {
+    for backend in TranFixture::compiled_backends() {
         let mut bench = Bench::load_on("tran_floor", backend);
         let options = TranRun::options_to(&[0.0, 0.1e-6], FLOOR_STOP);
         let error = bench.circuit().transient(options, Context::default()).and_then(|mut tran| tran.solve()).map(|_| ()).expect_err("the step no Newton iteration settles must fail");
@@ -145,18 +162,6 @@ fn tran_floor() {
         let time = text.split("at t = ").nth(1).and_then(|t| t.split(' ').next()).and_then(|t| t.parse::<f64>().ok()).expect("the time of the failing step");
         assert!((1e-6..1e-6 + 1e-8).contains(&time), "{}: the failing step follows ngspice's 1 us: {text}", backend.name());
     }
-}
-
-/// The transient of the twin `fixture` on `backend`, reading `v(node)`, against the reference run
-/// already made.
-fn compare_on(fixture: &str, node: &str, reference: &Reference, backend: Backend) {
-    compare_with(fixture, node, reference, backend, 100, TranRun::options);
-}
-
-/// [`compare_on`] with the export's `expected_rows` and the options `options_of` makes from its times.
-fn compare_with(fixture: &str, node: &str, reference: &Reference, backend: Backend, expected_rows: usize, options_of: impl Fn(&[f64]) -> TransientAnalysisOptions) {
-    let mut bench = Bench::load_on(fixture, backend);
-    TranRun::compare(&mut bench, node, reference, expected_rows, options_of);
 }
 
 /// The print rows ngspice exports for the clipper: its 20 us grid over 2 ms, both ends included.
@@ -173,7 +178,7 @@ const CLIPPER_ROWS: usize = 101;
 fn tran_clipper() {
     let reference = Ngspice::from_environment().run("tran_clipper");
     let model = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/limexp/tran_clipper.msl");
-    for backend in compiled_backends() {
+    for backend in TranFixture::compiled_backends() {
         let mut bench = Bench::load_file_on("tran_clipper", &model, backend);
         TranRun::compare(&mut bench, "vout", &reference, CLIPPER_ROWS, |times| TranRun::options_to(times, 2e-3));
     }
@@ -213,8 +218,8 @@ fn tran_rc_with_a_scaled_derivative() {
 #[test]
 fn uic_rc() {
     let reference = Ngspice::from_environment().run("uic_rc");
-    for backend in compiled_backends() {
-        compare_on("uic_rc", "out", &reference, backend);
+    for backend in TranFixture::compiled_backends() {
+        TranFixture::compare_on("uic_rc", "out", &reference, backend);
     }
 }
 
@@ -226,8 +231,8 @@ fn uic_rc_runs_and_prints_the_skip_line_without_ngspice() {
     let reference = Ngspice::new(Lookup::Skip).run("uic_rc");
     assert!(matches!(reference, Reference::Skipped));
     assert_eq!(Ngspice::skip_line("uic_rc"), "SKIP uic_rc: ngspice comparison disabled by PIPERINE_NGSPICE=skip");
-    for backend in compiled_backends() {
-        compare_on("uic_rc", "out", &reference, backend);
+    for backend in TranFixture::compiled_backends() {
+        TranFixture::compare_on("uic_rc", "out", &reference, backend);
     }
 }
 
@@ -240,7 +245,7 @@ const TLINE_ROWS: usize = 101;
 #[test]
 fn delay_tline() {
     let reference = Ngspice::from_environment().run("delay_tline");
-    for backend in compiled_backends() {
+    for backend in TranFixture::compiled_backends() {
         let mut bench = Bench::load_on("delay_tline", backend);
         TranRun::compare(&mut bench, "out", &reference, TLINE_ROWS, TranRun::options);
     }

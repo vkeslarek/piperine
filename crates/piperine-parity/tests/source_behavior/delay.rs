@@ -10,10 +10,7 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{AcSweepAnalysisOptions, Context, NodeIdentifier};
 
-#[allow(dead_code)]
-use crate::support;
-
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The project of `tests/operators/delay.msl`, and the runs the tests make of it.
 struct Delayed;
@@ -47,7 +44,7 @@ impl Delayed {
 
     /// `(time, v(o))` of every accepted point of the transient of `top` to `stop`, steps of at most `step`.
     fn output(top: &str, stop: f64, step: f64) -> Vec<(f64, f64)> {
-        let built = build(&Self::project(), top);
+        let built = BuckFixture::build(&Self::project(), top);
         let o = Self::node(&built.ir, top, "o");
         let (_, result) = built.run_with(stop, step);
         result.iter().map(|point| (point.time(), point.get_node(&o).expect("v(o)"))).collect()

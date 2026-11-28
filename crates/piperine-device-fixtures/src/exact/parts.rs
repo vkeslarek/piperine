@@ -1,6 +1,6 @@
 //! The other integer parts of `ExactRational`: the ceiling and rounding half away from zero.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigInt, BigUint};
 
 impl ExactRational {

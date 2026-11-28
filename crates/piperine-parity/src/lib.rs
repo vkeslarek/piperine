@@ -1,11 +1,12 @@
 //! The M1 parity harness: ngspice is run at test time on `tests/e2e/twins/*.cir` and the MSL twins
 //! of those fixtures are compared against it under one tolerance contract. The library serves the
-//! integration targets of this crate; `compile_cache` (the one compile cache of a test run), `mixed` (a hand-built design
+//! integration targets of this crate; `compile_cache` (the one compile cache of a test run), `buck_fixture` (a project read, built and run), `source` (the model-file runners), `mixed` (a hand-built design
 //! compiled and run on the solver) and `sinks` (the record sinks) and `compiled` (one body compiled and called through the ABI) serve the targets of the host and transpiler
 //! crates too.
 
 pub mod backend;
 pub mod bench;
+pub mod buck_fixture;
 pub mod compile_cache;
 pub mod compiled;
 pub mod contract;
@@ -19,5 +20,6 @@ pub mod operating_point;
 pub mod project;
 pub mod scenario;
 pub mod scratch;
+pub mod source;
 pub mod sinks;
 pub mod waveform;

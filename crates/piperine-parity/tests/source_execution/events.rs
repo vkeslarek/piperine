@@ -14,11 +14,9 @@ use piperine_solver::prelude::{NodeIdentifier, Solver};
 use piperine_solver::protocol::{AnalysisKind, Observation, ObservationKind, Sink};
 
 use piperine_parity::mixed;
-#[allow(dead_code)]
-use crate::support;
 
 use mixed::BuiltDesign;
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// One microsecond and one nanosecond in ticks (one femtosecond each).
 const US: i64 = 1_000_000_000;
@@ -138,7 +136,7 @@ impl Scenario {
     fn of(file: &str, top: &str) -> Scenario {
         let root: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/events").join(file);
         let buck = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck/src/lib.msl");
-        let built = build(&Project::new(&root).dependency("buck", &buck), top);
+        let built = BuckFixture::build(&Project::new(&root).dependency("buck", &buck), top);
         let streams = Streams::of(built.ir.clone());
         Scenario { built, streams }
     }

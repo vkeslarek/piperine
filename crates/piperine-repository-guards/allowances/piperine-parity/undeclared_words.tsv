@@ -72,7 +72,6 @@ crates/piperine-parity/tests/parity/tran.rs::tran_rc	1
 crates/piperine-parity/tests/parity/tran.rs::tran_rc_with_a_scaled_derivative	1
 crates/piperine-parity/tests/parity/tran.rs::uic_rc	1
 crates/piperine-parity/tests/parity/tran.rs::uic_rc_runs_and_prints_the_skip_line_without_ngspice	1
-crates/piperine-parity/tests/source/widths.rs::ty	1
 crates/piperine-parity/tests/source_behavior/delay.rs::a_negative_td_or_a_non_positive_max_fails_with_e0453	1
 crates/piperine-parity/tests/source_behavior/delay.rs::a_varying_delay_reads_back_td_and_max_while_td_exceeds_it	1
 crates/piperine-parity/tests/source_behavior/delay.rs::before_td_the_delay_reads_the_operating_point	1

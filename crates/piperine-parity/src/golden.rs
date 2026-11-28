@@ -205,20 +205,25 @@ impl PrintedNumber {
 mod tests {
     use super::*;
 
-    /// A golden over a scratch directory holding the given files, with no ngspice involved.
-    fn golden_with(files: &[(&str, &str)]) -> Golden {
-        let scratch = ScratchDir::create("unit");
-        for (name, content) in files {
-            std::fs::write(scratch.path().join(name), content).expect("write an export");
-        }
-        Golden::new("unit", "v(mid) = 7.500000e+00\nv(bad) = oops\n".to_string(), String::new(), "ngspice-test".to_string(), scratch)
-    }
+    /// Associated test helpers of `golden`, grouped on one fixture type.
+    struct GoldenFixture;
 
-    fn panic_message(work: impl FnOnce() + std::panic::UnwindSafe) -> String {
-        let payload = std::panic::catch_unwind(work).expect_err("the work must panic");
-        match payload.downcast::<String>() {
-            Ok(text) => *text,
-            Err(other) => other.downcast::<&str>().map(|text| text.to_string()).expect("a text panic"),
+    impl GoldenFixture {
+        /// A golden over a scratch directory holding the given files, with no ngspice involved.
+        fn golden_with(files: &[(&str, &str)]) -> Golden {
+            let scratch = ScratchDir::create("unit");
+            for (name, content) in files {
+                std::fs::write(scratch.path().join(name), content).expect("write an export");
+            }
+            Golden::new("unit", "v(mid) = 7.500000e+00\nv(bad) = oops\n".to_string(), String::new(), "ngspice-test".to_string(), scratch)
+        }
+
+        fn panic_message(work: impl FnOnce() + std::panic::UnwindSafe) -> String {
+            let payload = std::panic::catch_unwind(work).expect_err("the work must panic");
+            match payload.downcast::<String>() {
+                Ok(text) => *text,
+                Err(other) => other.downcast::<&str>().map(|text| text.to_string()).expect("a text panic"),
+            }
         }
     }
 
@@ -233,21 +238,21 @@ mod tests {
 
     #[test]
     fn an_unparsable_row_names_file_and_row() {
-        let golden = golden_with(&[("sweep", " 0.0 1.0 \n 1.0 abc \n"), ("short", "1.0\n")]);
-        let message = panic_message(std::panic::AssertUnwindSafe(|| {
+        let golden = GoldenFixture::golden_with(&[("sweep", " 0.0 1.0 \n 1.0 abc \n"), ("short", "1.0\n")]);
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| {
             golden.real("sweep");
         }));
         assert!(message.contains("sweep") && message.contains("row 2") && message.contains("1.0 abc"), "{message}");
-        let message = panic_message(std::panic::AssertUnwindSafe(|| {
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| {
             golden.real("short");
         }));
         assert!(message.contains("short") && message.contains("row 1") && message.contains("1 columns"), "{message}");
-        let message = panic_message(std::panic::AssertUnwindSafe(|| {
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| {
             golden.printed("v(bad)");
         }));
         assert!(message.contains("stdout row 2") && message.contains("v(bad)"), "{message}");
         assert_eq!(golden.printed("v(mid)"), 7.5);
-        let message = panic_message(std::panic::AssertUnwindSafe(|| {
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| {
             golden.printed("v(none)");
         }));
         assert!(message.contains("v(none)") && message.contains("unit"), "{message}");
@@ -255,11 +260,11 @@ mod tests {
 
     #[test]
     fn an_export_is_found_with_or_without_data_suffix() {
-        let plain = golden_with(&[("one", "1.0 2.0\n")]);
-        let suffixed = golden_with(&[("one.data", "1.0 2.0\n")]);
+        let plain = GoldenFixture::golden_with(&[("one", "1.0 2.0\n")]);
+        let suffixed = GoldenFixture::golden_with(&[("one.data", "1.0 2.0\n")]);
         assert_eq!(plain.real("one"), vec![(1.0, 2.0)]);
         assert_eq!(suffixed.real("one"), vec![(1.0, 2.0)]);
-        let complex = golden_with(&[("ac", "1.0e3 0.5 -0.5\n")]);
+        let complex = GoldenFixture::golden_with(&[("ac", "1.0e3 0.5 -0.5\n")]);
         let rows = complex.complex("ac");
         assert_eq!(rows[0].1, Complex { re: 0.5, im: -0.5 });
         assert!((rows[0].1.magnitude() - 0.5_f64.sqrt()).abs() < 1e-15);
@@ -268,16 +273,16 @@ mod tests {
 
     #[test]
     fn a_grid_mismatch_names_the_point() {
-        let golden = golden_with(&[("g", "2.5e+01 0\n1.25892541e+03 0\n"), ("short", "1.0 0\n")]);
+        let golden = GoldenFixture::golden_with(&[("g", "2.5e+01 0\n1.25892541e+03 0\n"), ("short", "1.0 0\n")]);
         // Half a unit in the last printed digit off matches, on either side.
         golden.same_grid("g", &[25.5, 1.2589254117941673e3]);
         golden.same_grid("g", &[24.5, 1258.9254051]);
         // One unit in the last printed digit off does not.
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[26.0, 1.2589254117941673e3])));
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[26.0, 1.2589254117941673e3])));
         assert!(message.contains("point 0") && message.contains("2.5e+01"), "{message}");
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[25.0, 1258.92542])));
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("g", &[25.0, 1258.92542])));
         assert!(message.contains("point 1") && message.contains("1.25892541e+03"), "{message}");
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("short", &[1.0, 2.0])));
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| golden.same_grid("short", &[1.0, 2.0])));
         assert!(message.contains('2') && message.contains('1'), "{message}");
     }
 
@@ -295,10 +300,10 @@ mod tests {
 
     #[test]
     fn a_wrong_row_count_names_both_counts() {
-        let golden = golden_with(&[("e", "1 2\n2 3\n3 4\n")]);
+        let golden = GoldenFixture::golden_with(&[("e", "1 2\n2 3\n3 4\n")]);
         let rows = golden.real("e");
         golden.expect_rows("e", &rows, 3);
-        let message = panic_message(std::panic::AssertUnwindSafe(|| golden.expect_rows("e", &rows, 37)));
+        let message = GoldenFixture::panic_message(std::panic::AssertUnwindSafe(|| golden.expect_rows("e", &rows, 37)));
         assert!(message.contains("unit") && message.contains(" 3 rows") && message.contains("37"), "{message}");
     }
 }

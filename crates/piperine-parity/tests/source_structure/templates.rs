@@ -3,9 +3,7 @@
 //! expected value is computed here by Rust from the rule the test cites, never read back from the model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::run;
 
 use run::SourceRun;
 

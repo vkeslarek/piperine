@@ -13,10 +13,7 @@ use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::NodeIdentifier;
 use piperine_solver::protocol::ZeroWidthCause;
 
-#[allow(dead_code)]
-use crate::support;
-
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// One sawtooth of `wraps/idtmod_ramp.msl`: the closed form of an `idtmod` of a constant.
 struct Sawtooth {
@@ -75,7 +72,7 @@ impl IdtmodRamp {
     /// and as its value at every accepted step.
     fn outputs(stop: f64, step: f64) -> Vec<(Waveform, Vec<f64>)> {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/idtmod_ramp.msl");
-        let built = build(&Project::new(&path), "IdtmodRamp");
+        let built = BuckFixture::build(&Project::new(&path), "IdtmodRamp");
         let (_, result) = built.run_with(stop, step);
         let accepted: Vec<_> = result.iter().collect();
         let times: Vec<f64> = accepted.iter().map(|point| point.time()).collect();
@@ -122,7 +119,7 @@ impl GlitchBench {
     /// cap `step`, and the zero-width solves the run made for a passed value.
     fn after_glitch(step: f64) -> (Vec<Vec<f64>>, u64) {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/glitch.msl");
-        let built = build(&Project::new(&path), "Glitch");
+        let built = BuckFixture::build(&Project::new(&path), "Glitch");
         let (_, result) = built.run_with(3e-6, step);
         let solves = result.statistics().zero_width_for(ZeroWidthCause::PassedValue);
         let accepted: Vec<_> = result.iter().filter(|point| point.time() >= 1e-6).collect();
@@ -173,7 +170,7 @@ fn a_change_made_after_a_zero_width_solve_is_read_once_at_its_value() {
     // zero-width solve for the crossing's change). The solution at each wrap holds the count of both
     // rounds, every reading is counted under its own cause, and no value round 1 read counts again
     let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps/rounds.msl");
-    let built = build(&Project::new(&path), "Rounds");
+    let built = BuckFixture::build(&Project::new(&path), "Rounds");
     let (_, result) = built.run_with(9e-6, 0.05e-6);
     let statistics = result.statistics();
     let node = |name: &str| NodeIdentifier::Anonymous(built.ir.node_at(&format!("Rounds.{name}")).expect("a node").id().index());
@@ -202,7 +199,7 @@ impl ElementBench {
     /// zero-width solves the run made for a passed value.
     fn run(file: &str, top: &str, nodes: &[&str]) -> (Vec<(f64, Vec<f64>)>, u64) {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/wraps").join(file);
-        let built = build(&Project::new(&path), top);
+        let built = BuckFixture::build(&Project::new(&path), top);
         let (_, result) = built.run_with(10e-9, 0.5e-9);
         let solves = result.statistics().zero_width_for(ZeroWidthCause::PassedValue);
         let ids: Vec<NodeIdentifier> = nodes

@@ -1,6 +1,6 @@
 //! Field operations on `ExactRational`: negation, sums, products, quotients and the exact order.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigInt, Sign};
 use std::cmp::Ordering;
 

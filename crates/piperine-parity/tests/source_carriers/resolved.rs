@@ -14,11 +14,9 @@ use piperine_transpile::Settings;
 use piperine_parity::project::Project;
 
 use piperine_parity::mixed;
-#[allow(dead_code)]
-use crate::support;
 
 use mixed::{BuiltDesign, Seen};
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// A sink that keeps nothing: a run is judged by what it returns.
 struct Ignore;
@@ -69,7 +67,7 @@ impl Model {
 
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> BuiltDesign {
-        build(&self.project, top)
+        BuckFixture::build(&self.project, top)
     }
 
     /// The `f64` a net of numbers holds in `bytes`.

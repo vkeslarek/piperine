@@ -1,7 +1,7 @@
 //! Reference rounding of an `ExactRational` to a binary format: the nearest value, ties to even,
 //! found by exact division and comparison with the midpoint (no code shared with the library).
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigUint, Sign};
 use piperine_numbers::format::BinaryFormat;
 use std::cmp::Ordering;

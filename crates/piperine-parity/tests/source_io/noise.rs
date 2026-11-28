@@ -13,9 +13,8 @@ use piperine_api::{Cell, Failure, Overrides, Project, Record, RecordSink, Sessio
 use piperine_solver::protocol::ObservationKind;
 use piperine_transpile::Settings;
 use piperine_parity::compile_cache::CompileCache;
+use piperine_parity::buck_fixture::BuckFixture;
 
-#[allow(dead_code)]
-use crate::support;
 
 /// A sink that keeps nothing: these tests read the report.
 struct Ignore;
@@ -197,7 +196,7 @@ fn a_noise_source_is_zero_outside_a_noise_sweep_and_never_reads_its_density() {
     assert!(matches!(operating_point.rows[0][1], Cell::Real(v) if (v - 1.0).abs() <= 1e-9), "v(o) of the operating point: {operating_point:?}");
     let ac = Hiss::ac_run("NegativeDensityBench", "o");
     assert!(ac.rows.iter().all(|row| matches!(row[1], Cell::Real(magnitude) if magnitude == 0.0)), "the AC run has no stimulus and the source adds none: {ac:?}");
-    let built = support::build(&piperine_parity::project::Project::new(&Hiss::path()), "NegativeDensityBench");
+    let built = BuckFixture::build(&piperine_parity::project::Project::new(&Hiss::path()), "NegativeDensityBench");
     let out = piperine_solver::prelude::NodeIdentifier::Anonymous(built.ir.node_at("NegativeDensityBench.o").expect("node o").id().index());
     let (_, result) = built.run_with(1e-6, 0.1e-6);
     for point in result.iter() {
@@ -208,7 +207,7 @@ fn a_noise_source_is_zero_outside_a_noise_sweep_and_never_reads_its_density() {
 #[test]
 fn a_reaction_or_an_event_reads_noise_as_zero() {
     // AO-03 AC 7: `on at(1m) { emit!("n", x = n) }` with `n = noise(1.0)`: the record holds 0.
-    let seen = support::build(&piperine_parity::project::Project::new(&Hiss::path()), "WatcherBench").run(2e-3, 0.1e-3);
+    let seen = BuckFixture::build(&piperine_parity::project::Project::new(&Hiss::path()), "WatcherBench").run(2e-3, 0.1e-3);
     let records: Vec<Vec<u8>> = seen
         .all()
         .iter()

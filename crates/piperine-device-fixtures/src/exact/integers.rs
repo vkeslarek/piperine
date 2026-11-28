@@ -1,6 +1,6 @@
 //! Integer parts of `ExactRational`: the floor and the Euclidean remainder.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigInt, BigUint};
 
 impl ExactRational {

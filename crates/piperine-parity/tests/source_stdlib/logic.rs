@@ -5,10 +5,7 @@
 //! model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::run;
 
 use piperine_api::Field;
 use run::SourceRun;

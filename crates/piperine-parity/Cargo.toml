@@ -17,6 +17,7 @@ tempfile.workspace = true
 
 [dev-dependencies]
 piperine-ir-fixtures = { path = "../piperine-ir-fixtures" }
+piperine-device-fixtures = { path = "../piperine-device-fixtures" }
 piperine-numbers = { path = "../piperine-numbers" }
 num-bigint = "0.4"
 

@@ -26,8 +26,44 @@ const LOW: [u8; 1] = [0];
 /// One nanosecond in ticks (the solver's one femtosecond).
 const NS: i64 = 1_000_000;
 
-fn real(v: f64) -> Constant {
-    Constant::Real(Real::new(v))
+/// Associated test helpers of `boundary`, grouped on one fixture type.
+struct BoundaryFixture;
+
+impl BoundaryFixture {
+    fn real(v: f64) -> Constant {
+        Constant::Real(Real::new(v))
+    }
+
+    /// Places the source, the switch, the load, the capacitor and the oscillator that drives the
+    /// gate: the gate rises at 3 us and falls at 6 us (one period of 1 / f = 6 us, half a period
+    /// from the start, from low).
+    fn network(w: &mut TopDesign) {
+        let (osc, switch) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b));
+        let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
+        w.place("osc", osc, vec![BoundaryFixture::real(1.0 / 6e-6)], &[("gate", BIT)]);
+        w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
+        w.place_with("sw", switch, &["vs", "x"], vec![BoundaryFixture::real(NETWORK.ron), BoundaryFixture::real(NETWORK.roff)], &[("gate", BIT)]);
+        w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
+        w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
+    }
+
+    /// `module Kick(in clk: Bit, out g: Bit = false)`:
+    ///
+    /// ```text
+    /// on clk.rise() { g <- true; }
+    /// ```
+    fn kick(b: &mut IrBuilder) -> BodyId {
+        const F: &str = "kick.msl";
+        let body = b.body(Buck::spec("Kick", F, 1));
+        b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
+        b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
+        let rise = Buck::rise(b, body, 0, F, 2, 8);
+        let mut x = Dx::new(b, F, 2, 22);
+        let yes = x.boolean(true);
+        let commit = x.commit(1, yes, None);
+        Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 2);
+        body
+    }
 }
 
 #[test]
@@ -45,7 +81,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
     let mut w = TopDesign::new();
     let (osc, adc, vsource) = (Buck::osc(&mut w.b), Buck::adc(&mut w.b), Devices::vsource(&mut w.b));
     // a sample strobe once per 1 us: the oscillator rises at 0.5 us and again at 1.5 us
-    w.place("osc", osc, vec![real(1e6)], &[("sample", BIT)]);
+    w.place("osc", osc, vec![BoundaryFixture::real(1e6)], &[("sample", BIT)]);
     for (i, v) in volts.iter().enumerate() {
         let node = format!("a{i}");
         w.place_analog(&format!("v{i}"), vsource, &[&node, "gnd"], &[*v, 0.0]);
@@ -54,7 +90,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
             &format!("adc{i}"),
             adc,
             &[&node],
-            vec![real(VREF), real(TCONV), real(TSTROBE)],
+            vec![BoundaryFixture::real(VREF), BoundaryFixture::real(TCONV), BoundaryFixture::real(TSTROBE)],
             &[("sample", BIT), (&code, ValueAliases::u(10)), (&done, BIT)],
         );
     }
@@ -126,19 +162,6 @@ impl Network {
 
 const NETWORK: Network = Network { v: 1.0, ron: 1e3, roff: 1e6, r2: 9e3, c: 0.5e-9 };
 
-/// Places the source, the switch, the load, the capacitor and the oscillator that drives the
-/// gate: the gate rises at 3 us and falls at 6 us (one period of 1 / f = 6 us, half a period
-/// from the start, from low).
-fn network(w: &mut TopDesign) {
-    let (osc, switch) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b));
-    let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
-    w.place("osc", osc, vec![real(1.0 / 6e-6)], &[("gate", BIT)]);
-    w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
-    w.place_with("sw", switch, &["vs", "x"], vec![real(NETWORK.ron), real(NETWORK.roff)], &[("gate", BIT)]);
-    w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
-    w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
-}
-
 #[test]
 fn the_comparator_trips_at_its_thresholds() {
     // `A2D` of std/convert.msl: vth = 0.6 V, hyst = 50 mV, so it goes true at vth + hyst / 2 =
@@ -146,9 +169,9 @@ fn the_comparator_trips_at_its_thresholds() {
     const UP: f64 = 0.6 + 0.05 / 2.0;
     const DOWN: f64 = 0.6 - 0.05 / 2.0;
     let mut w = TopDesign::new();
-    network(&mut w);
+    BoundaryFixture::network(&mut w);
     let a2d = Buck::comparator(&mut w.b);
-    w.place_with("cmp", a2d, &["x"], vec![real(0.6), real(50e-3)], &[("d", BIT)]);
+    w.place_with("cmp", a2d, &["x"], vec![BoundaryFixture::real(0.6), BoundaryFixture::real(50e-3)], &[("d", BIT)]);
     // 8.9 us: the gate rises at 3 us, falls at 6 us and rises again at 9 us
     let seen = BuiltDesign::new(w.finish()).run(8.9e-6, 1e-8);
     let gate = seen.transient("gate");
@@ -172,24 +195,6 @@ fn the_comparator_trips_at_its_thresholds() {
     assert!(d[1].0 > 6000 * NS, "the fall is during the discharge: {d:?}");
 }
 
-/// `module Kick(in clk: Bit, out g: Bit = false)`:
-///
-/// ```text
-/// on clk.rise() { g <- true; }
-/// ```
-fn kick(b: &mut IrBuilder) -> BodyId {
-    const F: &str = "kick.msl";
-    let body = b.body(Buck::spec("Kick", F, 1));
-    b.carrier(body, Buck::carrier("clk", BIT, CarrierRole::In, None, F, 1, 20));
-    b.carrier(body, Buck::carrier("g", BIT, CarrierRole::Out, Some(Constant::Bool(false)), F, 1, 30));
-    let rise = Buck::rise(b, body, 0, F, 2, 8);
-    let mut x = Dx::new(b, F, 2, 22);
-    let yes = x.boolean(true);
-    let commit = x.commit(1, yes, None);
-    Buck::reaction(b, body, vec![rise], vec![commit], vec![], F, 2);
-    body
-}
-
 #[test]
 fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     use piperine_solver::prelude::NodeIdentifier;
@@ -197,12 +202,12 @@ fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     // the oscillator's first rising edge is the instant t0 = 3.0037 us, off the 1 ns grid the step
     // cap gives, so only a time point lands there; a compiled reaction commits
     // the gate high there, and the switch (closed: Ron) connects the source to the RC
-    let (osc, switch, kick) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b), kick(&mut w.b));
+    let (osc, switch, kick) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b), BoundaryFixture::kick(&mut w.b));
     let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
-    w.place("osc", osc, vec![real(1.0 / 6.0074e-6)], &[("clk", BIT)]);
+    w.place("osc", osc, vec![BoundaryFixture::real(1.0 / 6.0074e-6)], &[("clk", BIT)]);
     w.place("kick", kick, vec![], &[("clk", BIT), ("gate", BIT)]);
     w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
-    w.place_with("sw", switch, &["vs", "x"], vec![real(NETWORK.ron), real(NETWORK.roff)], &[("gate", BIT)]);
+    w.place_with("sw", switch, &["vs", "x"], vec![BoundaryFixture::real(NETWORK.ron), BoundaryFixture::real(NETWORK.roff)], &[("gate", BIT)]);
     w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
     w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
     let built = BuiltDesign::new(w.finish());

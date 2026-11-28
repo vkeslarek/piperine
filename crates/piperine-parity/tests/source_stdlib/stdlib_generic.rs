@@ -4,9 +4,6 @@
 //! from the model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-use crate::support;
-
 use std::path::{Path, PathBuf};
 
 use std::cell::RefCell;
@@ -15,7 +12,7 @@ use std::rc::Rc;
 use piperine_api::{Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The models of `tests/stdlib_generic/` and what they record.
 struct StdModels;
@@ -29,7 +26,7 @@ impl StdModels {
 
     /// Every record of the transient of `top` of `file` up to `stop` seconds at `step`, decoded as the host decodes it.
     fn records(file: &str, top: &str, stop: f64, step: f64) -> Vec<Record> {
-        let built = build(&Self::project(file), top);
+        let built = BuckFixture::build(&Self::project(file), top);
         let streams = Streams::of(built.ir.clone());
         let seen = built.run(stop, step);
         seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()

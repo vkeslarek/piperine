@@ -5,11 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-#[allow(dead_code)]
-use crate::support;
-
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The model `file` of `tests/generation/`, .
 struct GenerationModels;
@@ -111,7 +109,7 @@ impl Ladders {
     /// The voltage of each node of `names` at every accepted point of the transient of `top` to 5 us, steps of at most 0.1 us:
     /// the time, then the voltages.
     fn transient(top: &str, names: &[String]) -> Vec<(f64, Vec<f64>)> {
-        let built = support::build(&GenerationModels::project("ladder.msl"), top);
+        let built = BuckFixture::build(&GenerationModels::project("ladder.msl"), top);
         let nodes: Vec<NodeIdentifier> = names.iter().map(|name| NodeIdentifier::Anonymous(built.ir.node_at(&format!("{top}.{name}")).expect("a node").id().index())).collect();
         let (_, result) = built.run_with(5e-6, 1e-7);
         result.iter().map(|point| (point.time(), nodes.iter().map(|node| point.get_node(node).expect("v(n)")).collect())).collect()
@@ -150,9 +148,9 @@ impl Bank {
 
     /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
     fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
-        let built = support::build(&GenerationModels::project("bank_digital.msl"), "Bench");
+        let built = BuckFixture::build(&GenerationModels::project("bank_digital.msl"), "Bench");
         let seen = built.run(4e-9, 0.5e-9);
-        support::transient(&seen, &format!("Bench.{name}"))
+        BuckFixture::transient(&seen, &format!("Bench.{name}"))
     }
 }
 
@@ -191,9 +189,9 @@ struct GeneratedItems;
 impl GeneratedItems {
     /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
     fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
-        let built = support::build(&GenerationModels::project("generated_items.msl"), "Bench");
+        let built = BuckFixture::build(&GenerationModels::project("generated_items.msl"), "Bench");
         let seen = built.run(4e-9, 0.5e-9);
-        support::transient(&seen, &format!("Bench.{name}"))
+        BuckFixture::transient(&seen, &format!("Bench.{name}"))
     }
 }
 
@@ -236,9 +234,9 @@ impl HoistedGeneration {
 
     /// The changes of the net `Bench.<name>` during the transient: instant in femtoseconds and bytes, in order.
     fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
-        let built = support::build(&GenerationModels::project("hoisted_generation.msl"), "Bench");
+        let built = BuckFixture::build(&GenerationModels::project("hoisted_generation.msl"), "Bench");
         let seen = built.run(3e-9, 0.5e-9);
-        support::transient(&seen, &format!("Bench.{name}"))
+        BuckFixture::transient(&seen, &format!("Bench.{name}"))
     }
 }
 
@@ -261,11 +259,11 @@ fn a_hoisted_module_with_generation_runs() {
 fn a_template_array_element_placed_in_generation_runs() {
     // GN-17, GAPS L88 (§8.4.1, §8.4.4): `fs[k](a)` in a generation `for` places the element `k` of the array of templates at its
     // own params: `y[k]` is `a * m[k]` with `m` = 1, 2, 5, and `a` goes from 3 to 4 at 1 ns
-    let built = support::build(&GenerationModels::project("template_array.msl"), "Bench");
+    let built = BuckFixture::build(&GenerationModels::project("template_array.msl"), "Bench");
     let seen = built.run(2e-9, 0.5e-9);
     let ns = 1_000_000;
     for (k, m) in [1u8, 2, 5].into_iter().enumerate() {
-        assert_eq!(support::transient(&seen, &format!("Bench.y[{k}]")), vec![(ns, vec![4 * m])], "element {k}: a * {m} after `a` becomes 4");
+        assert_eq!(BuckFixture::transient(&seen, &format!("Bench.y[{k}]")), vec![(ns, vec![4 * m])], "element {k}: a * {m} after `a` becomes 4");
     }
 }
 
@@ -274,18 +272,18 @@ fn a_param_declared_as_an_array_of_templates_runs_by_default_and_by_override() {
     // GN-17, GAPS L89 (§8.1, §8.4.1, §8.4.4): `fs[k](a)` of a param `fs: [Scale; 2]` places the element `k` at its own params, in a
     // module without a result and in one with a result: line
     // `k` is `a * m[k]` with the default `m` = 1, 2, the literal `m` = 5, 6 and the `const` `m` = 3, 7 and the choice `m` = 9, 4; `a` goes from 3 to 4 at 1 ns
-    let built = support::build(&GenerationModels::project("template_param_array.msl"), "Bench");
+    let built = BuckFixture::build(&GenerationModels::project("template_param_array.msl"), "Bench");
     let seen = built.run(2e-9, 0.5e-9);
     let ns = 1_000_000;
     for (line, multipliers) in [("d", [1u8, 2]), ("l", [5, 6]), ("c", [3, 7]), ("x", [9, 4])] {
         for (k, m) in multipliers.into_iter().enumerate() {
-            assert_eq!(support::transient(&seen, &format!("Bench.{line}.y[{k}]")), vec![(ns, vec![4 * m])], "line {line} element {k}: a * {m} after `a` becomes 4");
+            assert_eq!(BuckFixture::transient(&seen, &format!("Bench.{line}.y[{k}]")), vec![(ns, vec![4 * m])], "line {line} element {k}: a * {m} after `a` becomes 4");
         }
     }
     // §8.3.12: `Pick` (a module with a result) reads `fs[1](x)`: `m` of the second element of its default (2), of a literal (6) and of
     // the `const` `TRIPLE` (7)
     for (net, m) in [("pd", 2u8), ("pl", 6), ("pc", 7)] {
-        assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
+        assert_eq!(BuckFixture::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
     }
 }
 
@@ -295,9 +293,9 @@ struct CompositeParams;
 impl CompositeParams {
     /// The changes of the net `Bench.<name>` of the run: instant in femtoseconds and bytes, in order.
     fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
-        let built = support::build(&GenerationModels::project("composite_params.msl"), "Bench");
+        let built = BuckFixture::build(&GenerationModels::project("composite_params.msl"), "Bench");
         let seen = built.run(2e-9, 0.5e-9);
-        support::transient(&seen, &format!("Bench.{name}"))
+        BuckFixture::transient(&seen, &format!("Bench.{name}"))
     }
 }
 
@@ -321,11 +319,11 @@ fn a_template_carrying_composite_params_runs_through_a_placement() {
 fn a_module_with_a_result_through_a_callable_bound_param_runs() {
     // §8.4.4, §8.3.12: `s(a)` with `s: C`, `C: Fn(u8) -> u8` places `Scale` at the params of the template each `Mid` is given: `p` is
     // `a * 5` and `q` is `a * 7`, with `a` going from 3 to 4 at 1 ns
-    let built = support::build(&GenerationModels::project("callable_result.msl"), "Bench");
+    let built = BuckFixture::build(&GenerationModels::project("callable_result.msl"), "Bench");
     let seen = built.run(2e-9, 0.5e-9);
     let ns = 1_000_000;
     // one level down (fix round 2, finding 10): `r` is `Apply`'s own `s(x)` at `m` 3, `w` the template `Twice` forwards to it at `m` 6
     for (net, m) in [("p", 5u8), ("q", 7), ("r", 3), ("w", 6)] {
-        assert_eq!(support::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
+        assert_eq!(BuckFixture::transient(&seen, &format!("Bench.{net}")), vec![(ns, vec![4 * m])], "{net}: a * {m} after `a` becomes 4");
     }
 }

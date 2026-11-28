@@ -7,24 +7,11 @@
 //! reduced modulo `2^N`.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::widths;
-#[allow(dead_code)]
-use crate::exact;
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::oracle;
+use piperine_parity::source::widths;
 
-use exact::ExactRational;
+use piperine_device_fixtures::exact::ExactRational;
 use num_bigint::BigInt;
-use oracle::ExactOracle;
+use piperine_device_fixtures::oracle::ExactOracle;
 use piperine_abi::raw::leaf;
 use piperine_ir::ValueType;
 use piperine_plan::{CarrierLayout, NumberLayout};
@@ -356,17 +343,17 @@ impl FloatTable<'_> {
 
     /// One case of a float result.
     fn float(&self, name: &str, expression: &str, pattern: u128) -> WidthCase {
-        WidthCase { name: name.into(), ty: self.reference.name().into(), zero: "0.0".into(), expression: expression.into(), expected: self.reference.bytes(pattern) }
+        WidthCase { name: name.into(), carrier_type: self.reference.name().into(), zero: "0.0".into(), expression: expression.into(), expected: self.reference.bytes(pattern) }
     }
 
     /// One case of a `bool` result.
     fn boolean(&self, name: &str, expression: &str, value: bool) -> WidthCase {
-        WidthCase { name: name.into(), ty: "bool".into(), zero: "false".into(), expression: expression.into(), expected: ValueBytes::of_bool(value) }
+        WidthCase { name: name.into(), carrier_type: "bool".into(), zero: "false".into(), expression: expression.into(), expected: ValueBytes::of_bool(value) }
     }
 
     /// One case of an integer result of `bits` bits.
     fn integer(&self, name: &str, expression: &str, ty: &str, bits: u32, value: &BigInt) -> WidthCase {
-        WidthCase { name: name.into(), ty: ty.into(), zero: "0".into(), expression: expression.into(), expected: Conversions::integer_bytes(value, bits) }
+        WidthCase { name: name.into(), carrier_type: ty.into(), zero: "0".into(), expression: expression.into(), expected: Conversions::integer_bytes(value, bits) }
     }
 
     /// The bench of the format: the inputs `xa = 2.5`, `xb = 0.1`, `xc = -3.75`, the consts `KA`, `KB`, `KC` of the same
@@ -407,7 +394,7 @@ impl FloatTable<'_> {
         // the same expressions over consts, folded at elaboration, are the values the run commits (CV-36)
         for (row, expression) in [("k_add", "KA + KB"), ("k_mul", "KA * KB"), ("k_div", "KA / KB"), ("k_sin", "KC.sin()"), ("k_floor", "KC.floor()")].into_iter().filter(|(row, _)| reference.transcendental() || *row != "k_sin") {
             let twin = cases.iter().find(|case| case.name == row.trim_start_matches("k_")).expect("the run's twin").expected.clone();
-            cases.push(WidthCase { name: row.into(), ty: ty.into(), zero: "0.0".into(), expression: expression.into(), expected: twin });
+            cases.push(WidthCase { name: row.into(), carrier_type: ty.into(), zero: "0.0".into(), expression: expression.into(), expected: twin });
         }
         WidthBench {
             file,
@@ -434,7 +421,7 @@ impl FloatTable<'_> {
                 continue;
             }
             let pattern = Conversions::float_to_float(from, a, format);
-            cases.push(WidthCase { name: format!("to_{name}"), ty: name.into(), zero: "0.0".into(), expression: format!("xa as {name}"), expected: ValueBytes::of_pattern(pattern, bytes) });
+            cases.push(WidthCase { name: format!("to_{name}"), carrier_type: name.into(), zero: "0.0".into(), expression: format!("xa as {name}"), expected: ValueBytes::of_pattern(pattern, bytes) });
         }
         let pattern = Conversions::float_to_float(BinaryFormat::DOUBLE, u128::from(1.1f64.to_bits()), from);
         cases.push(self.float("from_f64", &format!("xf as {ty}"), pattern));
@@ -650,12 +637,12 @@ impl IntegerReference {
 
     /// One case of this type's value.
     fn case(&self, name: &str, expression: &str, value: &BigInt) -> WidthCase {
-        WidthCase { name: format!("{}_{name}", self.prefix()), ty: self.msl(), zero: "0".into(), expression: expression.into(), expected: self.bytes(value) }
+        WidthCase { name: format!("{}_{name}", self.prefix()), carrier_type: self.msl(), zero: "0".into(), expression: expression.into(), expected: self.bytes(value) }
     }
 
     /// One `bool` case.
     fn boolean(&self, name: &str, expression: &str, value: bool) -> WidthCase {
-        WidthCase { name: format!("{}_{name}", self.prefix()), ty: "bool".into(), zero: "false".into(), expression: expression.into(), expected: ValueBytes::of_bool(value) }
+        WidthCase { name: format!("{}_{name}", self.prefix()), carrier_type: "bool".into(), zero: "false".into(), expression: expression.into(), expected: ValueBytes::of_bool(value) }
     }
 
     /// Every operator, shift, comparison, H.1 method and `as` of the type over the inputs `{p}a`, `{p}b`, `{p}c`.
@@ -709,18 +696,18 @@ impl IntegerReference {
     fn casts(&self, cases: &mut Vec<WidthCase>, a: &BigInt) {
         let xa = format!("{}a", self.prefix());
         let narrow = IntegerReference { bits: 8, signed: false };
-        cases.push(WidthCase { name: format!("{}_to_u8", self.prefix()), ty: "u8".into(), zero: "0".into(), expression: format!("{xa} as u8"), expected: narrow.bytes(&narrow.wrap(a)) });
+        cases.push(WidthCase { name: format!("{}_to_u8", self.prefix()), carrier_type: "u8".into(), zero: "0".into(), expression: format!("{xa} as u8"), expected: narrow.bytes(&narrow.wrap(a)) });
         for target in [IntegerReference { bits: 130, signed: true }, IntegerReference { bits: 70, signed: false }] {
             let name = format!("{}_to_{}", self.prefix(), target.prefix());
-            cases.push(WidthCase { name, ty: target.msl(), zero: "0".into(), expression: format!("{xa} as {}", target.msl()), expected: target.bytes(&target.wrap(a)) });
+            cases.push(WidthCase { name, carrier_type: target.msl(), zero: "0".into(), expression: format!("{xa} as {}", target.msl()), expected: target.bytes(&target.wrap(a)) });
         }
         for (name, format, bytes) in [("f32", BinaryFormat::SINGLE, 4usize), ("f64", BinaryFormat::DOUBLE, 8), ("f128", BinaryFormat::QUAD, 16)] {
             let pattern = Conversions::integer_to_float(a, format);
-            cases.push(WidthCase { name: format!("{}_to_{name}", self.prefix()), ty: name.into(), zero: "0.0".into(), expression: format!("{xa} as {name}"), expected: ValueBytes::of_pattern(pattern, bytes) });
+            cases.push(WidthCase { name: format!("{}_to_{name}", self.prefix()), carrier_type: name.into(), zero: "0.0".into(), expression: format!("{xa} as {name}"), expected: ValueBytes::of_pattern(pattern, bytes) });
         }
         let big = self.wrap(&(a << (self.bits.saturating_sub(10))));
         let pattern = Conversions::integer_to_float(&big, BinaryFormat::SINGLE);
-        cases.push(WidthCase { name: format!("{}_big_to_f32", self.prefix()), ty: "f32".into(), zero: "0.0".into(), expression: format!("({xa} << {}u32) as f32", self.bits.saturating_sub(10)), expected: ValueBytes::of_pattern(pattern, 4) });
+        cases.push(WidthCase { name: format!("{}_big_to_f32", self.prefix()), carrier_type: "f32".into(), zero: "0.0".into(), expression: format!("({xa} << {}u32) as f32", self.bits.saturating_sub(10)), expected: ValueBytes::of_pattern(pattern, 4) });
         let from_bool = BigInt::from(1);
         cases.push(self.case("from_bool", &format!("{}t as {}", self.prefix(), self.msl()), &from_bool));
         let from_narrow = self.wrap(&BigInt::from(-5));

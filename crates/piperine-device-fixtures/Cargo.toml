@@ -6,6 +6,8 @@ description = "The hand-written ABI devices the back-end test suites share (dev-
 publish = false
 
 [dependencies]
+num-bigint = "0.4"
+piperine-numbers = { path = "../piperine-numbers" }
 piperine-abi = { path = "../piperine-abi" }
 piperine-analog-solver = { path = "../piperine-analog-solver" }
 ndarray.workspace = true

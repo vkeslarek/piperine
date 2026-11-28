@@ -11,10 +11,7 @@ use piperine_parity::project::Project;
 use piperine_parity::waveform::Waveform;
 use piperine_solver::prelude::NodeIdentifier;
 
-#[allow(dead_code)]
-use crate::support;
-
-use support::build;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The bench of `operators/slew_step.msl`: an ideal step into `slew`.
 struct SlewStepBench;
@@ -23,7 +20,7 @@ impl SlewStepBench {
     /// `v(o)` over a transient to `stop` with the step cap `step`.
     fn output(stop: f64, step: f64) -> Waveform {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/operators/slew_step.msl");
-        let built = build(&Project::new(&path), "SlewStepBench");
+        let built = BuckFixture::build(&Project::new(&path), "SlewStepBench");
         let output_node = NodeIdentifier::Anonymous(built.ir.node_at("SlewStepBench.o").expect("node o").id().index());
         let (_, result) = built.run_with(stop, step);
         let accepted: Vec<_> = result.iter().collect();

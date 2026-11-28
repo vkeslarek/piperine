@@ -2,15 +2,14 @@
 //! over `num-bigint`), and for binary32 and binary64 also against Rust's own `f32`/`f64` parsing
 //! (CV-30, CV-31; IEEE 754-2019 sections 4.3.1 and 7.4).
 
-use crate::exact;
 
 use num_bigint::BigUint;
 use num_bigint::BigInt;
 use piperine_numbers::decimal::DecimalText;
 use piperine_numbers::format::{BinaryFormat, FloatClass};
 use piperine_numbers::limbs::ToLimbs;
-use exact::ExactRational;
-use piperine_device_fixtures::random::Xorshift;
+use piperine_device_fixtures::exact::ExactRational;
+use piperine_device_fixtures::random::ShiftGenerator;
 
 /// Big-integer helper shared with the integer targets.
 struct BigOracle;
@@ -31,13 +30,13 @@ struct RoundingScenario {
     /// The format under test.
     format: BinaryFormat,
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
 }
 
 impl RoundingScenario {
     /// A scenario for `format`.
     fn new(format: BinaryFormat) -> Self {
-        RoundingScenario { format, random: Xorshift::new(u64::from(format.bits) * 977) }
+        RoundingScenario { format, random: ShiftGenerator::new(u64::from(format.bits) * 977) }
     }
 
     /// Asserts the library rounds the exact rational to the reference bits.
@@ -51,10 +50,10 @@ impl RoundingScenario {
 
     /// A random significand of 1 to `bits` bits.
     fn random_significand(&mut self, bits: u64) -> BigUint {
-        let width = 1 + self.random.next_u64() % bits;
+        let width = 1 + self.random.next_bits() % bits;
         let mut value = BigUint::from(0u32);
         for _ in 0..width.div_ceil(64) {
-            value = (value << 64u32) | BigUint::from(self.random.next_u64());
+            value = (value << 64u32) | BigUint::from(self.random.next_bits());
         }
         value >> ((width.div_ceil(64) * 64) - width)
     }
@@ -62,7 +61,7 @@ impl RoundingScenario {
     /// A random exponent that reaches subnormals and overflow of the format.
     fn random_exponent(&mut self) -> i64 {
         let span = 2 * (self.format.maximum_exponent as i64 + self.format.precision as i64) + 20;
-        (self.random.next_u64() % span as u64) as i64 - (self.format.maximum_exponent as i64 + self.format.precision as i64 + 10)
+        (self.random.next_bits() % span as u64) as i64 - (self.format.maximum_exponent as i64 + self.format.precision as i64 + 10)
     }
 
     /// Every exact tie between neighbours, one above and below, for edge and random neighbours.
@@ -109,9 +108,9 @@ impl RoundingScenario {
         for _ in 0..count {
             let significand = self.random_significand(150);
             let exponent = self.random_exponent();
-            let negative = self.random.next_u64() & 1 == 1;
+            let negative = self.random.next_bits() & 1 == 1;
             self.expect_round(&ExactRational::dyadic(negative, &significand, exponent), "random dyadic");
-            let power = (self.random.next_u64() % 120) as i64 - 60;
+            let power = (self.random.next_bits() % 120) as i64 - 60;
             let digits = self.random_significand(130);
             self.expect_round(&ExactRational::decimal(negative, &digits, power * 40), "random decimal");
         }
@@ -120,7 +119,7 @@ impl RoundingScenario {
     /// Every decoded random pattern rounds back to itself.
     fn check_decode(&mut self, count: usize) {
         for _ in 0..count {
-            let pattern = ((self.random.next_u64() as u128) << 64 | self.random.next_u64() as u128) & (u128::MAX >> (128 - self.format.bits));
+            let pattern = ((self.random.next_bits() as u128) << 64 | self.random.next_bits() as u128) & (u128::MAX >> (128 - self.format.bits));
             if let Some((negative, significand, exponent)) = self.format.decode(pattern) {
                 let round_trip = self.format.round(negative, &significand.to_limbs(), exponent, false);
                 assert_eq!(round_trip, pattern, "decode/round of {pattern:#x} in {} bits", self.format.bits);
@@ -155,12 +154,12 @@ fn rounding_to_every_format_is_nearest_ties_to_even() {
         scenario.check_random(20_000);
         scenario.check_decode(20_000);
     }
-    let mut random = Xorshift::new(94);
+    let mut random = ShiftGenerator::new(94);
     for format in [BinaryFormat::SINGLE, BinaryFormat::DOUBLE] {
         for _ in 0..20_000 {
-            let digits = BigUint::from(random.next_u64() >> (random.next_u64() % 60)) * BigUint::from(1_000u32).pow((random.next_u64() % 3) as u32);
-            let power = (random.next_u64() % 100) as i64 - 60;
-            let negative = random.next_u64() & 1 == 1;
+            let digits = BigUint::from(random.next_bits() >> (random.next_bits() % 60)) * BigUint::from(1_000u32).pow((random.next_bits() % 3) as u32);
+            let power = (random.next_bits() % 100) as i64 - 60;
+            let negative = random.next_bits() & 1 == 1;
             let rational = ExactRational::decimal(negative, &digits, power);
             let (expected, nearest) = (RustParser::bits(format, negative, &digits, power), rational.nearest(format));
             // Rust parses a zero as a signed zero; the reference gives +0 for any zero.
@@ -174,23 +173,23 @@ fn rounding_to_every_format_is_nearest_ties_to_even() {
 /// `{:e}` formatting (A.8 rule 8, QD6).
 struct TextScenario {
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
 }
 
 impl TextScenario {
     /// A scenario with a seeded generator.
     fn new(seed: u64) -> Self {
-        TextScenario { random: Xorshift::new(seed) }
+        TextScenario { random: ShiftGenerator::new(seed) }
     }
 
     /// A random decimal text with its exact value: up to 40 digits, an optional fraction point
     /// and an optional exponent. Returns the text and `(negative, digits, power)`.
     fn random_text(&mut self) -> (String, bool, BigUint, i64) {
-        let digit_count = 1 + (self.random.next_u64() % 40) as usize;
-        let digits: String = (0..digit_count).map(|_| char::from(b'0' + (self.random.next_u64() % 10) as u8)).collect();
-        let point = 1 + (self.random.next_u64() % digit_count as u64) as usize;
+        let digit_count = 1 + (self.random.next_bits() % 40) as usize;
+        let digits: String = (0..digit_count).map(|_| char::from(b'0' + (self.random.next_bits() % 10) as u8)).collect();
+        let point = 1 + (self.random.next_bits() % digit_count as u64) as usize;
         let mut text = String::new();
-        let negative = self.random.next_u64() & 1 == 1;
+        let negative = self.random.next_bits() & 1 == 1;
         if negative {
             text.push('-');
         }
@@ -200,8 +199,8 @@ impl TextScenario {
             text.push_str(&digits[point..]);
         }
         let mut power = -((digit_count - point) as i64);
-        if self.random.next_u64() % 3 != 0 {
-            let exponent = (self.random.next_u64() % 140) as i64 - 70;
+        if self.random.next_bits() % 3 != 0 {
+            let exponent = (self.random.next_bits() % 140) as i64 - 70;
             text.push_str(&format!("e{exponent}"));
             power += exponent;
         }
@@ -237,7 +236,7 @@ impl TextScenario {
         let precision = BinaryFormat::QUAD.precision as u64;
         for _ in 0..500 {
             // In [2^113, 2^114) binary128 values are the even integers: every odd one is a tie.
-            let neighbour = (BigUint::from(1u32) << precision) + BigUint::from(2 * (self.random.next_u64() % (1 << 19)));
+            let neighbour = (BigUint::from(1u32) << precision) + BigUint::from(2 * (self.random.next_bits() % (1 << 19)));
             let midpoint = &neighbour + 1u32;
             for (text, value) in [(midpoint.to_string(), midpoint.clone()), (format!("{midpoint}0001e-4"), midpoint.clone() * 10_000u32 + 1u32), (format!("{neighbour}9999e-4"), neighbour.clone() * 10_000u32 + 9_999u32)] {
                 let exponent = if text.contains('e') { -4 } else { 0 };
@@ -311,8 +310,8 @@ fn decimal_text_reads_to_the_nearest_value_and_prints_the_shortest() {
         scenario.check_shortest(BinaryFormat::HALF, bits, true);
     }
     for _ in 0..20_000 {
-        let word = (scenario.random.next_u64() as u128) << 64 | scenario.random.next_u64() as u128;
-        let minimal = scenario.random.next_u64() % 10 == 0;
+        let word = (scenario.random.next_bits() as u128) << 64 | scenario.random.next_bits() as u128;
+        let minimal = scenario.random.next_bits() % 10 == 0;
         scenario.check_shortest(BinaryFormat::QUAD, word, minimal);
         let single = (word as u32) as u128;
         let double = (word >> 64) as u64 as u128;

@@ -6,14 +6,14 @@
 
 use std::path::Path;
 
-use crate::run::SourceRun;
+use super::run::SourceRun;
 
-/// One row of a table: `name <- expression`, a carrier of type `ty` that must hold `expected` after the first edge.
+/// One row of a table: `name <- expression`, a carrier of type `carrier_type` that must hold `expected` after the first edge.
 pub struct WidthCase {
     /// The carrier's name.
     pub name: String,
     /// The MSL type of the value (`f32`, `bool`, `UInt<200>`).
-    pub ty: String,
+    pub carrier_type: String,
     /// The value the carrier starts at, as MSL text.
     pub zero: String,
     /// The MSL expression the reaction commits.
@@ -49,11 +49,11 @@ impl WidthBench {
             text.push('\n');
         }
         text.push_str("\nmodule Bench() {\n    signal clk: Bit;\n");
-        for (name, ty, init) in &self.inputs {
-            text.push_str(&format!("    signal {name}: Bit<{ty}> = {init};\n"));
+        for (name, carrier_type, init) in &self.inputs {
+            text.push_str(&format!("    signal {name}: Bit<{carrier_type}> = {init};\n"));
         }
         for case in &self.cases {
-            text.push_str(&format!("    signal {}: Bit<{}> = {};\n", case.name, case.ty, case.zero));
+            text.push_str(&format!("    signal {}: Bit<{}> = {};\n", case.name, case.carrier_type, case.zero));
         }
         text.push_str("    let osc = Osc(clk) { f: 200M };\n}\ndigital for Bench {\n    on clk.rise() {\n");
         for case in &self.cases {
@@ -75,7 +75,7 @@ impl WidthBench {
     }
 
     /// The model `file` of the directory as a project.
-    pub fn project(file: &str) -> piperine_parity::project::Project {
+    pub fn project(file: &str) -> crate::project::Project {
         Self::RUN.project(file)
     }
 

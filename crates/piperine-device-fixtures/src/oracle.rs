@@ -2,7 +2,7 @@
 //! operands and from the standard's special-value tables otherwise. The specification is H.2 and
 //! IEEE 754-2019 clauses 5 and 6; the code shares nothing with `IeeeArithmetic`.
 
-use super::exact::ExactRational;
+use crate::exact::ExactRational;
 use num_bigint::BigInt;
 use piperine_numbers::format::BinaryFormat;
 use std::cmp::Ordering;

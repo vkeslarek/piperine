@@ -2,6 +2,15 @@
 //! fraction to a binary interchange format. It shares no code with the library under test: the
 //! neighbours of a value are found by exact division and compared with the midpoint as fractions.
 
+mod algebra;
+mod integers;
+mod nearest;
+mod parts;
+mod root;
+mod scaled;
+mod text;
+mod values;
+
 use num_bigint::{BigInt, BigUint, Sign};
 
 /// A rational number `numerator / denominator` with a positive denominator, not reduced.

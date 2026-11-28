@@ -1,6 +1,6 @@
 //! The decimal constructor of `ExactRational`.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigInt, BigUint, Sign};
 
 impl ExactRational {

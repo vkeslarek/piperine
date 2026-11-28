@@ -6,19 +6,14 @@
 #![cfg(unix)]
 
 use piperine_parity::mixed;
-#[allow(dead_code)]
-use crate::support;
-#[allow(dead_code)]
-use crate::bytes;
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::bytes;
+use piperine_parity::source::run;
 
 use mixed::Seen;
 use piperine_solver::protocol::{AnalysisKind, ObservationKind};
 use bytes::CarrierBytes;
 use run::SourceRun;
-use support::{build, first_edge_value, transient};
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
@@ -441,8 +436,8 @@ fn an_index_reads_and_writes_the_element_it_names() {
     // CV-13 AC 1, §3.3.5 (explicit-unknowns T27; replaces `an_unknown_index_reads_and_writes_by_merge`): an index is an
     // integer. With `sel` holding 1, `eq[sel]` is 5 and `ne[2]` is 6; writing 7 into `w[sel]` leaves `w[0]` at 5, and
     // into `v[sel]` makes `v[1]` 7.
-    let seen = build(&RUN.project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
-    let at_edge = |name: &str| -> Option<Vec<u8>> { transient(&seen, &format!("MergeBench.{name}")).into_iter().next().map(|(_, bytes)| bytes) };
+    let seen = BuckFixture::build(&RUN.project("arrays.msl"), "MergeBench").run(10e-9, 1e-9);
+    let at_edge = |name: &str| -> Option<Vec<u8>> { BuckFixture::transient(&seen, &format!("MergeBench.{name}")).into_iter().next().map(|(_, bytes)| bytes) };
     assert_eq!(at_edge("same"), Some(CarrierBytes::byte(5)), "eq[1] is 5");
     assert_eq!(at_edge("differ"), Some(CarrierBytes::byte(6)), "ne[2] is 6");
     assert_eq!(at_edge("w0"), Some(CarrierBytes::byte(5)), "w[0] was not written");
@@ -709,7 +704,7 @@ fn normal_with_zero_sigma_returns_the_mean() {
 fn the_jitter_clock_repeats_with_its_seed() {
     // CV-16 AC 3 (§22.2.17 rule 4): the clock whose edges the state of `normal` places gives the same edge times on
     // every run with one seed, and the edges are not on a regular grid (the jitter is there).
-    let edges = |top: &str| transient(&build(&RUN.project("normal.msl"), top).run(200e-9, 1e-9), &format!("{top}.clk")).into_iter().map(|(tick, _)| tick).collect::<Vec<i64>>();
+    let edges = |top: &str| BuckFixture::transient(&BuckFixture::build(&RUN.project("normal.msl"), top).run(200e-9, 1e-9), &format!("{top}.clk")).into_iter().map(|(tick, _)| tick).collect::<Vec<i64>>();
     let first = edges("JitterBench");
     let second = edges("JitterBench");
     assert!(first.len() > 10, "the clock runs: {first:?}");
@@ -737,17 +732,17 @@ struct Carriers {
 impl Carriers {
     /// `Bench` of `carriers.msl`, run for two rising edges (2.5 ns and 7.5 ns).
     fn run() -> Carriers {
-        Carriers { seen: build(&RUN.project("carriers.msl"), "Bench").run(10e-9, 1e-9) }
+        Carriers { seen: BuckFixture::build(&RUN.project("carriers.msl"), "Bench").run(10e-9, 1e-9) }
     }
 
     /// Every change of the carrier `name` during the transient: instant in ticks and bytes.
     fn changes(&self, name: &str) -> Vec<(i64, Vec<u8>)> {
-        transient(&self.seen, &format!("Bench.{name}"))
+        BuckFixture::transient(&self.seen, &format!("Bench.{name}"))
     }
 
     /// The value of `name` once the first rising edge has committed.
     fn once(&self, name: &str) -> Vec<u8> {
-        first_edge_value(&self.seen, &format!("Bench.{name}"))
+        BuckFixture::first_edge_value(&self.seen, &format!("Bench.{name}"))
     }
 
     /// `value`, the bytes of a composite, as its pin holds it: those bytes and nothing else.
@@ -853,9 +848,9 @@ fn composite_params_bind_and_read_everywhere() {
     // CV-18 AC 1 (§8.1): a struct, a tuple and an array param bind their defaults or a placement's
     // value, and every block reads them: a digital reaction (fields, elements, a real field
     // converted), an `analog` block (a real field times Rust's constant) and the `where`.
-    let built = build(&RUN.project("params.msl"), "Bench");
+    let built = BuckFixture::build(&RUN.project("params.msl"), "Bench");
     let seen = built.run(10e-9, 1e-9);
-    let at_edge = |name: &str| transient(&seen, &format!("Bench.{name}"))[0].1.clone();
+    let at_edge = |name: &str| BuckFixture::transient(&seen, &format!("Bench.{name}"))[0].1.clone();
     // the defaults: g = Gains { a: 3, b: 0.5 }, t = (4, 5), arr = [1, 2, 3]
     let defaults = (Gains { a: 3, b: 0.5 }, (4u8, 5u8), [1u8, 2, 3]);
     assert_eq!(at_edge("dq"), CarrierBytes::byte(defaults.0.a), "g.a");
@@ -901,7 +896,7 @@ fn a_record_carries_a_composite_field_and_its_type() {
     // fields of the stream `sample`; the record is delivered with each field's bytes laid out as a
     // composite pin (the parts' values, then the known byte) at the offset the layout gives, and the
     // stream's metadata names each field's type as the source writes it.
-    let built = build(&RUN.project("records.msl"), "Bench");
+    let built = BuckFixture::build(&RUN.project("records.msl"), "Bench");
     let out = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
     let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
     let mut options = piperine_solver::prelude::TransientAnalysisOptions::new(10e-9, 1e-9);

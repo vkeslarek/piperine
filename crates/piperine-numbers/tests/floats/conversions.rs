@@ -2,14 +2,13 @@
 //! `num-bigint`) for every pair of widths, and against Rust's own `as` for the pairs Rust has:
 //! `f32` and `f64` to each other, and `u64`/`i64` with `f32`/`f64` (CV-30, CV-31, CV-32).
 
-use crate::exact;
 
-use exact::ExactRational;
+use piperine_device_fixtures::exact::ExactRational;
 use num_bigint::{BigInt, BigUint, Sign};
 use piperine_numbers::convert::NumberConversion;
 use piperine_numbers::format::BinaryFormat;
 use piperine_numbers::wide::{WideInt, WideUInt};
-use piperine_device_fixtures::random::Xorshift;
+use piperine_device_fixtures::random::ShiftGenerator;
 
 /// The four float formats, with a name for failure messages.
 const FORMATS: [(&str, BinaryFormat); 4] = [("f16", BinaryFormat::HALF), ("f32", BinaryFormat::SINGLE), ("f64", BinaryFormat::DOUBLE), ("f128", BinaryFormat::QUAD)];
@@ -17,18 +16,18 @@ const FORMATS: [(&str, BinaryFormat); 4] = [("f16", BinaryFormat::HALF), ("f32",
 /// Operand generation and the exact reference for conversions.
 struct ConversionScenario {
     /// The deterministic operand source.
-    random: Xorshift,
+    random: ShiftGenerator,
 }
 
 impl ConversionScenario {
     /// A scenario with a seeded generator.
     fn new(seed: u64) -> Self {
-        ConversionScenario { random: Xorshift::new(seed) }
+        ConversionScenario { random: ShiftGenerator::new(seed) }
     }
 
     /// 128 random bits.
     fn word(&mut self) -> u128 {
-        (self.random.next_u64() as u128) << 64 | self.random.next_u64() as u128
+        (self.random.next_bits() as u128) << 64 | self.random.next_bits() as u128
     }
 
     /// Whether a pattern of `format` is a NaN.
@@ -52,9 +51,9 @@ impl ConversionScenario {
         }
         for _ in 0..count {
             patterns.push(self.word() & (u128::MAX >> (128 - format.bits)));
-            let significand = BigUint::from(self.word() >> (self.random.next_u64() % 128)) | BigUint::from(1u32);
-            let exponent = (self.random.next_u64() % (limit as u64 + 8)) as i64 - 4 - significand.bits() as i64;
-            let exact = ExactRational::dyadic(self.random.next_u64() & 1 == 1, &significand, exponent);
+            let significand = BigUint::from(self.word() >> (self.random.next_bits() % 128)) | BigUint::from(1u32);
+            let exponent = (self.random.next_bits() % (limit as u64 + 8)) as i64 - 4 - significand.bits() as i64;
+            let exact = ExactRational::dyadic(self.random.next_bits() & 1 == 1, &significand, exponent);
             patterns.push(exact.nearest(format));
         }
         patterns
@@ -120,7 +119,7 @@ impl ConversionScenario {
             }
         }
         for _ in 0..count {
-            let pattern = (BigInt::from(self.word()) << 128 | BigInt::from(self.word())) >> (self.random.next_u64() % 256);
+            let pattern = (BigInt::from(self.word()) << 128 | BigInt::from(self.word())) >> (self.random.next_bits() % 256);
             values.push(pattern % (BigInt::from(1) << bits));
         }
         values

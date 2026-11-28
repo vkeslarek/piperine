@@ -1228,10 +1228,12 @@ name = "piperine-device-fixtures"
 version = "0.2.0"
 dependencies = [
  "ndarray",
+ "num-bigint",
  "num-complex",
  "piperine-abi",
  "piperine-analog-solver",
  "piperine-digital-solver",
+ "piperine-numbers",
  "piperine-solver",
 ]
 
@@ -1302,6 +1304,7 @@ dependencies = [
  "num-bigint",
  "piperine-abi",
  "piperine-api",
+ "piperine-device-fixtures",
  "piperine-interp",
  "piperine-ir",
  "piperine-ir-fixtures",

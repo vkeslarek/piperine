@@ -4,7 +4,7 @@
 
 use num_bigint::BigUint;
 use piperine_numbers::limbs::{Limbs, ToLimbs};
-use piperine_device_fixtures::random::Xorshift;
+use piperine_device_fixtures::random::ShiftGenerator;
 
 /// The big-integer oracle: conversions between limbs and `BigUint`, and random limb vectors.
 struct BigOracle;
@@ -25,15 +25,15 @@ impl BigOracle {
     }
 
     /// A random limb vector of 1 to `maximum` limbs, biased to edge limbs (0, 1, `u64::MAX`).
-    fn random_limbs(random: &mut Xorshift, maximum: u64) -> Vec<u64> {
-        let length = 1 + random.next_u64() % maximum;
+    fn random_limbs(random: &mut ShiftGenerator, maximum: u64) -> Vec<u64> {
+        let length = 1 + random.next_bits() % maximum;
         (0..length)
-            .map(|_| match random.next_u64() % 8 {
+            .map(|_| match random.next_bits() % 8 {
                 0 => 0,
                 1 => 1,
                 2 => u64::MAX,
                 3 => 1 << 63,
-                _ => random.next_u64(),
+                _ => random.next_bits(),
             })
             .collect()
     }
@@ -41,7 +41,7 @@ impl BigOracle {
 
 #[test]
 fn limbs_agree_with_big_integers_on_every_operation() {
-    let mut random = Xorshift::new(92);
+    let mut random = ShiftGenerator::new(92);
     let edge: Vec<Vec<u64>> = vec![vec![], vec![1], vec![u64::MAX], vec![0, 1], vec![u64::MAX, u64::MAX], vec![1 << 63], vec![0, 1 << 63], vec![1, 1 << 63, u64::MAX]];
     let mut pairs: Vec<(Vec<u64>, Vec<u64>)> = Vec::new();
     for left in &edge {
@@ -67,7 +67,7 @@ fn limbs_agree_with_big_integers_on_every_operation() {
                 assert_eq!(quotient, quotient.trimmed());
             }
         }
-        let count = random.next_u64() % 300;
+        let count = random.next_bits() % 300;
         assert_eq!(BigOracle::value(&left.shifted_left(count)), &big_left << count, "shl {left:?} {count}");
         assert_eq!(BigOracle::value(&left.shifted_right(count)), &big_left >> count, "shr {left:?} {count}");
         assert_eq!(left.bit_length(), big_left.bits(), "bits {left:?}");
@@ -78,11 +78,11 @@ fn limbs_agree_with_big_integers_on_every_operation() {
         if big_left != BigUint::from(0u32) {
             assert_eq!(left.trailing_zero_bits(), big_left.trailing_zeros().unwrap_or(0));
         }
-        let index = random.next_u64() % 200;
+        let index = random.next_bits() % 200;
         assert_eq!(left.bit(index), (&big_left >> index) % 2u32 == BigUint::from(1u32), "bit {left:?} {index}");
         assert_eq!(left.any_bit_below(index), (&big_left % (BigUint::from(1u32) << index)) != BigUint::from(0u32), "below {left:?} {index}");
-        let small = random.next_u64();
-        let addend = random.next_u64();
+        let small = random.next_bits();
+        let addend = random.next_bits();
         assert_eq!(BigOracle::value(&left.times_small_plus(small, addend)), &big_left * small + addend);
         if small != 0 {
             let (quotient, remainder) = left.divide_small(small).unwrap_or_default();
@@ -141,24 +141,24 @@ impl<const N: u32, const L: usize> NativeReference<N, L> {
     }
 
     /// Operand patterns: the edge values, then deterministic random ones.
-    fn operands(random: &mut Xorshift, count: usize) -> Vec<u128> {
+    fn operands(random: &mut ShiftGenerator, count: usize) -> Vec<u128> {
         let mut values: Vec<u128> = vec![0, 1, 2, Self::mask(u128::MAX), Self::mask(1u128 << (N - 1)), Self::mask((1u128 << (N - 1)) - 1), Self::mask(u128::MAX - 1)];
         for _ in 0..count {
-            let pattern = (random.next_u64() as u128) << 64 | random.next_u64() as u128;
-            values.push(Self::mask(pattern >> (random.next_u64() % 128)));
+            let pattern = (random.next_bits() as u128) << 64 | random.next_bits() as u128;
+            values.push(Self::mask(pattern >> (random.next_bits() % 128)));
         }
         values
     }
 
     /// Checks every operator and H.1 method of `WideUInt<N, L>` on the operand pairs.
     fn check_unsigned(count: usize) {
-        let mut random = Xorshift::new(u64::from(N));
+        let mut random = ShiftGenerator::new(u64::from(N));
         let values = Self::operands(&mut random, count);
         let maximum = Self::mask(u128::MAX);
         for (index, &a) in values.iter().enumerate() {
             let b = values[(index * 7 + 3) % values.len()];
             let (x, y) = (WideUInt::<N, L>::from_u128(a), WideUInt::<N, L>::from_u128(b));
-            let amount = random.next_u64() % (u64::from(N) + 8);
+            let amount = random.next_bits() % (u64::from(N) + 8);
             let note = format!("N={N} a={a} b={b} amount={amount}");
             assert_eq!((x + y).low_u128(), Self::mask(a.wrapping_add(b)), "add {note}");
             assert_eq!((x - y).low_u128(), Self::mask(a.wrapping_sub(b)), "sub {note}");
@@ -178,7 +178,7 @@ impl<const N: u32, const L: usize> NativeReference<N, L> {
             if a != b {
                 assert!(x.clamp_checked(WideUInt::from_u128(high), WideUInt::from_u128(low)).is_none(), "clamp lo > hi {note}");
             }
-            let exponent = (random.next_u64() % 9) as u32;
+            let exponent = (random.next_bits() % 9) as u32;
             assert_eq!(x.pow(exponent).low_u128(), Self::mask(a.wrapping_pow(exponent)), "pow {note}");
             let sum = a.checked_add(b).filter(|&v| v <= maximum);
             let difference = a.checked_sub(b);
@@ -201,12 +201,12 @@ impl<const N: u32, const L: usize> NativeReference<N, L> {
 
     /// Checks every operator and H.1 method of `WideInt<N, L>` on the operand pairs.
     fn check_signed(count: usize) {
-        let mut random = Xorshift::new(1000 + u64::from(N));
+        let mut random = ShiftGenerator::new(1000 + u64::from(N));
         let values: Vec<i128> = Self::operands(&mut random, count).into_iter().map(Self::signed).chain([-1, Self::minimum(), Self::maximum(), Self::minimum() + 1]).collect();
         for (index, &a) in values.iter().enumerate() {
             let b = values[(index * 7 + 3) % values.len()];
             let (x, y) = (WideInt::<N, L>::from_i128(a), WideInt::<N, L>::from_i128(b));
-            let amount = random.next_u64() % (u64::from(N) + 8);
+            let amount = random.next_bits() % (u64::from(N) + 8);
             let note = format!("N={N} a={a} b={b} amount={amount}");
             assert_eq!(x.low_i128(), a, "round trip {note}");
             assert_eq!((x + y).low_i128(), Self::wrap_signed(a.wrapping_add(b)), "add {note}");
@@ -229,7 +229,7 @@ impl<const N: u32, const L: usize> NativeReference<N, L> {
             if a != b {
                 assert!(x.clamp_checked(WideInt::from_i128(high), WideInt::from_i128(low)).is_none(), "clamp lo > hi {note}");
             }
-            let exponent = (random.next_u64() % 9) as u32;
+            let exponent = (random.next_bits() % 9) as u32;
             assert_eq!(x.pow(exponent).low_i128(), Self::wrap_signed(a.wrapping_pow(exponent)), "pow {note}");
             let in_range = |value: Option<i128>| value.filter(|v| (Self::minimum()..=Self::maximum()).contains(v));
             let (sum, difference, product) = (in_range(a.checked_add(b)), in_range(a.checked_sub(b)), in_range(a.checked_mul(b)));
@@ -290,26 +290,26 @@ impl<const N: u32, const L: usize> ModularReference<N, L> {
     }
 
     /// Random operands of `N` bits, edge values first.
-    fn operands(random: &mut Xorshift, count: usize) -> Vec<BigInt> {
+    fn operands(random: &mut ShiftGenerator, count: usize) -> Vec<BigInt> {
         let mut values: Vec<BigInt> = vec![BigInt::from(0), BigInt::from(1), BigInt::from(-1), Self::modulus() - 1, BigInt::from(1u32) << (N - 1), (BigInt::from(1u32) << (N - 1)) - 1];
         for _ in 0..count {
             let limbs = BigOracle::random_limbs(random, L as u64);
             let value = BigInt::from(BigOracle::value(&limbs));
-            values.push(Self::wrap_unsigned(&(value >> (random.next_u64() % u64::from(N)))));
+            values.push(Self::wrap_unsigned(&(value >> (random.next_bits() % u64::from(N)))));
         }
         values
     }
 
     /// The unsigned operation set of `WideUInt<N, L>` against exact arithmetic.
     fn check_unsigned(count: usize) {
-        let mut random = Xorshift::new(u64::from(N) * 3);
+        let mut random = ShiftGenerator::new(u64::from(N) * 3);
         let values: Vec<BigInt> = Self::operands(&mut random, count).iter().map(Self::wrap_unsigned).collect();
         let maximum = Self::modulus() - 1;
         for (index, a) in values.iter().enumerate() {
             let b = &values[(index * 5 + 1) % values.len()];
             let x = WideUInt::<N, L>::from_limbs(&Self::limbs(a));
             let y = WideUInt::<N, L>::from_limbs(&Self::limbs(b));
-            let amount = random.next_u64() % (u64::from(N) + 8);
+            let amount = random.next_bits() % (u64::from(N) + 8);
             let note = format!("N={N} a={a} b={b} amount={amount}");
             let pattern = |value: WideUInt<N, L>| BigInt::from(BigOracle::value(value.limbs()));
             assert_eq!(pattern(x + y), Self::wrap_unsigned(&(a + b)), "add {note}");
@@ -322,7 +322,7 @@ impl<const N: u32, const L: usize> ModularReference<N, L> {
             assert_eq!(x.cmp(&y), a.cmp(b), "cmp {note}");
             assert_eq!(x.checked_divide(y).map(pattern), (b != &BigInt::from(0)).then(|| a / b), "div {note}");
             assert_eq!(x.checked_remainder(y).map(pattern), (b != &BigInt::from(0)).then(|| a % b), "rem {note}");
-            let exponent = (random.next_u64() % 6) as u32;
+            let exponent = (random.next_bits() % 6) as u32;
             let mut expected_power = BigInt::from(1);
             for _ in 0..exponent {
                 expected_power = Self::wrap_unsigned(&(expected_power * a));
@@ -345,14 +345,14 @@ impl<const N: u32, const L: usize> ModularReference<N, L> {
 
     /// The signed operation set of `WideInt<N, L>` against exact arithmetic.
     fn check_signed(count: usize) {
-        let mut random = Xorshift::new(u64::from(N) * 5);
+        let mut random = ShiftGenerator::new(u64::from(N) * 5);
         let values: Vec<BigInt> = Self::operands(&mut random, count).iter().map(Self::wrap_signed).collect();
         let (minimum, maximum) = (-(BigInt::from(1u32) << (N - 1)), (BigInt::from(1u32) << (N - 1)) - 1);
         for (index, a) in values.iter().enumerate() {
             let b = &values[(index * 5 + 1) % values.len()];
             let x = WideInt::<N, L>::from_limbs(&Self::limbs(a));
             let y = WideInt::<N, L>::from_limbs(&Self::limbs(b));
-            let amount = random.next_u64() % (u64::from(N) + 8);
+            let amount = random.next_bits() % (u64::from(N) + 8);
             let note = format!("N={N} a={a} b={b} amount={amount}");
             let value = |wide: WideInt<N, L>| Self::wrap_signed(&BigInt::from(BigOracle::value(wide.limbs())));
             assert_eq!(value(x), a.clone(), "round trip {note}");

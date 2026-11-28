@@ -3,12 +3,8 @@
 //! rule the test cites, never read back from the model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-use crate::support;
-#[allow(dead_code)]
-use crate::bytes;
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::bytes;
+use piperine_parity::source::run;
 
 use std::path::{Path, PathBuf};
 
@@ -17,7 +13,7 @@ use piperine_api::{Field, Record};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use run::SourceRun;
-use support::{build, first_edge_value};
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The model `file` of `tests/generics/`, with generic modules admitted.
 struct ModuleModels;
@@ -44,8 +40,8 @@ impl ModuleModels {
 
     /// What `Bench` of `file` committed at its first rising edge: the value of each carrier in `names`.
     fn first_commits(file: &str, names: &[&str]) -> Vec<Vec<u8>> {
-        let seen = build(&Self::project(file), "Bench").run(10e-9, 1e-9);
-        names.iter().map(|name| first_edge_value(&seen, &format!("Bench.{name}"))).collect()
+        let seen = BuckFixture::build(&Self::project(file), "Bench").run(10e-9, 1e-9);
+        names.iter().map(|name| BuckFixture::first_edge_value(&seen, &format!("Bench.{name}"))).collect()
     }
 }
 
@@ -59,12 +55,10 @@ impl RustOracle {
     }
 }
 
-/// `enum Mode { Idle, Run }` of the model, laid out by its tag.
+/// `enum Mode { Idle, Run }` of the model, laid out by its tag: `Run` is tag 1, and `Idle` (tag 0) is never placed.
 #[derive(Clone, Copy)]
 enum Mode {
-    #[allow(dead_code)]
-    Idle,
-    Run,
+    Run = 1,
 }
 
 #[test]

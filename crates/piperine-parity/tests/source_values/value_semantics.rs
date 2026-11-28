@@ -7,13 +7,9 @@
 
 use piperine_api::Field;
 
-#[allow(dead_code)]
-#[allow(dead_code)]
-use crate::bytes;
-#[allow(dead_code)]
-use crate::operators;
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::bytes;
+use piperine_parity::source::operators;
+use piperine_parity::source::run;
 
 use bytes::CarrierBytes;
 use operators::PlaceOperators;
@@ -122,21 +118,5 @@ fn the_reporting_functions_emit_the_same_records() {
     assert_eq!(checks[0], vec![field("kind", text("require")), field("name", text("held")), field("pass", Field::Bool(true))]);
     assert_eq!(checks[1], vec![field("kind", text("cover")), field("name", text("seen")), field("pass", Field::Bool(true))]);
     assert_eq!(checks[2], vec![field("kind", text("target")), field("name", text("margin")), field("margin", Field::Real(0.25))]);
-}
-
-/// A pattern of four levels written as `0`, `1` and `x` characters, the leftmost the highest level.
-struct LevelPattern;
-
-#[allow(dead_code)] // the oracle of `logic_and_matches_bits_give_the_table_values`, which T45 writes (suite_hygiene `RemovedUnknownForms::SUCCESSORS`)
-impl LevelPattern {
-    /// The value of a pattern of `0` and `1` characters.
-    fn value(pattern: &str) -> i128 {
-        pattern.chars().fold(0, |value, level| value * 2 + i128::from(level == '1'))
-    }
-
-    /// Whether `value` (four levels) matches `pattern`, an `x` matching any level (§22.1.4).
-    fn matches(value: u8, pattern: &str) -> bool {
-        pattern.chars().enumerate().all(|(place, level)| level == 'x' || (value >> (3 - place)) & 1 == u8::from(level == '1'))
-    }
 }
 

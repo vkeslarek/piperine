@@ -1,7 +1,7 @@
 //! Views of `ExactRational` for the decimal text tests: the value scaled to an integer with a
 //! sticky bit, the value of a pattern and a decimal quotient.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::BigUint;
 use piperine_numbers::format::BinaryFormat;
 

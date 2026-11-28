@@ -1,7 +1,7 @@
 //! The values of `ExactRational` that conversions need: the exact value of a pattern, an integer,
 //! the zero test and the integer part.
 
-use super::exact::ExactRational;
+use super::ExactRational;
 use num_bigint::{BigInt, BigUint, Sign};
 use piperine_numbers::format::BinaryFormat;
 

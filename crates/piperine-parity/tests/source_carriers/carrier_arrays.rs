@@ -4,13 +4,11 @@
 //! it cites (part II §5.1.8, part IV §12.1), never read back from the model.
 #![cfg(unix)]
 
-#[allow(dead_code)]
-use crate::support;
-#[allow(dead_code)]
-use crate::run;
+use piperine_parity::source::run;
 
 use piperine_api::{Field, Record};
 use run::SourceRun;
+use piperine_parity::buck_fixture::BuckFixture;
 
 /// The model files of `tests/carrier_arrays/`.
 const RUN: SourceRun = SourceRun::in_directory("tests/carrier_arrays");
@@ -277,9 +275,9 @@ impl ElementReaders {
 
     /// The changes of the net `Chain.<name>` during the transient: instant in femtoseconds and bytes, in order.
     fn changes(name: &str) -> Vec<(i64, Vec<u8>)> {
-        let built = support::build(&RUN.project("element_readers.msl"), "Chain");
+        let built = BuckFixture::build(&RUN.project("element_readers.msl"), "Chain");
         let seen = built.run(4e-9, 0.5e-9);
-        support::transient(&seen, &format!("Chain.{name}"))
+        BuckFixture::transient(&seen, &format!("Chain.{name}"))
     }
 
     /// The value `s` holds after `rises` rising edges of `tick` (1 ns and 3 ns): `2 + 10 * rises`.
@@ -350,9 +348,9 @@ fn a_ram_read_port_of_65536_elements_builds_and_follows_its_address_and_its_elem
     // microstep, a fall writes 50 at `at`, so `q` is 41 after each rise and 50 after each fall; the build and the run take
     // seconds, not minutes
     let started = std::time::Instant::now();
-    let built = support::build(&RUN.project("ram.msl"), "Ram");
+    let built = BuckFixture::build(&RUN.project("ram.msl"), "Ram");
     let seen = built.run(4e-9, 0.5e-9);
-    let q = support::transient(&seen, "Ram.q");
+    let q = BuckFixture::transient(&seen, "Ram.q");
     let expected: Vec<(i64, Vec<u8>)> = (1..=4).map(|edge: i64| (edge * ElementReaders::NS, vec![if edge % 2 == 1 { 41 } else { 50 }])).collect();
     assert_eq!(q, expected);
     assert!(started.elapsed() < std::time::Duration::from_secs(120), "built and ran in {:?}", started.elapsed());
@@ -364,7 +362,7 @@ fn a_transient_with_an_array_no_analog_function_reads_stays_sparse() {
     // of bytes): the transient takes seconds, not minutes (the bound is a fifth of what the dense copy takes). The cell reads `gates[1]`, which rises at 2 ns: the node is at
     // `2k * 1 mA` = 2 V before and `1k * 1 mA` = 1 V after.
     let started = std::time::Instant::now();
-    let built = support::build(&RUN.project("sparse.msl"), "Sparse");
+    let built = BuckFixture::build(&RUN.project("sparse.msl"), "Sparse");
     let node = built.ir.node_at("Sparse.a").expect("the node `a`").id();
     let (_, result) = built.run_with(6e-9, 0.5e-9);
     let at = |time: f64| result.iter().rev().find(|step| step.time() <= time).and_then(|step| step.get_node(&piperine_solver::prelude::NodeIdentifier::Anonymous(node.index()))).expect("a point");
