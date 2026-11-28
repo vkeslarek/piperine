@@ -2117,3 +2117,113 @@ The four tests that close P9-5:
 ### Note (Low, not blocking)
 
 - **R2-1.** `crates/piperine-cli/tests/commands/commands.rs:107` still says `// Book claims held here: errors~a1afa480, structure~58f974e3`. The second id no longer exists in the inventory. Fix: drop it from the comment.
+
+## Phase 12 (B11a The remaining merges, T86 to T91)
+
+**Verdict**: FAIL (two Medium findings, four Low, two notes)
+**Head**: 521c882e4 on `feature/code-clarity-p12`. Base 35d30d015 (`git merge-base feature/code-clarity-p12 feature/code-clarity`).
+**Verifier**: independent sub-agent (Opus; author != verifier). Every cargo command ran with `CARGO_TARGET_DIR=/var/tmp/piperine-target-t TMPDIR=/var/tmp/piperine-tmp-t CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0`, one at a time, and the guard sources were touched first.
+
+### Gates
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line (`cargo build --workspace --all-targets`) | 0 warnings, 0 errors |
+| `piperine-repository-guards` | 122 passed (121 + `only_files_under_tests_golden_are_left_out_of_the_helper_guard`) |
+| `piperine-lang-fixtures`, `device-fixtures`, `ir-fixtures` | 0, 4, 2 passed |
+| `piperine-ir`, `plan`, `interp`, `project` | 163, 68, 72, 53 passed |
+| `piperine-transpile` | 168 passed (172 − T90's 4) |
+| `piperine-lang` | 1 439 passed (1 384 tests + 55 doc tests) |
+| `piperine-api` | 307 passed |
+| `piperine-cli` | 144 passed |
+| `piperine-numbers` | 22 passed |
+| `piperine` (root: `book`, `integrated`, `scenarios`, `host_ii`) | 424 passed. `inventory_guard::every_row_names_an_existing_test` and `every_block_of_the_book_has_one_row` are included. The 62 tests of `buck_scenarios` and `book_buck` (`test = false`) account for the rest of the root's 485 |
+| `piperine-parity` (the whole crate, with ngspice) | 653 passed, no `SKIP` |
+
+### Judgements
+
+1. **No test was lost and no assertion changed.**
+   - Test names per crate, collected statically from every `#[test]`, are identical at the base and at HEAD, with two exceptions:
+     - the guard self-test was added;
+     - T90's four transpile tests were removed.
+   - I compared test bodies after stripping comments, whitespace, path prefixes and hoisted nested items. 47 of 4 352 still differ. Every residue is one of the following:
+     - a renamed helper whose body is identical: `lowering_codes`→`LoweringCodes::of`, `build`→`PomSource::build` (the same `std_source` stub), `type_decl`→`CheckedSource::type_declaration`, `Xorshift::next_u64`→`ShiftGenerator::next_bits` (the same constants), `Models::all`→`Interpreter::new(Devices::design_of_every_device())` (the same five bodies and top);
+     - a renamed type (`Block`/`Class`→`SpecBlock`/`BlockClass`);
+     - an annotated path edit in `std/library.rs` or `msl/errors.rs` (`include_str!("../../Cargo.toml")`);
+     - the root buck test's switch from `Model` to `BuckStart`, which keeps the same run, overrides and assertions.
+   - Names that occur more than once in a crate, such as `a_carried_type_without_repr_is_e0112` (2) and `a_form_not_run_yet_…` (3), were compared as multisets and are equal.
+   - The moved oracle (`exact*.rs`, `oracle.rs` → `device-fixtures`) is byte-equal apart from `use` lines and comments.
+   - The test-support `Mode` enum keeps `Run = 1` explicitly, and `LevelPattern` was dead test code.
+2. **T90's four retired tests are proven from source.**
+   - `two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse` and `an_unchanged_commit_fires_nothing` exist in `parity/tests/source_execution/commits.rs`, a default target.
+   - They assert the same values: the instants `5·NS/2` and `15·NS/2` with the same bytes, `[2]`, the pulse pair, four commits, and one counter move to `[2]`.
+   - `repoints/T90.tsv` holds the four `replace` rows.
+3. **The goldens are untouched.**
+   - `crates/piperine-transpile/tests/golden/*.rs` and `crates/piperine-ir/tests/golden/**` are unchanged.
+   - `OwnershipRules::is_golden` matches a `tests`→`golden` pair of path components, and only for `CodeOrigin::Test`.
+   - Its self-test plants a golden, a `tests/other` helper and a `tests/golden_like` look-alike, and counts 2 findings. The exclusion is narrow.
+4. **Approved text is intact and the departures are recorded.**
+   - The tasks.md diff for T86 to T91 only ticks boxes and adds `Annotation:`/Progress lines.
+   - design.md records the phase-12 and T91 departures.
+   - Every `move` row of `repoints/T86-T89.tsv` (20 + 61 + 62 + 23) resolves to a `mod` in its new `main.rs`.
+   - `inventory.tsv` keeps 827 rows, and only `covered_by` changed.
+5. **The guard data is consistent.**
+   - The plan is `piperine` 4, `piperine-lang` 15, `piperine-parity` 11, `piperine-lang-fixtures` 1, and it matches the tree.
+   - `KEPT_CRATES`, `DEFAULT_MEMBERS`, the dependency graph (`lang-fixtures` → lang, ir; `device-fixtures` + numbers; parity + abi, plan) and the CLAUDE.md table gain the new crate.
+   - The 8 `kept:` rows of `test_only_items.tsv` are honest. `piperine-parity` is a test-only library, and those items exist for its `buck_*`/`source_*` targets.
+   - The `piperine/<target>::<module>::<fn>` resolver mirrors the crate form. The 493 real `piperine/book::` rows exercise it (note N1).
+6. **Allowances.**
+   - The three T91 kinds are empty: `allow_in_test_code` 155→0, `test_helper_functions` 942→0, `test_support_shared_by_path` 174→0.
+   - No other kind grows per item, except `undeclared_words` (P12-4).
+   - No `#[allow]`/`#[expect]` is left in test code.
+   - The one `#[path]` left is `tests/book/main.rs`'s `#[path = "support"] mod support { … }`. That is a directory for one target's own modules, not a share.
+
+### Findings
+
+#### P12-1 (Medium): most of the new "fixture types" are free helpers in disguise
+
+- T91 made 171 unit structs.
+- 155 are named `<File>Fixture` and carry the same generated doc, "Associated test helpers of `<file>`, grouped on one fixture type."
+- 16 are named after a truncated test name and documented "Fixtures of the test `…`, hoisted out of its body". Examples: `DepthLimitFitsFixture`, `GenerationIfItemsFixture`, `FilesUnderFixture`, `CountStatementsFixture`.
+- Their associated functions are the old free functions unchanged, and they are often unrelated to each other.
+  - Example: `crates/piperine-lang/tests/elab_digital/digital.rs:40` `DigitalFixture` holds `ports_of` (buck source text), `body_text` (a print slicer), `controller`, `guard_value` (an expression evaluator), `edges` (an MSL template), `golden` (a file reader) and `reaction_text`.
+- A type named for the file it sits in says where the functions are, not what they are. This meets the letter of `no_free_helper_function_in_test_code` and of Q17 ("methods of fixture types"), not rule 3/4's intent ("OO names", one purpose per type).
+- design.md's "Departures of T91" records the pattern, but the user has not approved it.
+- Fix: either regroup the helpers by what they act on (for example a `ReactionPrint` for `body_text`/`reaction_text`, a `GuardEvaluation`, the buck sources on `BuckSource`), or take the pattern to the user as a departure for a decision.
+
+#### P12-2 (Medium): T86's "exist once" for `design_of`, `diagnostics` and `snippet` is not met
+
+- T86's What reads: "`design_of`, `diagnostics` and `snippet` exist once as methods of a `Checked` source fixture". C26 also says helpers "live once".
+- The T86 and T87 annotations defer this to T91. T91 did not do it, and recorded no departure for it.
+- `CheckedSource::design_of` (`lang-fixtures/src/checked.rs:20`) now stands beside 12 more `design_of`, for example `types_values/explicit.rs:22` and `types_analog/events.rs:15`.
+- There are 15 `diagnostics` in the lang tests.
+- My duplicate scan finds 43 helper bodies of 120+ characters that are byte-identical across files. Examples: `design_of` ×8, `binding` ×6, `checked` ×5, `holds` ×4, `operating_point` ×3, `piperine_in` ×2 twice in cli.
+- Fix: route the identical copies to the one fixture method, or record the departure with its reason (some signatures differ) and the residual list.
+
+#### P12-3 (Low): `piperine-device-fixtures` is no longer only "the hand-written ABI devices"
+
+- It now also holds a PRNG (`random::ShiftGenerator`), an allocator (`heap::HeapCounter`), the exact-rational oracle of `piperine-numbers` (`exact`, `oracle`) and `shapes::View`.
+- `piperine-numbers`, a leaf, dev-depends on it, so the numbers tests now build `piperine-abi`, both sub-solvers and `piperine-solver` to get a 23-line generator and the oracle. The crate also gains `piperine-numbers` and `num-bigint` as dependencies.
+- The departure is recorded in design.md. The crate's name and its `Cargo.toml` description ("The hand-written ABI devices…") no longer say what it holds.
+- Fix: give the numbers oracle and the generator a home that does not drag the solvers into a leaf's tests, for example a `piperine-numbers-fixtures` crate, or the numbers tests' own `support` module.
+
+#### P12-4 (Low): five new `undeclared_words` rows
+
+- The merges turned target names into module names, and the scanner reads module names. So `parity/tests/parity/main.rs::sens`, `lang/tests/elab_structure/main.rs::unlowered`, `source_stdlib/main.rs::stdlib_generic`, `tests/book/main.rs::cheatsheet` and a `limexp` row are new allowance rows.
+- That breaks "rows only deleted or moved net-zero". In P9 the same case was solved by renaming the module (`stim`→`stimulus`).
+- Fix: full-word module names (`sensitivity`, ...) or dictionary/glossary entries.
+
+#### P12-5 (Low): the CLAUDE.md row of `piperine-lang-fixtures` names a type that does not exist
+
+- `CLAUDE.md` lists `Elab`. The crate's type is `SourceElaboration`, and it also holds `LoweringCodes`, `ElaborationForms`, `GenericSources` and `SpecTables`.
+
+#### P12-6 (Low): a new copy of `copy_tree`
+
+- `tests/book/buck.rs:49` (`BuckStart::copy_tree`, with `cell`) duplicates `tests/book/support/model.rs:189` (`Model::copy_tree`, `Model::cell`).
+- This is a fourth copy in the tree. The cli has two more.
+- The root `book_buck` dropped its include of the Book support and re-wrote what it needed.
+
+### Notes (not blocking)
+
+- **N1.** No planted test holds the root `main.rs` form of `Coverage::resolve`, as the P9 fix did for the crate form. The 493 real `piperine/book::` rows cover the resolving case, but not a missing module or function.
+- **N2.** `piperine-lang-fixtures` has no self-test. `piperine-ir-fixtures` holds its bodies to `Ir::check` in `tests/bodies.rs`.
