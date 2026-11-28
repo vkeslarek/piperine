@@ -48,3 +48,21 @@ impl OutputProbe {
         Waveform::new(steps.iter().map(|s| s.time()).collect(), steps.iter().map(|s| s.get_node(&out).expect("v(o)")).collect())
     }
 }
+
+/// The voltages of named nodes of a design.
+pub struct NodeVoltages;
+
+impl NodeVoltages {
+    /// The voltage of each node in `names` of `top` of `file` at its operating point.
+    pub fn at_operating_point(project: &Project, top: &str, names: &[&str]) -> Vec<f64> {
+        let mut running = project.compile(top).unwrap_or_else(|r| panic!("{r}"));
+        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
+        names
+            .iter()
+            .map(|name| {
+                let node = running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("node {name}"));
+                solved.get_node(&NodeIdentifier::Anonymous(node.id().index())).expect("v(n)")
+            })
+            .collect()
+    }
+}

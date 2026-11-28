@@ -3,6 +3,7 @@
 //! expected value is computed here by Rust from the rule the test cites, never read back from the model.
 #![cfg(unix)]
 
+use piperine_parity::source::network::UnitBranchNetwork;
 use piperine_parity::source::run;
 
 use run::SourceRun;
@@ -53,34 +54,6 @@ impl RustOracle {
         drive * upper / (upper + lower)
     }
 
-    /// The voltage of each of `count` nodes joined by 1 S branches (`None` is ground) and fed `amps` at node `fed`: Kirchhoff's
-    /// current law `G v = i` over the branches, solved by Gaussian elimination.
-    fn unit_branches(count: usize, branches: &[(usize, Option<usize>)], fed: usize, amps: f64) -> Vec<f64> {
-        let mut g = vec![vec![0.0; count + 1]; count];
-        for (from, to) in branches {
-            g[*from][*from] += 1.0;
-            if let Some(to) = to {
-                g[*to][*to] += 1.0;
-                g[*from][*to] -= 1.0;
-                g[*to][*from] -= 1.0;
-            }
-        }
-        g[fed][count] = amps;
-        for pivot in 0..count {
-            for row in pivot + 1..count {
-                let factor = g[row][pivot] / g[pivot][pivot];
-                for column in pivot..=count {
-                    g[row][column] -= factor * g[pivot][column];
-                }
-            }
-        }
-        let mut v = vec![0.0; count];
-        for row in (0..count).rev() {
-            let known: f64 = (row + 1..count).map(|column| g[row][column] * v[column]).sum();
-            v[row] = (g[row][count] - known) / g[row][row];
-        }
-        v
-    }
 }
 
 #[test]
@@ -271,7 +244,7 @@ fn a_body_written_in_reverse_order_runs_as_forward() {
 fn a_placement_connects_to_the_node_of_a_child_written_after_it() {
     // §8.2, §8.2.14 (finding 24): `RigChainReverse` writes `q = D2(p.sn)` before `p`, and settles where `RigChain` does: the chain
     // x -> p.sn -> q.sn of 1 S branches with 1 S leaks, fed 1 A at x
-    let wanted = RustOracle::unit_branches(3, &[(0, Some(1)), (1, None), (1, Some(2)), (2, None)], 0, 1.0);
+    let wanted = UnitBranchNetwork::voltages(3, &[(0, Some(1)), (1, None), (1, Some(2)), (2, None)], 0, 1.0);
     let forward = RUN.operating_point("connections.msl", "RigChain", &["x", "p.sn", "q.sn"]);
     let reverse = RUN.operating_point("connections.msl", "RigChainReverse", &["x", "p.sn", "q.sn"]);
     for (value, wanted) in reverse.iter().zip(&wanted) {
@@ -284,9 +257,9 @@ fn a_placement_connects_to_the_node_of_a_child_written_after_it() {
 fn a_cycle_of_node_connections_runs_as_hardware() {
     // §8.2.14, §8.3.5 (finding 25): a cross-coupled pair, a ring of three and a cell wired to its own node settle where
     // Kirchhoff's law over their 1 S branches puts them, fed 1 A at `p.sn`
-    let pair = RustOracle::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
-    let ring = RustOracle::unit_branches(3, &[(2, Some(0)), (0, None), (0, Some(1)), (1, None), (1, Some(2)), (2, None)], 0, 1.0);
-    let own = RustOracle::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
+    let pair = UnitBranchNetwork::voltages(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
+    let ring = UnitBranchNetwork::voltages(3, &[(2, Some(0)), (0, None), (0, Some(1)), (1, None), (1, Some(2)), (2, None)], 0, 1.0);
+    let own = UnitBranchNetwork::voltages(1, &[(0, Some(0)), (0, None)], 0, 1.0);
     for (top, names, wanted) in [("RigPair", &["p.sn", "q.sn"][..], pair), ("RigRing", &["p.sn", "q.sn", "r.sn"][..], ring), ("RigOwn", &["p.sn"][..], own)] {
         let seen = RUN.operating_point("connections.msl", top, names);
         assert_eq!(seen.len(), wanted.len(), "{top}");
@@ -300,8 +273,8 @@ fn a_cycle_of_node_connections_runs_as_hardware() {
 fn a_cycle_of_node_connections_two_levels_deep_runs_as_hardware() {
     // §8.2.14, §8.3.5 (finding 27): banks that reach their cell's storage node through a template (`p.c0.sn`) and are wired to each
     // other's, or to their own, settle where Kirchhoff's law over the cells' 1 S branches puts them, fed 1 A at `p.c0.sn`
-    let pair = RustOracle::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
-    let own = RustOracle::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
+    let pair = UnitBranchNetwork::voltages(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
+    let own = UnitBranchNetwork::voltages(1, &[(0, Some(0)), (0, None)], 0, 1.0);
     for (top, names, wanted) in [("RigBankPair", &["p.c0.sn", "q.c0.sn"][..], pair), ("RigBankOwn", &["p.c0.sn"][..], own)] {
         let seen = RUN.operating_point("connections.msl", top, names);
         assert_eq!(seen.len(), wanted.len(), "{top}");

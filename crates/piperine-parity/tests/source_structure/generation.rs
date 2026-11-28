@@ -3,10 +3,11 @@
 //! solver. Every expected value is computed here by Rust from the rule the test cites, never read back from the model.
 #![cfg(unix)]
 
+use piperine_parity::probe::NodeVoltages;
 use std::path::{Path, PathBuf};
 
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{Context, NodeIdentifier};
+use piperine_solver::prelude::NodeIdentifier;
 use piperine_parity::buck_fixture::NetChanges;
 use piperine_parity::mixed::BuiltDesign;
 
@@ -20,19 +21,6 @@ impl GenerationModels {
         Project::new(&path)
     }
 
-    /// The voltage of each node in `names` of `top` of `file` at its operating point.
-    fn operating_point(file: &str, top: &str, names: &[&str]) -> Vec<f64> {
-        let mut running = Self::project(file).compile(top).unwrap_or_else(|r| panic!("{r}"));
-        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
-        names
-            .iter()
-            .map(|name| {
-                let node = running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("node {name}"));
-                solved.get_node(&NodeIdentifier::Anonymous(node.id().index())).expect("v(n)")
-            })
-            .collect()
-    }
-
     /// The middle node of a 1k feed from 1 V into `load` ohms: Rust's divider.
     fn divided(load: f64) -> f64 {
         load / (1e3 + load)
@@ -44,7 +32,7 @@ fn generated_instances_run_and_read_by_ordinal() {
     // GN-17 AC 1, AC 2 (§8.2.23): `count` resistors of `r` in parallel are `r / count`; the element `k` is the instance
     // `bank.rk[k]` of the host path, and a count of zero is no instance at all (an empty array)
     for (rig, count) in [("FourRig", 4.0_f64), ("OneRig", 1.0)] {
-        let seen = GenerationModels::operating_point("bank.msl", rig, &["mid"]);
+        let seen = NodeVoltages::at_operating_point(&GenerationModels::project("bank.msl"), rig, &["mid"]);
         let expected = GenerationModels::divided(4e3 / count);
         assert!((seen[0] - expected).abs() < 1e-9, "{rig}: {seen:?} against {expected}");
     }
@@ -54,12 +42,12 @@ fn generated_instances_run_and_read_by_ordinal() {
         assert_eq!(element.name(), format!("rk[{k}]"));
     }
     assert!(ir.instance_at("FourRig.bank.rk[4]").is_none(), "an array of 4 has no element 4");
-    let none = GenerationModels::operating_point("bank.msl", "NoneRig", &["mid"]);
+    let none = NodeVoltages::at_operating_point(&GenerationModels::project("bank.msl"), "NoneRig", &["mid"]);
     assert!((none[0] - GenerationModels::divided(1e3)).abs() < 1e-9, "no resistor in the bank leaves the 1k load alone: {none:?}");
     let empty = GenerationModels::project("bank.msl").elaborate("NoneRig").unwrap_or_else(|r| panic!("{r}"));
     assert!(empty.instance_at("NoneRig.bank.rk[0]").is_none());
     // the loop variable reaches the param block: element `k` is `1k * (k + 1)`
-    let ramp = GenerationModels::operating_point("bank.msl", "RampRig", &["mid"]);
+    let ramp = NodeVoltages::at_operating_point(&GenerationModels::project("bank.msl"), "RampRig", &["mid"]);
     let conductance: f64 = (0..3).map(|k| 1.0 / (1e3 * (f64::from(k) + 1.0))).sum();
     assert!((ramp[0] - GenerationModels::divided(1.0 / conductance)).abs() < 1e-9, "{ramp:?}");
     let ir = GenerationModels::project("bank.msl").elaborate("RampRig").unwrap_or_else(|r| panic!("{r}"));
@@ -72,7 +60,7 @@ fn generated_instances_run_and_read_by_ordinal() {
 fn a_generation_if_places_the_taken_arm() {
     // GN-17 AC 1 (§8.2.24): `bypass` selects one arm: 1 ohm in the low rig, 1M in the high one; the other arm's instance
     // does not exist
-    let low = GenerationModels::operating_point("bank.msl", "ChoiceRig", &["low_mid", "high_mid"]);
+    let low = NodeVoltages::at_operating_point(&GenerationModels::project("bank.msl"), "ChoiceRig", &["low_mid", "high_mid"]);
     assert!((low[0] - GenerationModels::divided(1.0)).abs() < 1e-9 && (low[1] - GenerationModels::divided(1e6)).abs() < 1e-9, "{low:?}");
     let ir = GenerationModels::project("bank.msl").elaborate("ChoiceRig").unwrap_or_else(|r| panic!("{r}"));
     assert!(ir.instance_at("ChoiceRig.low.low").is_some() && ir.instance_at("ChoiceRig.low.high").is_none());
@@ -83,7 +71,7 @@ fn a_generation_if_places_the_taken_arm() {
 fn nested_loops_make_a_nested_array() {
     // GN-17 AC 2 (§8.2.23): `rows` by `columns` cells, the cell of row `i` and column `j` is `cell[i][j]`; `rows * columns`
     // resistors of 6k in parallel
-    let seen = GenerationModels::operating_point("bank.msl", "GridRig", &["mid"]);
+    let seen = NodeVoltages::at_operating_point(&GenerationModels::project("bank.msl"), "GridRig", &["mid"]);
     assert!((seen[0] - GenerationModels::divided(6e3 / 6.0)).abs() < 1e-9, "{seen:?}");
     let ir = GenerationModels::project("bank.msl").elaborate("GridRig").unwrap_or_else(|r| panic!("{r}"));
     for (row, column) in [(0, 0), (0, 2), (1, 1), (1, 2)] {
@@ -104,7 +92,7 @@ impl Ladders {
     /// The voltage of each node of `names` of `top` at the operating point.
     fn operating_point(top: &str, names: &[String]) -> Vec<f64> {
         let names: Vec<&str> = names.iter().map(String::as_str).collect();
-        GenerationModels::operating_point("ladder.msl", top, &names)
+        NodeVoltages::at_operating_point(&GenerationModels::project("ladder.msl"), top, &names)
     }
 
     /// The voltage of each node of `names` at every accepted point of the transient of `top` to 5 us, steps of at most 0.1 us:
@@ -221,7 +209,7 @@ fn carriers_definitions_and_hoisted_placements_in_generation_run() {
 #[test]
 fn a_hoisted_placement_with_contributions_runs_once_per_iteration() {
     // GN-17 AC 1 (§8.2.23): three loads of `k + 1` mS hoisted by a `for` are 6 mS in parallel under the 1k feed
-    let seen = GenerationModels::operating_point("generated_items.msl", "LoadRig", &["mid"]);
+    let seen = NodeVoltages::at_operating_point(&GenerationModels::project("generated_items.msl"), "LoadRig", &["mid"]);
     let expected = GenerationModels::divided(1.0 / 6e-3);
     assert!((seen[0] - expected).abs() < 1e-9, "{seen:?} against {expected}");
 }

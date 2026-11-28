@@ -4,6 +4,7 @@
 //! cites, never read back from the model.
 #![cfg(unix)]
 
+use piperine_parity::source::network::UnitBranchNetwork;
 use piperine_parity::source::run;
 
 use piperine_api::{Field, Record};
@@ -31,40 +32,6 @@ impl CellOracle {
     /// The five values a rig reads, in the order of its nodes: `v(sn)`, `vs`, `q` (its initial value), `k`, `twice` (`2 k`).
     fn reads(&self) -> [f64; 5] {
         [self.storage(), self.storage(), 2.5, self.k, 2.0 * self.k]
-    }
-}
-
-/// A network of unit-conductance branches solved by Kirchhoff, the oracle of the nested-reach rigs.
-struct UnitBranchNetwork;
-
-impl UnitBranchNetwork {
-    /// The voltage of each of `count` nodes joined by 1 S branches (`None` is ground) and fed `amps` at node `fed`: Kirchhoff's current
-    /// law `G v = i` over the branches, solved by Gaussian elimination.
-    fn unit_branches(count: usize, branches: &[(usize, Option<usize>)], fed: usize, amps: f64) -> Vec<f64> {
-        let mut g = vec![vec![0.0; count + 1]; count];
-        for (from, to) in branches {
-            g[*from][*from] += 1.0;
-            if let Some(to) = to {
-                g[*to][*to] += 1.0;
-                g[*from][*to] -= 1.0;
-                g[*to][*from] -= 1.0;
-            }
-        }
-        g[fed][count] = amps;
-        for pivot in 0..count {
-            for row in pivot + 1..count {
-                let factor = g[row][pivot] / g[pivot][pivot];
-                for column in pivot..=count {
-                    g[row][column] -= factor * g[pivot][column];
-                }
-            }
-        }
-        let mut v = vec![0.0; count];
-        for row in (0..count).rev() {
-            let known: f64 = (row + 1..count).map(|column| g[row][column] * v[column]).sum();
-            v[row] = (g[row][count] - known) / g[row][row];
-        }
-        v
     }
 }
 
@@ -132,14 +99,14 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_runs_as_hardware() {
     // where Kirchhoff's law over the cells' 1 S branches puts them, fed 1 A at `p`'s node: nodes 0 = p's, 1 = q's, the branch of each
     // cell from the other wrapper's node to its own and a 1 S leak at each; a wrapper wired to its own cell's node (four levels) sees
     // only the leak
-    let pair = UnitBranchNetwork::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
+    let pair = UnitBranchNetwork::voltages(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
     for (top, names) in [("RigPair3", ["p.mid.c0.sn", "q.mid.c0.sn"]), ("RigPair4", ["p.block.bank.c0.sn", "q.block.bank.c0.sn"])] {
         let seen = RUN.operating_point("reach.msl", top, &names);
         for (value, wanted) in seen.iter().zip(&pair) {
             assert!((value - wanted).abs() < TOLERANCE, "{top}: {value} is not {wanted}: {seen:?}");
         }
     }
-    let own = UnitBranchNetwork::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
+    let own = UnitBranchNetwork::voltages(1, &[(0, Some(0)), (0, None)], 0, 1.0);
     let seen = RUN.operating_point("reach.msl", "RigOwn4", &["p.top.mid.c0.sn"]);
     assert!((seen[0] - own[0]).abs() < TOLERANCE, "RigOwn4: {} is not {}", seen[0], own[0]);
 }
@@ -150,7 +117,7 @@ fn a_cycle_of_node_connections_through_a_generation_four_levels_deep_runs_as_har
     // wrapper's `cells[1]` node: nodes 0 = p's `cells[1]`, 1 = q's `cells[1]`, 2 = p's `cells[0]`, 3 = q's `cells[0]`, each cell a
     // 1 S branch from the wired node to its own and a 1 S leak, fed 1 A at node 0
     let branches = [(1, Some(2)), (2, None), (1, Some(0)), (0, None), (0, Some(3)), (3, None), (0, Some(1)), (1, None)];
-    let wanted = UnitBranchNetwork::unit_branches(4, &branches, 0, 1.0);
+    let wanted = UnitBranchNetwork::voltages(4, &branches, 0, 1.0);
     let seen = RUN.operating_point("reach.msl", "RigPairGeneration4", &["p.grid.row.cells[1].sn", "q.grid.row.cells[1].sn", "p.grid.row.cells[0].sn", "q.grid.row.cells[0].sn"]);
     for (value, wanted) in seen.iter().zip(&wanted) {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");

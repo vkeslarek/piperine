@@ -3,6 +3,8 @@
 //! rule the test cites, never read back from the model.
 #![cfg(unix)]
 
+use piperine_parity::probe::NodeVoltages;
+use piperine_parity::source::fields::RecordFields;
 use piperine_parity::source::bytes;
 use piperine_parity::source::run;
 
@@ -11,7 +13,6 @@ use std::path::{Path, PathBuf};
 use bytes::CarrierBytes;
 use piperine_api::{Field, Record};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{Context, NodeIdentifier};
 use run::SourceRun;
 use piperine_parity::buck_fixture::NetChanges;
 use piperine_parity::mixed::BuiltDesign;
@@ -24,19 +25,6 @@ impl ModuleModels {
     fn project(file: &str) -> Project {
         let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/generics").join(file);
         Project::new(&path)
-    }
-
-    /// The voltage of each node in `names` of `top` of `file` at its operating point.
-    fn operating_point(file: &str, top: &str, names: &[&str]) -> Vec<f64> {
-        let mut running = Self::project(file).compile(top).unwrap_or_else(|r| panic!("{r}"));
-        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
-        names
-            .iter()
-            .map(|name| {
-                let node = running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("node {name}"));
-                solved.get_node(&NodeIdentifier::Anonymous(node.id().index())).expect("v(n)")
-            })
-            .collect()
     }
 
     /// What `Bench` of `file` committed at its first rising edge: the value of each carrier in `names`.
@@ -86,14 +74,14 @@ fn a_nature_parameter_takes_its_default() {
     // that nature held at `level` volts and `a` at 0.5 V
     let ir = ModuleModels::project("modules.msl").elaborate("Rig").unwrap_or_else(|r| panic!("{r}"));
     assert!(ir.bodies().any(|body| body.name() == "Cell::<Electrical>"), "{:?}", ir.bodies().map(|b| b.name().to_string()).collect::<Vec<_>>());
-    let seen = ModuleModels::operating_point("modules.msl", "Rig", &["a", "cell.mid"]);
+    let seen = NodeVoltages::at_operating_point(&ModuleModels::project("modules.msl"), "Rig", &["a", "cell.mid"]);
     assert!((seen[0] - 0.5).abs() < 1e-9 && (seen[1] - 1.5).abs() < 1e-9, "{seen:?}");
 }
 
 #[test]
 fn a_const_generic_of_zero_makes_an_empty_module() {
     // GN-13 AC 1, §1.2.3: `Taps::<0>` has no rail and its loop runs zero times; `Taps::<2>` drives rail `k` to `2 (k + 1)`
-    let seen = ModuleModels::operating_point("modules.msl", "Rig", &["b", "c", "two.rails[0]", "two.rails[1]"]);
+    let seen = NodeVoltages::at_operating_point(&ModuleModels::project("modules.msl"), "Rig", &["b", "c", "two.rails[0]", "two.rails[1]"]);
     let rails: Vec<f64> = (0..2).map(|k| 2.0 * (f64::from(k) + 1.0)).collect();
     assert!((seen[0] - 1.0).abs() < 1e-9 && (seen[1] - 1.0).abs() < 1e-9, "{seen:?}");
     assert!((seen[2] - rails[0]).abs() < 1e-9 && (seen[3] - rails[1]).abs() < 1e-9, "{seen:?}");
@@ -103,7 +91,7 @@ fn a_const_generic_of_zero_makes_an_empty_module() {
 fn a_low_pass_over_the_generic_integrator_settles_at_its_input() {
     // GN-13 AC 1: `lowpass` places the stdlib `idt` at its default nature `State`; at DC the capacitor is open, so the
     // output equals the 1 V input
-    let seen = ModuleModels::operating_point("lowpass.msl", "Top", &["a", "b"]);
+    let seen = NodeVoltages::at_operating_point(&ModuleModels::project("lowpass.msl"), "Top", &["a", "b"]);
     assert!((seen[0] - 1.0).abs() < 1e-9 && (seen[1] - 1.0).abs() < 1e-6, "{seen:?}");
 }
 
@@ -123,7 +111,7 @@ fn short_merges_two_nodes_of_each_nature() {
     let (top, upper, lower) = (4.0_f64, 1e3_f64, 3e3_f64);
     let middle = top * lower / (upper + lower);
     for rig in ["ElectricalRig", "ThermalRig", "HeatRig"] {
-        let seen = ModuleModels::operating_point("short.msl", rig, &["whole_mid", "joined_mid", "whole_top", "joined_top"]);
+        let seen = NodeVoltages::at_operating_point(&ModuleModels::project("short.msl"), rig, &["whole_mid", "joined_mid", "whole_top", "joined_top"]);
         assert!((seen[0] - middle).abs() < 1e-6, "{rig}: the divider written with one middle node: {seen:?}");
         assert!((seen[1] - seen[0]).abs() < 1e-9, "{rig}: the joined divider is the same solution: {seen:?}");
         assert!((seen[2] - top).abs() < 1e-9 && (seen[3] - top).abs() < 1e-9, "{rig}: the source holds the top: {seen:?}");
@@ -153,14 +141,6 @@ impl HoistedRecords {
         Self::RUN.records_of("hoisted_out.msl", top).into_iter().filter(|record| record.stream == "seen").next_back().unwrap_or_else(|| panic!("{top} emits no `seen` record"))
     }
 
-    /// The boolean field `name` of `record`.
-    fn boolean(record: &Record, name: &str) -> bool {
-        match record.fields.iter().find(|(field, _)| field == name) {
-            Some((_, Field::Bool(value))) => *value,
-            other => panic!("{name} is a bool: {other:?}"),
-        }
-    }
-
     /// The integer field `name` of `record`.
     fn integer(record: &Record, name: &str) -> i128 {
         match record.fields.iter().find(|(field, _)| field == name) {
@@ -178,8 +158,8 @@ fn a_hoisted_generic_module_commits_to_the_carriers_its_out_ports_are_given() {
     let (d, gain) = (Some(7u8), 2.0_f64);
     let seen = HoistedRecords::last("HoldBench");
     assert_eq!(HoistedRecords::integer(&seen, "value"), i128::from(d.unwrap_or(0)));
-    assert_eq!(HoistedRecords::boolean(&seen, "some"), d.is_some());
-    assert_eq!(HoistedRecords::boolean(&seen, "ready"), gain > 1.0);
+    assert_eq!(RecordFields::boolean(&seen, "some"), d.is_some());
+    assert_eq!(RecordFields::boolean(&seen, "ready"), gain > 1.0);
 }
 
 #[test]
@@ -189,12 +169,12 @@ fn a_generic_module_takes_a_whole_array_and_a_window_of_one_at_a_port_of_length_
     // row 1 is true and the row 0, which no bank writes, keeps its first value
     let seen = HoistedRecords::last("WindowBench");
     for k in 0..4 {
-        assert!(HoistedRecords::boolean(&seen, &format!("w{k}")), "whole[{k}] is written by `Bank::<4>`");
+        assert!(RecordFields::boolean(&seen, &format!("w{k}")), "whole[{k}] is written by `Bank::<4>`");
     }
     let written_row = 1;
     for (row, prefix) in ["a", "b"].iter().enumerate() {
         for k in 0..3 {
-            assert_eq!(HoistedRecords::boolean(&seen, &format!("{prefix}{k}")), row == written_row, "grid[{row}][{k}]");
+            assert_eq!(RecordFields::boolean(&seen, &format!("{prefix}{k}")), row == written_row, "grid[{row}][{k}]");
         }
     }
 }

@@ -4,6 +4,8 @@
 //! from the model.
 #![cfg(unix)]
 
+use piperine_parity::probe::NodeVoltages;
+use piperine_parity::source::fields::RecordFields;
 use std::path::{Path, PathBuf};
 
 use std::cell::RefCell;
@@ -11,7 +13,6 @@ use std::rc::Rc;
 
 use piperine_api::{Field, Overrides, Project as HostProject, Record, RecordSink, Session, Streams};
 use piperine_parity::project::Project;
-use piperine_solver::prelude::{Context, NodeIdentifier};
 use piperine_parity::mixed::BuiltDesign;
 
 /// The models of `tests/stdlib_generic/` and what they record.
@@ -30,19 +31,6 @@ impl StdModels {
         let streams = Streams::of(built.ir.clone());
         let seen = built.run(stop, step);
         seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()
-    }
-
-    /// The voltage of each node in `names` of `top` of `file` at its operating point.
-    fn operating_point(file: &str, top: &str, names: &[&str]) -> Vec<f64> {
-        let mut running = Self::project(file).compile(top).unwrap_or_else(|r| panic!("{r}"));
-        let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
-        names
-            .iter()
-            .map(|name| {
-                let node = running.ir.node_at(&format!("{top}.{name}")).unwrap_or_else(|| panic!("node {name}"));
-                solved.get_node(&NodeIdentifier::Anonymous(node.id().index())).expect("v(n)")
-            })
-            .collect()
     }
 
     /// The records of the stream `stream`, in time order.
@@ -66,20 +54,12 @@ impl StdModels {
         }
     }
 
-    /// The boolean field `name` of `record`.
-    fn boolean(record: &Record, name: &str) -> bool {
-        match record.fields.iter().find(|(field, _)| field == name) {
-            Some((_, Field::Bool(value))) => *value,
-            other => panic!("{name} is a bool: {other:?}"),
-        }
-    }
-
     /// The checks of the stream `checks` named `name`, `(time, pass)` in order.
     fn checks_named(records: &[Record], name: &str) -> Vec<(f64, bool)> {
         Self::of_stream(records, "checks")
             .into_iter()
             .filter(|record| matches!(record.fields.iter().find(|(field, _)| field == "name"), Some((_, Field::Text(text))) if text == name))
-            .map(|record| (record.time, Self::boolean(record, "pass")))
+            .map(|record| (record.time, RecordFields::boolean(record, "pass")))
             .collect()
     }
 }
@@ -165,7 +145,7 @@ fn min_pulse_fails_exactly_for_a_narrow_pulse() {
     assert_eq!(checks.len(), changes.len(), "one check per change: {records:?}");
     for ((record, change), pass) in checks.iter().zip(changes).zip(&wanted) {
         assert!(Section22::same_reading(record.time, change), "checked at {change}: {}", record.time);
-        assert_eq!(StdModels::boolean(record, "pass"), *pass, "the check at {change}");
+        assert_eq!(RecordFields::boolean(record, "pass"), *pass, "the check at {change}");
     }
     assert!(wanted.iter().any(|pass| !pass) && wanted.iter().any(|pass| *pass), "the table holds narrow and wide levels");
 }
@@ -241,7 +221,7 @@ fn setup_hold_and_stable_fail_exactly_on_their_violations() {
             assert!(Section22::same_reading(*time, *change) && !pass, "{bench}: stable fails at {change}: {time} {pass}");
         }
         // §22.5.5 rule 3: `viol` read 5 ns after each rising edge is high exactly when that edge violated
-        let viol: Vec<bool> = StdModels::of_stream(&records, "viol").iter().map(|record| StdModels::boolean(record, "value")).collect();
+        let viol: Vec<bool> = StdModels::of_stream(&records, "viol").iter().map(|record| RecordFields::boolean(record, "value")).collect();
         let violated: Vec<bool> = MonitorSchedule::setup_passes().iter().map(|pass| !pass).collect();
         assert_eq!(viol, violated, "{bench}: viol follows the setup check");
     }
@@ -299,7 +279,7 @@ fn short_makes_one_node_against_section_eleven() {
     let (top, upper, lower) = (4.0_f64, 1e3_f64, 3e3_f64);
     let middle = top * lower / (upper + lower);
     for rig in ["ElectricalRig", "ThermalRig"] {
-        let seen = StdModels::operating_point("short.msl", rig, &["top", "mid", "other"]);
+        let seen = NodeVoltages::at_operating_point(&StdModels::project("short.msl"), rig, &["top", "mid", "other"]);
         assert!((seen[1] - middle).abs() < 1e-6 && (seen[2] - middle).abs() < 1e-6, "{rig}: one node at {middle}: {seen:?}");
         let (through_upper, through_lower) = ((seen[0] - seen[1]) / upper, seen[2] / lower);
         assert!((through_upper - through_lower).abs() < 1e-9 && (through_upper - top / (upper + lower)).abs() < 1e-9, "{rig}: one current: {through_upper} {through_lower}");
@@ -553,7 +533,7 @@ fn inertial_over_an_option_reads_its_result_in_a_reaction() {
     assert!(seen.len() >= 99, "one reading per ns: {}", seen.len());
     for record in seen {
         let expected = Section22::held_at(&held, record.time);
-        assert_eq!(StdModels::boolean(record, "some"), expected.is_some(), "y.is_some() at {}", record.time);
+        assert_eq!(RecordFields::boolean(record, "some"), expected.is_some(), "y.is_some() at {}", record.time);
         assert_eq!(StdModels::integer(record, "n"), i128::from(expected.unwrap_or(0)), "y.unwrap_or(0) at {}", record.time);
     }
 }

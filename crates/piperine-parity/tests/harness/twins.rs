@@ -9,7 +9,7 @@ use piperine_lang::pom::{Design, Reflect};
 
 /// One fixture of the corpus: its name, the top module of its twin, the node names the `.cir` uses
 /// and the length and FNV-1a 64-bit hash of the `.cir` as recorded.
-struct Fixture {
+struct PinnedTwin {
     name: &'static str,
     top: &'static str,
     nodes: &'static [&'static str],
@@ -17,14 +17,14 @@ struct Fixture {
     cir_hash: u64,
 }
 
-impl Fixture {
-    const CORPUS: [Fixture; 6] = [
-        Fixture { name: "divider", top: "Divider", nodes: &["vin", "mid"], cir_len: 104, cir_hash: 0x2f3f_d602_5d58_c5ff },
-        Fixture { name: "diode_iv", top: "DiodeIv", nodes: &["vin", "a"], cir_len: 204, cir_hash: 0xcc21_858d_eaee_1c5c },
-        Fixture { name: "diode_series", top: "DiodeSeries", nodes: &["vin", "a", "b"], cir_len: 143, cir_hash: 0x1a5a_30c8_e33a_cc25 },
-        Fixture { name: "ac_rc", top: "AcRc", nodes: &["vin", "out"], cir_len: 444, cir_hash: 0x8e02_2cbb_257a_8509 },
-        Fixture { name: "tran_rc", top: "TranRc", nodes: &["vin", "out"], cir_len: 634, cir_hash: 0x6ee1_832a_fc61_ae3a },
-        Fixture { name: "isrc_r", top: "IsrcR", nodes: &["a"], cir_len: 145, cir_hash: 0x360b_0e01_bc89_c304 },
+impl PinnedTwin {
+    const CORPUS: [PinnedTwin; 6] = [
+        PinnedTwin { name: "divider", top: "Divider", nodes: &["vin", "mid"], cir_len: 104, cir_hash: 0x2f3f_d602_5d58_c5ff },
+        PinnedTwin { name: "diode_iv", top: "DiodeIv", nodes: &["vin", "a"], cir_len: 204, cir_hash: 0xcc21_858d_eaee_1c5c },
+        PinnedTwin { name: "diode_series", top: "DiodeSeries", nodes: &["vin", "a", "b"], cir_len: 143, cir_hash: 0x1a5a_30c8_e33a_cc25 },
+        PinnedTwin { name: "ac_rc", top: "AcRc", nodes: &["vin", "out"], cir_len: 444, cir_hash: 0x8e02_2cbb_257a_8509 },
+        PinnedTwin { name: "tran_rc", top: "TranRc", nodes: &["vin", "out"], cir_len: 634, cir_hash: 0x6ee1_832a_fc61_ae3a },
+        PinnedTwin { name: "isrc_r", top: "IsrcR", nodes: &["a"], cir_len: 145, cir_hash: 0x360b_0e01_bc89_c304 },
     ];
 
     fn directory() -> PathBuf {
@@ -50,12 +50,12 @@ impl Fixture {
 
 #[test]
 fn the_corpus_holds_the_library_and_the_twins() {
-    let library = Fixture::directory().join("devices.msl");
+    let library = PinnedTwin::directory().join("devices.msl");
     let text = std::fs::read_to_string(&library).expect("tests/e2e/twins/devices.msl exists");
     for module in ["Resistor", "Capacitor", "Vsource", "Isource", "Diode"] {
         assert!(text.contains(&format!("module {module}")), "devices.msl lacks module {module}");
     }
-    for fixture in &Fixture::CORPUS {
+    for fixture in &PinnedTwin::CORPUS {
         assert!(fixture.twin().is_file(), "{} has no twin {}", fixture.name, fixture.twin().display());
         assert!(fixture.cir().is_file(), "{} has no .cir {}", fixture.name, fixture.cir().display());
     }
@@ -63,7 +63,7 @@ fn the_corpus_holds_the_library_and_the_twins() {
 
 #[test]
 fn every_twin_builds_without_diagnostics() {
-    for fixture in &Fixture::CORPUS {
+    for fixture in &PinnedTwin::CORPUS {
         let design = fixture.build();
         let found: Vec<String> = design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect();
         assert!(found.is_empty(), "{} builds with diagnostics {found:?}", fixture.name);
@@ -72,7 +72,7 @@ fn every_twin_builds_without_diagnostics() {
 
 #[test]
 fn top_nodes_carry_the_cir_names() {
-    for fixture in &Fixture::CORPUS {
+    for fixture in &PinnedTwin::CORPUS {
         let design = fixture.build();
         let top = design.module(fixture.top).unwrap_or_else(|| panic!("{} has no module {}", fixture.name, fixture.top));
         let mut found: Vec<&str> = top.signals().into_iter().filter_map(|s| s.name()).collect();
@@ -85,16 +85,16 @@ fn top_nodes_carry_the_cir_names() {
 
 #[test]
 fn the_cir_fixtures_are_byte_identical() {
-    for fixture in &Fixture::CORPUS {
+    for fixture in &PinnedTwin::CORPUS {
         let bytes = std::fs::read(fixture.cir()).expect("read the .cir");
         assert_eq!(bytes.len(), fixture.cir_len, "{}.cir changed length", fixture.name);
-        assert_eq!(Fixture::fnv1a(&bytes), fixture.cir_hash, "{}.cir changed content", fixture.name);
+        assert_eq!(PinnedTwin::fnv1a(&bytes), fixture.cir_hash, "{}.cir changed content", fixture.name);
     }
 }
 
 #[test]
 fn the_current_source_twin_exists() {
-    let fixture = &Fixture::CORPUS[5];
+    let fixture = &PinnedTwin::CORPUS[5];
     assert_eq!(fixture.name, "isrc_r");
     let cir = std::fs::read_to_string(fixture.cir()).expect("read isrc_r.cir");
     assert!(cir.contains("print v(a)"), "isrc_r.cir prints v(a)");
