@@ -1,5 +1,5 @@
 crates/piperine-analog-solver/src/device/assembly.rs::Assembly::param_stamps	-
-crates/piperine-analog-solver/src/device/plan.rs::::bind_instance	-
+crates/piperine-analog-solver/src/device/plan.rs::AnalogPlan::bind_instance	-
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve	-
 crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve_with_strategy	-
 crates/piperine-api/src/probe.rs::Probe::resolve	-

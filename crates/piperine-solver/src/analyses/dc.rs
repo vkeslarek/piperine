@@ -102,7 +102,7 @@ impl DcSystem<'_> {
         let amb = self.ambient();
         let bound = &mut self.circuit.abi;
         let mut all_stamps = bound.analog.assemble_dc(&x, amb)?;
-        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", &all_stamps) {
+        if let Some(err) = piperine_analog_solver::stamp_validation::StampValidation::non_finite_error("devices", &all_stamps) {
             return Err(err);
         }
         self.push_solver_stamps(&mut all_stamps);

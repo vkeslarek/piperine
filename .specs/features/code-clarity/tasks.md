@@ -2125,8 +2125,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The crate has no row in the free-function allowance
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] The crate has no row in the free-function allowance
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

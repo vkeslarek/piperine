@@ -36,66 +36,85 @@ pub struct LimitState {
     pub limited: f64,
 }
 
-/// Whether `held` is outside the limiting tolerance of `proposed`.
-pub(crate) fn active(held: f64, proposed: f64) -> bool {
-    (held - proposed).abs() > LIMIT_ABSTOL + LIMIT_RELTOL * proposed.abs()
-}
-
-/// Sets each limit's `x̂` and `x` from the functions that just wrote them,
-/// or to `LAST` for a limit no function writes (A3). In a small-signal sweep
-/// `x̂ = x` (abi.md §4.3).
-pub(crate) fn take_iterates(inst: &InstancePlan, st: &mut InstanceState, small_signal: bool) {
-    for (i, x) in inst.inputs.iter().enumerate() {
-        if x.kind != input::LIMIT {
-            continue;
-        }
-        let last = st.held[i].last;
-        let read = |at: Option<(usize, usize)>| at.map_or(last, |(f, w)| st.fns[f].f64(w));
-        let (limited, proposed) = (read(x.limited), read(x.proposed));
-        let h = &mut st.held[i];
-        h.value = if small_signal { proposed } else { limited };
-        h.proposed = proposed;
+impl LimitState {
+    /// Whether `held` is outside the limiting tolerance of `proposed`.
+    pub fn is_active(held: f64, proposed: f64) -> bool {
+        (held - proposed).abs() > LIMIT_ABSTOL + LIMIT_RELTOL * proposed.abs()
     }
 }
 
-/// Term `t` at the iterate: its value and direct partials, plus, for each
-/// partial `g` against a limit, `g·(x − x̂)` on the value and `g·p_j` on the
-/// columns (read through the [`Linear`] when asked for).
-pub(crate) fn linear<'a>(t: &'a TermPlan, inst: &'a InstancePlan, st: &'a InstanceState) -> Linear<'a> {
-    let Some((fi, w)) = t.value else { return Linear::none() };
-    let mut v = st.fns[fi].f64(w);
-    for (p, i) in &t.via {
-        let x = &inst.inputs[*i];
-        if x.kind != input::LIMIT {
-            continue;
-        }
-        let g = st.fns[fi].jac[*p];
-        let Held { value, proposed, .. } = st.held[*i];
-        v += g * (proposed - value);
-    }
-    Linear::of(v, t, inst, st)
+/// The limits of one instance: the part of the plan every limit operation reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Limits<'a> {
+    /// The instance whose limits these are.
+    instance: &'a InstancePlan,
 }
 
-/// The limits of one instance that veto convergence.
-pub(crate) fn vetoes(inst: &InstancePlan, st: &InstanceState, out: &mut Vec<LimitState>) {
-    for (x, h) in inst.inputs.iter().zip(&st.held) {
-        if x.kind == input::LIMIT && active(h.value, h.proposed) {
-            out.push(LimitState {
-                instance: inst.path.clone(),
-                input: x.name.clone(),
-                proposed: h.proposed,
-                limited: h.value,
-            });
+impl<'a> Limits<'a> {
+    /// The limits of `instance`.
+    pub fn new(instance: &'a InstancePlan) -> Self {
+        Self { instance }
+    }
+
+    /// Sets each limit's `x̂` and `x` from the functions that just wrote them,
+    /// or to `LAST` for a limit no function writes (A3). In a small-signal sweep
+    /// `x̂ = x` (abi.md §4.3).
+    pub fn take_iterates(&self, st: &mut InstanceState, small_signal: bool) {
+        for (i, x) in self.instance.inputs.iter().enumerate() {
+            if x.kind != input::LIMIT {
+                continue;
+            }
+            let last = st.held[i].last;
+            let read = |at: Option<(usize, usize)>| at.map_or(last, |(f, w)| st.fns[f].f64(w));
+            let (limited, proposed) = (read(x.limited), read(x.proposed));
+            let h = &mut st.held[i];
+            h.value = if small_signal { proposed } else { limited };
+            h.proposed = proposed;
         }
     }
-}
 
-/// Advances every written limit's `LAST` to its `x̂` with `AGE = age`.
-pub(crate) fn advance(inst: &InstancePlan, st: &mut InstanceState, age: u8) {
-    for (x, h) in inst.inputs.iter().zip(st.held.iter_mut()) {
-        if x.kind == input::LIMIT && x.limited.is_some() {
-            h.last = h.value;
-            h.age = age;
+    /// Term `t` at the iterate: its value and direct partials, plus, for each
+    /// partial `g` against a limit, `g·(x − x̂)` on the value and `g·p_j` on the
+    /// columns (read through the [`Linear`] when asked for).
+    pub fn linear<'s>(&self, t: &'s TermPlan, st: &'s InstanceState) -> Linear<'s>
+    where
+        'a: 's,
+    {
+        let Some((fi, w)) = t.value else { return Linear::none() };
+        let mut v = st.fns[fi].f64(w);
+        for (p, i) in &t.via {
+            let x = &self.instance.inputs[*i];
+            if x.kind != input::LIMIT {
+                continue;
+            }
+            let g = st.fns[fi].jac[*p];
+            let Held { value, proposed, .. } = st.held[*i];
+            v += g * (proposed - value);
+        }
+        Linear::of(v, t, self.instance, st)
+    }
+
+    /// The limits of the instance that veto convergence.
+    pub fn vetoes(&self, st: &InstanceState, out: &mut Vec<LimitState>) {
+        for (x, h) in self.instance.inputs.iter().zip(&st.held) {
+            if x.kind == input::LIMIT && LimitState::is_active(h.value, h.proposed) {
+                out.push(LimitState {
+                    instance: self.instance.path.clone(),
+                    input: x.name.clone(),
+                    proposed: h.proposed,
+                    limited: h.value,
+                });
+            }
+        }
+    }
+
+    /// Advances every written limit's `LAST` to its `x̂` with `AGE = age`.
+    pub fn advance(&self, st: &mut InstanceState, age: u8) {
+        for (x, h) in self.instance.inputs.iter().zip(st.held.iter_mut()) {
+            if x.kind == input::LIMIT && x.limited.is_some() {
+                h.last = h.value;
+                h.age = age;
+            }
         }
     }
 }

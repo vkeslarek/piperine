@@ -7,7 +7,7 @@
 //! (p6-cleanup-architecture D2). The step tunables stay on
 //! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
-use piperine_analog_solver::crossing::{CrossDir, predict_crossing};
+use piperine_analog_solver::crossing::{CrossDir, Prediction};
 use piperine_analog_solver::device::{Ambient, AssemblySnapshot, JumpPosition, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
@@ -398,7 +398,7 @@ impl TransientSystem<'_> {
         let amb = self.ambient();
         let bound = &mut self.circuit.abi;
         bound.analog.assemble_tran_into(x, amb, stage, out)?;
-        if let Some(err) = piperine_analog_solver::stamp_validation::non_finite_stamp_error("devices", out) {
+        if let Some(err) = piperine_analog_solver::stamp_validation::StampValidation::non_finite_error("devices", out) {
             return Err(err);
         }
         let gshunt = self.context.tolerances.gshunt;
@@ -1090,7 +1090,7 @@ fn crossing_estimate(t0: f64, e0: f64, t1: f64, e1: f64, prev: Option<(f64, f64,
         halvings = n.min(1000);
     }
     let e0 = e0 * 0.5f64.powi(halvings as i32);
-    predict_crossing(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
+    Prediction::from_samples(CrossDir::Rising, t0, e0, t1, e1).map_or(t0, |p| p.t_cross)
 }
 
 /// A converged attempt and its truncation verdict, until `device_accept`.

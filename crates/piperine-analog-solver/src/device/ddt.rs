@@ -12,7 +12,7 @@ use crate::math::integration::{TrBdf2, TrBdf2Phase};
 use crate::math::linear::Stamp;
 use crate::netlist::AnalogReference;
 
-use super::flow::{Linear, stamp_rows};
+use super::flow::{FlowStamp, Linear};
 use super::plan::TermPlan;
 
 /// Where a TR-BDF2 step stands relative to a jump (§15.2.6).
@@ -80,45 +80,54 @@ impl History {
     pub fn back(&self, lookback: usize) -> f64 {
         if lookback <= self.len { self.q[lookback - 1] } else { 0.0 }
     }
+
+    /// The companion current `i = c0·q + c1·q₁ + c2·q₂` of a term whose value at the solve of `stage`
+    /// is `q` (minus the previous derivative in a trapezoidal stage: the stored one after a jump step, the
+    /// BDF2 re-derivation after a regular step); 0
+    /// when the step is not positive.
+    pub fn companion_current(&self, stage: Stage, q: f64) -> f64 {
+        if stage.h <= 0.0 {
+            return 0.0;
+        }
+        let (c0, c1, c2) = stage.coefficients();
+        let mut i = c0 * q + c1 * self.back(1) + c2 * self.back(2);
+        if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.jump == JumpPosition::After {
+            i -= self.current_back(1);
+        } else if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.prev_h > 0.0 {
+            let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, stage.prev_h);
+            i -= d0 * self.back(1) + d1 * self.back(2) + d2 * self.back(3);
+        }
+        i
+    }
 }
 
-/// The companion current `i = c0·q + c1·q₁ + c2·q₂` of a term whose value at the solve of `stage`
-/// is `q` (minus the previous derivative in a trapezoidal stage: the stored one after a jump step, the
-/// BDF2 re-derivation after a regular step); 0
-/// when the step is not positive.
-pub(crate) fn companion_current(stage: Stage, q: f64, hist: &History) -> f64 {
-    if stage.h <= 0.0 {
-        return 0.0;
-    }
-    let (c0, c1, c2) = stage.coefficients();
-    let mut i = c0 * q + c1 * hist.back(1) + c2 * hist.back(2);
-    if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.jump == JumpPosition::After {
-        i -= hist.current_back(1);
-    } else if matches!(stage.phase, TrBdf2Phase::Trapezoidal) && stage.prev_h > 0.0 {
-        let (d0, d1, d2) = TrBdf2::phase_coeffs(TrBdf2Phase::Bdf2, stage.prev_h);
-        i -= d0 * hist.back(1) + d1 * hist.back(2) + d2 * hist.back(3);
-    }
-    i
+/// The companion stamps of one `DDT` term at the iterate: the part of the assembly its stage reads.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DdtStamp<'a> {
+    /// The term whose rows are stamped.
+    pub term: &'a TermPlan,
+    /// The term's value (`linear.v = q`) and partials at the iterate.
+    pub linear: Linear<'a>,
+    /// The accepted values of the term.
+    pub history: &'a History,
+    /// The TR-BDF2 stage being stamped.
+    pub stage: Stage,
 }
 
-/// The companion stamps of a `DDT` term of value `lin.v = q` at iterate `x`:
-/// `i = c0·q + c1·q₁ + c2·q₂` (minus the previous BDF2 derivative in a
-/// trapezoidal stage after a regular step), the Jacobian `c0·∂q/∂x_j` and the
-/// right side `c0·Σ ∂q/∂x_j·x_j − i`. With `h ≤ 0` every position is stamped
-/// with 0.
-pub(crate) fn stamp_ddt(
-    t: &TermPlan,
-    lin: &Linear<'_>,
-    hist: &History,
-    stage: Stage,
-    x: &[f64],
-    out: &mut Vec<Stamp<AnalogReference, f64>>,
-) {
-    if stage.h <= 0.0 {
-        stamp_rows(t, lin, 0.0, 0.0, out);
-        return;
+impl DdtStamp<'_> {
+    /// The companion stamps of a `DDT` term of value `lin.v = q` at iterate `x`:
+    /// `i = c0·q + c1·q₁ + c2·q₂` (minus the previous BDF2 derivative in a
+    /// trapezoidal stage after a regular step), the Jacobian `c0·∂q/∂x_j` and the
+    /// right side `c0·Σ ∂q/∂x_j·x_j − i`. With `h ≤ 0` every position is stamped
+    /// with 0.
+    pub fn stamp(&self, x: &[f64], out: &mut Vec<Stamp<AnalogReference, f64>>) {
+        let rows = FlowStamp::new(self.term, self.linear);
+        if self.stage.h <= 0.0 {
+            rows.rows(0.0, 0.0, out);
+            return;
+        }
+        let (c0, ..) = self.stage.coefficients();
+        let i = self.history.companion_current(self.stage, self.linear.v);
+        rows.rows(c0, c0 * self.linear.dot(x) - i, out);
     }
-    let (c0, ..) = stage.coefficients();
-    let i = companion_current(stage, lin.v, hist);
-    stamp_rows(t, lin, c0, c0 * lin.dot(x) - i, out);
 }
