@@ -20,7 +20,7 @@ use piperine_transpile::Settings;
 use piperine_parity::mixed;
 
 use mixed::{BuiltDesign, Seen};
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
 
 /// A sink that keeps nothing: a sweep reads its table.
 struct Ignore;
@@ -44,7 +44,7 @@ impl Model {
 
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> BuiltDesign {
-        BuckFixture::build(&self.project, top)
+        BuiltDesign::of(&self.project, top)
     }
 
     /// The node `<top>.<name>` of an elaborated design.
@@ -141,7 +141,7 @@ fn a_counter_over_a_project_byte_nature_commits_and_records() {
     // rise the net holds `k`, known.
     let built = Model::of("byte_counter.msl").built("ConnectedBench");
     let seen = built.run(60e-9, 1e-9);
-    let committed: Vec<Vec<u8>> = BuckFixture::transient(&seen, "ConnectedBench.count").into_iter().map(|(_, bytes)| bytes).collect();
+    let committed: Vec<Vec<u8>> = NetChanges::transient(&seen, "ConnectedBench.count").into_iter().map(|(_, bytes)| bytes).collect();
     let expected: Vec<Vec<u8>> = (1..=6).map(Model::known_byte).collect();
     assert_eq!(committed, expected, "one commit per rising edge");
     // The reader records the count it sees at each rising edge: the value before that edge's
@@ -162,7 +162,7 @@ fn a_counter_over_a_project_byte_nature_commits_and_records() {
     assert_eq!(seen_counts, (0..6).collect::<Vec<i128>>());
     // §8.2.4: the definition `twice = count + count` is recomputed at every change of `count`, so
     // the net holds `2k` after the `k`-th rise.
-    let doubled: Vec<Vec<u8>> = BuckFixture::transient(&seen, "ConnectedBench.twice").into_iter().map(|(_, bytes)| bytes).collect();
+    let doubled: Vec<Vec<u8>> = NetChanges::transient(&seen, "ConnectedBench.twice").into_iter().map(|(_, bytes)| bytes).collect();
     assert_eq!(doubled, (1..=6).map(|k| Model::known_byte(2 * k)).collect::<Vec<_>>(), "a definition follows its operand");
     // §5.3: `changed()` fires at each change of `count`: at `(0, 0)` for its first commit `0`, whose
     // `prev()` is the initial value, `0` (§5.3.5, D8: the first commit seeds `PREVIOUS` with its own
@@ -181,7 +181,7 @@ fn a_project_nature_carrier_connects_to_a_port_of_the_same_nature() {
     let alone = Model::of("byte_counter.msl").built("CounterBench").run(60e-9, 1e-9);
     let connected_bench = Model::of("byte_counter.msl").built("ConnectedBench");
     let connected = connected_bench.run(60e-9, 1e-9);
-    assert_eq!(BuckFixture::transient(&alone, "CounterBench.count"), BuckFixture::transient(&connected, "ConnectedBench.count"));
+    assert_eq!(NetChanges::transient(&alone, "CounterBench.count"), NetChanges::transient(&connected, "ConnectedBench.count"));
     let read: Vec<Vec<(String, i128)>> = (0..6).map(|count| vec![("count".to_string(), count)]).collect();
     assert_eq!(Model::records(&connected_bench, &connected, "seen"), read, "the reader reads the connected net");
 }

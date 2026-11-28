@@ -13,7 +13,8 @@ use piperine_api::{Field, Record};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 use run::SourceRun;
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
+use piperine_parity::mixed::BuiltDesign;
 
 /// The model `file` of `tests/generics/`, with generic modules admitted.
 struct ModuleModels;
@@ -40,8 +41,8 @@ impl ModuleModels {
 
     /// What `Bench` of `file` committed at its first rising edge: the value of each carrier in `names`.
     fn first_commits(file: &str, names: &[&str]) -> Vec<Vec<u8>> {
-        let seen = BuckFixture::build(&Self::project(file), "Bench").run(10e-9, 1e-9);
-        names.iter().map(|name| BuckFixture::first_edge_value(&seen, &format!("Bench.{name}"))).collect()
+        let seen = BuiltDesign::of(&Self::project(file), "Bench").run(10e-9, 1e-9);
+        names.iter().map(|name| NetChanges::first_edge_value(&seen, &format!("Bench.{name}"))).collect()
     }
 }
 

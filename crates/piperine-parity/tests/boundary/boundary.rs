@@ -26,10 +26,10 @@ const LOW: [u8; 1] = [0];
 /// One nanosecond in ticks (the solver's one femtosecond).
 const NS: i64 = 1_000_000;
 
-/// Associated test helpers of `boundary`, grouped on one fixture type.
-struct BoundaryFixture;
+/// The hand-built design of the boundary tests: its network, its kick and its constants.
+struct BoundaryDesign;
 
-impl BoundaryFixture {
+impl BoundaryDesign {
     fn real(v: f64) -> Constant {
         Constant::Real(Real::new(v))
     }
@@ -40,9 +40,9 @@ impl BoundaryFixture {
     fn network(w: &mut TopDesign) {
         let (osc, switch) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b));
         let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
-        w.place("osc", osc, vec![BoundaryFixture::real(1.0 / 6e-6)], &[("gate", BIT)]);
+        w.place("osc", osc, vec![BoundaryDesign::real(1.0 / 6e-6)], &[("gate", BIT)]);
         w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
-        w.place_with("sw", switch, &["vs", "x"], vec![BoundaryFixture::real(NETWORK.ron), BoundaryFixture::real(NETWORK.roff)], &[("gate", BIT)]);
+        w.place_with("sw", switch, &["vs", "x"], vec![BoundaryDesign::real(NETWORK.ron), BoundaryDesign::real(NETWORK.roff)], &[("gate", BIT)]);
         w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
         w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
     }
@@ -81,7 +81,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
     let mut w = TopDesign::new();
     let (osc, adc, vsource) = (Buck::osc(&mut w.b), Buck::adc(&mut w.b), Devices::vsource(&mut w.b));
     // a sample strobe once per 1 us: the oscillator rises at 0.5 us and again at 1.5 us
-    w.place("osc", osc, vec![BoundaryFixture::real(1e6)], &[("sample", BIT)]);
+    w.place("osc", osc, vec![BoundaryDesign::real(1e6)], &[("sample", BIT)]);
     for (i, v) in volts.iter().enumerate() {
         let node = format!("a{i}");
         w.place_analog(&format!("v{i}"), vsource, &[&node, "gnd"], &[*v, 0.0]);
@@ -90,7 +90,7 @@ fn the_adc_commits_the_rounded_code_after_tconv() {
             &format!("adc{i}"),
             adc,
             &[&node],
-            vec![BoundaryFixture::real(VREF), BoundaryFixture::real(TCONV), BoundaryFixture::real(TSTROBE)],
+            vec![BoundaryDesign::real(VREF), BoundaryDesign::real(TCONV), BoundaryDesign::real(TSTROBE)],
             &[("sample", BIT), (&code, ValueAliases::u(10)), (&done, BIT)],
         );
     }
@@ -169,9 +169,9 @@ fn the_comparator_trips_at_its_thresholds() {
     const UP: f64 = 0.6 + 0.05 / 2.0;
     const DOWN: f64 = 0.6 - 0.05 / 2.0;
     let mut w = TopDesign::new();
-    BoundaryFixture::network(&mut w);
+    BoundaryDesign::network(&mut w);
     let a2d = Buck::comparator(&mut w.b);
-    w.place_with("cmp", a2d, &["x"], vec![BoundaryFixture::real(0.6), BoundaryFixture::real(50e-3)], &[("d", BIT)]);
+    w.place_with("cmp", a2d, &["x"], vec![BoundaryDesign::real(0.6), BoundaryDesign::real(50e-3)], &[("d", BIT)]);
     // 8.9 us: the gate rises at 3 us, falls at 6 us and rises again at 9 us
     let seen = BuiltDesign::new(w.finish()).run(8.9e-6, 1e-8);
     let gate = seen.transient("gate");
@@ -202,12 +202,12 @@ fn a_carrier_change_is_a_time_point_and_starts_the_response() {
     // the oscillator's first rising edge is the instant t0 = 3.0037 us, off the 1 ns grid the step
     // cap gives, so only a time point lands there; a compiled reaction commits
     // the gate high there, and the switch (closed: Ron) connects the source to the RC
-    let (osc, switch, kick) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b), BoundaryFixture::kick(&mut w.b));
+    let (osc, switch, kick) = (Buck::osc(&mut w.b), Buck::switch(&mut w.b), BoundaryDesign::kick(&mut w.b));
     let (vsource, resistor, capacitor) = (Devices::vsource(&mut w.b), Devices::resistor(&mut w.b), Devices::capacitor(&mut w.b));
-    w.place("osc", osc, vec![BoundaryFixture::real(1.0 / 6.0074e-6)], &[("clk", BIT)]);
+    w.place("osc", osc, vec![BoundaryDesign::real(1.0 / 6.0074e-6)], &[("clk", BIT)]);
     w.place("kick", kick, vec![], &[("clk", BIT), ("gate", BIT)]);
     w.place_analog("v1", vsource, &["vs", "gnd"], &[NETWORK.v, 0.0]);
-    w.place_with("sw", switch, &["vs", "x"], vec![BoundaryFixture::real(NETWORK.ron), BoundaryFixture::real(NETWORK.roff)], &[("gate", BIT)]);
+    w.place_with("sw", switch, &["vs", "x"], vec![BoundaryDesign::real(NETWORK.ron), BoundaryDesign::real(NETWORK.roff)], &[("gate", BIT)]);
     w.place_analog("r2", resistor, &["x", "gnd"], &[NETWORK.r2]);
     w.place_analog("c1", capacitor, &["x", "gnd"], &[NETWORK.c]);
     let built = BuiltDesign::new(w.finish());

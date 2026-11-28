@@ -12,14 +12,14 @@ use piperine_solver::prelude::{AcSweepAnalysisOptions, Context};
 fn ac_rc() {
     let reference = Ngspice::from_environment().run("ac_rc");
     for backend in BackendSelection::selected() {
-        AcFixture::compare_on(&reference, backend);
+        AcComparison::compare_on(&reference, backend);
     }
 }
 
-/// Associated test helpers of `ac`, grouped on one fixture type.
-struct AcFixture;
+/// An AC twin compared with the reference on one backend.
+struct AcComparison;
 
-impl AcFixture {
+impl AcComparison {
     /// The sweep of the RC low-pass on `backend` against the reference run already made.
     fn compare_on(reference: &Reference, backend: Backend) {
         let mut bench = Bench::load_on("ac_rc", backend);

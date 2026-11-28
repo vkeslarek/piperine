@@ -12,10 +12,10 @@ use piperine_solver::prelude::{AnalogVariable, Context, SensAnalysisOptions};
 /// The params ngspice differentiates by, as `(its name, the instance, the param)`.
 const WRT: [(&str, &str, &str); 3] = [("r1", "r1", "r"), ("r2", "r2", "r"), ("v1", "v1", "dc")];
 
-/// Associated test helpers of `sens`, grouped on one fixture type.
-struct SensitivityFixture;
+/// A sensitivity twin compared with the reference on one backend.
+struct SensitivityComparison;
 
-impl SensitivityFixture {
+impl SensitivityComparison {
     fn compare(reference: &Reference, backend: Backend) {
         let mut bench = Bench::load_on("sens_divider", backend);
         let node = AnalogVariable::Node(bench.node("mid"));
@@ -43,7 +43,7 @@ impl SensitivityFixture {
 fn sens_divider() {
     let reference = Ngspice::from_environment().run("sens_divider");
     for backend in BackendSelection::selected() {
-        SensitivityFixture::compare(&reference, backend);
+        SensitivityComparison::compare(&reference, backend);
     }
 }
 

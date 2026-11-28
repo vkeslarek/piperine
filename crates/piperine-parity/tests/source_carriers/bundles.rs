@@ -13,7 +13,7 @@ use piperine_parity::project::Project;
 use piperine_parity::mixed;
 
 use mixed::{BuiltDesign, Seen};
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
 
 /// One MSL file of `tests/bundles/`.
 struct Model {
@@ -30,7 +30,7 @@ impl Model {
 
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> BuiltDesign {
-        BuckFixture::build(&self.project, top)
+        BuiltDesign::of(&self.project, top)
     }
 
     /// `v(<name>)` of the bench `top` at its operating point.
@@ -77,7 +77,7 @@ fn a_producer_consumer_and_observer_run_three_beats() {
     let seen = built.run(120e-9, 1e-9);
     assert_eq!(Model::data(&built, &seen, "taken"), [1, 2, 3], "the consumer takes one number per beat");
     assert_eq!(Model::data(&built, &seen, "seen"), [1, 2, 3], "the observer sees the same beats");
-    let valid: Vec<(i64, Vec<u8>)> = BuckFixture::series(&seen, "HandshakeBench.s.valid");
+    let valid: Vec<(i64, Vec<u8>)> = NetChanges::series(&seen, "HandshakeBench.s.valid");
     // `valid` starts true (`count < 3` at 0) and falls once, when the third beat's commit moves `count` to 3, at 55 ns
     assert_eq!(valid.first().map(|c| c.1.clone()), Some(vec![1]), "valid holds from (0, 0)");
     assert_eq!(valid.last().map(|c| (c.0, c.1.clone())), Some((55_000_000, vec![0])), "valid falls at the third beat: {valid:?}");

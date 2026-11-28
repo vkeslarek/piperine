@@ -155,10 +155,10 @@ impl Twin {
 mod tests {
     use super::*;
 
-    /// Associated test helpers of `corpus`, grouped on one fixture type.
-    struct CorpusFixture;
+    /// A corpus planted in a temporary directory.
+    struct PlantedCorpus;
 
-    impl CorpusFixture {
+    impl PlantedCorpus {
         /// A corpus of the scenario directories `layout` names, each with the files it lists.
         fn planted(layout: &[(&str, &[&str])]) -> (tempfile::TempDir, Corpus) {
             let root = tempfile::tempdir().expect("a temporary directory");
@@ -176,7 +176,7 @@ mod tests {
 
     #[test]
     fn a_twin_is_found_by_name() {
-        let (_root, corpus) = CorpusFixture::planted(&[("twins", &["alpha.msl", "alpha.cir", "devices.msl", "lonely.cir"])]);
+        let (_root, corpus) = PlantedCorpus::planted(&[("twins", &["alpha.msl", "alpha.cir", "devices.msl", "lonely.cir"])]);
         let twin = corpus.twin("alpha");
         assert_eq!(twin.name(), "alpha");
         assert!(twin.directory().ends_with("twins"));
@@ -191,7 +191,7 @@ mod tests {
 
     #[test]
     fn a_command_is_read_as_the_arguments_after_piperine() {
-        let (_root, corpus) = CorpusFixture::planted(&[("twins", &["alpha.msl", "alpha.cir"])]);
+        let (_root, corpus) = PlantedCorpus::planted(&[("twins", &["alpha.msl", "alpha.cir"])]);
         let twin = corpus.twin("alpha");
         std::fs::write(twin.command(), "piperine run alpha.msl --from -1 --print 'i(v1)'\n").expect("a planted command");
         assert_eq!(twin.command_arguments(), vec!["run", "alpha.msl", "--from", "-1", "--print", "i(v1)"]);
@@ -200,14 +200,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "gamma: no twin of that name")]
     fn a_missing_twin_names_itself() {
-        let (_root, corpus) = CorpusFixture::planted(&[("twins", &["alpha.msl", "alpha.cir"])]);
+        let (_root, corpus) = PlantedCorpus::planted(&[("twins", &["alpha.msl", "alpha.cir"])]);
         corpus.twin("gamma");
     }
 
     #[test]
     #[should_panic(expected = "a twin of that name is in two scenarios")]
     fn a_name_in_two_scenarios_is_refused() {
-        let (_root, corpus) = CorpusFixture::planted(&[("one", &["alpha.msl", "alpha.cir"]), ("two", &["alpha.msl", "alpha.cir"])]);
+        let (_root, corpus) = PlantedCorpus::planted(&[("one", &["alpha.msl", "alpha.cir"]), ("two", &["alpha.msl", "alpha.cir"])]);
         corpus.twin("alpha");
     }
 }

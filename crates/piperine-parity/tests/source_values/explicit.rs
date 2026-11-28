@@ -5,6 +5,7 @@
 //! the model.
 #![cfg(unix)]
 
+use piperine_parity::source::bytes::CarrierBytes;
 use piperine_parity::mixed;
 use piperine_parity::source::run;
 
@@ -14,7 +15,8 @@ use piperine_api::{Field, Record};
 use piperine_parity::project::Project;
 use mixed::Seen;
 use run::SourceRun;
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
+use piperine_parity::mixed::BuiltDesign;
 
 /// The model files of `tests/explicit/`.
 const RUN: SourceRun = SourceRun::in_directory("tests/explicit");
@@ -73,10 +75,10 @@ fn maybe_is_an_ordinary_field_of_a_record() {
     }
 }
 
-/// Associated test helpers of `explicit`, grouped on one fixture type.
-struct ExplicitFixture;
+/// The records of a stream the explicit-value benches emit, and the fields they carry.
+struct ExplicitRecords;
 
-impl ExplicitFixture {
+impl ExplicitRecords {
     /// The records of the stream `name` the transient of `top` of `initial.msl` made, in order.
     fn stream(top: &str, name: &str) -> Vec<Record> {
         RUN.records_of("initial.msl", top).into_iter().filter(|record| record.stream == name).collect()
@@ -100,33 +102,6 @@ impl ExplicitFixture {
         records.iter().map(|record| (record.time * 1e10).round() / 10.0).collect()
     }
 
-    /// The byte of a one-byte carrier.
-    fn byte(value: u8) -> Vec<u8> {
-        vec![value]
-    }
-
-    /// The 4 ns transient of `Paths` of `paths.msl`.
-    fn paths() -> Seen {
-        BuckFixture::build(&RUN.project("paths.msl"), "Paths").run(4e-9, 0.5e-9)
-    }
-
-    /// The changes of the net `name` of `Paths`.
-    fn changes(seen: &Seen, name: &str) -> Vec<(i64, Vec<u8>)> {
-        BuckFixture::transient(seen, &format!("Paths.{name}"))
-    }
-
-    /// The instant of the last step of the transient of `top` of `paths.msl`, run to 4 ns.
-    fn last_step(top: &str) -> f64 {
-        let (_, result) = BuckFixture::build(&RUN.project("paths.msl"), top).run_with(4e-9, 0.5e-9);
-        result.iter().last().expect("a time point").time()
-    }
-
-    /// The instants of the records of `top` of `cross_if.msl`, in a 1 us transient.
-    fn hits(top: &str) -> Vec<f64> {
-        let seen = BuckFixture::build(&RUN.project("cross_if.msl"), top).run(1e-6, 0.05e-6);
-        seen.all().iter().filter(|o| matches!(o.kind, piperine_solver::protocol::ObservationKind::Record { .. })).map(|o| o.time).collect()
-    }
-
     /// Every record of the 4 ns transient of `top` of `plain_values.msl`, decoded as the host decodes it.
     fn plain_records(top: &str) -> Vec<Record> {
         RUN.records_of("plain_values.msl", top)
@@ -146,10 +121,37 @@ impl ExplicitFixture {
     }
 }
 
+/// The `paths.msl` and `cross_if.msl` benches of the explicit-value tests, run and read back.
+struct ExplicitPaths;
+
+impl ExplicitPaths {
+    /// The 4 ns transient of `Paths` of `paths.msl`.
+    fn paths() -> Seen {
+        BuiltDesign::of(&RUN.project("paths.msl"), "Paths").run(4e-9, 0.5e-9)
+    }
+
+    /// The changes of the net `name` of `Paths`.
+    fn changes(seen: &Seen, name: &str) -> Vec<(i64, Vec<u8>)> {
+        NetChanges::transient(seen, &format!("Paths.{name}"))
+    }
+
+    /// The instant of the last step of the transient of `top` of `paths.msl`, run to 4 ns.
+    fn last_step(top: &str) -> f64 {
+        let (_, result) = BuiltDesign::of(&RUN.project("paths.msl"), top).run_with(4e-9, 0.5e-9);
+        result.iter().last().expect("a time point").time()
+    }
+
+    /// The instants of the records of `top` of `cross_if.msl`, in a 1 us transient.
+    fn hits(top: &str) -> Vec<f64> {
+        let seen = BuiltDesign::of(&RUN.project("cross_if.msl"), top).run(1e-6, 0.05e-6);
+        seen.all().iter().filter(|o| matches!(o.kind, piperine_solver::protocol::ObservationKind::Record { .. })).map(|o| o.time).collect()
+    }
+}
+
 #[test]
 fn a_written_initial_value_is_the_value_at_the_start() {
     // §3.3.4, §5.1.1 (EU-04 AC 1): `signal s: Bit<u8> = 7;` is 7 from `(0, 0)`: every probe at a rising edge reads 7
-    let probes = ExplicitFixture::stream("WrittenBench", "written");
+    let probes = ExplicitRecords::stream("WrittenBench", "written");
     assert!(!probes.is_empty(), "the probe runs at the rising edges");
     for record in probes {
         assert_eq!(record.fields, [("value".to_string(), Field::Int(7))], "the carrier holds its written value");
@@ -160,10 +162,10 @@ fn a_written_initial_value_is_the_value_at_the_start() {
 fn a_carrier_without_a_value_starts_at_its_default() {
     // §3.3.4, H.8 rule 4 (EU-04 AC 2): `signal o: Bit<Option<u8>>;` starts at `None`, so every read before a commit
     // takes the `None` arm: `match` 99, `if let` leaves 98, `unwrap_or` 97
-    let probes = ExplicitFixture::stream("DefaultBench", "optional");
+    let probes = ExplicitRecords::stream("DefaultBench", "optional");
     assert!(!probes.is_empty(), "the probe runs at the rising edges");
     for record in &probes {
-        assert_eq!(ExplicitFixture::integers(record), [99, 98, 97], "a carrier of `Option<u8>` with no value reads `None`");
+        assert_eq!(ExplicitRecords::integers(record), [99, 98, 97], "a carrier of `Option<u8>` with no value reads `None`");
     }
 }
 
@@ -172,11 +174,11 @@ fn an_option_carrier_is_read_by_matching() {
     // §1.7, §5.1.1 (EU-06 AC 2): `match`, `if let` and `unwrap_or` read a `Bit<Option<u8>>` carrier. The commit of
     // `Some(5)` at the first rising edge lands in the next microstep, so that edge reads `None` and every later
     // one reads 5
-    let probes = ExplicitFixture::stream("SetBench", "optional");
+    let probes = ExplicitRecords::stream("SetBench", "optional");
     assert!(probes.len() > 1, "more than one rising edge");
-    assert_eq!(ExplicitFixture::integers(&probes[0]), [99, 98, 97], "the commit has not landed at its own edge");
+    assert_eq!(ExplicitRecords::integers(&probes[0]), [99, 98, 97], "the commit has not landed at its own edge");
     for record in &probes[1..] {
-        assert_eq!(ExplicitFixture::integers(record), [5, 5, 5], "`Some(5)` is read by the three forms");
+        assert_eq!(ExplicitRecords::integers(record), [5, 5, 5], "`Some(5)` is read by the three forms");
     }
 }
 
@@ -184,11 +186,11 @@ fn an_option_carrier_is_read_by_matching() {
 fn the_first_commit_is_a_change() {
     // §5.3.4, D8 (EU-13 AC 2): the commit of the initial value at `(0, 0)` is a change of every carrier, for a written
     // value (`= 7`) and for the default of a type (`None`): `changed()` fires once, at time 0
-    let written = ExplicitFixture::stream("WrittenBench", "changed");
+    let written = ExplicitRecords::stream("WrittenBench", "changed");
     assert_eq!(written.len(), 1, "one change, at the start: {written:?}");
     assert_eq!(written[0].time, 0.0, "at (0, 0)");
     assert_eq!(written[0].fields[1].1, Field::Int(7), "the value committed");
-    let defaulted = ExplicitFixture::stream("DefaultBench", "optional_changed");
+    let defaulted = ExplicitRecords::stream("DefaultBench", "optional_changed");
     assert_eq!(defaulted.len(), 1, "one change, at the start: {defaulted:?}");
     assert_eq!(defaulted[0].time, 0.0, "at (0, 0)");
 }
@@ -197,11 +199,11 @@ fn the_first_commit_is_a_change() {
 fn prev_is_the_initial_value_before_a_change() {
     // §5.3.5, D8 (EU-13 AC 3): `q` starts at 4 and is committed 9 at the first rising edge. `prev()` reads 4 at that
     // edge, before any change after the start, and 4 again at the later edges, the value before the one change
-    let probes = ExplicitFixture::stream("PreviousBench", "previous");
+    let probes = ExplicitRecords::stream("PreviousBench", "previous");
     assert!(probes.len() > 1, "more than one rising edge");
-    assert_eq!(ExplicitFixture::integers(&probes[0]), [4, 4], "`prev()` and the value are the initial value at the first edge");
+    assert_eq!(ExplicitRecords::integers(&probes[0]), [4, 4], "`prev()` and the value are the initial value at the first edge");
     for record in &probes[1..] {
-        assert_eq!(ExplicitFixture::integers(record), [4, 9], "`prev()` is the value before the change");
+        assert_eq!(ExplicitRecords::integers(record), [4, 9], "`prev()` is the value before the change");
     }
 }
 
@@ -211,11 +213,11 @@ fn an_element_never_committed_reads_its_initial_value() {
     // `[Bit<Option<u8>>; 1 << 20]` (composite-values phase C, GAPS L24 closed): elements 0 and 1048575 read `Some(5)` at every
     // edge, and element 1, committed `Some(7)` at the first edge, reads 5 at that edge (the snapshot) and 7 after. The storage
     // half of AC 3, that the million elements cost what is written, is `piperine-api`'s `carrier_array_storage` (T85)
-    let probes = ExplicitFixture::stream("ElementsBench", "elements");
+    let probes = ExplicitRecords::stream("ElementsBench", "elements");
     assert!(probes.len() > 1, "the probe runs at the rising edges");
     for (k, record) in probes.iter().enumerate() {
         let committed = if k == 0 { 5 } else { 7 };
-        assert_eq!(ExplicitFixture::integers(record), [5, 5, committed], "edge {k}: each element no model commits reads its initial value");
+        assert_eq!(ExplicitRecords::integers(record), [5, 5, committed], "edge {k}: each element no model commits reads its initial value");
     }
 }
 
@@ -223,7 +225,7 @@ fn an_element_never_committed_reads_its_initial_value() {
 fn an_unbound_option_param_is_none() {
     // §8.1 (EU-06 AC 1, C20; owed to `params-and-io` B5, GAPS L28 closed): the placement of `Param` binds no value for
     // `limit: Option<u8>`, so it is `None` and `limit.is_some()` is false at every rising edge
-    let given = ExplicitFixture::stream("ParamBench", "param");
+    let given = ExplicitRecords::stream("ParamBench", "param");
     assert!(!given.is_empty(), "the reaction runs at the rising edges");
     for record in given {
         assert_eq!(record.fields, [("given".to_string(), Field::Bool(false))], "an unbound `Option` param is `None`");
@@ -235,8 +237,8 @@ fn a_change_is_a_different_value() {
     // §5.3.4, D8 (EU-13 AC 1): `s` starts at 1, and is committed 2, 2 and 3 at the first three rising edges. The first
     // commit of each value is a change; the second 2 is the held value and is not. So `changed()` fires at `(0, 0)`
     // for the initial 1, after the first edge for 2, and after the third for 3
-    let changes = ExplicitFixture::edge_stream("Bench", "changed");
-    assert_eq!(ExplicitFixture::nanoseconds(&changes), [0.0, 0.5, 2.5], "the instants of the changes: {changes:?}");
+    let changes = ExplicitRecords::edge_stream("Bench", "changed");
+    assert_eq!(ExplicitRecords::nanoseconds(&changes), [0.0, 0.5, 2.5], "the instants of the changes: {changes:?}");
     let values: Vec<Field> = changes.iter().map(|record| record.fields.iter().find(|(name, _)| name == "value").map(|(_, field)| field.clone()).expect("a value field")).collect();
     assert_eq!(values, [Field::Int(1), Field::Int(2), Field::Int(3)], "the value each change committed");
 }
@@ -245,8 +247,8 @@ fn a_change_is_a_different_value() {
 fn an_edge_is_a_transition() {
     // §22.1.5 (EU-13 AC 4): `b` starts false and toggles at each rising edge of the clock (0.5, 1.5, 2.5, 3.5 ns).
     // `rise()` fires on false to true, at the first and third; `fall()` on true to false, at the second and fourth
-    assert_eq!(ExplicitFixture::nanoseconds(&ExplicitFixture::edge_stream("Bench", "rise")), [0.5, 2.5], "false to true");
-    assert_eq!(ExplicitFixture::nanoseconds(&ExplicitFixture::edge_stream("Bench", "fall")), [1.5, 3.5], "true to false");
+    assert_eq!(ExplicitRecords::nanoseconds(&ExplicitRecords::edge_stream("Bench", "rise")), [0.5, 2.5], "false to true");
+    assert_eq!(ExplicitRecords::nanoseconds(&ExplicitRecords::edge_stream("Bench", "fall")), [1.5, 3.5], "true to false");
 }
 
 #[test]
@@ -255,9 +257,9 @@ fn a_carrier_that_starts_high_has_not_risen() {
     // `fall()`; nothing commits either, so no edge fires at all. `init()` still fires once, at `(0, 0)`: the first
     // commit of its carrier is a change (§22.1.6)
     for stream in ["hi_rise", "hi_fall", "lo_rise", "lo_fall"] {
-        assert!(ExplicitFixture::edge_stream("Quiet", stream).is_empty(), "{stream} fires on no transition");
+        assert!(ExplicitRecords::edge_stream("Quiet", stream).is_empty(), "{stream} fires on no transition");
     }
-    assert_eq!(ExplicitFixture::nanoseconds(&ExplicitFixture::edge_stream("Quiet", "init")), [0.0], "`init()` fires once at the start");
+    assert_eq!(ExplicitRecords::nanoseconds(&ExplicitRecords::edge_stream("Quiet", "init")), [0.0], "`init()` fires once at the start");
 }
 
 #[test]
@@ -266,7 +268,7 @@ fn a_carrier_a_definition_drives_has_not_risen_at_the_start() {
     // initial value of its own (an undelayed definition takes none). Its first value is its initial one, so it is no
     // rise from a value it never held
     for stream in ["defined_rise", "defined_fall"] {
-        assert!(ExplicitFixture::edge_stream("Defined", stream).is_empty(), "{stream} fires on no transition");
+        assert!(ExplicitRecords::edge_stream("Defined", stream).is_empty(), "{stream} fires on no transition");
     }
 }
 
@@ -283,47 +285,47 @@ fn control_on_a_carrier_runs_one_path() {
     // definitions_lets_and_functions_merge_alike, neither_arm_committing_commits_nothing,
     // an_unknown_delay_under_unknown_control_commits_unknown_next, delays_one_tick_apart_are_one_key): `d` holds true, `e` false, `sel` 1,
     // so every `if`, `match` and function takes one path and commits what that path commits
-    let seen = ExplicitFixture::paths();
-    let at_first_edge = |name: &str| ExplicitFixture::changes(&seen, name);
-    assert_eq!(at_first_edge("differ"), vec![(NS / 2, ExplicitFixture::byte(5))], "`if d` takes its first arm");
-    assert_eq!(at_first_edge("equal"), vec![(NS / 2, ExplicitFixture::byte(5))]);
-    assert_eq!(at_first_edge("before"), vec![(NS / 2, ExplicitFixture::byte(9))], "a commit outside the `if` is made once");
-    assert_eq!(at_first_edge("changes"), vec![(NS / 2, ExplicitFixture::byte(7))], "the one arm commits 7 over the 3 held");
+    let seen = ExplicitPaths::paths();
+    let at_first_edge = |name: &str| ExplicitPaths::changes(&seen, name);
+    assert_eq!(at_first_edge("differ"), vec![(NS / 2, CarrierBytes::byte(5))], "`if d` takes its first arm");
+    assert_eq!(at_first_edge("equal"), vec![(NS / 2, CarrierBytes::byte(5))]);
+    assert_eq!(at_first_edge("before"), vec![(NS / 2, CarrierBytes::byte(9))], "a commit outside the `if` is made once");
+    assert_eq!(at_first_edge("changes"), vec![(NS / 2, CarrierBytes::byte(7))], "the one arm commits 7 over the 3 held");
     assert_eq!(at_first_edge("keeps"), Vec::<(i64, Vec<u8>)>::new(), "the held 7 committed again is no change");
     assert_eq!(at_first_edge("idle"), Vec::<(i64, Vec<u8>)>::new(), "arms that only bind commit nothing");
-    assert_eq!(at_first_edge("statement"), vec![(NS / 2, ExplicitFixture::byte(1))]);
+    assert_eq!(at_first_edge("statement"), vec![(NS / 2, CarrierBytes::byte(1))]);
     assert_eq!(at_first_edge("expression"), at_first_edge("statement"), "an `if` expression and an `if` statement commit the same");
-    assert_eq!(at_first_edge("picked"), vec![(NS / 2, ExplicitFixture::byte(11))], "`match sel` takes the arm of 1");
-    assert_eq!(at_first_edge("nested_held"), vec![(NS / 2, ExplicitFixture::byte(3))], "the inner `if e` does not run");
+    assert_eq!(at_first_edge("picked"), vec![(NS / 2, CarrierBytes::byte(11))], "`match sel` takes the arm of 1");
+    assert_eq!(at_first_edge("nested_held"), vec![(NS / 2, CarrierBytes::byte(3))], "the inner `if e` does not run");
     assert_eq!(at_first_edge("nested_other"), Vec::<(i64, Vec<u8>)>::new(), "the else arm is not reached");
     assert_eq!(at_first_edge("nested_guarded"), Vec::<(i64, Vec<u8>)>::new(), "a guard that does not hold runs nothing");
-    assert_eq!(at_first_edge("pair_q"), vec![(NS / 2, ExplicitFixture::byte(4))]);
-    assert_eq!(at_first_edge("panic_q"), vec![(NS / 2, ExplicitFixture::byte(5))], "the arm that divides by zero is not taken: no fault");
-    assert_eq!(at_first_edge("panic_before"), vec![(NS / 2, ExplicitFixture::byte(9))]);
+    assert_eq!(at_first_edge("pair_q"), vec![(NS / 2, CarrierBytes::byte(4))]);
+    assert_eq!(at_first_edge("panic_q"), vec![(NS / 2, CarrierBytes::byte(5))], "the arm that divides by zero is not taken: no fault");
+    assert_eq!(at_first_edge("panic_before"), vec![(NS / 2, CarrierBytes::byte(9))]);
     for name in ["by_let", "by_function"] {
-        assert_eq!(at_first_edge(name), vec![(NS / 2, ExplicitFixture::byte(3))], "{name}");
+        assert_eq!(at_first_edge(name), vec![(NS / 2, CarrierBytes::byte(3))], "{name}");
     }
-    assert_eq!(BuckFixture::series(&seen, "Paths.by_definition").pop().map(|(_, bytes)| bytes), Some(ExplicitFixture::byte(3)), "a definition decides alike");
-    assert_eq!(at_first_edge("late_q"), vec![(3 * NS / 2, ExplicitFixture::byte(2))], "a delay is an f64: `after 1n` commits 1 ns after the edge");
-    assert_eq!(at_first_edge("ticks_q"), vec![(3 * NS / 2, ExplicitFixture::byte(1))], "only the arm `d` names commits");
-    assert_eq!(at_first_edge("state"), vec![(NS / 2, ExplicitFixture::byte(1)), (5 * NS / 2, ExplicitFixture::byte(0)), (7 * NS / 2, ExplicitFixture::byte(1))], "a phase detector with an initial state");
+    assert_eq!(NetChanges::series(&seen, "Paths.by_definition").pop().map(|(_, bytes)| bytes), Some(CarrierBytes::byte(3)), "a definition decides alike");
+    assert_eq!(at_first_edge("late_q"), vec![(3 * NS / 2, CarrierBytes::byte(2))], "a delay is an f64: `after 1n` commits 1 ns after the edge");
+    assert_eq!(at_first_edge("ticks_q"), vec![(3 * NS / 2, CarrierBytes::byte(1))], "only the arm `d` names commits");
+    assert_eq!(at_first_edge("state"), vec![(NS / 2, CarrierBytes::byte(1)), (5 * NS / 2, CarrierBytes::byte(0)), (7 * NS / 2, CarrierBytes::byte(1))], "a phase detector with an initial state");
 }
 
 #[test]
 fn a_finish_ends_the_run_where_its_guard_holds() {
     // §19 (replaces a_maybe_finish_does_not_end_the_run): `if d { finish(); }` with `d` true ends the run at the first rising
     // edge (0.5 ns); with `d` false the run goes on to its stop (4 ns)
-    assert!((ExplicitFixture::last_step("FinishBench") - 0.5e-9).abs() <= 1e-15, "a finish whose guard holds ends at the edge");
-    assert!((ExplicitFixture::last_step("KeepGoingBench") - 4e-9).abs() <= 1e-15, "a finish whose guard does not hold runs to stop");
+    assert!((ExplicitPaths::last_step("FinishBench") - 0.5e-9).abs() <= 1e-15, "a finish whose guard holds ends at the edge");
+    assert!((ExplicitPaths::last_step("KeepGoingBench") - 4e-9).abs() <= 1e-15, "a finish whose guard does not hold runs to stop");
 }
 
 #[test]
 fn settle_runs_as_before() {
     // §15 (EU-14 AC 1): `on settle` runs once per time point and its commit lands at the next instant, so `s` changes once, to 1
-    let seen = BuckFixture::build(&RUN.project("paths.msl"), "SettleBench").run(4e-9, 0.5e-9);
-    let changes = BuckFixture::transient(&seen, "SettleBench.s");
+    let seen = BuiltDesign::of(&RUN.project("paths.msl"), "SettleBench").run(4e-9, 0.5e-9);
+    let changes = NetChanges::transient(&seen, "SettleBench.s");
     assert_eq!(changes.len(), 1, "one change: {changes:?}");
-    assert_eq!(changes[0].1, ExplicitFixture::byte(1));
+    assert_eq!(changes[0].1, CarrierBytes::byte(1));
     // the reaction emits `now()` at each run: one run per time point (never twice at one instant, strictly later each
     // time), and the commit of the first run lands at the next time point, which is the instant of the second run
     let runs: Vec<i64> = seen.all().iter().filter(|o| matches!(o.kind, piperine_solver::protocol::ObservationKind::Record { .. })).map(|o| (o.time * 1e15).round() as i64).collect();
@@ -336,8 +338,8 @@ fn settle_runs_as_before() {
 fn an_event_read_is_a_bool() {
     // §13 rule 2 (EU-14 AC 2): `fired <- clk.rise()` reads whether the edge fired in this microstep, so it is true at the first
     // edge and holds there
-    let seen = BuckFixture::build(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
-    assert_eq!(BuckFixture::transient(&seen, "GuardBench.fired"), vec![(NS / 2, ExplicitFixture::byte(1))]);
+    let seen = BuiltDesign::of(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
+    assert_eq!(NetChanges::transient(&seen, "GuardBench.fired"), vec![(NS / 2, CarrierBytes::byte(1))]);
 }
 
 #[test]
@@ -345,17 +347,17 @@ fn a_false_guard_runs_nothing() {
     // §13 rule 1 (EU-14 AC 3, replaces a_known_false_guard_does_not_run, an_unknown_guard_runs_the_reaction_as_a_maybe and
     // two_commits_under_an_unknown_guard_merge_exactly): `on clk.rise() && en` with `en` true runs at each of the four rising
     // edges and `on clk.rise() && off` never runs, so `blocked`, which held 1, never changes
-    let seen = BuckFixture::build(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
-    let runs: Vec<i64> = BuckFixture::transient(&seen, "GuardBench.runs").iter().map(|(at, _)| *at).collect();
+    let seen = BuiltDesign::of(&RUN.project("paths.msl"), "GuardBench").run(4e-9, 0.5e-9);
+    let runs: Vec<i64> = NetChanges::transient(&seen, "GuardBench.runs").iter().map(|(at, _)| *at).collect();
     assert_eq!(runs, [NS / 2, 3 * NS / 2, 5 * NS / 2, 7 * NS / 2]);
-    assert_eq!(BuckFixture::transient(&seen, "GuardBench.blocked"), Vec::<(i64, Vec<u8>)>::new());
+    assert_eq!(NetChanges::transient(&seen, "GuardBench.blocked"), Vec::<(i64, Vec<u8>)>::new());
 }
 
 #[test]
 fn an_if_in_a_cross_argument_picks_its_arm() {
     // §13 (replaces an_unknown_if_in_a_cross_argument_merges): `cross(if d { v(p) - 0.3 } else { v(p) - 0.7 })` with `d` true
     // watches `v(p) - 0.3`, which a 1 V/us ramp crosses at 0.3 us
-    let known = ExplicitFixture::hits("KnownBench");
+    let known = ExplicitPaths::hits("KnownBench");
     assert_eq!(known.len(), 1, "one crossing: {known:?}");
     assert!((known[0] - 0.3e-6).abs() <= 1e-12, "at 0.3 us: {known:?}");
 }
@@ -364,8 +366,8 @@ fn an_if_in_a_cross_argument_picks_its_arm() {
 fn a_math_function_of_a_value_is_a_value() {
     // §3.3, §1.5 (replaces a_math_function_of_an_unknown_value_is_unknown and known_or_with_an_unknown_default_gives_that_default):
     // `sqrt` of 4.0 is 2.0, `abs` of -9.0 is 9.0, `exp(0.0)` is 1.0 and `ln(4.0) * 0.0` is 0.0
-    let records = ExplicitFixture::plain_records("MathBench");
-    assert_eq!(ExplicitFixture::constant_fields(&records, "math"), ExplicitFixture::fields(&[("root", Field::Real(2.0)), ("abs", Field::Real(9.0)), ("exp", Field::Real(1.0)), ("ln", Field::Real(0.0))]));
+    let records = ExplicitRecords::plain_records("MathBench");
+    assert_eq!(ExplicitRecords::constant_fields(&records, "math"), ExplicitRecords::fields(&[("root", Field::Real(2.0)), ("abs", Field::Real(9.0)), ("exp", Field::Real(1.0)), ("ln", Field::Real(0.0))]));
 }
 
 #[test]
@@ -373,10 +375,10 @@ fn short_circuit_operands_decide_as_bools() {
     // §1.5, §1.8 (replaces short_circuit_operands_follow_the_merge): a left operand that decides never runs the right one
     // (`f && 10 / 0 > 1` is false, `t || 10 / 0 > 1` is true), one that does not gives the right operand's value; a block that
     // emits runs only then
-    let records = ExplicitFixture::plain_records("ShortBench");
-    assert_eq!(ExplicitFixture::constant_fields(&records, "and"), ExplicitFixture::fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(true))]));
-    assert_eq!(ExplicitFixture::constant_fields(&records, "or"), ExplicitFixture::fields(&[("skipped", Field::Bool(true)), ("run", Field::Bool(false))]));
-    assert_eq!(ExplicitFixture::constant_fields(&records, "emits"), ExplicitFixture::fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(false))]));
+    let records = ExplicitRecords::plain_records("ShortBench");
+    assert_eq!(ExplicitRecords::constant_fields(&records, "and"), ExplicitRecords::fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(true))]));
+    assert_eq!(ExplicitRecords::constant_fields(&records, "or"), ExplicitRecords::fields(&[("skipped", Field::Bool(true)), ("run", Field::Bool(false))]));
+    assert_eq!(ExplicitRecords::constant_fields(&records, "emits"), ExplicitRecords::fields(&[("skipped", Field::Bool(false)), ("run", Field::Bool(false))]));
     let ran = records.iter().filter(|r| r.stream == "ran").count();
     assert_eq!(ran, 4, "the one emitting right operand that runs, once per rising edge");
 }
@@ -386,10 +388,10 @@ fn an_emit_under_a_guard_is_a_plain_record() {
     // §19 (replaces a_record_under_unknown_control_is_maybe, a_record_field_keeps_its_flag and a_maybe_check_is_judged_as_unknown):
     // `if d { emit!(..) }` with `d` true writes at each edge, `if e` with `e` false never, and `emit!` itself writes a record
     // with the value it names; a `require` that holds is a pass
-    let records = ExplicitFixture::plain_records("RecordBench");
+    let records = ExplicitRecords::plain_records("RecordBench");
     let count = |name: &str| records.iter().filter(|r| r.stream == name).count();
     assert_eq!((count("taken"), count("skipped"), count("plain")), (4, 0, 4));
-    assert_eq!(ExplicitFixture::constant_fields(&records, "taken"), ExplicitFixture::fields(&[("v", Field::Int(6)), ("k", Field::Int(3))]));
+    assert_eq!(ExplicitRecords::constant_fields(&records, "taken"), ExplicitRecords::fields(&[("v", Field::Int(6)), ("k", Field::Int(3))]));
     let verdict = piperine_api::Verdict::judge(&records);
     assert!(verdict.passed());
     assert_eq!((verdict.checks(), verdict.failed().len()), (4, 0));
@@ -399,13 +401,13 @@ fn an_emit_under_a_guard_is_a_plain_record() {
 fn an_emitting_function_runs_in_a_value_position_of_a_reaction() {
     // §19 rule 10: `sure <- heard()` commits 7 and writes its record; `if d { chosen <- heard(); }` with `d` true does too;
     // `u && ping()` with `u` true runs `ping`. Per rising edge: `heard` twice, `pinged` once
-    let built = BuckFixture::build(&RUN.project("plain_values.msl"), "CallsBench");
+    let built = BuiltDesign::of(&RUN.project("plain_values.msl"), "CallsBench");
     let streams = piperine_api::Streams::of(built.ir.clone());
     let seen = built.run(4e-9, 0.5e-9);
     let records: Vec<Record> = seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect();
-    assert_eq!(BuckFixture::transient(&seen, "CallsBench.sure"), vec![(NS / 2, ExplicitFixture::byte(7))]);
-    assert_eq!(BuckFixture::transient(&seen, "CallsBench.chosen"), vec![(NS / 2, ExplicitFixture::byte(7))]);
+    assert_eq!(NetChanges::transient(&seen, "CallsBench.sure"), vec![(NS / 2, CarrierBytes::byte(7))]);
+    assert_eq!(NetChanges::transient(&seen, "CallsBench.chosen"), vec![(NS / 2, CarrierBytes::byte(7))]);
     assert_eq!(records.iter().filter(|r| r.stream == "heard").count(), 8);
     assert_eq!(records.iter().filter(|r| r.stream == "pinged").count(), 4);
-    assert_eq!(ExplicitFixture::constant_fields(&records, "both"), ExplicitFixture::fields(&[("r", Field::Bool(true))]));
+    assert_eq!(ExplicitRecords::constant_fields(&records, "both"), ExplicitRecords::fields(&[("r", Field::Bool(true))]));
 }

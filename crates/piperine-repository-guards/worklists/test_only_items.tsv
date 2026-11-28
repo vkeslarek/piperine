@@ -51,7 +51,8 @@ crates/piperine-numbers/src/decimal.rs::DecimalText::shortest_scientific	-
 crates/piperine-numbers/src/precision.rs::Rounding::opposite	-
 crates/piperine-numbers/src/wide.rs::WideInt::minimum_of	-
 crates/piperine-numbers/src/wide.rs::WideUInt::low_u128	-
-crates/piperine-parity/src/buck_fixture.rs::BuckFixture::with_buck	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
+crates/piperine-parity/src/buck_fixture.rs::BuckProject::with_buck	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
+crates/piperine-parity/src/probe.rs::OutputProbe::ac_magnitudes	kept: test support the structure tests of this crate share (P12-2, the one reading of the output node over an AC sweep)
 crates/piperine-parity/src/contract.rs::ToleranceContract::phase_applies	-
 crates/piperine-parity/src/corpus.rs::Twin::command_arguments	-
 crates/piperine-parity/src/corpus.rs::Twin::expected_stdout	-

@@ -17,19 +17,32 @@ use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 use mixed::Seen;
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::{BuckProject, ByteInteger, NetChanges};
+use piperine_parity::mixed::BuiltDesign;
 
 /// The samples: one per rising edge of the oscillator.
 const SAMPLES: i64 = 2400;
 
-/// Associated test helpers of `buck_supervisor`, grouped on one fixture type.
-struct BuckSupervisorFixture;
+/// The `supervisor.msl` bench of the buck tests, loaded and run.
+struct BuckSupervisorModels;
 
-impl BuckSupervisorFixture {
+impl BuckSupervisorModels {
     fn project() -> Project {
-        BuckFixture::with_buck("supervisor.msl")
+        BuckProject::with_buck("supervisor.msl")
     }
 
+    /// The bench compiled and run over 2400 rising edges at 5 ns.
+    fn run() -> (mixed::BuiltDesign, Seen) {
+        let built = BuiltDesign::of(&BuckSupervisorModels::project(), "SupervisorBench");
+        let seen = built.run(TopDesign::rising_edge(SAMPLES) as f64 * 1e-15 + 1e-9, 1e-8);
+        (built, seen)
+    }
+}
+
+/// The state table of the supervisor and the input script that drives it.
+struct SupervisorReference;
+
+impl SupervisorReference {
     fn script(s: i64) -> Inputs {
         let meas = if (120..123).contains(&s) || (130..134).contains(&s) {
             100
@@ -50,32 +63,30 @@ impl BuckSupervisorFixture {
 
     fn model() -> Vec<Shown> {
         let mut r = Reference::new();
-        (0..SAMPLES).map(|s| r.step(BuckSupervisorFixture::script(s))).collect()
+        (0..SAMPLES).map(|s| r.step(SupervisorReference::script(s))).collect()
     }
+}
 
-    /// The bench compiled and run over 2400 rising edges at 5 ns.
-    fn run() -> (mixed::BuiltDesign, Seen) {
-        let built = BuckFixture::build(&BuckSupervisorFixture::project(), "SupervisorBench");
-        let seen = built.run(TopDesign::rising_edge(SAMPLES) as f64 * 1e-15 + 1e-9, 1e-8);
-        (built, seen)
-    }
+/// The shown state of the supervisor read back from a run and the inputs it was driven with.
+struct SupervisorReading;
 
+impl SupervisorReading {
     /// What the solver committed, read at each sample's rising edge.
     fn observed(seen: &Seen) -> Vec<Shown> {
         let (mode, fault, run, pgood) = (
-            BuckFixture::series(seen, "SupervisorBench.mode"),
-            BuckFixture::series(seen, "SupervisorBench.fault"),
-            BuckFixture::series(seen, "SupervisorBench.run"),
-            BuckFixture::series(seen, "SupervisorBench.pgood"),
+            NetChanges::series(seen, "SupervisorBench.mode"),
+            NetChanges::series(seen, "SupervisorBench.fault"),
+            NetChanges::series(seen, "SupervisorBench.run"),
+            NetChanges::series(seen, "SupervisorBench.pgood"),
         );
         (0..SAMPLES)
             .map(|s| {
                 let at = TopDesign::rising_edge(s + 1);
                 Shown {
-                    mode: BuckFixture::decode(BuckFixture::value_at(&mode, at), 1, false),
-                    fault: BuckFixture::decode(BuckFixture::value_at(&fault, at), 1, false),
-                    run: BuckFixture::decode(BuckFixture::value_at(&run, at), 1, false) != 0,
-                    pgood: BuckFixture::decode(BuckFixture::value_at(&pgood, at), 1, false) != 0,
+                    mode: ByteInteger::decode(NetChanges::value_at(&mode, at), 1, false),
+                    fault: ByteInteger::decode(NetChanges::value_at(&fault, at), 1, false),
+                    run: ByteInteger::decode(NetChanges::value_at(&run, at), 1, false) != 0,
+                    pgood: ByteInteger::decode(NetChanges::value_at(&pgood, at), 1, false) != 0,
                 }
             })
             .collect()
@@ -83,20 +94,20 @@ impl BuckSupervisorFixture {
 
     /// The script in MSL and its Rust twin give the same inputs at every sample.
     fn assert_inputs(seen: &Seen) {
-        let read = |name: &str| BuckFixture::series(seen, &format!("SupervisorBench.{name}"));
+        let read = |name: &str| NetChanges::series(seen, &format!("SupervisorBench.{name}"));
         let (en, vin_ok, cut, meas, reference, at_target) =
             (read("en"), read("vin_ok"), read("cut"), read("meas"), read("reference"), read("at_target"));
         for s in 0..SAMPLES {
             let at = TopDesign::rising_edge(s + 1) - 1;
             let got = Inputs {
-                en: BuckFixture::decode(BuckFixture::value_at(&en, at), 1, false) != 0,
-                vin_ok: BuckFixture::decode(BuckFixture::value_at(&vin_ok, at), 1, false) != 0,
-                cut: BuckFixture::decode(BuckFixture::value_at(&cut, at), 1, false) != 0,
-                meas: BuckFixture::decode(BuckFixture::value_at(&meas, at), 2, false),
-                reference: BuckFixture::decode(BuckFixture::value_at(&reference, at), 2, false),
-                at_target: BuckFixture::decode(BuckFixture::value_at(&at_target, at), 1, false) != 0,
+                en: ByteInteger::decode(NetChanges::value_at(&en, at), 1, false) != 0,
+                vin_ok: ByteInteger::decode(NetChanges::value_at(&vin_ok, at), 1, false) != 0,
+                cut: ByteInteger::decode(NetChanges::value_at(&cut, at), 1, false) != 0,
+                meas: ByteInteger::decode(NetChanges::value_at(&meas, at), 2, false),
+                reference: ByteInteger::decode(NetChanges::value_at(&reference, at), 2, false),
+                at_target: ByteInteger::decode(NetChanges::value_at(&at_target, at), 1, false) != 0,
             };
-            assert_eq!(got, BuckSupervisorFixture::script(s), "the inputs of sample {s}");
+            assert_eq!(got, SupervisorReference::script(s), "the inputs of sample {s}");
         }
     }
 }
@@ -224,7 +235,7 @@ impl Reference {
 
 #[test]
 fn the_supervisor_follows_its_state_table() {
-    let expected = BuckSupervisorFixture::model();
+    let expected = SupervisorReference::model();
     // the script reaches every row of the table, so a supervisor that did nothing could not match
     let modes = |m: i32| expected.iter().filter(|x| x.mode == m).count();
     assert!(modes(OFF) > 0 && modes(SOFT_START) > 0 && modes(REGULATE) > 0 && modes(HICCUP) > 1000);
@@ -232,9 +243,9 @@ fn the_supervisor_follows_its_state_table() {
     // a brown-out during the second hiccup leaves the fault code latched in `Off` (§8.1)
     assert!(expected.iter().any(|x| x.mode == OFF && x.fault == OVER_VOLTAGE));
 
-    let (built, seen) = BuckSupervisorFixture::run();
-    BuckSupervisorFixture::assert_inputs(&seen);
-    for (sample, (want, got)) in expected.iter().zip(&BuckSupervisorFixture::observed(&seen)).enumerate() {
+    let (built, seen) = BuckSupervisorModels::run();
+    SupervisorReading::assert_inputs(&seen);
+    for (sample, (want, got)) in expected.iter().zip(&SupervisorReading::observed(&seen)).enumerate() {
         assert_eq!(want, got, "sample {sample}");
     }
 
@@ -270,7 +281,7 @@ fn the_supervisor_follows_its_state_table() {
 
 #[test]
 fn power_good_asserts_after_64_and_drops_after_4() {
-    let expected = BuckSupervisorFixture::model();
+    let expected = SupervisorReference::model();
     // `Regulate` is first in force at sample 21 (entered at 20, when `at_target` rises): the 64th
     // consecutive in-window sample is 84 (§8.6)
     let rises: Vec<usize> = (1..SAMPLES as usize).filter(|&s| expected[s].pgood && !expected[s - 1].pgood).collect();
@@ -284,9 +295,9 @@ fn power_good_asserts_after_64_and_drops_after_4() {
     // it drops at once on leaving `Regulate`: the overcurrent entry at 257
     assert_eq!(falls.get(1), Some(&257));
 
-    let (_, seen) = BuckSupervisorFixture::run();
-    let pgood = BuckFixture::series(&seen, "SupervisorBench.pgood");
-    let at = |s: usize| BuckFixture::decode(BuckFixture::value_at(&pgood, TopDesign::rising_edge(s as i64 + 1)), 1, false) != 0;
+    let (_, seen) = BuckSupervisorModels::run();
+    let pgood = NetChanges::series(&seen, "SupervisorBench.pgood");
+    let at = |s: usize| ByteInteger::decode(NetChanges::value_at(&pgood, TopDesign::rising_edge(s as i64 + 1)), 1, false) != 0;
     for s in [83, 84, 122, 132, 133, 196, 197, 256, 257] {
         assert_eq!(at(s), expected[s].pgood, "pgood at sample {s}");
     }
@@ -302,8 +313,8 @@ fn each_hiccup_lasts_1000_samples() {
     // supervisor's own observed run against SPEC's number, not against `Reference`, which
     // carried the same off-by-one as the model (a hiccup of 1001 samples) and so could not
     // see it.
-    let (_, seen) = BuckSupervisorFixture::run();
-    let shown = BuckSupervisorFixture::observed(&seen);
+    let (_, seen) = BuckSupervisorModels::run();
+    let shown = SupervisorReading::observed(&seen);
     let entries: Vec<usize> = (1..shown.len()).filter(|&s| shown[s].mode == HICCUP && shown[s - 1].mode != HICCUP).collect();
     assert_eq!(entries.len(), 2, "the script enters `Hiccup` twice");
     // a hiccup ends in `SoftStart`, or is cut short by a brown-out into `Off` (the second one is,

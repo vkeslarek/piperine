@@ -14,10 +14,10 @@ use piperine_solver::prelude::Context;
 /// The nominal temperature of the twin and of ngspice's `tnom`, kelvin.
 const NOMINAL: f64 = 300.15;
 
-/// Associated test helpers of `temp`, grouped on one fixture type.
-struct TempFixture;
+/// A temperature twin compared with the reference, built or through a session.
+struct TempComparison;
 
-impl TempFixture {
+impl TempComparison {
     /// Solves `temp_res` on `backend` in a context at `kelvin` (the default context when `None`), and
     /// compares `v(mid)` with what ngspice printed as `printed`, when ngspice ran.
     fn compare(reference: &Reference, printed: &str, kelvin: Option<f64>, backend: Backend) {
@@ -55,7 +55,7 @@ fn temp_res() {
     // 75 C: ngspice's `.options temp=75`, the context's 348.15 K
     let reference = Ngspice::from_environment().run("temp_res");
     for backend in BackendSelection::selected() {
-        TempFixture::compare(&reference, "v(mid)", Some(75.0 + 273.15), backend);
+        TempComparison::compare(&reference, "v(mid)", Some(75.0 + 273.15), backend);
     }
 }
 
@@ -65,7 +65,7 @@ fn temp_res_at_the_default_temperature() {
     assert_eq!(Context::default().tolerances.temperature, NOMINAL, "the default temperature is ngspice's 27 C");
     let reference = Ngspice::from_environment().run("temp_res");
     for backend in BackendSelection::selected() {
-        TempFixture::compare(&reference, "cold", None, backend);
+        TempComparison::compare(&reference, "cold", None, backend);
     }
 }
 
@@ -74,7 +74,7 @@ fn temp_res_through_a_session() {
     // HII-03 AC 1 and 2: the run key `temp = 75` and no key at all, each against ngspice
     let reference = Ngspice::from_environment().run("temp_res");
     for backend in BackendSelection::selected() {
-        TempFixture::compare_session(&reference, "v(mid)", Some(75.0), backend);
-        TempFixture::compare_session(&reference, "cold", None, backend);
+        TempComparison::compare_session(&reference, "v(mid)", Some(75.0), backend);
+        TempComparison::compare_session(&reference, "cold", None, backend);
     }
 }

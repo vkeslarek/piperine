@@ -16,21 +16,27 @@ use piperine_parity::mixed;
 use piperine_ir_fixtures::mixed::TopDesign;
 
 use mixed::Seen;
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::{BuckProject, ByteInteger, NetChanges};
+use piperine_parity::mixed::BuiltDesign;
 
 /// The samples: one per rising edge of the oscillator.
 const SAMPLES: i64 = 200;
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
 
-/// Associated test helpers of `buck_control`, grouped on one fixture type.
-struct BuckControlFixture;
+/// The `control.msl` bench of the buck tests, loaded as a project.
+struct BuckControlModels;
 
-impl BuckControlFixture {
+impl BuckControlModels {
     fn project() -> Project {
-        BuckFixture::with_buck("control.msl")
+        BuckProject::with_buck("control.msl")
     }
+}
 
+/// The difference equations of the ramp and the PID, the oracle of the control tests.
+struct ControlReference;
+
+impl ControlReference {
     /// The inputs of sample `s`: `(run, target, meas)`, as `Script` of `tests/buck/control.msl`
     /// computes them from its counter; the test asserts the two agree before it judges the loop.
     ///
@@ -61,7 +67,7 @@ impl BuckControlFixture {
         let mut s = State { reference: 0, duty: 0, integ: 0, deriv: 0, e_prev: 0 };
         let mut states = Vec::new();
         for sample in 0..SAMPLES {
-            let (run, target, meas) = BuckControlFixture::script(sample);
+            let (run, target, meas) = ControlReference::script(sample);
             let (target, meas) = (target as i32, meas as i32);
             let old_reference = s.reference;
             // SPEC §7.2: the reference moves one code per sample towards the target, and rests at 0
@@ -98,23 +104,28 @@ impl BuckControlFixture {
         }
         states
     }
+}
 
+/// The state of the control bench read back from a run.
+struct ControlReading;
+
+impl ControlReading {
     fn observed(seen: &Seen) -> Vec<State> {
-        let reference = BuckFixture::series(seen, "ControlBench.reference");
-        let duty = BuckFixture::series(seen, "ControlBench.duty");
-        let integ = BuckFixture::series(seen, "ControlBench.pid.integ");
-        let deriv = BuckFixture::series(seen, "ControlBench.pid.deriv");
-        let e_prev = BuckFixture::series(seen, "ControlBench.pid.e_prev");
+        let reference = NetChanges::series(seen, "ControlBench.reference");
+        let duty = NetChanges::series(seen, "ControlBench.duty");
+        let integ = NetChanges::series(seen, "ControlBench.pid.integ");
+        let deriv = NetChanges::series(seen, "ControlBench.pid.deriv");
+        let e_prev = NetChanges::series(seen, "ControlBench.pid.e_prev");
         (0..SAMPLES)
             .map(|s| {
                 // sample `s` is the rising edge `s + 1`; its commits apply at that instant
                 let at = TopDesign::rising_edge(s + 1);
                 State {
-                    reference: BuckFixture::decode(BuckFixture::value_at(&reference, at), 2, false),
-                    duty: BuckFixture::decode(BuckFixture::value_at(&duty, at), 2, false),
-                    integ: BuckFixture::decode(BuckFixture::value_at(&integ, at), 4, true),
-                    deriv: BuckFixture::decode(BuckFixture::value_at(&deriv, at), 4, true),
-                    e_prev: BuckFixture::decode(BuckFixture::value_at(&e_prev, at), 2, true),
+                    reference: ByteInteger::decode(NetChanges::value_at(&reference, at), 2, false),
+                    duty: ByteInteger::decode(NetChanges::value_at(&duty, at), 2, false),
+                    integ: ByteInteger::decode(NetChanges::value_at(&integ, at), 4, true),
+                    deriv: ByteInteger::decode(NetChanges::value_at(&deriv, at), 4, true),
+                    e_prev: ByteInteger::decode(NetChanges::value_at(&e_prev, at), 2, true),
                 }
             })
             .collect()
@@ -143,7 +154,7 @@ const DUTY_MAX: i32 = 2880;
 
 #[test]
 fn the_ramp_and_the_pid_follow_their_difference_equations() {
-    let expected = BuckControlFixture::model();
+    let expected = ControlReference::model();
     // the script reaches what it is for, so a loop that did nothing could not match: both rails,
     // the integrator's hold while saturated, the resets, the ramp both ways
     assert!(expected.iter().any(|s| s.duty == DUTY_MAX), "saturates high");
@@ -153,21 +164,21 @@ fn the_ramp_and_the_pid_follow_their_difference_equations() {
     assert!(expected.windows(2).any(|w| w[1].reference < w[0].reference && w[1].reference > 0), "the ramp goes down");
     assert!(expected.iter().any(|s| s.e_prev == E_MIN) && expected.iter().any(|s| s.e_prev == E_MAX || s.e_prev > 100));
 
-    let seen = BuckFixture::build(&BuckControlFixture::project(), "ControlBench").run(1.0e-6, 1e-8);
+    let seen = BuiltDesign::of(&BuckControlModels::project(), "ControlBench").run(1.0e-6, 1e-8);
 
     // the stimulus in MSL and the Rust reference compute the same `run`, `target` and `meas` from
     // the sample index: the value each carried when the rising edge of sample `s` read it
     let (run, target, meas) =
-        (BuckFixture::series(&seen, "ControlBench.run"), BuckFixture::series(&seen, "ControlBench.target"), BuckFixture::series(&seen, "ControlBench.meas"));
+        (NetChanges::series(&seen, "ControlBench.run"), NetChanges::series(&seen, "ControlBench.target"), NetChanges::series(&seen, "ControlBench.meas"));
     for s in 0..SAMPLES {
         let at = TopDesign::rising_edge(s + 1);
-        let (want_run, want_target, want_meas) = BuckControlFixture::script(s);
-        assert_eq!(BuckFixture::decode(BuckFixture::value_at(&run, at - 1), 1, false) != 0, want_run, "run at sample {s}");
-        assert_eq!(BuckFixture::decode(BuckFixture::value_at(&target, at - 1), 2, false) as i64, want_target, "target at sample {s}");
-        assert_eq!(BuckFixture::decode(BuckFixture::value_at(&meas, at - 1), 2, false) as i64, want_meas, "meas at sample {s}");
+        let (want_run, want_target, want_meas) = ControlReference::script(s);
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&run, at - 1), 1, false) != 0, want_run, "run at sample {s}");
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&target, at - 1), 2, false) as i64, want_target, "target at sample {s}");
+        assert_eq!(ByteInteger::decode(NetChanges::value_at(&meas, at - 1), 2, false) as i64, want_meas, "meas at sample {s}");
     }
 
-    let observed = BuckControlFixture::observed(&seen);
+    let observed = ControlReading::observed(&seen);
     for (sample, (want, got)) in expected.iter().zip(&observed).enumerate() {
         assert_eq!(want, got, "sample {sample}");
     }
@@ -178,10 +189,10 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     // `tests/buck/control.msl` `Writes`: `wr` rises at the rising edges 2, 5, 8 and 11 (the
     // 2nd, 5th, 8th and 11th of the oscillator, 1 + 3k of its counter), with the data 7, 100,
     // 200 and 200 again presented before
-    let seen = BuckFixture::build(&BuckControlFixture::project(), "SetpointBench").run(70e-9, 1e-9);
+    let seen = BuiltDesign::of(&BuckControlModels::project(), "SetpointBench").run(70e-9, 1e-9);
     // SPEC §7.1: the register resets to 100; a write of 7 takes 7; 100 takes 100 (a change from
     // 7); 200 saturates to 168; a second 200 commits the held 168, which is no change
-    let code = BuckFixture::transient(&seen, "SetpointBench.code");
+    let code = NetChanges::transient(&seen, "SetpointBench.code");
     assert_eq!(
         code,
         vec![(TopDesign::rising_edge(2), vec![7]), (TopDesign::rising_edge(5), vec![100]), (TopDesign::rising_edge(8), vec![168])],
@@ -189,7 +200,7 @@ fn the_setpoint_register_takes_known_data_and_saturates() {
     );
     // the fourth write rose `wr` at the 11th edge and committed the held 168: `wr` rose there, and the
     // register's commits are the three above and a fourth that changes nothing
-    let wr = BuckFixture::transient(&seen, "SetpointBench.wr");
+    let wr = NetChanges::transient(&seen, "SetpointBench.wr");
     assert_eq!(wr.iter().filter(|(_, b)| b[0] == 1).count(), 4, "wr rose four times: {wr:?}");
     let made = seen.commits("SetpointBench.reg");
     assert_eq!(made.len(), 4, "four commits: the fourth is the held value: {made:?}");

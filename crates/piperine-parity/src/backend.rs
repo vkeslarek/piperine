@@ -23,6 +23,12 @@ impl BackendSelection {
         }
     }
 
+    /// The compiled backend alone: the one that runs a twin the interpreter refuses (a source that
+    /// reads the time, a contribution under a param selector).
+    pub fn compiled() -> Vec<Backend> {
+        BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust).collect()
+    }
+
     /// The backends of this process: `PIPERINE_BACKEND` read once through [`BackendSelection::parse`].
     /// An invalid value fails the test that asks, naming the two valid values.
     pub fn selected() -> Vec<Backend> {

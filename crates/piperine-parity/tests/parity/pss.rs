@@ -34,10 +34,10 @@ impl PssRun {
     }
 }
 
-/// Associated test helpers of `pss`, grouped on one fixture type.
-struct PssFixture;
+/// A periodic-steady-state twin compared with the reference on one backend.
+struct PssComparison;
 
-impl PssFixture {
+impl PssComparison {
     fn compare(reference: &Reference, backend: Backend) {
         let mut bench = Bench::load_on("pss_rc", backend);
         let out = bench.node("vout");
@@ -90,7 +90,7 @@ fn pss_rc() {
     // the source reads `now()`, which the interpreter (the M1 analog subset) does not run: the
     // Rust backend is the one that runs the twin
     for backend in BackendSelection::selected().into_iter().filter(|backend| *backend == Backend::Rust) {
-        PssFixture::compare(&reference, backend);
+        PssComparison::compare(&reference, backend);
     }
 }
 

@@ -34,10 +34,10 @@ impl CellOracle {
     }
 }
 
-/// Associated test helpers of `nested_reach`, grouped on one fixture type.
-struct NestedReachFixture;
+/// A network of unit-conductance branches solved by Kirchhoff, the oracle of the nested-reach rigs.
+struct UnitBranchNetwork;
 
-impl NestedReachFixture {
+impl UnitBranchNetwork {
     /// The voltage of each of `count` nodes joined by 1 S branches (`None` is ground) and fed `amps` at node `fed`: Kirchhoff's current
     /// law `G v = i` over the branches, solved by Gaussian elimination.
     fn unit_branches(count: usize, branches: &[(usize, Option<usize>)], fed: usize, amps: f64) -> Vec<f64> {
@@ -66,7 +66,12 @@ impl NestedReachFixture {
         }
         v
     }
+}
 
+/// The reads of a nested-reach rig, checked against the cell it holds.
+struct NestedReads;
+
+impl NestedReads {
     /// The five reads of the rig `top`, whose cell is at conductance `k`, against the cell's own values.
     fn assert_reads(top: &str, k: f64) {
         let seen = RUN.operating_point("reach.msl", top, &["sn_read", "vs_read", "q_read", "k_read", "twice_read"]);
@@ -92,33 +97,33 @@ impl NestedReachFixture {
 fn a_cell_three_and_four_levels_down_by_name_reads_its_node_lets_carrier_and_params() {
     // §8.2.8 (GAPS L81): `p.mid.c0` and `p.top.mid.c0`, a cell of `k = 1` driven at 1 V, read `sn` = 1/2 (the divider of 1 S and
     // 1 S), `vs` = `v(sn)` = 1/2, `q` = 2.5, `k` = 1 and `twice` = 2
-    NestedReachFixture::assert_reads("RigName3", 1.0);
-    NestedReachFixture::assert_reads("RigName4", 1.0);
+    NestedReads::assert_reads("RigName3", 1.0);
+    NestedReads::assert_reads("RigName4", 1.0);
 }
 
 #[test]
 fn a_cell_three_and_four_levels_down_through_templates_reads_its_node_lets_carrier_and_params() {
     // §8.4.8: the cell the template names (`k = 2` three levels down, `k = 3` four), read through `Block` and `Wing`: `sn` = k / (k + 1)
-    NestedReachFixture::assert_reads("RigTemplate3", 2.0);
-    NestedReachFixture::assert_reads("RigTemplate4", 3.0);
+    NestedReads::assert_reads("RigTemplate3", 2.0);
+    NestedReads::assert_reads("RigTemplate4", 3.0);
 }
 
 #[test]
 fn a_cell_through_generic_templates_three_and_four_levels_down_reads_its_node_lets_carrier_and_params() {
     // §8.4.8: a type parameter (`C: Fn(Electrical)`) of each wrapper handed down to the wrapper below: the cell the template names
     // (`k = 2`, `k = 3`, and `k = 5` in a generation) is read through `GBlock`, `GWing` and `GPlane`
-    NestedReachFixture::assert_reads("RigGeneric3", 2.0);
-    NestedReachFixture::assert_reads("RigGeneric4", 3.0);
-    NestedReachFixture::assert_reads("RigGenericRow4", 5.0);
+    NestedReads::assert_reads("RigGeneric3", 2.0);
+    NestedReads::assert_reads("RigGeneric4", 3.0);
+    NestedReads::assert_reads("RigGenericRow4", 5.0);
 }
 
 #[test]
 fn a_cell_of_a_generation_three_and_four_levels_down_reads_the_iteration_its_index_names() {
     // §8.2.23, §8.4.8: `cells[1]` of a generation reached through a template (`k = 4`, `k = 5`) and by name (`k = 1 + 1`)
-    NestedReachFixture::assert_reads("RigRow3", 4.0);
-    NestedReachFixture::assert_reads("RigRow4", 5.0);
-    NestedReachFixture::assert_reads("RigRows3", 2.0);
-    NestedReachFixture::assert_reads("RigRows4", 2.0);
+    NestedReads::assert_reads("RigRow3", 4.0);
+    NestedReads::assert_reads("RigRow4", 5.0);
+    NestedReads::assert_reads("RigRows3", 2.0);
+    NestedReads::assert_reads("RigRows4", 2.0);
 }
 
 #[test]
@@ -127,14 +132,14 @@ fn a_cycle_of_node_connections_three_and_four_levels_deep_runs_as_hardware() {
     // where Kirchhoff's law over the cells' 1 S branches puts them, fed 1 A at `p`'s node: nodes 0 = p's, 1 = q's, the branch of each
     // cell from the other wrapper's node to its own and a 1 S leak at each; a wrapper wired to its own cell's node (four levels) sees
     // only the leak
-    let pair = NestedReachFixture::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
+    let pair = UnitBranchNetwork::unit_branches(2, &[(1, Some(0)), (0, None), (0, Some(1)), (1, None)], 0, 1.0);
     for (top, names) in [("RigPair3", ["p.mid.c0.sn", "q.mid.c0.sn"]), ("RigPair4", ["p.block.bank.c0.sn", "q.block.bank.c0.sn"])] {
         let seen = RUN.operating_point("reach.msl", top, &names);
         for (value, wanted) in seen.iter().zip(&pair) {
             assert!((value - wanted).abs() < TOLERANCE, "{top}: {value} is not {wanted}: {seen:?}");
         }
     }
-    let own = NestedReachFixture::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
+    let own = UnitBranchNetwork::unit_branches(1, &[(0, Some(0)), (0, None)], 0, 1.0);
     let seen = RUN.operating_point("reach.msl", "RigOwn4", &["p.top.mid.c0.sn"]);
     assert!((seen[0] - own[0]).abs() < TOLERANCE, "RigOwn4: {} is not {}", seen[0], own[0]);
 }
@@ -145,7 +150,7 @@ fn a_cycle_of_node_connections_through_a_generation_four_levels_deep_runs_as_har
     // wrapper's `cells[1]` node: nodes 0 = p's `cells[1]`, 1 = q's `cells[1]`, 2 = p's `cells[0]`, 3 = q's `cells[0]`, each cell a
     // 1 S branch from the wired node to its own and a 1 S leak, fed 1 A at node 0
     let branches = [(1, Some(2)), (2, None), (1, Some(0)), (0, None), (0, Some(3)), (3, None), (0, Some(1)), (1, None)];
-    let wanted = NestedReachFixture::unit_branches(4, &branches, 0, 1.0);
+    let wanted = UnitBranchNetwork::unit_branches(4, &branches, 0, 1.0);
     let seen = RUN.operating_point("reach.msl", "RigPairGeneration4", &["p.grid.row.cells[1].sn", "q.grid.row.cells[1].sn", "p.grid.row.cells[0].sn", "q.grid.row.cells[0].sn"]);
     for (value, wanted) in seen.iter().zip(&wanted) {
         assert!((value - wanted).abs() < TOLERANCE, "{value} is not {wanted}: {seen:?}");
@@ -237,6 +242,6 @@ fn a_body_reads_the_params_of_its_own_cells_in_generation_one_level_down() {
 fn a_parent_drives_a_resolved_carrier_of_a_cell_three_levels_down() {
     // §5.2.2, §22.3 (`AndWire`): the cell drives its `line` high, the top drives it low through `p.mid.c0.line`: the net holds the
     // AND of the two drives, false (the cell's own drive alone leaves it high, `QuietBench`)
-    assert_eq!(NestedReachFixture::seen_flags("DriveBench").last(), Some(&(true && false)), "the top's drive is held beside the cell's");
-    assert_eq!(NestedReachFixture::seen_flags("QuietBench").last(), Some(&true), "the cell's drive alone is high");
+    assert_eq!(NestedReads::seen_flags("DriveBench").last(), Some(&(true && false)), "the top's drive is held beside the cell's");
+    assert_eq!(NestedReads::seen_flags("QuietBench").last(), Some(&true), "the cell's drive alone is high");
 }

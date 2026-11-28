@@ -7,12 +7,14 @@
 //! operating point is compared after the solver's own round-off.
 #![cfg(unix)]
 
+use piperine_parity::source::bytes::CarrierBytes;
 use std::path::{Path, PathBuf};
 
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier, Solver, TransientAnalysisOptions};
 
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
+use piperine_parity::mixed::BuiltDesign;
 
 /// How far the solver may move a value it was given as a current into 1 ohm: its `gmin` and
 /// round-off, not a tolerance of the rows (the rows' values are bit for bit in a reaction).
@@ -22,10 +24,10 @@ const SOLVE: f64 = 1e-9;
 const OSC: &str = "pub module Osc(out clk: Bit = false) { f: f64 = 200M where f > 0.0; }\n\
                    digital for Osc { on clk.changed() { clk <- !clk after 0.5 / f; } }\n";
 
-/// Associated test helpers of `catalogue`, grouped on one fixture type.
-struct CatalogueFixture;
+/// The catalogue benches written to a project and run: the design text, the first commits and the fault.
+struct CatalogueModels;
 
-impl CatalogueFixture {
+impl CatalogueModels {
     /// A source written under `CARGO_TARGET_TMPDIR`, as a project.
     fn project(name: &str, source: &str) -> Project {
         let dir: PathBuf = Path::new(env!("CARGO_TARGET_TMPDIR")).join("catalogue");
@@ -52,26 +54,16 @@ impl CatalogueFixture {
         )
     }
 
-    /// The bytes of an `f64` carrier value: its eight bytes.
-    fn real_bytes(v: f64) -> Vec<u8> {
-        v.to_le_bytes().to_vec()
-    }
-
-    /// The bytes of a one-byte carrier value (`u8`, `i8`, `bool`).
-    fn byte(v: u8) -> Vec<u8> {
-        vec![v]
-    }
-
     /// The value of each `rN` once the first rising edge has committed, in row order: its bytes.
     fn first_commits(project: &Project, count: usize) -> Vec<Vec<u8>> {
-        let seen = BuckFixture::build(project, "Bench").run(10e-9, 1e-9);
-        (0..count).map(|k| BuckFixture::first_edge_value(&seen, &format!("Bench.r{k}"))).collect()
+        let seen = BuiltDesign::of(project, "Bench").run(10e-9, 1e-9);
+        (0..count).map(|k| NetChanges::first_edge_value(&seen, &format!("Bench.r{k}"))).collect()
     }
 
     /// What the run of `Bench` says when it faults: the message of the error, or a failure of the
     /// test when the run went through.
     fn the_fault(project: &Project) -> String {
-        let built = BuckFixture::build(project, "Bench");
+        let built = BuiltDesign::of(project, "Bench");
         let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
         let mut options = TransientAnalysisOptions::new(10e-9, 1e-9);
         options.dt_max = 1e-9;
@@ -81,7 +73,12 @@ impl CatalogueFixture {
             Err(e) => e.to_string(),
         }
     }
+}
 
+/// The rows of the catalogue the benches compare with Rust.
+struct CatalogueRows;
+
+impl CatalogueRows {
     /// The `f64` rows of H.2 with the value Rust's method gives, one expression of `x y z w` each.
     fn f64_rows() -> Vec<(&'static str, f64)> {
         let (x, y, z, w) = (X, Y, Z, W);
@@ -187,18 +184,18 @@ fn f64_rows_equal_rusts_bit_for_bit_in_analog_and_in_a_reaction() {
     // CAT-01 AC 2: each H.2 row gives the value Rust's `f64` method gives. In a reaction the
     // committed bytes are Rust's bits; in an `analog` block the operating point is Rust's value
     // after the solve.
-    let rows = CatalogueFixture::f64_rows();
-    let bools = CatalogueFixture::bool_rows();
+    let rows = CatalogueRows::f64_rows();
+    let bools = CatalogueRows::bool_rows();
 
     let mut design: Vec<Row> = rows.iter().map(|(expr, _)| Row::new("f64", *expr)).collect();
     design.extend(bools.iter().map(|(expr, _)| Row::new("bool", *expr)));
-    let source = CatalogueFixture::reaction_design("", REAL_LETS, &design);
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("f64_reaction", &source), design.len());
+    let source = CatalogueModels::reaction_design("", REAL_LETS, &design);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("f64_reaction", &source), design.len());
     for (k, (expr, want)) in rows.iter().enumerate() {
-        assert_eq!(committed[k], CatalogueFixture::real_bytes(*want), "reaction: {expr} is {want:?} (bits {:#x})", want.to_bits());
+        assert_eq!(committed[k], CarrierBytes::real(*want), "reaction: {expr} is {want:?} (bits {:#x})", want.to_bits());
     }
     for (k, (expr, want)) in bools.iter().enumerate() {
-        assert_eq!(committed[rows.len() + k], CatalogueFixture::byte(u8::from(*want)), "reaction: {expr} is {want}");
+        assert_eq!(committed[rows.len() + k], CarrierBytes::byte(u8::from(*want)), "reaction: {expr} is {want}");
     }
 
     // The same expressions in an `analog` block, each a current into 1 ohm.
@@ -223,7 +220,7 @@ fn f64_rows_equal_rusts_bit_for_bit_in_analog_and_in_a_reaction() {
         loads.join(" "),
         names.join(", ")
     );
-    let mut running = CatalogueFixture::project("f64_analog", &source).compile("Bench").unwrap_or_else(|r| panic!("{r}"));
+    let mut running = CatalogueModels::project("f64_analog", &source).compile("Bench").unwrap_or_else(|r| panic!("{r}"));
     let solved = running.circuit.dc(Context::default()).expect("dc").solve().expect("the operating point solves");
     let wanted: Vec<f64> = rows.iter().map(|(_, v)| *v).chain(bools.iter().map(|(_, b)| f64::from(u8::from(*b)))).collect();
     let labels: Vec<&str> = rows.iter().map(|(e, _)| *e).chain(bools.iter().map(|(e, _)| *e)).collect();
@@ -247,7 +244,7 @@ fn a_crossed_or_nan_clamp_in_analog_faults_naming_it() {
              analog for Row {{ let not_a_number = zero / zero; i(gnd, p) +> x.clamp({lo}, {hi}); }}\n\
              module Bench() {{ signal a: Electrical; let r = Row(a); let l = Load(a, gnd); }}\n"
         );
-        CatalogueFixture::project(name, &source).compile("Bench").unwrap_or_else(|r| panic!("{r}"))
+        CatalogueModels::project(name, &source).compile("Bench").unwrap_or_else(|r| panic!("{r}"))
     };
     for (name, lo, hi) in [("clamp_crossed", "hi + 1.0", "hi"), ("clamp_nan_lo", "not_a_number", "hi"), ("clamp_nan_hi", "lo", "not_a_number")] {
         let mut running = bench(name, lo, hi);
@@ -295,12 +292,12 @@ fn pow_wraps() {
         Row::new("i8", "pws(-2, 7)"),
         Row::new("i8", "pws(-2, 8)"),
     ];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("int_pow", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)), rows.len());
-    let want = [2u8.wrapping_pow(9), 3u8.wrapping_pow(2), 3u8.wrapping_pow(6)].map(CatalogueFixture::byte);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("int_pow", &CatalogueModels::reaction_design(INT_FNS, "", &rows)), rows.len());
+    let want = [2u8.wrapping_pow(9), 3u8.wrapping_pow(2), 3u8.wrapping_pow(6)].map(CarrierBytes::byte);
     assert_eq!(&committed[..3], &want);
-    assert_eq!(committed[0], CatalogueFixture::byte(0), "2u8.pow(9) is 0");
-    assert_eq!(committed[3], CatalogueFixture::byte((-2i8).wrapping_pow(7) as u8));
-    assert_eq!(committed[4], CatalogueFixture::byte((-2i8).wrapping_pow(8) as u8));
+    assert_eq!(committed[0], CarrierBytes::byte(0), "2u8.pow(9) is 0");
+    assert_eq!(committed[3], CarrierBytes::byte((-2i8).wrapping_pow(7) as u8));
+    assert_eq!(committed[4], CarrierBytes::byte((-2i8).wrapping_pow(8) as u8));
 }
 
 #[test]
@@ -315,14 +312,14 @@ fn saturating_rows_clamp() {
         Row::new("u8", "sat_sub_u(3, 5)"),
         Row::new("u8", "sat_add(250, 5)"),
     ];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("int_saturating", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)), rows.len());
-    assert_eq!(committed[0], CatalogueFixture::byte(255));
-    assert_eq!(committed[1], CatalogueFixture::byte(0x80), "-128 as a byte");
-    assert_eq!(committed[2], CatalogueFixture::byte(255));
-    assert_eq!(committed[3], CatalogueFixture::byte(0x80));
-    assert_eq!(committed[4], CatalogueFixture::byte(0));
-    assert_eq!(committed[5], CatalogueFixture::byte(250u8.saturating_add(5)));
-    assert_eq!(committed[1], CatalogueFixture::byte(((-100i8).saturating_sub(100)) as u8));
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("int_saturating", &CatalogueModels::reaction_design(INT_FNS, "", &rows)), rows.len());
+    assert_eq!(committed[0], CarrierBytes::byte(255));
+    assert_eq!(committed[1], CarrierBytes::byte(0x80), "-128 as a byte");
+    assert_eq!(committed[2], CarrierBytes::byte(255));
+    assert_eq!(committed[3], CarrierBytes::byte(0x80));
+    assert_eq!(committed[4], CarrierBytes::byte(0));
+    assert_eq!(committed[5], CarrierBytes::byte(250u8.saturating_add(5)));
+    assert_eq!(committed[1], CarrierBytes::byte(((-100i8).saturating_sub(100)) as u8));
 }
 
 #[test]
@@ -343,17 +340,17 @@ fn checked_rows_give_none_on_overflow() {
         Row::new("i8", "add_or_s(100, 27)"),
         Row::new("i8", "add_or_s(100, 28)"),
     ];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("int_checked", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)), rows.len());
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("int_checked", &CatalogueModels::reaction_design(INT_FNS, "", &rows)), rows.len());
     let wants_none = [true, false, true, false, true, false];
     for (k, none) in wants_none.iter().enumerate() {
-        assert_eq!(committed[k], CatalogueFixture::byte(u8::from(*none)), "{}", rows[k].expr);
+        assert_eq!(committed[k], CarrierBytes::byte(u8::from(*none)), "{}", rows[k].expr);
     }
-    assert_eq!(committed[6], CatalogueFixture::byte(255));
-    assert_eq!(committed[7], CatalogueFixture::byte(0));
-    assert_eq!(committed[8], CatalogueFixture::byte(2));
-    assert_eq!(committed[9], CatalogueFixture::byte(15u8.checked_mul(17).unwrap_or(0)));
-    assert_eq!(committed[10], CatalogueFixture::byte(127));
-    assert_eq!(committed[11], CatalogueFixture::byte(0));
+    assert_eq!(committed[6], CarrierBytes::byte(255));
+    assert_eq!(committed[7], CarrierBytes::byte(0));
+    assert_eq!(committed[8], CarrierBytes::byte(2));
+    assert_eq!(committed[9], CarrierBytes::byte(15u8.checked_mul(17).unwrap_or(0)));
+    assert_eq!(committed[10], CarrierBytes::byte(127));
+    assert_eq!(committed[11], CarrierBytes::byte(0));
 }
 
 #[test]
@@ -361,11 +358,11 @@ fn rem_euclid_by_zero_faults_naming_it() {
     // CAT-02 AC 5 (H.1: "panics if `d` is zero", §1 rule 11): the run faults and the fault
     // names `rem_euclid`.
     let rows = vec![Row::new("u8", "rem_u(7, 0)")];
-    let fault = CatalogueFixture::the_fault(&CatalogueFixture::project("int_rem_zero", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)));
+    let fault = CatalogueModels::the_fault(&CatalogueModels::project("int_rem_zero", &CatalogueModels::reaction_design(INT_FNS, "", &rows)));
     assert!(fault.contains("rem_euclid"), "the fault names the row: {fault}");
     // A non-zero divisor runs: the same function with `3`.
     let rows = vec![Row::new("u8", "rem_u(7, 3)")];
-    assert_eq!(CatalogueFixture::first_commits(&CatalogueFixture::project("int_rem_three", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)), 1), vec![CatalogueFixture::byte(7u8.rem_euclid(3))]);
+    assert_eq!(CatalogueModels::first_commits(&CatalogueModels::project("int_rem_three", &CatalogueModels::reaction_design(INT_FNS, "", &rows)), 1), vec![CarrierBytes::byte(7u8.rem_euclid(3))]);
 }
 
 #[test]
@@ -380,16 +377,16 @@ fn signed_abs_signum_rem_euclid_follow_rust() {
         Row::new("i8", "rem(-7, 3)"),
         Row::new("i8", "rem(7, -3)"),
     ];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("int_signed", &CatalogueFixture::reaction_design(INT_FNS, "", &rows)), rows.len());
-    assert_eq!(committed[0], CatalogueFixture::byte(0x80), "(-128i8).abs() wraps to -128");
-    assert_eq!(committed[1], CatalogueFixture::byte(5));
-    assert_eq!(committed[2], CatalogueFixture::byte((-5i8).signum() as u8));
-    assert_eq!(committed[2], CatalogueFixture::byte(0xff), "-1");
-    assert_eq!(committed[3], CatalogueFixture::byte(0));
-    assert_eq!(committed[4], CatalogueFixture::byte(1));
-    assert_eq!(committed[5], CatalogueFixture::byte(2));
-    assert_eq!(committed[5], CatalogueFixture::byte((-7i8).rem_euclid(3) as u8));
-    assert_eq!(committed[6], CatalogueFixture::byte(7i8.rem_euclid(-3) as u8));
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("int_signed", &CatalogueModels::reaction_design(INT_FNS, "", &rows)), rows.len());
+    assert_eq!(committed[0], CarrierBytes::byte(0x80), "(-128i8).abs() wraps to -128");
+    assert_eq!(committed[1], CarrierBytes::byte(5));
+    assert_eq!(committed[2], CarrierBytes::byte((-5i8).signum() as u8));
+    assert_eq!(committed[2], CarrierBytes::byte(0xff), "-1");
+    assert_eq!(committed[3], CarrierBytes::byte(0));
+    assert_eq!(committed[4], CarrierBytes::byte(1));
+    assert_eq!(committed[5], CarrierBytes::byte(2));
+    assert_eq!(committed[5], CarrierBytes::byte((-7i8).rem_euclid(3) as u8));
+    assert_eq!(committed[6], CarrierBytes::byte(7i8.rem_euclid(-3) as u8));
 }
 
 /// The `Option` functions the `Option` tests call: `c` picks `Some(7)` (above 1) or `None`, `z` is
@@ -414,15 +411,15 @@ fn eagerly(c: u8) -> u8 { (c > 1).then_some(8u8).unwrap_or(0) }
 fn unwrap_and_expect_of_some_give_the_payload() {
     // CAT-03 AC 1: `unwrap` and `expect` of `Some(v)` give `v`.
     let rows = vec![Row::new("u8", "unw(2)"), Row::new("u8", "exp_msg(2)")];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("option_unwrap", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)), rows.len());
-    assert_eq!(committed, vec![CatalogueFixture::byte(7), CatalogueFixture::byte(7)]);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("option_unwrap", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)), rows.len());
+    assert_eq!(committed, vec![CarrierBytes::byte(7), CarrierBytes::byte(7)]);
 }
 
 #[test]
 fn unwrap_of_none_faults_naming_unwrap() {
     // CAT-03 AC 2: `unwrap` of `None` faults the run, naming `unwrap`.
     let rows = vec![Row::new("u8", "unw(1)")];
-    let fault = CatalogueFixture::the_fault(&CatalogueFixture::project("option_unwrap_none", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)));
+    let fault = CatalogueModels::the_fault(&CatalogueModels::project("option_unwrap_none", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)));
     assert!(fault.contains("unwrap"), "the fault names `unwrap`: {fault}");
 }
 
@@ -430,7 +427,7 @@ fn unwrap_of_none_faults_naming_unwrap() {
 fn expect_of_none_faults_with_its_message() {
     // CAT-03 AC 3: `expect("msg")` of `None` faults the run with `msg` in the fault.
     let rows = vec![Row::new("u8", "exp_msg(1)")];
-    let fault = CatalogueFixture::the_fault(&CatalogueFixture::project("option_expect_none", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)));
+    let fault = CatalogueModels::the_fault(&CatalogueModels::project("option_expect_none", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)));
     assert!(fault.contains("the reading is gone"), "the fault carries the message: {fault}");
 }
 
@@ -439,10 +436,10 @@ fn unwrap_or_else_evaluates_its_default_for_none_only() {
     // CAT-03 AC 4: the default is evaluated for `None` only. `90 / z` faults for `z` = 0, so a
     // `Some` with `z` = 0 must not evaluate it; `None` with `z` = 9 gives 10.
     let rows = vec![Row::new("u8", "else_(2, 0)"), Row::new("u8", "else_(1, 9)")];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("option_else", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)), rows.len());
-    assert_eq!(committed, vec![CatalogueFixture::byte(7), CatalogueFixture::byte(10)]);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("option_else", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)), rows.len());
+    assert_eq!(committed, vec![CarrierBytes::byte(7), CarrierBytes::byte(10)]);
     // and the default of `None` is evaluated: `z` = 0 faults.
-    let fault = CatalogueFixture::the_fault(&CatalogueFixture::project("option_else_none", &CatalogueFixture::reaction_design(OPTION_FNS, "", &[Row::new("u8", "else_(1, 0)")])));
+    let fault = CatalogueModels::the_fault(&CatalogueModels::project("option_else_none", &CatalogueModels::reaction_design(OPTION_FNS, "", &[Row::new("u8", "else_(1, 0)")])));
     assert!(fault.contains("division by zero"), "the default ran: {fault}");
 }
 
@@ -457,20 +454,20 @@ fn map_and_and_then_bind_the_payload() {
         Row::new("u8", "chained(1)"),
         Row::new("u8", "chained_low(2)"),
     ];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("option_map", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)), rows.len());
-    assert_eq!(committed[0], CatalogueFixture::byte(1), "Some(7).map(|x| x / 7) is Some(1)");
-    assert_eq!(committed[1], CatalogueFixture::byte(5), "None.map(..) is None, the default 5");
-    assert_eq!(committed[2], CatalogueFixture::byte(14), "Some(7).and_then(|x| Some(x * 2))");
-    assert_eq!(committed[3], CatalogueFixture::byte(0));
-    assert_eq!(committed[4], CatalogueFixture::byte(0), "Some(3).and_then(|x| if x > 5 ..) is None");
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("option_map", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)), rows.len());
+    assert_eq!(committed[0], CarrierBytes::byte(1), "Some(7).map(|x| x / 7) is Some(1)");
+    assert_eq!(committed[1], CarrierBytes::byte(5), "None.map(..) is None, the default 5");
+    assert_eq!(committed[2], CarrierBytes::byte(14), "Some(7).and_then(|x| Some(x * 2))");
+    assert_eq!(committed[3], CarrierBytes::byte(0));
+    assert_eq!(committed[4], CarrierBytes::byte(0), "Some(3).and_then(|x| if x > 5 ..) is None");
 }
 
 #[test]
 fn or_takes_the_first_some() {
     // CAT-03 AC 6: `a.or(b)` is `a` when it is `Some`, else `b`.
     let rows = vec![Row::new("u8", "either(4, 9)"), Row::new("u8", "either(0, 9)"), Row::new("u8", "either(0, 0)"), Row::new("u8", "either(3, 0)")];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("option_or", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)), rows.len());
-    assert_eq!(committed, vec![CatalogueFixture::byte(4), CatalogueFixture::byte(9), CatalogueFixture::byte(0), CatalogueFixture::byte(3)]);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("option_or", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)), rows.len());
+    assert_eq!(committed, vec![CarrierBytes::byte(4), CarrierBytes::byte(9), CarrierBytes::byte(0), CarrierBytes::byte(3)]);
 }
 
 #[test]
@@ -478,8 +475,8 @@ fn then_and_then_some_follow_the_bool() {
     // CAT-03 AC 7: `c.then(|| v)` and `c.then_some(v)` are `Some(v)` when `c` is true, else
     // `None`.
     let rows = vec![Row::new("u8", "lazily(2)"), Row::new("u8", "lazily(1)"), Row::new("u8", "eagerly(2)"), Row::new("u8", "eagerly(1)")];
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("option_then", &CatalogueFixture::reaction_design(OPTION_FNS, "", &rows)), rows.len());
-    assert_eq!(committed, vec![CatalogueFixture::byte(7), CatalogueFixture::byte(0), CatalogueFixture::byte(8), CatalogueFixture::byte(0)]);
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("option_then", &CatalogueModels::reaction_design(OPTION_FNS, "", &rows)), rows.len());
+    assert_eq!(committed, vec![CarrierBytes::byte(7), CarrierBytes::byte(0), CarrierBytes::byte(8), CarrierBytes::byte(0)]);
 }
 
 #[test]
@@ -487,11 +484,11 @@ fn db10_and_db20_run() {
     // CAT-04 AC 1: `db10(100.0)` and `db20(-10.0)` are 20.0 and 20.0 on the Rust backend: the
     // stdlib's `10.0 * x.log10()` and `20.0 * x.abs().log10()`.
     let rows = vec![Row::new("f64", "db10(100.0)"), Row::new("f64", "db20(-10.0)"), Row::new("f64", "db10(0.1)")];
-    let source = format!("use std::analog::{{db10, db20}};\n{}", CatalogueFixture::reaction_design("", "", &rows));
-    let committed = CatalogueFixture::first_commits(&CatalogueFixture::project("db_run", &source), rows.len());
-    assert_eq!(committed[0], CatalogueFixture::real_bytes(20.0));
-    assert_eq!(committed[1], CatalogueFixture::real_bytes(20.0));
-    assert_eq!(committed[2], CatalogueFixture::real_bytes(10.0 * 0.1f64.log10()));
+    let source = format!("use std::analog::{{db10, db20}};\n{}", CatalogueModels::reaction_design("", "", &rows));
+    let committed = CatalogueModels::first_commits(&CatalogueModels::project("db_run", &source), rows.len());
+    assert_eq!(committed[0], CarrierBytes::real(20.0));
+    assert_eq!(committed[1], CarrierBytes::real(20.0));
+    assert_eq!(committed[2], CarrierBytes::real(10.0 * 0.1f64.log10()));
 }
 
 #[test]
@@ -505,7 +502,7 @@ fn db10_and_db20_type_check_from_the_stdlib() {
          analog for Gain {{ i(gnd, p) +> db10(100.0); }}\n\
          module Bench() {{ signal clk: Bit; signal r: Bit<f64>; signal n: Electrical; let osc = Osc(clk) {{ f: 200M }}; let g = Gain(clk, n, r); }}\n"
     );
-    let project = CatalogueFixture::project("db_types", &source);
+    let project = CatalogueModels::project("db_types", &source);
     let design = project.design().unwrap_or_else(|r| panic!("{r}"));
     piperine_lang::types::Types::check(&design, "Bench").unwrap_or_else(|d| panic!("{:?}", d.iter().map(|d| (&d.diagnostic.code, &d.diagnostic.message)).collect::<Vec<_>>()));
     project.elaborate("Bench").unwrap_or_else(|r| panic!("{r}"));

@@ -9,7 +9,8 @@ use piperine_api::{Record, Streams};
 use crate::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier, Solver, TransientAnalysisOptions};
 
-use crate::buck_fixture::BuckFixture;
+use crate::buck_fixture::NetChanges;
+use crate::mixed::BuiltDesign;
 
 /// The model files of one directory of `tests/`.
 pub struct SourceRun {
@@ -32,10 +33,10 @@ impl SourceRun {
     /// What `Bench` of `file` committed at its first rising edge (2.5 ns of a 200 MHz oscillator): the
     /// value of each carrier in `names` (a commit of the value it started at changes nothing).
     pub fn first_commits(&self, file: &str, names: &[&str]) -> Vec<Vec<u8>> {
-        let seen = BuckFixture::build(&self.project(file), "Bench").run(10e-9, 1e-9);
+        let seen = BuiltDesign::of(&self.project(file), "Bench").run(10e-9, 1e-9);
         names
             .iter()
-            .map(|name| BuckFixture::first_edge_value(&seen, &format!("Bench.{name}")))
+            .map(|name| NetChanges::first_edge_value(&seen, &format!("Bench.{name}")))
             .collect()
     }
 
@@ -70,7 +71,7 @@ impl SourceRun {
 
     /// The message of the fault the transient of `top` of `file` runs into: the run is expected to fail.
     pub fn the_fault(&self, file: &str, top: &str) -> String {
-        let built = BuckFixture::build(&self.project(file), top);
+        let built = BuiltDesign::of(&self.project(file), top);
         let circuit = built.compiled.circuit().unwrap_or_else(|e| panic!("{e}"));
         let mut options = TransientAnalysisOptions::new(10e-9, 1e-9);
         options.dt_max = 1e-9;
@@ -83,7 +84,7 @@ impl SourceRun {
 
     /// Every record of the 4 ns transient of `top` of `file`, decoded as the host decodes it.
     pub fn records_of(&self, file: &str, top: &str) -> Vec<Record> {
-        let built = BuckFixture::build(&self.project(file), top);
+        let built = BuiltDesign::of(&self.project(file), top);
         let streams = Streams::of(built.ir.clone());
         let seen = built.run(4e-9, 0.5e-9);
         seen.all().iter().filter_map(|o| streams.decode(o)).map(|r| r.unwrap_or_else(|f| panic!("{f}"))).collect()

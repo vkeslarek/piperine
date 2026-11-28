@@ -14,7 +14,8 @@ use piperine_parity::source::run;
 use bytes::CarrierBytes;
 use operators::PlaceOperators;
 use run::SourceRun;
-use piperine_parity::buck_fixture::BuckFixture;
+use piperine_parity::buck_fixture::NetChanges;
+use piperine_parity::mixed::BuiltDesign;
 
 /// One nanosecond in ticks.
 const NS: i64 = 1_000_000;
@@ -108,9 +109,9 @@ fn every_loop_form_gives_rusts_values() {
 fn a_commit_in_a_reaction_loop_is_one_statement_last_write_winning() {
     // CV-02 AC 5 (§12.1.14, §12.1.2): a commit in a loop is one statement run several times; the
     // writes of one instant to one carrier leave the last one, a single change.
-    let seen = BuckFixture::build(&RUN.project("loops.msl"), "CommitBench").run(10e-9, 1e-9);
+    let seen = BuiltDesign::of(&RUN.project("loops.msl"), "CommitBench").run(10e-9, 1e-9);
     for (name, last) in [("last", 3u8), ("picked", 20), ("counted", 3)] {
-        let changes = BuckFixture::transient(&seen, &format!("CommitBench.{name}"));
+        let changes = NetChanges::transient(&seen, &format!("CommitBench.{name}"));
         assert_eq!(changes, vec![(5 * NS / 2, CarrierBytes::byte(last))], "{name}: one change, to the last value written");
     }
 }
@@ -474,29 +475,29 @@ fn a_closure_in_analog_is_differentiated_through() {
     }
 }
 
-/// Fixtures of the test `recursion_from_a_reaction_runs`, hoisted out of its body.
-struct RecursionFromReactionFixture;
+/// Rust's own recursion, the oracle of `recursion_from_a_reaction_runs`.
+struct RustRecursion;
 
-impl RecursionFromReactionFixture {
+impl RustRecursion {
     // CV-07 AC 1 (§3 rule 12): a function that calls itself, and two that call each other, run from
     // a reaction and give the values Rust's recursion gives.
     fn fib(n: u8) -> u16 {
-        if n < 2 { u16::from(n) } else { RecursionFromReactionFixture::fib(n - 1) + RecursionFromReactionFixture::fib(n - 2) }
+        if n < 2 { u16::from(n) } else { RustRecursion::fib(n - 1) + RustRecursion::fib(n - 2) }
     }
 
     fn is_even(n: u8) -> bool {
-        n == 0 || RecursionFromReactionFixture::is_odd(n - 1)
+        n == 0 || RustRecursion::is_odd(n - 1)
     }
 
     fn is_odd(n: u8) -> bool {
-        n != 0 && RecursionFromReactionFixture::is_even(n - 1)
+        n != 0 && RustRecursion::is_even(n - 1)
     }
 }
 
 #[test]
 fn recursion_from_a_reaction_runs() {
     let committed = RUN.first_commits("recursion.msl", &["a", "b", "c", "d"]);
-    let wanted = vec![CarrierBytes::word(RecursionFromReactionFixture::fib(10)), CarrierBytes::byte(u8::from(RecursionFromReactionFixture::is_even(10))), CarrierBytes::byte(u8::from(RecursionFromReactionFixture::is_odd(7))), CarrierBytes::byte(u8::from(RecursionFromReactionFixture::is_even(7)))];
+    let wanted = vec![CarrierBytes::word(RustRecursion::fib(10)), CarrierBytes::byte(u8::from(RustRecursion::is_even(10))), CarrierBytes::byte(u8::from(RustRecursion::is_odd(7))), CarrierBytes::byte(u8::from(RustRecursion::is_even(7)))];
     assert_eq!(committed, wanted);
 }
 

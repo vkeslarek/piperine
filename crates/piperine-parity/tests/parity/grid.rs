@@ -26,10 +26,10 @@ impl RecordSink for Ignore {
     fn record(&mut self, _: &Record) {}
 }
 
-/// Associated test helpers of `grid`, grouped on one fixture type.
-struct GridFixture;
+/// The grid table of a transient run and its rows read back by time.
+struct GridTable;
 
-impl GridFixture {
+impl GridTable {
     /// The rows of `tran_rc` to 10 us on a `print_step` grid, a step cap of a tenth of it, on `backend`.
     fn grid(backend: Backend, print_step: f64) -> Table {
         let cache = tempfile::tempdir().expect("tmp");
@@ -56,6 +56,16 @@ impl GridFixture {
         }
     }
 
+    /// The table row whose time is within `1e-9 * print_step` of `time`, if any.
+    fn row_at(table: &Table, time: f64, print_step: f64) -> Option<&Vec<Cell>> {
+        table.rows.iter().find(|row| (GridTable::real(&row[0]) - time).abs() <= TIME_MATCH * print_step)
+    }
+}
+
+/// The export of the reference run that the grid is compared with.
+struct GridExport;
+
+impl GridExport {
     /// ngspice's export of `tran_rc`: the rows `(time, v(out))` and the version line.
     fn export(reference: &Reference) -> Option<(Vec<(f64, f64)>, String)> {
         let Reference::Golden(golden) = reference else { return None };
@@ -63,23 +73,18 @@ impl GridFixture {
         golden.expect_rows("tran_rc_tran", &rows, 100);
         Some((rows, golden.version().to_string()))
     }
-
-    /// The table row whose time is within `1e-9 * print_step` of `time`, if any.
-    fn row_at(table: &Table, time: f64, print_step: f64) -> Option<&Vec<Cell>> {
-        table.rows.iter().find(|row| (GridFixture::real(&row[0]) - time).abs() <= TIME_MATCH * print_step)
-    }
 }
 
 #[test]
 fn the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports() {
     // LR-15 AC 1
     let reference = Ngspice::from_environment().run("tran_rc");
-    let Some((rows, _)) = GridFixture::export(&reference) else { return };
+    let Some((rows, _)) = GridExport::export(&reference) else { return };
     let print_step = rows[1].0 - rows[0].0;
     for backend in BackendSelection::selected() {
-        let table = GridFixture::grid(backend, print_step);
+        let table = GridTable::grid(backend, print_step);
         for (time, _) in &rows {
-            assert!(GridFixture::row_at(&table, *time, print_step).is_some(), "{}: no grid row within 1e-9 * {print_step:e} s of ngspice's time {time:e} s", backend.name());
+            assert!(GridTable::row_at(&table, *time, print_step).is_some(), "{}: no grid row within 1e-9 * {print_step:e} s of ngspice's time {time:e} s", backend.name());
         }
         // the proof line of C45: only a run that compared prints it, a skipped reference returns
         // above before any
@@ -91,16 +96,16 @@ fn the_grid_of_tran_rc_has_a_row_at_every_time_ngspice_exports() {
 fn tran_rc_on_the_grid_agrees_with_ngspice() {
     // LR-15 AC 2: the pairs are read as they are, with no interpolation
     let reference = Ngspice::from_environment().run("tran_rc");
-    let Some((rows, version)) = GridFixture::export(&reference) else { return };
+    let Some((rows, version)) = GridExport::export(&reference) else { return };
     let print_step = rows[1].0 - rows[0].0;
     for backend in BackendSelection::selected() {
-        let table = GridFixture::grid(backend, print_step);
+        let table = GridTable::grid(backend, print_step);
         let mut worst = 0.0_f64;
         for (time, wanted) in &rows {
-            let row = GridFixture::row_at(&table, *time, print_step).unwrap_or_else(|| panic!("{}: no grid row at {time:e} s", backend.name()));
+            let row = GridTable::row_at(&table, *time, print_step).unwrap_or_else(|| panic!("{}: no grid row at {time:e} s", backend.name()));
             let at = Point::new("tran_rc", "v(out)", Coordinate::Time(*time)).with_ngspice(&version).with_backend(backend.name());
-            ToleranceContract::TRAN_VOLTAGE.assert(&at, *wanted, GridFixture::real(&row[1]));
-            worst = worst.max((GridFixture::real(&row[1]) - wanted).abs());
+            ToleranceContract::TRAN_VOLTAGE.assert(&at, *wanted, GridTable::real(&row[1]));
+            worst = worst.max((GridTable::real(&row[1]) - wanted).abs());
         }
         // the proof line of C46: only a run that compared prints it
         println!("tran_rc on {}: {} pairs, largest |v(out)| deviation from ngspice {worst:e} V", backend.name(), rows.len());
@@ -114,7 +119,7 @@ fn a_skipped_reference_still_runs_the_twin() {
     let reference = Ngspice::new(Lookup::Skip).run("tran_rc");
     assert!(matches!(reference, Reference::Skipped));
     for backend in BackendSelection::selected() {
-        let table = GridFixture::grid(backend, 0.1e-6);
+        let table = GridTable::grid(backend, 0.1e-6);
         assert_eq!(table.rows.len(), 101, "{}: 0 to 10 us at 0.1 us", backend.name());
     }
 }

@@ -19,7 +19,6 @@ use piperine_transpile::Settings;
 use piperine_parity::mixed;
 
 use mixed::{BuiltDesign, Seen};
-use piperine_parity::buck_fixture::BuckFixture;
 
 /// What a `Line` holds: a level and a strength, in the numbers of `tests/nets/line.msl`.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -113,7 +112,7 @@ impl Model {
 
     /// `top` elaborated and compiled once.
     fn built(&self, top: &str) -> BuiltDesign {
-        BuckFixture::build(&self.project, top)
+        BuiltDesign::of(&self.project, top)
     }
 
     /// What the stream `line` of `built` says the net held after each change, the first at `(0, 0)`.

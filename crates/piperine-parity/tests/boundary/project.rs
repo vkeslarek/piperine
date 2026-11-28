@@ -9,23 +9,23 @@ use piperine_parity::contract::{Coordinate, Point, ToleranceContract};
 use piperine_parity::project::Project;
 use piperine_solver::prelude::{Context, NodeIdentifier};
 
-/// Associated test helpers of `project`, grouped on one fixture type.
-struct ProjectFixture;
+/// The project files of `tests/boundary/`, with the dependency crate of devices.
+struct BoundaryProject;
 
-impl ProjectFixture {
+impl BoundaryProject {
     fn fixture(file: &str) -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/buck/divider").join(file)
     }
 
     fn project(root: &str) -> Project {
         let cache = Path::new(env!("CARGO_TARGET_TMPDIR")).join("project-cache");
-        Project::new(&ProjectFixture::fixture(root)).dependency("devices", &ProjectFixture::fixture("devices/lib.msl")).cache(&cache)
+        Project::new(&BoundaryProject::fixture(root)).dependency("devices", &BoundaryProject::fixture("devices/lib.msl")).cache(&cache)
     }
 }
 
 #[test]
 fn a_project_with_a_dependency_crate_loads_and_runs() {
-    let mut running = ProjectFixture::project("bench.msl").compile("Divider").unwrap_or_else(|r| panic!("{r}"));
+    let mut running = BoundaryProject::project("bench.msl").compile("Divider").unwrap_or_else(|r| panic!("{r}"));
     assert!(running.compiled().report().warnings.is_empty(), "the generated source compiles with no warning");
     let mid = running.ir.node_at("Divider.mid").expect("the divider's mid node");
     let id = NodeIdentifier::Anonymous(mid.id().index());
@@ -39,7 +39,7 @@ fn a_project_with_a_dependency_crate_loads_and_runs() {
 #[test]
 fn a_diagnostic_is_returned_with_its_stage() {
     // A module the dependency does not have: the front end refuses it before the type check.
-    let refused = match ProjectFixture::project("unresolved.msl").compile("Divider") {
+    let refused = match BoundaryProject::project("unresolved.msl").compile("Divider") {
         Ok(_) => panic!("an unresolved placement compiled"),
         Err(r) => r,
     };
@@ -47,7 +47,7 @@ fn a_diagnostic_is_returned_with_its_stage() {
     assert!(!refused.diagnostics.is_empty(), "the diagnostics come back with the stage");
 
     // A `bool` given to an `f64` param: the type checker's stage.
-    let refused = match ProjectFixture::project("typeck.msl").elaborate("Divider") {
+    let refused = match BoundaryProject::project("typeck.msl").elaborate("Divider") {
         Ok(_) => panic!("a bool param value elaborated"),
         Err(r) => r,
     };
@@ -55,7 +55,7 @@ fn a_diagnostic_is_returned_with_its_stage() {
     assert!(refused.diagnostics.iter().any(|d| d.diagnostic.code == "E0180"), "{refused}");
 
     // A top that is not a module of the root crate: the type checker names it.
-    let refused = match ProjectFixture::project("bench.msl").elaborate("Resistor") {
+    let refused = match BoundaryProject::project("bench.msl").elaborate("Resistor") {
         Ok(_) => panic!("a dependency's module elaborated as the top"),
         Err(r) => r,
     };
@@ -67,11 +67,11 @@ fn a_diagnostic_is_returned_with_its_stage() {
 fn the_source_runner_checks_the_whole_model() {
     // GN-09: `Divider` is clean and `broken` is called by nothing, yet the runner refuses it at the
     // type check as a host does; the same top without the function elaborates
-    let refused = match ProjectFixture::project("unreached.msl").elaborate("Divider") {
+    let refused = match BoundaryProject::project("unreached.msl").elaborate("Divider") {
         Ok(_) => panic!("an unreached type error elaborated"),
         Err(r) => r,
     };
     assert_eq!(refused.stage, "typeck", "{refused}");
     assert_eq!(refused.diagnostics.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
-    assert!(ProjectFixture::project("bench.msl").elaborate("Divider").is_ok());
+    assert!(BoundaryProject::project("bench.msl").elaborate("Divider").is_ok());
 }

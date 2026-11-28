@@ -35,10 +35,10 @@ struct FreeRunning {
     steps: usize,
 }
 
-/// Associated test helpers of `deviation`, grouped on one fixture type.
-struct DeviationFixture;
+/// What each twin of the deviation table measures against its golden, on one backend.
+struct TwinReadings;
 
-impl DeviationFixture {
+impl TwinReadings {
     fn operating_point(twin: &OperatingPoint, golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
         let mut bench = Bench::load_on(twin.fixture, backend);
         let ids: Vec<_> = twin.nodes.iter().map(|node| bench.node(node)).collect();
@@ -94,7 +94,7 @@ impl DeviationFixture {
 
     /// The transient policy of `parity_tran.rs`: stop at 10 us, a step cap of a tenth of the print step.
     fn tran(fixture: &str, export: &str, node: &str, golden: &piperine_parity::golden::Golden, backend: Backend) -> Measured {
-        DeviationFixture::tran_to(fixture, export, node, golden, backend, 10e-6, f64::MIN_POSITIVE)
+        TwinReadings::tran_to(fixture, export, node, golden, backend, 10e-6, f64::MIN_POSITIVE)
     }
 
     /// [`tran`] to `stop`, with `dt_min` as the smallest step unless it is not above `f64::MIN_POSITIVE`
@@ -117,7 +117,7 @@ impl DeviationFixture {
         Measured {
             deviations: vec![Deviation::of(fixture, &format!("v({node})"), &ToleranceContract::TRAN_VOLTAGE, &compared)],
             steps: Some((stats.steps_accepted, stats.steps_rejected, stats.dt_min_floor_hits)),
-            free_running: Some(FreeRunning { ngspice_points: rows.len(), steps: DeviationFixture::free_running_steps(fixture, backend, stop, print_step, dt_min) }),
+            free_running: Some(FreeRunning { ngspice_points: rows.len(), steps: TwinReadings::free_running_steps(fixture, backend, stop, print_step, dt_min) }),
         }
     }
 
@@ -182,7 +182,7 @@ impl DeviationFixture {
         Measured {
             deviations: vec![Deviation::of("pss_rc", "v(vout)", &ToleranceContract::TRAN_VOLTAGE, &compared)],
             steps: Some((stats.steps_accepted, stats.steps_rejected, stats.dt_min_floor_hits)),
-            free_running: Some(FreeRunning { ngspice_points: last.len(), steps: DeviationFixture::free_running_steps("pss_rc", backend, PERIOD, print_step, f64::MIN_POSITIVE) }),
+            free_running: Some(FreeRunning { ngspice_points: last.len(), steps: TwinReadings::free_running_steps("pss_rc", backend, PERIOD, print_step, f64::MIN_POSITIVE) }),
         }
     }
 
@@ -192,37 +192,37 @@ impl DeviationFixture {
         let mut table = BTreeMap::new();
         for (fixture, nodes) in [("divider", &["vin", "mid"][..]), ("diode_series", &["a", "b"][..]), ("isrc_r", &["a"][..])] {
             let Reference::Golden(golden) = ngspice.run(fixture) else { return None };
-            table.insert(fixture, DeviationFixture::operating_point(&OperatingPoint { fixture, nodes }, &golden, backend));
+            table.insert(fixture, TwinReadings::operating_point(&OperatingPoint { fixture, nodes }, &golden, backend));
         }
         for (fixture, export) in [("diode_iv", "diode_iv_sweep"), ("diode_rev", "diode_rev_sweep")] {
             let Reference::Golden(golden) = ngspice.run(fixture) else { return None };
-            table.insert(fixture, DeviationFixture::sweep(fixture, export, &golden, backend));
+            table.insert(fixture, TwinReadings::sweep(fixture, export, &golden, backend));
         }
         let Reference::Golden(golden) = ngspice.run("ac_rc") else { return None };
-        table.insert("ac_rc", DeviationFixture::ac(&golden, backend));
+        table.insert("ac_rc", TwinReadings::ac(&golden, backend));
         let Reference::Golden(golden) = ngspice.run("tran_rc") else { return None };
-        table.insert("tran_rc", DeviationFixture::tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
+        table.insert("tran_rc", TwinReadings::tran("tran_rc", "tran_rc_tran", "out", &golden, backend));
         let Reference::Golden(golden) = ngspice.run("temp_res") else { return None };
-        table.insert("temp_res", DeviationFixture::temp_res(&golden, backend));
+        table.insert("temp_res", TwinReadings::temp_res(&golden, backend));
         let Reference::Golden(golden) = ngspice.run("tnom_res") else { return None };
-        table.insert("tnom_res", DeviationFixture::operating_point(&OperatingPoint { fixture: "tnom_res", nodes: &["mid"] }, &golden, backend));
+        table.insert("tnom_res", TwinReadings::operating_point(&OperatingPoint { fixture: "tnom_res", nodes: &["mid"] }, &golden, backend));
         let Reference::Golden(golden) = ngspice.run("tran_dq") else { return None };
-        table.insert("tran_dq", DeviationFixture::tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
+        table.insert("tran_dq", TwinReadings::tran("tran_dq", "tran_dq_tran", "a", &golden, backend));
         if backend == Backend::Rust {
             let Reference::Golden(golden) = ngspice.run("tran_jump") else { return None };
-            table.insert("tran_jump", DeviationFixture::tran_to("tran_jump", "tran_jump_tran", "top", &golden, backend, 2e-6, f64::MIN_POSITIVE));
+            table.insert("tran_jump", TwinReadings::tran_to("tran_jump", "tran_jump_tran", "top", &golden, backend, 2e-6, f64::MIN_POSITIVE));
             let Reference::Golden(golden) = ngspice.run("tran_corner") else { return None };
-            table.insert("tran_corner", DeviationFixture::tran_to("tran_corner", "tran_corner_tran", "top", &golden, backend, 2e-6, 1e-9));
+            table.insert("tran_corner", TwinReadings::tran_to("tran_corner", "tran_corner_tran", "top", &golden, backend, 2e-6, 1e-9));
             let Reference::Golden(golden) = ngspice.run("tran_floor") else { return None };
-            table.insert("tran_floor", DeviationFixture::floor(&golden));
+            table.insert("tran_floor", TwinReadings::floor(&golden));
             let Reference::Golden(golden) = ngspice.run("pss_rc") else { return None };
-            table.insert("pss_rc", DeviationFixture::pss_rc(&golden, backend));
+            table.insert("pss_rc", TwinReadings::pss_rc(&golden, backend));
             let Reference::Golden(golden) = ngspice.run("uic_rc") else { return None };
-            table.insert("uic_rc", DeviationFixture::tran("uic_rc", "uic_rc_tran", "out", &golden, backend));
+            table.insert("uic_rc", TwinReadings::tran("uic_rc", "uic_rc_tran", "out", &golden, backend));
             let Reference::Golden(golden) = ngspice.run("delay_tline") else { return None };
-            table.insert("delay_tline", DeviationFixture::tran("delay_tline", "delay_tline_tran", "out", &golden, backend));
+            table.insert("delay_tline", TwinReadings::tran("delay_tline", "delay_tline_tran", "out", &golden, backend));
             let Reference::Golden(golden) = ngspice.run("diode_rs") else { return None };
-            table.insert("diode_rs", DeviationFixture::operating_point(&OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }, &golden, backend));
+            table.insert("diode_rs", TwinReadings::operating_point(&OperatingPoint { fixture: "diode_rs", nodes: &["vin", "a"] }, &golden, backend));
         }
         Some(table)
     }
@@ -254,7 +254,7 @@ fn the_table_covers_every_twin() {
         .collect();
     msl.sort();
     for backend in BackendSelection::selected() {
-        let Some(table) = DeviationFixture::measure(backend) else { return };
+        let Some(table) = TwinReadings::measure(backend) else { return };
         let covered: Vec<&str> = table.keys().copied().collect();
         let expected: Vec<&str> = msl.iter().map(String::as_str).filter(|name| !OWN_TARGET.contains(name) && (backend == Backend::Rust || !COMPILED_ONLY.contains(name))).collect();
         assert_eq!(covered, expected, "one row per twin on {}", backend.name());

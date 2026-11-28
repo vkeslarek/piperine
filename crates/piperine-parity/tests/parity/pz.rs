@@ -33,10 +33,10 @@ impl Roots {
     }
 }
 
-/// Associated test helpers of `pz`, grouped on one fixture type.
-struct PzFixture;
+/// A pole-zero twin compared with the reference on one backend.
+struct PzComparison;
 
-impl PzFixture {
+impl PzComparison {
     fn compare(reference: &Reference, backend: Backend) {
         let mut bench = Bench::load_on("pz_lowpass", backend);
         let options = PoleZeroOptions { input_source: bench.source("v1"), output: AnalogVariable::Node(bench.node("out")), output_ref: None };
@@ -75,7 +75,7 @@ impl PzFixture {
 fn pz_lowpass() {
     let reference = Ngspice::from_environment().run("pz_lowpass");
     for backend in BackendSelection::selected() {
-        PzFixture::compare(&reference, backend);
+        PzComparison::compare(&reference, backend);
     }
 }
 

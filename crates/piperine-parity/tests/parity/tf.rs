@@ -9,10 +9,10 @@ use piperine_parity::host::HostRun;
 use piperine_parity::ngspice::{Ngspice, Reference};
 use piperine_solver::prelude::{AnalogVariable, Context, TransferFunctionAnalysisOptions};
 
-/// Associated test helpers of `tf`, grouped on one fixture type.
-struct TfFixture;
+/// A transfer-function twin compared with the reference on one backend.
+struct TfComparison;
 
-impl TfFixture {
+impl TfComparison {
     fn compare(reference: &Reference, backend: Backend) {
         let mut bench = Bench::load_on("tf_divider", backend);
         let options = TransferFunctionAnalysisOptions { output: AnalogVariable::Node(bench.node("vout")), output_ref: None, input_source: bench.source("v1") };
@@ -40,7 +40,7 @@ impl TfFixture {
 fn tf_divider() {
     let reference = Ngspice::from_environment().run("tf_divider");
     for backend in BackendSelection::selected() {
-        TfFixture::compare(&reference, backend);
+        TfComparison::compare(&reference, backend);
     }
 }
 

@@ -193,10 +193,10 @@ mod tests {
         ("TRAN_VOLTAGE", ToleranceContract::TRAN_VOLTAGE),
     ];
 
-    /// Associated test helpers of `contract`, grouped on one fixture type.
-    struct ContractFixture;
+    /// The message a tolerance contract rejects a pair with.
+    struct ContractRejection;
 
-    impl ContractFixture {
+    impl ContractRejection {
         fn rejection(contract: &ToleranceContract, at: &Point, golden: f64, actual: f64) -> String {
             let result = std::panic::catch_unwind(|| contract.assert(at, golden, actual));
             let payload = result.expect_err("the pair must be rejected");
@@ -229,7 +229,7 @@ mod tests {
             assert_eq!(contract.abstol(), abstol, "{name} abstol");
             assert!(contract.rationale().len() > 40, "{name} has no rationale worth the name");
             let at = Point::new("f", "q", Coordinate::OperatingPoint);
-            assert!(ContractFixture::rejection(&contract, &at, 1.0, 1.1).contains(contract.rationale()), "{name}: a rejection prints its rationale");
+            assert!(ContractRejection::rejection(&contract, &at, 1.0, 1.1).contains(contract.rationale()), "{name}: a rejection prints its rationale");
         }
     }
 
@@ -240,7 +240,7 @@ mod tests {
         assert_eq!((contract.reltol(), contract.abstol()), (1e-3, 1e-20));
         assert!(contract.rationale().len() > 40, "no rationale worth the name");
         let at = Point::new("noise_rc", "onoise_total", Coordinate::Band(1e3, 1e6));
-        let text = ContractFixture::rejection(&contract, &at, 1.5e-6, 2.5e-6);
+        let text = ContractRejection::rejection(&contract, &at, 1.5e-6, 2.5e-6);
         assert!(text.contains("band 1e3 to 1e6 Hz") && text.contains(contract.rationale()), "{text}");
         assert!(contract.holds(0.0, 0.0));
     }
@@ -271,22 +271,22 @@ mod tests {
     #[test]
     fn a_rejection_names_point_values_bound_and_rationale() {
         let at = Point::new("diode_iv", "i(v1)", Coordinate::Sweep(0.35));
-        let text = ContractFixture::rejection(&ToleranceContract::DC_CURRENT, &at, 1.5, 2.5);
+        let text = ContractRejection::rejection(&ToleranceContract::DC_CURRENT, &at, 1.5, 2.5);
         for needle in ["diode_iv", "i(v1)", "sweep value 3.5e-1", "1.5e0", "2.5e0", "abstol 1e-12", "reltol 1e-3", "1 pA flow tolerance"] {
             assert!(text.contains(needle), "message lacks {needle:?}: {text}");
         }
         let at = Point::new("ac_rc", "v(out)", Coordinate::Frequency(1e5));
-        assert!(ContractFixture::rejection(&ToleranceContract::AC_MAGNITUDE, &at, 1.0, 2.0).contains("frequency 1e5 Hz"));
+        assert!(ContractRejection::rejection(&ToleranceContract::AC_MAGNITUDE, &at, 1.0, 2.0).contains("frequency 1e5 Hz"));
         let at = Point::new("tran_rc", "v(out)", Coordinate::Time(2e-6));
-        assert!(ContractFixture::rejection(&ToleranceContract::TRAN_VOLTAGE, &at, 1.0, 2.0).contains("time 2e-6 s"));
+        assert!(ContractRejection::rejection(&ToleranceContract::TRAN_VOLTAGE, &at, 1.0, 2.0).contains("time 2e-6 s"));
         let at = Point::new("divider", "v(mid)", Coordinate::OperatingPoint);
-        assert!(ContractFixture::rejection(&ToleranceContract::DC_VOLTAGE, &at, 1.0, 2.0).contains("operating point"));
+        assert!(ContractRejection::rejection(&ToleranceContract::DC_VOLTAGE, &at, 1.0, 2.0).contains("operating point"));
     }
 
     #[test]
     fn a_rejection_names_the_ngspice_version() {
         let at = Point::new("divider", "v(mid)", Coordinate::OperatingPoint).with_ngspice("ngspice-47 : Circuit level simulation program");
-        let text = ContractFixture::rejection(&ToleranceContract::DC_VOLTAGE, &at, 7.5, 7.6);
+        let text = ContractRejection::rejection(&ToleranceContract::DC_VOLTAGE, &at, 7.5, 7.6);
         assert!(text.contains("ngspice-47 : Circuit level simulation program"), "{text}");
     }
 
