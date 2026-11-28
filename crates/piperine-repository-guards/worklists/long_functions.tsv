@@ -1,7 +1,5 @@
-crates/piperine-analog-solver/src/device/assembly.rs::Assembly::param_stamps	-
-crates/piperine-analog-solver/src/device/plan.rs::AnalogPlan::bind_instance	-
-crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve	-
-crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve_with_strategy	-
+crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve	kept: the one Newton loop of the plain solve; its iterate, residual and callbacks are the loop's state, and the convergence path it takes is pinned by the numeric oracles, so a split is not this task's change
+crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::solve_with_strategy	kept: the one Newton loop of the strategy solve; the same state as `solve` and the same numeric oracles pin it
 crates/piperine-api/src/probe.rs::Probe::resolve	-
 crates/piperine-digital-solver/src/dag.rs::Dag::build	-
 crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-

@@ -2147,8 +2147,8 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Its row of `long_functions.tsv` is `split`; the crate's rows all have verdicts
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-solver`
+- [x] Its row of `long_functions.tsv` is `split`; the crate's rows all have verdicts (the row is deleted: `bind_instance` is no longer a long function, the guard closes a row whose item is gone; `param_stamps` was split too; the two Newton solves are `kept`)
+- [x] Gate check passes: Quick, and `cargo test -p piperine-solver`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick

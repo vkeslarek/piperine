@@ -6,7 +6,7 @@
 //! `set_discrete` (abi.md §10). A non-finite value or seeded partial that the
 //! solve reads fails it, naming instance, cell and origin (A4).
 
-use piperine_abi::raw::{ambient, op, watch};
+use piperine_abi::raw::{Cell, Shape, ambient, cell, kind, op, part, watch};
 
 use super::cell::RealCell;
 use super::ddt::{DdtStamp, History, Stage};
@@ -618,57 +618,11 @@ impl Assembly {
         let inst = &self.plan.instances[instance];
         let st = &self.state[instance];
         let ctx = Reads { x, amb, slots: &self.slots, previous: &self.previous, held: &st.held };
-        let shape = inst.handle.shape();
+        let pins = ParamPins { shape: inst.handle.shape(), listed: wrt };
         let mut d = vec![0.0; inst.terms.len()];
         let mut scratch: Vec<u8> = Vec::new();
         for f in inst.functions.iter().filter(|f| f.rows && !f.limits) {
-            let sf = shape.functions.get(f.k as usize).ok_or_else(|| {
-                Error::device(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
-            })?;
-            let pin_d = |c: &piperine_abi::raw::Cell| {
-                let discrete = shape
-                    .pins
-                    .get(c.index as usize)
-                    .is_some_and(|p| p.kind == piperine_abi::raw::kind::DISCRETE);
-                (c.kind == piperine_abi::raw::cell::PIN && discrete)
-                    .then(|| wrt.iter().find(|(q, _)| *q == c.index))
-                    .flatten()
-            };
-            let seed: Vec<u8> = sf
-                .partials
-                .iter()
-                .map(|p| u8::from(sf.reads.get(p.read as usize).is_some_and(|c| pin_d(c).is_some())))
-                .collect();
-            if seed.iter().all(|s| *s == 0) {
-                continue;
-            }
-            scratch.clear();
-            for (source, len) in &f.reads {
-                ctx.push(*source, *len, &mut scratch);
-            }
-            let mut at = 0;
-            let input: Vec<&[u8]> = f
-                .reads
-                .iter()
-                .map(|(_, len)| {
-                    let cell = &scratch[at..at + len];
-                    at += len;
-                    cell
-                })
-                .collect();
-            let mut out: Vec<Vec<u8>> = f.write_lens.iter().map(|n| vec![0; *n]).collect();
-            let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
-            let mut jac = vec![0.0; seed.len()];
-            inst.handle.eval(f.k, &input, &mut output, &seed, &mut jac).map_err(|e| {
-                Error::device(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
-            })?;
-            for (pi, p) in sf.partials.iter().enumerate() {
-                let (Some(r), Some(w)) = (sf.reads.get(p.read as usize), sf.writes.get(p.write as usize)) else { continue };
-                let Some((_, dp)) = pin_d(r) else { continue };
-                if w.kind == piperine_abi::raw::cell::TERM && w.part == piperine_abi::raw::part::VALUE {
-                    d[w.index as usize] += jac[pi] * dp;
-                }
-            }
+            pins.add_derivatives(inst, f, &ctx, &mut scratch, &mut d)?;
         }
         let mut out = Vec::new();
         for (t, g) in inst.terms.iter().zip(d) {
@@ -684,6 +638,7 @@ impl Assembly {
         }
         Ok(out)
     }
+
 
     /// The term histories and limit states, to restore when a step is rejected.
     pub fn snapshot(&self) -> AssemblySnapshot {
@@ -703,6 +658,67 @@ impl Assembly {
             st.delay.clone_from(&snap.delay[i]);
             st.watched.clone_from(&snap.watched[i]);
         }
+    }
+}
+
+/// The pins of one instance's shape against which a parameter's derivative is known: the
+/// discrete pins `wrt` lists, each with `d`, the derivative of its bytes with respect to the param.
+struct ParamPins<'a> {
+    /// The instance's shape.
+    shape: &'a Shape<'a>,
+    /// Each such pin with `d`.
+    listed: &'a [(u32, f64)],
+}
+
+impl ParamPins<'_> {
+    /// The entry of `listed` for cell `c`, when `c` is one of its discrete pins.
+    fn derivative(&self, c: &Cell) -> Option<&(u32, f64)> {
+        let discrete = self.shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::DISCRETE);
+        (c.kind == cell::PIN && discrete).then(|| self.listed.iter().find(|(q, _)| *q == c.index)).flatten()
+    }
+
+    /// Adds to `d`, per term, `g·d` for every partial `g` of function `f` that a pin of `listed` reaches:
+    /// evaluates `f` seeding only those partials. A function none of them reach is not called.
+    fn add_derivatives(&self, inst: &InstancePlan, f: &FnPlan, ctx: &Reads<'_>, scratch: &mut Vec<u8>, d: &mut [f64]) -> Result<(), Error> {
+        let sf = self.shape.functions.get(f.k as usize).ok_or_else(|| {
+            Error::device(format!("instance `{}`: function {} is outside its shape", inst.path, f.k))
+        })?;
+        let seed: Vec<u8> = sf
+            .partials
+            .iter()
+            .map(|p| u8::from(sf.reads.get(p.read as usize).is_some_and(|c| self.derivative(c).is_some())))
+            .collect();
+        if seed.iter().all(|s| *s == 0) {
+            return Ok(());
+        }
+        scratch.clear();
+        for (source, len) in &f.reads {
+            ctx.push(*source, *len, scratch);
+        }
+        let mut at = 0;
+        let input: Vec<&[u8]> = f
+            .reads
+            .iter()
+            .map(|(_, len)| {
+                let cell = &scratch[at..at + len];
+                at += len;
+                cell
+            })
+            .collect();
+        let mut out: Vec<Vec<u8>> = f.write_lens.iter().map(|n| vec![0; *n]).collect();
+        let mut output: Vec<&mut [u8]> = out.iter_mut().map(Vec::as_mut_slice).collect();
+        let mut jac = vec![0.0; seed.len()];
+        inst.handle.eval(f.k, &input, &mut output, &seed, &mut jac).map_err(|e| {
+            Error::device(format!("instance `{}`: function `{}` ({}): {e}", inst.path, f.name, f.origin))
+        })?;
+        for (pi, p) in sf.partials.iter().enumerate() {
+            let (Some(r), Some(w)) = (sf.reads.get(p.read as usize), sf.writes.get(p.write as usize)) else { continue };
+            let Some((_, dp)) = self.derivative(r) else { continue };
+            if w.kind == cell::TERM && w.part == part::VALUE {
+                d[w.index as usize] += jac[pi] * dp;
+            }
+        }
+        Ok(())
     }
 }
 

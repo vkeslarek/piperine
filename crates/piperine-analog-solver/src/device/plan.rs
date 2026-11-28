@@ -306,18 +306,34 @@ impl AnalogPlan {
             )));
         }
         // Terms first, so a target bound to a discrete net is named by its term.
+        let terms = Self::bind_terms(shape, &pins, &path)?;
+        Self::bind_pins(shape, &pins, &path, netlist, slots)?;
+        Self::sample_reactions(shape, &pins, samples);
+        let mut tables = InstanceTables { terms, inputs: Self::bind_inputs(shape), watches: Self::bind_watches(shape, &pins) };
+        let functions = Self::bind_functions(&mut tables, shape, &pins, &path)?;
+        let InstanceTables { mut terms, mut inputs, mut watches } = tables;
+        if functions.is_empty() {
+            terms.clear();
+            inputs.clear();
+            watches.clear();
+        }
+        Ok(InstancePlan { path, handle, functions, terms, inputs, watches })
+    }
+
+    /// The terminals: one plan per term of the shape, its two targets resolved to rows.
+    fn bind_terms(shape: &Shape, pins: &[AnalogBinding], path: &str) -> Result<Vec<TermPlan>, Error> {
         let mut terms = Vec::with_capacity(shape.terms.len());
         for t in shape.terms.iter() {
             let side = |which: &str, target: u32| -> Result<Option<AnalogReference>, Error> {
                 if target == GROUND {
                     return Ok(None);
                 }
-                let pin = ShapeLookup::get(shape.pins.get(target as usize), &path, "pin", target as usize)?;
+                let pin = ShapeLookup::get(shape.pins.get(target as usize), path, "pin", target as usize)?;
                 match &pins[target as usize] {
                     AnalogBinding::Unknown(r) if r.idx().is_some() => Ok(Some(r.clone())),
                     AnalogBinding::Unknown(_) | AnalogBinding::Ground => Ok(None),
                     b => Err(Error::device_entry(
-                        &path,
+                        path,
                         "term",
                         t.name.as_str(),
                         t.origin.as_str(),
@@ -349,13 +365,25 @@ impl AnalogPlan {
                 via: Vec::new(),
             });
         }
+        Ok(terms)
+    }
+
+    /// The pins: each binding fits its pin's kind, an unknown is one the netlist holds, and a discrete
+    /// slot has one size across every pin that binds it.
+    fn bind_pins(
+        shape: &Shape,
+        pins: &[AnalogBinding],
+        path: &str,
+        netlist: &Netlist,
+        slots: &mut Vec<Option<usize>>,
+    ) -> Result<(), Error> {
         for (i, b) in pins.iter().enumerate() {
-            let pin = ShapeLookup::get(shape.pins.get(i), &path, "pin", i)?;
+            let pin = ShapeLookup::get(shape.pins.get(i), path, "pin", i)?;
             let fits = match b {
                 AnalogBinding::Unknown(r) => {
                     if r.idx().is_some() && netlist.variable_for(r).is_none() {
                         return Err(Error::device_entry(
-                            &path,
+                            path,
                             "pin",
                             pin.name.as_str(),
                             pin.origin.as_str(),
@@ -373,7 +401,7 @@ impl AnalogPlan {
                     match slots[slot] {
                         Some(other) if other != size => {
                             return Err(Error::device_entry(
-                                &path,
+                                path,
                                 "pin",
                                 pin.name.as_str(),
                                 pin.origin.as_str(),
@@ -390,7 +418,7 @@ impl AnalogPlan {
             if !fits {
                 let what = if pin.kind == kind::CONTINUOUS { "continuous" } else { "discrete" };
                 return Err(Error::device_entry(
-                    &path,
+                    path,
                     "pin",
                     pin.name.as_str(),
                     pin.origin.as_str(),
@@ -398,8 +426,11 @@ impl AnalogPlan {
                 ));
             }
         }
+        Ok(())
+    }
 
-        // The continuous pins the digital side's reactions read (abi.md R2).
+    /// The continuous pins the digital side's reactions read (abi.md R2), appended to `samples`.
+    fn sample_reactions(shape: &Shape, pins: &[AnalogBinding], samples: &mut Vec<Option<usize>>) {
         for r in shape.reactions.iter() {
             for c in r.reads.iter() {
                 let continuous = shape.pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS);
@@ -411,7 +442,11 @@ impl AnalogPlan {
                 }
             }
         }
-        let mut watches: Vec<WatchPlan> = shape
+    }
+
+    /// The watches: one plan per watch of the shape, its `CROSS` tolerances resolved to slots.
+    fn bind_watches(shape: &Shape, pins: &[AnalogBinding]) -> Vec<WatchPlan> {
+        shape
             .watches
             .iter()
             .map(|w| {
@@ -429,8 +464,12 @@ impl AnalogPlan {
                     value: None,
                 }
             })
-            .collect();
-        let mut inputs: Vec<InputPlan> = shape
+            .collect()
+    }
+
+    /// The held inputs: one plan per input of the shape, its cells filled in by the functions.
+    fn bind_inputs(shape: &Shape) -> Vec<InputPlan> {
+        shape
             .inputs
             .iter()
             .map(|x| InputPlan {
@@ -444,109 +483,151 @@ impl AnalogPlan {
                 psd: None,
                 p: Vec::new(),
             })
-            .collect();
+            .collect()
+    }
 
+    /// The analog functions of the shape, in order; each one also records in `tables` what it writes
+    /// and the partials it declares.
+    fn bind_functions(
+        tables: &mut InstanceTables,
+        shape: &Shape,
+        pins: &[AnalogBinding],
+        path: &str,
+    ) -> Result<Vec<FnPlan>, Error> {
         let mut functions = Vec::new();
         for (k, f) in shape.functions.iter().enumerate() {
             let writes: Vec<Cell> = f.writes.iter().copied().collect();
             if !Self::is_analog(&writes) {
                 continue;
             }
-            let fi = functions.len();
             let reads: Vec<Cell> = f.reads.iter().copied().collect();
-            for (w, c) in writes.iter().enumerate() {
-                match (c.kind, c.part) {
-                    (cell::INPUT, part::PROPOSED) => inputs[c.index as usize].proposed = Some((fi, w)),
-                    (cell::INPUT, part::LIMITED) => inputs[c.index as usize].limited = Some((fi, w)),
-                    (cell::INPUT, part::RE) => inputs[c.index as usize].re = Some((fi, w)),
-                    (cell::INPUT, part::IM) => inputs[c.index as usize].im = Some((fi, w)),
-                    (cell::INPUT, part::PSD) => inputs[c.index as usize].psd = Some((fi, w)),
-                    (cell::WATCH, _) => watches[c.index as usize].value = Some((fi, w)),
-                    (cell::TERM, part::TIME) => terms[c.index as usize].td = Some((fi, w)),
-                    _ => {}
-                }
-                if c.kind == cell::TERM && c.part == part::VALUE {
-                    let t = &mut terms[c.index as usize];
-                    if t.value.is_some() {
-                        let term = ShapeLookup::get(shape.terms.get(c.index as usize), &path, "term", c.index as usize)?;
-                        return Err(Error::device_entry(
-                            &path,
-                            "term",
-                            term.name.as_str(),
-                            term.origin.as_str(),
-                            "written by two functions".into(),
-                        ));
-                    }
-                    t.value = Some((fi, w));
-                }
-            }
-            for (pi, p) in f.partials.iter().enumerate() {
-                let (w, r) = (writes[p.write as usize], reads[p.read as usize]);
-                let col = Self::column(&pins, shape, &r);
-                let held = (r.kind == cell::INPUT && r.part == part::VALUE).then_some(r.index as usize);
-                match (w.kind, w.part) {
-                    (cell::TERM, part::VALUE) => {
-                        let t = &mut terms[w.index as usize];
-                        if let Some(c) = col {
-                            t.direct.push((pi, c));
-                        } else if let Some(i) = held {
-                            t.via.push((pi, i));
-                        }
-                    }
-                    (cell::INPUT, part::PROPOSED) => {
-                        if let Some(c) = col {
-                            inputs[w.index as usize].p.push((pi, c));
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            let mut sources = Vec::with_capacity(reads.len());
-            for c in &reads {
-                sources.push(Self::source(&path, shape, &pins, f, c)?);
-            }
-            let read_lens = ShapeLookup::get(shape.cell_lens(&f.reads, Access::FunctionRead), &path, "read of function", k)?;
-            let seed = f
-                .partials
+            tables.claim_writes(shape, path, &writes, functions.len())?;
+            tables.link_partials(shape, pins, f, &reads, &writes);
+            functions.push(Self::bind_function(shape, pins, path, (k, f))?);
+        }
+        Ok(functions)
+    }
+
+    /// The plan of analog function `k`: where each read comes from, how long each cell is, which
+    /// partials a Newton solve seeds, and what the function is needed for.
+    fn bind_function(
+        shape: &Shape,
+        pins: &[AnalogBinding],
+        path: &str,
+        (k, f): (usize, &Function),
+    ) -> Result<FnPlan, Error> {
+        let reads: Vec<Cell> = f.reads.iter().copied().collect();
+        let writes: Vec<Cell> = f.writes.iter().copied().collect();
+        let mut sources = Vec::with_capacity(reads.len());
+        for c in &reads {
+            sources.push(Self::source(path, shape, pins, f, c)?);
+        }
+        let read_lens = ShapeLookup::get(shape.cell_lens(&f.reads, Access::FunctionRead), path, "read of function", k)?;
+        let seed = f
+            .partials
+            .iter()
+            .map(|p| {
+                let r = reads[p.read as usize];
+                let continuous = shape.pins.get(r.index as usize).is_some_and(|x| x.kind == kind::CONTINUOUS);
+                let wanted = (r.kind == cell::PIN && continuous) || (r.kind == cell::INPUT && r.part == part::VALUE);
+                u8::from(wanted)
+            })
+            .collect();
+        let limits = writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED));
+        let rows = limits || writes.iter().any(|c| c.kind == cell::TERM);
+        Ok(FnPlan {
+            k: k as u32,
+            name: f.name.as_str().into(),
+            origin: f.origin.as_str().into(),
+            reads: sources.into_iter().zip(read_lens).collect(),
+            write_lens: ShapeLookup::get(shape.cell_lens(&f.writes, Access::FunctionWrite), path, "write of function", k)?,
+            seed,
+            rows,
+            limits,
+            stim: writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::RE | part::IM)),
+            noise: writes.iter().any(|c| c.kind == cell::INPUT && c.part == part::PSD),
+            watch: writes.iter().any(|c| {
+                c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind != watch::TRACE)
+            }),
+            traces: writes
                 .iter()
-                .map(|p| {
-                    let r = reads[p.read as usize];
-                    let continuous = shape.pins.get(r.index as usize).is_some_and(|x| x.kind == kind::CONTINUOUS);
-                    let wanted = (r.kind == cell::PIN && continuous) || (r.kind == cell::INPUT && r.part == part::VALUE);
-                    u8::from(wanted)
+                .enumerate()
+                .filter(|(_, c)| {
+                    c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind == watch::TRACE)
                 })
-                .collect();
-            let limits = writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::PROPOSED | part::LIMITED));
-            let rows = limits || writes.iter().any(|c| c.kind == cell::TERM);
-            functions.push(FnPlan {
-                k: k as u32,
-                name: f.name.as_str().into(),
-                origin: f.origin.as_str().into(),
-                reads: sources.into_iter().zip(read_lens).collect(),
-                write_lens: ShapeLookup::get(shape.cell_lens(&f.writes, Access::FunctionWrite), &path, "write of function", k)?,
-                seed,
-                rows,
-                limits,
-                stim: writes.iter().any(|c| c.kind == cell::INPUT && matches!(c.part, part::RE | part::IM)),
-                noise: writes.iter().any(|c| c.kind == cell::INPUT && c.part == part::PSD),
-                watch: writes.iter().any(|c| {
-                    c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind != watch::TRACE)
-                }),
-                traces: writes
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, c)| {
-                        c.kind == cell::WATCH && shape.watches.get(c.index as usize).is_some_and(|w| w.kind == watch::TRACE)
-                    })
-                    .map(|(w, c)| (w, c.index as usize))
-                    .collect(),
-            });
+                .map(|(w, c)| (w, c.index as usize))
+                .collect(),
+        })
+    }
+}
+
+/// The terms, inputs and watches of one instance while its functions are taken: each function
+/// records in them the cells it writes and the partials it declares.
+struct InstanceTables {
+    /// One plan per term of the shape.
+    terms: Vec<TermPlan>,
+    /// One plan per input of the shape.
+    inputs: Vec<InputPlan>,
+    /// One plan per watch of the shape.
+    watches: Vec<WatchPlan>,
+}
+
+impl InstanceTables {
+    /// Records that function `fi` writes `writes`: each cell fills its term, input or watch; a term's
+    /// `VALUE` written by two functions is an error.
+    fn claim_writes(&mut self, shape: &Shape, path: &str, writes: &[Cell], fi: usize) -> Result<(), Error> {
+        for (w, c) in writes.iter().enumerate() {
+            match (c.kind, c.part) {
+                (cell::INPUT, part::PROPOSED) => self.inputs[c.index as usize].proposed = Some((fi, w)),
+                (cell::INPUT, part::LIMITED) => self.inputs[c.index as usize].limited = Some((fi, w)),
+                (cell::INPUT, part::RE) => self.inputs[c.index as usize].re = Some((fi, w)),
+                (cell::INPUT, part::IM) => self.inputs[c.index as usize].im = Some((fi, w)),
+                (cell::INPUT, part::PSD) => self.inputs[c.index as usize].psd = Some((fi, w)),
+                (cell::WATCH, _) => self.watches[c.index as usize].value = Some((fi, w)),
+                (cell::TERM, part::TIME) => self.terms[c.index as usize].td = Some((fi, w)),
+                _ => {}
+            }
+            if c.kind == cell::TERM && c.part == part::VALUE {
+                let t = &mut self.terms[c.index as usize];
+                if t.value.is_some() {
+                    let term = ShapeLookup::get(shape.terms.get(c.index as usize), path, "term", c.index as usize)?;
+                    return Err(Error::device_entry(
+                        path,
+                        "term",
+                        term.name.as_str(),
+                        term.origin.as_str(),
+                        "written by two functions".into(),
+                    ));
+                }
+                t.value = Some((fi, w));
+            }
         }
-        if functions.is_empty() {
-            terms.clear();
-            inputs.clear();
-            watches.clear();
+        Ok(())
+    }
+
+    /// Records the partials of function `f`: a partial of a term's `VALUE` against a continuous pin is
+    /// a direct column, against a held input a `via`; a partial of a `PROPOSED` is one of its columns.
+    fn link_partials(&mut self, shape: &Shape, pins: &[AnalogBinding], f: &Function, reads: &[Cell], writes: &[Cell]) {
+        for (pi, p) in f.partials.iter().enumerate() {
+            let (w, r) = (writes[p.write as usize], reads[p.read as usize]);
+            let col = AnalogPlan::column(pins, shape, &r);
+            let held = (r.kind == cell::INPUT && r.part == part::VALUE).then_some(r.index as usize);
+            match (w.kind, w.part) {
+                (cell::TERM, part::VALUE) => {
+                    let t = &mut self.terms[w.index as usize];
+                    if let Some(c) = col {
+                        t.direct.push((pi, c));
+                    } else if let Some(i) = held {
+                        t.via.push((pi, i));
+                    }
+                }
+                (cell::INPUT, part::PROPOSED) => {
+                    if let Some(c) = col {
+                        self.inputs[w.index as usize].p.push((pi, c));
+                    }
+                }
+                _ => {}
+            }
         }
-        Ok(InstancePlan { path, handle, functions, terms, inputs, watches })
     }
 }
