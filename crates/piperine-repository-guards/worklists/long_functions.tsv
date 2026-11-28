@@ -3,7 +3,6 @@ crates/piperine-analog-solver/src/math/newton_raphson.rs::NewtonRaphsonSolver::s
 crates/piperine-api/src/probe.rs::Probe::resolve	-
 crates/piperine-digital-solver/src/dag.rs::Dag::build	-
 crates/piperine-digital-solver/src/instant.rs::Digital::microsteps	-
-crates/piperine-digital-solver/src/plan.rs::::analyze	-
 crates/piperine-interp/src/composite.rs::CompositeForms::walk	-
 crates/piperine-interp/src/device.rs::Interpreted::inputs	-
 crates/piperine-interp/src/walk/diagnostics.rs::Walk::form_name	kept: one arm per variant, every arm a one-line name

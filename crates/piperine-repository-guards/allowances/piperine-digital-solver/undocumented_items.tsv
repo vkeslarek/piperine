@@ -4,7 +4,6 @@ crates/piperine-digital-solver/src/error.rs::::DigitalError	1
 crates/piperine-digital-solver/src/journal.rs::Journal::len	1
 crates/piperine-digital-solver/src/journal.rs::Journal::push	1
 crates/piperine-digital-solver/src/observe.rs::Obs::new	1
-crates/piperine-digital-solver/src/plan.rs::::bind_error	1
 crates/piperine-digital-solver/src/queue.rs::Pending::same_statement	1
 crates/piperine-digital-solver/src/queue.rs::Queue::is_empty	1
 crates/piperine-digital-solver/src/queue.rs::Queue::new	1

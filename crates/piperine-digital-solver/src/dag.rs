@@ -47,14 +47,14 @@ impl Dag {
         // abi.md §9 D1: every directed cycle passes through a RELAX net. Take the edges through
         // RELAX nets away; what remains must have no cycle.
         let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |net| !nets[net.0 as usize].relax)).collect();
-        for members in components(&strict) {
+        for members in Self::components(&strict) {
             if members.len() > 1 || strict[members[0]].contains(&members[0]) {
                 let what = members.iter().map(|m| functions[*m].name.clone()).collect();
                 return Err(DigitalError::Bind { rule: "cycle", what });
             }
         }
 
-        let comps = components(&edges);
+        let comps = Self::components(&edges);
         let mut comp_of = vec![0usize; functions.len()];
         for (c, members) in comps.iter().enumerate() {
             for m in members {
@@ -154,62 +154,62 @@ impl Dag {
     pub fn readers(&self, net: NetId) -> &[usize] {
         self.readers.get(net.0 as usize).map(Vec::as_slice).unwrap_or(&[])
     }
-}
 
-/// Tarjan's strongly connected components, iterative. Each component lists its
-/// members in increasing order.
-fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
-    let n = edges.len();
-    let mut index = vec![usize::MAX; n];
-    let mut low = vec![0usize; n];
-    let mut on_stack = vec![false; n];
-    let mut stack: Vec<usize> = Vec::new();
-    let mut comps: Vec<Vec<usize>> = Vec::new();
-    let mut next = 0usize;
-    for root in 0..n {
-        if index[root] != usize::MAX {
-            continue;
-        }
-        // (node, position of the next edge to follow)
-        let mut call: Vec<(usize, usize)> = vec![(root, 0)];
-        index[root] = next;
-        low[root] = next;
-        next += 1;
-        stack.push(root);
-        on_stack[root] = true;
-        while let Some(&(v, e)) = call.last() {
-            if let Some(&w) = edges[v].get(e) {
-                call.last_mut().expect("non-empty").1 += 1;
-                if index[w] == usize::MAX {
-                    index[w] = next;
-                    low[w] = next;
-                    next += 1;
-                    stack.push(w);
-                    on_stack[w] = true;
-                    call.push((w, 0));
-                } else if on_stack[w] {
-                    low[v] = low[v].min(index[w]);
-                }
-            } else {
-                call.pop();
-                if let Some(&(parent, _)) = call.last() {
-                    low[parent] = low[parent].min(low[v]);
-                }
-                if low[v] == index[v] {
-                    let mut members = Vec::new();
-                    loop {
-                        let w = stack.pop().expect("v is on the stack");
-                        on_stack[w] = false;
-                        members.push(w);
-                        if w == v {
-                            break;
-                        }
+    /// Tarjan's strongly connected components, iterative. Each component lists its
+    /// members in increasing order.
+    fn components(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+        let n = edges.len();
+        let mut index = vec![usize::MAX; n];
+        let mut low = vec![0usize; n];
+        let mut on_stack = vec![false; n];
+        let mut stack: Vec<usize> = Vec::new();
+        let mut comps: Vec<Vec<usize>> = Vec::new();
+        let mut next = 0usize;
+        for root in 0..n {
+            if index[root] != usize::MAX {
+                continue;
+            }
+            // (node, position of the next edge to follow)
+            let mut call: Vec<(usize, usize)> = vec![(root, 0)];
+            index[root] = next;
+            low[root] = next;
+            next += 1;
+            stack.push(root);
+            on_stack[root] = true;
+            while let Some(&(v, e)) = call.last() {
+                if let Some(&w) = edges[v].get(e) {
+                    call.last_mut().expect("non-empty").1 += 1;
+                    if index[w] == usize::MAX {
+                        index[w] = next;
+                        low[w] = next;
+                        next += 1;
+                        stack.push(w);
+                        on_stack[w] = true;
+                        call.push((w, 0));
+                    } else if on_stack[w] {
+                        low[v] = low[v].min(index[w]);
                     }
-                    members.sort_unstable();
-                    comps.push(members);
+                } else {
+                    call.pop();
+                    if let Some(&(parent, _)) = call.last() {
+                        low[parent] = low[parent].min(low[v]);
+                    }
+                    if low[v] == index[v] {
+                        let mut members = Vec::new();
+                        loop {
+                            let w = stack.pop().expect("v is on the stack");
+                            on_stack[w] = false;
+                            members.push(w);
+                            if w == v {
+                                break;
+                            }
+                        }
+                        members.sort_unstable();
+                        comps.push(members);
+                    }
                 }
             }
         }
+        comps
     }
-    comps
 }
