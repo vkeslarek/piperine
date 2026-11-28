@@ -1,7 +1,7 @@
 //! Scope: struct, enum, tuple, array and `Option` values lowered by `piperine_lang::elab` (feature
 //! `composite-values`, CV-09 to CV-13, CV-20 to CV-22; docs/spec Part I §1.2 to §1.6, §2). Each test
 //! elaborates a design of `Top` and reads the type arena and the expressions of the IR it gives.
-//! Run-time values are proven from source in `piperine-parity`'s `source_aggregates`.
+//! Run-time values are proven from source in `piperine-parity`'s `source_values`.
 
 use crate::support;
 use crate::elab_forms;

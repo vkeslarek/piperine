@@ -27,9 +27,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tlib**: `cargo test -p piperine-transpile --lib`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run env**: `cargo test -p piperine-solver --test transient environment::`
-**Run sfix**: `cargo test -p piperine-parity --test source_fixes`
-**Run scat**: `cargo test -p piperine-parity --test source_catalogue`
-**Run senv**: `cargo test -p piperine-parity --test source_environment`
+**Run sfix**: `cargo test -p piperine-parity --test source_values fixes::`
+**Run scat**: `cargo test -p piperine-parity --test source_stdlib catalogue::`
+**Run senv**: `cargo test -p piperine-parity --test source_behavior environment::`
 **Run records**: `cargo test -p piperine-api --test records records::`
 **Run apilib**: `cargo test -p piperine-api --lib`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
@@ -1294,7 +1294,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 
 **C82** - Every parity target passes with its sources, the contract and the transpile goldens unedited. (PAR-01, AC 2)
-Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus --test parity_grid && cargo test -p piperine-solver --test parity_baseline && git diff --exit-code 4293de6b -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-parity/tests/parity_grid.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice crates/piperine-transpile/tests/golden`
+Proof: `cargo test -p piperine-parity --test parity && cargo test -p piperine-solver --test parity_baseline && git diff --exit-code 4293de6b -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-parity/tests/parity_grid.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice crates/piperine-transpile/tests/golden`
 
 **C83** - A `cross` over a NaN computed from known values fails the solve. (FIX-05, AC 5; fix round F2)
 Proof: run sfix | test a_cross_over_a_nan_of_known_values_fails_the_solve ... ok

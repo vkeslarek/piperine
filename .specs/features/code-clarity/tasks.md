@@ -2331,9 +2331,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 11 default targets; every test keeps its name; `the_parity_oracles_are_not_reduced` passes
-- [ ] `cargo test -p piperine-parity --test parity -- --nocapture` compares every twin with ngspice
-- [ ] Plan lowered to 11; Gate check passes: Ledger
+- [x] 11 default targets; every test keeps its name; `the_parity_oracles_are_not_reduced` passes
+  - Annotation: the 62 targets of the plan were 41 `source_*`, 12 `parity_*`, `harness`, `boundary`, `backend`, `backends`, `bench`, `deviation`, `project`, `run_errors` and `twins`. `backend`, `backends` and `deviation` became modules of `parity`; `bench` and `twins` of `harness`; `project` and `run_errors` of `boundary`. Per-target tests equal the former files' counts: source 114/84/115/69/39/29/55/9, parity 57, harness 20, boundary 11. Three tests needed a path edit that changes no assertion: `harness::two_processes_share_one_cache` starts its writers with the module-qualified `--exact harness::a_process_that_writes_the_cache`, and the corpus guard reads `tests/parity/*.rs` (leaving out the backend, backends and deviation modules, which the `parity_*` file filter never covered).
+- [x] `cargo test -p piperine-parity --test parity -- --nocapture` compares every twin with ngspice
+  - Annotation: ngspice 1 is installed; the only `SKIP` lines are the six tests that pass `Lookup::Skip` or print the skip line on purpose (`uic_rc`, `tran_rc`, `diode_rs`, three noise twins). The per-twin comparisons are not cached across tests, so one process changes nothing: 56 of 57 passed on the first full run, the one failure being the corpus guard's file filter above.
+- [x] Plan lowered to 11; Gate check passes: Ledger
+  - Annotation: `root-e2e`'s C16 Run line `--test 'parity_*'` became `--test parity`; two proof-ledger rows that recorded the targets `parity` and `source_io` as missing were deleted because those targets now exist.
 
 **Tests**: integration
 **Gate**: ledger

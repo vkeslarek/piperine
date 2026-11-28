@@ -15,7 +15,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabnested**: `cargo test -p piperine-lang --test elab_structure nested_reach::`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_structure templates::`
-**Run sourcenested**: `cargo test -p piperine-parity --test source_nested_reach`
+**Run sourcenested**: `cargo test -p piperine-parity --test source_structure nested_reach::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: Opus (the delegating agent's instruction).

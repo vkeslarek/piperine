@@ -23,8 +23,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run bookcli**: `cargo test -p piperine --test book_cli`
 **Run bookbuck**: `cargo test -p piperine --test book_buck`
 **Run bookguards**: `cargo test -p piperine --test book_inventory --test book_claims`
-**Run sources**: `cargo test -p piperine-parity --test source_commits --test source_records --test source_time`
-**Run sourcehost**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test source_host`
+**Run sources**: `cargo test -p piperine-parity --test source_execution`
+**Run sourcehost**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test source_host host::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is a Sonnet worker (user rule: Sonnet implements, a different model verifies). The

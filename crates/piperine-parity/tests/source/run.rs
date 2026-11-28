@@ -1,5 +1,5 @@
-//! The run of one model file of an MSL source target (`source_aggregates`, `source_control`,
-//! `source_value_semantics`): read from the target's own directory, elaborated, compiled on the
+//! The run of one model file of an MSL source target (the `source_*` targets that run a model file:
+//! `source_values`, `source_structure`): read from the target's own directory, elaborated, compiled on the
 //! transpiled backend and run on the solver, then read back as commits, node voltages, a fault or
 //! records.
 

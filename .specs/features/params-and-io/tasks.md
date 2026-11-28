@@ -31,10 +31,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run apisources**: `cargo test -p piperine-api --test host host_sources::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
-**Run runerrors**: `cargo test -p piperine-parity --test run_errors`
-**Run sourcehost**: `cargo test -p piperine-parity --test source_host`
-**Run sourceparams**: `cargo test -p piperine-parity --test source_params`
-**Run sourcetables**: `cargo test -p piperine-parity --test source_tables`
+**Run runerrors**: `cargo test -p piperine-parity --test boundary run_errors::`
+**Run sourcehost**: `cargo test -p piperine-parity --test source_host host::`
+**Run sourceparams**: `cargo test -p piperine-parity --test source_structure params::`
+**Run sourcetables**: `cargo test -p piperine-parity --test source_io tables::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`

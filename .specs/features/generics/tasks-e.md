@@ -15,11 +15,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesmodel**: `cargo test -p piperine-lang --test types_modules model::`
 **Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
 **Run galleries**: `cargo test -p piperine-lang --test std galleries::`
-**Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
+**Run srcstd**: `cargo test -p piperine-parity --test source_stdlib stdlib_generic::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run elabgenr**: `cargo test -p piperine-lang --test elab_structure generation::`
-**Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
+**Run srcgenr**: `cargo test -p piperine-parity --test source_structure generation::`
 **Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_digital results::`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_structure templates::`

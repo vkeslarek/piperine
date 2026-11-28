@@ -22,8 +22,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run tcontrol**: `cargo test -p piperine-transpile --test print control::`
 **Run typesgen**: `cargo test -p piperine-lang --test types_generics generics::`
-**Run srctempl**: `cargo test -p piperine-parity --test source_templates`
-**Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
+**Run srctempl**: `cargo test -p piperine-parity --test source_structure templates::`
+**Run srcimplicit**: `cargo test -p piperine-parity --test source_host implicit::`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
 **Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`

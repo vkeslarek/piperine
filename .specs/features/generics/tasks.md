@@ -22,9 +22,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
-**Run srcgen**: `cargo test -p piperine-parity --test source_generics`
-**Run srchandles**: `cargo test -p piperine-parity --test source_handles`
-**Run parityproject**: `cargo test -p piperine-parity --test project`
+**Run srcgen**: `cargo test -p piperine-parity --test source_structure generics::`
+**Run srchandles**: `cargo test -p piperine-parity --test source_structure handles::`
+**Run parityproject**: `cargo test -p piperine-parity --test boundary project::`
 **Run apiproject**: `cargo test -p piperine-api --test session project::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`

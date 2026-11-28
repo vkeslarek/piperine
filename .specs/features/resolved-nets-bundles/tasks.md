@@ -15,7 +15,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run pombundles**: `cargo test -p piperine-lang --test pom bundles::`
 **Run typesbundles**: `cargo test -p piperine-lang --test types_carriers bundles::`
 **Run elabbundles**: `cargo test -p piperine-lang --test elab_digital bundles::`
-**Run sourcebundles**: `cargo test -p piperine-parity --test source_bundles`
+**Run sourcebundles**: `cargo test -p piperine-parity --test source_carriers bundles::`
 **Run apimetadata**: `cargo test -p piperine-api --test session metadata::`
 **Run pomreflect**: `cargo test -p piperine-lang --test pom reflect::`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
@@ -25,7 +25,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
 **Run msl_parser**: `cargo test -p piperine-lang --test msl parser::`
 **Run digitalinstant**: `cargo test -p piperine-digital-solver --test engine instant::`
-**Run sourcewraps**: `cargo test -p piperine-parity --test source_wraps`
+**Run sourcewraps**: `cargo test -p piperine-parity --test source_behavior wraps::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets (only in a task whose `Done when` says "with the buck", MD-77): `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test source_commits --test source_records --test buck_supervisor --test source_time --test buck_boundary --test buck_closed_loop --test buck_power`, `cargo test -p piperine-cli --test buck`
 

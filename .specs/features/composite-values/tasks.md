@@ -22,13 +22,13 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typesagg**: `cargo test -p piperine-lang --test types_patterns aggregates::`
 **Run elabctl**: `cargo test -p piperine-lang --test elab_values control::`
 **Run elabagg**: `cargo test -p piperine-lang --test elab_values aggregates::`
-**Run srcctl**: `cargo test -p piperine-parity --test source_control`
+**Run srcctl**: `cargo test -p piperine-parity --test source_values control::`
 **Run errors**: `cargo test -p piperine-lang --test msl errors::`
 **Run typesvs**: `cargo test -p piperine-lang --test types_values value_semantics::`
-**Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
+**Run srcvs**: `cargo test -p piperine-parity --test source_values value_semantics::`
 **Run typescmp**: `cargo test -p piperine-lang --test types_patterns compound::`
 **Run booktypes**: `cargo test -p piperine --test book_types`
-**Run srcagg**: `cargo test -p piperine-parity --test source_aggregates`
+**Run srcagg**: `cargo test -p piperine-parity --test source_values aggregates::`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
 **Run apicomp**: `cargo test -p piperine-api --test host composites::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`

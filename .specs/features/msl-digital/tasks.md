@@ -29,7 +29,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run planamend**: `cargo test -p piperine-plan --test shape amended_shape::`
 **Run amended**: `cargo test -p piperine-transpile --test digital amended::`
 **Run nets**: `cargo test -p piperine-transpile --test digital digital_circuit::`
-**Run project**: `cargo test -p piperine-parity --test project`
+**Run project**: `cargo test -p piperine-parity --test boundary project::`
 **Run bcommits**: `cargo test -p piperine-parity --test buck_commits`
 **Run bdpwm**: `cargo test -p piperine-parity --test buck_dpwm`
 **Run bcontrol**: `cargo test -p piperine-parity --test buck_control`

@@ -25,18 +25,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typeops**: `cargo test -p piperine-lang --test types_analog analog_operators::`
 **Run elabops**: `cargo test -p piperine-lang --test elab_analog operators::`
 **Run subset**: `cargo test -p piperine-lang --test types_modules subset::`
-**Run spartial**: `cargo test -p piperine-parity --test source_partial`
-**Run sdelay**: `cargo test -p piperine-parity --test source_delay`
-**Run snoise**: `cargo test -p piperine-parity --test source_noise`
-**Run ssession**: `cargo test -p piperine-parity --test source_session`
-**Run straces**: `cargo test -p piperine-parity --test source_traces`
+**Run spartial**: `cargo test -p piperine-parity --test source_behavior partial::`
+**Run sdelay**: `cargo test -p piperine-parity --test source_behavior delay::`
+**Run snoise**: `cargo test -p piperine-parity --test source_io noise::`
+**Run ssession**: `cargo test -p piperine-parity --test source_io session::`
+**Run straces**: `cargo test -p piperine-parity --test source_io traces::`
 **Run tevents**: `cargo test -p piperine-lang --test types_analog events::`
-**Run sslew**: `cargo test -p piperine-parity --test source_slew`
-**Run partran**: `cargo test -p piperine-parity --test parity_tran`
-**Run parac**: `cargo test -p piperine-parity --test parity_ac`
-**Run parop**: `cargo test -p piperine-parity --test parity_op`
-**Run parnoise**: `cargo test -p piperine-parity --test parity_noise`
-**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run sslew**: `cargo test -p piperine-parity --test source_behavior slew::`
+**Run partran**: `cargo test -p piperine-parity --test parity tran::`
+**Run parac**: `cargo test -p piperine-parity --test parity ac::`
+**Run parop**: `cargo test -p piperine-parity --test parity op::`
+**Run parnoise**: `cargo test -p piperine-parity --test parity noise::`
+**Run corpus**: `cargo test -p piperine-parity --test parity corpus::`
 **Run contract**: `cargo test -p piperine-parity --lib contract`
 **Run apinoise**: `cargo test -p piperine-api --test params noise::`
 **Run apioptions**: `cargo test -p piperine-api --test params options::`

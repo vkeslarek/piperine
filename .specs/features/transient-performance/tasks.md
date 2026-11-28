@@ -817,7 +817,7 @@ Proof: run solver | test the_observations_of_both_rules_come_in_time_order ... o
 Proof: run parity | test tran_rc ... ok
 
 **C41** - Without ngspice the parity targets print the skip line and the twins still run (TP-09, AC 5; T23)
-Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
+Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity tran:: -- --nocapture`
 
 **C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok

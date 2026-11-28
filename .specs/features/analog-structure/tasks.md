@@ -20,16 +20,16 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run typestruct**: `cargo test -p piperine-lang --test types_modules structure::`
 **Run elabstruct**: `cargo test -p piperine-lang --test elab_structure structure::`
-**Run sswitch**: `cargo test -p piperine-parity --test source_switch`
-**Run sderiv**: `cargo test -p piperine-parity --test source_derivative`
-**Run smodules**: `cargo test -p piperine-parity --test source_modules`
-**Run sreach**: `cargo test -p piperine-parity --test source_reach`
-**Run sparams**: `cargo test -p piperine-parity --test source_params`
-**Run partran**: `cargo test -p piperine-parity --test parity_tran`
-**Run parac**: `cargo test -p piperine-parity --test parity_ac`
-**Run parop**: `cargo test -p piperine-parity --test parity_op`
-**Run pardc**: `cargo test -p piperine-parity --test parity_dc`
-**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run sswitch**: `cargo test -p piperine-parity --test source_behavior switch::`
+**Run sderiv**: `cargo test -p piperine-parity --test source_behavior derivative::`
+**Run smodules**: `cargo test -p piperine-parity --test source_structure modules::`
+**Run sreach**: `cargo test -p piperine-parity --test source_structure reach::`
+**Run sparams**: `cargo test -p piperine-parity --test source_structure params::`
+**Run partran**: `cargo test -p piperine-parity --test parity tran::`
+**Run parac**: `cargo test -p piperine-parity --test parity ac::`
+**Run parop**: `cargo test -p piperine-parity --test parity op::`
+**Run pardc**: `cargo test -p piperine-parity --test parity dc::`
+**Run corpus**: `cargo test -p piperine-parity --test parity corpus::`
 **Run apibind**: `cargo test -p piperine-api --test session bindings::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
