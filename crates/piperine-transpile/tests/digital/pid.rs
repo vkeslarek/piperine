@@ -11,6 +11,7 @@
 use piperine_ir::{BinaryOp, BodyId, CarrierRole, Constant, Event, EventSource, IrBuilder, Local, Real, UnaryOp, ValueType};
 
 use piperine_ir_fixtures::digital;
+use piperine_parity::buck_fixture::ByteInteger;
 use piperine_parity::mixed;
 
 use digital::{Buck, Dx, ValueAliases};
@@ -207,14 +208,6 @@ impl PidObservation {
         &series.iter().rev().find(|(t, _)| *t <= at).expect("an initial value").1
     }
 
-    /// A little-endian integer of `bytes` bytes, sign-extended when `signed`.
-    fn decode(raw: &[u8], bytes: usize, signed: bool) -> i32 {
-        let mut buf = [0u8; 4];
-        buf[..bytes].copy_from_slice(&raw[..bytes]);
-        let v = u32::from_le_bytes(buf);
-        if signed && bytes < 4 && v & (1 << (bytes * 8 - 1)) != 0 { (v | (u32::MAX << (bytes * 8))) as i32 } else { v as i32 }
-    }
-
     fn observed(seen: &Seen) -> Vec<State> {
         let reference = seen.series("reference");
         let duty = seen.series("duty");
@@ -226,11 +219,11 @@ impl PidObservation {
                 // sample `s` is the rising edge `s + 1`; its commits apply at that instant
                 let at = TopDesign::rising_edge(s + 1);
                 State {
-                    reference: PidObservation::decode(PidObservation::value_at(&reference, at), 2, false),
-                    duty: PidObservation::decode(PidObservation::value_at(&duty, at), 2, false),
-                    integ: PidObservation::decode(PidObservation::value_at(&integ, at), 4, true),
-                    deriv: PidObservation::decode(PidObservation::value_at(&deriv, at), 4, true),
-                    e_prev: PidObservation::decode(PidObservation::value_at(&e_prev, at), 2, true),
+                    reference: ByteInteger::decode(PidObservation::value_at(&reference, at), 2, false),
+                    duty: ByteInteger::decode(PidObservation::value_at(&duty, at), 2, false),
+                    integ: ByteInteger::decode(PidObservation::value_at(&integ, at), 4, true),
+                    deriv: ByteInteger::decode(PidObservation::value_at(&deriv, at), 4, true),
+                    e_prev: ByteInteger::decode(PidObservation::value_at(&e_prev, at), 2, true),
                 }
             })
             .collect()

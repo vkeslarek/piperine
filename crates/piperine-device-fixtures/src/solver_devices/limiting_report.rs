@@ -1,5 +1,6 @@
 //! The devices of the solver target `limiting_report`, one type per device.
 
+use crate::examples::LimitingDiode;
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
 use piperine_abi::device::{Device, Eval, Fault, Values};
@@ -71,7 +72,7 @@ impl Device for LimitedDiode {
             let (age, is_static) = (cx.u8(4), cx.bool(5));
             let old = if age == 0 || (is_static && age == 1) { vcrit } else { cx.f64(3) };
             cx.set(0, v);
-            cx.set(1, LimitingReportShapes::pnjlim(v, old, vt, vcrit));
+            cx.set(1, LimitingDiode::limit_junction(v, old, vt, vcrit));
             cx.jac().copy_from_slice(&[1.0, -1.0]);
         } else {
             let (vd, is) = (cx.f64(0), cx.f64(1));
@@ -134,20 +135,6 @@ impl LimitingReportShapes {
             ..FunctionSpec::default()
         });
         s.freeze()
-    }
-
-    /// ngspice's junction limiter.
-    pub fn pnjlim(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {
-        if vnew > vcrit && (vnew - vold).abs() > vt + vt {
-            if vold > 0.0 {
-                let arg = 1.0 + (vnew - vold) / vt;
-                if arg > 0.0 { vold + vt * arg.ln() } else { vcrit }
-            } else {
-                vt * (vnew / vt).ln()
-            }
-        } else {
-            vnew
-        }
     }
 
     /// The shape of `LimitedDiode`, built once and shared by every instance.

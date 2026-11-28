@@ -1,5 +1,6 @@
 //! The devices of the solver target `checkpoint_restore`, one type per device.
 
+use crate::examples::LimitingDiode;
 use std::cell::RefCell;
 use std::result::Result;
 use std::sync::{Arc, OnceLock};
@@ -53,7 +54,7 @@ impl Device for AgedDiode {
             AGES.with(|a| a.borrow_mut().push(age));
             let old = if age == 0 || (is_static && age == 1) { vcrit } else { cx.f64(3) };
             cx.set(0, v);
-            cx.set(1, CheckpointRestoreShapes::pnjlim(v, old, vt, vcrit));
+            cx.set(1, LimitingDiode::limit_junction(v, old, vt, vcrit));
             cx.jac().copy_from_slice(&[1.0, -1.0]);
         } else {
             let (vd, is) = (cx.f64(0), cx.f64(1));
@@ -83,20 +84,6 @@ impl CheckpointRestoreShapes {
     /// The partial of write `write` against read `read`: the first seed, against nothing else.
     pub fn partial(write: u32, read: u32) -> Partial {
         Partial { write, to: 0, read, at: 0 }
-    }
-
-    /// ngspice's junction limiter.
-    pub fn pnjlim(vnew: f64, vold: f64, vt: f64, vcrit: f64) -> f64 {
-        if vnew > vcrit && (vnew - vold).abs() > vt + vt {
-            if vold > 0.0 {
-                let arg = 1.0 + (vnew - vold) / vt;
-                if arg > 0.0 { vold + vt * arg.ln() } else { vcrit }
-            } else {
-                vt * (vnew / vt).ln()
-            }
-        } else {
-            vnew
-        }
     }
 
     /// The shape of `AgedDiode`, built once and shared by every instance.

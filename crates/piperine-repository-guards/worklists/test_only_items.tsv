@@ -24,7 +24,7 @@ crates/piperine-ir/src/deps/queries.rs::Body::param_changes	kept: an IR analysis
 crates/piperine-ir/src/print.rs::Ir::print_structural	kept: an IR printing host
 crates/piperine-lang/src/elab/consts.rs::ConstEval::files_read	-
 crates/piperine-lang/src/msl/parser/expr.rs::ExpressionGrammar::parse_block	kept: test surface of ExpressionGrammar
-crates/piperine-lang/src/pom/design.rs::DesignBuilder::std_source	-
+crates/piperine-lang/src/pom/design.rs::DesignBuilder::std_source	kept: the host seam that replaces the embedded standard library; only the tests of the front end replace it, no product caller does
 crates/piperine-lang/src/pom/design.rs::Design::dump	-
 crates/piperine-lang/src/pom/design.rs::Design::from_json	-
 crates/piperine-lang/src/pom/design.rs::Design::type_count	-
@@ -52,6 +52,7 @@ crates/piperine-numbers/src/precision.rs::Rounding::opposite	-
 crates/piperine-numbers/src/wide.rs::WideInt::minimum_of	-
 crates/piperine-numbers/src/wide.rs::WideUInt::low_u128	-
 crates/piperine-parity/src/buck_fixture.rs::BuckProject::with_buck	kept: test support the buck and source_* targets of this crate share (T91, formerly a #[path] module of each target)
+crates/piperine-parity/src/compiled.rs::CompiledDevice::run_with_partials	kept: the transpile analog target reads a function's writes and partials through it
 crates/piperine-parity/src/contract.rs::ToleranceContract::phase_applies	-
 crates/piperine-parity/src/corpus.rs::Twin::command_arguments	-
 crates/piperine-parity/src/corpus.rs::Twin::expected_stdout	-

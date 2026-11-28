@@ -36,6 +36,12 @@ impl CompiledDevice {
         Ok(cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect())
     }
 
+    /// `run`, and the partials the function declares, in the shape's order.
+    pub fn run_with_partials(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<f64>, Vec<f64>), CallError> {
+        let (cells, jac) = self.run_cells(name, reads)?;
+        Ok((cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect(), jac))
+    }
+
     /// `run`, with each write as the bytes of its cell, and the partials the function declares.
     pub fn run_cells(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<Vec<u8>>, Vec<f64>), CallError> {
         let shape = self.handle.shape();

@@ -6,69 +6,13 @@
 //! printed source.
 #![cfg(unix)]
 
-use std::sync::Arc;
 
-use piperine_abi::caller::{CallError, Handle};
-use piperine_abi::device::{Access, cell_lens};
-use piperine_ir::{BinaryOp, BodyId, BranchKind, Ir, IrBuilder, Operator, QuantityRole, Site, Stmt, ValueType};
-use piperine_plan::Modules;
-use piperine_transpile::{Settings, Transpiler};
+use piperine_ir::{BinaryOp, BranchKind, Ir, IrBuilder, Operator, QuantityRole, Site, Stmt, ValueType};
+use piperine_parity::compiled::CompiledDevice;
 
 use piperine_ir_fixtures::structure;
 
 use structure::{ParamEvents, Switching, SwitchingWrites};
-
-/// One body of a design compiled with `rustc` and instantiated at its defaults. The cache
-/// directory lives as long as this does.
-struct Device {
-    handle: Handle,
-    _cache: tempfile::TempDir,
-}
-
-impl Device {
-    /// The body `Sw` of `ir`, compiled.
-    fn of(ir: Ir) -> Device {
-        Device::of_body(ir, "Sw")
-    }
-
-    /// The body `name` of `ir`, compiled.
-    fn of_body(ir: Ir, name: &str) -> Device {
-        let cache = tempfile::tempdir().expect("a temp dir");
-        let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-        let ir = Arc::new(ir);
-        let body: BodyId = ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body {name}")).id();
-        let compiled = Transpiler::new(ir).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));
-        let module = Modules::module(&compiled, body).unwrap_or_else(|| panic!("{name} has a module"));
-        let handle = Handle::create(module, &[]).unwrap_or_else(|e| panic!("create: {e}"));
-        Device { handle, _cache: cache }
-    }
-
-    /// Runs function `name` on `reads`, one byte string per read cell, and returns each write as
-    /// an `f64` (the first eight bytes of its cell).
-    fn run(&self, name: &str, reads: &[&[u8]]) -> Result<Vec<f64>, CallError> {
-        self.run_with_partials(name, reads).map(|(values, _)| values)
-    }
-
-    /// `run`, and the partials the function declares, in the shape's order.
-    fn run_with_partials(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<f64>, Vec<f64>), CallError> {
-        let (cells, jac) = self.run_cells(name, reads)?;
-        Ok((cells.iter().map(|c| f64::from_le_bytes(c[..8].try_into().expect("an f64 cell"))).collect(), jac))
-    }
-
-    /// `run`, with each write as the bytes of its cell, and the partials.
-    fn run_cells(&self, name: &str, reads: &[&[u8]]) -> Result<(Vec<Vec<u8>>, Vec<f64>), CallError> {
-        let shape = self.handle.shape();
-        let k = shape.functions.iter().position(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
-        let f = shape.functions.get(k).expect("the function");
-        let lens = cell_lens(shape, &f.writes, Access::FunctionWrite).expect("write lens");
-        let mut cells: Vec<Vec<u8>> = lens.iter().map(|len| vec![0u8; *len]).collect();
-        let mut writes: Vec<&mut [u8]> = cells.iter_mut().map(Vec::as_mut_slice).collect();
-        let seed = vec![1u8; f.partials.len()];
-        let mut jac = vec![0.0; f.partials.len()];
-        self.handle.eval(k as u32, reads, &mut writes, &seed, &mut jac)?;
-        Ok((cells, jac))
-    }
-}
 
 /// Bytes of the cells the tests feed.
 struct Bytes;
@@ -95,7 +39,7 @@ fn a_conditional_flow_contribution_adds_only_when_its_arm_runs() {
         let (cond, taken) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Flow, 2.0));
         SwitchingWrites { analog: vec![always, Switching::branch_on(b, cond, vec![taken], vec![])], ..SwitchingWrites::default() }
     });
-    let device = Device::of(ir);
+    let device = CompiledDevice::of_body(ir, "Sw");
     assert_eq!(device.run("terms", &[&Bytes::bit(true)]).expect("terms"), [3.0]);
     assert_eq!(device.run("terms", &[&Bytes::bit(false)]).expect("terms"), [1.0]);
 }
@@ -108,7 +52,7 @@ fn a_switch_equation_follows_its_enabled_kind() {
     //   potential enabled: the row is `a - 1.0 = -0.5` (the branch is a potential source);
     //   flow enabled: the row is `f - 2.0 = -1.75` (the flow is the sum of the flow contributions).
     let ir = Switching::ir(BranchKind::Switch, Switching::on_the_carrier);
-    let device = Device::of(ir);
+    let device = CompiledDevice::of_body(ir, "Sw");
     let (a, f) = (Bytes::real(0.5), Bytes::real(0.25));
     assert_eq!(device.run("terms", &[&a, &f, &Bytes::bit(true)]).expect("terms"), [0.25, -0.5]);
     assert_eq!(device.run("terms", &[&a, &f, &Bytes::bit(false)]).expect("terms"), [0.25, -1.75]);
@@ -122,7 +66,7 @@ fn a_switch_with_neither_kind_has_zero_flow() {
         let (cond, potential) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0));
         SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![potential], vec![])], ..SwitchingWrites::default() }
     });
-    let device = Device::of(ir);
+    let device = CompiledDevice::of_body(ir, "Sw");
     let (a, f) = (Bytes::real(0.5), Bytes::real(0.25));
     assert_eq!(device.run("terms", &[&a, &f, &Bytes::bit(false)]).expect("terms"), [0.25, 0.25], "the equation row is f");
     assert_eq!(device.run("terms", &[&a, &f, &Bytes::bit(true)]).expect("terms"), [0.25, -0.5], "enabled again: a - 1.0");
@@ -136,7 +80,7 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
         let (cond, potential, flow) = (Switching::carrier_high(b), Switching::contribute(b, QuantityRole::Potential, 1.0), Switching::contribute(b, QuantityRole::Flow, 2.0));
         SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![potential, flow], vec![])], ..SwitchingWrites::default() }
     });
-    let device = Device::of(both);
+    let device = CompiledDevice::of_body(both, "Sw");
     let (a, f) = (Bytes::real(0.5), Bytes::real(0.25));
     let fault = device.run("terms", &[&a, &f, &Bytes::bit(true)]).expect_err("both kinds enabled");
     assert_eq!(fault.code, 418, "{fault}");
@@ -158,7 +102,7 @@ fn both_kinds_enabled_return_e0418_naming_the_branch() {
         let second = Switching::branch_on(b, c2, vec![flow], vec![]);
         SwitchingWrites { analog: vec![first, second], ..SwitchingWrites::default() }
     });
-    let device = Device::of(at_zero);
+    let device = CompiledDevice::of_body(at_zero, "Sw");
     assert_eq!(device.run("terms", &[&Bytes::real(0.75), &Bytes::real(0.25)]).expect("only the flow is enabled"), [0.25, -1.75]);
 }
 
@@ -194,7 +138,7 @@ fn a_derivative_state_is_written_outside_every_condition() {
     // `terms` reads `a`, the rate pin `u` and `en` and writes `b0.flow`, `d0.rate` (`u`) and
     // `d0.state` (`-a`). With `a = 0.5`, `u = 0.125`: `en` high gives flow `2u = 0.25`, `en` low gives
     // flow 0 (the arm does not run); the rate and state terms are the same in both: `0.125`, `-0.5`.
-    let device = Device::of(RateBody::rate_in_a_flow(true, false));
+    let device = CompiledDevice::of_body(RateBody::rate_in_a_flow(true, false), "Sw");
     let (a, u) = (Bytes::real(0.5), Bytes::real(0.125));
     assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(true)]).expect("terms"), [0.25, 0.125, -0.5]);
     assert_eq!(device.run("terms", &[&a, &u, &Bytes::bit(false)]).expect("terms"), [0.0, 0.125, -0.5]);
@@ -206,7 +150,7 @@ fn a_derivative_read_is_its_rate_pin() {
     // partial against the pin is 2; the rate term `u` has partial 1 against it; the state term
     // `-a` has partial -1 against `a`. The plan declares them as (b0.flow, u), (d0.rate, u),
     // (d0.state, a), in that order.
-    let device = Device::of(RateBody::rate_in_a_flow(false, false));
+    let device = CompiledDevice::of_body(RateBody::rate_in_a_flow(false, false), "Sw");
     let (values, partials) = device.run_with_partials("terms", &[&Bytes::real(0.5), &Bytes::real(0.125)]).expect("terms");
     assert_eq!(values, [0.25, 0.125, -0.5]);
     assert_eq!(partials, [2.0, 1.0, -1.0]);
@@ -216,7 +160,7 @@ fn a_derivative_read_is_its_rate_pin() {
 fn a_derivative_abstol_function_writes_its_pin() {
     // `ddt(v(a, gnd), 2.0 * tol)` with `tol = 0.25`: the function `d0.abstol` reads the param alone
     // and writes `0.5` to the site's `abstol` pin.
-    let device = Device::of(RateBody::rate_in_a_flow(false, true));
+    let device = CompiledDevice::of_body(RateBody::rate_in_a_flow(false, true), "Sw");
     assert_eq!(device.run("d0.abstol", &[&Bytes::real(0.25)]).expect("d0.abstol"), [0.5]);
 }
 
@@ -236,7 +180,7 @@ fn a_disabled_limit_writes_its_last_value() {
         let site = Site { name: "lim".into(), origin: Switching::at(), enabled: Some(enabled) };
         SwitchingWrites { analog: vec![Switching::branch_on(b, cond, vec![taken], vec![])], limits: vec![site], locals: Switching::limit_locals(), ..SwitchingWrites::default() }
     });
-    let device = Device::of(ir);
+    let device = CompiledDevice::of_body(ir, "Sw");
     let (last, age, held) = (Bytes::real(0.75), [1u8], [0u8]);
     let enabled = device.run_with_partials("limit:lim", &[&Bytes::real(1.0), &last, &age, &held]).expect("limit");
     assert_eq!(enabled, (vec![1.0, 0.875], vec![1.0]));
@@ -254,7 +198,7 @@ fn a_disabled_cap_writes_infinity() {
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
         SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
-    let device = Device::of(ir);
+    let device = CompiledDevice::of_body(ir, "Sw");
     assert_eq!(device.run("cap:0", &[&Bytes::real(1.0)]).expect("cap"), [0.5]);
     assert_eq!(device.run("cap:0", &[&Bytes::real(0.25)]).expect("cap"), [f64::INFINITY]);
 }
@@ -271,7 +215,7 @@ fn an_executed_cap_that_is_not_finite_and_positive_is_e0509() {
             let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: Some(when) });
             SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
         });
-        let device = Device::of(ir);
+        let device = CompiledDevice::of_body(ir, "Sw");
         let fault = device.run("cap:0", &[&Bytes::real(1.0)]).expect_err("an executed cap that is not valid");
         assert_eq!(fault.code, 509, "step {bad}: {fault}");
         assert!(fault.message.contains("E0509") && fault.message.contains("bound_step"), "step {bad}: {fault}");
@@ -282,7 +226,7 @@ fn an_executed_cap_that_is_not_finite_and_positive_is_e0509() {
         let cap = b.stmt(Stmt::BoundStep { site: 0, value: step, when: None });
         SwitchingWrites { analog: vec![cap, Switching::contribute(b, QuantityRole::Flow, 1.0)], ..SwitchingWrites::default() }
     });
-    let fault = Device::of(unguarded).run("cap:0", &[]).expect_err("an unguarded bound_step(inf) is executed");
+    let fault = CompiledDevice::of_body(unguarded, "Sw").run("cap:0", &[]).expect_err("an unguarded bound_step(inf) is executed");
     assert_eq!(fault.code, 509, "{fault}");
 }
 
@@ -292,7 +236,7 @@ fn a_param_change_fires_its_event() {
     // `CHANGED` byte and writes the event pin's `CHANGED` byte: nonzero exactly when the param's
     // pin changed (abi.md §4.1, §5.3.1).
     let ir = ParamEvents::ir(ValueType::Bool, |b| b.expr(piperine_ir::Expr::Fired(0), ValueType::Bool, ParamEvents::at()));
-    let device = Device::of_body(ir, "Lag");
+    let device = CompiledDevice::of_body(ir, "Lag");
     let tol = Bytes::real(1e-9);
     assert_eq!(device.run_cells("event:0", &[&tol, &[1u8]]).expect("event").0, [vec![1u8]]);
     assert_eq!(device.run_cells("event:0", &[&tol, &[0u8]]).expect("event").0, [vec![0u8]]);
@@ -303,7 +247,7 @@ fn a_param_previous_decodes_its_previous_bytes() {
     // `seen = tol.prev();` as a drive of an `out seen: f64` carrier: `drive:seen` reads the
     // `PREVIOUS` part of the param pin, in the param's own layout (an `F64`), and writes the value
     // `0.375` into the carrier's pin (its eight bytes, abi.md P3).
-    let device = Device::of_body(ParamEvents::previous_drive(), "Lag");
+    let device = CompiledDevice::of_body(ParamEvents::previous_drive(), "Lag");
     let (cells, _) = device.run_cells("drive:seen", &[&Bytes::real(0.375)]).expect("drive");
     assert_eq!(f64::from_le_bytes(cells[0][..8].try_into().expect("the value")), 0.375);
 }

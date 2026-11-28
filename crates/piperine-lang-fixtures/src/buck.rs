@@ -41,7 +41,9 @@ impl BuckSource {
     pub fn item(file: &str, head: &str) -> String {
         let text = BuckSource::read(file);
         let at = text.find(head).unwrap_or_else(|| panic!("no `{head}` in {file}"));
-        let start = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n")).unwrap_or(at);
+        let derive = text[..at].rfind("#[derive").filter(|d| !text[*d..at].contains('}') && !text[*d..at].contains(";\n"));
+        // an enum of the buck is always read with its derive: the tests compare values by it
+        let start = if head.starts_with("pub enum ") { derive.unwrap_or_else(|| panic!("`{head}` has no derive in {file}")) } else { derive.unwrap_or(at) };
         text[start..BuckSource::through_closing_brace(&text, at)].to_string()
     }
 

@@ -8,22 +8,10 @@
 use crate::support;
 
 use piperine::{Cell, Field, Overrides};
-use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
+use support::printed::Printed;
 use support::model::{Model, Ran};
 use support::refusal::{Refusal, Reported};
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`6.320928e-1`); `what` says
-    /// what the number is.
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
 
 /// The project `piperine new rc` makes, as `examples/rc`.
 struct RcProject;

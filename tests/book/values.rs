@@ -8,21 +8,10 @@
 use crate::support;
 
 use piperine::{Cell, Field, Overrides, Record};
-use piperine_parity::golden::PrintedNumber;
 use support::chapter::Chapter;
 use support::faulty::Faulty;
+use support::printed::Printed;
 use support::model::{Model, Ran};
-
-/// A number as the Book prints it: the printed digits are the resolution of the comparison.
-struct Printed;
-
-impl Printed {
-    /// Asserts that `x` rounds to the number the Book prints as `printed` (`1.052399e-4`).
-    fn holds(printed: &str, x: f64, what: &str) {
-        let number = PrintedNumber::parse(printed).unwrap_or_else(|| panic!("`{printed}` is a printed number"));
-        assert!(number.rounds_from(x), "{what}: the Book prints {printed}, the run gives {x:e}");
-    }
-}
 
 /// A transient to `stop` of the top `top`, the run the chapter's commands make.
 struct Transient;

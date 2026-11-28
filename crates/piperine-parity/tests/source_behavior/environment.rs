@@ -140,7 +140,7 @@ fn freq_in_a_reaction_is_zero() {
     }
 }
 
-/// Associated test helpers of `environment`, grouped on one fixture type.
+/// The four kind nodes of `KindsBench` read back from a solved circuit.
 struct EnvironmentKinds;
 
 impl EnvironmentKinds {
