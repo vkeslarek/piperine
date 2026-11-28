@@ -1836,3 +1836,85 @@ Repro: `grep -rn '\`model.rs\`\|Checker::layouts' crates/piperine-lang/src`.
 | P10-5 stale `model.rs` / `Checker::layouts` docs | Low | open |
 | P10-6 T72 subject 74 characters, names `TraitTable` | Low | note |
 | P10-7 `owners.tsv` task column off by one | Low | open |
+
+## Phase 10 — re-verification
+
+**Verdict**: PASS (round 1 closes P10-1 to P10-5 and P10-7; two new Low findings, cosmetic; no Medium or High)
+**Head**: ac2508f75 on `feature/code-clarity-p10` (fix round 1), checked against 10617e6cc (the verified head plus the Phase 10 section).
+**Verifier**: the same independent sub-agent (Opus; author != verifier). I reran the gates myself, in the foreground, with `CARGO_TARGET_DIR=/var/tmp/piperine-target-a`, after touching `crates/piperine-repository-guards/src/*.rs`.
+
+### Gates rerun at the head
+
+| Gate | Result |
+| --- | --- |
+| `**Build**` line: `cargo build --workspace --all-targets`, filtered for `^(warning|error)` | 0 warnings, 0 errors |
+| `cargo test -p piperine-repository-guards` | 11 result lines, 121 passed, 0 failed |
+| `cargo test -p piperine-lang` | 84 result lines, 1 439 passed, 0 failed (unchanged) |
+| `cargo test -p piperine-transpile` (goldens included) | 31 result lines, 172 passed, 0 failed |
+| `cargo test -p piperine-cli` (twins included) | 12 result lines, 144 passed, 0 failed |
+| `cargo test -p piperine-parity` | 64 result lines, 645 passed, 0 failed |
+| `cargo test -p piperine-api` | 28 result lines, 307 passed, 0 failed |
+| `cargo test -p piperine --test book_inventory --test integrated` | 18 + 42 passed, 0 failed |
+| `cargo test -p piperine --test book_claims` | 6 passed, 1 failed: the same single offence, `structure~58f974e3` (N3) |
+
+### Closure of round 1's findings
+
+| Finding | Closure | Holds |
+| --- | --- | --- |
+| P10-1 approved box text rewritten | tasks.md T70–T76 | yes. Every box carries its approved text again: T76's reads "8 files at its root and 6 directories, as design.md's map". Each departure is an indented `Note:` under its box, and T76's note says the "6" was a slip and the tree has seven |
+| P10-2 `check.rs` beyond the worklist | `check.rs` 793 → 363 lines; `value/lowering.rs`, `value/functions.rs`, `module/body.rs`; `Diagnostics` methods; design.md annotation after :356; T76 note | yes, with a residual I accept (judgement below). I extracted every moved method from 10617e6cc's `check.rs` and from its new file, stripped the receiver re-pointing (`self.<view>().`, `self.checker.`, `pub(..)`), and diffed the bodies. 14 of 18 are identical. The other four differ only by binding a value to a `let` before a call, for the borrow (`signature_parts`, `function`, `module`: `let generic_item = …; replace_generic_item(generic_item)`), or by `super::Obligation` → `Obligation` (`function_of`). `diagnostics_mark` and `reported` (both `list.len()`) became `Diagnostics::count`. The `Diagnostics` bodies of `report`, `report_distinct`, `coded`, `refuse`, `refuse_with` and `annotate_since` are the old `Checker` bodies over `self.list`/`self.reported_spans`. `mismatch*` are unchanged |
+| P10-3 `PatternTables` | tasks.md T69 | yes. A `Note (P10-3)` under the first box |
+| P10-4 `method_call`, `check_as` | `value/call.rs`, `value/expr.rs`; `long_functions.tsv` | yes. `method_call` → `method_builtin` (the `match res`, returning `ControlFlow`), `method_on_value` and `method_not_found` (the miss arm). `check_as` → `expected_flow`, `if_as`, `negated_integer_as` and `report_found_mismatch`. Each block is moved verbatim and called where it stood. The three old rows are gone. The new row `expected_flow` (77 lines) is `kept:` as an exhaustive match whose multi-line arms are now methods; that is design.md:412's reason, and it is honest |
+| P10-4: the one non-verbatim `return` | `value/expr.rs`, the two `Lit` arms of `expected_flow` | yes, unreachable as claimed. `let LitKind::Int(text) = &lit.kind else { return };` (which left `check_as` early) became `… else { return None };` (which would continue to `report_found_mismatch(None)`, a no-op, and record `expected`). Each arm's guard is `matches!(&lit.kind, LitKind::Int(..))` or `LitKind::Float { .. }`, so the `else` never runs. The same holds for the new `let ExprKind::MethodCall { .. } = &node.kind else { return None }` in the three `method_*` helpers: every caller passes the `node` that `method_call` already destructured as a `MethodCall` |
+| P10-5 stale docs | `check.rs:185`, `value/aggregate.rs:6` | yes: `whole_model.rs`, `Types::layouts`. `grep` finds no stale `Checker::` path for a moved method in `crates/piperine-lang/src` |
+| P10-6 subject | — | note only, as recorded |
+| P10-7 `owners.tsv` task column | `data/owners.tsv:25-28` | yes: T73, T74, T75, T72 |
+
+### Judgement on what `check.rs` keeps (P10-2, design.md:346)
+
+`check.rs` now holds the worklist (`reach`, `drain`, `check_ahead`, `declaration`, `refuse_declaration`), the pass order (`run`, `run_model`, `sorted_diagnostics`, `within`), the seven view accessors, and these as well:
+
+- six one-line forwarders: `report`, `coded`, `refuse`, `refuse_with` to `Diagnostics`, and `file_of_expr`;
+- the three `mismatch*`;
+- `is_std` and `project_defines`.
+
+**Acceptable.** The forwarders are the entry point every view reaches through `Deref`. Inlining `self.state.diagnostics.x(..)` at about 200 sites fails wherever an argument borrows `self` (`self.file_of_expr(e)`, `self.state.design`), because two-phase borrows do not pass through `DerefMut`. Hoisting each argument into a `let` would grow every site and buy nothing. The new design.md annotation names exactly this residue, so the design text and the code agree again. That is the closure T31 and design.md:612 prescribe for a design that could not be built as written.
+
+**What still carries logic, and its precise owner, if the user wants `check.rs` to be forwarders only:**
+
+- `mismatch_coded` holds a rule, not a forwarder: it first asks `ModuleTyping::untyped_template_read` and only then reports. Its owner is `ExpressionTyping`. `mismatch` and `mismatch_text` would follow it, and `Checker` would keep a one-line forwarder.
+- `project_defines` is a query of the impl table. Its owner is `TraitTyping`, or `ImplTable::defines_method` called with `is_std` at the two call sites.
+- `is_std` is a query of a declaration. Its owner is `Decl`, which already has `krate()`.
+
+This is about 25 lines and has no behaviour risk. I record it as a note (N5), not a finding.
+
+### New observations at the round-1 head
+
+### R1-1 (Low): 43 redundant `self.expressions()` hops inside `ExpressionTyping`
+
+The round moved `lower_type`, `signature`, `function` and the other moved methods onto `ExpressionTyping`, and re-pointed every call to them as `self.expressions().x(..)`, including the 43 calls inside `ExpressionTyping`'s own `impl` (in `value/lowering.rs` 11, `functions.rs` 9, `expr.rs` 6, `operators.rs` 4, `call.rs` 3, `associated.rs` 3, `aggregate.rs` 3, `methods.rs` 2, `closures.rs` 1, `compound.rs` 1). There were 0 at 10617e6cc. Each hop derefs to `Checker` and builds a second view of the same checker to call a method the first already has. It is behaviour-neutral but reads as if the call left the concern. Probe: `sed -i 's/self\.expressions()\./self./g' crates/piperine-lang/src/types/value/*.rs` and `cargo check -p piperine-lang` compile clean in a scratch target. The edit was reverted, and `git status` is clean. Fix: apply that substitution.
+
+### R1-2 (Low): `report_found_mismatch` is not formatted
+
+The body of `value/expr.rs:179-191` is indented 4 spaces, at the level of the `fn`, and its closing braces sit at 4 as well. Fix: `rustfmt` the file, or indent by hand.
+
+### Notes
+
+- **N5**: see the judgement above. `mismatch*`, `project_defines` and `is_std` have named owners, should the user want `check.rs` reduced to forwarders.
+- `method_not_found` ends in an explicit `return None;` (`value/call.rs:448`), the old arm's last line kept verbatim. As a function tail it is `clippy::needless_return`; clippy is not a gate here.
+- No test, golden, doc, `.msl` or file outside `types/`, `repository-guards` data and `.specs/` changed (`git diff --name-only 10617e6cc HEAD`). Allowances shrink or move: `undocumented_items` −3 (`declaration`, `file_of_expr`, `lower_type_node`, each now documented); `undeclared_words` 1 moved (`ret`, `check.rs` → `value/functions.rs`); `long_functions` −3 +1 (`expected_flow`, a new name for the core of `check_as`). Nothing in a `+` line adds a macro, an `#[allow]`, an `#[expect]`, an `unwrap`, a free function or a `pub(crate)`.
+- `book_claims`: still red for the one stale row `structure~58f974e3` only, which the integration branch removed in cf16edbaa (N3); this round does not touch `tests/book/`.
+
+### Phase 10 findings after round 1
+
+| Finding | Severity | Status |
+| --- | --- | --- |
+| P10-1 approved box text rewritten | Low | closed |
+| P10-2 `check.rs` beyond the worklist | Low | closed (residue accepted, design annotated; N5 names the owners) |
+| P10-3 `PatternTables` note | Low | closed |
+| P10-4 `method_call`, `check_as` verdicts | Low | closed |
+| P10-5 stale docs | Low | closed |
+| P10-6 T72 subject | Low | note |
+| P10-7 `owners.tsv` task column | Low | closed |
+| R1-1 43 redundant `self.expressions()` hops | Low | open |
+| R1-2 `report_found_mismatch` unformatted | Low | open |
