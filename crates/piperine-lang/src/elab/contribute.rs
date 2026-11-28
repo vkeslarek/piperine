@@ -13,7 +13,7 @@ use piperine_ir::{Addend, BinaryOp, Branch, BranchKind, Expr, ExprId as LoweredE
 
 use super::elaborator::Elaboration;
 use super::derivatives::LeafRules;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::selectors::ContributionRecord;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::{Diagnostic, Span};
@@ -188,7 +188,7 @@ impl Elaboration<'_, '_> {
         let node = self.state.design.expr_node(ddt).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
         let [x] = &args[..] else { return None };
-        self.lower_expr(scope, x.value)
+        self.values().lower_expr(scope, x.value)
     }
 
     /// One run of non-`ddt` leaves re-joined in order, signed relative to its first leaf: the
@@ -197,9 +197,9 @@ impl Elaboration<'_, '_> {
     fn direct_run(&mut self, scope: &mut Scope, run: &[Leaf]) -> Option<LoweredExpr> {
         let first = run[0];
         let origin = self.expr_origin(first.expr);
-        let mut value = self.lower_expr(scope, first.expr);
+        let mut value = self.values().lower_expr(scope, first.expr);
         for leaf in &run[1..] {
-            let rhs = self.lower_expr(scope, leaf.expr);
+            let rhs = self.values().lower_expr(scope, leaf.expr);
             let op = if leaf.negated == first.negated { BinaryOp::Add } else { BinaryOp::Sub };
             value = match (value, rhs) {
                 (Some(lhs), Some(rhs)) => Some(self.emit(Expr::Binary { op, lhs, rhs }, ValueType::F64, origin.clone())),

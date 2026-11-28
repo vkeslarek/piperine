@@ -17,7 +17,7 @@ use piperine_ir::{Constant, ExprId as LoweredExpr};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::unroll::{DEPTH, Expansion};
 use crate::refusal::forms::StructureForm;
 use crate::msl::Span;
@@ -188,7 +188,7 @@ impl Elaboration<'_, '_> {
         for (param, slot) in params.iter().zip(slots) {
             let argument = match (self.typed_local(*param), *slot) {
                 (Some(Ty::Option(payload)), slot) => {
-                    let [flag, payload] = self.lower_option_slot(scope, slot, &payload, call)?;
+                    let [flag, payload] = self.values().lower_option_slot(scope, slot, &payload, call)?;
                     Argument::Option { param: *param, flag, payload }
                 }
                 (_, None) => {
@@ -205,7 +205,7 @@ impl Elaboration<'_, '_> {
                 },
                 (_, Some(arg)) => {
                     let folded = self.fold_scalar(scope, arg);
-                    Argument::Value { param: *param, value: self.lower_expr(scope, arg)?, folded }
+                    Argument::Value { param: *param, value: self.values().lower_expr(scope, arg)?, folded }
                 }
             };
             arguments.push(argument);

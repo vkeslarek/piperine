@@ -10,7 +10,7 @@ use piperine_ir::{AggregateData, Constant, NodeArray, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, ExprId, ExprKind};
 use crate::types::{Length, Ty};
@@ -155,7 +155,7 @@ impl Elaboration<'_, '_> {
         let Some(array) = self.state.consts.typed_carrier_array(decl) else { return None };
         let shape = self.declared_shape(&array, frame, decl, "carriers")?;
         let Ty::Carrier { value, .. } = array.innermost() else { return None };
-        match self.stored_type(value) {
+        match self.values().stored_type(value) {
             Some(element) => Some((shape, element)),
             None => {
                 self.refuse(file, span, DigitalForm::CarrierWhoseValueTypeHasNoValue);
@@ -176,7 +176,7 @@ impl Elaboration<'_, '_> {
         }
         if repeated != init && !matches!(self.state.design.expr_node(repeated).kind, ExprKind::Array(_)) {
             let value = self.carrier_init(repeated, frame)?;
-            return Some(self.ir_constant(value, element));
+            return Some(self.values().ir_constant(value, element));
         }
         if shape.dims.len() > 1 {
             self.refuse(file, node.span, DigitalForm::InitialValueOfNestedArrayOfCarriers);
@@ -215,7 +215,7 @@ impl Elaboration<'_, '_> {
         }
         if inner.dims.is_empty() || (repeated != init && !matches!(self.state.design.expr_node(repeated).kind, ExprKind::Array(_))) {
             let value = self.carrier_init_over(repeated, bindings)?;
-            return Some(vec![self.ir_constant(value, element); count]);
+            return Some(vec![self.values().ir_constant(value, element); count]);
         }
         if inner.dims.len() > 1 {
             let span = self.state.design.expr_node(init).span;
@@ -224,7 +224,7 @@ impl Elaboration<'_, '_> {
         }
         match self.carrier_init_over(init, bindings)? {
             Constant::Aggregate(id) => Some(self.state.builder.aggregate_at(id).parts.clone()),
-            other => Some(vec![self.ir_constant(other, element); count]),
+            other => Some(vec![self.values().ir_constant(other, element); count]),
         }
     }
 

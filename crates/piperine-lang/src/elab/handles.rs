@@ -6,7 +6,7 @@
 //! carrier (its value), and a carrier method on it to the method on that carrier.
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 impl Elaboration<'_, '_> {

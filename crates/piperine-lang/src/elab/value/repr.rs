@@ -6,18 +6,17 @@
 //! An `Option` result is no IR value of elaboration, so the author's `decode` is two IR functions, one for each
 //! half (`T.decode.is`, `T.decode.val`); the IR's `decode` is the function that packs them again.
 
-use std::collections::BTreeMap;
 
+use super::ValueLowering;
 use piperine_ir::{Expr, FunctionId, FunctionSpec, Local, TypeId as IrTypeId, ValueType};
 
-use super::elaborator::Elaboration;
-use super::variants::Half;
+use crate::elab::variants::Half;
 use crate::pom::{DeclId, DeclKind};
-use super::instances::{ConcreteValue, Instance};
-use crate::types::{ConstTerm, GenericSignature, GenericValue, ImplTarget, Nominal, Ty};
+use crate::elab::instances::{ConcreteValue, Instance};
+use crate::types::{ImplTarget, Nominal, Ty};
 
 /// A hand-written layout whose functions exist, set on its type once they are in the IR.
-pub(super) struct HandWrittenRepr {
+pub(in crate::elab) struct HandWrittenRepr {
     /// The arena entry of the type.
     ty: IrTypeId,
     /// The number of levels.
@@ -28,11 +27,11 @@ pub(super) struct HandWrittenRepr {
     decode: FunctionId,
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The hand-written layout of every struct and enum the run reached that has an `impl Repr`, its functions
     /// lowered; call before the functions are added to the IR. A type that is not reached has no entry and no
     /// layout. After a diagnostic, none.
-    pub(super) fn lower_hand_written_reprs(&mut self) -> Vec<HandWrittenRepr> {
+    pub(in crate::elab) fn lower_hand_written_reprs(&mut self) -> Vec<HandWrittenRepr> {
         let impls: Vec<(DeclId, DeclId)> = self
             .state.impls
             .impls()
@@ -104,44 +103,6 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    /// The arguments the `impl Repr` `owner` takes for the type `ty` it is written for: what its parameters stand for
-    /// (`impl<T: Repr> Repr for Pair<T>` meeting `Pair<u8>` gives `u8`), in the order of its parameters; empty for an
-    /// `impl` with none. `None` when a parameter stays open.
-    pub(super) fn hand_written_arguments(&self, owner: DeclId, ty: &Ty) -> Option<Vec<ConcreteValue>> {
-        let encode = self.state.impls.item(owner, "encode")?;
-        if !self.is_generic_impl_item(encode) {
-            return Some(Vec::new());
-        }
-        let found = self.state.types.impl_arguments(encode, ty)?;
-        found
-            .into_iter()
-            .map(|value| match value {
-                GenericValue::Type(argument) => Some(ConcreteValue::Type(argument)),
-                GenericValue::Const(ConstTerm::Value(count)) => Some(ConcreteValue::Const(count)),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// The folded `WIDTH` of the `impl Repr` `owner` for `arguments`: the level count of each type argument and the value
-    /// of each const argument stand where the `impl`'s parameters are named (`2 * T::WIDTH`).
-    pub(super) fn hand_written_width(&self, owner: DeclId, arguments: &[ConcreteValue]) -> Option<u32> {
-        let width = self.state.impls.item(owner, "WIDTH")?;
-        let DeclKind::Const(data) = &self.state.design.decl_data(width).kind else { return None };
-        let signature = GenericSignature::of(self.state.design, owner);
-        let values: BTreeMap<DeclId, u128> = signature
-            .parameters()
-            .iter()
-            .zip(arguments)
-            .filter_map(|(parameter, argument)| match argument {
-                ConcreteValue::Type(ty) => self.level_count(ty).map(|levels| (parameter.decl, u128::from(levels))),
-                ConcreteValue::Const(count) => u128::try_from(*count).ok().map(|count| (parameter.decl, count)),
-                _ => None,
-            })
-            .collect();
-        u32::try_from(self.state.types.fold_with(data.value?, values)?).ok()
-    }
-
     /// The IR function `Type.decode` that gives the whole `Option` of the author's `decode`: it calls the
     /// two halves with its one argument and packs their results.
     fn pack_decode(&mut self, item: DeclId, arguments: &[ConcreteValue], own: &ValueType, width: u32, presence: FunctionId, payload: FunctionId) -> FunctionId {
@@ -160,7 +121,7 @@ impl Elaboration<'_, '_> {
 
     /// The `encode` of the hand-written `Repr` of what the carrier `decl` holds, with the arguments its `impl` takes for
     /// that type; `None` for a derived layout.
-    pub(super) fn hand_written_encode(&self, decl: DeclId) -> Option<(DeclId, Vec<ConcreteValue>)> {
+    pub(in crate::elab) fn hand_written_encode(&self, decl: DeclId) -> Option<(DeclId, Vec<ConcreteValue>)> {
         let Some(Ty::Carrier { value, .. }) = self.state.consts.typed_carrier(decl) else { return None };
         let entry = self.state.impls.hand_written_repr(&value)?;
         let arguments = self.hand_written_arguments(entry.decl, &value)?;
@@ -169,9 +130,9 @@ impl Elaboration<'_, '_> {
 
     /// The initial value of a carrier of a hand-written layout: the levels word `encode` gives for the folded
     /// `expr`, run for the arguments of its `impl`. `None` after a diagnostic.
-    pub(super) fn encoded_init(&mut self, expr: crate::pom::ExprId, encode: DeclId, arguments: &[ConcreteValue], frame: usize) -> Option<piperine_ir::Constant> {
+    pub(in crate::elab) fn encoded_init(&mut self, expr: crate::pom::ExprId, encode: DeclId, arguments: &[ConcreteValue], frame: usize) -> Option<piperine_ir::Constant> {
         let bindings = self.frame_bindings(frame);
-        let outer = self.state.consts.set_substitution(self.instance_substitution(encode, arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(encode, arguments));
         let word = self.state.consts.encoded_word(expr, encode, &bindings);
         self.state.consts.set_substitution(outer);
         match word {
@@ -185,12 +146,12 @@ impl Elaboration<'_, '_> {
 
     /// The levels word a carrier of a hand-written layout starts at when it writes no initial value: the levels `encode` gives
     /// for the `default` value of its type (GN-32 AC 2, §3.3.4), run for the arguments of its `impl`. `None` after a diagnostic.
-    pub(super) fn encoded_default(&mut self, encode: DeclId, arguments: &[ConcreteValue], default: piperine_ir::Constant) -> Option<piperine_ir::Constant> {
+    pub(in crate::elab) fn encoded_default(&mut self, encode: DeclId, arguments: &[ConcreteValue], default: piperine_ir::Constant) -> Option<piperine_ir::Constant> {
         let DeclKind::Fn(data) = &self.state.design.decl_data(encode).kind else { return None };
         let body = data.body.clone()?;
         let Some(crate::pom::StmtKind::Expr { expr: at, .. }) = body.stmts.last().map(|stmt| self.state.design.stmt_node(*stmt).kind.clone()) else { return None };
         let tree = self.imported_tree(default);
-        let outer = self.state.consts.set_substitution(self.instance_substitution(encode, arguments));
+        let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(encode, arguments));
         let word = self.state.consts.encoded_tree_word(at, encode, &tree);
         self.state.consts.set_substitution(outer);
         match word {
@@ -203,7 +164,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Writes each layout on its type; the functions are in the IR by now.
-    pub(super) fn set_hand_written_reprs(&mut self, layouts: Vec<HandWrittenRepr>) {
+    pub(in crate::elab) fn set_hand_written_reprs(&mut self, layouts: Vec<HandWrittenRepr>) {
         if !self.state.diagnostics.is_empty() {
             return;
         }

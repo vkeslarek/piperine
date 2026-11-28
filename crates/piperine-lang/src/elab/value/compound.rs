@@ -17,13 +17,14 @@
 //!   literal `None` or `Some` is its value.
 //! - `let (a, b) = (x, y);` is one local per component.
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Method as IrMethod, Origin, Stmt, StmtId, UnaryOp, ValueType};
 
-use super::elaborator::Elaboration;
-use super::elements::Lookup;
+use crate::elab::elaborator::Elaboration;
+use crate::elab::elements::Lookup;
 use super::patterns::Subject;
-use super::selectors::ArmCondition;
-use super::lower::Scope;
+use crate::elab::selectors::ArmCondition;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::{PatternForm, ValueForm};
 use crate::pom::{Arm, DeclId, DeclKind, Design, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution};
 use crate::types::{Method, Ty};
@@ -36,19 +37,19 @@ struct ArmTest {
 
 /// An `Option` value as the IR holds it: its flag and its payload. `literal` is the flag when
 /// the source wrote `None` or `Some(..)`.
-pub(super) struct Pair {
-    pub(super) is: LoweredExpr,
-    pub(super) val: LoweredExpr,
-    pub(super) literal: Option<bool>,
+pub(in crate::elab) struct Pair {
+    pub(in crate::elab) is: LoweredExpr,
+    pub(in crate::elab) val: LoweredExpr,
+    pub(in crate::elab) literal: Option<bool>,
 }
 
 /// The tag of an enum: its width and its variants in declaration order.
-pub(super) struct EnumLayout {
+pub(in crate::elab) struct EnumLayout {
     variants: Vec<DeclId>,
 }
 
 impl EnumLayout {
-    pub(super) fn of(design: &Design, decl: DeclId) -> EnumLayout {
+    pub(in crate::elab) fn of(design: &Design, decl: DeclId) -> EnumLayout {
         let variants = design.decl_data(decl).children.iter().copied().filter(|v| matches!(design.decl_data(*v).kind, DeclKind::Variant(_))).collect();
         EnumLayout { variants }
     }
@@ -60,24 +61,24 @@ impl EnumLayout {
     }
 
     /// The tag of a variant declaration, through its enum.
-    pub(super) fn variant_tag(design: &Design, variant: DeclId) -> Option<i128> {
+    pub(in crate::elab) fn variant_tag(design: &Design, variant: DeclId) -> Option<i128> {
         let parent = design.decl_data(variant).parent?;
         EnumLayout::of(design, parent).tag_of(variant)
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The tests that select the arm of a `match` on `scrutinee` whose pattern is `pat` (`None` for
     /// the last arm, which has no test) after the arms with the patterns `earlier` did not: one
     /// `bool` per test, read in `scope`, a scope with no local, so the scrutinee is read again at
     /// each test (`selectors.rs`, a guarded site's `enabled`). `None` after a diagnostic.
-    pub(super) fn standalone_arm_tests(&mut self, scope: &mut Scope, scrutinee: ExprId, earlier: &[PatId], pat: Option<PatId>) -> Option<Vec<LoweredExpr>> {
+    pub(in crate::elab) fn standalone_arm_tests(&mut self, scope: &mut Scope, scrutinee: ExprId, earlier: &[PatId], pat: Option<PatId>) -> Option<Vec<LoweredExpr>> {
         let subject = if matches!(self.typed(scrutinee), Some(Ty::Option(_))) { Subject::RereadPair(scrutinee) } else { Subject::Reread(scrutinee) };
         let mut tests = Vec::new();
         for before in earlier {
             if let Some(test) = self.pattern_test(scope, &subject, *before) {
                 let ty = ValueType::Bool;
-                tests.push(self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ty, self.expr_origin(scrutinee)));
+                tests.push(self.elaboration.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ty, self.expr_origin(scrutinee)));
             }
         }
         if let Some(pat) = pat
@@ -179,7 +180,7 @@ impl Elaboration<'_, '_> {
             }
             let test = if last { None } else { tested.test };
             let everything = !last && test.is_none();
-            let own = Self::enter_arm(scope, test, true);
+            let own = Elaboration::enter_arm(scope, test, true);
             let condition = match arm.guard {
                 Some(_) => ArmCondition::Guarded,
                 None => ArmCondition::MatchArm { scrutinee, earlier: arms[..k].iter().map(|a| a.pat).collect(), pat: (!last).then_some(arm.pat) },
@@ -198,8 +199,8 @@ impl Elaboration<'_, '_> {
                 None => ok = false,
             }
             scope.analog.guards.pop();
-            Self::leave_arm(scope, own);
-            Self::enter_arm(scope, test, false);
+            Elaboration::leave_arm(scope, own);
+            Elaboration::enter_arm(scope, test, false);
             tests.push(test);
             if everything {
                 break;
@@ -238,7 +239,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The known zero of `ty`: the payload of `None`.
-    pub(super) fn zero(&mut self, ty: &ValueType, origin: Origin) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn zero(&mut self, ty: &ValueType, origin: Origin) -> Option<LoweredExpr> {
         let kind = match ty {
             ValueType::F64 => Expr::Real(piperine_ir::Real::new(0.0)),
             ValueType::Bool => Expr::Bool(false),
@@ -265,19 +266,19 @@ impl Elaboration<'_, '_> {
 
     /// The two arguments an `Option<T>` parameter takes in the IR, `is` then `val`: the pair of the
     /// bound argument, or `(false, zero)` for one left out (§3.2.4). `None` after a diagnostic.
-    pub(super) fn lower_option_slot(&mut self, scope: &mut Scope, slot: Option<ExprId>, payload: &Ty, at: ExprId) -> Option<[LoweredExpr; 2]> {
+    pub(in crate::elab) fn lower_option_slot(&mut self, scope: &mut Scope, slot: Option<ExprId>, payload: &Ty, at: ExprId) -> Option<[LoweredExpr; 2]> {
         if let Some(arg) = slot {
             let pair = self.lower_option(scope, arg)?;
             return Some([pair.is, pair.val]);
         }
         let origin = self.expr_origin(at);
         let Some(payload) = self.value_type(payload) else {
-            self.refuse(scope.values.file, self.state.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
             return None;
         };
         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
         let Some(val) = self.zero(&payload, origin) else {
-            self.refuse(scope.values.file, self.state.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoZero);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(at).span, ValueForm::OptionParameterWhosePayloadHasNoZero);
             return None;
         };
         Some([is, val])
@@ -299,7 +300,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The pair an `Option` expression lowers to. `None` after a diagnostic.
-    pub(super) fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
+    pub(in crate::elab) fn lower_option(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Pair> {
         let node = self.state.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         let (file, span) = (scope.values.file, node.span);
@@ -357,7 +358,7 @@ impl Elaboration<'_, '_> {
                     }
                     // An `Option` value input of a hoisted module: the caller's argument, in the
                     // caller's frame (an `f64` given there is `Some` of it, §3.2.3).
-                    (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_option(scope, given)),
+                    (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.values().lower_option(scope, given)),
                     // A trailing `Option` input left out reads as `None` (DIG-10 AC 3).
                     (None, Some(None)) => {
                         let is = self.emit(Expr::Bool(false), ValueType::Bool, origin.clone());
@@ -519,7 +520,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// Whether `expr` is a call of the built-in `Some`.
-    pub(super) fn is_some_call(&self, expr: ExprId) -> bool {
+    pub(in crate::elab) fn is_some_call(&self, expr: ExprId) -> bool {
         match &self.state.design.expr_node(expr).kind {
             ExprKind::Call { callee, .. } => matches!(&self.state.design.expr_node(*callee).kind, ExprKind::Path(path) if matches!(self.state.design.path_node(*path).segments.last().map(|s| s.res), Some(Resolution::Builtin(id)) if id.info().name == "Some")),
             _ => false,

@@ -4,7 +4,7 @@
 use piperine_ir::{AnalysisKind, Branch, BranchKind, Env, Expr, ExprId as LoweredExpr, Origin, Site, StmtId as LoweredStmt, Terminal, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::types::Callee;
 use crate::pom::{BehaviorKind, BuiltinId, BuiltinKind, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtKind};
@@ -27,7 +27,7 @@ impl Elaboration<'_, '_> {
             // After a diagnostic the block is empty: no `Ir` is built anyway.
             scope.analog.in_analog_code = true;
             scope.analog.in_analog_block = true;
-            let (mut lowered, value) = self.lower_statements(scope, &behavior.body).unwrap_or_default();
+            let (mut lowered, value) = self.values().lower_statements(scope, &behavior.body).unwrap_or_default();
             scope.analog.in_analog_block = false;
             scope.analog.in_analog_code = false;
             // At the top of the block a trailing expression without `;` is a statement like any other.
@@ -226,7 +226,7 @@ impl Elaboration<'_, '_> {
         }
         // read at a converged solution, `limit(x, f, seed)` is `x`: the limited iterate is the unlimited one
         if scope.analog.at_solution {
-            return self.lower_expr(scope, *args.first()?);
+            return self.values().lower_expr(scope, *args.first()?);
         }
         let enabled = self.standalone_guard(scope, span, "a `limit`")?;
         let site = scope.analog.limits.len() as u32;
@@ -239,7 +239,7 @@ impl Elaboration<'_, '_> {
             None => {
                 let mut lowered = Vec::new();
                 for arg in args {
-                    lowered.push(self.lower_expr(scope, *arg));
+                    lowered.push(self.values().lower_expr(scope, *arg));
                 }
                 let mut lowered = lowered.into_iter();
                 (lowered.next()??, lowered.next()??, lowered.next().flatten())
@@ -247,10 +247,10 @@ impl Elaboration<'_, '_> {
             Some(_) => {
                 // `f` is a closure whose parameters are locals of the body: it stays where it is.
                 let mut standalone = Self::standalone_scope(scope);
-                let x = self.lower_expr(&mut standalone, *args.first()?);
-                let f = self.lower_expr(scope, *args.get(1)?);
+                let x = self.values().lower_expr(&mut standalone, *args.first()?);
+                let f = self.values().lower_expr(scope, *args.get(1)?);
                 let seed = match args.get(2) {
-                    Some(seed) => Some(self.lower_expr(&mut standalone, *seed)),
+                    Some(seed) => Some(self.values().lower_expr(&mut standalone, *seed)),
                     None => None,
                 };
                 if !standalone.values.locals.is_empty() {
@@ -283,7 +283,7 @@ impl Elaboration<'_, '_> {
         let mut standalone = Self::standalone_scope(scope);
         let mut lowered = Vec::new();
         for arg in args {
-            let value = if guarded { self.lower_expr(&mut standalone, *arg) } else { self.lower_expr(scope, *arg) };
+            let value = if guarded { self.values().lower_expr(&mut standalone, *arg) } else { self.values().lower_expr(scope, *arg) };
             lowered.push(value);
         }
         if guarded {
@@ -336,7 +336,7 @@ impl Elaboration<'_, '_> {
         let when = if nested { self.standalone_guard(scope, node.span, "a `bound_step`") } else { Some(None) };
         let Some(when) = when else { return Some(false) };
         let mut standalone = Self::standalone_scope(scope);
-        let value = if nested { self.lower_expr(&mut standalone, arg.value) } else { self.lower_expr(scope, arg.value) }?;
+        let value = if nested { self.values().lower_expr(&mut standalone, arg.value) } else { self.values().lower_expr(scope, arg.value) }?;
         if !standalone.values.locals.is_empty() {
             self.refuse(scope.values.file, node.span, AnalogForm::BoundStepUnderConditionWhoseStepBinds);
             return Some(false);

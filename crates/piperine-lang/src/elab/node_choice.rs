@@ -11,7 +11,7 @@ use piperine_ir::Constant;
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::pom::{Arm, BlockNode, DeclId, ExprId, ExprKind, PatKind, Resolution, StmtKind};
 
 /// What folding a choice has bound so far: the constants of the `let`s of its blocks, and the `let`s that name a node.

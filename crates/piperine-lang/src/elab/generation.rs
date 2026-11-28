@@ -15,7 +15,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, GenElseNode, GenerationData, PatKind};
 

@@ -7,7 +7,7 @@ use piperine_ir::Constant;
 
 use super::elaborator::Elaboration;
 use super::instances::Instance;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::structural::BodyKey;
 use crate::refusal::forms::GenericsForm;
 use crate::msl::{Diagnostic, Span};

@@ -14,11 +14,12 @@
 //! A form with no finite symbolic reading (a `while`, a `loop`, a `break`, a `match` statement, a `let` that takes
 //! a pattern, a call made for its effect) is `P0001` naming it (GAPS L74), never a wrong value.
 
+use super::value::ValueLowering;
 use piperine_ir::{Constant, Expr, ExprId as LoweredExpr};
 
 use super::elaborator::Elaboration;
 use super::expansion::Environment;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, PatKind, Resolution, StmtId, StmtKind};
@@ -143,7 +144,7 @@ impl Elaboration<'_, '_> {
                 scope.digital.texts.insert(binding, text);
             }
             Some(Ty::Option(_)) => {
-                let pair = self.lower_option(scope, init)?;
+                let pair = self.values().lower_option(scope, init)?;
                 scope.analog.option_values.insert(binding, (pair.is, pair.val));
             }
             _ => self.set_expanded_name(scope, binding, init)?,
@@ -154,7 +155,7 @@ impl Elaboration<'_, '_> {
     /// The name `binding` holds the value of `source` from here on, and the constant it folds to, when it does.
     fn set_expanded_name(&mut self, scope: &mut Scope, binding: DeclId, source: ExprId) -> Option<()> {
         let folded = self.fold_scalar(scope, source);
-        let value = self.lower_expr(scope, source)?;
+        let value = self.values().lower_expr(scope, source)?;
         scope.analog.values.insert(binding, value);
         match folded {
             Some(constant) => scope.values.unrolled.bind(binding, constant),
@@ -171,7 +172,7 @@ impl Elaboration<'_, '_> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.state.design.decl_data(node.owner).file;
         match &node.kind {
-            ExprKind::Return(Some(returned)) => Some(Flow::Done(self.lower_expr(scope, *returned)?)),
+            ExprKind::Return(Some(returned)) => Some(Flow::Done(self.values().lower_expr(scope, *returned)?)),
             ExprKind::Assign { .. } => {
                 self.run_assignment(scope, expr, ExpandedBody::Differentiated)?;
                 Some(Flow::Next)
@@ -193,7 +194,7 @@ impl Elaboration<'_, '_> {
                 self.refuse(file, node.span, AnalogForm::BreakContinueOrReturnWithNoValue);
                 None
             }
-            _ if value => Some(Flow::Done(self.lower_expr(scope, expr)?)),
+            _ if value => Some(Flow::Done(self.values().lower_expr(scope, expr)?)),
             _ => {
                 self.refuse(file, node.span, AnalogForm::ExpressionStatementThatIsNoAssignmentIf);
                 None
@@ -223,9 +224,9 @@ impl Elaboration<'_, '_> {
             return None;
         }
         let old = scope.analog.values[&decl];
-        let operand = self.lower_expr(scope, rhs)?;
+        let operand = self.values().lower_expr(scope, rhs)?;
         let (ty, origin) = (self.type_of(old), self.expr_origin(assignment));
-        let value = self.emit(Expr::Binary { op: Self::binary_op(op), lhs: old, rhs: operand }, ty, origin);
+        let value = self.emit(Expr::Binary { op: ValueLowering::binary_op(op), lhs: old, rhs: operand }, ty, origin);
         scope.analog.values.insert(decl, value);
         scope.values.unrolled.unbind(decl);
         Some(())
@@ -252,7 +253,7 @@ impl Elaboration<'_, '_> {
             self.refuse(scope.values.file, span, AnalogForm::FnCalledInsideDdxThatForksInto);
             return None;
         }
-        let test = self.lower_expr(scope, cond)?;
+        let test = self.values().lower_expr(scope, cond)?;
         let origin = self.expr_origin(cond);
         let before = Environment::of(scope);
         scope.values.decisions += 1;

@@ -213,10 +213,10 @@ impl Elaboration<'_, '_> {
         let data = self.state.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
         let carried = match self.state.consts.typed_carrier(decl).as_ref() {
-            Some(Ty::Carrier { value, .. }) => self.stored_type(value),
+            Some(Ty::Carrier { value, .. }) => self.values().stored_type(value),
             // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
             Some(array @ Ty::Array(..)) => match array.innermost() {
-                Ty::Carrier { value, .. } => self.stored_type(value),
+                Ty::Carrier { value, .. } => self.values().stored_type(value),
                 _ => None,
             },
             _ => None,
@@ -266,21 +266,21 @@ impl Elaboration<'_, '_> {
                 let shape = array.clone()?;
                 Some(self.array_init(decl, expr, &shape, &ty, frame)?)
             }
-            Some(expr) => match self.hand_written_encode(decl) {
-                Some((encode, arguments)) => Some(self.encoded_init(expr, encode, &arguments, frame)?),
+            Some(expr) => match self.values().hand_written_encode(decl) {
+                Some((encode, arguments)) => Some(self.values().encoded_init(expr, encode, &arguments, frame)?),
                 None => {
                     let value = self.carrier_init(expr, frame)?;
-                    Some(self.ir_constant(value, &ty))
+                    Some(self.values().ir_constant(value, &ty))
                 }
             },
             None if resolved.is_some() => None,
             // a type with a hand-written `Repr` and a `Default` starts at the levels `encode` gives for its default (GN-32 AC 2); a
             // type with no `Default` has none to start at: the carrier takes its value from what drives it
-            None if let Some((encode, arguments)) = self.hand_written_encode(decl)
+            None if let Some((encode, arguments)) = self.values().hand_written_encode(decl)
                 && (frame == 0 || matches!(data.kind, DeclKind::Signal(_))) =>
             {
                 match self.default_initial_value(decl, &ty) {
-                    Some(default) => Some(self.encoded_default(encode, &arguments, default)?),
+                    Some(default) => Some(self.values().encoded_default(encode, &arguments, default)?),
                     None => None,
                 }
             }
@@ -298,7 +298,7 @@ impl Elaboration<'_, '_> {
     fn lower_resolved_carrier(&mut self, frame: usize, decl: DeclId, nature: DeclId, init: Option<ExprId>) -> Option<Carrier> {
         let data = self.state.design.decl_data(decl).clone();
         let (chosen, picked) = self.chosen_resolve_impl(decl, nature)?;
-        let Some(driven) = self.stored_type(&chosen.driven) else {
+        let Some(driven) = self.values().stored_type(&chosen.driven) else {
             self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };
@@ -306,7 +306,7 @@ impl Elaboration<'_, '_> {
         let init = match init {
             Some(expr) => {
                 let value = self.carrier_init(expr, frame)?;
-                Some(self.ir_constant(value, &driven))
+                Some(self.values().ir_constant(value, &driven))
             }
             None if picked => self.default_constant(&chosen.driven, &driven),
             None => None,
@@ -416,7 +416,7 @@ impl Elaboration<'_, '_> {
         let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.state.consts.value(expr, &Bindings::new()) };
         self.state.consts.set_substitution(outer);
         let value = folded.ok()?;
-        Some(self.ir_constant(value, stored))
+        Some(self.values().ir_constant(value, stored))
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.

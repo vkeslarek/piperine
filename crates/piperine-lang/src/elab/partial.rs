@@ -13,7 +13,7 @@
 use piperine_ir::{BodyId, Differentiation, Expr, ExprId as LoweredExpr, Origin, PartialDerivative, Terminal, ValueType, Variable};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{ExprId, ExprKind, QuantityRole};
 
@@ -28,7 +28,7 @@ impl Elaboration<'_, '_> {
         standalone.analog.value_input = true;
         // a local the derivative would read is refused by the pass, naming it; the locals of the
         // closure a `limit` takes are never read, `limit` being transparent
-        let expr = self.lower_expr(&mut standalone, *value)?;
+        let expr = self.values().lower_expr(&mut standalone, *value)?;
         scope.adopt_standalone(&mut standalone);
         if self.reads_a_function(expr) {
             self.refuse(scope.values.file, span, AnalogForm::CallInsideDdxThatExpandsToNo);

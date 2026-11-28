@@ -20,7 +20,7 @@ use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, St
 
 use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::StructureForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{Arm, BlockNode, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution, StmtKind};
@@ -240,7 +240,7 @@ impl Elaboration<'_, '_> {
             for expr in &inside {
                 frame.derivatives.remove(expr);
             }
-            let Some((stmts, tail)) = self.lower_statements(scope, &body.stmts) else {
+            let Some((stmts, tail)) = self.values().lower_statements(scope, &body.stmts) else {
                 ok = false;
                 break;
             };
@@ -379,7 +379,7 @@ impl Elaboration<'_, '_> {
             self.refuse(scope.values.file, span, StructureForm::RecursionThroughFunctionWithoutBody);
             return None;
         };
-        if self.calls_option_function(expr).is_some() || self.expands_forms_it_cannot(&body) {
+        if self.values().calls_option_function(expr).is_some() || self.expands_forms_it_cannot(&body) {
             self.refuse(scope.values.file, span, StructureForm::RecursionReachedFromAnalogWhoseFunctionReturns);
             return None;
         }
@@ -400,7 +400,7 @@ impl Elaboration<'_, '_> {
         let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
         let slots = self.state.types.binding(expr).map(<[_]>::to_vec).unwrap_or_default();
         let folded: Vec<Option<Constant>> = slots.iter().map(|slot| slot.and_then(|arg| self.state.consts.value(arg, &bindings).ok())).collect();
-        let arguments = self.lower_arguments(scope, expr, function)?;
+        let arguments = self.values().lower_arguments(scope, expr, function)?;
         let (saved_locals, saved_unrolled) = (scope.values.local_index.clone(), scope.values.unrolled.clone());
         let mut stmts = Vec::new();
         for (k, param) in params.iter().enumerate() {
@@ -417,7 +417,7 @@ impl Elaboration<'_, '_> {
             stmts.push(self.stmt(Stmt::Let { local, init }));
         }
         scope.analog.expanding.push(Expansion { function, decisions: scope.values.decisions });
-        let lowered = crate::stack::Stack::deep(|| self.lower_statements(scope, &body.stmts));
+        let lowered = crate::stack::Stack::deep(|| self.values().lower_statements(scope, &body.stmts));
         scope.analog.expanding.pop();
         scope.values.local_index = saved_locals;
         scope.values.unrolled = saved_unrolled;

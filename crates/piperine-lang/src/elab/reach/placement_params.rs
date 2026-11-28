@@ -14,7 +14,7 @@ use piperine_ir::{Constant, ExprId as LoweredExpr};
 
 use crate::elab::consts::{Bindings, ConstFault};
 use crate::elab::elaborator::Elaboration;
-use crate::elab::lower::Scope;
+use crate::elab::elaborator::Scope;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclId, DeclKind, ExprId, FieldInit, FileId, Resolution};
 use crate::types::Substitution;
@@ -137,8 +137,8 @@ impl Elaboration<'_, '_> {
     /// lowered in the caller's frame, the default in the frame itself. `None` for a param the frame does not defer.
     pub(in crate::elab) fn lower_deferred_param(&mut self, scope: &mut Scope, decl: DeclId) -> Option<LoweredExpr> {
         match self.state.structure.frames.get(scope.values.frame)?.deferred_params.get(&decl).copied()? {
-            DeferredParam::Given(expr) => self.in_caller(scope, |this, scope| this.lower_expr(scope, expr)),
-            DeferredParam::Default(expr) => self.lower_expr(scope, expr),
+            DeferredParam::Given(expr) => self.in_caller(scope, |this, scope| this.values().lower_expr(scope, expr)),
+            DeferredParam::Default(expr) => self.values().lower_expr(scope, expr),
         }
     }
 }

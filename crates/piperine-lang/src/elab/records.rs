@@ -11,7 +11,7 @@
 use piperine_ir::{EmitField, Expr, ExprId as LoweredExpr, Origin, Stmt, Stream, StreamField, StmtId as LoweredStmt, TraceSite, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{BinOp, BlockNode, DeclId, DeclKind, ExprId, ExprKind, FieldInit, Lit, Resolution};
 use crate::types::{Callee, Ty};
@@ -87,7 +87,7 @@ impl Elaboration<'_, '_> {
                 match self.text_of(scope, field.value) {
                     Some(text) => lowered.push(EmitField::Text { name: field.name.text.clone(), text }),
                     // A file with no text was reported as `E0612` or `E0613` by `read_included_files`.
-                    None if self.names_unreadable_file(field.value) => ok = false,
+                    None if self.values().names_unreadable_file(field.value) => ok = false,
                     None => {
                         let span = self.state.design.expr_node(field.value).span;
                         self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
@@ -99,14 +99,14 @@ impl Elaboration<'_, '_> {
             // an `Option` field is its presence and its payload, packed as one value (§19 rule 11, D8)
             let lowered_value = match self.typed(field.value) {
                 Some(Ty::Option(payload)) => match self.value_type(&payload) {
-                    Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
+                    Some(payload) => self.values().lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
                     None => {
                         let span = self.state.design.expr_node(field.value).span;
                         self.refuse(scope.values.file, span, ValueForm::OptionRecordFieldWhosePayloadHasNo);
                         None
                     }
                 },
-                _ => self.lower_expr(scope, field.value),
+                _ => self.values().lower_expr(scope, field.value),
             };
             let Some(value) = lowered_value else {
                 ok = false;
@@ -216,7 +216,7 @@ impl Elaboration<'_, '_> {
     /// then the body's statements. `None` after a diagnostic.
     fn inline_emitting_parts(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
         let (mut out, body) = self.bind_inlined_arguments(scope, function, args)?;
-        let (stmts, value) = self.lower_statements(scope, &body.stmts)?;
+        let (stmts, value) = self.values().lower_statements(scope, &body.stmts)?;
         out.extend(stmts);
         Some((out, value))
     }
@@ -255,7 +255,7 @@ impl Elaboration<'_, '_> {
                 }
                 continue;
             }
-            let Some(value) = self.lower_expr(scope, *arg) else {
+            let Some(value) = self.values().lower_expr(scope, *arg) else {
                 ok = false;
                 continue;
             };

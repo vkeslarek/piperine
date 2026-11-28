@@ -3,20 +3,20 @@
 //! its variant names (CV-22).
 //!
 //! The arena is built once, before any body is lowered, in the declaration order of the design, so
-//! [`ValueTypes::of`](super::lower::ValueTypes) only looks a declaration up. A unit enum is an IR
+//! [`ValueTypes::of`](super::expressions::ValueTypes) only looks a declaration up. A unit enum is an IR
 //! enum like any other: its tag is its `Repr` layout (§2 rule 5), so carried bytes do not change.
 
+use super::ValueLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{AggregateData, Constant, Derives, FieldsForm, TypeData, TypeId, TypeKind, ValueType, VariantData};
 
-use super::elaborator::Elaboration;
 use crate::pom::{DeclId, DeclKind, FieldsForm as SourceForm, Reflect};
 use crate::types::{FieldType, Length, Nominal, Ty};
 
 /// The entry of the IR's type arena each reached struct and enum declaration has.
 #[derive(Debug, Default)]
-pub(super) struct TypeArena {
+pub(in crate::elab) struct TypeArena {
     /// The arena index of each declaration.
     ids: BTreeMap<DeclId, TypeId>,
     /// The arena index of each instance of a generic struct or enum, by its declaration and arguments (`Pair<f64>`).
@@ -43,19 +43,19 @@ impl TypeArena {
     }
 
     /// The IR types of the fields of the arena struct `id`, in declaration order.
-    pub(super) fn field_types(&self, id: TypeId) -> &[ValueType] {
+    pub(in crate::elab) fn field_types(&self, id: TypeId) -> &[ValueType] {
         self.shapes.get(id.index()).and_then(|shape| shape.first()).map_or(&[], Vec::as_slice)
     }
 
     /// The IR types of the fields of variant `variant` of the arena enum `id`.
     /// Whether the enum `id` has no field in any variant: a value of it is its tag.
-    pub(super) fn is_unit_only(&self, id: TypeId) -> bool {
+    pub(in crate::elab) fn is_unit_only(&self, id: TypeId) -> bool {
         self.shapes.get(id.index()).is_some_and(|variants| variants.iter().all(Vec::is_empty))
     }
 
     /// The types of the fields of variant `variant` of the enum `id`, in order; none for a variant of no
     /// field or an entry the arena does not hold.
-    pub(super) fn variant_field_types(&self, id: TypeId, variant: u32) -> &[ValueType] {
+    pub(in crate::elab) fn variant_field_types(&self, id: TypeId, variant: u32) -> &[ValueType] {
         self.shapes.get(id.index()).and_then(|shape| shape.get(variant as usize)).map_or(&[], Vec::as_slice)
     }
 
@@ -72,7 +72,7 @@ impl TypeArena {
     /// The IR type of `ty` where it is built of arena entries and scalars: a struct, an enum, a tuple
     /// or an array of them. `None` for an `Option` (a pair of values in value code, §2 of
     /// `compound.rs`) and for a type no value has.
-    pub(super) fn of(&self, ty: &Ty, scalar: impl Fn(&Ty) -> Option<ValueType> + Copy) -> Option<ValueType> {
+    pub(in crate::elab) fn of(&self, ty: &Ty, scalar: impl Fn(&Ty) -> Option<ValueType> + Copy) -> Option<ValueType> {
         match ty {
             Ty::Struct(nominal) => self.nominal_id(nominal).map(ValueType::Struct),
             Ty::Enum(nominal) => self.nominal_id(nominal).map(ValueType::Enum),
@@ -83,10 +83,10 @@ impl TypeArena {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// A folded value as the IR holds one of type `ty`: the constant evaluator names a unit variant
     /// by its position, which the IR holds as a composite constant of the variant.
-    pub(super) fn ir_constant(&mut self, value: Constant, ty: &ValueType) -> Constant {
+    pub(in crate::elab) fn ir_constant(&mut self, value: Constant, ty: &ValueType) -> Constant {
         match (value, ty) {
             (Constant::Int(position), ValueType::Enum(_)) => {
                 Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: ty.clone(), variant: Some(position as u32), parts: Vec::new() }))
@@ -97,7 +97,7 @@ impl Elaboration<'_, '_> {
 
     /// Adds every struct and enum the check reached to the IR's type arena, in the order of the
     /// design (`TypeArena::over`), before any body is lowered.
-    pub(super) fn build_type_arena(&mut self) {
+    pub(in crate::elab) fn build_type_arena(&mut self) {
         // a generic declaration has no entry of its own: its fields mention parameters; each instance has one
         let decls: Vec<DeclId> = self.state.types.aggregate_types().into_iter().filter(|decl| self.state.design.decl_data(*decl).generics_span.is_none()).collect();
         self.state.values.type_arena = TypeArena::over(&decls);
@@ -156,7 +156,7 @@ impl Elaboration<'_, '_> {
 
     /// The arena entry of every instance of a generic struct or enum the type `ty` holds, an instance's arguments
     /// before it, so a field of an instance finds its own type (T38). A type that still mentions a parameter has none.
-    pub(super) fn register_instances(&mut self, ty: &Ty) {
+    pub(in crate::elab) fn register_instances(&mut self, ty: &Ty) {
         let mut found = Vec::new();
         ty.generic_instances(&mut found);
         for nominal in found {
@@ -235,7 +235,7 @@ impl Elaboration<'_, '_> {
     /// `value_type`, with an `Option` kept as `ValueType::Option` (the pair of value code is for
     /// code that reads its halves) at any depth of a tuple or an array. `None` for a type no
     /// value has.
-    pub(super) fn stored_type(&self, ty: &Ty) -> Option<ValueType> {
+    pub(in crate::elab) fn stored_type(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::Option(inner) => self.stored_type(inner).map(|inner| ValueType::Option(Box::new(inner))),
             Ty::Tuple(items) => items.iter().map(|item| self.stored_type(item)).collect::<Option<Vec<_>>>().map(ValueType::Tuple),

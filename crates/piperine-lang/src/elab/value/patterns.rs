@@ -11,19 +11,20 @@
 //!
 //! A pattern that matches every value has no test.
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::EnumLayout;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
-use super::selectors::ArmCondition;
+use crate::elab::elaborator::Elaboration;
+use crate::elab::elaborator::Scope;
+use crate::elab::selectors::ArmCondition;
 use crate::refusal::forms::PatternForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatId, PatKind, Resolution, StmtId, StmtKind};
 use crate::types::Ty;
 
 /// The scrutinee of a `match`, as each test reads it.
-pub(super) enum Subject {
+pub(in crate::elab) enum Subject {
     /// A local, a param or a literal: lowered again for each test.
     Reread(ExprId),
     /// Bound to this local of this type.
@@ -40,11 +41,11 @@ pub(super) enum Subject {
 }
 
 /// What one pattern asks of its subject.
-pub(super) struct PatternTest {
+pub(in crate::elab) struct PatternTest {
     /// The condition under which the pattern matches; `None` when every value does.
-    pub(super) test: Option<LoweredExpr>,
+    pub(in crate::elab) test: Option<LoweredExpr>,
     /// Each name the pattern binds, with the value it takes.
-    pub(super) bindings: Vec<(DeclId, LoweredExpr)>,
+    pub(in crate::elab) bindings: Vec<(DeclId, LoweredExpr)>,
 }
 
 impl PatternTest {
@@ -59,9 +60,9 @@ impl PatternTest {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The test pattern `pat` makes of `subject`, and the names it binds. `None` after a diagnostic.
-    pub(super) fn test_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId) -> Option<PatternTest> {
+    pub(in crate::elab) fn test_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId) -> Option<PatternTest> {
         let node = self.state.design.pat_node(pat).clone();
         let origin = self.state.locator.origin(scope.values.file, node.span);
         if let PatKind::Or(alternatives) = &node.kind {
@@ -192,7 +193,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// `lhs && rhs` of two tests.
-    pub(super) fn both(&mut self, lhs: LoweredExpr, rhs: LoweredExpr, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn both(&mut self, lhs: LoweredExpr, rhs: LoweredExpr, origin: Origin) -> LoweredExpr {
         self.emit(Expr::Binary { op: BinaryOp::And, lhs, rhs }, ValueType::Bool, origin)
     }
 
@@ -491,7 +492,7 @@ impl Elaboration<'_, '_> {
         let matched = self.test_pattern(scope, &subject, pat)?;
         let names = self.bind_names(scope, &matched.bindings)?;
         let test = self.condition_of(&matched, &origin);
-        let arm = Self::enter_arm(scope, Some(test), true);
+        let arm = Elaboration::enter_arm(scope, Some(test), true);
         scope.analog.guards.push(ArmCondition::IfLet);
         let lets = self.binding_lets(&names);
         let taken = match half {
@@ -499,15 +500,15 @@ impl Elaboration<'_, '_> {
             None => self.bound_block(scope, lets, &then.stmts, then.span),
         };
         scope.analog.guards.pop();
-        Self::leave_arm(scope, arm);
-        let arm = Self::enter_arm(scope, Some(test), false);
+        Elaboration::leave_arm(scope, arm);
+        let arm = Elaboration::enter_arm(scope, Some(test), false);
         scope.analog.guards.push(ArmCondition::IfLet);
         let otherwise = match else_ {
             Some(else_) => self.lower_arm_value(scope, else_, half),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
         scope.analog.guards.pop();
-        Self::leave_arm(scope, arm);
+        Elaboration::leave_arm(scope, arm);
         let (taken, otherwise) = (taken?, otherwise?);
         let (taken, otherwise) = (self.fit_to(taken, &base), self.fit_to(otherwise, &base));
         let ty = base;

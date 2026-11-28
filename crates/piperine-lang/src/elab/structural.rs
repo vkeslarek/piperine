@@ -24,7 +24,7 @@ use super::consts::Bindings;
 use super::instances::Instance;
 use super::body::ModulePlan;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use piperine_ir::Terminal;
 use crate::pom::{Arm, FileId, DeclId, DeclKind, Design, ExprId, ExprKind, PatId, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::Types;
@@ -838,7 +838,7 @@ impl Elaboration<'_, '_> {
         let Resolution::Decl(decl) = res else { return None };
         match self.state.design.decl_data(decl).kind {
             DeclKind::Const(_) => self.state.consts.constant(decl).ok(),
-            DeclKind::Variant(_) => super::compound::EnumLayout::variant_tag(self.state.design, decl).map(Constant::Int),
+            DeclKind::Variant(_) => super::value::compound::EnumLayout::variant_tag(self.state.design, decl).map(Constant::Int),
             _ => None,
         }
     }

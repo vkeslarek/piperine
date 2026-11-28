@@ -6,7 +6,7 @@
 use piperine_ir::{Stmt, StmtId as LoweredStmt};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::pom::ExprId;
 
 impl Elaboration<'_, '_> {
@@ -19,11 +19,11 @@ impl Elaboration<'_, '_> {
         }
         let wanted = target.as_ref().map(|t| t.ty.clone());
         let value = match &wanted {
-            Some(ty) => self.lower_stored(scope, value, ty),
-            None => self.lower_expr(scope, value),
+            Some(ty) => self.values().lower_stored(scope, value, ty),
+            None => self.values().lower_expr(scope, value),
         };
         let after = match after {
-            Some(after) => self.lower_expr(scope, after).map(Some),
+            Some(after) => self.values().lower_expr(scope, after).map(Some),
             None => Some(None),
         };
         match (target, value, after) {

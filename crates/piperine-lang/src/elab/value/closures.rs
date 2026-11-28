@@ -5,16 +5,16 @@
 //! by value. A function's name used as a value is `Expr::FunctionRef`; a call of a local of
 //! function type is `Expr::CallValue`. The IR types a call through a value by its function type.
 
+use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, ValueType};
 
-use super::elaborator::Elaboration;
-use super::lower::Scope;
-use super::variants::Half;
+use crate::elab::elaborator::Scope;
+use crate::elab::variants::Half;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{ClosureParam, DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// `|params| body`, its captured mutable locals copied first.
     pub(super) fn lower_closure(&mut self, scope: &mut Scope, closure: ExprId, params: &[ClosureParam], body: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let span = self.state.design.expr_node(closure).span;

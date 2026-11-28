@@ -27,11 +27,11 @@
 //! branch flow, `time()`, `static()`, `gmin()` or `source_scale()`, directly or through an operand
 //! or a function), so a value input of a hoisted module is judged by what its caller gave.
 
-use piperine_ir::{BinaryOp, Env, Event, EventSource, Expr, ExprId as LoweredExpr, Origin, Reaction, Stmt, UnaryOp, ValueType};
+use piperine_ir::{BinaryOp, Event, EventSource, Expr, ExprId as LoweredExpr, Origin, Reaction, Stmt, UnaryOp, ValueType};
 
 use super::elaborator::Elaboration;
 use super::elements::{ElementRef, Lookup};
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{BinOp, DeclId, DeclKind, ExprId, ExprKind, Resolution, StmtId};
 use crate::types::{Builtin, Callee};
@@ -47,37 +47,6 @@ pub(super) struct Disjunct {
 }
 
 impl Elaboration<'_, '_> {
-    /// Whether the lowered expression `expr` is continuous.
-    pub(super) fn continuous(&self, expr: LoweredExpr) -> bool {
-        self.state.values.expr_continuous.get(expr.index()).copied().unwrap_or(false)
-    }
-
-    /// Whether an expression of kind `kind`, whose operands are lowered already, is continuous.
-    pub(super) fn continuous_kind(&self, kind: &Expr) -> bool {
-        let any = |es: &[LoweredExpr]| es.iter().any(|e| self.continuous(*e));
-        match kind {
-            Expr::Probe { .. } | Expr::Flow { .. } | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Env(Env::Time | Env::Static | Env::Gmin | Env::SourceScale | Env::Freq) => true,
-            Expr::Env(Env::Temperature | Env::TemperatureGiven | Env::Analysis(_)) | Expr::SessionParameter { .. } | Expr::Fired(_) | Expr::Real(_) | Expr::Bool(_) | Expr::Unit | Expr::Local(_) | Expr::Param(_) | Expr::ParamPrevious(_) | Expr::Others(_) | Expr::Resolve { .. } | Expr::Int(_) | Expr::FloatBits(_) | Expr::Wide(_) | Expr::Carrier(_) | Expr::Previous(_) => false,
-            Expr::Unary { expr, .. } | Expr::Cast { expr, .. } | Expr::Table { x: expr, .. } | Expr::TableSlope { x: expr, .. } => self.continuous(*expr),
-            Expr::CarrierElement { index, .. } | Expr::ElementPrevious { index, .. } | Expr::ElementChanged { index, .. } => self.continuous(*index),
-            Expr::Binary { lhs, rhs, .. } => any(&[*lhs, *rhs]),
-            Expr::Unwrap { is, value, .. } => any(&[*is, *value]),
-            Expr::Same { a, b } => any(&[*a, *b]),
-            Expr::LevelCast { expr, .. } => self.continuous(*expr),
-            Expr::If { cond, then, otherwise } => any(&[*cond, *then, *otherwise]),
-            Expr::Block { stmts, value } => stmts.iter().any(|s| self.state.values.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
-            Expr::Call { function, args } => self.state.functions.variants.continuous(*function) || any(args),
-            Expr::Math { args, .. } => any(args),
-            Expr::Method { receiver, args, .. } => self.continuous(*receiver) || any(args),
-            Expr::Closure { body, .. } => self.continuous(*body),
-            Expr::Limit { x, f, seed, .. } => any(&[*x, *f]) || seed.is_some_and(|s| self.continuous(s)),
-            Expr::Stim { mag, phase, .. } => self.continuous(*mag) || phase.is_some_and(|p| self.continuous(p)),
-            Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
-                any(&kind.operands()) || kind.statements().iter().any(|s| self.state.values.stmt_continuous.get(s.index()).copied().unwrap_or(false))
-            }
-        }
-    }
-
     /// The `digital` blocks of `module`, read in `scope`: their reactions, in source order.
     pub(super) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return };
@@ -191,7 +160,7 @@ impl Elaboration<'_, '_> {
     /// The body of a reaction in `scope`, under `if cond` when `condition`, run once the body is
     /// lowered, gives one. `None` after a diagnostic.
     fn reaction_body_under(&mut self, scope: &mut Scope, stmts: &[StmtId], condition: impl FnOnce(&mut Self) -> Option<LoweredExpr>) -> Option<Vec<piperine_ir::StmtId>> {
-        let (mut lowered, value) = self.lower_statements(scope, stmts)?;
+        let (mut lowered, value) = self.values().lower_statements(scope, stmts)?;
         if let Some(value) = value {
             lowered.push(self.stmt(Stmt::Expr(value)));
         }
@@ -333,7 +302,7 @@ impl Elaboration<'_, '_> {
             }
             _ => {
                 let before = scope.values.locals.len();
-                let lowered = self.lower_expr(scope, expr)?;
+                let lowered = self.values().lower_expr(scope, expr)?;
                 let span = self.state.design.expr_node(expr).span;
                 self.add_conjunct(scope, lowered, before, span, d)
             }
@@ -372,7 +341,7 @@ impl Elaboration<'_, '_> {
     /// The argument of `cross` or `at`, which belongs to the event: it may bind no local.
     fn event_argument(&mut self, scope: &mut Scope, arg: ExprId) -> Option<LoweredExpr> {
         let before = scope.values.locals.len();
-        let lowered = self.lower_expr(scope, arg)?;
+        let lowered = self.values().lower_expr(scope, arg)?;
         if scope.values.locals.len() > before {
             let span = self.state.design.expr_node(arg).span;
             self.refuse(scope.values.file, span, AnalogForm::LetInArgumentOfEvent);
@@ -406,7 +375,7 @@ impl Elaboration<'_, '_> {
                 },
                 _ => {}
             },
-            ExprKind::Call { args, .. } if self.is_some_call(arg) => {
+            ExprKind::Call { args, .. } if self.values().is_some_call(arg) => {
                 let payload = args.first().map(|a| a.value);
                 return self.optional_constant(scope, payload, what);
             }

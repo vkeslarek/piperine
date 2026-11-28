@@ -122,7 +122,7 @@ impl Elaboration<'_, '_> {
             return;
         }
         let Some(implementation) = self.net_implementation(&holders, sample) else { return };
-        let Some(driven) = self.stored_type(&implementation.driven) else { return };
+        let Some(driven) = self.values().stored_type(&implementation.driven) else { return };
         let value = sample.value.clone();
         let mut drive_nets = Vec::new();
         let mut owners: Vec<Option<Holder>> = Vec::new();

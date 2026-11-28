@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 
 use piperine_ir::{ExprId as LoweredExpr, Local, Origin, StmtId as LoweredStmt, ValueType};
 
-use super::consts::Bindings;
+use crate::elab::consts::Bindings;
 use super::control::LoopFrame;
 use super::exits::Divergences;
 use super::returns::{FunctionResult, InlineExit};
@@ -25,7 +25,7 @@ pub(in crate::elab) struct ExpressionTables {
     /// The origin of every IR expression added so far, by id.
     pub(in crate::elab) expr_origins: Vec<Origin>,
     /// The diverging expressions lowered so far (`exits.rs`).
-    pub(super) divergences: Divergences,
+    pub(in crate::elab) divergences: Divergences,
     /// The IR type each reached struct and enum has (`types.rs`).
     pub(in crate::elab) type_arena: TypeArena,
 }
@@ -59,22 +59,22 @@ pub(in crate::elab) struct ValueScope {
     /// what it holds (`selectors.rs`).
     pub(in crate::elab) local_inits: BTreeMap<u32, LoweredExpr>,
     /// The loops the code being lowered sits in, innermost last (`control.rs`).
-    pub(super) loops: Vec<LoopFrame>,
+    pub(in crate::elab) loops: Vec<LoopFrame>,
     /// What a `return` of the function being lowered gives (`returns.rs`); `None` outside a function
     /// whose body returns early.
-    pub(super) result: Option<FunctionResult>,
+    pub(in crate::elab) result: Option<FunctionResult>,
     /// How many `if` and `match` decisions that did not fold the code being lowered sits under.
     pub(in crate::elab) decisions: u32,
     /// The `let`s of the temporaries an inlined `Option` call reads (`returns.rs`), declared before the
     /// statement being lowered so every read of the pair sees them bound.
-    pub(super) pending: Vec<LoweredStmt>,
+    pub(in crate::elab) pending: Vec<LoweredStmt>,
     /// The inlined `Option` functions being lowered that leave early, innermost last (`returns.rs`).
     pub(super) inline_exits: Vec<InlineExit>,
 }
 
 impl ValueScope {
     /// The value scope of code written in `file`: no param, no local, frame 0, outside every loop and function.
-    pub(super) fn new(file: FileId) -> Self {
+    pub(in crate::elab) fn new(file: FileId) -> Self {
         ValueScope {
             file,
             params: BTreeMap::new(),

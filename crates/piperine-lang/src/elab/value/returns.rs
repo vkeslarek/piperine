@@ -9,15 +9,15 @@
 //! A function with a `return` or a `?` has the result type of its signature
 //! (`FunctionResult`): every return and the tail are held to it.
 
+use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, StmtId, ValueType};
 
 use super::control::LoopFrame;
 
 use super::compound::Pair;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
-use super::variants::Half;
-use super::instances::ConcreteValue;
+use crate::elab::elaborator::Scope;
+use crate::elab::variants::Half;
+use crate::elab::instances::ConcreteValue;
 use crate::refusal::forms::{GenericsForm, ValueForm};
 use crate::msl::Span;
 use crate::pom::{BlockNode, DeclId, DeclKind, ExprId, ExprKind, FileId, StmtKind};
@@ -25,13 +25,13 @@ use crate::types::{Callee, Ty};
 
 /// What a `return` of the function being lowered must give.
 #[derive(Clone)]
-pub(super) struct FunctionResult {
+pub(in crate::elab) struct FunctionResult {
     /// The IR type of the value returned: the half's type for an `Option` result.
-    pub(super) ty: ValueType,
+    pub(in crate::elab) ty: ValueType,
     /// Which half of an `Option` result this variant returns.
-    pub(super) half: Half,
+    pub(in crate::elab) half: Half,
     /// The payload of an `Option` result.
-    pub(super) payload: Option<ValueType>,
+    pub(in crate::elab) payload: Option<ValueType>,
 }
 
 /// An inlined function that returns an `Option` and leaves early (§19 rule 10, §1.8.13): where its
@@ -52,10 +52,10 @@ pub(super) struct InlineExit {
     pub(super) loop_flagged: bool,
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The body of `function` as the variant `half` lowers it, at the result type its signature
     /// gives (`FunctionResult`) when the body returns early.
-    pub(super) fn lower_function_body(&mut self, scope: &mut Scope, function: DeclId, half: Half, file: FileId, body: &BlockNode) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_function_body(&mut self, scope: &mut Scope, function: DeclId, half: Half, file: FileId, body: &BlockNode) -> Option<LoweredExpr> {
         let declared = match &self.state.design.decl_data(function).kind {
             DeclKind::Fn(f) => f.ret.and_then(|t| self.typed_written(t)),
             _ => None,
@@ -194,7 +194,7 @@ impl Elaboration<'_, '_> {
         let arguments = instance.as_ref().map(|instance| instance.arguments.clone()).unwrap_or_default();
         if self.is_inlined(function) {
             let Some(instance) = instance else { return self.lower_inlined_option_call(scope, expr, function) };
-            let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+            let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
             let inlined = self.lower_inlined_option_call(scope, expr, function);
             self.state.consts.set_substitution(outer);
             return inlined;
@@ -378,7 +378,7 @@ impl Elaboration<'_, '_> {
     }
 
     /// The function `expr` calls when its result is an `Option`.
-    pub(super) fn calls_option_function(&self, expr: ExprId) -> Option<DeclId> {
+    pub(in crate::elab) fn calls_option_function(&self, expr: ExprId) -> Option<DeclId> {
         let Some(Callee::Function(function)) = self.state.types.callee(expr) else { return None };
         let DeclKind::Fn(f) = &self.state.design.decl_data(function).kind else { return None };
         f.ret.and_then(|t| self.typed_written(t)).is_some_and(|t| matches!(t, Ty::Option(_))).then_some(function)

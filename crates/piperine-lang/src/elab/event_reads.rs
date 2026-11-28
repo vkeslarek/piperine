@@ -13,7 +13,7 @@ use piperine_ir::{Event, Expr, ExprId as LoweredExpr, Origin, ValueType};
 use super::elaborator::Elaboration;
 use super::elements::Lookup;
 use super::events::Disjunct;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::pom::{ExprId, ExprKind};
 use crate::types::Builtin;
 

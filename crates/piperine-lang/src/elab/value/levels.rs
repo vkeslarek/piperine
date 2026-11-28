@@ -5,46 +5,17 @@
 //! with a hand-written `impl Repr` is the call of its own `encode` and `decode`. Any other layout (`f64`, a signed
 //! `decode`, a derived struct, enum, tuple or array) is `Expr::LevelCast` between the type and `[bool; WIDTH]`.
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, LevelPart, Origin, ValueType};
 
 use super::compound::Pair;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
-use super::variants::Half;
+use crate::elab::elaborator::Scope;
+use crate::elab::variants::Half;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{Arg, DeclId, ExprId, FileId, ExprKind, Resolution};
-use crate::types::{ConstTerm, GenericValue, Length, Nominal, Ty};
+use crate::types::{Length, Nominal, Ty};
 
-impl Elaboration<'_, '_> {
-    /// `ty` with each `[_; T::WIDTH]` that is still generic (the consts evaluator folds the built-in layouts) folded
-    /// to the `WIDTH` of the hand-written `impl Repr` of the type `T` is given.
-    pub(super) fn with_hand_written_widths(&self, ty: &Ty) -> Ty {
-        match ty {
-            Ty::Array(element, Length::Generic(ConstTerm::Width(parameter))) => {
-                let element = Box::new(self.with_hand_written_widths(element));
-                let width = match self.state.consts.substitution().get(*parameter) {
-                    Some(GenericValue::Type(given)) => self.level_count(given),
-                    _ => None,
-                };
-                match width {
-                    Some(levels) => Ty::Array(element, Length::Fixed(u64::from(levels))),
-                    None => Ty::Array(element, Length::Generic(ConstTerm::Width(*parameter))),
-                }
-            }
-            Ty::Array(element, length) => Ty::Array(Box::new(self.with_hand_written_widths(element)), length.clone()),
-            Ty::Tuple(items) => Ty::Tuple(items.iter().map(|item| self.with_hand_written_widths(item)).collect()),
-            Ty::Option(inner) => Ty::Option(Box::new(self.with_hand_written_widths(inner))),
-            other => other.clone(),
-        }
-    }
-
-    /// The number of levels of the `Repr` of `ty` (§2): the width of its hand-written `impl`, else the count its layout
-    /// gives (rules 2 to 6). `None` for a type with no laid-out value type.
-    pub(super) fn level_count(&self, ty: &Ty) -> Option<u32> {
-        let hand_written = self.state.impls.hand_written_repr(ty).map(|entry| entry.decl).and_then(|owner| self.hand_written_width(owner, &self.hand_written_arguments(owner, ty)?));
-        hand_written.or_else(|| self.state.types.repr_levels(ty))
-    }
-
+impl ValueLowering<'_, '_, '_> {
     /// `x.encode()` where the checker typed no method (a `T: Repr` parameter): the levels of the receiver. `None` when
     /// the call is no such encode, with no diagnostic; after a diagnostic when it is one and cannot be lowered.
     pub(super) fn lower_parameter_encode(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, name: &str, origin: Origin) -> Option<Option<LoweredExpr>> {

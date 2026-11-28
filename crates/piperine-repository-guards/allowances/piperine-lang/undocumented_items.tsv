@@ -1,7 +1,7 @@
 crates/piperine-lang/src/elab/body.rs::Elaboration::lower_node	1
 crates/piperine-lang/src/elab/carriers.rs::Elaboration::lower_carrier	1
 crates/piperine-lang/src/elab/children.rs::Elaboration::lower_child	1
-crates/piperine-lang/src/elab/compound.rs::EnumLayout::of	1
+crates/piperine-lang/src/elab/value/compound.rs::EnumLayout::of	1
 crates/piperine-lang/src/elab/consts.rs::Bindings::bind	1
 crates/piperine-lang/src/elab/consts.rs::Bindings::get	1
 crates/piperine-lang/src/elab/consts.rs::ConstEval::boolean	1
@@ -9,9 +9,9 @@ crates/piperine-lang/src/elab/consts.rs::ConstEval::new	1
 crates/piperine-lang/src/elab/consts/numbers.rs::ConstEval::panic	1
 crates/piperine-lang/src/elab/elaborator.rs::Elaborator::new	1
 crates/piperine-lang/src/elab/events.rs::Elaboration::not	1
-crates/piperine-lang/src/elab/levels.rs::Elaboration::decode_levels	1
-crates/piperine-lang/src/elab/lower.rs::Elaboration::binary_op	1
-crates/piperine-lang/src/elab/lower.rs::Elaboration::lower_expr_unchecked	1
+crates/piperine-lang/src/elab/value/levels.rs::ValueLowering::decode_levels	1
+crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::binary_op	1
+crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_expr_unchecked	1
 crates/piperine-lang/src/elab/origin.rs::Locator::new	1
 crates/piperine-lang/src/msl/ast.rs::::Arm	1
 crates/piperine-lang/src/msl/ast.rs::::AttrArg	1

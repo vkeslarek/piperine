@@ -13,7 +13,7 @@ use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
 use super::instances::Instance;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::templates::TemplateValue;
 use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
@@ -472,7 +472,7 @@ impl Elaboration<'_, '_> {
     fn lower_param_expression(&mut self, scope: &mut Scope, expr: ExprId) -> Option<piperine_ir::ExprId> {
         let payload = if self.state.types.implicit_some(expr) {
             Some(expr)
-        } else if self.is_some_call(expr) {
+        } else if self.values().is_some_call(expr) {
             match &self.state.design.expr_node(expr).kind {
                 ExprKind::Call { args, .. } => args.first().map(|arg| arg.value),
                 _ => None,
@@ -482,13 +482,13 @@ impl Elaboration<'_, '_> {
         };
         // an `Option` param of the parent passed on (`{ rs: rs }`): its two halves, packed again
         if payload.is_none() && matches!(self.typed(expr).as_ref(), Some(crate::types::Ty::Option(_))) {
-            let pair = self.lower_option(scope, expr)?;
+            let pair = self.values().lower_option(scope, expr)?;
             let origin = self.expr_origin(expr);
             let held = self.type_of(pair.val);
             return Some(self.emit(piperine_ir::Expr::OptionPack { is: pair.is, value: pair.val }, ValueType::Option(Box::new(held)), origin));
         }
-        let Some(payload) = payload else { return self.lower_expr(scope, expr) };
-        let value = self.lower_expr(scope, payload)?;
+        let Some(payload) = payload else { return self.values().lower_expr(scope, expr) };
+        let value = self.values().lower_expr(scope, payload)?;
         let origin = self.expr_origin(expr);
         let is = self.emit(piperine_ir::Expr::Bool(true), ValueType::Bool, origin.clone());
         let held = self.type_of(value);

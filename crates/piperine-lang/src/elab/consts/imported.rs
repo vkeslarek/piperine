@@ -8,7 +8,7 @@
 use piperine_ir::{AggregateData, Constant, Expr, ExprId as LoweredExpr, Origin, Real, ValueType};
 
 use super::super::elaborator::Elaboration;
-use super::super::lower::Scope;
+use super::super::elaborator::Scope;
 use super::{Bindings, CompositeKind, ConstFault, ConstTree};
 use crate::refusal::forms::{ConstantForm, StructureForm};
 use crate::pom::ExprId;
@@ -18,7 +18,7 @@ impl Elaboration<'_, '_> {
     /// the IR's composite constants.
     pub(in crate::elab) fn composite_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let tree = self.state.consts.tree(expr, bindings)?;
-        let Some(ty) = self.typed(expr).and_then(|t| self.stored_type(&t)) else {
+        let Some(ty) = self.typed(expr).and_then(|t| self.values().stored_type(&t)) else {
             return Err(ConstFault::refused(expr, StructureForm::CompositeValueOfTypeThatHasNo));
         };
         self.import_tree(expr, &tree, &ty)
@@ -111,7 +111,7 @@ impl Elaboration<'_, '_> {
             (ConstTree::Composite { kind: CompositeKind::Option, parts }, ValueType::Option(payload)) => {
                 let (is, value) = match parts.first() {
                     Some(held) => (self.emit(Expr::Bool(true), ValueType::Bool, origin.clone()), self.tree_expr(held, payload, origin)?),
-                    None => (self.emit(Expr::Bool(false), ValueType::Bool, origin.clone()), self.zero(payload, origin.clone())?),
+                    None => (self.emit(Expr::Bool(false), ValueType::Bool, origin.clone()), self.values().zero(payload, origin.clone())?),
                 };
                 Some(self.emit(Expr::OptionPack { is, value }, ty.clone(), origin.clone()))
             }
@@ -142,7 +142,7 @@ impl Elaboration<'_, '_> {
     /// The constant of `expr`, a value of type `T` bound to a param of type `Option<T>`: `Some` of it (§3.2.3, PI-03 AC 2).
     pub(in crate::elab) fn implicit_some_constant(&mut self, expr: ExprId, bindings: &Bindings) -> Result<Constant, ConstFault> {
         let payload = self.state.consts.tree(expr, bindings)?;
-        let Some(held) = self.typed(expr).and_then(|ty| self.stored_type(&ty)) else {
+        let Some(held) = self.typed(expr).and_then(|ty| self.values().stored_type(&ty)) else {
             return Err(ConstFault::refused(expr, ConstantForm::ImplicitSomeOfValueWithNoValue));
         };
         self.import_tree(expr, &ConstTree::Composite { kind: CompositeKind::Option, parts: vec![payload] }, &ValueType::Option(Box::new(held)))

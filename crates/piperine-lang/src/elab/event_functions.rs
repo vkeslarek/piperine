@@ -16,8 +16,8 @@ use super::elaborator::Elaboration;
 use super::events::Disjunct;
 use super::expansion::Environment;
 use super::instances::ConcreteValue;
-use super::lower::Scope;
-use super::patterns::Subject;
+use super::elaborator::Scope;
+use super::value::patterns::Subject;
 use super::symbolic::{ExpandedBody, Flow, Step};
 use super::unroll::Expansion;
 use crate::refusal::forms::EventFunctionForm;
@@ -63,7 +63,7 @@ impl Elaboration<'_, '_> {
         let (Some(Callee::Method(named) | Callee::Bound { item: named }), Some((receiver, arguments))) = (self.state.types.callee(call), self.method_operands(call)) else { return None };
         let receiver_type = self.typed(receiver)?;
         let target = if self.is_trait_function(named) {
-            let Some(target) = self.bound_implementation(call, named, &receiver_type) else {
+            let Some(target) = self.values().bound_implementation(call, named, &receiver_type) else {
                 self.refuse(scope.values.file, span, EventFunctionForm::MethodThatReturnsEventThatNoImpl);
                 return None;
             };
@@ -74,7 +74,7 @@ impl Elaboration<'_, '_> {
         let instance = if self.is_trait_function(target) {
             vec![ConcreteValue::Type(receiver_type)]
         } else if self.is_generic_impl_item(target) {
-            self.method_impl_arguments(scope, call, target, receiver)?
+            self.values().method_impl_arguments(scope, call, target, receiver)?
         } else {
             Vec::new()
         };
@@ -264,7 +264,7 @@ impl Elaboration<'_, '_> {
     /// expression has one place). `None` after a diagnostic.
     fn guard_by_condition(&mut self, scope: &mut Scope, cond: ExprId, negated: bool, disjunct: &mut Disjunct) -> Option<()> {
         let locals = scope.values.locals.len();
-        let mut lowered = self.lower_expr(scope, cond)?;
+        let mut lowered = self.values().lower_expr(scope, cond)?;
         if negated {
             let origin = self.expr_origin(cond);
             lowered = self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: lowered }, ValueType::Bool, origin);
@@ -288,7 +288,7 @@ impl Elaboration<'_, '_> {
                 self.refuse(scope.values.file, span, EventFunctionForm::MatchArmWithGuardInFunctionThat);
                 return None;
             }
-            if !self.test_pattern(scope, &subject, arm.pat)?.bindings.is_empty() {
+            if !self.values().test_pattern(scope, &subject, arm.pat)?.bindings.is_empty() {
                 self.refuse(scope.values.file, span, EventFunctionForm::MatchArmWhosePatternBindsNameIn);
                 return None;
             }
@@ -310,7 +310,7 @@ impl Elaboration<'_, '_> {
             let last = position + 1 == arms.len();
             let earlier: Vec<_> = arms[..position].iter().map(|earlier| earlier.pat).collect();
             for mut disjunct in found? {
-                let tests = self.standalone_arm_tests(scope, scrutinee, &earlier, (!last).then_some(arm.pat))?;
+                let tests = self.values().standalone_arm_tests(scope, scrutinee, &earlier, (!last).then_some(arm.pat))?;
                 let span = self.state.design.expr_node(arm.body).span;
                 for test in tests {
                     self.add_conjunct(scope, test, scope.values.locals.len(), span, &mut disjunct)?;

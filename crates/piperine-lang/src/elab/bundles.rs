@@ -9,7 +9,7 @@ use piperine_ir::{CarrierWindow, ExprId as LoweredExpr, Origin, Terminal};
 use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::elements::Lookup;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{BundlePlace, DeclId, DeclKind, Dir, ExprId, ExprKind, Resolution, StructClass};
 

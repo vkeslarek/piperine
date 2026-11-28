@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use piperine_ir::{Derivative, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, PatKind, Resolution};
 
@@ -125,9 +125,9 @@ impl Elaboration<'_, '_> {
         let [state, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
         standalone.analog.value_input = true;
-        let state = self.lower_expr(&mut standalone, *state)?;
+        let state = self.values().lower_expr(&mut standalone, *state)?;
         let abstol = match rest {
-            [tolerance] => Some(self.lower_expr(&mut standalone, *tolerance)?),
+            [tolerance] => Some(self.values().lower_expr(&mut standalone, *tolerance)?),
             _ => None,
         };
         scope.adopt_standalone(&mut standalone);

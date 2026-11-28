@@ -9,9 +9,9 @@
 
 use piperine_ir::{Env, Expr, ExprId as LoweredExpr, LevelPart, Origin, SessionParameter, ValueType};
 
-use super::compound::Pair;
+use super::value::compound::Pair;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::pom::ExprId;
 

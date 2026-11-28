@@ -19,7 +19,7 @@ use std::cmp::Ordering;
 
 use piperine_ir::{AggregateId, Constant, Real};
 
-use super::super::compound::EnumLayout;
+use super::super::value::compound::EnumLayout;
 use super::control::{Argument, FnValue};
 use super::{Bindings, ConstEval, ConstFault};
 use crate::refusal::forms::{ConstantForm, StructureForm, ValueForm};

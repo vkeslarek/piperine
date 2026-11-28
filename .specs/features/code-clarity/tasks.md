@@ -2459,8 +2459,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] No `impl Elaboration` in `elab/value/`; goldens, twins and the Book inventory are byte-identical
-- [ ] Gate check passes: Golden
+- [x] No `impl Elaboration` in `elab/value/`; goldens, twins and the Book inventory are byte-identical
+  - Note: `lower.rs` held `Scope` and the helpers every concern reads (`typed`, `typed_local`, `typed_written`, `value_type`, `type_of`, `expr_origin`, `emit`, `stmt`, `refuse_silent_failure`, `peel_parens`, `is_trait_function`, `is_generic_impl_item`, and the `Repr` width lookups `with_hand_written_widths`, `level_count`, `hand_written_width`, `hand_written_arguments`, `continuous`, `continuous_kind`): they stay `&self` methods of `Elaboration` and `Scope` stays beside it, all in `elaborator.rs` (design.md, T93 annotation). `lower_expr_unchecked` is 64 lines after `lower_folded_expression`, `lower_unary`, `lower_binary`, `lower_folded_if`, `lower_if`, `lower_field_expression`, `lower_method_expression`, `lower_numeric_method`, `lower_literal`, `lower_block_expression`, `lower_cast` and `lower_decided_match` took the arms; it keeps a verdict of `kept` (an exhaustive match over `ExprKind`).
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

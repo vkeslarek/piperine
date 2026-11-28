@@ -2,11 +2,11 @@
 //! read as the constant it is and validated (`E0704`), and the call lowers to `Expr::Table` over the
 //! samples, which the run only evaluates.
 
+use super::ValueLowering;
 use piperine_ir::{Constant, Expr, ExprId as LoweredExpr, Extrapolation, Origin, Real, TableControl, TableDegree, ValueType};
 
-use super::consts::{Bindings, CompositeKind, ConstTree};
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::consts::{Bindings, CompositeKind, ConstTree};
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::pom::ExprId;
@@ -21,7 +21,7 @@ pub(super) struct ControlText<'a>(
 
 impl ControlText<'_> {
     /// The control the text says, or why it is none (`E0703`).
-    pub(super) fn parse(&self) -> Result<TableControl, String> {
+    pub(in crate::elab) fn parse(&self) -> Result<TableControl, String> {
         let mut chars = self.0.chars();
         let degree = match chars.next() {
             Some('D') => TableDegree::Closest,
@@ -67,7 +67,7 @@ impl Samples<'_> {
 
     /// Why the samples are no table for `degree` (`E0704`): fewer points than the interpolation needs, or the
     /// first row, counted from 1, whose abscissa does not exceed the one before.
-    pub(super) fn refusal(&self, degree: TableDegree) -> Option<String> {
+    pub(in crate::elab) fn refusal(&self, degree: TableDegree) -> Option<String> {
         let needed = Self::needed(degree);
         if self.0.len() < needed {
             return Some(format!("the table has {} point(s) and the interpolation needs at least {needed}", self.0.len()));
@@ -77,12 +77,12 @@ impl Samples<'_> {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// `table_model(x, table, control)` at `expr`: the control and the table are elaboration constants; the call is
     /// `Expr::Table` over `x` and the samples. `None` after a diagnostic (`E0703`, `E0704`).
     pub(super) fn lower_table_model(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [x, table, control] = args else {
-            self.refuse(scope.values.file, self.state.design.expr_node(expr).span, AnalogForm::TableModelCalledWithOtherThanThree);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, AnalogForm::TableModelCalledWithOtherThanThree);
             return None;
         };
         let (control_span, table_span) = (self.state.design.expr_node(*control).span, self.state.design.expr_node(*table).span);
@@ -113,7 +113,7 @@ impl Elaboration<'_, '_> {
     /// The `(abscissa, value)` pairs the constant `table` folds to; `None` after a diagnostic.
     fn table_samples(&mut self, scope: &Scope, table: ExprId) -> Option<Vec<(f64, f64)>> {
         let span = self.state.design.expr_node(table).span;
-        let tree = match self.state.consts.tree(table, &self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled)) {
+        let tree = match self.elaboration.state.consts.tree(table, &self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled)) {
             Ok(tree) => tree,
             Err(fault) => {
                 self.const_fault(&fault, "the table of a `table_model`");

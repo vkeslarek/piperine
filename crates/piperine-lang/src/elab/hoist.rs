@@ -25,7 +25,7 @@ use super::carriers::Frame;
 use super::consts::Bindings;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::reach::placement_params::PlacementSite;
 use crate::refusal::forms::StructureForm;
 use crate::msl::Diagnostic;
@@ -174,20 +174,20 @@ impl Elaboration<'_, '_> {
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
         let result = data.result?;
         let entry = self.enter_frame(scope, frame);
-        let lowered = self.lower_expr(scope, result);
+        let lowered = self.values().lower_expr(scope, result);
         self.leave_frame(scope, entry);
         lowered
     }
 
     /// `call`'s result of `Option` type as the pair of its two halves, lowered where it is read: the callee's result expression in its
     /// frame (the `Option` form of [`Elaboration::lower_result`]).
-    pub(super) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<super::compound::Pair> {
+    pub(super) fn lower_result_pair(&mut self, scope: &mut Scope, call: ExprId) -> Option<super::value::compound::Pair> {
         let frame = self.frame_of(scope, call)?;
         let module = self.state.structure.frames[frame].module;
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
         let result = data.result?;
         let entry = self.enter_frame(scope, frame);
-        let pair = self.lower_option(scope, result);
+        let pair = self.values().lower_option(scope, result);
         self.leave_frame(scope, entry);
         pair
     }
@@ -228,7 +228,7 @@ impl Elaboration<'_, '_> {
         if matches!(self.state.design.expr_node(value).kind, ExprKind::Call { .. }) && self.result_callee(value).is_some() {
             return self.lower_result(scope, value);
         }
-        self.lower_expr(scope, value)
+        self.values().lower_expr(scope, value)
     }
 
     /// The name of the placement `call` of `module` in the frame `parent`: the `let` it

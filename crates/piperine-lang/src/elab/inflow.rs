@@ -13,7 +13,7 @@ use piperine_ir::{Addend, Branch, BranchKind, BodyNode, Constant, Expr, ExprId a
 
 use super::body::NodePlan;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::selectors::ContributionRecord;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprKind, Resolution};
@@ -42,7 +42,7 @@ impl Elaboration<'_, '_> {
             let branch = scope.analog.branches.len() as u32 - 1;
             let data = self.state.design.decl_data(port);
             scope.analog.contributions.push(ContributionRecord { branch, quantity: QuantityRole::Potential, conditions: Vec::new(), file: data.file, span: data.span });
-            let zero = self.constant_expr(Constant::Real(Real::new(0.0)), ValueType::F64, origin);
+            let zero = self.values().constant_expr(Constant::Real(Real::new(0.0)), ValueType::F64, origin);
             stmts.push(self.stmt(Stmt::Contribute { branch, quantity: QuantityRole::Potential, addends: vec![Addend { operator: Operator::Direct, negated: false, value: zero }] }));
             self.state.digital.structure.inflows.push(Inflow { port: port_node, branch });
             self.state.structure.frames[0].nodes.insert(port, inside);

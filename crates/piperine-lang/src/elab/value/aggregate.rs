@@ -10,12 +10,12 @@
 //! expression are evaluated in the order they are written (§1.3.11): when that is not declaration
 //! order and a field is more than a read, each field is bound to a local first, in written order.
 
+use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, LevelPart, Local, Origin, Place, Projection, Stmt, TypeId, ValueType};
 
 use super::compound::EnumLayout;
-use super::elaborator::Elaboration;
-use super::elements::Lookup;
-use super::lower::Scope;
+use crate::elab::elements::Lookup;
+use crate::elab::elaborator::Scope;
 use super::patterns::{PatternTest, Subject};
 use crate::refusal::forms::ValueForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, FieldInit, FieldPatNode, PatId, PatKind, Resolution};
@@ -40,7 +40,7 @@ impl Built {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The struct or variant declaration `callee` names, when it builds one.
     pub(super) fn constructed_decl(&self, callee: ExprId) -> Option<DeclId> {
         match &self.state.design.expr_node(callee).kind {
@@ -74,7 +74,7 @@ impl Elaboration<'_, '_> {
             _ => match self.state.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(variant)) if matches!(self.state.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
-                    self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
+                    self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
                     return None;
                 }
             },
@@ -163,7 +163,7 @@ impl Elaboration<'_, '_> {
     /// `value` lowered as a value of the type `wanted` held as one value (a carrier, a param, a
     /// record field): an `Option` is the pair of value code packed (D8), anything else is the
     /// expression itself.
-    pub(super) fn lower_stored(&mut self, scope: &mut Scope, value: ExprId, wanted: &ValueType) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_stored(&mut self, scope: &mut Scope, value: ExprId, wanted: &ValueType) -> Option<LoweredExpr> {
         if let ValueType::Option(_) = wanted {
             let pair = self.lower_option(scope, value)?;
             let origin = self.expr_origin(value);
@@ -190,7 +190,7 @@ impl Elaboration<'_, '_> {
 
     /// The position of the field `name` of the struct or tuple type `ty`: a name for a named field, the
     /// digits for a positional one.
-    pub(super) fn field_index(&self, ty: &Ty, name: &str) -> Option<u32> {
+    pub(in crate::elab) fn field_index(&self, ty: &Ty, name: &str) -> Option<u32> {
         match ty {
             Ty::Tuple(_) => name.parse().ok(),
             Ty::Struct(Nominal { decl, .. }) => {
@@ -278,7 +278,7 @@ impl Elaboration<'_, '_> {
         match self.state.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
             Some(count) => Some(count),
             None => {
-                self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::LengthOrBoundThatIsNotInteger);
+                self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::LengthOrBoundThatIsNotInteger);
                 None
             }
         }

@@ -4,11 +4,11 @@
 //! forms that hold one (a block ending in it, an `if` whose arms both end in it) are remembered
 //! with the parts they were made of.
 
+use super::ValueLowering;
 use std::collections::BTreeMap;
 
 use piperine_ir::{Expr, ExprId as LoweredExpr, Stmt, StmtId as LoweredStmt, ValueType};
 
-use super::elaborator::Elaboration;
 
 /// How a diverging expression was built.
 #[derive(Clone)]
@@ -23,7 +23,7 @@ enum Divergence {
 
 /// The diverging expressions lowered so far, by id, and the statements that are one.
 #[derive(Default)]
-pub(super) struct Divergences {
+pub(in crate::elab) struct Divergences {
     expressions: BTreeMap<usize, Divergence>,
     /// A statement `exit;` by id: the expression it holds.
     statements: BTreeMap<usize, LoweredExpr>,
@@ -31,12 +31,12 @@ pub(super) struct Divergences {
 
 impl Divergences {
     /// Whether `expr` diverges.
-    pub(super) fn diverges(&self, expr: LoweredExpr) -> bool {
+    pub(in crate::elab) fn diverges(&self, expr: LoweredExpr) -> bool {
         self.expressions.contains_key(&expr.index())
     }
 
     /// Remembers that statement `stmt` is `Stmt::Expr(expr)` of a diverging expression.
-    pub(super) fn note_statement(&mut self, stmt: LoweredStmt, statement: &Stmt) {
+    pub(in crate::elab) fn note_statement(&mut self, stmt: LoweredStmt, statement: &Stmt) {
         if let Stmt::Expr(expr) = statement
             && self.diverges(*expr)
         {
@@ -45,7 +45,7 @@ impl Divergences {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// A `break`, `continue` or `return` node `exit`, typed `()` until a position asks for more.
     pub(super) fn emit_exit(&mut self, exit: Expr, origin: piperine_ir::Origin) -> LoweredExpr {
         let lowered = self.emit(exit.clone(), ValueType::Unit, origin);

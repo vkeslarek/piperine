@@ -12,7 +12,7 @@
 use piperine_ir::{DelaySite, Env, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::AnalogForm;
 use crate::msl::Diagnostic;
 use crate::pom::ExprId;
@@ -29,9 +29,9 @@ impl Elaboration<'_, '_> {
         let mut standalone = Self::standalone_scope(scope);
         standalone.analog.at_solution = true;
         standalone.analog.value_input = true;
-        let input = self.lower_expr(&mut standalone, *input)?;
+        let input = self.values().lower_expr(&mut standalone, *input)?;
         let time_span = self.state.design.expr_node(*time).span;
-        let time = self.lower_expr(&mut standalone, *time)?;
+        let time = self.values().lower_expr(&mut standalone, *time)?;
         let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
         scope.adopt_standalone(&mut standalone);
         if !standalone.values.locals.is_empty() {

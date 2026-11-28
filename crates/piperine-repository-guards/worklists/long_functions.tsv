@@ -26,9 +26,9 @@ crates/piperine-ir/src/statements.rs::Statements::of	-
 crates/piperine-lang/src/elab/body.rs::Elaboration::lower_body_under_substitution	-
 crates/piperine-lang/src/elab/carriers.rs::Elaboration::lower_carrier	-
 crates/piperine-lang/src/elab/children.rs::Elaboration::lower_child	-
-crates/piperine-lang/src/elab/compound.rs::Elaboration::lower_option	-
-crates/piperine-lang/src/elab/compound.rs::Elaboration::lower_option_method	-
-crates/piperine-lang/src/elab/compound.rs::Elaboration::lower_option_row	-
+crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option	-
+crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_method	-
+crates/piperine-lang/src/elab/value/compound.rs::ValueLowering::lower_option_row	-
 crates/piperine-lang/src/elab/consts.rs::ConstEval::known_method	-
 crates/piperine-lang/src/elab/consts/composite.rs::ConstEval::run_row	-
 crates/piperine-lang/src/elab/element_commits.rs::Elaboration::place_target	-
@@ -36,15 +36,15 @@ crates/piperine-lang/src/elab/elements.rs::Elaboration::node_run	-
 crates/piperine-lang/src/elab/events.rs::Elaboration::disjuncts	-
 crates/piperine-lang/src/elab/functions.rs::Elaboration::lower_function	-
 crates/piperine-lang/src/elab/hoist.rs::Elaboration::hoist	-
-crates/piperine-lang/src/elab/iterators.rs::Elaboration::prepare	-
-crates/piperine-lang/src/elab/lower.rs::Elaboration::lower_call	-
-crates/piperine-lang/src/elab/lower.rs::Elaboration::lower_expr_unchecked	-
-crates/piperine-lang/src/elab/lower.rs::Elaboration::lower_path	-
-crates/piperine-lang/src/elab/patterns.rs::Elaboration::test_pattern	-
+crates/piperine-lang/src/elab/value/iterators.rs::ValueLowering::prepare	-
+crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_call	kept: the dispatch over the callee the checker resolved, one arm per callee kind
+crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_expr_unchecked	kept: an exhaustive match over ExprKind, one arm per expression kind, each arm a call into its family
+crates/piperine-lang/src/elab/value/expressions.rs::ValueLowering::lower_path	-
+crates/piperine-lang/src/elab/value/patterns.rs::ValueLowering::test_pattern	-
 crates/piperine-lang/src/elab/place.rs::Elaboration::bind_params	-
 crates/piperine-lang/src/elab/place.rs::Elaboration::place_instance	-
 crates/piperine-lang/src/elab/records.rs::Elaboration::lower_emit	-
-crates/piperine-lang/src/elab/returns.rs::Elaboration::lower_inlined_option_call	-
+crates/piperine-lang/src/elab/value/returns.rs::ValueLowering::lower_inlined_option_call	-
 crates/piperine-lang/src/elab/structural.rs::Elaboration::classify_key_params	-
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::expression_inner	kept: an exhaustive match over the expression kinds, one short arm per kind; splitting it would only scatter the arms
 crates/piperine-lang/src/msl/parser/check.rs::ParseCheck::statement	kept: an exhaustive match over the statement kinds, one short arm per kind

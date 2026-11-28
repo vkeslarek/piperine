@@ -24,7 +24,7 @@ use std::collections::HashSet;
 use piperine_ir::{BranchKind, Condition, Expr, ExprId as LoweredExpr, QuantityRole, Terminal};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::msl::{Diagnostic, Span};
 use crate::pom::{DeclKind, ExprId, FileId, PatId};
@@ -219,11 +219,11 @@ impl Elaboration<'_, '_> {
         for guard in &scope.analog.guards.clone() {
             match guard {
                 ArmCondition::If { condition, holds } => {
-                    let test = self.lower_expr(&mut standalone, *condition)?;
+                    let test = self.values().lower_expr(&mut standalone, *condition)?;
                     let origin = self.expr_origin(*condition);
                     tests.push(if *holds { test } else { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Not, expr: test }, piperine_ir::ValueType::Bool, origin) });
                 }
-                ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
+                ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.values().standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
                 ArmCondition::IfLet => {
                     self.refuse_with(scope.values.file, span, ValueForm::UnderIfLet, [what.to_string()]);
                     return None;

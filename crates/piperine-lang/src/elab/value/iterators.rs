@@ -11,11 +11,11 @@
 //! A chain is read where it is used: a `let` of an iterator or a range binds no value, the name
 //! stands for the chain written there, whose closures capture by value (§1.4.6).
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Place, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::Pair;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::msl::Span;
 use crate::pom::{BlockNode, ExprId, ExprKind, PatId, PatKind, Resolution};
@@ -51,7 +51,7 @@ enum Adaptor {
 }
 
 /// A sequence as the source writes it: a source and its adaptors.
-pub(super) struct Sequence {
+pub(in crate::elab) struct Sequence {
     /// Where the elements start.
     source: Source,
     /// What each element goes through, first to last.
@@ -127,10 +127,10 @@ enum Consumer {
     Contains(u32),
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The sequence `expr` is: an array (read by value), a range, or a chain of adaptors over
     /// either, a `let`-bound name standing for what it was bound to. `None` after a diagnostic.
-    pub(super) fn sequence(&mut self, scope: &Scope, expr: ExprId) -> Option<Sequence> {
+    pub(in crate::elab) fn sequence(&mut self, scope: &Scope, expr: ExprId) -> Option<Sequence> {
         let expr = self.peel_parens(expr);
         let node = self.state.design.expr_node(expr).clone();
         if matches!(self.typed(expr), Some(Ty::Array(..))) {
@@ -185,7 +185,7 @@ impl Elaboration<'_, '_> {
             Source::Array(array) => {
                 let value = self.lower_expr(scope, *array)?;
                 let ValueType::Array(element, count) = self.type_of(value) else {
-                    self.refuse(scope.values.file, self.state.design.expr_node(*array).span, ValueForm::ArrayThatIsNotArrayValue);
+                    self.elaboration.refuse(scope.values.file, self.state.design.expr_node(*array).span, ValueForm::ArrayThatIsNotArrayValue);
                     return None;
                 };
                 let local = self.hold(scope, prelude, "array", value);
@@ -195,7 +195,7 @@ impl Elaboration<'_, '_> {
                 let (low, high) = (self.lower_expr(scope, *lo)?, self.lower_expr(scope, *hi)?);
                 let element = self.type_of(low);
                 if !element.is_integer() {
-                    self.refuse(scope.values.file, self.state.design.expr_node(*lo).span, ValueForm::RangeOfAnythingButIntegers);
+                    self.elaboration.refuse(scope.values.file, self.state.design.expr_node(*lo).span, ValueForm::RangeOfAnythingButIntegers);
                     return None;
                 }
                 let (low_local, high_local) = (self.hold(scope, prelude, "low", low), self.hold(scope, prelude, "high", high));
@@ -615,7 +615,7 @@ impl Elaboration<'_, '_> {
     /// `r.is_empty()` of a range (H.6 rule 2): `!(lo < hi)`, `!(lo <= hi)` for `..=`.
     fn lower_range_is_empty(&mut self, scope: &mut Scope, recv: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(lo), Some(hi), inclusive) = self.range_parts(scope, recv)? else {
-            self.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::IsEmptyOfRangeWithMissingBound);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::IsEmptyOfRangeWithMissingBound);
             return None;
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
@@ -652,7 +652,7 @@ impl Elaboration<'_, '_> {
         let usize_ty = ValueType::UInt(64);
         let array = self.lower_expr(scope, recv)?;
         let ValueType::Array(_, count) = self.type_of(array) else {
-            self.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::ValueThatIsNotArray);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::ValueThatIsNotArray);
             return None;
         };
         let literal = |this: &mut Self, value: bool| this.emit(Expr::Bool(value), ValueType::Bool, origin.clone());

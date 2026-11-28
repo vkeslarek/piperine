@@ -4,17 +4,17 @@
 //! for `Self`. `Type::f(..)` is an ordinary call and `Type::NAME` a folded constant, which the call
 //! and the constant folder already lower.
 
+use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr};
 
-use super::elaborator::Elaboration;
-use super::instances::ConcreteValue;
-use super::lower::Scope;
-use super::variants::Half;
+use crate::elab::instances::ConcreteValue;
+use crate::elab::elaborator::Scope;
+use crate::elab::variants::Half;
 use crate::refusal::forms::GenericsForm;
-use crate::pom::{DeclId, DeclKind, ExprId};
+use crate::pom::{DeclId, ExprId};
 use crate::types::Ty;
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// The call `receiver.f(arguments)` of the method `function`: the receiver and the arguments lowered
     /// in order, a `Call` of the method's variant (for a function of a trait, the instance for the type
     /// of the receiver). `None` after a diagnostic.
@@ -43,7 +43,7 @@ impl Elaboration<'_, '_> {
 
     /// The arguments the generic `impl` of the method `function` takes from the type of `receiver`, concrete. `None`
     /// after a diagnostic.
-    pub(super) fn method_impl_arguments(&mut self, scope: &Scope, expr: ExprId, function: DeclId, receiver: ExprId) -> Option<Vec<ConcreteValue>> {
+    pub(in crate::elab) fn method_impl_arguments(&mut self, scope: &Scope, expr: ExprId, function: DeclId, receiver: ExprId) -> Option<Vec<ConcreteValue>> {
         let receiver_type = self.typed(receiver)?;
         let span = self.state.design.expr_node(expr).span;
         let Some(values) = self.state.types.impl_arguments(function, &receiver_type) else {
@@ -68,17 +68,8 @@ impl Elaboration<'_, '_> {
 
     /// The item that runs for the call `expr` of the trait function `item` through a bound on a receiver of type `receiver`
     /// (`consts/dispatch.rs`).
-    pub(super) fn bound_implementation(&mut self, expr: ExprId, item: DeclId, receiver: &Ty) -> Option<DeclId> {
+    pub(in crate::elab) fn bound_implementation(&mut self, expr: ExprId, item: DeclId, receiver: &Ty) -> Option<DeclId> {
         self.state.consts.bound_implementation(expr, item, receiver)
     }
 
-    /// Whether `function` is declared in a trait.
-    pub(super) fn is_trait_function(&self, function: DeclId) -> bool {
-        self.state.design.decl_data(function).parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Trait(_)))
-    }
-
-    /// Whether `function` is written in an `impl` that has generic parameters.
-    pub(super) fn is_generic_impl_item(&self, function: DeclId) -> bool {
-        self.state.design.decl_data(function).parent.is_some_and(|parent| matches!(self.state.design.decl_data(parent).kind, DeclKind::Impl(_)) && self.state.design.decl_data(parent).generics_span.is_some())
-    }
 }

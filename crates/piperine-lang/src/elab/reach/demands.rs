@@ -22,7 +22,7 @@ use crate::refusal::forms::ValueForm;
 use crate::elab::consts::Bindings;
 use crate::elab::elaborator::Elaboration;
 use crate::elab::generation::Iteration;
-use crate::elab::lower::Scope;
+use crate::elab::elaborator::Scope;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind};
 
 /// One hop of a read through children of children: the body of `module` reaches the item at the end of `path` below its child

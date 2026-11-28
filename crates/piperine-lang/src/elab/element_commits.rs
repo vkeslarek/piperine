@@ -8,7 +8,7 @@
 use piperine_ir::{CommitTarget, ExprId as LoweredExpr, Projection, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::RefusedForm;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{ExprId, ExprKind};
@@ -86,14 +86,14 @@ impl Elaboration<'_, '_> {
         for step in steps {
             match step {
                 Step::Index(index) => {
-                    path.push(Projection::Index(self.lower_expr(scope, index)?));
+                    path.push(Projection::Index(self.values().lower_expr(scope, index)?));
                     ty = match ty {
                         ValueType::Array(element, _) => *element,
                         _ => return self.refuse_place(scope, place, DigitalForm::ElementOfValueThatIsNoArray),
                     };
                 }
                 Step::Field { inner, name } => {
-                    let Some(index) = self.typed(inner).and_then(|inner_ty| self.field_index(&inner_ty, &name)) else {
+                    let Some(index) = self.typed(inner).and_then(|inner_ty| self.values().field_index(&inner_ty, &name)) else {
                         return self.refuse_place(scope, place, DigitalForm::FieldOfTypeThatHasNone);
                     };
                     path.push(Projection::Field(index));

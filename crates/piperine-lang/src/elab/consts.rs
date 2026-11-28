@@ -42,8 +42,8 @@ use std::sync::Arc;
 
 use piperine_ir::{Constant, Real};
 
-use super::compound::EnumLayout;
-use super::files::{FileFault, IncludedFiles};
+use super::value::compound::EnumLayout;
+use super::value::files::{FileFault, IncludedFiles};
 use crate::refusal::forms::{ConstantForm, ValueForm};
 use crate::refusal::{Refusal, RefusedForm};
 use crate::msl::lexer::NumberLiteral;

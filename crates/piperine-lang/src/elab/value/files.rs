@@ -5,11 +5,11 @@
 //! path never touches the disk, so a file that changes afterwards changes nothing until the host
 //! elaborates again (§20 rule 3).
 
+use super::ValueLowering;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use super::elaborator::Elaboration;
 use crate::pom::{ConstData, DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
 /// Why a file has no text: `E0612` or `E0613` at elaboration (§20).
@@ -113,11 +113,11 @@ impl IncludedFiles {
     }
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// Read the file of every reached `const` whose initializer is `include_str!` (§20 rule 3: the
     /// text is part of the elaborated design, read now and never again). A file with no text is
     /// `E0612` or `E0613` at the `include_str!` (`const_fault`).
-    pub(super) fn read_included_files(&mut self) {
+    pub(in crate::elab) fn read_included_files(&mut self) {
         let consts: Vec<DeclId> = self.state.types.reached().iter().copied().filter(|decl| self.is_text_const(*decl)).collect();
         for decl in consts {
             if let Err(fault) = self.state.consts.text(decl) {
@@ -128,7 +128,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether `expr` reads a `const` whose `include_str!` file has no text: its fault is already
     /// reported (`read_included_files`), so the reader adds none.
-    pub(super) fn names_unreadable_file(&mut self, expr: ExprId) -> bool {
+    pub(in crate::elab) fn names_unreadable_file(&mut self, expr: ExprId) -> bool {
         let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return false };
         match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
             Some(Resolution::Decl(decl)) if self.is_text_const(decl) => self.state.consts.text(decl).is_err(),

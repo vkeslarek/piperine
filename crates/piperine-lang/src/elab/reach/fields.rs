@@ -24,7 +24,7 @@ use crate::elab::carriers::Frame;
 use crate::elab::hoist::PlacementKey;
 use crate::elab::element_commits::PlaceTarget;
 use crate::elab::elaborator::Elaboration;
-use crate::elab::lower::Scope;
+use crate::elab::elaborator::Scope;
 use super::placement_params::{PlacementParams, PlacementSite};
 use super::demands::ReachedKind;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
@@ -74,7 +74,7 @@ impl Elaboration<'_, '_> {
         self.read_has_its_type(scope, expr, self.state.structure.frames[frame].module, item, &substitution)?;
         match self.state.design.decl_data(item).kind.clone() {
             DeclKind::Param(_) => match self.state.structure.frames[frame].params.get(&item).copied() {
-                Some(value) => Some(self.constant_expr(value, ty, origin)),
+                Some(value) => Some(self.values().constant_expr(value, ty, origin)),
                 // a param whose given value does not fold is read in place (`reach/placement_params.rs`)
                 None if self.state.structure.frames[frame].deferred_params.contains_key(&item) => {
                     let entry = self.enter_frame(scope, frame);
@@ -566,7 +566,7 @@ impl Elaboration<'_, '_> {
             return None;
         };
         let (chosen, _) = self.chosen_resolve_impl(decl, nature)?;
-        let Some(driven) = self.stored_type(&chosen.driven) else {
+        let Some(driven) = self.values().stored_type(&chosen.driven) else {
             self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
             return None;
         };

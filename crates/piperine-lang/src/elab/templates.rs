@@ -84,7 +84,7 @@ impl Elaboration<'_, '_> {
         {
             return self.import_template_numbers(expr, tree);
         }
-        let held = self.typed(expr).and_then(|ty| self.stored_type(&ty));
+        let held = self.typed(expr).and_then(|ty| self.values().stored_type(&ty));
         let ty = match held {
             Some(held) if self.state.types.implicit_some(expr) => Some(ValueType::Option(Box::new(held))),
             other => other,

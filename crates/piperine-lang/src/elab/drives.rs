@@ -9,7 +9,7 @@ use super::drive_overlaps::{DriveSite, DriveWay, ElementReach};
 use super::element_commits::PlaceTarget;
 use super::elaborator::Elaboration;
 use super::generation::Iteration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::pom::{DeclId, DeclKind, ExprId, ExprKind, Resolution};
 
@@ -93,11 +93,11 @@ impl Elaboration<'_, '_> {
         let mut sub = Self::sub_scope(scope);
         sub.digital.no_locals = true;
         let lowered = match wanted {
-            Some(ty) => self.lower_stored(&mut sub, value, ty),
-            None => self.lower_expr(&mut sub, value),
+            Some(ty) => self.values().lower_stored(&mut sub, value, ty),
+            None => self.values().lower_expr(&mut sub, value),
         };
         let delay = match after {
-            Some(after) => Some(self.lower_expr(&mut sub, after)),
+            Some(after) => Some(self.values().lower_expr(&mut sub, after)),
             None => None,
         };
         if !sub.values.locals.is_empty() {

@@ -10,7 +10,7 @@ use super::consts::{Bindings, ConstFault};
 use super::elaborator::Elaboration;
 use super::instances::Instance;
 use super::structural::BodyKey;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::StructureForm;
 use crate::pom::{DeclId, DeclKind, ExprId};
 use crate::types::Ty;
@@ -158,7 +158,7 @@ impl Elaboration<'_, '_> {
         if crate::types::ParamRequirement::new(declared, Some(&written)).is_required() {
             return None;
         }
-        let stored = self.stored_type(&written)?;
+        let stored = self.values().stored_type(&written)?;
         self.default_constant(&written, &stored)
     }
 
@@ -263,7 +263,7 @@ impl Elaboration<'_, '_> {
             ValueType::Array(Box::new(ValueType::UInt(32)), length as u64)
         } else { self.lower_param_type(data.file, p.ty)? };
         let check = match p.where_ {
-            Some(cond) => Some(self.lower_expr(scope, cond)?),
+            Some(cond) => Some(self.values().lower_expr(scope, cond)?),
             None => None,
         };
         let structural = self.state.structure.keys.is_key(module, param);
@@ -281,7 +281,7 @@ impl Elaboration<'_, '_> {
     /// The type a param of the declared type `ty` holds: one value, an `Option` kept whole as `ValueType::Option`
     /// (its pin is `{ some, v }`, explicit-unknowns P5), unpacked into its halves where a read needs them.
     fn lower_param_type(&mut self, file: crate::pom::FileId, ty: crate::pom::TypeId) -> Option<ValueType> {
-        let stored = self.typed_written(ty).and_then(|t| self.stored_type(&t));
+        let stored = self.typed_written(ty).and_then(|t| self.values().stored_type(&t));
         if stored.is_none() {
             let span = self.state.design.type_node(ty).span;
             self.refuse(file, span, StructureForm::ParamOfTypeThatHasNoValue);

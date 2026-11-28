@@ -4,7 +4,7 @@
 use piperine_ir::{FunctionSpec, Local, ValueType};
 
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use super::instances::{ConcreteValue, Instance};
 use super::variants::{Half, Variants};
 use crate::refusal::forms::ValueForm;
@@ -46,7 +46,7 @@ impl Elaboration<'_, '_> {
                 scope.values.options.insert(param, (is, is + 1));
                 continue;
             }
-            match self.bind_local(&mut scope, param) {
+            match self.values().bind_local(&mut scope, param) {
                 Some(index) => {
                     params.push(scope.values.locals[index as usize].clone());
                 }
@@ -64,7 +64,7 @@ impl Elaboration<'_, '_> {
             self.refuse(data.file, data.span, ValueForm::LoweredFunctionWithoutBody);
             return None;
         };
-        let lowered = self.lower_function_body(&mut scope, function, half, data.file, body)?;
+        let lowered = self.values().lower_function_body(&mut scope, function, half, data.file, body)?;
         if !(ok && declared_ret) {
             return None;
         }
@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
         if let DeclKind::Fn(signature) = &self.state.design.decl_data(function).kind {
             types.extend(signature.ret.and_then(|ret| self.typed_written(ret)));
         }
-        types.iter().for_each(|ty| self.register_instances(ty));
+        types.iter().for_each(|ty| self.values().register_instances(ty));
     }
 
     /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so

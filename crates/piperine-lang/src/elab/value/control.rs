@@ -4,18 +4,18 @@
 //! A local the body assigns is a `mutable` IR local, whatever the source wrote on its `let`
 //! (every local is a place, §1.5.12), and an assignment is `Stmt::Assign`.
 
+use super::ValueLowering;
 use piperine_ir::{Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, ValueType};
 
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::ValueForm;
 use crate::pom::{BlockNode, DeclId, ExprId, ExprKind, FileId, PatId, PatKind, Resolution};
 use crate::types::Callee;
 
 /// One loop the code being lowered sits in; `Scope::loops` counts them, innermost last.
-pub(super) struct LoopFrame;
+pub(in crate::elab) struct LoopFrame;
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// `let x;` (§1.7.5): a local with no value yet. The checker proves it is assigned before it is
     /// read, so the IR local starts as the zero of its type and is assignable. `false` after a diagnostic.
     pub(super) fn lower_deferred_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: PatId, file: FileId, span: crate::msl::Span) -> bool {
@@ -94,7 +94,7 @@ impl Elaboration<'_, '_> {
 
 // ---- loops and the exits that leave them (§1.8.7 to §1.8.12) ------------------------------
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// `while cond { body }`, whose condition is read before every iteration: type `()`.
     pub(super) fn lower_while(&mut self, scope: &mut Scope, cond: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
         if let ExprKind::Let { pat, expr } = self.state.design.expr_node(cond).kind.clone() {

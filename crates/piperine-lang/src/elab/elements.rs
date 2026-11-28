@@ -9,7 +9,7 @@ use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Origin, ValueType};
 
 use super::carrier_arrays::ArrayShape;
 use super::elaborator::Elaboration;
-use super::lower::Scope;
+use super::elaborator::Scope;
 use crate::refusal::forms::DigitalForm;
 use crate::msl::Diagnostic;
 use crate::pom::{ExprId, ExprKind, Resolution};
@@ -159,7 +159,7 @@ impl Elaboration<'_, '_> {
             };
             match folded {
                 Some(constant) => lowered.push(constant),
-                None => lowered.push(self.lower_expr(scope, *index)?),
+                None => lowered.push(self.values().lower_expr(scope, *index)?),
             }
         }
         let constants: Vec<Option<u64>> = lowered.iter().map(|e| self.constant_index(*e)).collect();

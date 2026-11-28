@@ -6,56 +6,24 @@
 //! An integer expression that reads only literals and constants is folded to one literal, by
 //! the rules the compiled code follows (`ConstEval`).
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Constant, Expr, ExprId as LoweredExpr, Local, MathFn, Method as IrMethod, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
-use super::analog_state::AnalogScope;
-use super::digital_state::DigitalScope;
-use super::elements::ElementPart;
-use super::value_state::ValueScope;
+use crate::elab::elements::ElementPart;
 use super::compound::EnumLayout;
-use super::variants::Half;
-use super::consts::Bindings;
-use super::elaborator::Elaboration;
-use super::selectors::ArmCondition;
+use crate::elab::variants::Half;
+use crate::elab::consts::Bindings;
+use crate::elab::elaborator::{Elaboration, Scope};
+use crate::elab::selectors::ArmCondition;
 use crate::refusal::forms::ValueForm;
 use crate::refusal::RefusedForm;
 use crate::msl::Span;
 use crate::pom::{BinOp, CallClass, DeclId, DeclKind, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution, StmtId, StmtKind, UnOp};
 use crate::types::{Callee, Method, Ty};
 
-/// What names the code being lowered: the owner's params and locals (its nodes are those of its
-/// frame, `Frame::nodes`), one part per concern.
-pub(in crate::elab) struct Scope {
-    /// The file, params, locals, frame and control flow of the code: what value lowering reads and writes.
-    pub(in crate::elab) values: ValueScope,
-    /// The branch and site context of the code: what analog lowering reads and writes.
-    pub(in crate::elab) analog: AnalogScope,
-    /// The carrier context of the code: what discrete lowering reads and writes.
-    pub(in crate::elab) digital: DigitalScope,
-}
-
-impl Scope {
-    /// Takes over what a standalone scope made from a copy of this one's (`standalone_scope`) added: the `ac_stim` sites
-    /// and the statements that write them, the branches a flow read numbered, and the flow leaves. So a stimulus or a
-    /// flow read inside a value a primitive evaluates on its own (a `noise` density, a `delay` input, a `ddt` state, a
-    /// `ddx` value) is a site or a branch of the body. The `limit` sites it made stay its own: a `limit` there is read
-    /// at a solution (`at_solution`) or differentiated through, never evaluated.
-    pub(in crate::elab) fn adopt_standalone(&mut self, standalone: &mut Scope) {
-        self.analog.stims = standalone.analog.stims.clone();
-        self.analog.branches = standalone.analog.branches.clone();
-        self.analog.flow_leaves.append(&mut standalone.analog.flow_leaves);
-        self.analog.hoisted_steps.append(&mut standalone.analog.hoisted_steps);
-    }
-
-    /// The scope of code written in `file`: no param, no local, frame 0, outside every analog block, loop and function.
-    pub(in crate::elab) fn new(file: FileId) -> Self {
-        Scope { values: ValueScope::new(file), analog: AnalogScope::default(), digital: DigitalScope::default() }
-    }
-}
-
 /// The IR type of a type of the subset.
-pub(super) struct ValueTypes<'a> {
-    pub(super) arena: &'a super::types::TypeArena,
+pub(in crate::elab) struct ValueTypes<'a> {
+    pub(in crate::elab) arena: &'a super::types::TypeArena,
 }
 
 impl ValueTypes<'_> {
@@ -70,7 +38,7 @@ impl ValueTypes<'_> {
 
     /// `None` for a type no value has in the IR: a node, a module, an `Option` (a pair of values,
     /// msl-digital T27).
-    pub(super) fn of(&self, ty: &Ty) -> Option<ValueType> {
+    pub(in crate::elab) fn of(&self, ty: &Ty) -> Option<ValueType> {
         match ty {
             Ty::F64 => Some(ValueType::F64),
             Ty::F32 => Some(ValueType::F32),
@@ -93,23 +61,7 @@ impl ValueTypes<'_> {
     }
 }
 
-impl Elaboration<'_, '_> {
-    /// The type the checker gave `expr`, with the generic parameters of the instance being lowered
-    /// replaced by their arguments: the one read of the type table of an expression (`ConstEval::typed`).
-    pub(super) fn typed(&self, expr: ExprId) -> Option<Ty> {
-        self.state.consts.typed(expr).map(|ty| self.with_hand_written_widths(&ty))
-    }
-
-    /// The type of the binding `binding` under the substitution.
-    pub(super) fn typed_local(&self, binding: DeclId) -> Option<Ty> {
-        self.state.consts.typed_local(binding).map(|ty| self.with_hand_written_widths(&ty))
-    }
-
-    /// The type the type node `ty` writes, under the substitution.
-    pub(super) fn typed_written(&self, ty: crate::pom::TypeId) -> Option<Ty> {
-        self.state.consts.typed_written(ty).map(|ty| self.with_hand_written_widths(&ty))
-    }
-
+impl ValueLowering<'_, '_, '_> {
     /// The IR method a numeric row of Appendix H lowers to; `None` for the rows that lower
     /// elsewhere (`exp`, `ln`, `sqrt`, `abs` of `f64` are `Math`; `checked_*` and the `Option`
     /// and `bool` rows are pairs).
@@ -152,56 +104,15 @@ impl Elaboration<'_, '_> {
         })
     }
 
-    /// The IR type of a type of the subset; `None` when no value has it in the IR.
-    pub(super) fn value_type(&self, ty: &Ty) -> Option<ValueType> {
-        ValueTypes { arena: &self.state.values.type_arena }.of(ty)
-    }
-
-    /// Add an expression to the IR, remembering its type (the builder does not hand it back) and
-    /// whether it is continuous (`events.rs`).
-    pub(super) fn emit(&mut self, kind: Expr, ty: ValueType, origin: Origin) -> LoweredExpr {
-        self.state.values.expr_types.push(ty.clone());
-        let continuous = self.continuous_kind(&kind);
-        self.state.values.expr_continuous.push(continuous);
-        self.state.values.expr_origins.push(origin.clone());
-        self.state.builder.expr(kind, ty, origin)
-    }
-
-    /// Add a statement to the IR, remembering whether it reads a continuous value.
-    pub(super) fn stmt(&mut self, stmt: Stmt) -> LoweredStmt {
-        let continuous = stmt.operands().iter().any(|e| self.continuous(*e));
-        self.state.values.stmt_continuous.push(continuous);
-        let id = self.state.builder.stmt(stmt.clone());
-        self.state.values.divergences.note_statement(id, &stmt);
-        id
-    }
-
-    /// The type of an expression already added.
-    pub(super) fn type_of(&self, expr: LoweredExpr) -> ValueType {
-        self.state.values.expr_types[expr.index()].clone()
-    }
-
-    /// The origin of an expression: where its construct starts.
-    pub(super) fn expr_origin(&self, expr: ExprId) -> Origin {
-        let node = self.state.design.expr_node(expr);
-        self.state.locator.origin(self.state.design.decl_data(node.owner).file, node.span)
-    }
-
     /// `expr` lowered, or `None` after the diagnostics of what could not be. An expression that fails while nothing
     /// has been reported is refused by name here, so no position (a statement, a definition, an event expression, a
     /// value input) can drop it silently.
-    pub(super) fn lower_expr(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
+    pub(in crate::elab) fn lower_expr(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         let lowered = self.lower_expr_unchecked(scope, expr);
         if lowered.is_none() && self.state.diagnostics.is_empty() {
-            self.refuse_silent_failure(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::ThisExpression);
+            self.elaboration.refuse_silent_failure(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::ThisExpression);
         }
         lowered
-    }
-
-    /// `P0001` for something that failed to lower while no diagnostic was reported: the one place the elaborator says
-    /// "nothing vanishes silently".
-    pub(super) fn refuse_silent_failure(&mut self, file: FileId, span: Span, form: impl Into<RefusedForm>) {
-        self.refuse(file, span, form);
     }
 
     fn lower_expr_unchecked(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
@@ -221,40 +132,14 @@ impl Elaboration<'_, '_> {
         if self.state.types.event_read(expr) {
             return self.lower_event_read(scope, expr);
         }
-        if ty.is_integer() && self.constant_form(expr) {
-            return match self.state.consts.value(expr, &Bindings::new()) {
-                Ok(value) => Some(self.constant_expr(value, ty, origin)),
-                Err(fault) => {
-                    self.const_fault(&fault, "a constant expression");
-                    None
-                }
-            };
-        }
-        // a method of a module type (`fet.gain()`, `N: Mosfet`) runs at elaboration on the template the param holds (§3.1.4, §8.4.5)
-        if self.is_template_method(expr) {
-            let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
-            return match self.state.consts.value(expr, &bindings) {
-                Ok(value) => Some(self.constant_expr(value, ty, origin)),
-                Err(fault) => {
-                    self.const_fault(&fault, "a method of a template");
-                    None
-                }
-            };
+        if let Some(folded) = self.lower_folded_expression(scope, expr, &ty, &origin) {
+            return folded;
         }
         match &node.kind {
-            ExprKind::Lit(_) => match self.state.consts.value(expr, &Bindings::new()) {
-                Ok(value) => Some(self.constant_expr(value, ty, origin)),
-                Err(fault) => {
-                    self.const_fault(&fault, "a literal");
-                    None
-                }
-            },
+            ExprKind::Lit(_) => self.lower_literal(expr, ty, origin),
             ExprKind::Paren(inner) => self.lower_expr(scope, *inner),
             ExprKind::Path(_) => self.lower_path(scope, expr, ty, origin),
-            ExprKind::Field { expr: recv, name, .. } if matches!(self.typed(*recv), Some(Ty::Struct(_) | Ty::Tuple(_))) && self.bundle_leaf(scope, expr).is_none() => self.lower_field_value(scope, *recv, &name.text, ty, origin),
-            // a field of an element of an array of bundles (`ps[k].b`) is one element of its leaf (struct of arrays, `elements.rs`)
-            ExprKind::Field { .. } if self.bundle_leaf(scope, expr).is_some_and(|place| !place.elements.is_empty()) => self.lower_bundle_element(scope, expr, origin),
-            ExprKind::Field { .. } => self.lower_field(scope, expr, ty, origin),
+            ExprKind::Field { expr: recv, name, .. } => self.lower_field_expression(scope, expr, *recv, &name.text, ty, origin),
             ExprKind::Struct { path, fields, .. } => self.lower_struct_expr(scope, expr, *path, fields, ty, origin),
             ExprKind::Tuple(items) => self.lower_tuple(scope, items, ty, origin),
             ExprKind::Array(items) => self.lower_array(scope, items, ty, origin),
@@ -263,76 +148,16 @@ impl Elaboration<'_, '_> {
             // an operator the checker resolved to the `impl` function of an operator trait is a call of it (Appendix H.10)
             ExprKind::Unary { expr: operand, .. } if let Some(Callee::Method(function)) = self.state.types.callee(expr) => self.lower_method_call(scope, expr, function, *operand, &[], origin),
             ExprKind::Binary { lhs, rhs, .. } if let Some(Callee::Method(function)) = self.state.types.callee(expr) => self.lower_method_call(scope, expr, function, *lhs, &[*rhs], origin),
-            ExprKind::Unary { op, expr: operand } => {
-                let op = match op {
-                    UnOp::Neg => UnaryOp::Neg,
-                    UnOp::Not => UnaryOp::Not,
-                };
-                let operand = self.lower_expr(scope, *operand)?;
-                Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
-            }
+            ExprKind::Unary { op, expr: operand } => self.lower_unary(scope, *op, *operand, ty, origin),
             ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Str)) => self.lower_text_comparison(scope, *op, *lhs, *rhs, origin),
             ExprKind::Binary { op: op @ (BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge), lhs, rhs } if matches!(self.typed(*lhs), Some(Ty::Option(_))) => self.lower_option_comparison(scope, *op, *lhs, *rhs, origin),
-            ExprKind::Binary { op, lhs, rhs } => {
-                // The right operand of `&&`/`||` runs only when the left does not decide: it is
-                // conditional exactly like an `if` arm.
-                let short_circuit = matches!(op, BinOp::And | BinOp::Or);
-                let left = *lhs;
-                let lhs = self.lower_expr(scope, *lhs);
-                // `a && b` runs `b` when `a` holds, `a || b` when it does not.
-                if short_circuit {
-                    scope.analog.guards.push(ArmCondition::If { condition: left, holds: matches!(op, BinOp::And) });
-                }
-                let rhs = self.lower_expr(scope, *rhs);
-                if short_circuit {
-                    scope.analog.guards.pop();
-                }
-                let (lhs, rhs) = (lhs?, rhs?);
-                let op = Self::binary_op(*op);
-                Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
-            }
+            ExprKind::Binary { op, lhs, rhs } => self.lower_binary(scope, *op, *lhs, *rhs, ty, origin),
             ExprKind::If { cond, then, else_ } if matches!(self.state.design.expr_node(*cond).kind, ExprKind::Let { .. }) => self.lower_if_let(scope, *cond, then, *else_, ty, None, origin),
             // A condition that reads only key params and constants is folded: only the arm it
             // selects is lowered (`structural.rs`, §11 rule 3).
-            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_decision(scope, *cond) => {
-                if holds {
-                    return self.lower_block(scope, file, &then.stmts, node.span);
-                }
-                match else_ {
-                    Some(else_) => self.lower_expr(scope, *else_),
-                    None => Some(self.emit(Expr::Unit, ValueType::Unit, origin)),
-                }
-            }
-            ExprKind::If { cond, then, else_ } => {
-                let source = *cond;
-                let cond = self.lower_expr(scope, *cond);
-                scope.values.decisions += 1;
-                let arm = Self::enter_arm(scope, cond, true);
-                scope.analog.guards.push(ArmCondition::If { condition: source, holds: true });
-                let then = self.lower_block(scope, file, &then.stmts, node.span);
-                scope.analog.guards.pop();
-                Self::leave_arm(scope, arm);
-                let arm = Self::enter_arm(scope, cond, false);
-                scope.analog.guards.push(ArmCondition::If { condition: source, holds: false });
-                let otherwise = match else_ {
-                    Some(else_) => self.lower_expr(scope, *else_),
-                    None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
-                };
-                scope.analog.guards.pop();
-                Self::leave_arm(scope, arm);
-                scope.values.decisions -= 1;
-                let (cond, then, otherwise) = (cond?, then?, otherwise?);
-                let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
-                let whole = self.emit(Expr::If { cond, then, otherwise }, ty, origin);
-                self.note_branch(whole, cond, then, otherwise);
-                Some(whole)
-            }
-            ExprKind::Block(block) => {
-                scope.analog.block_depth += 1;
-                let lowered = self.lower_block(scope, file, &block.stmts, node.span);
-                scope.analog.block_depth -= 1;
-                lowered
-            }
+            ExprKind::If { cond, then, else_ } if let Some(holds) = self.folded_decision(scope, *cond) => self.lower_folded_if(scope, expr, holds, &then.stmts, *else_, origin),
+            ExprKind::If { cond, then, else_ } => self.lower_if(scope, expr, *cond, &then.stmts, *else_, ty, origin),
+            ExprKind::Block(block) => self.lower_block_expression(scope, file, &block.stmts, node.span),
             ExprKind::Assign { .. } => self.lower_assignment_expr(scope, expr, origin),
             ExprKind::While { cond, body } => self.lower_while(scope, *cond, body, origin),
             ExprKind::Loop { body } => self.lower_loop(scope, body, ty, matches!(self.typed(expr), Some(Ty::Never)), origin),
@@ -342,80 +167,227 @@ impl Elaboration<'_, '_> {
             ExprKind::Return(value) => self.lower_return(scope, *value, node.span, origin),
             ExprKind::Try(inner) => self.lower_try(scope, *inner, node.span, origin),
             ExprKind::Call { args, class, .. } => self.lower_call(scope, expr, &args.iter().map(|a| a.value).collect::<Vec<_>>(), *class, ty, origin),
-            ExprKind::MethodCall { recv, args, .. } if let Some(Callee::Method(function)) = self.state.types.callee(expr) => {
-                let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_method_call(scope, expr, function, *recv, &arguments, origin)
-            }
-            ExprKind::MethodCall { recv, args, .. } if let Some(Callee::Bound { item }) = self.state.types.callee(expr) => {
-                let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_bound_call(scope, expr, item, *recv, &arguments, origin)
-            }
-            ExprKind::MethodCall { recv, args, .. } if self.state.types.method(expr).is_some_and(Method::is_sequence_row) => {
-                let method = self.state.types.method(expr)?;
-                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                self.lower_sequence_method(scope, expr, method, *recv, &args, ty, origin)
-            }
-            ExprKind::MethodCall { recv, .. } if self.state.types.builtin(expr).is_some() => {
-                let builtin = self.state.types.builtin(expr)?;
-                self.lower_builtin_read(scope, expr, builtin, *recv, ty, origin)
-            }
-            ExprKind::MethodCall { recv, args, method: method_name, .. } => {
-                let Some(method) = self.state.types.method(expr) else {
-                    // `x.encode()` of a `T: Repr` parameter has no method row: its levels are written out per instance
-                    if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, *recv, &method_name.text, origin.clone()) {
-                        return levels;
-                    }
-                    self.refuse(file, node.span, ValueForm::MethodOutsideCatalogue);
-                    return None;
-                };
-                let f = match method {
-                    Method::Exp => MathFn::Exp,
-                    Method::Ln => MathFn::Ln,
-                    Method::Sqrt => MathFn::Sqrt,
-                    Method::Abs => MathFn::Abs,
-                    row if Self::ir_method(row).is_some() => {
-                        let method = Self::ir_method(row)?;
-                        let receiver = self.lower_expr(scope, *recv);
-                        let mut lowered = Vec::new();
-                        for arg in args {
-                            lowered.push(self.lower_expr(scope, arg.value));
-                        }
-                        let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
-                        return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
-                    }
-                    // Lowered as a flag and a payload from msl-digital T27 on.
-                    Method::IsSome | Method::IsNone | Method::UnwrapOr | Method::Unwrap | Method::Expect | Method::UnwrapOrElse => {
-                        let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
-                        return self.lower_option_method(scope, method, *recv, &args, ty, origin);
-                    }
-                    // The rest are `Option`s (`checked_*`, `map`, `and_then`, `or`, `then`, `then_some`): they lower
-                    // on their pair, never as one value.
-                    _ => {
-                        self.refuse_with(file, node.span, ValueForm::RowReadAsValueRatherThanAs, [format!("{:?}", method)]);
-                        return None;
-                    }
-                };
-                let recv = self.lower_expr(scope, *recv)?;
-                Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
-            }
-            ExprKind::Cast { expr: operand, .. } => {
-                let operand = self.lower_expr(scope, *operand)?;
-                Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
-            }
+            ExprKind::MethodCall { recv, args, method: method_name, .. } => self.lower_method_expression(scope, expr, *recv, args, &method_name.text, ty, origin),
+            ExprKind::Cast { expr: operand, .. } => self.lower_cast(scope, *operand, ty, origin),
             // A scrutinee over the key params folds: only the arm it selects is lowered (`structural.rs`).
             ExprKind::Match { scrutinee, arms } if let Some(selected) = self.folded_selection(scope, *scrutinee, arms) => self.lower_expr(scope, arms[selected].body),
-            ExprKind::Match { scrutinee, arms } => {
-                scope.values.decisions += 1;
-                let lowered = self.lower_match(scope, *scrutinee, arms, ty, None, origin);
-                scope.values.decisions -= 1;
-                lowered
-            }
+            ExprKind::Match { scrutinee, arms } => self.lower_decided_match(scope, *scrutinee, arms, ty, origin),
             ExprKind::Closure { params, body, .. } => self.lower_closure(scope, expr, params, *body, origin),
             other => {
                 self.refuse(file, node.span, RefusedForm::expression(other));
                 None
             }
         }
+    }
+
+    /// A constant integer expression, or a method of a module type run on the template its param holds (§3.1.4, §8.4.5),
+    /// folded at elaboration: the fold's result (`None` after a diagnostic), or `None` when `expr` is neither.
+    fn lower_folded_expression(&mut self, scope: &mut Scope, expr: ExprId, ty: &ValueType, origin: &Origin) -> Option<Option<LoweredExpr>> {
+        if ty.is_integer() && self.constant_form(expr) {
+            return Some(match self.state.consts.value(expr, &Bindings::new()) {
+                Ok(value) => Some(self.constant_expr(value, ty.clone(), origin.clone())),
+                Err(fault) => {
+                    self.const_fault(&fault, "a constant expression");
+                    None
+                }
+            });
+        }
+        // a method of a module type (`fet.gain()`, `N: Mosfet`) runs at elaboration on the template the param holds (§3.1.4, §8.4.5)
+        if self.is_template_method(expr) {
+            let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
+            return Some(match self.state.consts.value(expr, &bindings) {
+                Ok(value) => Some(self.constant_expr(value, ty.clone(), origin.clone())),
+                Err(fault) => {
+                    self.const_fault(&fault, "a method of a template");
+                    None
+                }
+            });
+        }
+        None
+    }
+
+    /// A unary `-` or `!`.
+    fn lower_unary(&mut self, scope: &mut Scope, op: UnOp, operand: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let op = match op {
+            UnOp::Neg => UnaryOp::Neg,
+            UnOp::Not => UnaryOp::Not,
+        };
+        let operand = self.lower_expr(scope, operand)?;
+        Some(self.emit(Expr::Unary { op, expr: operand }, ty, origin))
+    }
+
+    /// A binary operator of two values; the right operand of `&&` and `||` is conditional exactly like an `if` arm.
+    fn lower_binary(&mut self, scope: &mut Scope, op: BinOp, lhs: ExprId, rhs: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        // The right operand of `&&`/`||` runs only when the left does not decide: it is
+        // conditional exactly like an `if` arm.
+        let short_circuit = matches!(op, BinOp::And | BinOp::Or);
+        let left = lhs;
+        let lhs = self.lower_expr(scope, lhs);
+        // `a && b` runs `b` when `a` holds, `a || b` when it does not.
+        if short_circuit {
+            scope.analog.guards.push(ArmCondition::If { condition: left, holds: matches!(op, BinOp::And) });
+        }
+        let rhs = self.lower_expr(scope, rhs);
+        if short_circuit {
+            scope.analog.guards.pop();
+        }
+        let (lhs, rhs) = (lhs?, rhs?);
+        let op = Self::binary_op(op);
+        Some(self.emit(Expr::Binary { op, lhs, rhs }, ty, origin))
+    }
+
+    /// An `if` whose condition reads only key params and constants: only the arm it selects is lowered (`structural.rs`,
+    /// §11 rule 3).
+    fn lower_folded_if(&mut self, scope: &mut Scope, expr: ExprId, holds: bool, then: &[StmtId], else_: Option<ExprId>, origin: Origin) -> Option<LoweredExpr> {
+        let node = self.state.design.expr_node(expr);
+        let (file, span) = (self.state.design.decl_data(node.owner).file, node.span);
+        if holds {
+            return self.lower_block(scope, file, then, span);
+        }
+        match else_ {
+            Some(else_) => self.lower_expr(scope, else_),
+            None => Some(self.emit(Expr::Unit, ValueType::Unit, origin)),
+        }
+    }
+
+    /// An `if` with both arms lowered, each under its own condition.
+    fn lower_if(&mut self, scope: &mut Scope, expr: ExprId, cond: ExprId, then: &[StmtId], else_: Option<ExprId>, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let node = self.state.design.expr_node(expr);
+        let (file, span) = (self.state.design.decl_data(node.owner).file, node.span);
+        let source = cond;
+        let cond = self.lower_expr(scope, cond);
+        scope.values.decisions += 1;
+        let arm = Elaboration::enter_arm(scope, cond, true);
+        scope.analog.guards.push(ArmCondition::If { condition: source, holds: true });
+        let then = self.lower_block(scope, file, then, span);
+        scope.analog.guards.pop();
+        Elaboration::leave_arm(scope, arm);
+        let arm = Elaboration::enter_arm(scope, cond, false);
+        scope.analog.guards.push(ArmCondition::If { condition: source, holds: false });
+        let otherwise = match else_ {
+            Some(else_) => self.lower_expr(scope, else_),
+            None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
+        };
+        scope.analog.guards.pop();
+        Elaboration::leave_arm(scope, arm);
+        scope.values.decisions -= 1;
+        let (cond, then, otherwise) = (cond?, then?, otherwise?);
+        let (then, otherwise) = (self.fit_to(then, &ty), self.fit_to(otherwise, &ty));
+        let whole = self.emit(Expr::If { cond, then, otherwise }, ty, origin);
+        self.note_branch(whole, cond, then, otherwise);
+        Some(whole)
+    }
+
+    /// A method call the checker typed by a row of Appendix H that lowers to a math function or an IR method; the rows that
+    /// are `Option`s lower on their pair.
+    fn lower_numeric_method(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, args: &[crate::pom::Arg], name: &str, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let node = self.state.design.expr_node(expr);
+        let (file, span) = (self.state.design.decl_data(node.owner).file, node.span);
+        let Some(method) = self.state.types.method(expr) else {
+            // `x.encode()` of a `T: Repr` parameter has no method row: its levels are written out per instance
+            if args.is_empty() && let Some(levels) = self.lower_parameter_encode(scope, expr, recv, name, origin.clone()) {
+                return levels;
+            }
+            self.refuse(file, span, ValueForm::MethodOutsideCatalogue);
+            return None;
+        };
+        let f = match method {
+            Method::Exp => MathFn::Exp,
+            Method::Ln => MathFn::Ln,
+            Method::Sqrt => MathFn::Sqrt,
+            Method::Abs => MathFn::Abs,
+            row if Self::ir_method(row).is_some() => {
+                let method = Self::ir_method(row)?;
+                let receiver = self.lower_expr(scope, recv);
+                let mut lowered = Vec::new();
+                for arg in args {
+                    lowered.push(self.lower_expr(scope, arg.value));
+                }
+                let (receiver, args) = (receiver?, lowered.into_iter().collect::<Option<Vec<_>>>()?);
+                return Some(self.emit(Expr::Method { method, receiver, args }, ty, origin));
+            }
+            // Lowered as a flag and a payload from msl-digital T27 on.
+            Method::IsSome | Method::IsNone | Method::UnwrapOr | Method::Unwrap | Method::Expect | Method::UnwrapOrElse => {
+                let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+                return self.lower_option_method(scope, method, recv, &args, ty, origin);
+            }
+            // The rest are `Option`s (`checked_*`, `map`, `and_then`, `or`, `then`, `then_some`): they lower
+            // on their pair, never as one value.
+            _ => {
+                self.refuse_with(file, span, ValueForm::RowReadAsValueRatherThanAs, [format!("{:?}", method)]);
+                return None;
+            }
+        };
+        let recv = self.lower_expr(scope, recv)?;
+        Some(self.emit(Expr::Math { f, args: vec![recv] }, ty, origin))
+    }
+
+    /// A field read: of a struct or tuple value, of one element of an array of bundles, or of a node of a bundle.
+    fn lower_field_expression(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, name: &str, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        if matches!(self.typed(recv), Some(Ty::Struct(_) | Ty::Tuple(_))) && self.bundle_leaf(scope, expr).is_none() {
+            return self.lower_field_value(scope, recv, name, ty, origin);
+        }
+        // a field of an element of an array of bundles (`ps[k].b`) is one element of its leaf (struct of arrays, `elements.rs`)
+        if self.bundle_leaf(scope, expr).is_some_and(|place| !place.elements.is_empty()) {
+            return self.lower_bundle_element(scope, expr, origin);
+        }
+        self.lower_field(scope, expr, ty, origin)
+    }
+
+    /// A method call, by what the checker resolved it to: a method of the project, a method through a bound, a row of the
+    /// sequence methods, a read of a built-in, or a row of Appendix H.
+    fn lower_method_expression(&mut self, scope: &mut Scope, expr: ExprId, recv: ExprId, args: &[crate::pom::Arg], name: &str, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        if let Some(Callee::Method(function)) = self.state.types.callee(expr) {
+            let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+            return self.lower_method_call(scope, expr, function, recv, &arguments, origin);
+        }
+        if let Some(Callee::Bound { item }) = self.state.types.callee(expr) {
+            let arguments: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+            return self.lower_bound_call(scope, expr, item, recv, &arguments, origin);
+        }
+        if self.state.types.method(expr).is_some_and(Method::is_sequence_row) {
+            let method = self.state.types.method(expr)?;
+            let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
+            return self.lower_sequence_method(scope, expr, method, recv, &args, ty, origin);
+        }
+        if self.state.types.builtin(expr).is_some() {
+            let builtin = self.state.types.builtin(expr)?;
+            return self.lower_builtin_read(scope, expr, builtin, recv, ty, origin);
+        }
+        self.lower_numeric_method(scope, expr, recv, args, name, ty, origin)
+    }
+
+    /// A literal, folded to its constant.
+    fn lower_literal(&mut self, expr: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        match self.state.consts.value(expr, &Bindings::new()) {
+            Ok(value) => Some(self.constant_expr(value, ty, origin)),
+            Err(fault) => {
+                self.const_fault(&fault, "a literal");
+                None
+            }
+        }
+    }
+
+    /// A block as an expression, one level deeper in the analog block it sits in.
+    fn lower_block_expression(&mut self, scope: &mut Scope, file: FileId, stmts: &[StmtId], span: Span) -> Option<LoweredExpr> {
+        scope.analog.block_depth += 1;
+        let lowered = self.lower_block(scope, file, stmts, span);
+        scope.analog.block_depth -= 1;
+        lowered
+    }
+
+    /// An `as` cast of `operand` to the type of the expression.
+    fn lower_cast(&mut self, scope: &mut Scope, operand: ExprId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        let operand = self.lower_expr(scope, operand)?;
+        Some(self.emit(Expr::Cast { expr: operand, to: ty.clone() }, ty, origin))
+    }
+
+    /// A `match` that is a decision of the code it sits in.
+    fn lower_decided_match(&mut self, scope: &mut Scope, scrutinee: ExprId, arms: &[crate::pom::Arm], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
+        scope.values.decisions += 1;
+        let lowered = self.lower_match(scope, scrutinee, arms, ty, None, origin);
+        scope.values.decisions -= 1;
+        lowered
     }
 
     /// A call: of a function of the reachable set (one `Call` node, the function lowered once
@@ -442,7 +414,7 @@ impl Elaboration<'_, '_> {
             let instance = self.concrete_instance(expr)?;
             // a function generic over a nature takes handles: inlined for the nature it is instantiated at
             if self.is_inlined(instance.item) {
-                let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+                let outer = self.elaboration.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
                 let inlined = self.inline_emitting_value(scope, instance.item, args, origin);
                 self.state.consts.set_substitution(outer);
                 return inlined;
@@ -507,9 +479,9 @@ impl Elaboration<'_, '_> {
     /// The arguments of the call `expr` of `function`, one IR argument per parameter in parameter
     /// order, from the checker's binding of the call (§3.2): an `Option<T>` parameter takes two,
     /// its flag and its payload, a parameter left out `(false, zero)`. `None` after a diagnostic.
-    pub(super) fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
+    pub(in crate::elab) fn lower_arguments(&mut self, scope: &mut Scope, expr: ExprId, function: DeclId) -> Option<Vec<LoweredExpr>> {
         let Some(binding) = self.state.types.binding(expr).map(<[_]>::to_vec) else {
-            self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::CallWhoseArgumentsTypeCheckerDidNot);
+            self.elaboration.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::CallWhoseArgumentsTypeCheckerDidNot);
             return None;
         };
         let params: Vec<DeclId> = self.state.design.decl_data(function).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
@@ -530,18 +502,10 @@ impl Elaboration<'_, '_> {
         ok.then_some(lowered)
     }
 
-    /// `expr` without the parentheses around it.
-    pub(super) fn peel_parens(&self, mut expr: ExprId) -> ExprId {
-        while let ExprKind::Paren(inner) = &self.state.design.expr_node(expr).kind {
-            expr = *inner;
-        }
-        expr
-    }
-
     /// Allocate the local a `Binding` declaration names: its name and its type, in declaration
     /// order, assignable exactly when the body assigns it (§1.5.12). `None` after a diagnostic
     /// when the checker typed it with a non-value type.
-    pub(super) fn bind_local(&mut self, scope: &mut Scope, binding: DeclId) -> Option<u32> {
+    pub(in crate::elab) fn bind_local(&mut self, scope: &mut Scope, binding: DeclId) -> Option<u32> {
         let assignable = self.state.types.is_assigned(binding);
         self.bind_local_as(scope, binding, assignable)
     }
@@ -580,7 +544,7 @@ impl Elaboration<'_, '_> {
 
     /// The statements of a block in order and its value (the last expression without `;`).
     /// `None` after the diagnostics of every statement that could not be lowered.
-    pub(super) fn lower_statements(&mut self, scope: &mut Scope, stmts: &[StmtId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
+    pub(in crate::elab) fn lower_statements(&mut self, scope: &mut Scope, stmts: &[StmtId]) -> Option<(Vec<LoweredStmt>, Option<LoweredExpr>)> {
         let mut out = Vec::new();
         let mut value = None;
         let mut ok = true;
@@ -682,7 +646,7 @@ impl Elaboration<'_, '_> {
         }
     }
 
-    pub(super) fn binary_op(op: BinOp) -> BinaryOp {
+    pub(in crate::elab) fn binary_op(op: BinOp) -> BinaryOp {
         match op {
             BinOp::Add => BinaryOp::Add,
             BinOp::Sub => BinaryOp::Sub,
@@ -728,7 +692,7 @@ impl Elaboration<'_, '_> {
 
     /// A folded value as the IR expression of its type; an integer takes `ty`, its expression's
     /// value type.
-    pub(super) fn constant_expr(&mut self, value: Constant, ty: ValueType, origin: Origin) -> LoweredExpr {
+    pub(in crate::elab) fn constant_expr(&mut self, value: Constant, ty: ValueType, origin: Origin) -> LoweredExpr {
         match value {
             Constant::Real(r) => self.emit(Expr::Real(r), ValueType::F64, origin),
             Constant::Bool(b) => self.emit(Expr::Bool(b), ValueType::Bool, origin),
@@ -797,14 +761,14 @@ impl Elaboration<'_, '_> {
             },
             // a carrier declared inside generation, read inside its loops, is the iteration's element (§8.2.23)
             DeclKind::Signal(_) if !self.generated_carrier_levels(scope, expr).is_empty() => match self.element_lookup(scope, expr) {
-                super::elements::Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
+                crate::elab::elements::Lookup::Found(element) => Some(self.carrier_element_read(scope, element, origin)),
                 _ => None,
             },
             DeclKind::Port(_) | DeclKind::Signal(_) => match (self.frame_carrier(scope.values.frame, decl), self.input_of(scope, decl)) {
                 (Some(index), _) if scope.analog.in_analog_block && self.state.digital.structure.carriers[index as usize].count.is_some() => Some(self.elements_of_array(scope, index, ElementPart::Value, origin)),
                 (Some(index), _) => Some(self.carrier_read(index, origin)),
                 // A value input of a hoisted module: the caller's expression, in the caller's frame.
-                (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.lower_expr(scope, given)),
+                (None, Some(Some(given))) => self.in_caller(scope, |this, scope| this.values().lower_expr(scope, given)),
                 (None, Some(None)) => {
                     self.refuse(scope.values.file, node.span, ValueForm::ValueInputLeftOutReadAsValue);
                     None

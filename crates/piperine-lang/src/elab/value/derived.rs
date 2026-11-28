@@ -8,11 +8,11 @@
 //! and `Some` by payload. `T::default()` is `Expr::Default(T)`, the default of an `Option` its
 //! `None`.
 
+use super::ValueLowering;
 use piperine_ir::{BinaryOp, Expr, ExprId as LoweredExpr, Local, Origin, Stmt, StmtId as LoweredStmt, UnaryOp, ValueType};
 
 use super::compound::Pair;
-use super::elaborator::Elaboration;
-use super::lower::Scope;
+use crate::elab::elaborator::Scope;
 use crate::refusal::forms::GenericsForm;
 use crate::pom::{BinOp, ExprId};
 
@@ -47,7 +47,7 @@ struct OptionOperands {
     origin: Origin,
 }
 
-impl Elaboration<'_, '_> {
+impl ValueLowering<'_, '_, '_> {
     /// `lhs op rhs` over two `Option`s with a comparison operator. `None` after a diagnostic.
     pub(super) fn lower_option_comparison(&mut self, scope: &mut Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (left, right) = (self.lower_option(scope, lhs)?, self.lower_option(scope, rhs)?);

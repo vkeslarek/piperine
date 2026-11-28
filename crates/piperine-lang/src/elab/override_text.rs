@@ -82,7 +82,7 @@ impl Elaboration<'_, '_> {
             }
             Ty::Enum(nominal) => self.variant_constant(ty, nominal.decl, text),
             Ty::Option(inner) => {
-                let stored = self.stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
+                let stored = self.values().stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
                 let parts = match (text, text.strip_prefix("Some(").and_then(|rest| rest.strip_suffix(')'))) {
                     ("None", _) => Vec::new(),
                     (_, Some(payload)) => vec![self.constant_as(inner, payload.trim())?],
@@ -122,7 +122,7 @@ impl Elaboration<'_, '_> {
         let wanted = text.strip_prefix(&format!("{enum_name}::")).unwrap_or(text);
         match variants.iter().position(|(name, unit)| name == wanted && *unit) {
             Some(position) => {
-                let stored = self.stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
+                let stored = self.values().stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
                 Ok(Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: stored, variant: Some(position as u32), parts: Vec::new() })))
             }
             None => {

@@ -9,7 +9,7 @@ use piperine_ir::{Constant, Real};
 use super::composite::CompositeKind;
 use super::{Bindings, ConstEval, ConstFault, Width};
 use crate::refusal::forms::ConstantForm;
-use crate::elab::tables::{HexText, TableFault, TableText};
+use crate::elab::value::tables::{HexText, TableFault, TableText};
 use crate::pom::{ConstData, DeclKind, ExprId, ExprKind, Resolution};
 use crate::types::{Intrinsic, Length, Ty};
 
