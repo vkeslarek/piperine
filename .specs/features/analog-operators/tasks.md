@@ -47,7 +47,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clioptions**: `cargo test -p piperine-cli --test commands options::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run inventory**: `cargo test -p piperine --test book_inventory`
+**Run inventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree is `/home/keslarek/Git/piperine-analog-operators`, branch `feature/analog-operators`. Every cargo command runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target-b CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 TMPDIR=/var/tmp/piperine-tmp-b`, in the foreground; never `pkill` by pattern; where parallel worktrees share the target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources. If `df /` passes 90 %, stop and report.

@@ -18,10 +18,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sourcebundles**: `cargo test -p piperine-parity --test source_carriers bundles::`
 **Run apimetadata**: `cargo test -p piperine-api --test session metadata::`
 **Run pomreflect**: `cargo test -p piperine-lang --test pom reflect::`
-**Run booknatures**: `cargo test -p piperine --test book_natures`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
-**Run bookmodules**: `cargo test -p piperine --test book_modules`
-**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
+**Run booknatures**: `cargo test -p piperine --test book natures::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
+**Run bookmodules**: `cargo test -p piperine --test book modules::`
+**Run bookcheatsheet**: `cargo test -p piperine --test book cheatsheet::`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
 **Run msl_parser**: `cargo test -p piperine-lang --test msl parser::`
 **Run digitalinstant**: `cargo test -p piperine-digital-solver --test engine instant::`

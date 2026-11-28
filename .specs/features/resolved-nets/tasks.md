@@ -25,11 +25,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run sourcenets**: `cargo test -p piperine-parity --test source_carriers nets::`
 **Run typesgenmod**: `cargo test -p piperine-lang --test types_generics generic_modules::`
 **Run elabgenmod**: `cargo test -p piperine-lang --test elab_structure generic_modules::`
-**Run booknatures**: `cargo test -p piperine --test book_natures`
-**Run bookmodules**: `cargo test -p piperine --test book_modules`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookcorestd**: `cargo test -p piperine --test book_core_std`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run booknatures**: `cargo test -p piperine --test book natures::`
+**Run bookmodules**: `cargo test -p piperine --test book modules::`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookcorestd**: `cargo test -p piperine --test book core_std::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
 **Run typesaggregates**: `cargo test -p piperine-lang --test types_patterns aggregates::`

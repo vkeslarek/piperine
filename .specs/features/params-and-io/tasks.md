@@ -38,11 +38,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookcorestd**: `cargo test -p piperine --test book_core_std`
-**Run bookpackages**: `cargo test -p piperine --test book_packages`
-**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookcorestd**: `cargo test -p piperine --test book core_std::`
+**Run bookpackages**: `cargo test -p piperine --test book packages::`
+**Run bookcheatsheet**: `cargo test -p piperine --test book cheatsheet::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

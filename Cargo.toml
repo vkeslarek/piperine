@@ -57,101 +57,11 @@ num-complex = { workspace = true }
 name = "host_ii"
 path = "crates/piperine-api/tests/root_surface/host_ii.rs"
 
-# The Book's inventory guard (`feature root-e2e`): a repository-policy proof over the Book's text, so it
-# sits under `tests/book/` with the support modules the Book targets share.
+# The Book (`feature root-e2e`): one target, one module per chapter, and the two guards over the Book's text
+# (`inventory_guard`, `claims_guard`) beside them, with the support modules the chapters share.
 [[test]]
-name = "book_inventory"
-path = "tests/book/inventory_guard.rs"
-
-# The Book's claim guard (`feature root-e2e`): every sentence that states a value or an outcome has a row.
-[[test]]
-name = "book_claims"
-path = "tests/book/claims_guard.rs"
-
-# One target per Book chapter (`feature root-e2e`), each running the chapter's models through `piperine::`.
-[[test]]
-name = "book_errors"
-path = "tests/book/errors.rs"
-
-[[test]]
-name = "book_welcome"
-path = "tests/book/welcome.rs"
-
-[[test]]
-name = "book_language"
-path = "tests/book/language.rs"
-
-[[test]]
-name = "book_types"
-path = "tests/book/types.rs"
-
-[[test]]
-name = "book_generics"
-path = "tests/book/generics.rs"
-
-[[test]]
-name = "book_values"
-path = "tests/book/values.rs"
-
-[[test]]
-name = "book_natures"
-path = "tests/book/natures.rs"
-
-[[test]]
-name = "book_modules"
-path = "tests/book/modules.rs"
-
-[[test]]
-name = "book_analog"
-path = "tests/book/analog.rs"
-
-[[test]]
-name = "book_digital"
-path = "tests/book/digital.rs"
-
-[[test]]
-name = "book_mixed"
-path = "tests/book/mixed.rs"
-
-[[test]]
-name = "book_packages"
-path = "tests/book/packages.rs"
-
-[[test]]
-name = "book_core_std"
-path = "tests/book/core_std.rs"
-
-[[test]]
-name = "book_cheatsheet"
-path = "tests/book/cheatsheet.rs"
-
-[[test]]
-name = "book_pom"
-path = "tests/book/pom.rs"
-
-[[test]]
-name = "book_abi"
-path = "tests/book/abi.rs"
-
-[[test]]
-name = "book_compiler"
-path = "tests/book/compiler.rs"
-
-[[test]]
-name = "book_solver"
-path = "tests/book/solver.rs"
-
-[[test]]
-name = "book_structure"
-path = "tests/book/structure.rs"
-
-[[test]]
-name = "book_simulation"
-path = "tests/book/simulation.rs"
-
-[[test]]
-name = "book_cli"
-path = "tests/book/cli.rs"
+name = "book"
+path = "tests/book/main.rs"
 
 # A dev/test build of this workspace links ~50 test binaries, and full
 # debuginfo is what makes that expensive: every `rust-lld` invocation peaked

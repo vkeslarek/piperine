@@ -12,10 +12,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-18 - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine -p piperine-parity -p piperine-cli -p piperine-api --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries workspace_shape::`
-**Run inventory**: `cargo test --test book_inventory`
-**Run claims**: `cargo test --test book_claims`
-**Run errors**: `cargo test --test book_errors`
-**Run welcome**: `cargo test --test book_welcome`
+**Run inventory**: `cargo test --test book inventory_guard::`
+**Run claims**: `cargo test --test book claims_guard::`
+**Run errors**: `cargo test --test book errors::`
+**Run welcome**: `cargo test --test book welcome::`
 **Run scenarios**: `env -u PIPERINE_NGSPICE cargo test --test scenarios -- --nocapture`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run corpus**: `cargo test -p piperine-parity --test parity corpus::`

@@ -107,7 +107,7 @@ cargo test -p piperine --test integrated      # small mixed-signal designs end t
 - No hand-kept list. Enumerate with `ls crates/*/tests/*.rs tests/` or the `Running` lines of
   `cargo test`; every target opens with a `//!` scope header.
 - A target lives in the crate it exercises. Root `tests/` holds only the integrated tests:
-  `tests/book/` (one target per Book chapter + `inventory.tsv`), `tests/integrated/`,
+  `tests/book/` (the target `book`, one module per Book chapter, + `inventory.tsv`), `tests/integrated/`,
   `tests/scenarios.rs`, `tests/buck_scenarios.rs`, fixtures in `tests/e2e/`.
 - `crates/piperine-repository-guards/tests/suite/suite_hygiene.rs` guards the suite: no switched-off code, no
   `#[ignore]`, no target without `//!`, no file-scope lint suppression, no dead identifiers.

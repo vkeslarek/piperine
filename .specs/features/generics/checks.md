@@ -27,21 +27,21 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run elabgenr**: `cargo test -p piperine-lang --test elab_structure generation::`
 **Run srcmods**: `cargo test -p piperine-parity --test source_structure generic_modules::`
 **Run srcgenr**: `cargo test -p piperine-parity --test source_structure generation::`
-**Run bookmodules**: `cargo test -p piperine --test book_modules`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookcorestd**: `cargo test -p piperine --test book_core_std`
-**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
-**Run booknatures**: `cargo test -p piperine --test book_natures`
-**Run bookgenerics**: `cargo test -p piperine --test book_generics`
-**Run bookwelcome**: `cargo test -p piperine --test book_welcome`
+**Run bookmodules**: `cargo test -p piperine --test book modules::`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookcorestd**: `cargo test -p piperine --test book core_std::`
+**Run bookcheatsheet**: `cargo test -p piperine --test book cheatsheet::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
+**Run booknatures**: `cargo test -p piperine --test book natures::`
+**Run bookgenerics**: `cargo test -p piperine --test book generics::`
+**Run bookwelcome**: `cargo test -p piperine --test book welcome::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run typescarrarr**: `cargo test -p piperine-lang --test types_carriers carrier_arrays::`
 **Run elabcarrarr**: `cargo test -p piperine-lang --test elab_digital carrier_arrays::`
 **Run paritycarrarr**: `cargo test -p piperine-parity --test source_carriers carrier_arrays::`
 **Run dag**: `cargo test -p piperine-digital-solver --test plan dag::`
 **Run apicarrarr**: `cargo test -p piperine-api --test host carrier_arrays::`
-**Run bookcompiler**: `cargo test -p piperine --test book_compiler`
+**Run bookcompiler**: `cargo test -p piperine --test book compiler::`
 **Run typesmodules**: `cargo test -p piperine-lang --test types_modules modules::`
 **Run elabresults**: `cargo test -p piperine-lang --test elab_digital results::`
 **Run typestempl**: `cargo test -p piperine-lang --test types_generics templates::`
@@ -52,7 +52,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run srctempl**: `cargo test -p piperine-parity --test source_structure templates::`
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_host implicit::`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
-**Run bookanalog**: `cargo test -p piperine --test book_analog`
+**Run bookanalog**: `cargo test -p piperine --test book analog::`
 **Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib stdlib_generic::`
 **Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`

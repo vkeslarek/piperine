@@ -241,7 +241,8 @@ impl Coverage {
     }
 
     /// The test `covered_by` names: `piperine/<target>::<fn>` is a root target (the path its
-    /// `[[test]]` table gives, else `tests/<target>.rs`), `<crate>/<target>::<fn>` is
+    /// `[[test]]` table gives, else `tests/<target>.rs`; `piperine/<target>::<module>::<fn>` is `<module>.rs` beside a
+    /// `main.rs` target), `<crate>/<target>::<fn>` is
     /// `crates/<crate>/tests/<target>.rs`, and `<crate>/<target>::<module>::<fn>` is
     /// `crates/<crate>/tests/<target>/<module>.rs` when the target is a directory. An error says what
     /// is missing.
@@ -249,7 +250,11 @@ impl Coverage {
         let (location, name) = covered_by.split_once("::").ok_or_else(|| format!("`{covered_by}` is not `<crate>/<target>::<fn>`"))?;
         let (package, target) = location.split_once('/').ok_or_else(|| format!("`{covered_by}` is not `<crate>/<target>::<fn>`"))?;
         let (path, name) = if package == "piperine" {
-            (self.root.join(self.root_target_path(target)), name)
+            let path = self.root.join(self.root_target_path(target));
+            match name.rsplit_once("::") {
+                Some((module, function)) if path.file_name().is_some_and(|file| file == "main.rs") => (path.with_file_name(format!("{module}.rs")), function),
+                _ => (path, name),
+            }
         } else {
             let tests = self.root.join("crates").join(package).join("tests");
             match name.rsplit_once("::") {

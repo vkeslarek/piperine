@@ -7,13 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod gaps;
-    pub mod inventory;
-}
+use crate::support;
 
 use support::book::{BlockId, Book, Fingerprint};
 use support::gaps::Gaps;

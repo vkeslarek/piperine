@@ -20,6 +20,7 @@ tests/book/errors.rs::e0338_is_an_initial_value_under_an_undelayed_definition	1
 tests/book/errors.rs::e0343_is_an_item_of_a_child_that_is_not_pub	1
 tests/book/errors.rs::e0430_is_found_on_the_head_of_the_worked_example_s_reaction	1
 tests/book/language.rs::blocks_ifs_and_matches_are_expressions_with_one_value	1
+tests/book/main.rs::cheatsheet	1
 tests/book/mixed.rs::the_sar_adc_runs_with_its_comparator_and_its_field_access	1
 tests/book/modules.rs::the_swappable_mosfet_listing_runs	1
 tests/book/natures.rs::Sda	1

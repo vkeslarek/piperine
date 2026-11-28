@@ -5,16 +5,7 @@
 //! asserted at the precision the Book prints it. Each test opens with the inventory ids it holds, from
 //! `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod inventory;
-    pub mod model;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use piperine::{Cell, Field, Overrides};
 use piperine_parity::golden::PrintedNumber;

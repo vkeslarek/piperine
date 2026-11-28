@@ -28,10 +28,10 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
 **Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run bookmodules**: `cargo test -p piperine --test book_modules`
-**Run bookanalog**: `cargo test -p piperine --test book_analog`
-**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run bookmodules**: `cargo test -p piperine --test book modules::`
+**Run bookanalog**: `cargo test -p piperine --test book analog::`
+**Run bookcheatsheet**: `cargo test -p piperine --test book cheatsheet::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 

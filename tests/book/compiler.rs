@@ -6,18 +6,7 @@
 //! describes (a twin and a scenario test per circuit, the reverse-bias sweep measured against ngspice).
 //! Each test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod chapter;
-    pub mod faulty;
-    pub mod inventory;
-    pub mod model;
-    pub mod printed;
-    pub mod records;
-    pub mod refusal;
-}
+use crate::support;
 
 use std::path::{Path, PathBuf};
 

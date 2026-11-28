@@ -20,9 +20,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run cliintegrated**: `cargo test -p piperine-cli --test commands integrated::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run clibookbuck**: `cargo test -p piperine-cli --test book_buck`
-**Run bookcli**: `cargo test -p piperine --test book_cli`
+**Run bookcli**: `cargo test -p piperine --test book cli::`
 **Run bookbuck**: `cargo test -p piperine --test book_buck`
-**Run bookguards**: `cargo test -p piperine --test book_inventory --test book_claims`
+**Run bookguards**: `cargo test -p piperine --test book`
 **Run sources**: `cargo test -p piperine-parity --test source_execution`
 **Run sourcehost**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test source_host host::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
