@@ -8,7 +8,7 @@
 //! [`TransientAnalysisOptions`], and the shared
 //! [`Context`](crate::analyses::Context) carries what every analysis shares.
 use piperine_analog_solver::crossing::{CrossDir, predict_crossing};
-use piperine_analog_solver::device::{Ambient, AssemblySnapshot, JumpPosition, Stage};
+use piperine_analog_solver::device::{Ambient, AssemblySnapshot, JumpPosition, Rising, Stage};
 use piperine_analog_solver::netlist::AnalogReference;
 use crate::analyses::dc::DcSolver;
 use crate::analyses::Context;
@@ -1041,6 +1041,9 @@ pub(crate) struct DeviceRun {
     locates: bool,
     /// The attempts of the current step that went past a crossing.
     located: Option<Located>,
+    /// The last landing whose solution did not cross: the step from it, once it missed again,
+    /// lands its watches late.
+    missed: Option<MissedLanding>,
     /// The controller's step when the current step was first retaken toward a crossing: the
     /// step after the landing starts from it, not from the landing's short step.
     retaken: Option<f64>,
@@ -1073,6 +1076,48 @@ struct AcceptUndo {
 struct Located {
     from: f64,
     past: Vec<((usize, usize), (f64, f64, u32))>,
+    /// The tick the step was last retaken to, counted as `from` is.
+    landing: f64,
+}
+
+impl Located {
+    /// The landing this record asked for, when the attempt at `tick` is that landing and none of
+    /// the watches it located rose there (`rising`): the solution at the landing does not cross,
+    /// so the attempt is accepted as an ordinary step and the landing is missed. `from` is the
+    /// tick of the step's start and `earlier` the last missed landing, which this one repeats
+    /// when the step started there.
+    fn missed_at(&self, from: f64, tick: f64, rising: &[Rising], earlier: Option<&MissedLanding>) -> Option<MissedLanding> {
+        let watches: Vec<(usize, usize)> = self.past.iter().map(|(key, _)| *key).collect();
+        let rose = rising.iter().any(|r| watches.contains(&(r.instance, r.watch)));
+        let repeated = earlier.is_some_and(|missed| missed.tick == from);
+        (self.landing == tick && !rose).then_some(MissedLanding { tick, watches, repeated })
+    }
+}
+
+/// A landing the locator retook a step to whose solution did not cross (§17.3 rule 3): the step
+/// is accepted there as an ordinary one, and the watches it was meant for are located again from
+/// it, at the next tick when the crossing is estimated there. A step of a few ticks can move no
+/// state by as much as one unit in the last place (at the default 1 fs tick, 25 µA into 1 mF
+/// moves a node 2.5e-17 V a tick, under half an ulp of 0.9 V), so that landing can miss again
+/// with the same solution, and so on step after step. From a landing that missed again
+/// (`repeated`), a watch it was meant for whose crossing is estimated within its `ttol` of the
+/// landing is landed at the latest tick within that `ttol` of the estimate instead, which
+/// §17.3's guarantee allows (the landing exceeds the crossing by at most `ttol` plus one tick).
+#[derive(Clone, Debug, PartialEq)]
+struct MissedLanding {
+    /// The tick of the missed landing, counted as `Located::from` is.
+    tick: f64,
+    /// The `(instance, watch)` of each watch the landing was meant for.
+    watches: Vec<(usize, usize)>,
+    /// The step that missed this landing started at an earlier missed landing.
+    repeated: bool,
+}
+
+impl MissedLanding {
+    /// Whether a step from `tick` locates `watch` from this landing, missed again.
+    fn repeated_for(&self, tick: f64, watch: (usize, usize)) -> bool {
+        self.repeated && self.tick == tick && self.watches.contains(&watch)
+    }
 }
 
 /// The crossing time of a watch between the last accepted solution `(t0, e0)`, `e0 ≤ 0`, and the
@@ -1234,6 +1279,7 @@ impl TransientSolver<'_> {
             net_names,
             locates,
             located: None,
+            missed: None,
             retaken: None,
             undo: None,
             retaking: false,
@@ -1708,9 +1754,9 @@ impl TransientSolver<'_> {
     /// `≤ 0` at the last accepted solution to `> 0` here is within its tolerance when its value
     /// is under its `etol` or `t1` exceeds its estimated crossing by at most its `ttol` (a
     /// watch's own pins, else the session's `ttol` and potential `abstol`). When one is not, the
-    /// step is retaken at the earliest estimate rounded up to a tick (§15 T4): `Some(landing)`.
-    /// `None` accepts the attempt: every crossing is within tolerance, or the earliest estimate
-    /// rounds to the attempt's own tick.
+    /// step is retaken at the earliest landing (`landing_tick`): `Some(landing)`. `None` accepts
+    /// the attempt: every crossing is within tolerance, or the earliest landing is the attempt's
+    /// own tick; an attempt at a landing whose watches did not rise is a missed landing.
     fn device_locate(&mut self, run: &mut DeviceRun, t1: f64) -> crate::core::result::Result<Option<f64>> {
         let t0 = run.st.current_time;
         if run.located.as_ref().is_some_and(|l| l.from != t0) {
@@ -1720,26 +1766,29 @@ impl TransientSolver<'_> {
         let amb = Ambient { time: run.st.origin + t1, ..self.system.ambient() };
         let (ttol, etol) = (self.options.ttol, self.system.context.tolerances.vntol);
         let rising = self.device_bound().analog.rising(&x, amb)?;
+        let (from, attempt) = ((t0 / run.spt).round(), (t1 / run.spt).round());
+        if let Some(missed) = run.located.as_ref().and_then(|l| l.missed_at(from, attempt, &rising, run.missed.as_ref())) {
+            run.missed = Some(missed);
+        }
         let mut earliest = f64::INFINITY;
         for r in &rising {
-            let prev = run.located.as_ref().and_then(|l| {
-                l.past.iter().find(|(k, _)| *k == (r.instance, r.watch)).map(|(_, p)| *p)
-            });
+            let key = (r.instance, r.watch);
+            let prev = run.located.as_ref().and_then(|l| l.past.iter().find(|(k, _)| *k == key).map(|(_, p)| *p));
             let estimate = crossing_estimate(t0, r.before, t1, r.now, prev);
-            let within = r.now < r.etol.unwrap_or(etol) || t1 - estimate <= r.ttol.unwrap_or(ttol);
+            let watch_ttol = r.ttol.unwrap_or(ttol);
+            let within = r.now < r.etol.unwrap_or(etol) || t1 - estimate <= watch_ttol;
             if !within {
-                earliest = earliest.min(estimate);
+                let after_miss = run.missed.as_ref().is_some_and(|m| m.repeated_for(from, key));
+                earliest = earliest.min(run.landing_tick(estimate, watch_ttol, after_miss));
             }
         }
-        // The landing tick: the estimate rounded up, after the accepted time's tick.
-        let first = (t0 / run.spt).round() + 1.0;
-        let landing = (earliest / run.spt).ceil().max(first);
-        if !landing.is_finite() || landing >= (t1 / run.spt).round() {
+        if !earliest.is_finite() || earliest >= attempt {
             run.located = None;
             return Ok(None);
         }
         run.retaken.get_or_insert(run.st.dt);
-        let located = run.located.get_or_insert_with(|| Located { from: t0, past: Vec::new() });
+        let located = run.located.get_or_insert_with(|| Located { from: t0, past: Vec::new(), landing: earliest });
+        located.landing = earliest;
         for r in &rising {
             let key = (r.instance, r.watch);
             match located.past.iter_mut().find(|(k, _)| *k == key) {
@@ -1747,7 +1796,7 @@ impl TransientSolver<'_> {
                 None => located.past.push((key, (t1, r.now, 1))),
             }
         }
-        Ok(Some(landing * run.spt))
+        Ok(Some(earliest * run.spt))
     }
 
     /// The `REJECT` trace record of a step that failed the truncation test.
@@ -1941,6 +1990,21 @@ impl TransientSolver<'_> {
 }
 
 impl DeviceRun {
+    /// The tick a crossing estimated at `estimate` is landed on (§17.3 rule 3, §15 T4): the
+    /// estimate rounded up to a tick, and after the accepted time's tick. From a landing of its
+    /// watch that missed again (`after_miss`, `MissedLanding`) with the estimate within `ttol` of
+    /// it, the latest tick within `ttol` of the estimate, so that the step is long enough to move
+    /// the solution across.
+    fn landing_tick(&self, estimate: f64, ttol: f64, after_miss: bool) -> f64 {
+        let start = self.st.current_time;
+        let landing = (estimate / self.spt).ceil().max((start / self.spt).round() + 1.0);
+        if after_miss && estimate - start < ttol {
+            landing.max(((estimate + ttol) / self.spt).floor())
+        } else {
+            landing
+        }
+    }
+
     /// The Newton failure `error` of the attempt to `time`, which is at the
     /// step floor: `E0508`, or `E0504` when it is the first step after a
     /// delivery under a restart (it reads a jump), naming the nets delivered.
@@ -1997,8 +2061,13 @@ impl DeviceRun {
         self.st.stop = origin.stop;
         self.proposed -= moved;
         self.attempted -= moved;
+        let moved_ticks = (moved / self.spt).round();
+        if let Some(missed) = &mut self.missed {
+            missed.tick -= moved_ticks;
+        }
         if let Some(located) = &mut self.located {
             located.from -= moved;
+            located.landing -= moved_ticks;
             for (_, (time, _, _)) in &mut located.past {
                 *time -= moved;
             }
