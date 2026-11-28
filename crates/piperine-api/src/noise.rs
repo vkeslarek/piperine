@@ -69,6 +69,9 @@ impl NoiseProbe {
         if GroundName::names(path) {
             return Ok(NodeIdentifier::Gnd);
         }
+        if let Some(refusal) = GroundName::refusal(path) {
+            return Err(NoiseProbe::nothing(entry, &refusal));
+        }
         match Probe::resolve(ir, top, path)? {
             Probe::Node { id, .. } => Ok(id),
             _ => Err(NoiseProbe::nothing(entry, &format!("`{path}` is not a node")))

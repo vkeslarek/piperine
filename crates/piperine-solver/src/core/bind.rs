@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use piperine_abi::caller::Handle;
 use piperine_abi::raw::{
-    Cell, DEFAULT, Layout, Module, Pin, Shape, cell, global, kind, leaf, pin_flag, role, watch,
+    Cell, DEFAULT, Layout, Module, Pin, cell, global, kind, leaf, pin_flag, role, watch,
 };
 use piperine_analog_solver::device::{AnalogBinding, AnalogInstance, AnalogPlan, Assembly};
 use piperine_analog_solver::error::{Error, SolverDomain};
@@ -68,6 +68,60 @@ pub enum ParamValue {
     /// The pin is bound to the shared param net of this name
     /// ([`CircuitBuilder::param_net`](crate::core::builder::CircuitBuilder::param_net)).
     Shared(String),
+}
+
+impl ParamValue {
+    /// The bytes of the value in `layout` (P3: the bytes of its type and nothing else).
+    pub(crate) fn encode(&self, layout: &Layout) -> std::result::Result<Vec<u8>, String> {
+        let value = self;
+        if let ParamValue::Bytes(b) = value {
+            return if b.len() == layout.size as usize {
+                Ok(b.clone())
+            } else {
+                Err(format!("{} bytes given for a layout of {}", b.len(), layout.size))
+            };
+        }
+        let field = layout.fields.iter().next().ok_or("a layout with no field takes no value")?;
+        let mut bytes = vec![0u8; layout.size as usize];
+        let at = field.offset as usize;
+        let put = |bytes: &mut [u8], b: &[u8]| -> std::result::Result<(), String> {
+            bytes.get_mut(at..at + b.len()).ok_or("the layout is too small for the value")?.copy_from_slice(b);
+            Ok(())
+        };
+        match (value, field.leaf) {
+            (ParamValue::Real(v), leaf::F64) => put(&mut bytes, &v.to_le_bytes())?,
+            (ParamValue::Real(v), leaf::F32) => put(&mut bytes, &(*v as f32).to_le_bytes())?,
+            (ParamValue::Bool(v), leaf::BOOL | leaf::U8) => put(&mut bytes, &[u8::from(*v)])?,
+            (ParamValue::Int(v), l) => {
+                let le = |n: usize| -> std::result::Result<Vec<u8>, String> {
+                    let full = v.to_le_bytes();
+                    let fits = match n {
+                        1 => i8::try_from(*v).is_ok() || u8::try_from(*v).is_ok(),
+                        2 => i16::try_from(*v).is_ok() || u16::try_from(*v).is_ok(),
+                        4 => i32::try_from(*v).is_ok() || u32::try_from(*v).is_ok(),
+                        _ => true,
+                    };
+                    if fits { Ok(full[..n].to_vec()) } else { Err(format!("{v} does not fit {n} bytes")) }
+                };
+                let n = match l {
+                    leaf::U8 | leaf::I8 => 1,
+                    leaf::U16 | leaf::I16 => 2,
+                    leaf::U32 | leaf::I32 => 4,
+                    leaf::U64 | leaf::I64 => 8,
+                    _ => return Err("an integer needs an integer leaf".into()),
+                };
+                put(&mut bytes, &le(n)?)?;
+            }
+            _ => return Err("the value does not fit the first field of the layout".into()),
+        }
+        // a layout whose second field is a BOOL `known` flag (a session parameter's) says the value was given
+        if let Some(flag) = layout.fields.iter().nth(1).filter(|f| f.name.as_str() == "known" && f.leaf == leaf::BOOL) {
+            if let Some(byte) = bytes.get_mut(flag.offset as usize) {
+                *byte = 1;
+            }
+        }
+        Ok(bytes)
+    }
 }
 
 /// One instance as the builder collects it.
@@ -275,13 +329,13 @@ impl Bound {
                 self.names.params.keys().filter(|(p, _)| p == path).map(|(_, n)| n.as_str()).collect();
             declared.sort_unstable();
             if declared.is_empty() {
-                bind_error(path, format!("no PARAM pin `{param}`; the instance declares no writable parameters"))
+                Bind::error(path, format!("no PARAM pin `{param}`; the instance declares no writable parameters"))
             } else {
-                bind_error(path, format!("no PARAM pin `{param}`; available parameters: {}", declared.join(", ")))
+                Bind::error(path, format!("no PARAM pin `{param}`; available parameters: {}", declared.join(", ")))
             }
         })?;
-        let layout = self.digital.plan().net_layout(net).ok_or_else(|| bind_error(path, format!("`{param}` has no layout")))?;
-        let bytes = encode(layout, value).map_err(|e| bind_error(path, format!("`{param}`: {e}")))?;
+        let layout = self.digital.plan().net_layout(net).ok_or_else(|| Bind::error(path, format!("`{param}` has no layout")))?;
+        let bytes = value.encode(layout).map_err(|e| Bind::error(path, format!("`{param}`: {e}")))?;
         Ok((net, bytes))
     }
 
@@ -291,7 +345,7 @@ impl Bound {
         let at = self.digital.plan().nets.iter().position(|n| n.name == name).ok_or_else(|| fail("no discrete net of the design has that name".into()))?;
         let net = NetId(at as u32);
         let layout = self.digital.plan().net_layout(net).ok_or_else(|| fail("no device pin reads it, so it has no layout".into()))?;
-        let mut bytes = encode(layout, value).map_err(fail)?;
+        let mut bytes = value.encode(layout).map_err(fail)?;
         // a write to a drive net of a resolved net is a drive that is present (abi.md §9 D1): its `driving` byte is 1
         if let Some(driving) = layout.fields.iter().find(|field| field.name.as_bytes() == b"driving")
             && let Some(byte) = bytes.get_mut(driving.offset as usize)
@@ -327,14 +381,14 @@ impl Bound {
     /// `TEMPERATURE_GIVEN` global says whether the run set it (`given`); a net
     /// seeded with its value and never moved needs no write.
     pub(crate) fn set_temperature(&mut self, t: f64, given: bool) {
-        let temperature = |layout: &Layout| encode(layout, &ParamValue::Real(t));
+        let temperature = |layout: &Layout| ParamValue::Real(t).encode(layout);
         self.write_temperature_global("global:temperature", temperature);
         self.write_temperature_global("global:temperature_given", |layout| Self::flag_bytes(layout, given));
     }
 
     /// The bytes of a one-bit flag in `layout`: a `bool` when it takes one, `1.0` or `0.0` otherwise.
     pub(crate) fn flag_bytes(layout: &Layout, on: bool) -> std::result::Result<Vec<u8>, String> {
-        encode(layout, &ParamValue::Bool(on)).or_else(|_| encode(layout, &ParamValue::Real(if on { 1.0 } else { 0.0 })))
+        ParamValue::Bool(on).encode(layout).or_else(|_| ParamValue::Real(if on { 1.0 } else { 0.0 }).encode(layout))
     }
 
     /// Writes the global net named `key` with the bytes `encoded` gives for its layout, and records the write
@@ -376,7 +430,8 @@ impl Bound {
     }
 }
 
-/// What the builder hands to [`bind`].
+
+/// What the builder hands to [`Bind::run`].
 pub(crate) struct BindInput<'a> {
     pub specs: Vec<DeviceSpec>,
     /// The array nets: name, element count and initial value.
@@ -390,61 +445,6 @@ pub(crate) struct BindInput<'a> {
     pub microsteps: usize,
     pub time_point_rule: TimePointRule,
     pub temperature: f64,
-}
-
-fn bind_error(path: &str, detail: impl std::fmt::Display) -> Error {
-    Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
-}
-
-/// The bytes of `value` in `layout` (P3: the bytes of its type and nothing else).
-pub(crate) fn encode(layout: &Layout, value: &ParamValue) -> std::result::Result<Vec<u8>, String> {
-    if let ParamValue::Bytes(b) = value {
-        return if b.len() == layout.size as usize {
-            Ok(b.clone())
-        } else {
-            Err(format!("{} bytes given for a layout of {}", b.len(), layout.size))
-        };
-    }
-    let field = layout.fields.iter().next().ok_or("a layout with no field takes no value")?;
-    let mut bytes = vec![0u8; layout.size as usize];
-    let at = field.offset as usize;
-    let put = |bytes: &mut [u8], b: &[u8]| -> std::result::Result<(), String> {
-        bytes.get_mut(at..at + b.len()).ok_or("the layout is too small for the value")?.copy_from_slice(b);
-        Ok(())
-    };
-    match (value, field.leaf) {
-        (ParamValue::Real(v), leaf::F64) => put(&mut bytes, &v.to_le_bytes())?,
-        (ParamValue::Real(v), leaf::F32) => put(&mut bytes, &(*v as f32).to_le_bytes())?,
-        (ParamValue::Bool(v), leaf::BOOL | leaf::U8) => put(&mut bytes, &[u8::from(*v)])?,
-        (ParamValue::Int(v), l) => {
-            let le = |n: usize| -> std::result::Result<Vec<u8>, String> {
-                let full = v.to_le_bytes();
-                let fits = match n {
-                    1 => i8::try_from(*v).is_ok() || u8::try_from(*v).is_ok(),
-                    2 => i16::try_from(*v).is_ok() || u16::try_from(*v).is_ok(),
-                    4 => i32::try_from(*v).is_ok() || u32::try_from(*v).is_ok(),
-                    _ => true,
-                };
-                if fits { Ok(full[..n].to_vec()) } else { Err(format!("{v} does not fit {n} bytes")) }
-            };
-            let n = match l {
-                leaf::U8 | leaf::I8 => 1,
-                leaf::U16 | leaf::I16 => 2,
-                leaf::U32 | leaf::I32 => 4,
-                leaf::U64 | leaf::I64 => 8,
-                _ => return Err("an integer needs an integer leaf".into()),
-            };
-            put(&mut bytes, &le(n)?)?;
-        }
-        _ => return Err("the value does not fit the first field of the layout".into()),
-    }
-    // a layout whose second field is a BOOL `known` flag (a session parameter's) says the value was given
-    if let Some(flag) = layout.fields.iter().nth(1).filter(|f| f.name.as_str() == "known" && f.leaf == leaf::BOOL) {
-        if let Some(byte) = bytes.get_mut(flag.offset as usize) {
-            *byte = 1;
-        }
-    }
-    Ok(bytes)
 }
 
 /// The design-wide nets, and who created each.
@@ -504,42 +504,26 @@ impl Nets {
             spec.init = pin.init.as_slice().to_vec();
         }
     }
-}
 
-/// The pins of `shape` an analog function reads, a term's or watch's pin
-/// operand names: the discrete pins the analog copy holds.
-fn analog_pins(shape: &Shape) -> Vec<bool> {
-    let mut read = vec![false; shape.pins.len()];
-    let mut mark = |p: u32| {
-        if let Some(r) = read.get_mut(p as usize) {
-            *r = true;
-        }
-    };
-    for f in shape.functions.iter() {
-        let analog = !f.writes.is_empty() && f.writes.iter().all(|c: &Cell| c.kind != cell::PIN);
-        if analog {
-            f.reads.iter().filter(|c| c.kind == cell::PIN).for_each(|c| mark(c.index));
-        }
-    }
-    for t in shape.terms.iter() {
-        for p in [t.max, t.abstol] {
-            if p != DEFAULT {
-                mark(p);
+    /// Checks every net's seed against its size: one element's bytes, or (an array net) every element's.
+    fn check_seeds(&self) -> Result<()> {
+        for spec in &self.specs {
+            let element = spec.size as usize;
+            let allowed = spec.init.len() == element || (spec.count > 0 && spec.init.len() as u64 == element as u64 * spec.count);
+            if !spec.init.is_empty() && !allowed {
+                return Err(Error::simple(
+                    SolverDomain::Device,
+                    format!("net `{}` holds {} bytes and its seed {}", spec.name, spec.size, spec.init.len()),
+                ));
             }
         }
+        Ok(())
     }
-    for w in shape.watches.iter() {
-        for p in [w.ttol, w.etol] {
-            if p != DEFAULT {
-                mark(p);
-            }
-        }
-    }
-    read
 }
 
-/// One instance while it is being bound.
-struct Bind {
+/// One instance once its pins are bound: its two shares of the one placement, the site of each pin, and the net
+/// of each discrete or event pin.
+struct InstanceBinding {
     path: String,
     analog: Handle,
     digital: Handle,
@@ -548,65 +532,201 @@ struct Bind {
     nets: Vec<Option<usize>>,
 }
 
-fn create(module: &'static Module, path: &str, values: &[(u32, Vec<u8>)]) -> Result<Handle> {
-    let given: Vec<(u32, &[u8])> = values.iter().map(|(p, b)| (*p, b.as_slice())).collect();
-    Handle::create(module, &given).map_err(|e| bind_error(path, format!("create: {e}")))
-}
+impl InstanceBinding {
+    /// The pins of the instance's shape an analog function reads, a term's or watch's pin operand names: the
+    /// discrete pins the analog copy holds.
+    fn analog_pins(&self) -> Vec<bool> {
+        let shape = self.analog.shape();
+        let mut read = vec![false; shape.pins.len()];
+        let mut mark = |p: u32| {
+            if let Some(r) = read.get_mut(p as usize) {
+                *r = true;
+            }
+        };
+        for f in shape.functions.iter() {
+            let analog = !f.writes.is_empty() && f.writes.iter().all(|c: &Cell| c.kind != cell::PIN);
+            if analog {
+                f.reads.iter().filter(|c| c.kind == cell::PIN).for_each(|c| mark(c.index));
+            }
+        }
+        for t in shape.terms.iter() {
+            for p in [t.max, t.abstol] {
+                if p != DEFAULT {
+                    mark(p);
+                }
+            }
+        }
+        for w in shape.watches.iter() {
+            for p in [w.ttol, w.etol] {
+                if p != DEFAULT {
+                    mark(p);
+                }
+            }
+        }
+        read
+    }
 
-/// Binds `input` to its two plans.
-pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
-    let BindInput { specs, arrays, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
-    let mut nets = Nets::default();
-    let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
-    for (name, seed) in shared {
-        if shared_by_name.insert(name.clone(), seed).is_some() {
-            return Err(Error::simple(SolverDomain::Device, format!("shared param net `{name}` is declared twice")));
+    /// The analog and the digital binding of the pin `pin` at `site`: `read` says the analog copy holds it, `sample`
+    /// is the sample a continuous pin is read through, and `names` takes the analog slot of a discrete pin.
+    fn site_bindings(site: &Site, pin: &Pin, read: bool, sample: u32, names: &mut NameMap) -> (AnalogBinding, Binding) {
+        let held = pin.kind == kind::DISCRETE && read;
+        match site {
+            Site::Unknown(r) => (AnalogBinding::Unknown(r.clone()), Binding::Sample(sample)),
+            Site::Ground => (AnalogBinding::Ground, Binding::Sample(sample)),
+            Site::Net(id) if held => (AnalogBinding::Discrete(names.slot_of(*id, None)), Binding::Net(*id)),
+            Site::Net(id) => (AnalogBinding::Absent, Binding::Net(*id)),
+            Site::ArrayElement { net, element } => {
+                let analog = if held { AnalogBinding::Discrete(names.slot_of(*net, Some((*element as u32, 1)))) } else { AnalogBinding::Absent };
+                (analog, Binding::ArrayElement { net: *net, element: *element })
+            }
+            Site::ArrayWindow { net, first, length } => {
+                let analog = if held { AnalogBinding::Discrete(names.slot_of(*net, Some((*first as u32, *length as u32)))) } else { AnalogBinding::Absent };
+                (analog, Binding::ArrayWindow { net: *net, first: *first, length: *length })
+            }
+            Site::Absent => (AnalogBinding::Absent, Binding::Absent),
         }
     }
-    let session: HashMap<String, ParamValue> = session.into_iter().collect();
 
-    let mut paths = std::collections::HashSet::new();
-    let mut binds: Vec<Bind> = Vec::with_capacity(specs.len());
-    let mut holds = Vec::new();
-    let mut vntol: HashMap<NodeIdentifier, f64> = HashMap::new();
-    let mut branch_abstol: HashMap<BranchIdentifier, f64> = HashMap::new();
-    let mut params = HashMap::new();
-    let mut analyses: Vec<(u32, NetId, Vec<u8>)> = Vec::new();
-
-    for spec in &specs {
-        let path = spec.path.as_str();
-        if !paths.insert(path.to_string()) {
-            return Err(bind_error(path, "an instance of this path exists"));
+    /// The instance's analog and digital halves, the `index`-th of the design: `read` is its analog pins, `sample_of`
+    /// the sample of each continuous pin a reaction reads; `names` records its path, pins and slots.
+    fn into_plans(self, index: usize, read: &[bool], sample_of: &HashMap<(usize, usize), u32>, names: &mut NameMap) -> (AnalogInstance, InstancePlan) {
+        let shape = self.analog.shape();
+        let mut analog_bindings = Vec::with_capacity(self.sites.len());
+        let mut digital_bindings = Vec::with_capacity(self.sites.len());
+        for (pi, site) in self.sites.iter().enumerate() {
+            let pin = shape.pins.get(pi).expect("one site per pin");
+            let sample = sample_of.get(&(index, pi)).copied().unwrap_or(u32::MAX);
+            let (analog, digital) = Self::site_bindings(site, pin, read[pi], sample, names);
+            analog_bindings.push(analog);
+            digital_bindings.push(digital);
         }
-        // The values given, by prototype pin (P5: `Value.pin` means the same pin in every shape).
+        names.instances.push(self.path.clone());
+        names.pin_names.push(shape.pins.iter().map(|p| p.name.as_str().to_string()).collect());
+        names.pins.push(self.sites);
+        let analog = AnalogInstance { path: self.path.clone(), handle: self.analog, pins: analog_bindings };
+        (analog, InstancePlan { path: self.path, handle: self.digital, pins: digital_bindings })
+    }
+}
+
+/// What one instance hands its pins while they are bound: its path, its `PORT` connections in order (and how many
+/// a pin took), and the bytes and shared nets of the `PARAM` values given, by prototype pin.
+struct InstanceInput<'s> {
+    path: &'s str,
+    ports: std::slice::Iter<'s, Port>,
+    /// How many of `ports` a `PORT` pin took.
+    taken: usize,
+    /// The bytes of each `PARAM` value given.
+    seeds: HashMap<u32, Vec<u8>>,
+    /// The shared param net each `PARAM` pin given one is bound to.
+    shared_pins: HashMap<u32, String>,
+}
+
+impl InstanceInput<'_> {
+    /// The next `PORT` connection, or `Port::Open` when the netlist gave no more.
+    fn next_port(&mut self) -> Port {
+        match self.ports.next() {
+            Some(p) => {
+                self.taken += 1;
+                p.clone()
+            }
+            None => Port::Open,
+        }
+    }
+}
+
+/// Bind in progress (abi.md §3.1, §9): what the builder declared design-wide, and what binding the instances one
+/// by one builds — the nets, the continuous pins' holds and tolerances, the param nets, the analysis flags. Each
+/// pin is bound by its kind and its role (`PORT`, `PARAM`, `GLOBAL`, `PRIVATE`).
+pub(crate) struct Bind<'a> {
+    arrays: Vec<ArrayDecl>,
+    /// The shared param nets by name, with their seeds.
+    shared: HashMap<String, ParamValue>,
+    /// The session parameters by name, for `NAMED` globals.
+    session: HashMap<String, ParamValue>,
+    netlist: &'a mut Netlist,
+    resolution: f64,
+    temperature: f64,
+    nets: Nets,
+    holds: Vec<Hold>,
+    vntol: HashMap<NodeIdentifier, f64>,
+    branch_abstol: HashMap<BranchIdentifier, f64>,
+    /// The net of `(instance path, PARAM pin name)`.
+    params: HashMap<(String, String), NetId>,
+    analyses: Vec<(u32, NetId, Vec<u8>)>,
+}
+
+impl Bind<'_> {
+    /// The error of the instance at `path`.
+    fn error(path: &str, detail: impl std::fmt::Display) -> Error {
+        Error::simple(SolverDomain::Device, format!("instance `{path}`: {detail}"))
+    }
+
+    /// Binds `input` to its two plans.
+    pub(crate) fn run(input: BindInput<'_>) -> Result<Bound> {
+        let BindInput { specs, arrays, shared, session, netlist, resolution, microsteps, time_point_rule, temperature } = input;
+        let mut shared_by_name: HashMap<String, ParamValue> = HashMap::new();
+        for (name, seed) in shared {
+            if shared_by_name.insert(name.clone(), seed).is_some() {
+                return Err(Error::simple(SolverDomain::Device, format!("shared param net `{name}` is declared twice")));
+            }
+        }
+        let mut bind = Bind {
+            arrays,
+            shared: shared_by_name,
+            session: session.into_iter().collect(),
+            netlist,
+            resolution,
+            temperature,
+            nets: Nets::default(),
+            holds: Vec::new(),
+            vntol: HashMap::new(),
+            branch_abstol: HashMap::new(),
+            params: HashMap::new(),
+            analyses: Vec::new(),
+        };
+        let mut paths = std::collections::HashSet::new();
+        let mut instances: Vec<InstanceBinding> = Vec::with_capacity(specs.len());
+        for spec in &specs {
+            if !paths.insert(spec.path.clone()) {
+                return Err(Bind::error(&spec.path, "an instance of this path exists"));
+            }
+            instances.push(bind.instance(spec)?);
+        }
+        bind.finish(instances, microsteps, time_point_rule)
+    }
+
+    /// The values `spec` gives, by prototype pin (P5: `Value.pin` means the same pin in every shape), in the order
+    /// given: their bytes, recorded with the shared nets they name in `input`.
+    fn given_values(&self, spec: &DeviceSpec, input: &mut InstanceInput<'_>) -> Result<Vec<(u32, Vec<u8>)>> {
+        let path = input.path;
         let proto = spec.module.prototype();
         let mut values: Vec<(u32, Vec<u8>)> = Vec::new();
-        let mut seeds: HashMap<u32, Vec<u8>> = HashMap::new();
-        let mut shared_pins: HashMap<u32, String> = HashMap::new();
         for (name, value) in &spec.values {
-            let Some((pi, pin)) = proto
-                .pins
-                .iter()
-                .enumerate()
-                .find(|(_, p)| p.role == role::PARAM && p.name.as_str() == name)
-            else {
-                return Err(bind_error(path, format!("no PARAM pin `{name}`")));
+            let Some((pi, pin)) = proto.pins.iter().enumerate().find(|(_, p)| p.role == role::PARAM && p.name.as_str() == name) else {
+                return Err(Bind::error(path, format!("no PARAM pin `{name}`")));
             };
             let resolved = match value {
                 ParamValue::Shared(net) => {
-                    let seed = shared_by_name
-                        .get(net)
-                        .ok_or_else(|| bind_error(path, format!("`{name}`: no shared param net `{net}`")))?;
-                    shared_pins.insert(pi as u32, net.clone());
+                    let seed = self.shared.get(net).ok_or_else(|| Bind::error(path, format!("`{name}`: no shared param net `{net}`")))?;
+                    input.shared_pins.insert(pi as u32, net.clone());
                     seed.clone()
                 }
                 v => v.clone(),
             };
-            let bytes = encode(&pin.layout, &resolved).map_err(|e| bind_error(path, format!("`{name}`: {e}")))?;
-            seeds.insert(pi as u32, bytes.clone());
+            let bytes = resolved.encode(&pin.layout).map_err(|e| Bind::error(path, format!("`{name}`: {e}")))?;
+            input.seeds.insert(pi as u32, bytes.clone());
             values.push((pi as u32, bytes));
         }
-        let analog = create(spec.module, path, &values)?;
+        Ok(values)
+    }
+
+    /// Creates the instance `spec` places and binds each of its pins.
+    fn instance(&mut self, spec: &DeviceSpec) -> Result<InstanceBinding> {
+        let path = spec.path.as_str();
+        let mut input = InstanceInput { path, ports: spec.ports.iter(), taken: 0, seeds: HashMap::new(), shared_pins: HashMap::new() };
+        let values = self.given_values(spec, &mut input)?;
+        let given: Vec<(u32, &[u8])> = values.iter().map(|(p, b)| (*p, b.as_slice())).collect();
+        let analog = Handle::create(spec.module, &given).map_err(|e| Bind::error(path, format!("create: {e}")))?;
         // One `create` per placement: both sides call the same instance (an external
         // device holds state; two copies would diverge). The assembly's evals and the
         // engine's reactions never run concurrently in this owner, and the handle's
@@ -615,313 +735,263 @@ pub(crate) fn bind(input: BindInput<'_>) -> Result<Bound> {
         let shape = analog.shape();
         let mut sites = Vec::with_capacity(shape.pins.len());
         let mut pin_nets = Vec::with_capacity(shape.pins.len());
-        let mut ports = spec.ports.iter();
-        let mut given = 0usize;
         for (pi, pin) in shape.pins.iter().enumerate() {
-            let pname = pin.name.as_str();
-            let optional = pin.flags & pin_flag::OPTIONAL != 0;
-            let take = |ports: &mut std::slice::Iter<'_, Port>, given: &mut usize| -> Port {
-                match ports.next() {
-                    Some(p) => {
-                        *given += 1;
-                        p.clone()
-                    }
-                    None => Port::Open,
-                }
-            };
             let (site, net) = match pin.kind {
-                kind::CONTINUOUS => {
-                    let site = match pin.role {
-                        role::PORT => match take(&mut ports, &mut given) {
-                            Port::Node(r) if r.variable().is_ground() => Site::Ground,
-                            Port::Node(r) => Site::Unknown(r),
-                            Port::Open => Site::Unknown(netlist.connect_branch(BranchIdentifier::new(path, pname))),
-                            Port::Net(n) | Port::Window { net: n, .. } => {
-                                return Err(bind_error(path, format!("continuous pin `{pname}` bound to net `{n}`")));
-                            }
-                        },
-                        role::PRIVATE => Site::Unknown(netlist.connect_branch(BranchIdentifier::new(path, pname))),
-                        _ => return Err(bind_error(path, format!("continuous pin `{pname}` is neither PORT nor PRIVATE"))),
-                    };
-                    if let Site::Unknown(r) = &site {
-                        if pin.flags & pin_flag::HAS_INIT != 0 {
-                            let b = pin.init.as_slice();
-                            let v = b.get(..8).and_then(|b| b.try_into().ok()).map(f64::from_le_bytes);
-                            holds.push(Hold {
-                                reference: r.clone(),
-                                value: v.ok_or_else(|| bind_error(path, format!("`{pname}`: init is not an F64")))?,
-                            });
-                        }
-                        match r.variable().as_ref() {
-                            AnalogVariable::Node(id) if pin.abstol[0] > 0.0 => {
-                                let e = vntol.entry(id.clone()).or_insert(pin.abstol[0]);
-                                *e = e.min(pin.abstol[0]);
-                            }
-                            AnalogVariable::Branch(id) if pin.abstol[1] > 0.0 => {
-                                let e = branch_abstol.entry(id.clone()).or_insert(pin.abstol[1]);
-                                *e = e.min(pin.abstol[1]);
-                            }
-                            _ => {}
-                        }
-                    }
-                    (site, None)
-                }
-                kind::DISCRETE | kind::EVENT => {
-                    let private = format!("{path}.{pname}");
-                    let mut window: Option<(u64, u64)> = None;
-                    let net = match pin.role {
-                        role::PORT => match take(&mut ports, &mut given) {
-                            Port::Net(n) => match arrays.iter().find(|decl| decl.name == n) {
-                                Some(decl) if pin.count == decl.count => Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin)),
-                                Some(decl) => {
-                                    return Err(bind_error(
-                                        path,
-                                        format!("pin `{pname}` of {} elements bound to array net `{n}` of {} elements", pin.count, decl.count),
-                                    ));
-                                }
-                                None => Some(nets.get_or_add(&format!("net:{n}"), &n, pin)),
-                            },
-                            Port::Window { net: n, first, length } => {
-                                let Some(decl) = arrays.iter().find(|decl| decl.name == n) else {
-                                    return Err(bind_error(path, format!("pin `{pname}` bound to a window of `{n}`, which is no array net")));
-                                };
-                                if first.checked_add(length).is_none_or(|end| end > decl.count) || length == 0 {
-                                    return Err(bind_error(
-                                        path,
-                                        format!("pin `{pname}` bound to elements {first}..+{length} of array net `{n}` of {} elements", decl.count),
-                                    ));
-                                }
-                                if length != pin.count.max(1) {
-                                    return Err(bind_error(
-                                        path,
-                                        format!("pin `{pname}` of {} elements bound to a window of {length} elements of `{n}`", pin.count.max(1)),
-                                    ));
-                                }
-                                window = Some((first, length));
-                                Some(nets.get_or_add_array(&format!("net:{n}"), decl, pin))
-                            }
-                            Port::Open if optional => None,
-                            Port::Open => Some(nets.add(&private, pin)),
-                            Port::Node(_) => {
-                                return Err(bind_error(path, format!("discrete pin `{pname}` bound to an analog node")));
-                            }
-                        },
-                        role::PARAM => {
-                            let seed = seeds.get(&(pi as u32)).cloned().or_else(|| {
-                                (pin.flags & pin_flag::HAS_INIT != 0).then(|| pin.init.as_slice().to_vec())
-                            });
-                            let n = match shared_pins.get(&(pi as u32)) {
-                                Some(name) => nets.get_or_add(&format!("param:{name}"), name, pin),
-                                None => nets.add(&private, pin),
-                            };
-                            if nets.specs[n].init.is_empty() {
-                                nets.specs[n].init = seed.unwrap_or_default();
-                            }
-                            nets.specs[n].param = true;
-                            params.insert((path.to_string(), pname.to_string()), NetId(n as u32));
-                            Some(n)
-                        }
-                        role::GLOBAL => {
-                            let (key, name, seed): (String, String, Option<Vec<u8>>) = match pin.global {
-                                global::TEMPERATURE => (
-                                    "global:temperature".into(),
-                                    "$temperature".into(),
-                                    Some(encode(&pin.layout, &ParamValue::Real(temperature)).map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?),
-                                ),
-                                global::TEMPERATURE_GIVEN => (
-                                    "global:temperature_given".into(),
-                                    "$temperature_given".into(),
-                                    Some(Bound::flag_bytes(&pin.layout, false).map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?),
-                                ),
-                                global::RESOLUTION => (
-                                    "global:resolution".into(),
-                                    "$resolution".into(),
-                                    Some(encode(&pin.layout, &ParamValue::Real(resolution)).map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?),
-                                ),
-                                global::DC => ("global:dc".into(), "$dc".into(), None),
-                                global::TRAN => ("global:tran".into(), "$tran".into(), None),
-                                global::AC => ("global:ac".into(), "$ac".into(), None),
-                                global::NOISE => ("global:noise".into(), "$noise".into(), None),
-                                global::START => ("global:start".into(), "$start".into(), None),
-                                global::SETTLE => ("global:settle".into(), "$settle".into(), None),
-                                _ => {
-                                    let Some(value) = session.get(pname) else {
-                                        if optional {
-                                            sites.push(Site::Absent);
-                                            pin_nets.push(None);
-                                            continue;
-                                        }
-                                        return Err(bind_error(
-                                            path,
-                                            format!("global `{pname}` names a session parameter nobody set"),
-                                        ));
-                                    };
-                                    let bytes = encode(&pin.layout, value)
-                                        .map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?;
-                                    (format!("named:{pname}"), format!("${pname}"), Some(bytes))
-                                }
-                            };
-                            let n = nets.get_or_add(&key, &name, pin);
-                            if nets.specs[n].init.is_empty() {
-                                nets.specs[n].init = seed.unwrap_or_default();
-                            }
-                            let flag = matches!(pin.global, global::DC | global::TRAN | global::AC | global::NOISE);
-                            if flag && !analyses.iter().any(|(g, _, _)| *g == pin.global) {
-                                let on = encode(&pin.layout, &ParamValue::Bool(true))
-                                    .or_else(|_| encode(&pin.layout, &ParamValue::Real(1.0)))
-                                    .map_err(|e| bind_error(path, format!("`{pname}`: {e}")))?;
-                                analyses.push((pin.global, NetId(n as u32), on));
-                            }
-                            Some(n)
-                        }
-                        _ => Some(nets.add(&private, pin)),
-                    };
-                    if let Some(n) = net {
-                        nets.merge(n, pin);
-                    }
-                    let site = match (net, window) {
-                        (None, _) => Site::Absent,
-                        (Some(n), None) => Site::Net(NetId(n as u32)),
-                        (Some(n), Some((element, 1))) if pin.count == 0 => Site::ArrayElement { net: NetId(n as u32), element },
-                        (Some(n), Some((first, length))) => Site::ArrayWindow { net: NetId(n as u32), first, length },
-                    };
-                    (site, net)
-                }
-                _ => return Err(bind_error(path, format!("pin `{pname}` has an unknown kind"))),
+                kind::CONTINUOUS => (self.continuous_pin(&mut input, pin)?, None),
+                kind::DISCRETE | kind::EVENT => self.discrete_pin(&mut input, pi as u32, pin)?,
+                _ => return Err(Bind::error(path, format!("pin `{}` has an unknown kind", pin.name.as_str()))),
             };
             sites.push(site);
             pin_nets.push(net);
         }
-        if given < spec.ports.len() {
-            return Err(bind_error(path, format!("{} ports given for {given} PORT pins", spec.ports.len())));
+        if input.taken < spec.ports.len() {
+            return Err(Bind::error(path, format!("{} ports given for {} PORT pins", spec.ports.len(), input.taken)));
         }
-        binds.push(Bind { path: spec.path.clone(), analog, digital, sites, nets: pin_nets });
+        Ok(InstanceBinding { path: spec.path.clone(), analog, digital, sites, nets: pin_nets })
     }
 
-    // The nets the analog side reads, the crossing nets, and the analog copy's slots.
-    let mut names = NameMap::default();
-    let mut analog_read: Vec<Vec<bool>> = Vec::with_capacity(binds.len());
-    for b in &binds {
-        let shape = b.analog.shape();
-        let read = analog_pins(shape);
-        for (pi, pin) in shape.pins.iter().enumerate() {
-            if let Some(n) = b.nets[pi]
-                && pin.kind == kind::DISCRETE
-                && read[pi]
-            {
-                nets.specs[n].analog_reads = true;
-            }
+    /// A continuous pin: a `PORT` on the node it is given (its own branch when open), a `PRIVATE` on a branch of its
+    /// own; its `init` is a hold and its `abstol` tightens its unknown's tolerance.
+    fn continuous_pin(&mut self, input: &mut InstanceInput<'_>, pin: &Pin) -> Result<Site> {
+        let (path, pname) = (input.path, pin.name.as_str());
+        let site = match pin.role {
+            role::PORT => match input.next_port() {
+                Port::Node(r) if r.variable().is_ground() => Site::Ground,
+                Port::Node(r) => Site::Unknown(r),
+                Port::Open => Site::Unknown(self.netlist.connect_branch(BranchIdentifier::new(path, pname))),
+                Port::Net(n) | Port::Window { net: n, .. } => {
+                    return Err(Bind::error(path, format!("continuous pin `{pname}` bound to net `{n}`")));
+                }
+            },
+            role::PRIVATE => Site::Unknown(self.netlist.connect_branch(BranchIdentifier::new(path, pname))),
+            _ => return Err(Bind::error(path, format!("continuous pin `{pname}` is neither PORT nor PRIVATE"))),
+        };
+        if let Site::Unknown(r) = &site {
+            self.hold_and_tolerance(path, pin, r)?;
         }
-        for w in shape.watches.iter().filter(|w| w.kind == watch::CROSS) {
-            if let Some(Some(n)) = b.nets.get(w.event as usize) {
-                nets.specs[*n].crossing = true;
-            }
-        }
-        analog_read.push(read);
+        Ok(site)
     }
-    let mut analog_instances = Vec::with_capacity(binds.len());
-    let mut digital_instances = Vec::with_capacity(binds.len());
-    let mut sample_count = 0u32;
-    let mut sample_of: HashMap<(usize, usize), u32> = HashMap::new();
-    for (i, b) in binds.iter().enumerate() {
-        // The samples analog and digital agree on: instance, reaction and read order.
-        for r in b.analog.shape().reactions.iter() {
-            for c in r.reads.iter() {
-                let continuous = b.analog.shape().pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS);
-                if c.kind == cell::PIN && continuous {
-                    sample_of.entry((i, c.index as usize)).or_insert(sample_count);
-                    sample_count += 1;
-                }
-            }
-        }
-    }
-    for (i, b) in binds.into_iter().enumerate() {
-        let shape = b.analog.shape();
-        let mut abinds = Vec::with_capacity(b.sites.len());
-        let mut dbinds = Vec::with_capacity(b.sites.len());
-        for (pi, site) in b.sites.iter().enumerate() {
-            let pin = shape.pins.get(pi).expect("one site per pin");
-            match site {
-                Site::Unknown(r) => {
-                    abinds.push(AnalogBinding::Unknown(r.clone()));
-                    dbinds.push(Binding::Sample(sample_of.get(&(i, pi)).copied().unwrap_or(u32::MAX)));
-                }
-                Site::Ground => {
-                    abinds.push(AnalogBinding::Ground);
-                    dbinds.push(Binding::Sample(sample_of.get(&(i, pi)).copied().unwrap_or(u32::MAX)));
-                }
-                Site::Net(id) => {
-                    dbinds.push(Binding::Net(*id));
-                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        let slot = names.slot_of(*id, None);
-                        abinds.push(AnalogBinding::Discrete(slot));
-                    } else {
-                        abinds.push(AnalogBinding::Absent);
-                    }
-                }
-                Site::ArrayElement { net, element } => {
-                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        abinds.push(AnalogBinding::Discrete(names.slot_of(*net, Some((*element as u32, 1)))));
-                    } else {
-                        abinds.push(AnalogBinding::Absent);
-                    }
-                    dbinds.push(Binding::ArrayElement { net: *net, element: *element });
-                }
-                Site::ArrayWindow { net, first, length } => {
-                    if pin.kind == kind::DISCRETE && analog_read[i][pi] {
-                        abinds.push(AnalogBinding::Discrete(names.slot_of(*net, Some((*first as u32, *length as u32)))));
-                    } else {
-                        abinds.push(AnalogBinding::Absent);
-                    }
-                    dbinds.push(Binding::ArrayWindow { net: *net, first: *first, length: *length });
-                }
-                Site::Absent => {
-                    abinds.push(AnalogBinding::Absent);
-                    dbinds.push(Binding::Absent);
-                }
-            }
-        }
-        names.instances.push(b.path.clone());
-        names.pin_names.push(shape.pins.iter().map(|p| p.name.as_str().to_string()).collect());
-        names.pins.push(b.sites);
-        analog_instances.push(AnalogInstance { path: b.path.clone(), handle: b.analog, pins: abinds });
-        digital_instances.push(InstancePlan { path: b.path, handle: b.digital, pins: dbinds });
-    }
-    for spec in &nets.specs {
-        let element = spec.size as usize;
-        let allowed = spec.init.len() == element || (spec.count > 0 && spec.init.len() as u64 == element as u64 * spec.count);
-        if !spec.init.is_empty() && !allowed {
-            return Err(Error::simple(
-                SolverDomain::Device,
-                format!("net `{}` holds {} bytes and its seed {}", spec.name, spec.size, spec.init.len()),
-            ));
-        }
-    }
-    names.nets = nets.named.iter().map(|(k, v)| (k.clone(), NetId(*v as u32))).collect();
-    names.params = params;
 
-    // an array net the analog side reads hands it the windows its slots hold, no more
-    for (net, spec) in nets.specs.iter_mut().enumerate().filter(|(_, spec)| spec.count > 0) {
-        spec.analog_windows = names.array_slots(NetId(net as u32), spec.count).into_iter().map(|(_, first, length)| (first, length)).collect();
+    /// Records the `init` of the continuous pin `pin` on unknown `r` as a hold, and its node or flow `abstol`.
+    fn hold_and_tolerance(&mut self, path: &str, pin: &Pin, r: &AnalogReference) -> Result<()> {
+        if pin.flags & pin_flag::HAS_INIT != 0 {
+            let b = pin.init.as_slice();
+            let v = b.get(..8).and_then(|b| b.try_into().ok()).map(f64::from_le_bytes);
+            self.holds.push(Hold {
+                reference: r.clone(),
+                value: v.ok_or_else(|| Bind::error(path, format!("`{}`: init is not an F64", pin.name.as_str())))?,
+            });
+        }
+        match r.variable().as_ref() {
+            AnalogVariable::Node(id) if pin.abstol[0] > 0.0 => {
+                let e = self.vntol.entry(id.clone()).or_insert(pin.abstol[0]);
+                *e = e.min(pin.abstol[0]);
+            }
+            AnalogVariable::Branch(id) if pin.abstol[1] > 0.0 => {
+                let e = self.branch_abstol.entry(id.clone()).or_insert(pin.abstol[1]);
+                *e = e.min(pin.abstol[1]);
+            }
+            _ => {}
+        }
+        Ok(())
     }
-    let seeds: Vec<(u32, Vec<u8>)> = names
-        .slot_nets
-        .iter()
-        .enumerate()
-        .map(|(slot, id)| {
-            let spec = &nets.specs[id.0 as usize];
-            names.slot_bytes(slot as u32, &spec.name, &spec.init, spec.size).map(|bytes| (slot as u32, bytes))
-        })
-        .collect::<Result<_>>()?;
-    let analog_plan = AnalogPlan::bind(analog_instances, netlist)?;
-    let digital_plan = DigitalPlan::bind(nets.specs, digital_instances, Resolution { seconds_per_tick: resolution })
-        .map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))?;
-    let mut analog = Assembly::new(analog_plan);
-    for (slot, init) in seeds {
-        if !init.is_empty() {
-            analog.set_discrete(slot, &init);
+
+    /// A discrete or event pin, by role: its site and its net (none for an absent pin).
+    fn discrete_pin(&mut self, input: &mut InstanceInput<'_>, pi: u32, pin: &Pin) -> Result<(Site, Option<usize>)> {
+        let (net, window) = match pin.role {
+            role::PORT => self.discrete_port(input, pin)?,
+            role::PARAM => (Some(self.parameter_pin(input, pi, pin)), None),
+            role::GLOBAL => (self.global_pin(input.path, pin)?, None),
+            _ => (Some(self.nets.add(&format!("{}.{}", input.path, pin.name.as_str()), pin)), None),
+        };
+        if let Some(n) = net {
+            self.nets.merge(n, pin);
+        }
+        let site = match (net, window) {
+            (None, _) => Site::Absent,
+            (Some(n), None) => Site::Net(NetId(n as u32)),
+            (Some(n), Some((element, 1))) if pin.count == 0 => Site::ArrayElement { net: NetId(n as u32), element },
+            (Some(n), Some((first, length))) => Site::ArrayWindow { net: NetId(n as u32), first, length },
+        };
+        Ok((site, net))
+    }
+
+    /// A discrete `PORT` pin: the named net (or array net) it is given, a window of an array net, a net of its own
+    /// when open, nothing when open and `OPTIONAL`. The window is `(first, length)` for a window.
+    fn discrete_port(&mut self, input: &mut InstanceInput<'_>, pin: &Pin) -> Result<(Option<usize>, Option<(u64, u64)>)> {
+        let (path, pname) = (input.path, pin.name.as_str());
+        match input.next_port() {
+            Port::Net(n) => match self.arrays.iter().find(|decl| decl.name == n) {
+                Some(decl) if pin.count == decl.count => Ok((Some(self.nets.get_or_add_array(&format!("net:{n}"), decl, pin)), None)),
+                Some(decl) => Err(Bind::error(path, format!("pin `{pname}` of {} elements bound to array net `{n}` of {} elements", pin.count, decl.count))),
+                None => Ok((Some(self.nets.get_or_add(&format!("net:{n}"), &n, pin)), None)),
+            },
+            Port::Window { net: n, first, length } => {
+                let Some(decl) = self.arrays.iter().find(|decl| decl.name == n) else {
+                    return Err(Bind::error(path, format!("pin `{pname}` bound to a window of `{n}`, which is no array net")));
+                };
+                if first.checked_add(length).is_none_or(|end| end > decl.count) || length == 0 {
+                    return Err(Bind::error(path, format!("pin `{pname}` bound to elements {first}..+{length} of array net `{n}` of {} elements", decl.count)));
+                }
+                if length != pin.count.max(1) {
+                    return Err(Bind::error(path, format!("pin `{pname}` of {} elements bound to a window of {length} elements of `{n}`", pin.count.max(1))));
+                }
+                Ok((Some(self.nets.get_or_add_array(&format!("net:{n}"), decl, pin)), Some((first, length))))
+            }
+            Port::Open if pin.flags & pin_flag::OPTIONAL != 0 => Ok((None, None)),
+            Port::Open => Ok((Some(self.nets.add(&format!("{path}.{pname}"), pin)), None)),
+            Port::Node(_) => Err(Bind::error(path, format!("discrete pin `{pname}` bound to an analog node"))),
         }
     }
-    let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, time_point_rule);
-    Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: Vec::new(), microsteps })
+
+    /// A `PARAM` pin: the shared param net it is given or a net of its own, seeded with the value given or the pin's
+    /// `init`.
+    fn parameter_pin(&mut self, input: &InstanceInput<'_>, pi: u32, pin: &Pin) -> usize {
+        let (path, pname) = (input.path, pin.name.as_str());
+        let seed = input.seeds.get(&pi).cloned().or_else(|| (pin.flags & pin_flag::HAS_INIT != 0).then(|| pin.init.as_slice().to_vec()));
+        let n = match input.shared_pins.get(&pi) {
+            Some(name) => self.nets.get_or_add(&format!("param:{name}"), name, pin),
+            None => self.nets.add(&format!("{path}.{pname}"), pin),
+        };
+        if self.nets.specs[n].init.is_empty() {
+            self.nets.specs[n].init = seed.unwrap_or_default();
+        }
+        self.nets.specs[n].param = true;
+        self.params.insert((path.to_string(), pname.to_string()), NetId(n as u32));
+        n
+    }
+
+    /// A `GLOBAL` pin: the one design-wide net of its constant (of its name for `NAMED`), seeded with the session's
+    /// value; an analysis-kind global records the bytes that mean "this analysis runs". `None` for an `OPTIONAL`
+    /// named global no session parameter sets.
+    fn global_pin(&mut self, path: &str, pin: &Pin) -> Result<Option<usize>> {
+        let Some((key, name, seed)) = self.global_net(path, pin)? else { return Ok(None) };
+        let n = self.nets.get_or_add(&key, &name, pin);
+        if self.nets.specs[n].init.is_empty() {
+            self.nets.specs[n].init = seed.unwrap_or_default();
+        }
+        let flag = matches!(pin.global, global::DC | global::TRAN | global::AC | global::NOISE);
+        if flag && !self.analyses.iter().any(|(g, _, _)| *g == pin.global) {
+            let on = ParamValue::Bool(true)
+                .encode(&pin.layout)
+                .or_else(|_| ParamValue::Real(1.0).encode(&pin.layout))
+                .map_err(|e| Bind::error(path, format!("`{}`: {e}", pin.name.as_str())))?;
+            self.analyses.push((pin.global, NetId(n as u32), on));
+        }
+        Ok(Some(n))
+    }
+
+    /// The key, name and seed of the net of the `GLOBAL` pin `pin`; `None` for an `OPTIONAL` named global no session
+    /// parameter sets.
+    fn global_net(&self, path: &str, pin: &Pin) -> Result<Option<(String, String, Option<Vec<u8>>)>> {
+        let pname = pin.name.as_str();
+        let seeded = |value: std::result::Result<Vec<u8>, String>| value.map(Some).map_err(|e| Bind::error(path, format!("`{pname}`: {e}")));
+        let net = |key: &str, name: &str, seed: Option<Vec<u8>>| Ok(Some((key.to_string(), name.to_string(), seed)));
+        match pin.global {
+            global::TEMPERATURE => net("global:temperature", "$temperature", seeded(ParamValue::Real(self.temperature).encode(&pin.layout))?),
+            global::TEMPERATURE_GIVEN => net("global:temperature_given", "$temperature_given", seeded(Bound::flag_bytes(&pin.layout, false))?),
+            global::RESOLUTION => net("global:resolution", "$resolution", seeded(ParamValue::Real(self.resolution).encode(&pin.layout))?),
+            global::DC => net("global:dc", "$dc", None),
+            global::TRAN => net("global:tran", "$tran", None),
+            global::AC => net("global:ac", "$ac", None),
+            global::NOISE => net("global:noise", "$noise", None),
+            global::START => net("global:start", "$start", None),
+            global::SETTLE => net("global:settle", "$settle", None),
+            _ => {
+                let Some(value) = self.session.get(pname) else {
+                    if pin.flags & pin_flag::OPTIONAL != 0 {
+                        return Ok(None);
+                    }
+                    return Err(Bind::error(path, format!("global `{pname}` names a session parameter nobody set")));
+                };
+                let bytes = value.encode(&pin.layout).map_err(|e| Bind::error(path, format!("`{pname}`: {e}")))?;
+                Ok(Some((format!("named:{pname}"), format!("${pname}"), Some(bytes))))
+            }
+        }
+    }
+
+    /// Marks the nets the analog side reads and the crossing nets: the analog pins of each instance, in order.
+    fn mark_analog_reads(&mut self, instances: &[InstanceBinding]) -> Vec<Vec<bool>> {
+        let mut analog_read: Vec<Vec<bool>> = Vec::with_capacity(instances.len());
+        for b in instances {
+            let shape = b.analog.shape();
+            let read = b.analog_pins();
+            for (pi, pin) in shape.pins.iter().enumerate() {
+                if let Some(n) = b.nets[pi]
+                    && pin.kind == kind::DISCRETE
+                    && read[pi]
+                {
+                    self.nets.specs[n].analog_reads = true;
+                }
+            }
+            for w in shape.watches.iter().filter(|w| w.kind == watch::CROSS) {
+                if let Some(Some(n)) = b.nets.get(w.event as usize) {
+                    self.nets.specs[*n].crossing = true;
+                }
+            }
+            analog_read.push(read);
+        }
+        analog_read
+    }
+
+    /// The samples analog and digital agree on: by instance, reaction and read order, the number of each continuous
+    /// pin a reaction reads.
+    fn sample_numbers(instances: &[InstanceBinding]) -> HashMap<(usize, usize), u32> {
+        let mut sample_count = 0u32;
+        let mut sample_of: HashMap<(usize, usize), u32> = HashMap::new();
+        for (i, b) in instances.iter().enumerate() {
+            for r in b.analog.shape().reactions.iter() {
+                for c in r.reads.iter() {
+                    let continuous = b.analog.shape().pins.get(c.index as usize).is_some_and(|p| p.kind == kind::CONTINUOUS);
+                    if c.kind == cell::PIN && continuous {
+                        sample_of.entry((i, c.index as usize)).or_insert(sample_count);
+                        sample_count += 1;
+                    }
+                }
+            }
+        }
+        sample_of
+    }
+
+    /// Builds the two plans of the bound `instances`, the analog copy's slots and seeds, and the engines over them.
+    fn finish(mut self, instances: Vec<InstanceBinding>, microsteps: usize, time_point_rule: TimePointRule) -> Result<Bound> {
+        let mut names = NameMap::default();
+        let analog_read = self.mark_analog_reads(&instances);
+        let sample_of = Self::sample_numbers(&instances);
+        let mut analog_instances = Vec::with_capacity(instances.len());
+        let mut digital_instances = Vec::with_capacity(instances.len());
+        for (i, b) in instances.into_iter().enumerate() {
+            let (analog, digital) = b.into_plans(i, &analog_read[i], &sample_of, &mut names);
+            analog_instances.push(analog);
+            digital_instances.push(digital);
+        }
+        self.nets.check_seeds()?;
+        names.nets = self.nets.named.iter().map(|(k, v)| (k.clone(), NetId(*v as u32))).collect();
+        names.params = self.params;
+        // an array net the analog side reads hands it the windows its slots hold, no more
+        for (net, spec) in self.nets.specs.iter_mut().enumerate().filter(|(_, spec)| spec.count > 0) {
+            spec.analog_windows = names.array_slots(NetId(net as u32), spec.count).into_iter().map(|(_, first, length)| (first, length)).collect();
+        }
+        let seeds: Vec<(u32, Vec<u8>)> = names
+            .slot_nets
+            .iter()
+            .enumerate()
+            .map(|(slot, id)| {
+                let spec = &self.nets.specs[id.0 as usize];
+                names.slot_bytes(slot as u32, &spec.name, &spec.init, spec.size).map(|bytes| (slot as u32, bytes))
+            })
+            .collect::<Result<_>>()?;
+        let analog_plan = AnalogPlan::bind(analog_instances, self.netlist)?;
+        let digital_plan = DigitalPlan::bind(self.nets.specs, digital_instances, Resolution { seconds_per_tick: self.resolution })
+            .map_err(|e| Error::simple(SolverDomain::Digital, e.to_string()))?;
+        let mut analog = Assembly::new(analog_plan);
+        for (slot, init) in seeds {
+            if !init.is_empty() {
+                analog.set_discrete(slot, &init);
+            }
+        }
+        let digital = Digital::new(digital_plan, DigitalLimits { max_delta_cycles: microsteps, ..DigitalLimits::default() }, time_point_rule);
+        let (holds, vntol, branch_abstol, analyses) = (self.holds, self.vntol, self.branch_abstol, self.analyses);
+        Ok(Bound { analog, digital, names, holds, vntol, branch_abstol, analyses, host_writes: Vec::new(), temperature: Vec::new(), microsteps })
+    }
 }

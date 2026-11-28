@@ -4,10 +4,11 @@
 use std::collections::HashMap;
 
 use piperine_analog_solver::netlist::{AnalogReference, Netlist, NodeIdentifier};
-use crate::core::bind::{bind, ArrayDecl, BindInput, DeviceSpec, ParamValue, Port};
+use crate::core::bind::{ArrayDecl, Bind, BindInput, DeviceSpec, ParamValue, Port};
 use crate::core::circuit::CircuitInstance;
 use crate::core::ground::GroundName;
 use crate::core::result::Result;
+use piperine_analog_solver::error::{Error, SolverDomain};
 use piperine_digital_solver::landing::TimePointRule;
 
 // ── CircuitBuilder ────────────────────────────────────────────────────────────
@@ -48,6 +49,9 @@ pub struct CircuitBuilder {
     time_point_rule: TimePointRule,
     /// monotonically increasing counter for fresh Anonymous node IDs
     next_anon: usize,
+    /// The refusals of the node names that spell ground otherwise than `gnd` (S21): [`build`](Self::build) fails with
+    /// the first.
+    refused_names: Vec<String>,
 }
 
 impl CircuitBuilder {
@@ -65,6 +69,7 @@ impl CircuitBuilder {
             microsteps: piperine_digital_solver::limits::DigitalLimits::default().max_delta_cycles,
             time_point_rule: TimePointRule::default(),
             next_anon: 0,
+            refused_names: Vec::new(),
         }
     }
 
@@ -77,10 +82,14 @@ impl CircuitBuilder {
     }
 
     /// Named analog node. Same name → same reference (idempotent lookup).
-    /// The ground names (see [`GroundName`]) route to ground.
+    /// `gnd` (see [`GroundName`]) routes to ground; `GND`, `vss` and `VSS` are refused: [`build`](Self::build)
+    /// fails naming `gnd`.
     pub fn node(&mut self, name: &str) -> AnalogReference {
         if GroundName::names(name) {
             return self.ground();
+        }
+        if let Some(refusal) = GroundName::refusal(name) {
+            self.refused_names.push(refusal);
         }
         if let Some(r) = self.nodes.get(name) {
             return r.clone();
@@ -159,6 +168,9 @@ impl CircuitBuilder {
 
     /// Freeze: bind the device instances (abi.md §9) into a circuit.
     pub fn build(mut self) -> Result<CircuitInstance> {
+        if let Some(refusal) = self.refused_names.first() {
+            return Err(Error::simple(SolverDomain::Device, refusal.clone()));
+        }
         let temperature = piperine_analog_solver::tolerances::Tolerances::default().temperature;
         let recipe = crate::core::bind::Recipe {
             specs: std::mem::take(&mut self.devices),
@@ -170,7 +182,7 @@ impl CircuitBuilder {
             time_point_rule: self.time_point_rule,
             temperature,
         };
-        let bound = bind(BindInput {
+        let bound = Bind::run(BindInput {
             specs: recipe.specs.clone(),
             arrays: recipe.arrays.clone(),
             shared: recipe.shared.clone(),
@@ -240,13 +252,17 @@ mod tests {
     }
 
     #[test]
-    fn edge_gnd_name_routes_to_ground() {
-        // Edge: .node("gnd") routes to the ground reference
+    fn edge_a_ground_alias_is_refused() {
+        // Edge: .node("gnd") routes to the ground reference; `GND`, `vss` and `VSS` are refused, naming `gnd` (S21)
         let mut b = CircuitBuilder::new("top");
         let g = b.ground();
         let n = b.node("gnd");
         assert_eq!(g, n);
-        let n2 = b.node("GND");
-        assert_eq!(g, n2);
+        for alias in ["GND", "vss", "VSS"] {
+            let mut b = CircuitBuilder::new("top");
+            b.node(alias);
+            let message = b.build().err().expect("a ground alias is refused").to_string();
+            assert!(message.contains(alias) && message.contains("`gnd`"), "{message}");
+        }
     }
 }

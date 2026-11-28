@@ -6,12 +6,14 @@
 //! loops use. `Net` is the one *public* identity over all of them: a
 //! dense index for the fast path paired with a [`NetKind`] and a stable label,
 //! so diagnostics, queries, and result mapping treat `v(out)`, `i(vsrc)`, a
-//! digital net, and `GND` symmetrically.
+//! digital net, and `gnd` symmetrically.
 
 use std::fmt;
 use std::sync::Arc;
 
 use piperine_analog_solver::netlist::{AnalogReference, AnalogVariable, Netlist};
+
+use crate::core::ground::GroundName;
 
 /// What kind of solved signal a [`Net`] names.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -76,12 +78,12 @@ impl Net {
         }
     }
 
-    /// The ground pseudo net: no solved unknown, canonical label `GND`.
+    /// The ground pseudo net: no solved unknown, label `gnd` (its one spelling, [`GroundName`]).
     pub fn ground() -> Self {
         Self {
             dense: Self::NONE,
             kind: NetKind::Pseudo,
-            label: "GND".into(),
+            label: GroundName::TEXT.into(),
             analog: None,
         }
     }
@@ -198,7 +200,7 @@ mod tests {
         assert_eq!(net.kind(), NetKind::Pseudo);
         assert_eq!(net.dense(), None);
         assert!(net.is_ground());
-        assert_eq!(net.label(), "GND");
+        assert_eq!(net.label(), "gnd");
     }
 
     #[test]

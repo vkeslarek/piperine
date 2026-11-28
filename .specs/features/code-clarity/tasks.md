@@ -2214,9 +2214,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
-- [ ] No free function in the file; `bind`'s row is `split`
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api`
+- [x] S21 (user, 2026-11-27): the ground is spelled `gnd` only. `GroundName` accepts `gnd`; the ground net's label (`core/net.rs`) prints `gnd`; `GND`, `vss` and `VSS` given as a node name are refused with an error naming `gnd`, in the builder and in a noise request (`api/src/noise.rs`); `edge_gnd_name_routes_to_ground` becomes a test of the refusal (a `replace` row)
+  - `GroundName::refusal` words the one error. `CircuitBuilder::node` keeps returning a reference (its signature is unchanged) and records the refusal; `build` fails with it, so no circuit is ever built on such a node. The replace row is `repoints/T83.tsv` (`edge_a_ground_alias_is_refused`), with its `uncited_tests.tsv` verdict. `net.rs`'s `ground_is_a_pseudo_net_with_no_index` now asserts the label `gnd` (the S21 consequence). No example, Book listing, golden, fixture or spec page used `GND`, `vss` or `VSS` as ground; nothing printed moved.
+- [x] No free function in the file; `bind`'s row is `split`
+  - Departure: the row is deleted, not marked `split`: no method of the split is over the limit, and the guard refuses a row whose item is no longer long. `bind` is `Bind::run`; the pins bind through `continuous_pin` (PORT/PRIVATE, with `hold_and_tolerance`), `discrete_pin` → `discrete_port`, `parameter_pin`, `global_pin` (+ `global_net`), PRIVATE in `discrete_pin`; then `finish`, `mark_analog_reads`, `sample_numbers`, `InstanceBinding::into_plans`/`site_bindings`. The former per-instance `Bind` is `InstanceBinding`. The 4 other free functions: `encode` → `ParamValue::encode`, `bind_error` → `Bind::error`, `create` → inlined into `Bind::instance` (`Handle::create`), `analog_pins` → `InstanceBinding::analog_pins`.
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
