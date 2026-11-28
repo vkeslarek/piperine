@@ -1,11 +1,12 @@
 # Spice Models Design
 
 **Spec**: `.specs/features/spice-models/spec.md`
-**Status**: Draft — awaiting user approval of the interface (`interface-review.md`)
+**Status**: Approved
+**Approved**: 2026-11-27 - user (translated, relayed by the coordinator): "I accept the recommended options, except what I told you (no CIDER and no XSPICE). … Please write the design and break it into tasks!" The full words and the decision log are in `spec.md`.
 
-The design has six parts, in the order the request gives them: the parameter and usage map (§4), the interface (§2, §3), the implementation map (§5), the parity plan (§6), the Book (§7), and the phases and risks (§9, §10). §8 lists what the models need of the language, the solver and the device ABI. No `tasks.md` exists yet: tasks are written after the interface is approved.
+The design has six parts, in the order the request gives them: the parameter and usage map (§4), the interface (§2, §3), the implementation map (§5), the parity plan (§6), the Book (§7), and the phases and risks (§9, §10). §8 lists what the models need of the language, the solver and the device ABI. §12 is the `alias` amendment, §13 how the library ships in `std`, §14 who decides a family's page, and §15 the `convolve` primitive the lossy line needs. `tasks.md` is the plan (148 tasks in 18 phases).
 
-Paths and crate names are those of `origin/main` at `7d4d544e0`. `code-clarity` renames crates before this feature starts (`piperine-lang` to `piperine-language`, and others); the first task re-takes every path on the merged `main`.
+The feature executes after `code-clarity` and `device-abi-simplification` have merged. Paths and crate names below are those the two features leave (`piperine-language`, `piperine-interpreter`, `piperine-repository-guards`); T1 re-takes every path on the merged `main`.
 
 ---
 
@@ -16,33 +17,34 @@ One model goes through five steps, and a family is a batch of models that go thr
 ```mermaid
 flowchart LR
     S["ngspice-47 sources\n<dev>.c, *set.c, *temp.c, *load.c, *noi.c"] --> M["Map\nmodels/<family>.md\n(generated + the mapping task)"]
-    M --> I["Interface\nthe family's page,\napproved by the user"]
-    I --> C["MSL module\npackages/spice/src/<family>/"]
+    M --> I["Interface\nthe family's page,\ndecided by the phase's planner"]
+    I --> C["MSL module\nstd/spice/<family>"]
     C --> P["Parity twins\nthe model's matrix,\nboth backends"]
     P --> B["Book chapter\nlistings run, tables generated"]
 ```
 
-Three things are settled once, before the first family: the package and its rules (§2, §3), the parity scaffold with its gates (§6), and the capabilities the later families need (§8).
+Four things are settled once, before the first family: the `alias` item (§12), the library's place in `std` and its rules (§2, §3, §13), the parity scaffold with its gates (§6), and the capabilities the later families need (§8).
 
 **What makes the work tractable.** In ngspice a device is some thirty C files: one function per analysis, each with hand-written derivatives. In MSL a device is one module: its params, one `analog` block that states the currents, the charges and the noise sources, and for some devices a `digital` block. The derivatives, the AC and pole-zero stamps, the truncation-error control and the sensitivities come from the language. Of the 376,000 lines of C behind the in-scope devices, what a model must restate is the setup and temperature code (the params and the body `let`s) and the current and charge part of the load function. Appendix D of the language specification shows the size this gives: a junction diode is about ten lines.
 
 ---
 
-## 2. The package
+## 2. The library
 
-### 2.1 Location and manifest
+### 2.1 Location
+
+The models are a namespace of the standard library (decision D5; §13 gives the reasoning and the loading rule).
 
 ```
-packages/spice/
-    Piperine.toml                 name = "spice"
-    LICENSE                       ngspice's Modified BSD notice, and the list of the ngspice files the package derives from
-    NGSPICE_VERSION               the tag the models were written from: ngspice-47
-    src/
-        lib.msl                   the namespaces, pub
+crates/piperine-language/std/
+    lib.msl                       gains `pub mod spice;` (not re-exported by `prelude`)
+    spice/
+        mod.msl                   the namespaces, pub; `pub const NGSPICE_VERSION: str = "ngspice-47";`
+        NOTICE                    ngspice's Modified BSD notice and the list of the ngspice files the library derives from
         constants.msl             ngspice's physical constants
-        junction.msl              what the junction devices share: depletion charge, the temperature laws, critical voltage
         temperature.msl           the instance-temperature rule of interface-review §2.7
-        passive.msl               or passive/mod.msl with one file per device when a namespace grows
+        junction.msl              what the junction devices share: depletion charge, the temperature laws, critical voltage
+        passive.msl
         source.msl
         controlled.msl
         switch.msl
@@ -57,19 +59,17 @@ packages/spice/
         hisim/{mod,hisim2,hisim_hv1,hisim_hv2}.msl
 ```
 
-A module and its behavior blocks are in one file (§8 rule 5), so one device is one file, and a large one (BSIM4) is a large file. What devices share is in functions of `junction.msl`, `temperature.msl` and `mosfet/meyer.msl`; a `fn` keeps no state (§3), so sharing costs nothing at run time.
-
-How a user depends on the package is decision D5. Inside this repository the parity crate and the Book's test target name it by `path`.
+A module and its behavior blocks are in one file (§8 rule 5), so one device is one file, and a large one (BSIM4) is a large file. What devices share is in functions of `junction.msl`, `temperature.msl` and `mosfet/meyer.msl`; a `fn` keeps no state (§3), so sharing costs nothing at run time. Every file is added to the embedded table of the standard library (`pom/stdlib.rs` today) in the commit that adds it.
 
 ### 2.2 Namespaces
 
-`lib.msl` declares one `pub mod` per row of `interface-review.md` §1 and re-exports nothing at the root: a user writes `use spice::diode::Diode;`. The shared namespaces (`constants`, `junction`, `temperature`) are `pub`, so a user's own model can use ngspice's temperature laws and constants.
+`spice/mod.msl` declares one `pub mod` per row of `interface-review.md` §1 and re-exports nothing: a user writes `use std::spice::diode::Diode;`. No item of `std::spice` is in the prelude: `Diode` and `Resistor` are common names in a user's own code and in the specification's examples, and the path `std::spice` is what says where a model comes from. The shared namespaces (`constants`, `junction`, `temperature`) are `pub`, so a user's own model can use ngspice's temperature laws and constants.
 
-`spice::constants` holds ngspice's values, which differ from the standard library's in the last digits: `CHARGE = 1.6021766208e-19`, `BOLTZMANN = 1.38064852e-23`, `CELSIUS_TO_KELVIN = 273.15`, `REFERENCE_TEMPERATURE = 300.15`, and the derived `BOLTZMANN_OVER_CHARGE`, `ROOT_TWO`, `VT0` (`src/include/ngspice/const.h`). A model reads these, never `std::constants::Q` or `K_B`, so a thermal voltage has ngspice's digits.
+`std::spice::constants` holds ngspice's values, which differ from `std::constants` in the last digits: `CHARGE = 1.6021766208e-19`, `BOLTZMANN = 1.38064852e-23`, `CELSIUS_TO_KELVIN = 273.15`, `REFERENCE_TEMPERATURE = 300.15`, and the derived `BOLTZMANN_OVER_CHARGE`, `ROOT_TWO`, `VT0` (`src/include/ngspice/const.h`). A model reads these, never `std::constants::Q` or `K_B`, so a thermal voltage has ngspice's digits.
 
-### 2.3 What the package does not hold
+### 2.3 What the library does not hold
 
-No `extern` module. No Rust. No host code. No netlist reader. The package is MSL source that the ordinary pipeline elaborates, plans and runs on both backends.
+No `extern` module, no intrinsic, no Rust, no host code, no netlist reader, no model card. It is MSL source that the ordinary pipeline elaborates, plans and runs on both backends, written under the rules a user's package is written under.
 
 ---
 
@@ -129,10 +129,11 @@ No `extern` module. No Rust. No host code. No netlist reader. The package is MSL
 
 ### 3.6 Model cards
 
-1. A card is a template of the device module (§8.4), held in a `const` or returned by a function.
-2. The package ships no cards. The Book and the parity fixtures have cards of public parts, each with its source.
-3. With D3 a placement through a card may rebind params. Without it, a card whose instances differ is a function of what differs.
-4. Binning is a function that returns a template (§8.4.7).
+1. A card is an `alias` of the device module (§12): `pub alias D1N4148 = Diode { is: 2.52n, rs: 0.568, n: 1.752 };`.
+2. A placement through the card binds what the card left and may replace what it bound: `NCH(d, g, s, b) { w: 10u, l: 1u }`.
+3. A card that refines another is an alias of an alias: `alias NCH_SLOW = NCH { vto: 0.82 };`.
+4. Binning is a function that returns a template (§8.4.7), choosing among aliases: `if l < 0.1u { NCH_1 { w, l } } else { NCH_2 { w, l } }`.
+5. The library ships no cards. The Book and the parity fixtures have cards of public parts, each with its source.
 
 ### 3.7 Temperature, multiplicity, initial state
 
@@ -181,7 +182,7 @@ The closed list. A guard fails when a settable ngspice parameter is neither a pa
 
 **How it is made.** `tools/extract.py <ngspice tree> inventory.json` reads each device directory: the `IFparm` tables (name, id, type, direction, redundancy, description), the terminal names, the `SPICEdev` entry points, the field each parameter is stored in (the `*par*.c` files), the default assigned under `if (!…Given)` anywhere in the directory, how many times the given flag is read outside the parameter files, the limiting functions called, the internal unknowns created, the noise source names and the length of the state vector. `tools/render.py inventory.json models/` writes the files. Both are committed; a test of the feature renders again from a checkout of the tag and compares (SPM-01).
 
-**What the extraction does not give.** Units (the tables have none), the meaning of "absent" for each `Option`, and the 354 defaults assigned outside the idiom. These are the **mapping task** of each family: its output is the family's interface page (a hand-written table per device in the form of `interface-review.md` §3.1, with unit, type, default and meaning for every param), which goes to the user before the family is implemented (SPM-06, SPM-42). The unit of each BSIM, HiSIM, VBIC and HICUM parameter is taken from the model's reference manual, which the page cites.
+**What the extraction does not give.** Units (the tables have none), the meaning of "absent" for each `Option`, and the 354 defaults assigned outside the idiom. These are the **mapping task** of each family: its output is the family's interface page (a hand-written table per device in the form of `interface-review.md` §3.1, with unit, type, default and meaning for every param), written and decided by the phase's planner before the family's modules (§14; SPM-06, SPM-42). The user is informed, not asked. The unit of each BSIM, HiSIM, VBIC and HICUM parameter is taken from the model's reference manual, which the page cites.
 
 **Usage rules** are recorded per device in the same page: which parameters are required, which exclude each other, what a model selector switches, which terminals may be tied. For the families of `interface-review.md` §3 to §7 they are in that page now.
 
@@ -196,7 +197,7 @@ The closed list. A guard fails when a settable ngspice parameter is neither a pa
 | `DEVtrunc` | the truncation-error test of each `ddt` state (§17.2.1) | `abstol` of a charge where ngspice uses `chgtol` |
 | `DEVconvTest` | the solver's convergence test and the `limit` veto (§17.1, §18) | nothing; a deviation of path, never of answer |
 | `DEVsetic` | §16 H7 | the `ic…` params |
-| `DEVaccept` (breakpoints, line history) | `at`, `delay` | scheduled corners; §8 for the lossy line |
+| `DEVaccept` (breakpoints, line history) | `at`, `delay`, `convolve` | scheduled corners; §15 for the lossy line |
 | `DEVsen*` | the host's gradients | nothing |
 | `DEVdisto` | none: distortion is a transient and a Fourier analysis | nothing |
 | `DEVsoaCheck` | a reaction `on settle` that writes a warning record, placed only when a limit is given | the `…_max` params |
@@ -298,7 +299,7 @@ One row per in-scope device, generated from the sources (the same extraction as 
 
 **Switches.** A `Bit` state with hysteresis; conductance `1/ron` or `1/roff`; thermal noise of the present resistance. The operating point settles the state by the rounds of §16.
 
-**Lines.** `tra`: the two ports of the method of characteristics, each a potential contribution `z0 * i + delay(v_other + z0 * i_other, td)`. `urc`: generation. `txl` and `cpl`: ngspice approximates the line by a delay and a rational (Padé) function per mode; in MSL the same poles and residues are a `laplace_*` filter per mode and a `delay`, with the coefficients computed in body `let`s by the algorithm of `txlsetup.c` and `cplsetup.c`. `ltra`: a convolution of the port quantities with the line's impulse responses over the whole accepted history, whose kernels ngspice integrates anew for each step. No MSL primitive reads an arbitrary stretch of history; this is capability N3 of §8.
+**Lines.** `tra`: the two ports of the method of characteristics, each a potential contribution `z0 * i + delay(v_other + z0 * i_other, td)`. `urc`: generation. `txl` and `cpl`: ngspice approximates the line by a delay and a rational (Padé) function per mode; in MSL the same poles and residues are a `laplace_*` filter per mode and a `delay`, with the coefficients computed in body `let`s by the algorithm of `txlsetup.c` and `cplsetup.c`. `ltra`: a convolution of the port quantities with the line's impulse responses over the whole accepted history, whose kernels ngspice integrates anew for each step. This is the core primitive `convolve` (§15), which the feature adds; the line supplies the closed-form integrals of `ltramisc.c`.
 
 **Junction devices** (`dio`, `bjt`, `jfet`, `mes`, the bulk diodes of every MOSFET). The shared functions of `spice::junction`: depletion charge with the `fc` linearization, the temperature laws of saturation current, built-in potential and capacitance for each `tlev`/`tlevc`, the critical voltage, `limitlog`. A device calls them with its own parameters. Known traps from the earlier ports, to be re-checked by twins: the BJT's substrate junction polarity for lateral devices, the JFET's `b` (doping tail) term, the diode's breakdown matching (`bv` is adjusted so the two exponentials meet at `ibv`), and the dependence of convergence on `gmin` stepping.
 
@@ -345,15 +346,15 @@ Each model has a matrix: rows are conditions, columns are analyses. A cell is on
 | MOS 1 to 9, VDMOS | `id`–`vgs` at low and high `vds`, `id`–`vds` at four `vgs`, each at three body biases; subthreshold, linear, saturation; reverse mode (`vds < 0`); both polarities; process-derived versus given `vto`, `kp`, `gamma`, `phi`; junction diodes forward and reverse; overlap and Meyer capacitances in AC at five biases; an inverter and a ring oscillator in transient; noise per `nlev`; three temperatures; VDMOS body diode and self-heating |
 | BSIM, HiSIM, SOI | the above; plus a geometry grid (short, long, narrow, wide, and the four corners); each model selector at each value; gate current; the NQS options in AC and transient; stress and well-proximity parameters; binned cards; the model's own regression decks from `ngspice/tests/` |
 
-A twin is small: one device, its sources, at most a load. The existing fixtures of `tests/e2e/twins/` (66 netlists, 24 with an MSL twin today) are kept, and their hand-written `devices.msl` is replaced by the package once phase 1 lands.
+A twin is small: one device, its sources, at most a load. The existing fixtures of `tests/e2e/twins/` (66 netlists, 24 with an MSL twin today) are kept, and their hand-written `devices.msl` is replaced by `std::spice` once the models it holds have landed (phases 1 and 4).
 
 ### 6.3 Layout and generation
 
 ```
-packages/spice/parity/<family>/<model>/<case>.cir      the ngspice netlist
-packages/spice/parity/<family>/<model>/<case>.msl      the MSL twin
-packages/spice/parity/<family>/<model>/matrix.toml     the cells: case, analysis, quantities, contract, or the refusal and its owner
-crates/piperine-parity/tests/spice_<family>.rs         one target per family; it walks the matrices
+crates/piperine-parity/tests/spice/<family>/<model>/<case>.cir      the ngspice netlist
+crates/piperine-parity/tests/spice/<family>/<model>/<case>.msl      the MSL twin
+crates/piperine-parity/tests/spice/<family>/<model>/matrix.toml     the cells: case, analysis, quantities, contract, or the refusal and its reason
+crates/piperine-parity/tests/spice_<family>.rs                      one target per family; it walks the matrices
 ```
 
 The `.cir` and the `.msl` of a twin are written by hand for the first families. From the MOSFETs on, a card has hundreds of parameters, and a twin's two files must carry the same card: a small generator in `piperine-parity` writes both from one table of `name = value` pairs (the ngspice spelling and the MSL spelling come from the rename table). The generator is test support; it is the seed of the netlist importer that the spec leaves out.
@@ -367,7 +368,7 @@ The `.cir` and the `.msl` of a twin are written by hand for the first families. 
 | parameter completeness | an ngspice parameter is neither a param of the module nor in the closed list of §3.9 | SPM-02 |
 | name fidelity | a param's name is not the ngspice name and not in the rename table | SPM-09 |
 | contract only | a parity test compares with a literal (the existing rule of `contract.rs`) | SPM-28 |
-| oracle version | the installed ngspice does not report the version of `NGSPICE_VERSION` | SPM-05, SPM-36 |
+| oracle version | the installed ngspice does not report `std::spice::NGSPICE_VERSION` | SPM-05, SPM-36 |
 | map freshness | `models/*.md` differs from a fresh rendering | SPM-01 |
 
 Per the project's gate policy, a task runs the targets of the family it touches; the full suite runs once, at the family's final verification.
@@ -382,14 +383,14 @@ Known before starting, and each needs a decision recorded in the deviation ledge
 | located crossings against step-quantized switching | a switch closes at slightly different times | the same; twins measure after the event, not at it |
 | the Meyer capacitance averaging | small differences of gate charging in transient | risk R4 |
 | ngspice's derivative not being the derivative of its current | AC and noise differ where it happens | found by the AC twins; recorded per model (SPM-24) |
-| physical constants | none: the package uses ngspice's | |
+| physical constants | none: the library uses ngspice's | |
 | random sources | different samples | compare mean, variance and spectrum, not samples |
 
 ---
 
 ## 7. The Book
 
-A new part, after "In depth": **Part 3, The SPICE model library**. It is a manual: each chapter explains its devices to a reader who has used a transistor and not necessarily a SPICE model, and it is complete without ngspice's manual. Every listing is run by the `book` target; every parameter table is generated from the package's `///` texts, so the Book cannot drift from the source.
+The chapter "Modules and hierarchy" gains a section on `alias` (§12.7), and the cheat sheet a row. Then a new part, after "In depth": **Part 3, The SPICE model library**. It is a manual: each chapter explains its devices to a reader who has used a transistor and not necessarily a SPICE model, and it is complete without ngspice's manual. Every listing is run by the `book` target; every parameter table is generated from the package's `///` texts, so the Book cannot drift from the source.
 
 Each device section has the same seven parts, in this order:
 
@@ -403,7 +404,7 @@ Each device section has the same seven parts, in this order:
 
 | Chapter | Sections | Use cases (each a run listing) |
 | --- | --- | --- |
-| **Using the `spice` package** | the dependency; `use`; the naming rule; a card is a template; card functions and binning; units and SI suffixes; temperature, `dtemp`, `tnom`; multiplicity; initial conditions; reading operating-point variables and noise by source; **from an ngspice netlist to MSL**: the element-by-element translation table, the aliases, the expression functions of the B source; what differs on purpose; what is refused and who owns it; models ngspice loads through OSDI and how MSL loads them | a netlist translated line by line and run to the same answers |
+| **Using the SPICE library** | `use std::spice::…`; the naming rule; a card is an `alias`; binning functions; units and SI suffixes; temperature, `dtemp`, `tnom`; multiplicity; initial conditions; reading operating-point variables and noise by source; **from an ngspice netlist to MSL**: the element-by-element translation table, the aliases, the expression functions of the B source; what differs on purpose; what is not provided (CIDER, XSPICE code models, `ndev`) and what is refused; models ngspice loads through OSDI and how MSL loads them | a netlist translated line by line and run to the same answers |
 | **Passive elements** | resistor (by value, by geometry, temperature, noise); capacitor; inductor; coupled inductors and transformers; the uniform RC line | a divider over temperature; a resistor's noise; a transformer; an RC line's delay |
 | **Sources and switches** | DC and AC; the eight waveforms, each with its parameters drawn on its curve; a waveform of your own; behavioural sources; the four controlled sources; current sensing; switches and hysteresis | a pulse train into an RC; an AM signal; an ideal op-amp from a controlled source; a relaxation oscillator with a switch |
 | **Transmission lines** | lossless; reflections and termination; lossy and coupled lines; which model for which problem | a mismatched line's ringing; crosstalk on a coupled pair |
@@ -411,11 +412,11 @@ Each device section has the same seven parts, in this order:
 | **Bipolar transistors** | Gummel-Poon from the ideal transistor up; Early effect, high injection, base resistance; charge and `ft`; temperature; noise; VBIC and what it adds; HICUM; self-heating | a common-emitter stage (bias, gain, noise); a current mirror over temperature; a switching transistor's storage time |
 | **JFETs, MESFETs and HFETs** | Shichman-Hodges JFET; Parker-Skellern; Statz MESFET; MESA; HFET | a JFET source follower; a MESFET amplifier's gain against bias |
 | **MOSFETs: the classic levels** | level 1 from the square law; process-derived parameters; body effect; junctions and overlap; the Meyer capacitances; levels 2, 3, 6, 9 and what each adds; the power MOSFET (VDMOS) | an inverter's transfer curve and delay; a differential pair; a power switch with its body diode |
-| **MOSFETs: BSIM** | what BSIM3 and BSIM4 model; **working with a foundry card** (a card function, binning, corners, mismatch); the parameter groups; the model selectors; layout effects; noise models; the earlier versions and BSIM1, BSIM2 | a ring oscillator from a card; `gm/id` curves; `ft` against bias; a binned card |
+| **MOSFETs: BSIM** | what BSIM3 and BSIM4 model; **working with a foundry card** (an alias per card, binning, corners, mismatch); the parameter groups; the model selectors; layout effects; noise models; the earlier versions and BSIM1, BSIM2 | a ring oscillator from a card; `gm/id` curves; `ft` against bias; a binned card |
 | **SOI and HiSIM** | body effects in SOI, the body contact, self-heating; the BSIMSOI family; STAG; HiSIM2 and HiSIM_HV | a floating-body kink; a high-voltage switch |
 | **Reference** | every parameter of every model, generated; the translation table; the index of ngspice names | |
 
-The chapters are written with their family (SPM-43), not at the end. The Book's rules hold: self-contained, respectful, every listing run, values allowed to move with the solver while they stay close to ngspice.
+Each phase ships the sections of its devices (SPM-43); a chapter grows phase by phase and is never written at the end. The Book's rules hold: self-contained, respectful, every listing run, values allowed to move with the solver while they stay close to ngspice.
 
 ---
 
@@ -427,7 +428,7 @@ Checked against the language specification, `GAPS.md` at `7d4d544e0` and the cap
 | --- | --- | --- | --- | --- | --- |
 | N1 | flow and potential contributions, param-selected shorts | every device | §11 rules 1 to 3 | C1, C4, C23 | there |
 | N2 | charges under `ddt` with a per-state tolerance | every dynamic device | §14.5 | C2 | there |
-| N3 | **a convolution over the accepted history with a kernel that depends on the present step** | `ltra` | none | none (C3 is a fixed delay) | **missing.** Owner to be named before phase 6: a core primitive, or the lossy line refused. The other lines do not need it. |
+| N3 | **a convolution over the accepted history with a kernel that depends on the present step** | `ltra` | none | none (C3 is a fixed delay) | **missing.** Created in this feature: the core primitive `convolve` (§15, phase 9, T84 to T88). |
 | N4 | Newton limiting with a seed and a veto | every junction and FET | §18 | C9, C10, C95 | there |
 | N5 | noise sources, named, correlated through shared instances, frequency-dependent | every noisy device | §14.8, §11.1.8 | C12, C96 | there |
 | N6 | AC stimulus | sources | §14.3 | C13 | there |
@@ -438,41 +439,47 @@ Checked against the language specification, `GAPS.md` at `7d4d544e0` and the cap
 | N11 | `laplace_*` filters with coefficients from params | `txl`, `cpl` | §22.2 | C24 | there for constant coefficients; coefficients computed in a body `let` to be verified |
 | N12 | generation over a structural param, arrays of nodes | `urc`, `cpl` | §8.2.7 | C32 | there |
 | N13 | a `Thermal` port | self-heating variants | §4 | C27 | there |
-| N14 | templates, `const` of module type, functions returning templates | every card | §8.4 | C73 | specified; to be verified at scale in phase 0 |
-| N15 | a param block on a template placement | cards with instance params | amendment of §8.4.4 (D3) | none | decision |
+| N14 | templates, functions returning templates | binning | §8.4 | C73 | specified; verified in phase 0 |
+| N15 | the `alias` item | every card | amendment, §12 | none: an alias is gone before a shape is built | this feature, phase 0 |
 | N16 | a `pub` node of an instance passed as a sibling's connection | `MutualInductor` (D10) | §8.2.8, §8.1.10 | C28 | specified; to be verified in phase 0 |
 | N17 | enum, `bool`, `i32` and array params read in `analog`; a param that selects a branch kind | every transistor | §8.1.15, §11 rule 3 | C30 `STRUCTURAL` | there (`GAPS.md` L93 refuses `str` params, which the package does not use) |
-| N18 | modules of 900 params and analog blocks of several thousand `let`s, on both backends, in acceptable compile time | BSIM4, BSIMSOI, HiSIM | no limit stated | no limit stated | **unknown.** Measured by the phase-0 spike (§9); risk R1 |
+| N18 | modules of 900 params and analog blocks of several thousand `let`s, on both backends, in acceptable compile time | BSIM4, BSIMSOI, HiSIM | no limit stated | no limit stated | **unknown.** Measured by the phase-0 spike (T17); risk R1 |
 | N19 | a record written at accepted solutions (`on settle` with a probe) | safe-operating-area limits | §12.1.5, §19 | C44, C47 | there |
 | N20 | host `set`, sweep and gradient of any model param | fitting, corners, `.sens` parity | §21, §23 | C26, C64 | there; `GAPS.md` L61 (a param folded at elaboration cannot be swept after `open`) bites structural params only |
-| N21 | a `git` dependency on a package in a subdirectory | users of the package | amendment of §3.6.7 (D5) | none | decision |
+| N21 | a namespace of `std` that costs nothing when unused | every design that uses no SPICE model | §13 | none | this feature, phase 0 |
 
-Nothing here asks the device ABI for a new capability except N3, and N3 is first a question for the language (what the primitive is), then for the ABI.
+Nothing here asks the device ABI for a new capability except N3, which this feature creates: §15 specifies the primitive and what it adds to the ABI and the solver.
 
 ---
 
 ## 9. Phases
 
-Each phase after the first has the same shape: mapping task and the family's interface page; the user's approval; the modules; the parity matrix; the Book chapter; closure with `GAPS.md` and `ROADMAP.md`. Phases 3 onward are independent of each other once phase 2 is done and can run as parallel lanes, each in its own worktree with its own target directory.
+Decision D12: from the simplest model to the most complex, each phase shippable by itself. A phase delivers its modules in `std::spice`, their filled parity matrices on both backends, and their Book sections, and merges to `main` when its last task is committed. The order follows the size and the number of mechanisms of each model: a linear element; then state; then events; then a junction; then a transistor; then the compact models by size.
 
-| Phase | Content | Models | Depends on |
+| Phase | Ships | Models | New mechanism it exercises |
 | --- | --- | --- | --- |
-| 0 | **Ground.** The package skeleton, `constants`, `temperature`, the licence file; the parity scaffold (the layout of §6.3, the seven gates); the map-freshness test; the decisions D1 to D12 applied; D3 and D5 amendments if approved; **the scale spike**: a synthetic module with 900 params and 3,000 `let`s through both backends, to size N18 before any large model is planned | — | `code-clarity` merged |
-| 1 | Linear elements, sources, switches | `res`, `cap`, `ind` and `K`, `vsrc`, `isrc`, `asrc`, `vcvs`, `vccs`, `cccs`, `ccvs`, `sw`, `csw` (13 kinds, 18 modules and 8 waveforms) | 0 |
-| 2 | The diode and `spice::junction` | `dio` (4 modules) | 1 |
-| 3 | Bipolar, JFET, MESFET, HFET | `bjt`, `jfet`, `jfet2`, `mes`, `mesa`, `hfet1`, `hfet2` | 2 |
-| 4 | MOS levels and the power MOSFET | `mos1`, `mos2`, `mos3`, `mos6`, `mos9`, `vdmos` | 2 |
-| 5 | BSIM3 and BSIM4 | `bsim3` (3.3.0), `bsim4` (4.8) | 4, the spike |
-| 6 | Lines | `tra`, `urc`, `txl`, `cpl`; `ltra` when N3 has an owner | 1 |
-| 7 | Advanced bipolar | `vbic`, `hicum2`, with self-heating | 3 |
-| 8 | Early BSIM and the legacy versions | `bsim1`, `bsim2`, `bsim3v0`, `bsim3v1`, `bsim3v32`, `bsim4v5`, `bsim4v6`, `bsim4v7` | 5 |
-| 9 | SOI | `bsim3soi_fd`, `bsim3soi_dd`, `bsim3soi_pd`, `bsimsoi`, `soi3` | 5 |
-| 10 | HiSIM | `hisim2`, `hisimhv1`, `hisimhv2` | 5 |
-| 11 | **Close.** The Book's first and last chapters complete, the reference generated, every gate at zero, the refused list in `GAPS.md`, the full suite once | — | all |
+| 0 | **Ground**: `alias` in the language, specification and Book; the `std::spice` skeleton with on-demand loading and its notice; the parity scaffold and its gates; the scale spike | — | — |
+| 1 | Resistors, capacitors, DC and AC sources, linear controlled sources | `res`, `cap`, `vsrc`, `isrc` (no waveform), `vcvs`, `vccs`, `cccs`, `ccvs` | params, temperature, `ddt`, thermal and flicker noise, a sensing branch |
+| 2 | Inductors and coupling, the eight waveforms, behavioural sources | `ind`, `K`, the waveforms, `asrc` | a potential branch with state, a public node, scheduled corners, a value input |
+| 3 | Switches and the lossless line | `sw`, `csw`, `tra` | discrete state with hysteresis, `delay` |
+| 4 | Diodes and the uniform RC line | `dio` (four modules), `urc` | limiting, junction charge, temperature laws, self-heating, generation |
+| 5 | JFETs and the Statz MESFET | `jfet`, `jfet2`, `mes` | a three-terminal device, polarity |
+| 6 | The bipolar transistor | `bjt` | two junctions, base resistance modulation, excess phase |
+| 7 | MOS levels 1, 2, 3, 6, 9 | `mos1`, `mos2`, `mos3`, `mos6`, `mos9` | source/drain interchange, Meyer capacitances, process-derived parameters |
+| 8 | The power MOSFET, MESA and HFET | `vdmos`, `mesa`, `hfet1`, `hfet2` | self-heating in a transistor |
+| 9 | **The history convolution primitive** `convolve` (§15): specification, device ABI, analog solver, language and both backends, the Book | — | capability N3, created here |
+| 10 | Lossy and coupled lines | `txl`, `cpl`, `ltra` | rational approximations, a const-generic device, `convolve` |
+| 11 | BSIM1 and BSIM2 | `bsim1`, `bsim2` | a compact model of 80 to 135 params: the rehearsal for BSIM3 |
+| 12 | BSIM3 | `bsim3` (3.3.0), then `bsim3v32`, `bsim3v1`, `bsim3v0` | 423 params, model selectors, the NQS node |
+| 13 | VBIC and HICUM | `vbic`, `hicum2`, each with its self-heating module | advanced bipolar |
+| 14 | BSIM4 | `bsim4` (4.8), then `bsim4v7`, `bsim4v6`, `bsim4v5` | 891 params, gate and body networks, correlated noise |
+| 15 | SOI | `soi3`, `bsim3soi_fd`, `bsim3soi_dd`, `bsim3soi_pd`, `bsimsoi` | body and thermal terminals |
+| 16 | HiSIM | `hisim2`, `hisimhv1`, `hisimhv2` | surface-potential models |
+| 17 | **Close**: the Book's reference and translation table complete, every gate at zero, the excluded list in `GAPS.md`, the full suite once | — | — |
 
-**Why this order.** Every twin needs sources and resistors, so they are first. The diode is the smallest device with limiting, charge, temperature and noise, and every transistor contains it. BSIM3 and BSIM4 are what a user with a foundry kit needs, so they come before the lines and the advanced bipolar models even though they are larger. The legacy versions are near-copies of the models of phase 5 and are cheapest after it.
+Phases 1 to 4 are one lane, in order: each uses the devices of the one before in its twins. From phase 5 on, a phase needs only phase 4 and may run as a parallel lane, in its own worktree with its own target directory; phase 9 needs phase 3 and phase 10 needs phase 9. The BSIM phases (11, 12, 14) are in order because each reuses the structure of the one before; 15 and 16 follow 14. `tasks.md` has 148 tasks.
 
-**Size.** Phases 1 to 4 restate about 80,000 lines of C in an estimated 8,000 lines of MSL. Phases 5 and 8 to 10 are where the volume is: 268,000 lines of C, of which the load and temperature functions that must be restated are about a third. These are not one-pass phases; each large model is its own sequence of tasks (DC and temperature, then charge and AC, then noise, then the selectors), as the `ngspice-bsim3` scaffold already foresaw.
+**Size.** Phases 1 to 8 restate about 80,000 lines of C in an estimated 8,000 lines of MSL. Phases 11 to 16 are where the volume is: 268,000 lines of C, of which the load and temperature functions that must be restated are about a third. A large model is a sequence of tasks (the interface page; setup and temperature; DC current; charge; noise and reported quantities; parity; the Book), as the `ngspice-bsim3` scaffold foresaw.
 
 ---
 
@@ -484,14 +491,16 @@ Each phase after the first has the same shape: mapping task and the family's int
 | R2 | **Transliteration errors** in the equations of 52 devices | wrong models that look right | the parity matrix with a geometry grid and every selector; ngspice's own regression decks; the parameter-coverage gate, which makes an unused parameter visible |
 | R3 | **ngspice's derivative is not the derivative of its current** in some model | AC or noise outside the contract with a correct model | found per model by the AC twins; recorded as a deviation with the source lines; never a wider contract |
 | R4 | **Meyer capacitances** (`mos1` to `mos9`): ngspice integrates the average of the capacitance at two time points, which is not `ddt` of a charge | transient gate currents differ slightly; charge is not conserved in either simulator | `c * ddt(v)` with the present capacitance; twins that charge a gate through a resistor; if the contract fails, the exact averaging needs the previous value of `c`, a signal updated `on settle`, which is exact for ngspice's rule at accepted steps |
-| R5 | **The lossy line** needs N3 | `ltra` late or refused | named now; the other four lines do not depend on it |
+| R5 | **The lossy line** needs N3, and N3 changes the device ABI and the analog solver | a core change inside a model feature | `convolve` is specified first (§15, T84), built as its own phase before the lines, and proven against an RC filter before any line uses it |
 | R6 | **Convergence**: a faithful model with ngspice's limiting may still need ngspice's shortcuts (bypass, its initial-junction sequence) to converge on hard circuits | twins that do not solve | `off`, the `limit` seeds and `gmin`/source stepping are in the language; the earlier ports found junction convergence solvable by gmin stepping; a failure is a solver item |
-| R7 | **Licence.** The device sources are Modified BSD (`COPYING` lists no device as an exception); a transliteration is a derived work | a package that cannot be redistributed as it is | the package carries ngspice's notice and each file names its sources (SPM-25); the repository's own licence is MIT, which the notice is compatible with. Reported to the user for confirmation; no model file is committed before it |
+| R7 | **Licence.** The device sources are Modified BSD (`COPYING` lists no device as an exception); a transliteration is a derived work | a standard library that cannot be redistributed as it is | `std/spice/NOTICE` carries ngspice's notice and each file names its sources (SPM-25); the repository's own licence is MIT, which the notice is compatible with. Approved by the user on 2026-11-27 (§13, T10) |
 | R8 | **Units and meanings of 10,000 parameters** written by hand per family | a slow mapping task, or wrong units in the Book | the unit is metadata, never read by a model, so an error there cannot change a result; the reference manuals are cited per parameter group; the tables are generated from one place |
-| R9 | **The interface freezes too early.** A rule approved on small devices may not fit BSIMSOI's terminals or HiSIM's options | a late change of names users already wrote | each family's page is approved before that family; the rules of §3 are the same for all, and the open points (SOI terminal variants) are named now |
+| R9 | **The interface freezes too early.** A rule approved on small devices may not fit BSIMSOI's terminals or HiSIM's options | a late change of names users already wrote | the rules of §3 are the user's and the same for all; a family's page applies them and its planner decides what they leave open (§14), so a late finding changes a page and not a rule; the known open point (SOI and HiSIM_HV terminal variants) is named now |
 | R10 | **Two ports of the same model disagree across backends** (`interp` and `rust`) on a large model | a twin green on one backend | SPM-35: each twin runs on both |
 | R11 | **The oracle moves.** A machine with another ngspice version gives other values for the newer models | false failures or false passes | the oracle-version gate (SPM-36); the version is recorded with every compared point, as today |
-| R12 | **`code-clarity` and the ABI refactor move the ground** under this feature | rebases | the feature adds a package and test fixtures and changes no crate's source until the parity scaffold; lanes rebase at phase boundaries |
+| R12 | **`code-clarity` and the ABI refactor move the ground** under this feature | rebases | the feature starts after both merge; T1 re-takes every path |
+| R13 | **The standard library grows by tens of thousands of lines** and every run parses `std` | every design pays for BSIM4 | SPM-07: a namespace file of `std` is read when a path first reaches it (§13); a guard measures the time of an empty design before and after |
+| R14 | **`alias` touches the parser, the name resolver, the elaborator, the object model, the printer, the language server and the host metadata** | a language change larger than its grammar | §12 keeps it to one item kind and one binding rule; the instance an alias places is an ordinary instance, so nothing after elaboration changes |
 
 ---
 
@@ -501,12 +510,215 @@ Each phase after the first has the same shape: mapping task and the family's int
 | --- | --- |
 | The map is generated and committed, with the tools | 11,027 rows cannot be kept true by hand, and a reviewer must be able to see where a row came from |
 | Selector parameters stay integers | the values are each model's documented vocabulary; two hundred enums of numbers would add names and remove nothing |
-| No card library in the package | a card is a claim about a part or a process; the package claims only ngspice's models. Cards of public parts live in the Book and the fixtures, each with its source |
-| The package's constants, not `std`'s | parity to the last digit of a thermal voltage; a user's own model may use either |
+| No card library in `std::spice` | a card is a claim about a part or a process; the library claims only ngspice's models. Cards of public parts live in the Book and the fixtures, each with its source |
+| `std::spice::constants`, not `std::constants` | parity to the last digit of a thermal voltage; a user's own model may use either |
 | One file per device even when large | §8 rule 5 requires a module and its blocks in one file; splitting BSIM4's block would mean splitting its equations into functions by an order ngspice does not have, which defeats the side-by-side reading |
-| Twins live in the package, the runner in `piperine-parity` | the fixtures are the package's proof and travel with it; the harness and the contracts stay in one crate |
+| Twins and runner both in `piperine-parity` | the library is in `std`, which holds source only; the fixtures, the harness and the contracts stay in one crate |
 | Refused forms are diagnostics with a name, never a silent default | project rule: every refused form named and owned |
 
-## 12. Open questions
+## 12. The `alias` amendment
 
-D1 to D12 of the spec, shown with examples in `interface-review.md` §12, and the sixteen per-family choices C1 to C16 listed there. Two more points are open and are not the user's to decide yet: the owner of N3 (the lossy line), and the terminal variants of the SOI models, which the SOI family's page settles.
+The user's amendment (2026-11-27): "`alias CMim = SemiconductorCapacitor { cj: 2m, ... };` … at instantiation it requires only the necessary params, with replace allowed … it makes sense for all models." It is a change to the language, for every module, owned by this feature (tasks T2 to T9).
+
+### 12.1 What it is
+
+An **alias** is an item that gives a name to a module with some of its params bound.
+
+```rust
+/// The metal-insulator-metal capacitor of the process.
+pub alias CMim = SemiconductorCapacitor { cj: 2m, cjsw: 0.1n };
+
+let c1 = CMim(a, b) { l: 10u, w: 10u };            // binds what the alias left
+let c2 = CMim(a, b) { l: 10u, w: 10u, cj: 2.2m };  // and may replace what it bound
+```
+
+**The keyword.** `alias`, not `template`. In the specification a *template* is already a value: `Name { params }`, complete, placed with connections only (§8.4). The new item is not that value: it may leave required params unbound, and a placement through it takes a param block. One word for both would give "template" two meanings in one section. `alias` says what the item adds, a second name, and the user's own example uses it. The language keeps no *type* alias (B.3.6): an alias names a module, and its right side is always a module or another alias.
+
+### 12.2 Grammar
+
+```
+alias_decl     ::= attrs 'pub'? 'alias' IDENT generics? '=' path generic_args? ( '{' ( IDENT ( ':' expr )? ',' )* '}' )? ';'
+```
+
+`alias_decl` joins the items of a namespace (B.3.1). `alias` is a **contextual keyword**, like `analog` and `digital` (A.1): it is a keyword only at item position before an identifier, and an ordinary identifier elsewhere, so no existing model loses a name. The binding list is the one of `template` (§8): `name: expr`, or `name` alone for `name: name`. Without a block, `alias N = M;` binds nothing.
+
+### 12.3 Static semantics (a new §8.6 of Part III)
+
+1. An alias is an item at namespace scope, beside `module`. Its name is in the type namespace of its file and **MUST** be unique in it. It **MUST NOT** appear in a module body, a block or a function.
+2. The **target** is the path on the right: a module declared with `module` (an `extern` module included) or another alias. A core primitive, a function, a type or a nature is not a target.
+3. Each name of the block **MUST** be a param of the target module and **MUST NOT** repeat in the block (`E0320`, as in a placement).
+4. Each value is a const expression over constants and the alias's own const generics (§3.9), of the param's type under the call rule (§3.2: a `T` for an `Option<T>` is `Some`, and `None` binds an `Option` param to absent). A namespace has no params, so a bound value never reads one.
+5. The **bindings of an alias** are those of its target, when the target is an alias, with each name of its own block added or replaced. An alias **MUST NOT** depend on itself.
+6. **A placement whose head is an alias** takes connections and a param block, as a placement whose head is a module does: `Alias(ports) { params }`. The instance's params are bound in this order, a later one replacing an earlier one: the module's defaults, the bindings of the alias, the placement's block. The block's values follow §8.1.19: they may read the parent's params.
+7. A param with no default and a type other than `Option` that is still unbound after rule 6 is `E0319`, naming the param, the module and the alias.
+8. Every `where` of the module is checked for each instance with its final values (§8.1.1). An implementation **MAY** also report, at the alias, a `where` that the alias's own bindings already make false whatever a placement adds.
+9. **An alias as a value.** `Alias { params }` is a template expression (§8.4): a value of the *module's* type, bound by rules 5 and 6, which **MUST** be complete (§8.4.2). The bare name `Alias` is `Alias {}`. So an alias goes wherever a template of its module goes: a template-typed param, a function's result, a `C: Fn(P)` argument.
+10. A placement whose head is a template *value* still takes no param block (§8.4.4, `G.53`). An alias is a name, known where it is written, and its bindings are text the reader can find; a value may have come from anywhere.
+11. An alias is not a type. In a type position the module's name is written; an alias there is `E0382`.
+12. An alias **MAY** have generic parameters, which it passes to its target: `alias Fifo8<T: Repr> = AsyncFifo::<T, 3> { almost_full: 6 };`, used as `Fifo8::<u8>(…)`. Their bounds are checked as a module's are.
+13. `pub`, `use`, `pub use` and paths treat an alias as any item (§3.4, §3.5). `///` on an alias is metadata (§21).
+14. An instance placed through an alias is an instance of the module in every respect: `inst.name`, traits, `Fn(P)`, structural params (§8.1.2: a param is structural by what reads it, never by who bound it).
+
+### 12.4 Dynamic semantics
+
+15. An alias has no run-time existence. An instance placed through one is identical to the instance `Module(ports) { every final binding }` places.
+
+### 12.5 Errors
+
+| Code | Condition | Phase |
+| --- | --- | --- |
+| `E0380` | the target of an alias is not a module or an alias (rule 2) | elaboration |
+| `E0381` | an alias that depends on itself (rule 5) | elaboration |
+| `E0382` | an alias used as a type (rule 11) | elaboration |
+| `E0383` | an alias declared in a module body, a block or a function (rule 1) | parse |
+| §8.1 | a block that names no param of the module, or names one twice (`E0320`); a value that is not a const expression over constants and const generics (`E0321`); a required param unbound at a placement or in a template expression (`E0319`); a `where` false for an instance (`E0317`) | elaboration |
+| §3.4 | a second item of the same name in the namespace (the existing code, as for any item) | elaboration |
+
+The numbers `E0380` to `E0383` are free at `7d4d544e0`; T2 confirms them on the merged tree.
+
+### 12.6 The host and the object model
+
+**The object model mirrors the source** (the project's rule). The POM gains an item kind, `Alias`: its name, visibility, docs, generics, the target path as written, and the bindings as written, in order. An instance records its head as written: the alias name, or the module name. Nothing replaces an alias by its expansion in what the POM shows: the chain alias → alias → module is walked through the items. The *effective* bindings of an instance are what elaboration computes from the chain, a derived result beside the authored structure.
+
+**Metadata (§21).** Two additions, both read-only:
+
+- each param of an instance has an **origin**: `default`, `alias <path>`, `placement`, or `host` after a `set`;
+- each alias is listed with its target, its bindings and the paths of the instances placed through it.
+
+**`set`, sweeps, gradients.** Nothing changes. A param bound by an alias is a param of the instance: `set top.m1.vto` sets it for that instance, with the `where` check; a sweep and a gradient address it by the same path. There is no `set` of an alias: an alias is text fixed at elaboration. A host that wants one value for every instance of a card iterates the alias's instance list; a design that wants it as a design param declares the param in the parent and binds it at the placements (`NCH(d, g, s, b) { vto: vto_corner }`), and §8.1.23 then recomputes every instance on one `set`.
+
+### 12.7 Where it is written down
+
+| Document | Change |
+| --- | --- |
+| `docs/spec/part_iii_structure.md` | a new §8.6 "Aliases" with the rules above; §8 syntax block and the forms table gain the item; §8.1.18 says "a module or an alias"; §8.4.4 cites rule 10 |
+| `docs/spec/appendix_a_lexical.md` | `alias` in the row of contextual keywords |
+| `docs/spec/appendix_b_grammar.md` | `alias_decl` in B.1 and B.3; the placement matrix B.2 (namespace scope only); B.3.6 keeps "type aliases" as not part of the language and points at §8.6 for modules |
+| `docs/spec/part_vi_io.md` §21 | the origin of a param and the list of aliases |
+| `docs/spec/appendix_g_scope.md` | `G.53` annotated: a placement through an alias takes a block (§8.6); a closed row for the amendment with the user's words |
+| `docs/spec/index.md` | concept 6 (module) covers aliases; the glossary gains "alias, target" |
+| the Book, "Modules and hierarchy" | a section "Naming a configured module: `alias`": the motivation (the same params written at every placement), the item, binding what is left, replacing, an alias of an alias, an alias as a template value, what the host sees; three run listings |
+| the Book, cheat sheet | one row |
+| the language server, the printer (`piperine fmt`), the syntax files under `editors/` | the item is parsed, printed and highlighted; go-to-definition on an alias head |
+
+### 12.8 What the implementation touches
+
+The lexer (contextual keyword), the parser (one item), the syntax tree and the POM (one item kind, the instance's head), name resolution (an alias in the type namespace), elaboration (the binding chain of rule 6, the checks of rules 7 and 8), template expressions (rule 9), the metadata the host reads, the printer, the language server. Nothing after elaboration: the plan, both backends, the solvers and the device ABI see ordinary instances.
+
+---
+
+## 13. Shipping in the standard library
+
+**The decision (D5).** The user: "the package I meant is in the stdlib… ship the standard spice models as part of the language".
+
+**The spelling: `std::spice`**, a `pub mod` of the standard library, not a second shipped crate named `spice`.
+
+| | `std::spice::diode::Diode` (chosen) | a second implicit crate, `spice::diode::Diode` |
+| --- | --- | --- |
+| New rule in the language | none: §3.5.3 already says `std` is a dependency of every crate, and `spice` is a namespace inside it, as `std::analog` is | §3.5.3 would name two crates no manifest names, and two names no dependency may take |
+| Who could have written it | anyone: ordinary MSL items under ordinary rules | the same |
+| Shorter path | no | by five characters; `use` removes the difference |
+| "The models come from ngspice" | the word `spice` is in every path | the same |
+
+The project's rule is that builtins follow the rules of user items, with no special case. `std` is the one crate the toolchain ships, and it is a crate like any other: a tree of namespaces of MSL source. Putting the models in a namespace of it adds nothing to the language. A second implicit crate would add a special case to gain five characters.
+
+**Not in the prelude.** The prelude re-exports the items of the other `std` namespaces. `spice` is excluded: `lib.msl`'s header sentence and §22's index are changed to say so, and a guard checks that no item of `std::spice` is reachable without its path.
+
+**The specification.** §22 gains §22.7 "The SPICE model library": the namespaces, the interface rules of §3 (names, units, given-ness, polarity, temperature, multiplicity, initial conditions), and the statement that each model computes what the model of the same name computes in ngspice-47. The catalogue of record, every module with its ports and every param with its type, default, `where` and text, is a new **Appendix I**, generated from the library's sources; a test fails when the two differ. The equations are not restated in the specification: the reference is ngspice-47's source, and the proof is the parity matrix.
+
+**Loading on demand (SPM-07).** Today the standard library is a table of embedded files, all parsed for every design. With BSIM4, BSIMSOI and HiSIM the library grows by tens of thousands of lines. The rule of §3.6.2 already says how a file is found: `mod name;` loads `name.msl`. The change is *when*: a namespace file of `std` is read, parsed and checked when a path first resolves into it. A design that names no SPICE model reads none of `spice/`; a design that uses `Diode` reads `spice/mod.msl`, `diode.msl` and what `diode.msl` names. The language's meaning does not change (an item not reached has no effect on a conforming model); the errors of an unreached `std` file are found by the library's own test, which reaches every namespace. A guard measures an empty design's elaboration before and after phase 0 and keeps the difference under a bound it states.
+
+**The version.** `std::spice::NGSPICE_VERSION` is the tag the models were written from; the parity harness asserts the installed oracle reports it.
+
+**The notice (user, 2026-11-27).** ngspice's Modified BSD notice is the file `std/spice/NOTICE`, at the root of the spice module. Each model file starts with a header that names the ngspice files it restates and points at `NOTICE`, and each model's `///` ends with the same reference, so the host's listing and the Book carry it. A guard requires both (T10).
+
+---
+
+## 14. The per-family interface pages
+
+The user does not review a family's page (2026-11-27). The planner of each phase writes `interface/<family>.md` under the rules of §3, decides what the rules leave open, records each such decision in the page under "Decisions taken" with its reason, and the phase's report tells the user. The rules themselves (§3, and the rename table) change only by the user.
+
+---
+
+## 15. The `convolve` primitive (capability N3)
+
+The user (2026-11-27): create the capability the lossy line needs inside this feature. Tasks T84 to T88; it runs after `device-abi-simplification`, on the ABI that feature leaves.
+
+### 15.1 What the lossy line needs
+
+ngspice's LTRA model writes each port of a lossy line as the sum of three things: a term in the present port quantities, a term in the far port's quantities one delay earlier, and convolutions of port quantities with impulse responses that have no finite-state form (they hold Bessel functions). ngspice evaluates a convolution by taking the signal as piecewise linear between accepted time points and integrating the kernel exactly over each piece; the model supplies the kernel's integrals in closed form (`ltramisc.c`). The weight of the present time point multiplies an unknown, so it is in the matrix; the rest is history.
+
+`ddt` has a state, `delay` has a history at one lag, `laplace_*` has finitely many states. None reads the whole accepted history against a kernel. That is the missing primitive.
+
+### 15.2 The primitive
+
+A core module with a result (§14), beside `ddt`, `delay`, `limit` and `noise`:
+
+```
+module convolve(x: f64, second_integral, steady: f64, response,
+                reltol: Option<f64>, abstol: Option<f64>) -> f64
+    // second_integral: fn(lag: f64) -> f64
+    // response:        fn(frequency: f64) -> (f64, f64)
+```
+
+It is `y(t) = ∫₀^∞ k(τ) · x(t − τ) dτ` for a kernel `k` the model describes three ways, one per kind of solve:
+
+| Argument | What the model gives | Read in |
+| --- | --- | --- |
+| `second_integral` | `K(τ)`, with `K'' = k`, `K(0) = 0`, `K'(0) = 0`: a function or closure that keeps no state, over the lag and what is constant during an analysis | transient steps |
+| `steady` | `∫₀^∞ k`, the gain for a constant signal | equilibrium solves |
+| `response` | the kernel's frequency response at `frequency`, as (real, imaginary) | small-signal sweeps |
+| `reltol`, `abstol` | the tolerances under which a sample of the history that lies on the line between its neighbours is dropped; left out, the simulator's | history upkeep |
+
+The model supplies all three because no one of them gives the others cheaply: the solver does not integrate a kernel numerically or transform it.
+
+### 15.3 Semantics
+
+**Static.**
+
+1. `x` and `steady` are value inputs: `f64` expressions (§14 rule 5). `second_integral` and `response` are functions or closures that keep no state (§3), as the `f` of `limit` is; what they capture **MUST** be constant during an analysis (params, constants, the environment of §14.4.1). A capture that reads a probe or a carrier is an error at the placement.
+2. `convolve` is allowed where instances go (§8.3.4) and `analog` reads them. Its result is a continuous expression with a direct dependence on `x` (§8.3.6).
+3. For `ddx`, the result of `convolve` is held constant, as the result of any instance is (§14.2.3). For the solver's own linearization the partial is rule 6's.
+
+**Dynamic.** Per kind of solve (the rows §16.2 gains):
+
+4. *Equilibrium solve*: `steady · x`.
+5. *History.* The state is the accepted pairs `(tⱼ, xⱼ)` since the operating point. Before it, `x` is taken as constant at its operating-point value `x₀`: the kernel's memory of the time before the run is `steady · x₀`.
+6. *Transient step* to `t`, with `x` piecewise linear through the accepted points and the present iterate `(t, x)`: `y = steady · x₀ + Σⱼ wⱼ · (xⱼ − x₀)`, where the weight of a sample comes from `K` at the lags to it and to its two neighbours (the exact integral of the kernel against the two linear pieces that meet at it). The present sample's weight is `K(h) / h` for a step `h`: that is `∂y/∂x`, the term's entry in the Jacobian. The sum over past samples does not change during the Newton iterations of a step and is computed once per step.
+7. *Jump solve*: a transient step (§15.2); the history is kept across a jump, as `delay`'s is.
+8. *Small-signal sweep*: `response(freq()) · x`, complex. In `Noise` it applies to a noise result as any operator does (§11.1.9).
+9. The history advances on accepted steps only and is restored by a rejected one (§14 rule 8). A sample is dropped when it lies within `reltol` and `abstol` of the line through its neighbours.
+10. Read in a reaction or an event argument, the result is its value in the solution read.
+11. `convolve` adds no time point. A kernel that is zero up to a lag `T` (a delayed kernel) makes the result depend on nothing more recent than `T` ago; the model caps its step with `bound_step` where its accuracy needs it, as ngspice's line does.
+12. A non-finite value of `second_integral`, `steady` or `response` fails the solve (`E0507`), naming the instance.
+
+**Errors.** `E0450` covers a placement where the table does not allow it. One new code, `E0458`: a kernel or response closure that captures what is not constant during an analysis (rule 1). T84 confirms the number.
+
+**A worked case.** A first-order low-pass with time constant `τ` has `k(t) = exp(−t/τ)/τ`, so `K(t) = t − τ·(1 − exp(−t/τ))`, `steady = 1`, and the response `1/(1 + jωτ)`. `convolve(v(a), |lag| lag − tau * (1.0 − (−lag / tau).exp()), 1.0, |f| …)` must equal an RC filter in DC, AC and transient: that is the primitive's first proof (T86, T87).
+
+### 15.4 What it needs below the language
+
+Checked against the design of `device-abi-simplification` (proposal v6, Part II), which this feature runs after. That contract has three term operators (`DIRECT`, `TIME_DERIVATIVE`, `DELAY`); for `DELAY` the solver keeps a history of values up to a per-term `maximum_delay` and the device writes the delay through the aspect `TERM_DELAY` (capability C3). A device is immutable data and pure code with no memory, so the history is the solver's and the kernel is the device's.
+
+| Layer | Addition |
+| --- | --- |
+| Device ABI, catalogue of term operators | a fourth operator, `CONVOLUTION`: "the solver keeps the accepted history of the term's value and adds its convolution with the device's kernel" |
+| Device ABI, `Term` | references to two functions of the shape (the kernel and the response) and the two compaction tolerances, with `SESSION_DEFAULT` as for `state_tolerance` |
+| Device ABI, aspects | `TERM_KERNEL_LAG` (written by the solver, read by the kernel function), `TERM_KERNEL_VALUE` (written by the kernel function), `TERM_STEADY_GAIN` (written by a function of the device), `TERM_RESPONSE` (two reals, written by the response function, which reads the frequency of the solve's environment, C18) |
+| Device ABI, validation | a kernel function reads the lag and what is constant during an analysis, and writes `TERM_KERNEL_VALUE` only; a `CONVOLUTION` term has both functions; the access table gains the four aspects |
+| Device ABI, version | unchanged: the contract is not released, and the change is in place |
+| Analog solver | the history store with marks, restore and release (C51), the weights and the once-per-step history sum, the partial `K(h)/h` in the sparsity pattern built at bind (C5), compaction, the equilibrium and small-signal forms (C24 is the place small-signal operator responses already live) |
+| Plan and backends | the lowering of the core module to a term with operator `CONVOLUTION` and two device functions, in the interpreter and in the generated Rust |
+| Language | the core name `convolve`, its typing, rule 1's capture check |
+
+The names of the aspects and fields are this design's proposal; T84 fixes them in `docs/abi/` in that document's vocabulary before any code.
+
+### 15.5 What it does not do
+
+It does not integrate a kernel numerically, find a kernel's response, or control the step by the convolution's own truncation error. ngspice's line has options for the last (`truncnr`, `truncdontcut`); the module maps what it can to `bound_step` and the compaction tolerances, and its page records what has no counterpart.
+
+---
+
+## 16. Open questions
+
+None is the user's at this point. The decisions of 2026-11-27 are in `spec.md`. What each phase's planner decides (a family's page, the SOI and HiSIM_HV terminal variants, the form chosen for the Meyer capacitances) is recorded where it is decided and reported.

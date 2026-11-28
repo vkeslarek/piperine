@@ -1,29 +1,39 @@
 # Spice Models Specification
 
-**Status**: Draft — awaiting user approval of the interface (`interface-review.md`)
+**Status**: Approved
+**Approved**: 2026-11-27 - user (translated, relayed by the coordinator): "The package I meant is in the stdlib… Let's ship the standard spice models as part of the language. Together with this feature, add a language variation that could be called alias or template. It makes a lot of sense that cmim(l, w) could actually be `alias CMim = SemiconductorCapacitor { cj: 2m, ... };` and that at instantiation it requires only the necessary params, with replace allowed… It makes sense for all models. This would be a language amendment worth doing. I accept the recommended options, except what I told you (no CIDER and no XSPICE). Delivery order can go from simplest to most complex, so we get fast deliveries. Please write the design and break it into tasks!"
 
-The complete library of ngspice device models, written in MSL, as one package named `spice`. A user who knows SPICE places a resistor, a diode with a model card or a BSIM4 transistor from a foundry card, and gets the behaviour ngspice gives, checked against ngspice by test.
+The complete library of ngspice device models, written in MSL, shipped with the language as `std::spice`. A user who knows SPICE places a resistor, a diode with a model card or a BSIM4 transistor from a foundry card, and gets the behaviour ngspice gives, checked against ngspice by test. The feature also adds one construct to the language, the `alias` item, which is how a model card is written.
 
-This document holds the problem, the scope, the inventory and the requirements. `design.md` holds the interface rules, the implementation map, the parity plan, the Book outline and the phases. `interface-review.md` is the page the user reads first: the interface, family by family, with the decisions that are theirs. `models/*.md` hold every parameter of every device, generated from the ngspice sources.
+This document holds the problem, the scope, the inventory and the requirements. `design.md` holds the interface rules, the `alias` amendment, the implementation map, the parity plan, the Book outline and the phases. `interface-review.md` is the interface catalogue in its decided state. `models/*.md` hold every parameter of every device, generated from the ngspice sources. `tasks.md` is the plan.
 
-## Open questions (for the user)
+## Decisions recorded (2026-11-27)
 
-Twelve decisions are the user's. Each has a recommendation, and the documents are written on the recommended side. `interface-review.md` §12 states each one with its example and the other sides.
+The user reviewed the interface catalogue and decided. "Recommended" means the side `interface-review.md` recommended at review.
 
-| # | Question | Recommendation |
+| # | Question | Decision |
 | --- | --- | --- |
-| D1 | **Parameter names.** ngspice's own names (`is`, `vto`, `kp`, `tox`), or full words (`saturation_current`)? | ngspice's names for params, full words for everything else (modules, ports, namespaces, enums, functions). A param name is the vocabulary of every model card, PDK and textbook; the full meaning is in the param's `///` text and in the Book. |
-| D2 | **Where model params live.** Flat params on the device module, or a `model` struct passed as one param? | Flat params. A model card is a template (`const D1N4148: Diode = Diode { … };`), which the language already has. The host lists, sets and differentiates every param by name; a struct field has none of that today. |
-| D3 | **Instance params on a shared card.** A template placement takes no param block today (`G.53`), so `NCH(d, g, s, b) { w: 10u, l: 1u }` is refused. | Ask for the language amendment that lifts `G.53`. Until it lands a card is a function of its instance params (`nch(10u, 1u)(d, g, s, b)`), which is the form §8.4.7 already names for binning. |
-| D4 | **Units of temperature and phase.** ngspice's (`tnom`, `temp` in °C; `acphase` in degrees) or MSL's (kelvin, radians)? | ngspice's. One rule covers name, unit and default: a card is copied without arithmetic. |
-| D5 | **Where the package lives and how a user depends on it.** | In this repository at `packages/spice/`, tested with the solver. For users, a `git` dependency with a subdirectory key in the manifest, which `msl-packages` left out and this feature needs. |
-| D6 | **CIDER numerical devices** (`numd`, `numd2`, `nbjt`, `nbjt2`, `numos`) and the `ndev` socket device. They solve device physics on a mesh; they are not compact models. | Not in this feature. Named here, owned by a follow-up feature `spice-numerical-devices`, to be scheduled or dropped by the user. |
-| D7 | **XSPICE code models** (81 of them: `gain`, `summer`, `d_and`, `adc_bridge`, `zener`, …). | Not in this feature. Owned by a follow-up `spice-code-models`. Most are behavioural blocks that MSL's own digital and mixed-signal constructs replace; each needs that judgement, model by model. |
-| D8 | **Legacy model versions** (`bsim3v0`, `bsim3v1`, `bsim3v32`, `bsim4v5`, `bsim4v6`, `bsim4v7`). ngspice keeps them for old model cards. | In scope, as the last phase before closure, each a module of its own (`Bsim3V32`). |
-| D9 | **The reference version.** The parity oracle installed is ngspice-47; the checkout at `~/Git/ngspice` is ngspice-26 (2015) and lacks `vdmos`, `hicum2` and `hisimhv2`. | ngspice-47 is the reference for sources and oracle. |
-| D10 | **Coupled inductors.** `K L1 L2 0.9` names two inductors. An MSL module reaches another only through a node. | Every `Inductor` has a public node `link`; `MutualInductor(l1.link, l2.link) { k: 0.9 }` couples two of them. |
-| D11 | **Controlling current of F, H and W elements.** ngspice names a 0 V source. | The device has its own sensing branch: two more ports, placed in series with the path whose current controls it. |
-| D12 | **The order of delivery.** | Linear elements and sources, then the diode, then BJT/JFET/MESFET, MOS levels 1 to 9, BSIM3 and BSIM4, lines, VBIC and HICUM, the old BSIMs, SOI, HiSIM. |
+| D1 | Parameter names | **Recommended.** ngspice's names for params; full words for modules, ports, namespaces, enums and functions. |
+| D2 | Where model params live | **Recommended.** Flat params on the device module. No `model` struct. |
+| D3 | Instance params on a shared card | **Superseded by the user.** A new item, `alias`, names a module with some params bound; a placement through it binds what is left and may replace what was bound. `G.53` stays as it is for template values. |
+| D4 | Units of temperature and phase | **Recommended.** ngspice's: `tnom`, `temp` in °C; `acphase` in degrees. |
+| D5 | Where the models live | **Changed by the user.** In the standard library, shipped with the language: `std::spice`. No manifest line, no package of its own. |
+| D6 | CIDER numerical devices and `ndev` | **Out of scope entirely.** Not provided; listed by name as excluded; no follow-up feature. |
+| D7 | XSPICE code models | **Out of scope entirely.** Not provided; listed by name as excluded; no follow-up feature. |
+| D8 | Legacy model versions | **Recommended.** In scope, each a module of its own, delivered with its current version's family. |
+| D9 | Reference version | **Recommended.** ngspice-47 for sources and oracle. |
+| D10 | Coupled inductors | **Recommended.** A public `link` node on every `Inductor`; `MutualInductor(l1.link, l2.link)`. |
+| D11 | Controlling current of F, H, W | **Recommended.** The device's own sensing branch. |
+| D12 | Order of delivery | **Changed by the user.** From the simplest model to the most complex, each phase shippable by itself: models, parity twins and its Book section. |
+| C1–C16 | The per-family choices | **Accepted** as written. C-rows that named card functions now name `alias`. |
+
+Three further decisions of the same day:
+
+| Topic | Decision |
+| --- | --- |
+| Licence (risk R7) | **Approved.** ngspice's Modified BSD notice goes at the root of the spice module of the standard library (`std/spice/NOTICE`); each model's description (its file header and its `///`) refers to that notice and names its ngspice source. A phase-0 task, not a gate. |
+| The per-family parameter pages (SPM-06, SPM-42) | **The user does not review them.** The planner of each phase decides, records the result in the family's page, and the user is informed. |
+| The lossy line's missing capability (N3) | **Created inside this feature**: a core primitive for a convolution over the accepted history (`convolve`, `design.md` §15), with tasks before the lines phase. |
 
 ## Problem Statement
 
@@ -33,24 +43,25 @@ Earlier work ported some of these models in Verilog-A and in PHDL (`spice-stdlib
 
 ## Dependency
 
-This feature executes after `code-clarity` merges to `main` and its review ends. It runs beside `device-abi-simplification`: the models are MSL source and touch no crate of the ABI. Paths and crate names in these documents are those of `origin/main` at `7d4d544e0`; the first task re-takes them on the merged `main`.
+This feature executes after `code-clarity` and after `device-abi-simplification` have both merged to `main`: the models compile onto the new device ABI, and the `alias` amendment changes the front end those features rename and restructure. Paths and crate names in these documents are those of `origin/main` at `7d4d544e0`; the first task re-takes them on the merged `main`.
 
 ## Goals
 
-- [ ] Every device model of ngspice-47's `src/spicelib/devices` is accounted for: 52 are written in MSL, 6 are refused by name with an owner.
+- [ ] Every device model of ngspice-47's `src/spicelib/devices` is accounted for: 52 are written in MSL, 6 are excluded by name.
 - [ ] Each MSL model computes what ngspice computes, for every parameter ngspice accepts, in every analysis ngspice supports for it.
 - [ ] The interface is MSL's own: modules, params, templates, `where`, `Option`. A user needs no netlist concept that MSL lacks.
 - [ ] Each model agrees with ngspice-47 under the existing tolerance contracts, across its operating regions, its analyses and temperature.
 - [ ] The Book has a part on the library that a user can work from: what each device is, how to place it, what each parameter means, worked cases.
-- [ ] The models ship as one package, `spice`.
+- [ ] The models ship with the language as `std::spice`: a user writes `use std::spice::diode::Diode;` and nothing else.
+- [ ] A model card is one `alias` item, for these models and for any module a user writes.
 
 ## Out of Scope
 
 | Feature | Reason |
 | ------- | ------ |
-| CIDER numerical devices (`numd`, `numd2`, `nbjt`, `nbjt2`, `numos`) | They solve drift-diffusion on a mesh inside the device. That is a solver, not a compact model. Refused by name; owner `spice-numerical-devices` (D6). |
-| `ndev` | A socket to an external device simulator. Refused by name; MSL reaches foreign simulators through `extern "cosim"`. |
-| XSPICE code models (81) | A behavioural block library, not device physics; `models/excluded.md` lists them. Owner `spice-code-models` (D7). |
+| CIDER numerical devices (`numd`, `numd2`, `nbjt`, `nbjt2`, `numos`) | They solve drift-diffusion on a mesh inside the device. That is a solver, not a compact model. Not provided (D6): listed by name in `models/excluded.md`, the Book and `GAPS.md`; no follow-up is planned. |
+| `ndev` | A socket to an external device simulator. Not provided (D6); MSL reaches foreign simulators through `extern "cosim"`. |
+| XSPICE code models (81) | A behavioural block library, not device physics. Not provided (D7): `models/excluded.md` lists them by name; no follow-up is planned. |
 | Verilog-A models ngspice loads through OSDI (BSIM-CMG, BSIM-BULK, PSP, EKV, MEXTRAM, HICUM/L0, ASM-HEMT) | They are not ngspice's models: ngspice loads a compiled library. MSL loads the same library with `extern "osdi"` (§8.5). The Book's first chapter of the part says so. |
 | A netlist importer (`.cir`, `.lib`, `.model` to MSL) | Its own feature. This one fixes the target such an importer writes to, and the Book gives the translation table. |
 | ngspice's Volterra distortion analysis (`.disto`) and the `distof1`, `distof2` source parameters | MSL builds distortion measures from a transient and the host's Fourier analysis (§16.3). The models need nothing for it. Parity compares that route with ngspice's `.four`. |
@@ -66,11 +77,11 @@ This feature executes after `code-clarity` merges to `main` and its review ends.
 
 | Assumption / decision | Chosen default | Rationale | Confirmed? |
 | --- | --- | --- | --- |
-| Reference sources | tag `ngspice-47` of the ngspice repository | the installed oracle reports `ngspice-47`; a model must be read from the version it is tested against | n (D9) |
-| Local checkout `~/Git/ngspice` | not the reference: it is at ngspice-26 (March 2015) | it lacks `vdmos`, `hicum2`, `hisimhv2` and eleven years of fixes | n (D9) |
-| What "every model" covers | the 58 device kinds of `src/spicelib/devices` (57 directories with a `SPICEdev`, plus the mutual inductor inside `ind`) | they are what `.model` and the element letters reach | n (D6, D7) |
+| Reference sources | tag `ngspice-47` of the ngspice repository | the installed oracle reports `ngspice-47`; a model must be read from the version it is tested against | y (D9) |
+| Local checkout `~/Git/ngspice` | not the reference: it is at ngspice-26 (March 2015) | it lacks `vdmos`, `hicum2`, `hisimhv2` and eleven years of fixes | y (D9) |
+| What "every model" covers | the 58 device kinds of `src/spicelib/devices` (57 directories with a `SPICEdev`, plus the mutual inductor inside `ind`) | they are what `.model` and the element letters reach | y (D6, D7) |
 | Tolerances | the nine contracts of `piperine-parity/src/contract.rs`, unchanged | "never retune tolerances"; the contract is the only place a bound is written | y (project rule) |
-| Licence | the package carries ngspice's Modified BSD notice; every model file names the ngspice files it was written from | the device sources are Modified BSD (`COPYING`); a transliteration keeps the notice | n (reported, see Risks) |
+| Licence | `std/spice/` carries ngspice's Modified BSD notice; every model file names the ngspice files it was written from | the device sources are Modified BSD (`COPYING`); a transliteration keeps the notice | y (user, 2026-11-27; T10) |
 | Units of the generated tables | not in the ngspice tables; added by each family's mapping task from the model's manual | `IFparm` has a name, a type and a description, no unit | n (SPM-06) |
 | Where ngspice reads the analysis card for a default (`tr`, `tf`, `pw`, `per` of a pulse) | the MSL parameter is required, or absent means "never" | a model does not know the run's stop time | n (review §4) |
 
@@ -131,10 +142,10 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 | HiSIM2 | `hisim2` | element M; level 68 | `Hisim2` | 32 | 544 | 18355 |
 | HiSIMHV1 | `hisimhv1` | element M; level 73, version 1.x | `HisimHv1` | 38 | 608 | 18052 |
 | HiSIMHV2 | `hisimhv2` | element M; level 73, version 2.x | `HisimHv2` | 38 | 728 | 20326 |
-| NUMD, NUMD2, NBJT, NBJT2, NUMOS | `numd`, `numd2`, `nbjt`, `nbjt2`, `numos` | `.model … numd\|nbjt\|numos` | refused (D6) | 29 | 1 | 9566 |
-| NDEV | `ndev` | `.model … ndev` | refused | 0 | 2 | 637 |
+| NUMD, NUMD2, NBJT, NBJT2, NUMOS | `numd`, `numd2`, `nbjt`, `nbjt2`, `numos` | `.model … numd\|nbjt\|numos` | not provided (D6) | 29 | 1 | 9566 |
+| NDEV | `ndev` | `.model … ndev` | not provided (D6) | 0 | 2 | 637 |
 
-**Totals.** 58 device kinds in ngspice-47. In scope: 52, in 51 directories, with **757 instance parameters and 10,270 model parameters (11,027 settable parameters)** and 376,000 lines of C behind them. Refused by name: 6. Beside the device library, ngspice-47 ships 81 XSPICE code models in seven libraries (`models/excluded.md`), which D7 leaves to a follow-up.
+**Totals.** 58 device kinds in ngspice-47. In scope: 52, in 51 directories, with **757 instance parameters and 10,270 model parameters (11,027 settable parameters)** and 376,000 lines of C behind them. Excluded by name: 6. Beside the device library, ngspice-47 ships 81 XSPICE code models in seven libraries (`models/excluded.md`), which D7 excludes.
 
 **What each analysis needs of a model.** In ngspice a device has one C function per analysis. In MSL one `analog` block serves every analysis (§11.1), so a model that is right at DC and has its charges and its noise sources written is right in AC, in pole-zero, in transfer function, in sensitivity and in a periodic analysis without further code. The table of `design.md` §5 gives, per model, which ngspice entry points exist; a model for which ngspice has no noise function gets no noise source here.
 
@@ -152,12 +163,12 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 1. The file `models/<family>.md` SHALL list, for each of the 58 device kinds, every entry of its instance and model `IFparm` tables in ngspice-47, with its name, type, direction, description and the default ngspice assigns (SPM-01)
 2. WHEN `tools/extract.py` and `tools/render.py` run against the tag `ngspice-47` THEN they SHALL reproduce `models/*.md` byte for byte, and a test SHALL fail when a committed file differs from the rendering (SPM-01)
-3. The package SHALL declare one MSL param for each settable ngspice parameter of an in-scope device, or the parameter SHALL be in the closed list of `design.md` §3.9 with the reason it has no param; a guard SHALL fail when a parameter is in neither (SPM-02)
+3. The library SHALL declare one MSL param for each settable ngspice parameter of an in-scope device, or the parameter SHALL be in the closed list of `design.md` §3.9 with the reason it has no param; a guard SHALL fail when a parameter is in neither (SPM-02)
 4. IF a parameter of the closed list is one a user could write in ngspice THEN the list SHALL name the MSL form that replaces it or the owner of the refusal (SPM-02)
 5. Each in-scope device SHALL state the analyses ngspice supports for it (its `SPICEdev` entry points) and how MSL provides each one (SPM-03)
-6. The six refused devices and the 81 code models SHALL be listed by name with their owner in `models/excluded.md`, in the Book and in `GAPS.md` (SPM-04)
-7. The ngspice version the inventory was taken from SHALL be recorded in the package and SHALL equal the version the parity harness asserts (SPM-05)
-8. WHEN a family's interface is submitted for approval THEN every param of the family SHALL have its unit, its default, its given-ness rule and its `where` condition written in the family's page, taken from the ngspice sources and the model's reference manual (SPM-06)
+6. The six excluded devices and the 81 code models SHALL be listed by name in `models/excluded.md`, in the Book and in `GAPS.md`, each with the statement that it is not provided (SPM-04)
+7. The ngspice version the inventory was taken from SHALL be recorded in `std/spice/` and SHALL equal the version the parity harness asserts (SPM-05)
+8. Before a family's modules are written, every param of the family SHALL have its unit, its default, its given-ness rule and its `where` condition written in the family's page (`interface/<family>.md`), taken from the ngspice sources and the model's reference manual (SPM-06)
 
 **Independent Test**: run the two tools against a fresh checkout of `ngspice-47`; `git diff` is empty. Pick ten parameters from ngspice's manual at random; each is in a table.
 
@@ -171,21 +182,62 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 **Acceptance Criteria** (SPM-07 to SPM-18):
 
-1. The package SHALL be named `spice`, with its crate root at `packages/spice/src/lib.msl`, and its namespaces SHALL be those of `design.md` §2 (SPM-07)
-2. Every model SHALL be an ordinary MSL module with behavior blocks; the package SHALL contain no `extern` module and SHALL use no construct that a user's package could not use (SPM-08)
+1. The models SHALL be the namespace `std::spice` of the standard library, with the namespaces of `design.md` §2 under it; no item of `std::spice` SHALL be in the prelude; a design that names no item of `std::spice` SHALL not pay for parsing or checking it (SPM-07)
+2. Every model SHALL be an ordinary MSL module with behavior blocks; `std::spice` SHALL contain no `extern` module and no intrinsic, and SHALL use no construct that a user's package could not use (SPM-08)
 3. A param SHALL carry the ngspice name of the parameter in lower case; the only other spellings SHALL be those of the rename table of `design.md` §3.2 (SPM-09)
-4. Every module, port, namespace, enum, variant, function and operating-point variable the package adds SHALL be a full word or an acronym that is the device's established name (`Bjt`, `Mosfet`, `Bsim4`, `Vbic`) (SPM-09)
+4. Every module, port, namespace, enum, variant, function and operating-point variable the library adds SHALL be a full word or an acronym that is the device's established name (`Bjt`, `Mosfet`, `Bsim4`, `Vbic`) (SPM-09)
 5. Every param SHALL have a `///` text that gives its meaning, its unit and its ngspice name where the two differ (SPM-10)
 6. WHEN ngspice assigns a constant default and reads the parameter's given flag nowhere else THEN the param SHALL be declared with that default; WHEN ngspice computes the default from other parameters, or behaves differently when the parameter is not written, THEN the param SHALL be an `Option` and the computation SHALL be a body `let` (SPM-11)
 7. WHEN ngspice refuses a parameter value with an error THEN the param SHALL carry a `where` that refuses the same values; WHEN ngspice replaces or clamps a value THEN the model SHALL do the same and the param's text SHALL say so (SPM-12)
-8. A model card SHALL be a template of the device module, and a shared card SHALL be a `const` or a function that returns the template; the package SHALL define no second type that mirrors a module's params (SPM-13)
-9. WHEN one ngspice device accepts two sets of required parameters (a resistor by value or by sheet resistance and geometry) THEN the package SHALL give each set a module of its own, and each module SHALL declare as required exactly the parameters its set requires (SPM-14)
+8. A model card SHALL be an `alias` of the device module; a function that returns a template SHALL remain valid and is the form for binning; the library SHALL define no second type that mirrors a module's params (SPM-13)
+9. WHEN one ngspice device accepts two sets of required parameters (a resistor by value or by sheet resistance and geometry) THEN the library SHALL give each set a module of its own, and each module SHALL declare as required exactly the parameters its set requires (SPM-14)
 10. The polarity of a device SHALL be a param of an enum type whose variants are ngspice's type keywords, with ngspice's default (SPM-15)
 11. WHEN ngspice lets a device have an optional terminal (a thermal node, a body contact) THEN each terminal list SHALL be a module of its own (SPM-16)
 12. Every quantity ngspice reports for an instance (`gm`, `gds`, `vth`, `vdsat`, `cgs`, …) SHALL be an operating-point variable of the same name, except node numbers and sensitivity outputs (SPM-17)
 13. The instance temperature SHALL follow ngspice's rule from the params `temp` and `dtemp` and the run's `temperature()`, and the multiplier `m` SHALL combine with `multiplicity()` as §8.5.5 gives (SPM-18)
 
 **Independent Test**: the examples of `interface-review.md` are compiled and run by a test of the `book` target, unchanged.
+
+---
+
+### P1: A model card is an `alias` ⭐ MVP
+
+**User Story**: As a designer, I want to name a module with some of its params bound, and place it giving only what is left, so a model card is one line and a placement reads as it does in SPICE.
+
+**Why P1**: The user's amendment: "it makes sense for all models".
+
+**Acceptance Criteria** (SPM-45 to SPM-54), each stated in `docs/spec/` as `design.md` §12 gives it:
+
+1. WHEN a file declares `alias Name = Target { bindings };` at namespace scope THEN `Name` SHALL be a name of the type namespace that stands for the module `Target` with those params bound, and `Target` SHALL be a module or another alias (SPM-45)
+2. WHEN a placement's head is an alias THEN its param block SHALL bind the params the alias left unbound and MAY bind again a param the alias bound, whose value at that instance is then the placement's (SPM-46)
+3. IF, after the alias chain and the placement's block, a param with no default and a type other than `Option` is unbound THEN elaboration SHALL fail with `E0319` naming the param, the module and the alias (SPM-46)
+4. WHEN an alias is used as a template expression (`Name { … }`) or by its bare name THEN the result SHALL be a template of the target module, complete under §8.4.2 (SPM-47)
+5. An instance placed through an alias SHALL be an instance of the target module in every respect: its `Fn(P)` bounds, its traits, its `inst.name` reads and its metadata (SPM-48)
+6. A value bound in an alias SHALL be a const expression over constants and the alias's own generic parameters; a `where` of the target SHALL be checked for every instance with the instance's final values (SPM-49)
+7. `pub`, `use` and paths SHALL treat an alias as any item; an alias that depends on itself SHALL be an error (SPM-50)
+8. The host SHALL list, for each param of an instance, where its value comes from (the module's default, an alias by name, or the placement), SHALL list each alias with the instances placed through it, and SHALL `set`, sweep and differentiate a param bound by an alias as any other param of the instance (SPM-51)
+9. The object model SHALL hold each alias as an item, as written, and each instance SHALL record the alias it was placed through; no elaboration step SHALL replace an alias by its expansion in what the object model shows (SPM-52)
+10. `alias` SHALL be a contextual keyword, so no existing identifier is lost; every refused form SHALL have a code of the `E03xx` scheme and a test (SPM-53)
+11. The language specification, the Book's chapter on modules and the cheat sheet SHALL define and teach `alias`, with every listing run (SPM-54)
+
+**Independent Test**: `alias CMim = SemiconductorCapacitor { cj: 2m, cjsw: 0.1n };` then `CMim(a, b) { l: 10u, w: 10u }` and `CMim(a, b) { l: 10u, w: 10u, cj: 3m }` elaborate to instances of `SemiconductorCapacitor` with `cj` 2m and 3m; `CMim(a, b) {}` is `E0319` naming `l`.
+
+---
+
+### P1: A convolution over the history ⭐ MVP
+
+**User Story**: As a model author, I want to state a memory kernel and have the solver convolve a signal with it over the accepted history, so a lossy transmission line is ngspice's model and not an approximation of it.
+
+**Why P1**: The user's decision: create the capability inside this feature.
+
+**Acceptance Criteria** (SPM-55 to SPM-58), each stated in `docs/spec/` and `docs/abi/` as `design.md` §15 gives it:
+
+1. The language SHALL have a core module `convolve(x, second_integral, steady, response, reltol, abstol) -> f64`, placed where instances go, whose kernel and response functions keep no state and capture only what is constant during an analysis; a capture of anything else SHALL be an elaboration error (SPM-55)
+2. In an equilibrium solve `convolve` SHALL be `steady · x`; in a transient step the convolution of the kernel with the piecewise-linear accepted history and the present iterate, with the present sample's weight as its partial; in a small-signal sweep `response(freq()) · x`; its history SHALL advance on accepted steps only and be restored by a rejected one (SPM-56)
+3. The device ABI SHALL gain the term operator `CONVOLUTION` with its fields, aspects and validation rules, in place, with the exported symbol and the version unchanged, and the analog solver SHALL hold the history, the weights and the compaction (SPM-57)
+4. A module that uses `convolve` with an exponential kernel SHALL equal the RC low-pass it describes in DC, AC and transient, on both backends, under the existing contracts; the Book SHALL explain the primitive with that case (SPM-58)
+
+**Independent Test**: the low-pass of `design.md` §15.3 against an RC filter; `LossyTransmissionLine` with zero loss against `LosslessTransmissionLine`.
 
 ---
 
@@ -244,7 +296,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 1. The Book SHALL gain a part "The SPICE model library" with the chapters of `design.md` §7, one per device category (SPM-37)
 2. Each chapter SHALL explain each device before its tables: what it models, when to choose it, a minimal placement, a model card, and one use case at least with its result (SPM-38)
-3. Each chapter SHALL explain every param of its devices, grouped by what it affects, with its unit, default and meaning; the reference tables SHALL be generated from the `///` texts of the package, and a test SHALL fail when the Book and the package differ (SPM-39)
+3. Each chapter SHALL explain every param of its devices, grouped by what it affects, with its unit, default and meaning; the reference tables SHALL be generated from the `///` texts of `std::spice`, and a test SHALL fail when the Book and the library differ (SPM-39)
 4. Every listing of the part SHALL be compiled and run by the `book` test target (SPM-40)
 5. The part SHALL hold the translation table from ngspice netlist forms to MSL, the list of what differs from ngspice on purpose, and the list of what is refused with its owner (SPM-41)
 
@@ -256,7 +308,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 **Acceptance Criteria** (SPM-42 to SPM-44):
 
-1. A family SHALL be implemented only after the user approved its interface page; the approval SHALL be recorded with its date and words (SPM-42)
+1. A family's interface page SHALL be written and committed before its modules by the planner of its phase, who applies the rules of `design.md` §3, decides what they leave open and records each such decision in the page with its reason; the user SHALL be informed of those decisions in the phase's report and is not asked to review the page; a change to a rule of §3 itself SHALL go to the user (SPM-42)
 2. WHEN a family closes THEN its Book chapter, its parity matrix and its `GAPS.md` rows SHALL be in the same merge (SPM-43)
 3. The capability a model family needs of the language, the solver and the device ABI SHALL be checked against `design.md` §8 before the family starts, and a missing one SHALL be owned by a feature before the family is scheduled (SPM-44)
 
@@ -266,14 +318,16 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 
 | ID | Story | Phase | Status |
 | --- | --- | --- | --- |
-| SPM-01 … SPM-06 | P1: inventory | Design | Draft |
-| SPM-07 … SPM-18 | P1: interface | Design | Draft — awaiting approval |
-| SPM-19 … SPM-26 | P1: fidelity | Design | Draft |
-| SPM-27 … SPM-36 | P1: parity | Design | Draft |
-| SPM-37 … SPM-41 | P1: the Book | Design | Draft |
-| SPM-42 … SPM-44 | P2: process | Design | Draft |
+| SPM-01 … SPM-06 | P1: inventory | Tasks | Pending |
+| SPM-07 … SPM-18 | P1: interface | Tasks | Pending |
+| SPM-19 … SPM-26 | P1: fidelity | Tasks | Pending |
+| SPM-27 … SPM-36 | P1: parity | Tasks | Pending |
+| SPM-37 … SPM-41 | P1: the Book | Tasks | Pending |
+| SPM-42 … SPM-44 | P2: process | Tasks | Pending |
+| SPM-45 … SPM-54 | P1: `alias` | Tasks | Pending |
+| SPM-55 … SPM-58 | P1: `convolve` | Tasks | Pending |
 
-**Coverage:** 44 requirements. No `tasks.md` yet: tasks are written after the interface is approved.
+**Coverage:** 58 requirements, all mapped to tasks in `tasks.md`.
 
 ## Sources
 
@@ -287,7 +341,7 @@ ngspice-47 registers 57 devices (`src/spicelib/devices/dev.c`), one per director
 ## Success Criteria
 
 - [ ] A user translates an ngspice netlist of in-scope devices line by line with the Book's table and gets ngspice's answers under the contract.
-- [ ] No ngspice parameter of an in-scope device is unknown to the package: each is a param or a named entry of the closed list.
+- [ ] No ngspice parameter of an in-scope device is unknown to the library: each is a param or a named entry of the closed list.
 - [ ] Every model has a filled parity matrix, on both backends, with no contract changed.
-- [ ] A foundry BSIM4 card is one MSL function, and placing a transistor from it is one line.
+- [ ] A foundry BSIM4 card is one `alias`, and placing a transistor from it is one line.
 - [ ] The Book's part is enough to use every device without opening ngspice's manual.

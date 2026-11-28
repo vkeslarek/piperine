@@ -1,35 +1,31 @@
-# The `spice` package: interface catalogue for review
+# `std::spice`: the interface catalogue
 
-**Status**: Draft — awaiting user approval of the interface.
-**Reference**: ngspice-47. **Language**: MSL as specified in `docs/spec/`.
+**Status**: Approved, in its decided state.
+**Approved**: 2026-11-27 - user (translated, relayed by the coordinator): "I accept the recommended options, except what I told you (no CIDER and no XSPICE)." The decisions are in section 12.
+**Reference**: ngspice-47. **Language**: MSL as specified in `docs/spec/`, with the `alias` item this feature adds (section 2.5).
 
-This page is what you approve before any model is written. It shows how a user places every kind of ngspice device in MSL: the modules, their ports, their parameters, how a model card is written and shared. Sections 1 and 2 give the package and the rules that hold for every device. Sections 3 to 10 go family by family, with examples, the parameter tables and the choices made. Section 11 lists what the package does differently from ngspice on purpose. Section 12 lists the decisions that are yours, each with its alternatives and a recommendation.
+This page shows how a user places every kind of ngspice device in MSL: the modules, their ports, their parameters, how a model card is written and shared. Sections 1 and 2 give the library and the rules that hold for every device. Sections 3 to 10 go family by family, with examples, the parameter tables and the choices made. Section 11 lists what the library does differently from ngspice on purpose. Section 12 records the decisions.
 
-**What you asked for**, as this page understands it:
+**What was asked for:**
 
 - every model ngspice has, faithful to its behaviour and its equations;
 - freedom to reshape the interface so the models are easier to use and to read;
 - in this order: map the models and every parameter; design the user interface on top of that; then map the calculations; then prove each model against ngspice;
 - a part of the Book that is a user manual of the library;
-- the package named `spice`, so that it is plain the models come from ngspice.
+- the models shipped with the language, in the standard library, under the name `spice`, so that it is plain they come from ngspice.
 
-**How complete this page is.** The complete parameter map of all 52 in-scope devices (11,027 parameters) is in `models/*.md`, generated from the ngspice-47 sources: name, type, default, meaning, and whether ngspice reads the parameter's "given" flag. The tables in this page are written by hand, with units, for the passive elements, the sources, the switches, the lines and the diode, and for the instance parameters and the main model parameters of the transistors. The remaining model parameters of the large transistor models keep their ngspice names under the rules of section 2; their units are added family by family, and each family's full page comes to you before that family is implemented (spec SPM-06, SPM-42).
+**How complete this page is.** The complete parameter map of all 52 in-scope devices (11,027 parameters) is in `models/*.md`, generated from the ngspice-47 sources: name, type, default, meaning, and whether ngspice reads the parameter's "given" flag. The tables in this page are written by hand, with units, for the passive elements, the sources, the switches, the lines and the diode, and for the instance parameters and the main model parameters of the transistors. The remaining model parameters of the large transistor models keep their ngspice names under the rules of section 2. Their units, defaults and given-ness are written family by family in `interface/<family>.md` by the planner of that family's phase, who decides what the rules leave open; you are told what was decided and do not review those pages (your decision of 2026-11-27).
 
 ---
 
-## 1. The package at a glance
+## 1. The library at a glance
 
-`spice` is an MSL package. A project names it as a dependency and brings in what it uses:
-
-```toml
-[dependencies]
-spice = { path = "../piperine/packages/spice" }
-```
+The models are the namespace `std::spice` of the standard library. They ship with the language: a project needs no dependency, only a `use`.
 
 ```rust
-use spice::passive::{Resistor, Capacitor};
-use spice::source::{VoltageSource, pulse};
-use spice::diode::Diode;
+use std::spice::passive::{Resistor, Capacitor};
+use std::spice::source::{VoltageSource, pulse};
+use std::spice::diode::Diode;
 
 /// A clipper: a pulse through a resistor into a diode and a capacitor.
 module Clipper() {
@@ -48,22 +44,22 @@ The namespaces follow the device categories of the Book:
 
 | Namespace | Holds | ngspice elements |
 | --- | --- | --- |
-| `spice::passive` | `Resistor`, `SemiconductorResistor`, `Capacitor`, `SemiconductorCapacitor`, `Inductor`, `GeometricInductor`, `MutualInductor` | R, C, L, K |
-| `spice::source` | `VoltageSource`, `CurrentSource`, `BehavioralVoltageSource`, `BehavioralCurrentSource`, and the waveforms `pulse`, `sine`, `exponential`, `piecewise_linear`, `frequency_modulated`, `amplitude_modulated`, `transient_noise`, `transient_random` | V, I, B |
-| `spice::controlled` | `VoltageControlledVoltageSource`, `VoltageControlledCurrentSource`, `CurrentControlledCurrentSource`, `CurrentControlledVoltageSource` | E, G, F, H |
-| `spice::switch` | `VoltageControlledSwitch`, `CurrentControlledSwitch` | S, W |
-| `spice::line` | `LosslessTransmissionLine`, `LossyTransmissionLine`, `SingleLossyTransmissionLine`, `CoupledTransmissionLines`, `UniformRcLine` | T, O, Y, P, U |
-| `spice::diode` | `Diode`, `GeometricDiode`, `DiodeSelfHeating`, `GeometricDiodeSelfHeating` | D |
-| `spice::bipolar` | `Bjt`, `Vbic`, `VbicSelfHeating`, `Hicum2`, `Hicum2SelfHeating` | Q |
-| `spice::jfet` | `Jfet`, `Jfet2` | J |
-| `spice::mesfet` | `Mesfet`, `Mesa`, `Hfet1`, `Hfet2` | Z |
-| `spice::mosfet` | `Mos1`, `Mos2`, `Mos3`, `Mos6`, `Mos9`, `Vdmos`, `VdmosSelfHeating` | M |
-| `spice::bsim` | `Bsim1`, `Bsim2`, `Bsim3`, `Bsim3V32`, `Bsim3V1`, `Bsim3V0`, `Bsim4`, `Bsim4V7`, `Bsim4V6`, `Bsim4V5` | M |
-| `spice::soi` | `Bsim3SoiFd`, `Bsim3SoiDd`, `Bsim3SoiPd`, `Bsim4Soi`, `Soi3` | M |
-| `spice::hisim` | `Hisim2`, `HisimHv1`, `HisimHv2` | M |
-| `spice::constants` | ngspice's physical constants (`CHARGE`, `BOLTZMANN`, `REFERENCE_TEMPERATURE`, …) | |
+| `std::spice::passive` | `Resistor`, `SemiconductorResistor`, `Capacitor`, `SemiconductorCapacitor`, `Inductor`, `GeometricInductor`, `MutualInductor` | R, C, L, K |
+| `std::spice::source` | `VoltageSource`, `CurrentSource`, `BehavioralVoltageSource`, `BehavioralCurrentSource`, and the waveforms `pulse`, `sine`, `exponential`, `piecewise_linear`, `frequency_modulated`, `amplitude_modulated`, `transient_noise`, `transient_random` | V, I, B |
+| `std::spice::controlled` | `VoltageControlledVoltageSource`, `VoltageControlledCurrentSource`, `CurrentControlledCurrentSource`, `CurrentControlledVoltageSource` | E, G, F, H |
+| `std::spice::switch` | `VoltageControlledSwitch`, `CurrentControlledSwitch` | S, W |
+| `std::spice::line` | `LosslessTransmissionLine`, `LossyTransmissionLine`, `SingleLossyTransmissionLine`, `CoupledTransmissionLines`, `UniformRcLine` | T, O, Y, P, U |
+| `std::spice::diode` | `Diode`, `GeometricDiode`, `DiodeSelfHeating`, `GeometricDiodeSelfHeating` | D |
+| `std::spice::bipolar` | `Bjt`, `Vbic`, `VbicSelfHeating`, `Hicum2`, `Hicum2SelfHeating` | Q |
+| `std::spice::jfet` | `Jfet`, `Jfet2` | J |
+| `std::spice::mesfet` | `Mesfet`, `Mesa`, `Hfet1`, `Hfet2` | Z |
+| `std::spice::mosfet` | `Mos1`, `Mos2`, `Mos3`, `Mos6`, `Mos9`, `Vdmos`, `VdmosSelfHeating` | M |
+| `std::spice::bsim` | `Bsim1`, `Bsim2`, `Bsim3`, `Bsim3V32`, `Bsim3V1`, `Bsim3V0`, `Bsim4`, `Bsim4V7`, `Bsim4V6`, `Bsim4V5` | M |
+| `std::spice::soi` | `Bsim3SoiFd`, `Bsim3SoiDd`, `Bsim3SoiPd`, `Bsim4Soi`, `Soi3` | M |
+| `std::spice::hisim` | `Hisim2`, `HisimHv1`, `HisimHv2` | M |
+| `std::spice::constants` | ngspice's physical constants (`CHARGE`, `BOLTZMANN`, `REFERENCE_TEMPERATURE`, …) | |
 
-Every item is an ordinary MSL module with an `analog` block (and a `digital` block where the device has events). The package uses nothing a package of yours could not use.
+Every item is an ordinary MSL module with an `analog` block (and a `digital` block where the device has events). The library uses nothing a package of yours could not use, and none of its names is in the prelude: `Diode` means the library's diode only where a `use` says so.
 
 ---
 
@@ -121,48 +117,51 @@ Nothing is `inf` or `0` "meaning absent": absent is `None`.
 
 Where ngspice stops with an error for a value, the param has a `where` that refuses the same values, at elaboration and on every host `set`. Where ngspice replaces a value (a resistance under 1 pΩ becomes 1 pΩ), the model does the same and the parameter's text says so. The package invents no bound ngspice does not have.
 
-### 2.5 Model cards
+### 2.5 Model cards: `alias`
 
-**A model card is a template.** In MSL a module with its params bound is a value (§8.4), and that is what a `.model` line is.
+**A model card is an `alias`.** The feature adds one item to the language, for every module and not only for these: an alias names a module with some of its params bound.
 
 ```spice
 .model D1N4148 D (is=2.52n rs=0.568 n=1.752 cjo=4p m=0.4 tt=20n bv=100 ibv=100u)
 D1 a k D1N4148
-D2 b k D1N4148
+D2 b k D1N4148 area=2
 ```
 
 ```rust
 /// 1N4148 switching diode.
-pub const D1N4148: Diode = Diode { is: 2.52n, rs: 0.568, n: 1.752, cjo: 4p, mj: 0.4, tt: 20n, bv: 100.0, ibv: 100u };
+pub alias D1N4148 = Diode { is: 2.52n, rs: 0.568, n: 1.752, cjo: 4p, mj: 0.4, tt: 20n, bv: 100.0, ibv: 100u };
 
 let d1 = D1N4148(a, k);
-let d2 = D1N4148(b, k);
+let d2 = D1N4148(b, k) { area: 2.0 };
 ```
 
-There is no separate "model" type and no second list of parameters: the device module has every parameter, instance and model alike, and a card binds the ones it knows. This is decision D2; the alternative is shown in section 12.
+Three rules cover its use:
 
-**A card whose instances differ** (a transistor's `w` and `l`, a diode's `area`) is a function of what differs. The language names this form for binning (§8.4.7):
+1. **A placement binds what the alias left.** A param the module requires and the alias did not bind must be given at the placement; a param with a default or of an `Option` type may be.
+2. **A placement may replace what the alias bound.** `D1N4148(a, k) { bv: 75.0 }` is this one diode with another breakdown voltage.
+3. **An alias may refine an alias.** `alias D1N4148_HOT = D1N4148 { tnom: 85.0 };`.
 
 ```rust
 /// The NMOS of a 0.8 µm process.
-pub fn nch(w: f64, l: f64) -> Mos1 {
-    Mos1 { polarity: MosfetPolarity::Nmos, w, l, vto: 0.75, kp: 110u, gamma: 0.4, lambda: 0.04, tox: 15n }
-}
+pub alias NCH = Mos1 { polarity: MosfetPolarity::Nmos, vto: 0.75, kp: 110u, gamma: 0.4, lambda: 0.04, tox: 15n };
 
-let m1 = nch(10u, 1u)(d, g, s, b);
+let m1 = NCH(d, g, s, b) { w: 10u, l: 1u };       // M1 d g s b NCH W=10u L=1u
 ```
 
-With the amendment of decision D3 the same card is a constant and the instance parameters go where SPICE writes them:
+There is no separate "model" type and no second list of parameters: the device module has every parameter, instance and model alike, and a card binds the ones it knows (decision D2). An instance placed through an alias is an instance of the module: the host lists every one of its params with where its value came from (the module's default, the alias, the placement), and sets, sweeps and differentiates any of them.
+
+**Binning stays a function.** An alias is fixed text; choosing among cards by geometry is code, and the language already names that form (§8.4.7). The function returns a template made from an alias:
 
 ```rust
-pub const NCH: Mos1 = Mos1 { polarity: MosfetPolarity::Nmos, vto: 0.75, kp: 110u, gamma: 0.4, lambda: 0.04, tox: 15n };
-
-let m1 = NCH(d, g, s, b) { w: 10u, l: 1u };       // refused today (G.53); allowed after D3
+pub fn nch(w: f64, l: f64) -> Mos1 {
+    if l < 1u { NCH_SHORT { w, l } } else { NCH_LONG { w, l } }
+}
+let m2 = nch(10u, 0.8u)(d, g, s, b);
 ```
 
-Both forms stay valid after D3; binning needs the function in any case.
+**One parameter for one quantity.** In ngspice some 130 parameters exist twice, once on the model and once on the instance, and the instance value wins (`tc1` of a resistor, `area` of a diode, `rbdb` of BSIM4). In MSL each is one param: a card binds it, and a placement that binds it again replaces the card's value. That is rule 2.
 
-**One parameter for one quantity.** In ngspice some 130 parameters exist twice, once on the model and once on the instance, and the instance value wins (`tc1` of a resistor, `area` of a diode, `rbdb` of BSIM4). In MSL each is one param: a card binds it, and an instance that binds it again through its card function gives the instance's value.
+`design.md` §12 has the amendment in full: grammar, the rules of elaboration, errors, what the host and the object model show.
 
 ### 2.6 Polarity
 
@@ -221,10 +220,9 @@ let r2 = Resistor(a, b) { r: 4.7k, tc1: 1.2m, tc2: 3u };            // with temp
 let r3 = Resistor(a, b) { r: 50.0, noisy: false };                  // a noiseless termination
 
 /// The high-resistance polysilicon of a process.
-pub fn rpoly(l: f64, w: f64) -> SemiconductorResistor {
-    SemiconductorResistor { rsh: 1k, narrow: 40n, short: 20n, tc1: -0.9m, l, w, kf: 2e-25, af: 2.0 }
-}
-let r4 = rpoly(20u, 1u)(a, b);                                      // (20u - 2·20n) / (1u - 2·40n) · 1k
+pub alias RPoly = SemiconductorResistor { rsh: 1k, narrow: 40n, short: 20n, tc1: -0.9m, kf: 2e-25, af: 2.0 };
+let r4 = RPoly(a, b) { l: 20u, w: 1u };                             // (20u - 2·20n) / (1u - 2·40n) · 1k
+let r5 = RPoly(a, b) {};                                            // refused: `l` is required and unbound
 ```
 
 `Resistor`: by value.
@@ -266,10 +264,9 @@ Each combination ngspice accepts lands in one module: a resistor with a model ca
 let c1 = Capacitor(a, b) { c: 100n };
 let c2 = Capacitor(a, b) { c: 1p, ic: 1.8 };                        // starts a transient charged to 1.8 V
 
-pub fn cmim(l: f64, w: f64) -> SemiconductorCapacitor {
-    SemiconductorCapacitor { cj: 2m, cjsw: 0.1n, l, w }             // 2 fF/µm², 0.1 fF/µm
-}
-let c3 = cmim(10u, 10u)(a, b);
+pub alias CMim = SemiconductorCapacitor { cj: 2m, cjsw: 0.1n };     // 2 fF/µm², 0.1 fF/µm
+let c3 = CMim(a, b) { l: 10u, w: 10u };
+let c4 = CMim(a, b) { l: 10u, w: 10u, cj: 2.2m };                   // this one with another density
 ```
 
 `Capacitor`: `c` (F, required), `ic: Option<f64>` (V), `tc1`, `tc2`, `tnom`, `temp`, `dtemp`, `m`, `scale`, `bv_max`. `SemiconductorCapacitor` adds `cj` (F/m², bottom), `cjsw` (F/m, sidewall), `l`, `w` (m; `w` defaults to 10u), `narrow`, `short`, `del` (m), and, in place of `cj`, `di` (relative permittivity) with `thick` (m): the same split and the same reasons as the resistor.
@@ -319,7 +316,7 @@ let vsig = VoltageSource(sig, gnd, tone) { acmag: 1.0 };
 | `acphase` | `acphase`, `ac` | `f64 = 0.0` | degrees | Small-signal phase. |
 | `m` | `m` (current source only) | `Option<f64>` | | Parallel multiplier. |
 
-The waveform is a value: any `f64` expression. The package gives ngspice's eight functions as modules with a result. In ngspice their parameters are positions in a list; each param here has the name ngspice's sources and manual give that position.
+The waveform is a value: any `f64` expression. The library gives ngspice's eight functions as modules with a result. In ngspice their parameters are positions in a list; each param here has the name ngspice's sources and manual give that position.
 
 | Waveform | ngspice | Params (ngspice's order) |
 | --- | --- | --- |
@@ -409,7 +406,7 @@ let p1 = CoupledTransmissionLines::<2>([a1, a2], [b1, b2]) {
 
 `td` and `f`/`nl` are one number written two ways, so they are one module with a `where` that asks for one of them, unlike the resistor, where the two forms bring different parameters with them. The LTRA model's eleven flags (`lininterp`, `quadinterp`, `mixedinterp`, `nocontrol`, `steplimit`, `nosteplimit`, `truncnr`, `truncdontcut`) are mutually exclusive groups in ngspice; here each group is one enum param.
 
-`LossyTransmissionLine` depends on a solver capability that is not there yet (a convolution over the accepted history, `design.md` §8). Until it is, the module is refused with a diagnostic that names it; it is the one device of the first families that may land late.
+`LossyTransmissionLine` needs a convolution of the port quantities over the whole accepted history, which no MSL primitive gave. The feature adds it: the core primitive `convolve` (`design.md` §15), built as its own phase before the lines.
 
 ---
 
@@ -419,14 +416,12 @@ let p1 = CoupledTransmissionLines::<2>([a1, a2], [b1, b2]) {
 let d1 = Diode(a, k) { is: 1e-14 };                                              // the ideal junction
 let d2 = Diode(a, k) { is: 2.52n, rs: 0.568, n: 1.752, cjo: 4p, mj: 0.4, tt: 20n, bv: 100.0, ibv: 100u };
 
-pub const D1N4148: Diode = Diode { is: 2.52n, rs: 0.568, n: 1.752, cjo: 4p, mj: 0.4, tt: 20n, bv: 100.0, ibv: 100u };
+pub alias D1N4148 = Diode { is: 2.52n, rs: 0.568, n: 1.752, cjo: 4p, mj: 0.4, tt: 20n, bv: 100.0, ibv: 100u };
 let d3 = D1N4148(a, k);
 
 /// A junction of a process, by area and perimeter.
-pub fn ndiode(area: f64, pj: f64) -> Diode {
-    Diode { is: 1.2u, jsw: 0.3n, cjo: 0.9m, cjp: 0.25n, mj: 0.34, mjsw: 0.2, vj: 0.7, area, pj }
-}
-let d4 = ndiode(100p, 40u)(a, k);
+pub alias NDiode = Diode { is: 1.2u, jsw: 0.3n, cjo: 0.9m, cjp: 0.25n, mj: 0.34, mjsw: 0.2, vj: 0.7 };
+let d4 = NDiode(a, k) { area: 100p, pj: 40u };
 
 let d5 = DiodeSelfHeating(a, k, tj) { is: 1e-12, rth0: 50.0, cth0: 1m };          // tj: a Thermal node
 ```
@@ -461,7 +456,7 @@ The parameters of `Diode`, by what they do. Every one is listed; `models/diode.m
 ## 8. Bipolar transistors
 
 ```rust
-pub const Q2N2222: Bjt = Bjt {
+pub alias Q2N2222 = Bjt {
     polarity: BjtPolarity::Npn, is: 14.34f, bf: 255.9, nf: 1.0, vaf: 74.03, ikf: 0.2847,
     ise: 14.34f, ne: 1.307, br: 6.092, rb: 10.0, rc: 1.0,
     cje: 22.01p, vje: 0.75, mje: 0.377, cjc: 7.306p, vjc: 0.75, mjc: 0.3416, tf: 411.1p, tr: 46.91n, xtb: 1.5,
@@ -502,7 +497,7 @@ VBIC and HICUM keep their own parameter names (`ibei`, `ibci`, `rcx`, `c10`, `qp
 ## 9. JFETs, MESFETs and HFETs
 
 ```rust
-pub const J2N5457: Jfet = Jfet { polarity: JfetPolarity::Njf, vto: -1.5, beta: 1.2m, lambda: 3m, rd: 5.0, rs: 5.0, cgs: 4p, cgd: 2p, is: 1p };
+pub alias J2N5457 = Jfet { polarity: JfetPolarity::Njf, vto: -1.5, beta: 1.2m, lambda: 3m, rd: 5.0, rs: 5.0, cgs: 4p, cgd: 2p, is: 1p };
 let j1 = J2N5457(d, g, s);
 ```
 
@@ -550,17 +545,13 @@ Bulk MOSFETs have the ports `(d, g, s, b)`. The bulk is always a port.
 ### 10.2 Levels 1 to 9
 
 ```rust
-pub fn nch(w: f64, l: f64) -> Mos1 {
-    Mos1 { polarity: MosfetPolarity::Nmos, w, l, vto: 0.75, kp: 110u, gamma: 0.4, phi: 0.7, lambda: 0.04,
-           tox: 15n, cgso: 0.3n, cgdo: 0.3n, cj: 0.3m, mj: 0.5, cjsw: 0.25n, mjsw: 0.33 }
-}
-pub fn pch(w: f64, l: f64) -> Mos1 {
-    Mos1 { polarity: MosfetPolarity::Pmos, w, l, vto: -0.85, kp: 40u, gamma: 0.5, phi: 0.7, lambda: 0.05, tox: 15n }
-}
+pub alias NCH = Mos1 { polarity: MosfetPolarity::Nmos, vto: 0.75, kp: 110u, gamma: 0.4, phi: 0.7, lambda: 0.04,
+                       tox: 15n, cgso: 0.3n, cgdo: 0.3n, cj: 0.3m, mj: 0.5, cjsw: 0.25n, mjsw: 0.33 };
+pub alias PCH = Mos1 { polarity: MosfetPolarity::Pmos, vto: -0.85, kp: 40u, gamma: 0.5, phi: 0.7, lambda: 0.05, tox: 15n };
 
 module Inverter(inp: Electrical, outp: Electrical, vdd: Electrical) {
-    let mp = pch(20u, 1u)(outp, inp, vdd, vdd);
-    let mn = nch(10u, 1u)(outp, inp, gnd, gnd);
+    let mp = PCH(outp, inp, vdd, vdd) { w: 20u, l: 1u };
+    let mn = NCH(outp, inp, gnd, gnd) { w: 10u, l: 1u };
 }
 ```
 
@@ -596,44 +587,46 @@ Model params of `Mos1` (all 32):
 
 A BSIM4 card has up to 891 model parameters. No interface makes that small; what the interface can do is keep the cost in one place and make the use one line.
 
-**The cost is paid once, in the card.** A process is a file of card functions, written by hand from the foundry's `.lib` or, later, by an importer. The card binds what the foundry gives and nothing else: the module's defaults are BSIM4's.
+**The cost is paid once, in the card.** A process is a file of aliases, written by hand from the foundry's `.lib` or, later, by an importer. The card binds what the foundry gives and nothing else: the module's defaults are BSIM4's.
 
 ```rust
 // pdk/transistors.msl
-use spice::bsim::{Bsim4, MosfetPolarity};
+use std::spice::bsim::{Bsim4, MosfetPolarity};
 
 /// Core NMOS, typical corner.
-pub fn nch(w: f64, l: f64, nf: f64) -> Bsim4 {
-    Bsim4 {
-        polarity: MosfetPolarity::Nmos, w, l, nf,
-        toxe: 1.85n, toxp: 1.6n, vth0: 0.4, k1: 0.55, k2: -0.02, u0: 0.035, vsat: 1.2e5,
-        rdsw: 150.0, cgso: 2.5e-10, cgdo: 2.5e-10, cjs: 1m, cjd: 1m,
-        // … the rest of the card
-    }
-}
+pub alias NCH = Bsim4 {
+    polarity: MosfetPolarity::Nmos,
+    toxe: 1.85n, toxp: 1.6n, vth0: 0.4, k1: 0.55, k2: -0.02, u0: 0.035, vsat: 1.2e5,
+    rdsw: 150.0, cgso: 2.5e-10, cgdo: 2.5e-10, cjs: 1m, cjd: 1m,
+    // … the rest of the card
+};
 ```
 
-**The use is one line.**
+**The use is one line**, and it reads as the SPICE line does.
 
 ```rust
-let m1 = nch(1u, 60n, 2.0)(d, g, s, b);
+let m1 = NCH(d, g, s, b) { w: 1u, l: 60n, nf: 2.0 };       // M1 d g s b nch W=1u L=60n NF=2
 ```
 
-**Binning is an `if`.** ngspice selects among cards `nch.1`, `nch.2`, … by `lmin`, `lmax`, `wmin`, `wmax`. Here the selection is ordinary code (§8.4.7), and a geometry outside every bin is an error the PDK author writes:
+**A corner is an alias of an alias.**
+
+```rust
+pub alias NCH_SLOW = NCH { vth0: 0.44, u0: 0.032 };
+pub alias NCH_FAST = NCH { vth0: 0.36, u0: 0.038 };
+```
+
+**Binning is an `if`.** ngspice selects among cards `nch.1`, `nch.2`, … by `lmin`, `lmax`, `wmin`, `wmax`. Here the selection is ordinary code (§8.4.7) over aliases, and a geometry outside every bin is an error the PDK author writes:
 
 ```rust
 pub fn nch(w: f64, l: f64, nf: f64) -> Bsim4 {
-    if l < 0.1u { nch_bin1(w, l, nf) } else if l < 1u { nch_bin2(w, l, nf) } else { nch_bin3(w, l, nf) }
+    if l < 0.1u { NCH_BIN1 { w, l, nf } } else if l < 1u { NCH_BIN2 { w, l, nf } } else { NCH_BIN3 { w, l, nf } }
 }
+let m2 = nch(1u, 60n, 2.0)(d, g, s, b);
 ```
 
 The interpolating binning parameters of a card (`lvth0`, `wvth0`, `pvth0`: the `l`, `w` and `p` variants of most parameters, which is why there are 891) are ordinary params and work inside one card as in ngspice.
 
-**Corners and mismatch are params of your own.** A card function takes what you vary:
-
-```rust
-pub fn nch(w: f64, l: f64, nf: f64, corner: Corner) -> Bsim4 { … }
-```
+**Mismatch and design-level variation are params of your own.** A placement's block may read the parent's params, so a value a design varies is bound where the device is placed: `NCH(d, g, s, b) { w: 1u, l: 60n, delvto: offset }`.
 
 **Reading the list.** Nobody reads 891 parameters in a row. `models/bsim.md` has them in ngspice's order; the Book's BSIM chapter groups them (threshold, mobility, saturation, output resistance, gate current, junctions, overlap and intrinsic capacitance, layout-dependent stress, noise, temperature, the model selectors, the binning variants) and explains the groups and the selectors (`capmod`, `mobmod`, `rdsmod`, `igcmod`, `rgatemod`, `rbodymod`, `trnqsmod`, `acnqsmod`, `fnoimod`, `tnoimod`, `geomod`, `permod`, …), which are the parameters a user of a foundry card actually touches.
 
@@ -643,7 +636,7 @@ Instance params of `Bsim4` (all 43 in `models/bsim.md`): `w`, `l` (m, 5u), `nf` 
 
 ### 10.4 SOI and HiSIM
 
-These follow the same rules. Two things are particular and are decided when their family is reviewed:
+These follow the same rules. Two things are particular; the planner of their phase decides them in the family's page and reports:
 
 - the SOI models take four to seven terminals in ngspice (`d, g, s, e`, then an optional body contact `p`, body `b` and thermal node `t`). Each terminal list ngspice accepts is a module (`Bsim4Soi`, `Bsim4SoiBodyContact`, …); the list is fixed in the SOI family's page;
 - HiSIM_HV has its substrate and thermal nodes as options of the same kind.
@@ -656,7 +649,7 @@ A user who knows ngspice should read this list once. Each line is in the Book.
 
 | ngspice | `spice` in MSL | Why |
 | --- | --- | --- |
-| `.model` and instance parameters are two lists | one list of params on the module; a card is a template | the language has templates; one mechanism |
+| `.model` and instance parameters are two lists | one list of params on the module; a card is an `alias` | one mechanism, for every module |
 | `level`, `version` select a model | the module is the model | a card cannot be given to the wrong model |
 | `.options tnom`, `defw`, `defl`, `defad`, `defas`, `scale` | params with ngspice's built-in defaults | MSL has no circuit-wide model option |
 | `uic` and `ic=` | `ic` holds the branch at the transient's operating point | §16 H6, H7 |
@@ -674,72 +667,29 @@ A user who knows ngspice should read this list once. Each line is in the Book.
 
 ---
 
-## 12. Decisions
+## 12. Decisions (recorded 2026-11-27)
 
-### D1. Parameter names
-
-| | A. ngspice's names (recommended) | B. Full words | C. Full words, ngspice names as documented aliases |
-| --- | --- | --- | --- |
-| A diode | `Diode { is: 1e-14, n: 1.05, rs: 0.5, cjo: 2p }` | `Diode { saturation_current: 1e-14, emission_coefficient: 1.05, series_resistance: 0.5, zero_bias_capacitance: 2p }` | as B; the Book maps `is` to `saturation_current` |
-| A BSIM4 card | copied from the foundry file | 891 names to invent; `k1` has no agreed full name | the same, plus a table to maintain |
-| Reading a card against a datasheet | the same words | a dictionary in between | a dictionary in between |
-
-The project's rule is full words in our interface. The recommendation keeps that rule for everything the package names itself and treats a parameter name as a term of the domain that the package did not coin, as `sin` or `Hz` are. If you prefer B or C for the small devices only (passives, sources, switches), say so: the cost is that the rule then has two halves.
-
-### D2. Where model parameters live
-
-| | A. Flat params, a card is a template (recommended) | B. A `model` struct param |
+| # | Question | Decided |
 | --- | --- | --- |
-| Declaration | `module Diode(a, k) { area: f64 = 1.0; is: f64 = 1e-14; n: f64 = 1.0; … }` | `struct DiodeModel { is: Option<f64>, n: Option<f64>, … }`, `module Diode(a, k) { model: DiodeModel; area: f64 = 1.0; }` |
-| A card | `const D1: Diode = Diode { is: 2.52n, n: 1.752 };` | `const D1: DiodeModel = diode_model(is: 2.52n, n: 1.752);` (a constructor function with one optional argument per field, because a struct expression names every field, §1.3.3) |
-| A placement | `D1(a, k)` | `Diode(a, k) { model: D1, area: 2.0 }` |
-| The host sets or sweeps `is` | `set top.d1.is` | not defined today: a gradient param is an `f64` param (§21 rule 7), and a field of a struct param is not one |
-| `where`, defaults, `///` per parameter | on the param | `where` on the module over `model.is`; defaults inside the constructor; no host listing per field |
-| Reads like SPICE | the card yes; instance params need D3 | yes |
+| D1 | Parameter names | ngspice's names for params; full words for everything else (2.1). |
+| D2 | Where model parameters live | Flat params on the device module; no `model` struct (2.5). |
+| D3 | Instance parameters on a shared card | **The user's amendment:** the `alias` item. A placement through an alias binds what is left and may replace what was bound (2.5; `design.md` §12). The restriction on template *values* (`G.53`) stays. A function returning a template stays valid and is the form for binning. |
+| D4 | Units of temperature and phase | ngspice's: °C and degrees (2.2). |
+| D5 | Where the models live | **The user's change:** in the standard library, `std::spice`, shipped with the language; no dependency line (1; `design.md` §13). |
+| D6 | CIDER numerical devices and `ndev` | **Not provided.** Listed by name as excluded; no follow-up. |
+| D7 | XSPICE code models | **Not provided.** Listed by name as excluded; no follow-up. |
+| D8 | Legacy BSIM3 and BSIM4 versions | In scope, each a module, delivered right after its current version. |
+| D9 | Reference version | ngspice-47. |
+| D10 | Coupled inductors | A public `link` node on every `Inductor` (3.3). |
+| D11 | The controlling current of F, H, W | The device's own sensing branch (4.3). |
+| D12 | Order of delivery | **The user's change:** from the simplest to the most complex, each phase a delivery (`design.md` §9). |
+| Licence | ngspice's Modified BSD notice | Approved: the notice at the root of the spice module of the standard library; each model's description names its ngspice source and the notice. |
+| Family pages | Units, defaults and given-ness of the large models | Decided by the planner of each phase and recorded in `interface/<family>.md`; the user is informed. |
+| Lossy line | The missing capability | Created in this feature: `convolve` (`design.md` §15). |
 
-B is closer to the picture of a SPICE netlist and is what you sketched ("structs as a param"). A is recommended because every parameter stays a first-class param: listed, documented, bounded, set, swept and differentiated by the host with nothing new in the language, which matters for fitting and optimization. A also has one list where B has two that must stay in step.
+The order of delivery: 1 resistors, capacitors, DC and AC sources, controlled sources; 2 inductors, waveforms, behavioural sources; 3 switches and the lossless line; 4 diodes and the RC line; 5 JFETs and the Statz MESFET; 6 the bipolar transistor; 7 MOS levels 1 to 9; 8 VDMOS, MESA, HFET; 9 the `convolve` primitive; 10 lossy and coupled lines; 11 BSIM1 and BSIM2; 12 BSIM3; 13 VBIC and HICUM; 14 BSIM4; 15 SOI; 16 HiSIM. Phase 0 before them is the ground: `alias`, the library's place in `std`, the parity machinery.
 
-### D3. Instance parameters on a shared card
-
-Today: `nch(10u, 1u)(d, g, s, b)`, a card function. Proposed amendment to §8.4.4 (`G.53`): a placement through a template value may carry a param block, which rebinds the params it names: `NCH(d, g, s, b) { w: 10u, l: 1u }`. The bare module name is already the template with every default (amendment of 2026-11-24), so `Mos1(d, g, s, b) { w: 10u }` is this rule already; the amendment removes the exception for a template that bound some params first. Recommended: yes, as a small language change owned by this feature's first phase. Without it everything in this page still works through card functions.
-
-### D4. Units of temperature and phase
-
-A. ngspice's: `tnom: 27.0` (°C), `acphase: 90.0` (degrees). Recommended. B. MSL's: `tnom: 300.15` (K), `acphase: PI / 2.0`. B is consistent with `temperature()` and `ac_stim`; A lets a card be copied, and a wrong `tnom` is a silent error of 273 K.
-
-### D5. Where the package lives
-
-The models must be tested with the solver, in one CI, so the source is in this repository at `packages/spice/`. A user depends on it by `path` when they have a checkout. For a `git` dependency, §3.6.7 requires the package at the root of the repository. Options: A. add a subdirectory key to a `git` dependency (`spice = { git = "…/piperine", dir = "packages/spice" }`), which `msl-packages` left out as "not needed" and is now needed. Recommended. B. publish `packages/spice` to a repository of its own at each release. C. make `spice` an implicit dependency like `std`: no manifest line, but a second special crate.
-
-### D6. CIDER and `ndev`
-
-Refuse by name and leave to a follow-up (recommended), or bring them in. They are mesh-based device simulators inside a device: `numd`, `numd2`, `nbjt`, `nbjt2`, `numos` total 9,566 lines plus the CIDER library of 28,000. Writing a one-dimensional drift-diffusion device in MSL is possible (a generated row of nodes) and is a different kind of work from a compact model.
-
-### D7. XSPICE code models
-
-81 models in seven libraries: analog blocks (`gain`, `summer`, `limit`, `int`, `s_xfer`, `pwl`, …), digital gates and flip-flops (`d_and`, `d_dff`, …), bridges (`adc_bridge`, `dac_bridge`), extra devices (`zener`, `memristor`, `core`, `aswitch`, `potentiometer`), microstrip lines. Recommended: a follow-up feature, `spice-code-models`, which judges each one: most digital ones are what MSL's `digital` blocks and `std` already are, and the bridges are `std::convert`.
-
-### D8. Legacy versions
-
-`Bsim3V0`, `Bsim3V1`, `Bsim3V32`, `Bsim4V5`, `Bsim4V6`, `Bsim4V7`: six models, 93,000 lines of C that are mostly copies of the current versions. In scope, last (recommended), or left out until a card needs one.
-
-### D9. Reference version
-
-ngspice-47 for sources and oracle (recommended). The checkout at `~/Git/ngspice` is ngspice-26; a model read from it and tested against the installed ngspice-47 would differ wherever eleven years of fixes changed a model.
-
-### D10. Coupled inductors
-
-A. A public `link` node on every `Inductor` (recommended): `MutualInductor(l1.link, l2.link) { k: 0.98 }`, one inductor module, and two extra unknowns per inductor whether it is coupled or not. B. A separate `CoupledInductor(p, n, link)` with the node as a port: no cost for uncoupled inductors, a signal to declare for each coupled one. C. One module for the whole set, `CoupledInductors<const N>(p: [Electrical; N], n: [Electrical; N])`, with the inductances and the coupling matrix as params: compact, and no longer one line per SPICE line.
-
-### D11. The controlling current of F, H and W
-
-A. The device's own sensing branch as two extra ports (recommended). B. A separate `CurrentProbe(p, n)` module with a public flow, read by the controlled source: closer to SPICE's named source, two instances where A has one.
-
-### D12. Order of delivery
-
-1 linear elements, sources, switches; 2 diode; 3 BJT, JFET, MESFET, HFET; 4 MOS levels 1 to 9 and VDMOS; 5 BSIM3 and BSIM4; 6 lines; 7 VBIC and HICUM; 8 BSIM1, BSIM2 and the legacy versions; 9 SOI; 10 HiSIM. The order puts first what every later parity twin needs (sources, resistors) and what most circuits use, and leaves for last the models few cards ask for. Say which family you need earlier.
-
-### Choices made per family, to confirm or change
+### The per-family choices, accepted
 
 | # | Choice | Section |
 | --- | --- | --- |
