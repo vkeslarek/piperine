@@ -1,0 +1,21 @@
+# T86: the msl_* targets become `msl`, the pom_* targets and buck_example become `pom`, the std_* targets become `std`; one module per former target (the prefix of the old name is dropped).
+move piperine-lang/msl_corpus piperine-lang/msl::corpus
+move piperine-lang/msl_errors piperine-lang/msl::errors
+move piperine-lang/msl_format piperine-lang/msl::format
+move piperine-lang/msl_lexer piperine-lang/msl::lexer
+move piperine-lang/msl_parser piperine-lang/msl::parser
+move piperine-lang/msl_print piperine-lang/msl::print
+move piperine-lang/pom_body piperine-lang/pom::body
+move piperine-lang/pom_bundles piperine-lang/pom::bundles
+move piperine-lang/pom_classify piperine-lang/pom::classify
+move piperine-lang/pom_corpus piperine-lang/pom::corpus
+move piperine-lang/pom_crates piperine-lang/pom::crates
+move piperine-lang/pom_design piperine-lang/pom::design
+move piperine-lang/pom_docs piperine-lang/pom::docs
+move piperine-lang/pom_reflect piperine-lang/pom::reflect
+move piperine-lang/pom_resolve piperine-lang/pom::resolve
+move piperine-lang/pom_tree piperine-lang/pom::tree
+move piperine-lang/buck_example piperine-lang/pom::buck_example
+move piperine-lang/std_excerpts piperine-lang/std::excerpts
+move piperine-lang/std_galleries piperine-lang/std::galleries
+move piperine-lang/std_library piperine-lang/std::library

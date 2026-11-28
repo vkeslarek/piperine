@@ -12,18 +12,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: In Progress - B1 (T1 to T4) done; B2 started 2026-11-24 on `feature/resolved-nets-bundles`; B2 onward (T5 to T21) amended 2026-11-22 for the explicit-unknowns model (MD-78) and waiting for the user's approval of this plan
 **Approved**: 2026-11-21 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12" and, 2026-11-21, "pode ir tocando como previsto, parando só depois da revisão no item 13" (B1 as planned then; the amendment of B2 onward has no approval yet)
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-analog-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run pombundles**: `cargo test -p piperine-lang --test pom_bundles`
+**Run pombundles**: `cargo test -p piperine-lang --test pom bundles::`
 **Run typesbundles**: `cargo test -p piperine-lang --test types_bundles`
 **Run elabbundles**: `cargo test -p piperine-lang --test elab_bundles`
 **Run sourcebundles**: `cargo test -p piperine-parity --test source_bundles`
 **Run apimetadata**: `cargo test -p piperine-api --test session metadata::`
-**Run pomreflect**: `cargo test -p piperine-lang --test pom_reflect`
+**Run pomreflect**: `cargo test -p piperine-lang --test pom reflect::`
 **Run booknatures**: `cargo test -p piperine --test book_natures`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`
 **Run bookmodules**: `cargo test -p piperine --test book_modules`
 **Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
 **Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-**Run msl_parser**: `cargo test -p piperine-lang --test msl_parser`
+**Run msl_parser**: `cargo test -p piperine-lang --test msl parser::`
 **Run digitalinstant**: `cargo test -p piperine-digital-solver --test engine instant::`
 **Run sourcewraps**: `cargo test -p piperine-parity --test source_wraps`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`

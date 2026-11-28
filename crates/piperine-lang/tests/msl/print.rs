@@ -5,8 +5,7 @@
 //! doc comment and attribute survives. A fixture adds the docs and attributes
 //! on every kind of node that carries them.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use piperine_lang::msl::ast::File;
 use piperine_lang::msl::parser::SourceParser;

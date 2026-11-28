@@ -13,8 +13,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
 **Run typesmodel**: `cargo test -p piperine-lang --test types_model`
-**Run stdlibrary**: `cargo test -p piperine-lang --test std_library`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run bookinventory**: `cargo test -p piperine --test book_inventory`

@@ -29,7 +29,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

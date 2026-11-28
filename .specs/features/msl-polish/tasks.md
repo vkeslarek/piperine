@@ -12,19 +12,19 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Done
 **Approved**: 2026-11-14 - user: "sim"
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
-**Run lexer**: `cargo test -p piperine-lang --test msl_lexer`
-**Run parser**: `cargo test -p piperine-lang --test msl_parser`
-**Run errors**: `cargo test -p piperine-lang --test msl_errors`
-**Run print**: `cargo test -p piperine-lang --test msl_print`
-**Run mslcorpus**: `cargo test -p piperine-lang --test msl_corpus`
-**Run design**: `cargo test -p piperine-lang --test pom_design`
-**Run tree**: `cargo test -p piperine-lang --test pom_tree`
-**Run body**: `cargo test -p piperine-lang --test pom_body`
-**Run pomcorpus**: `cargo test -p piperine-lang --test pom_corpus`
-**Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run classify**: `cargo test -p piperine-lang --test pom_classify`
-**Run reflect**: `cargo test -p piperine-lang --test pom_reflect`
-**Run docs**: `cargo test -p piperine-lang --test pom_docs`
+**Run lexer**: `cargo test -p piperine-lang --test msl lexer::`
+**Run parser**: `cargo test -p piperine-lang --test msl parser::`
+**Run errors**: `cargo test -p piperine-lang --test msl errors::`
+**Run print**: `cargo test -p piperine-lang --test msl print::`
+**Run mslcorpus**: `cargo test -p piperine-lang --test msl corpus::`
+**Run design**: `cargo test -p piperine-lang --test pom design::`
+**Run tree**: `cargo test -p piperine-lang --test pom tree::`
+**Run body**: `cargo test -p piperine-lang --test pom body::`
+**Run pomcorpus**: `cargo test -p piperine-lang --test pom corpus::`
+**Run resolve**: `cargo test -p piperine-lang --test pom resolve::`
+**Run classify**: `cargo test -p piperine-lang --test pom classify::`
+**Run reflect**: `cargo test -p piperine-lang --test pom reflect::`
+**Run docs**: `cargo test -p piperine-lang --test pom docs::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 **Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`
 

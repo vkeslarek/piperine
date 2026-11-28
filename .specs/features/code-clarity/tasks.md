@@ -2283,8 +2283,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every test keeps its name; the three targets open with a `//!` header
-- [ ] Gate check passes: Ledger
+- [x] Every test keeps its name; the three targets open with a `//!` header
+  - Annotation: `buck_example` (a hand-merged sibling with no target of its own in the design table) became the module `buck_example` of `pom`; `msl` holds 115 tests, `pom` 295 (with `buck_example`), `std` 71 = 481, the count of `#[test]` of the 20 former targets. `std/library.rs`'s two source-reading tests (`the_fixture_prelude_is_gone`, `no_pom_test_was_removed`) now walk the new directory layout; their assertions are unchanged.
+- [x] Gate check passes: Ledger
+  - Annotation: the `Checked` fixture's single `design_of`/`diagnostics`/`snippet` (the **What** line) belongs to the `types_*` files that define them (fourteen copies); it lands with T87, which merges those files, so the files are touched once.
 
 **Tests**: integration
 **Gate**: ledger

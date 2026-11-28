@@ -25,8 +25,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabinstances**: `cargo test -p piperine-lang --test elab_instances`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_params`
 **Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
-**Run msformat**: `cargo test -p piperine-lang --test msl_format`
-**Run stdgalleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run msformat**: `cargo test -p piperine-lang --test msl format::`
+**Run stdgalleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run irchecks**: `cargo test -p piperine-ir --test model check::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run apisources**: `cargo test -p piperine-api --test host host_sources::`

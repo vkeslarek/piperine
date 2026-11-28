@@ -23,7 +23,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run elabctl**: `cargo test -p piperine-lang --test elab_control`
 **Run elabagg**: `cargo test -p piperine-lang --test elab_aggregates`
 **Run srcctl**: `cargo test -p piperine-parity --test source_control`
-**Run errors**: `cargo test -p piperine-lang --test msl_errors`
+**Run errors**: `cargo test -p piperine-lang --test msl errors::`
 **Run typesvs**: `cargo test -p piperine-lang --test types_value_semantics`
 **Run srcvs**: `cargo test -p piperine-parity --test source_value_semantics`
 **Run typescmp**: `cargo test -p piperine-lang --test types_compound`
@@ -33,7 +33,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apicomp**: `cargo test -p piperine-api --test host composites::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

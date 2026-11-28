@@ -2,8 +2,7 @@
 //! name, text and syntax tree, parse diagnostics passed through with their
 //! file, determinism, and thread safety.
 
-#[path = "support/pom.rs"]
-mod support;
+use crate::support;
 
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::{Design, FileId, Reflect, SourceFile};

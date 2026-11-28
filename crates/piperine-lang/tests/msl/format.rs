@@ -7,8 +7,7 @@
 //! libraries, examples, twins and test fixtures, every block of the
 //! specification and every `msl` block of the Book.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use std::path::{Path, PathBuf};
 

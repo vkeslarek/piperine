@@ -2414,7 +2414,7 @@ Proof: run brecords | test records_of_two_reactions_at_different_statements_keep
 Proof: run tev | test an_emit_in_analog_is_p0001_by_name ... ok
 
 **C183** - A module-body `let` gives its module only the names its own pattern binds: a later `let` reads them; a `match` arm's or an `if let`'s binding inside its value resolves in that arm and is `E0161` in a later `let` (T66's resolver rule, verification F8). (DIG-03, AC 4; T66)
-Proof: `cargo test -p piperine-lang --test pom_resolve a_body_let_gives_its_module_only_the_names_of_its_own_pattern -- --exact`
+Proof: `cargo test -p piperine-lang --test pom resolve::a_body_let_gives_its_module_only_the_names_of_its_own_pattern -- --exact`
 
 ---
 

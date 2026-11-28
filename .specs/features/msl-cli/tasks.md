@@ -31,8 +31,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run commands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
 **Run book**: `cargo test -p piperine-lang --test book`
-**Run format**: `cargo test -p piperine-lang --test msl_format`
-**Run print**: `cargo test -p piperine-lang --test msl_print`
+**Run format**: `cargo test -p piperine-lang --test msl format::`
+**Run print**: `cargo test -p piperine-lang --test msl print::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 **Run suite**: `cargo test -p piperine-repository-guards --test suite`
 **Run spec_structure**: `cargo test -p piperine-lang --test spec_structure`

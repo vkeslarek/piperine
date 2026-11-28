@@ -5,8 +5,7 @@
 //! call or a `Name { .. }` expression is: instance, template, literal; and what
 //! a member (`inst.name`, `bundle.field`, `carrier.method()`) resolves to.
 
-#[path = "support/pom.rs"]
-mod support;
+use crate::support;
 
 use piperine_lang::pom::{CallClass, Design, DesignDiagnostic, ExprId, ExprKind, PortKind, Reflect, Resolution, StructClass};
 use support::build;

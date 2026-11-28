@@ -201,7 +201,7 @@ fn depth_limit_fits_8mib_stack_in_debug() {
     // The fit rests on chumsky's `stacker` feature (heap-grown stack segments,
     // allowed by AC 7), so the manifest declares it explicitly rather than by
     // default...
-    let manifest = include_str!("../Cargo.toml");
+    let manifest = include_str!("../../Cargo.toml");
     let chumsky = manifest.lines().find(|l| l.starts_with("chumsky")).expect("chumsky dependency");
     assert!(chumsky.contains("\"stacker\""), "stacker is declared: {chumsky}");
     // ...and no thread is spawned by any MSL source: none names a stack size.

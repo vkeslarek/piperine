@@ -13,11 +13,11 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-stdlib/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run docs**: `cargo test -p piperine-lang --test pom_docs`
-**Run std**: `cargo test -p piperine-lang --test std_library`
-**Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run resolve**: `cargo test -p piperine-lang --test pom resolve::`
+**Run docs**: `cargo test -p piperine-lang --test pom docs::`
+**Run std**: `cargo test -p piperine-lang --test std library::`
+**Run excerpts**: `cargo test -p piperine-lang --test std excerpts::`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run book**: `cargo test -p piperine-lang --test book`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 

@@ -28,7 +28,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run apiarr**: `cargo test -p piperine-api --test host carrier_arrays::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run book**: `cargo test -p piperine --test book_natures --test book_modules --test book_inventory`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 

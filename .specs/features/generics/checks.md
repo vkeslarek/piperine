@@ -20,7 +20,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run typesmods**: `cargo test -p piperine-lang --test types_generic_modules`
 **Run typesgenr**: `cargo test -p piperine-lang --test types_generation`
 **Run elabmods**: `cargo test -p piperine-lang --test elab_generic_modules`
@@ -53,7 +53,7 @@ The `**Build**` line, the union of the `**Run**` lines and every check of `tasks
 **Run srcimplicit**: `cargo test -p piperine-parity --test source_implicit`
 **Run elabparams**: `cargo test -p piperine-lang --test elab_params`
 **Run bookanalog**: `cargo test -p piperine --test book_analog`
-**Run stdlibrary**: `cargo test -p piperine-lang --test std_library`
+**Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
 **Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
 **Run typesresults**: `cargo test -p piperine-lang --test types_results`
 **Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`

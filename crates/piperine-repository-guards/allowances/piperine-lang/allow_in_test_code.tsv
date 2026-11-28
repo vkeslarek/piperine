@@ -26,7 +26,7 @@ crates/piperine-lang/tests/elab_templates.rs::allow(dead_code)	1
 crates/piperine-lang/tests/elab_unlowered.rs::allow(dead_code)	1
 crates/piperine-lang/tests/elab_values.rs::allow(dead_code)	1
 crates/piperine-lang/tests/spec_codes.rs::allow(dead_code)	1
-crates/piperine-lang/tests/std_library.rs::allow(dead_code)	1
+crates/piperine-lang/tests/std/main.rs::allow(dead_code)	1
 crates/piperine-lang/tests/support/spec_corpus.rs::allow(dead_code)	1
 crates/piperine-lang/tests/types_aggregates.rs::allow(dead_code)	1
 crates/piperine-lang/tests/types_analog_operators.rs::allow(dead_code)	1

@@ -2,10 +2,8 @@
 //! pattern and type form of the language becomes one node of the matching
 //! kind, reachable from the declaration that owns it.
 
-#[path = "support/pom.rs"]
-mod support;
-#[path = "support/lowering.rs"]
-mod lowering;
+use crate::support;
+use crate::lowering;
 
 use std::collections::BTreeSet;
 

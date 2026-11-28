@@ -2,10 +2,8 @@
 //! per-kind requirements): which declaration sits under which, in source
 //! order, with its kind, name, span and visibility.
 
-#[path = "support/pom.rs"]
-mod support;
-#[path = "support/lowering.rs"]
-mod lowering;
+use crate::support;
+use crate::lowering;
 
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::{DeclKind, NamespaceOrigin, Reflect};

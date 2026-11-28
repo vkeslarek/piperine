@@ -7,8 +7,7 @@
 //! as a file or as the body of a block. A `rust,*` info string of any other
 //! class fails the suite, so a new class cannot slip in unchecked.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use piperine_lang::msl::parser::SourceParser;
 use spec_corpus::{Block, Class, corpus, extract, fragment_diagnostics};

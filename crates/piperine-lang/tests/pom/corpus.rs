@@ -2,8 +2,7 @@
 //! POM-06 AC 1 and POM-14 AC 1): every fence rebuilds to the syntax tree the
 //! parser returned, and every fence builds without breaking an invariant.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::pom::Design;

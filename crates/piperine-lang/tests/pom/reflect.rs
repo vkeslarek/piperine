@@ -2,8 +2,7 @@
 //! and casts, the carrier nature of a port or signal, the instance views and
 //! the reverse queries.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use piperine_lang::pom::{Decl, Design, ExprId, PatId, Reference, Reflect, StmtId, TypeId, Writer};
 use serde::{Serialize, de::DeserializeOwned};

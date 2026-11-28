@@ -5,10 +5,8 @@
 //! returns its failures; the tests assert the list is empty on the real tree and assert its content
 //! on text written in the test.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
-#[path = "support/spec_tables.rs"]
-mod spec_tables;
+use crate::spec_corpus;
+use crate::spec_tables;
 
 use std::path::PathBuf;
 

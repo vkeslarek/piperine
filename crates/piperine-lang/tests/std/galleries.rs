@@ -5,8 +5,7 @@
 //! reference. The table is data; each check is a plain function that returns its failures, and the
 //! tests assert the list is empty on the real tree and non-empty on text written in the test.
 
-#[path = "support/spec_corpus.rs"]
-mod spec_corpus;
+use crate::spec_corpus;
 
 use std::collections::BTreeSet;
 use std::path::PathBuf;

@@ -87,8 +87,7 @@ fn the_core_rows_are_unchanged() {
     assert_eq!(table, rows.to_vec());
 }
 
-#[path = "support/pom.rs"]
-mod support;
+use crate::support;
 
 use piperine_lang::pom::{Design, DesignBuilder, DesignDiagnostic, PathId, Reflect, Resolution};
 use support::{build, codes};
