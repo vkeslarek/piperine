@@ -190,12 +190,39 @@ block	errors#4	d6f143186449ee41	shown	-	-	-
 block	pom#1	e6a2cd05f83340b4	shown	-	-	-
 block	pom#2	b7ce5fba7e2d63f3	run	piperine/book_pom::front_runs_with_its_analog_and_digital_events	-	-
 block	pom#3	349bd80a32a83f03	shown	-	-	-
-block	abi#1	c715b5183a7012a9	shown	-	-	-
-block	abi#2	30c3504b382a7487	run	piperine/book_abi::two_resistors_of_one_shape_divide_a_source_by_their_values	-	-
-block	abi#3	051cb6db57f75a67	shown	-	-	-
-block	abi#4	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	-
-block	abi#5	97e83a277ec19321	shown	-	-	-
-block	abi#6	52e5d7721de89cee	shown	-	-	-
+block	abi#1	30c3504b382a7487	run	piperine/book_abi::two_resistors_of_one_shape_divide_a_source_by_their_values	-	-
+block	abi#2	b5b4dc3f29a0829c	shown	-	X10	-
+block	abi#3	7f56c990874e7013	run	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	-
+block	abi#4	38512091ef50417b	shown	-	X10	-
+block	abi#5	012edc6cfd4117c6	shown	-	X10	-
+block	abi#6	093b8f0068ce9c10	shown	-	X10	-
+block	abi#7	f9633c4c3eaf9f0f	shown	-	X10	-
+block	abi#8	1b64986843677c11	shown	-	X10	-
+block	abi#9	5fc3e887480cda5f	shown	-	X10	-
+block	abi#10	bf321e1f12fa334b	shown	-	X10	-
+block	device-authoring#1	0278e90c3d7155f4	shown	-	X10	-
+block	device-authoring#2	d66c008bf3d0bd4c	shown	-	X10	-
+block	device-authoring#3	7e801e61ac0a9b63	shown	-	X10	-
+block	device-authoring#4	ec72e61692278a51	shown	-	X10	-
+block	device-authoring#5	7cc00206238f8c08	shown	-	X10	-
+block	device-authoring#6	2140ec3f00045c57	shown	-	X10	-
+block	device-authoring#7	6ebcca0ac8cb1abe	shown	-	X10	-
+block	device-authoring#8	68afbf080913ff79	shown	-	X10	-
+block	device-authoring#9	9ef7eb4d5a9414db	shown	-	X10	-
+block	device-authoring#10	1007830dbb3546d4	shown	-	X10	-
+block	device-authoring#11	781b500508a9f690	shown	-	X10	-
+block	device-authoring#12	2b175041f47ccddb	shown	-	X10	-
+block	device-authoring#13	cf33dafd95b614f6	shown	-	X10	-
+block	device-authoring#14	c96e290c16f93892	shown	-	X10	-
+block	device-authoring#15	575e3898f93e1dbb	shown	-	X10	-
+block	device-authoring#16	19a2747144aece2f	shown	-	X10	-
+block	device-authoring#17	f8c8ea09a129bf12	shown	-	X10	-
+block	device-authoring#18	3f3205e7815bb13d	shown	-	X10	-
+block	device-authoring#19	df172988c3c1b839	shown	-	X10	-
+block	device-authoring#20	da5358e5fe90e106	shown	-	X10	-
+block	device-authoring#21	969ff1c55b1aae71	shown	-	X10	-
+block	device-authoring#22	0860209d51f09cd3	shown	-	X10	-
+block	device-authoring#23	6cc0cff950863f6f	shown	-	X10	-
 block	compiler#1	07f51b3645a3ebce	run	piperine/book_compiler::the_divider_puts_mid_at_7_5_volts_and_ngspice_prints_the_same	-	-
 block	compiler#2	dd1f1631781e10eb	run	piperine/book_compiler::the_diode_with_a_limited_junction_settles_where_the_junction_equation_says	-	-
 block	compiler#3	835ad43867b51f3a	shown	-	-	-
@@ -532,10 +559,74 @@ claim	pom~27751c3c	27751c3c3fa969ac	holds	piperine/book_pom::building_always_giv
 claim	pom~806e9e4f	806e9e4f3ddce5e9	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	It always returns a Design.
 claim	pom~dfd54aa0	dfd54aa057b9f194	holds	piperine/book_pom::building_always_gives_a_design_and_a_syntax_error_goes_to_its_diagnostics	-	Check diagnostics() before you trust the answers.
 claim	pom~20d38737	20d38737f0fea9cc	holds	piperine/book_pom::a_type_error_is_not_the_object_models_to_report	-	An E0432 or E0417 comes from a later stage.
-claim	abi~5856e308	5856e308decfdc14	prose	-	-	A call returns OK, FAULT (with a message), RESHAPE (these param values need a different shape) or FINISH (a reaction ends the analysis at its instant).
-claim	abi~978c8986	978c8986b77bf2f9	prose	-	-	No macro is involved: a generic function produces the C thunks.
-claim	abi~e42ad9e5	e42ad9e55b310b40	prose	-	-	It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.
-claim	abi~09170599	09170599d8835780	prose	-	-	A time at which the analog solver produces an accepted solution and runs the time-point procedure.
+claim	abi~3934b681	3934b681f17d356c	prose	-	X10	To simulate a circuit it needs, from each component, the answers to two questions.
+claim	abi~0bedc5c4	0bedc5c40737a30d	prose	-	X10	A device answers the first question with data and the second with code, and that is all a device is:
+claim	abi~ef605a63	ef605a63735ce605	prose	-	X10	The answers are the same, so no harm is done.
+claim	abi~e88aeb7f	e88aeb7fdbc717d6	prose	-	X10	A capacitor says "this is a charge"; what an equilibrium does with a charge, how it is integrated in time, how it answers at a frequency and what happens to its history when a step is undone are the solver's business.
+claim	abi~5164e3a6	5164e3a6aa772e48	prose	-	X10	what the model printed from inside a solve; kept even when the step is undone, because their purpose is to show what the solver tried
+claim	abi~2c5bd48c	2c5bd48c385da4e6	prose	-	X10	In words: the resistor touches two nodes that the circuit connects, takes one parameter with a default of 1 kΩ, produces one current that leaves p and enters n, and has one piece of code that computes that current from the two potentials and the resistance, with its three derivatives.
+claim	abi~ff1e7b28	ff1e7b2868310e62	prose	-	X10	Hold these nine and you are oriented: anything else you meet is an entry of one of four short, closed lists, which the next section gives.
+claim	abi~65e6b19b	65e6b19b56be43d1	prose	-	X10	Each kind is introduced here with the question it answers and where it shows in the two devices above.
+claim	abi~1083117c	1083117ce6d74e85	prose	-	X10	The resistance has the layout F64, one 64-bit real number.
+claim	abi~90a4bdd5	90a4bdd59b8bec27	prose	-	X10	The linkage is the field of a pin that answers.
+claim	abi~dbaa5fd7	dbaa5fd7cabd9640	prose	-	X10	The flip-flop's rise has the linkage PRIVATE: its net belongs to the instance and nothing else reaches it.
+claim	abi~93a9af82	93a9af822370dbc0	prose	-	X10	So everything analog code produces needs another place to go, and the six analog tables are those places.
+claim	abi~5924b229	5924b22991c69632	prose	-	X10	The others hold the remaining things that analog code produces: a limit, a small-signal source, a crossing, an operating-point variable and a trace.
+claim	abi~b0443210	b0443210079baba5	prose	-	X10	Reading an aspect gives the facet's present state, and writing it sets that state.
+claim	abi~a781e68d	a781e68d9e38c60e	prose	-	X10	The ten are the temperature; whether the run set a temperature; the time resolution; four that say which analysis is running (DC, transient, AC, noise); the event START, which fires once when an analysis begins from initial values; the event SETTLE, which fires at the end of each time point; and a named session parameter, a value the host gives to the whole run under a name.
+claim	abi~d8540a37	d8540a37d5570bef	prose	-	X10	It is how a threshold detected in analog reaches digital code.
+claim	abi~a1bb998a	a1bb998a82a4e8db	prose	-	X10	Take a divider: a source of 3 V, a first resistor of 1 kΩ from the source to a node mid, and a second of 2 kΩ from mid to ground.
+claim	abi~a6ae0d72	a6ae0d722554e463	prose	-	X10	The function computes (p − n) / r and its derivatives, fills the buffers and returns.
+claim	abi~f4c47309	f4c47309a525672f	holds	piperine/book_abi::two_resistors_of_one_shape_divide_a_source_by_their_values	-	Run the operating point and the middle node sits at 2 V: the first resistor carries (3 − 2) / 1 kΩ = 1 mA into it and the second carries 2 / 2 kΩ = 1 mA out of it.
+claim	abi~c00c545d	c00c545d3f95063f	prose	-	X10	The digital solver runs the instants that are due before the end of the proposed step, and stops before a landing: an instant whose effect the analog side must see, or that needs to see the analog side.
+claim	abi~a5680dbb	a5680dbbbe3a0e4c	holds	piperine/book_abi::the_flip_flop_starts_low_and_takes_its_input_at_the_rising_edge	-	Hold d high and raise the clock at 1 µs: q starts low, and after the edge it is high.
+claim	abi~bb1f7e6c	bb1f7e6c99fcb5a9	prose	-	X10	If the analog solver rejects the step that led here, the store is put back and the edge is replayed; the flip-flop's code is called again and gives the same answer.
+claim	abi~3b0d0540	3b0d05402c49894a	prose	-	X10	They start from an operating point and ask how the circuit answers a small disturbance at each frequency.
+claim	abi~4e767069	4e7670694b26a083	prose	-	X10	Suppose the resistor had been declared with r: f64 = 1k where r > 0.0.
+claim	abi~b9cccc3c	b9cccc3c63db9470	prose	-	X10	A parameter may be marked STRUCTURAL: every change of it needs another shape, so the owner destroys and creates the instances again on each accepted write, and refuses such a write during a run.
+claim	abi~9af86ed9	9af86ed988fe6262	prose	-	X10	The comment after each field is its offset in bytes on a 64-bit machine.
+claim	abi~b9bb04be	b9bb04be9bf4ea92	prose	-	X10	An index is a position in a named table of the same shape, counted from 0 and stored as a 32-bit unsigned number.
+claim	abi~76fec9c3	76fec9c326668b8c	prose	-	X10	An enumeration is a 32-bit number with named constants, and the first constant is always 1.
+claim	abi~0a8eb6e1	0a8eb6e18c177cac	prose	-	X10	A layout is a size, an alignment and a list of fields, and each field is a leaf: a boolean, an unsigned or signed integer of 8, 16, 32 or 64 bits, or a real of 32 or 64 bits.
+claim	abi~e25039a7	e25039a7ee4fb327	prose	-	X10	A library is what the function piperine_abi_1 hands over. size is the size of the structure as the library was built, and minor its minor version; a loader refuses a library that is shorter than it expects or newer than it knows.
+claim	abi~63bad3a6	63bad3a6b8f4478a	prose	-	X10	None of the four entry points may be missing; a device type with no reaction points react at code that answers FAULT.
+claim	abi~6fea3994	6fea399480a5a237	prose	-	X10	RELAXED_LOOP_ALLOWED: a loop of digital functions may pass through this net, and the solver settles it by repeating.
+claim	abi~d89a0261	d89a026144fac76c	prose	-	X10	STRUCTURAL: the net refuses a host write during a run, and on a parameter it says that every change needs another shape.
+claim	abi~0e38c94c	0e38c94c0f956be6	prose	-	X10	Its one flag, IRREVERSIBLE, is for a reaction whose effect the solver cannot take back because it reaches outside the solver's storage: it talks to a program that cannot be rewound, for example.
+claim	abi~4a0aca54	4a0aca545c76ad71	prose	-	X10	A function frame has one pointer per read, each to a buffer the solver filled, and one pointer per write, each to a buffer the function fills. wanted has one byte per declared partial, 1 when this call needs that derivative, and partials has one real per declared partial for the answers.
+claim	abi~389343fe	389343fe12a7ae5d	prose	-	X10	The read and write buffers have exactly the length the shape gives their aspect, and one property that matters in any language: they carry no alignment.
+claim	abi~531e4327	531e4327e3fc3140	prose	-	X10	Both frames end with message, a small buffer in which a device that fails writes a code of its own choosing and a line of text.
+claim	abi~743f9dc1	743f9dc145dc15d7	prose	-	X10	Every call returns a status: OK; FAULT, with the message filled in; RESHAPE, only from a digital function that is trying out a parameter value; or FINISH, only from a reaction, which ends the analysis after the present instant.
+claim	abi~1a2e91e3	1a2e91e35db0e7b7	prose	-	X10	a net of the instance's own, which no other instance and no host write reaches
+claim	abi~e2ef8291	e2ef8291ceb96dc7	prose	-	X10	Before the solver uses a shape it validates it against nine rules, in this order, and refuses the shape at the first one it breaks.
+claim	device-authoring~fc128c4f	fc128c4f927b18f4	prose	-	X10	ContinuousPinSpecification::new("p").linkage(Linkage::port(0)) A specification is the description of one entry before it is added.
+claim	device-authoring~f0a27d4d	f0a27d4d29e7177e	prose	-	X10	The builder remembers its size, and when the shape is frozen it checks that the size is the one the aspect has, so a read of a potential as a 32-bit number is refused before the device ever runs.
+claim	device-authoring~a4767d93	a4767d93b22f81b9	prose	-	X10	The return type Result<(), Fault> says that the method either succeeds with nothing more to hand back, which is written Ok(()), or fails with a Fault: a code and a message that the solver reports with the name of the instance.
+claim	device-authoring~5953c939	5953c9399b744d54	prose	-	X10	const declares a value fixed when the program is compiled. match compares function with each case in turn and runs the first that fits; the last case, which gives the value the name other, catches everything else.
+claim	device-authoring~d943f78b	d943f78b78e9047f	prose	-	X10	shape() is the three lines that every device has: make a builder, declare the tables, declare the code, freeze. freeze validates the whole against the nine rules of chapter 18 and checks the size of every typed read and write; it gives either a SharedShape, which is a shape that many instances can hold at once, or a ShapeRefused that names the rule and the entry.
+claim	device-authoring~b437006d	b437006db68acb9c	prose	-	X10	The trait supplies a version that fails with a fault, for devices that have none, so the resistor does not write it.
+claim	device-authoring~db0f4435	db0f44352f991698	prose	-	X10	DeviceType::implemented_by::<Resistor>("Resistor") makes a device type out of your type: it produces the four entry points in the binary form the solver calls, which unpack the raw frame into a lens, call your trait's methods, and turn a Fault into the status FAULT with its message.
+claim	device-authoring~8c51fda4	8c51fda4f7f4a763	prose	-	X10	Place two of these in a divider across 3 V, with 1 kΩ on top and 2 kΩ below, and the solver calls create twice and evaluate on each at every iteration, as chapter 18 followed.
+claim	device-authoring~e4d155d5	e4d155d5c9060592	prose	-	X10	A test of the attribute crate keeps a copy of that expansion as plain source and fails if the two ever differ, so you can always read what was added.
+claim	device-authoring~93959977	939599776874b868	prose	-	X10	The parameter q is one: #[commit_site(discrete_pin_value(tables.q))] declares that this reaction may commit to the value of the pin q, and gives the method a CommitSiteHandle, which is a handle on that one site.
+claim	device-authoring~82a523eb	82a523eb9a389628	prose	-	X10	A reaction returns Result<ReactionOutcome, Fault>.
+claim	device-authoring~8de44000	8de44000693f01fc	prose	-	X10	A comparator looks at two analog voltages and produces a digital bit.
+claim	device-authoring~243e0fab	243e0fab156961df	prose	-	X10	It is the smallest device that crosses from the analog side to the digital side, and the thing that carries it across is a crossing.
+claim	device-authoring~df853643	df8536439a92bf5a	prose	-	X10	At the instant the solver reports the crossing, the difference is very close to zero and can be on either side of it.
+claim	device-authoring~2c603a93	2c603a9354b59b3c	prose	-	X10	A small device shows both answers: a counter in the style of a microcontroller's timer.
+claim	device-authoring~51700acd	51700acd1e99739a	prose	-	X10	And it is programmable: each time it wraps, it samples an analog control voltage and takes its next top from it, one count per 100 mV.
+claim	device-authoring~996be5ea	996be5ea3c55a1e4	prose	-	X10	It stops at its first visible action.
+claim	device-authoring~48d693a1	48d693a13c496adc	prose	-	X10	When the count wraps, the output toggles, and something else in the design may act on that.
+claim	device-authoring~9f0f18dc	9f0f18dc6ea09ca1	prose	-	X10	So the loop stops there.
+claim	device-authoring~ac56c84b	ac56c84bed5d66ed	prose	-	X10	When a reset arrives in between, the method runs, sets a new wake time, and the old one is gone.
+claim	device-authoring~da585192	da5851928544a807	prose	-	X10	The solver then never runs that reaction ahead of the accepted analog time, gives it an exact horizon, and calls it once per instant.
+claim	device-authoring~1e331d51	1e331d51e6fe37f7	prose	-	X10	When an attribute is used in a way that cannot be turned into a device, the build stops with a message at the exact word that is wrong.
+claim	device-authoring~0a8196d4	0a8196d491c8b9e7	prose	-	X10	a write is a `&mut T`: the function fills it; a read is taken by value: the frame gives no alignment
+claim	device-authoring~84a50083	84a50083d52e452b	prose	-	X10	a function returns Result<(), Fault>; a reaction returns Result<ReactionOutcome, Fault>
+claim	device-authoring~5e7b4fe2	5e7b4fe2ecca524a	prose	-	X10	A read whose type has another size than its aspect, a potential read as a 32-bit number for example, is refused by freeze with the name of the function and the read.
+claim	device-authoring~431b576f	431b576fcaf69497	prose	-	X10	The mark #[test] is an attribute of the language itself: it makes a function a test. .expect("…") stops the test with that text if the call failed. current_at is a small function declared in place, between two bars, for use in this test only.
+claim	device-authoring~9bf4907c	9bf4907c2284d6fc	prose	-	X10	Give two ports the position 0, for example, and freeze refuses with the rule LinkageRepeated and the name of the second pin.
+claim	device-authoring~a797fd80	a797fd80b7cbe3dc	prose	-	X10	A wrong partial makes the simulation give wrong answers.
 block	solver#1	83b122f0b6d179ca	run	piperine/book_solver::the_filter_runs_under_every_analysis_a_run_table_names	-	-
 block	solver#2	d031dd18f89b18af	shown	-	-	-
 block	solver#3	2cf86fa5c5e0f33c	held	piperine-cli/book::every_cli_listing_of_the_book_is_what_the_binary_prints	-	piperine run filter.msl --analysis op
@@ -684,7 +775,7 @@ claim	simulation~8e10cd25	8e10cd25ec61b27a	prose	-	-	A stage that fails is retri
 claim	simulation~69743e37	69743e379b66c312	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	If the direct attempt and both rescues fail, the run stops with E0505 and names the unknowns that would not settle.
 claim	simulation~d3db4907	d3db4907e08f62bb	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	This circuit has no operating point at all: a device that pushes current out above 0.5 V and pulls it in below.
 claim	simulation~c00d7d3c	c00d7d3cdc37af09	holds	piperine/book_simulation::a_circuit_with_no_operating_point_stops_with_e0505_naming_its_unknowns	-	The number in the middle is the bound: one solve is allowed 500 iterations.
-claim	simulation~9e91f29d	9e91f29df6568ebc	prose	-	-	Chapter 19 gives the bound on those rounds and the error that names the nets when they never agree.
+claim	simulation~20d19489	20d1948906cd591c	prose	-	-	Chapter 20 gives the bound on those rounds and the error that names the nets when they never agree.
 claim	simulation~354e500b	354e500bc9e64ef4	prose	-	-	Everything returns to the checkpoint taken before it, and the step is tried again at one eighth of its size.
 claim	simulation~2bcf7be9	2bcf7be9e06567f9	prose	-	-	A step in which Newton fails is treated the same way.
 claim	simulation~f65fc805	f65fc80584500466	holds	piperine/book_simulation::a_transient_starts_at_a_thousandth_of_its_stop_and_no_step_exceeds_a_hundredth	-	The first step of a run is one thousandth of stop, and no step is longer than one hundredth of stop, unless the run gives max_step: then max_step is both the first step and the longest.

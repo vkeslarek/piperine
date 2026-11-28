@@ -23,7 +23,7 @@ yet"; `P0002` of a plain type mismatch.
 change of the IR or the ABI.
 
 **Counts.** 0 silent, 2 broken, 21 loud (L1 to L97 less the seven `analog-operators` rows (L43, L44, L45, L47, L49, L60, and L72, which it found and closed), the nine `msl-fixes`, the one `host-ii`, the two `unknown-semantics`, the nine `analog-structure`, the three `unknown-semantics-events` (L51, L52, L53), the four `params-and-io` (L20, L28, L39, L57) and the eleven `composite-values` rows (L1, L2, L3, L5, L6, L10, L13, L16, L24, L63, L66), the four `resolved-nets` rows (L21, L22, L23, L71) the three `explicit-unknowns` rows (L64, L65, L68) and L25 (`resolved-nets-bundles`) closed, S8 closed by `explicit-unknowns` phase A, L4, L7, L8 and L9 closed by `generics` phases A and B, L30, L31, L69 and L70 closed by `generics` phase C, L29, L32, L78, L79 and L80 closed by `generics` phase D, L40, L77, L88 and L89 closed by `generics` phase E, L81 and L82 closed by `nested-reach`, L90 and L91 never rows, in six tables) plus
-7 backend and diagnostic notes, 8 spec holes or disagreements, 3 solver and performance points,
+7 backend and diagnostic notes, 9 spec holes or disagreements, 3 solver and performance points,
 17 host gaps, 8 unproven.
 
 | Section | Ids |
@@ -31,7 +31,7 @@ change of the IR or the ABI.
 | §2 Broken | B3, B4 |
 | §3 Silent (read this first) | none (S3 closed by `generics` phase C; S6 and S8 closed by `explicit-unknowns`) |
 | §4 Loud | L1–L97 (L94, L95, L96 and L97 found by the `nested-reach` verification, owner `spec-closure`; L81 and L82 closed by `nested-reach` (L81 found by the `generics` phase D fix round 2, L82 by its fix round 10); L92 and L93 found by the `generics` phase E round 2 verification, owner `spec-closure`; L90 and L91 never rows; L40, L77, L88 and L89 closed by `generics` phase E (L88 found by the `generics` phase D round 14 verification; L89, a param of an array of templates, found by its T119 and closed by T121); L83 to L87 found by the `generics` phase D fix round 14, owners `spec-closure` (L83), `generics` (L84), `closures` (L85, with `spec-closure` for its code, and L86) and `params-and-io` (L87); L21, L22, L23 and L71 closed by `resolved-nets`, L25 by `resolved-nets-bundles`; L82 found by the `generics` phase D fix round 10, owner `spec-closure`; L78, L79 and L80 found by the `generics` phase D verification and fix round 1, L78, L79 and L80 closed by its fix round 2, which found L81, owner `spec-closure`; L76 and L77 found by the `generics` phase C round 4 fix, owners `spec-closure` and `generics` phase E (T118); L75 found by the `unknown-semantics-events` closing round, owner `spec-closure`; L73 and L74 found by the `analog-operators` closing round, owner `spec-closure`; L43, L44, L45, L47, L49, L60 and L72 closed by `analog-operators` (L72 found by it); L64 and L65 closed by `explicit-unknowns`; L13 closed by `composite-values` phase D; L11, L14, L15, L17, L18, L19, L20, L28, L39, L41, L57, L46, L48, L54, L55, L56, L26, L27, L34–L38, L42, L50, L5, L6, L10, L1, L2, L3, L16, L66, L51, L53, L22, L23 closed; L4, L7, L8 and L9 closed by `generics` phases A and B; L64 to L66 found by `composite-values`; L68 split from L58 and closed by `explicit-unknowns` phase B) |
-| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X2 (X1 closed by `fix/idtmod-wrap`; X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`) |
+| §5 Spec holes and disagreements | G1–G5 (the buck's; G6 closed by `explicit-unknowns`), X2 (X1 closed by `fix/idtmod-wrap`; X6 decided by `generics`; X3, X4, X7, X8, X9 decided by `host-ii`; X5 closed by `params-and-io`), X10 (the Book's two device-ABI chapters, written ahead of `device-abi-simplification`) |
 | §6 Solver, numerics, performance | V13, V16 (V12 closed by `transient-performance`) |
 | §7 Host surface | H1–H18 (H11 closed by `root-e2e`, H12 by `params-and-io`) |
 | §8 Unproven | U1–U11 (U5, U10 closed by `root-e2e`, U7 by `analog-operators`) |
@@ -193,6 +193,21 @@ G1 to G5 are the buck's (`examples/buck/GAPS.md`; G6, unknown integers per value
 - **X2 — Appendix C.2.3 and G.38 say "nothing is executed".** Of the conformance set,
   `transition` runs; `zi_nd`, `inertial` and `Tran` are refused; the §15.1 trace has no test from
   source.
+- **X10 — the Book's chapters 18 and 19 teach a device ABI the tree does not implement yet.** "The
+  device ABI" (`abi`) and "Writing a device" (`device-authoring`) were written ahead of the feature
+  `device-abi-simplification` (user, 2026-11-27: "Eu gostaria que antecipasse criar os capítulos do
+  book do ABI"), in the names its approved design fixes: `ContinuousPin`, `Linkage`, aspects,
+  `CommitSite`, `evaluate`, `react`, `DeviceImplementation`, the builder and the attributes of
+  `piperine-abi-macros`. The crate `piperine-abi` of the tree still has the contract before it
+  (`Cell`, `Statement`, `Device`, `eval`), and `piperine-abi-macros` does not exist, so none of the 31
+  `rust` and `text` listings of the two chapters compiles or is run by a test, and the sentences
+  that describe the new contract are asserted by nothing. In `tests/book/inventory.tsv` those rows
+  carry `X10` in the gap column: the listings as `shown`, the sentences as `prose` (the inventory has
+  no verdict for a `rust` listing that waits for a feature: `refused` fits an `msl` block only). The
+  two `msl` listings (`abi#1`, `abi#3`) and the two values stated about them run today
+  (`book_abi`). Owner: `device-abi-simplification`, whose ABI-18 turns every `rust` listing into a
+  region of a compiled file with the verdict `run` or `held`, re-judges each `X10` sentence, and
+  removes this entry (its tasks T59 to T65 and T72 to T77). Size L.
 
 ---
 
@@ -356,3 +371,8 @@ Three observations the root tests made are no Book row, so they are not above: t
 each with its owner. A run has no key or flag for `dt_min` (H16, `host-analyses`); a `--stream` named like
 a signal fails decoding (H17, `host-analyses`); a root file stem that is a keyword is `E0171` (H18,
 `cli-packages`).
+
+The listings of chapters 18 and 19 that teach the device ABI of `device-abi-simplification` are no row
+of the table either: they are `rust` and `text` blocks, which the inventory holds as `shown`, and the
+table lists what the binary refuses. They are tracked as X10 (§5), which their inventory rows name
+in the gap column.

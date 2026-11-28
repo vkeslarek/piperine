@@ -317,14 +317,14 @@ fn the_book_says_transient() {
 #[test]
 fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
     // CLI-19 AC 1: the chapter `cli`, titled `The command line`, belongs to Part 1 of the Book, after
-    // `errors` and before `cheatsheet`, which closes the part; Part 2 follows with `pom`, `abi`, `solver`,
-    // `compiler` and `structure` (the Book's order: reading errors 14, the command line 15, the cheat
-    // sheet 16, then the object model 17 to how Piperine is organized 21); the chapter numbers are
-    // consecutive from 1
+    // `errors` and before `cheatsheet`, which closes the part; Part 2 follows with `pom`, `abi`,
+    // `device-authoring`, `solver`, `compiler` and `structure` (the Book's order: reading errors 14, the
+    // command line 15, the cheat sheet 16, then the object model 17 to how Piperine is organized 22);
+    // the chapter numbers are consecutive from 1
     let html = content();
     let ids = chapter_ids(&html);
-    let tail: Vec<&str> = ids.iter().rev().take(8).rev().map(String::as_str).collect();
-    assert_eq!(tail, ["errors", "cli", "cheatsheet", "pom", "abi", "solver", "compiler", "structure"], "{ids:?}");
+    let tail: Vec<&str> = ids.iter().rev().take(9).rev().map(String::as_str).collect();
+    assert_eq!(tail, ["errors", "cli", "cheatsheet", "pom", "abi", "device-authoring", "solver", "compiler", "structure"], "{ids:?}");
     assert!(chapter(&html, "cli").contains("<h2>The command line</h2>"), "the title");
     let numbers: Vec<usize> = html
         .split("<p class=\"ch-num\">Chapter ")
@@ -332,7 +332,7 @@ fn the_cli_chapter_closes_the_fundamentals_before_the_cheat_sheet() {
         .map(|s| s.split_once('<').expect("the label closes").0.parse().expect("a chapter number"))
         .collect();
     assert_eq!(numbers, (1..=ids.len()).collect::<Vec<_>>(), "chapter numbers are consecutive from 1");
-    assert_eq!(ids.len(), 21, "{ids:?}");
+    assert_eq!(ids.len(), 22, "{ids:?}");
 }
 
 #[test]

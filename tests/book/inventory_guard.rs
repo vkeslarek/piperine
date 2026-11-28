@@ -232,11 +232,11 @@ impl Tree {
 
 #[test]
 fn the_book_reads_every_block() {
-    // RE-01 AC 1: the Book has 21 chapters and 287 code blocks (the foreign-models examples left the Book, three blocks; 280 before explicit-unknowns added the four nets of "Driving with strength", 287 before the swappable MOSFET of generics phase D added two) (a mermaid diagram is not one), 122 of
+    // RE-01 AC 1: the Book has 22 chapters and 314 code blocks (the foreign-models examples left the Book, three blocks; 280 before explicit-unknowns added the four nets of "Driving with strength", 287 before the swappable MOSFET of generics phase D added two; 314 since the device ABI became two chapters, `abi` rewritten and `device-authoring` new, ahead of `device-abi-simplification`) (a mermaid diagram is not one), 122 of
     // them `msl`; every block has a distinct id that reads back, and every chapter has prose
     let book = Book::read();
-    assert_eq!(book.chapters().len(), 21, "the chapters of the Book: {:?}", book.chapters());
-    assert_eq!(book.blocks().len(), 287, "the code blocks of the Book");
+    assert_eq!(book.chapters().len(), 22, "the chapters of the Book: {:?}", book.chapters());
+    assert_eq!(book.blocks().len(), 314, "the code blocks of the Book");
     assert_eq!(book.blocks().iter().filter(|block| block.language() == "msl").count(), 127, "the `msl` blocks of the Book");
     let mut seen = Vec::new();
     for block in book.blocks() {

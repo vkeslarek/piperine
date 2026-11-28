@@ -346,7 +346,7 @@ print_step = 1e-6</pre>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 19). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 20). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: a param of type <code>str</code>, for one. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
+  <p>The specification is complete. The front end that parses MSL and builds the object model (chapter 17) exists and is growing, and it parses and resolves the whole standard library and every complete file of this book. The solver and its device ABI are built (chapters 18 and 20). A first set of analog circuits (resistors, capacitors, sources, a diode with junction limiting) runs on it end to end from source, through an interpreter or as compiled Rust, and is compared with ngspice. Digital and mixed-signal models run from source as compiled Rust: a full-size digitally controlled buck converter starts and regulates with its loop closed (chapter 21). So a file with a <code>digital</code> block, like <code>Monitor</code> above, runs today. The <code>piperine</code> command runs all of it, and every listing of its output in this book is what it prints, checked against the program itself. Parts of the language beyond that are still refused by name with P0001: a param of type <code>str</code>, for one. When a chapter's example needs one of them, its "Run it" box says so and shows the refusal. This book describes the language as specified.</p>
 </div>
 
 <div class="callout mistake">
@@ -3325,7 +3325,7 @@ digital for MacPipe {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 20); its reactions, commits, events and <code>emit!</code> records run on the solver and are tested against the rules above. A param of an integer type, such as <code>n: u8</code>, is a param like any other: the debouncer and the PWM run from source, as their "Run it" boxes show. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
+  <p>Digital MSL runs from source, and the <code>piperine</code> command runs it. A <code>digital</code> block is type checked, elaborated and compiled to Rust (chapter 21); its reactions, commits, events and <code>emit!</code> records run on the solver and are tested against the rules above. A param of an integer type, such as <code>n: u8</code>, is a param like any other: the debouncer and the PWM run from source, as their "Run it" boxes show. A transient of a design with no analog node runs to its stop like any other and gives its table.</p>
 </div>
 
 <div class="callout mistake">
@@ -4915,7 +4915,7 @@ analog for SarAdc { i(dac.core) +> ddt(cpar * v(dac.core)); }    // the parent's
   <p>By the end of this chapter you can say what the solver is doing at any moment of a run: how a circuit becomes equations, how those equations are solved at rest and over time, how the analog and digital sides take turns, and why a given run is fast, slow or stuck. You do not need to know how to build a solver. You need to know what yours is doing with your model.</p>
 </div>
 
-<p>You have now written analog, digital and mixed models. This chapter shows what the simulator does with them, slowly, with a picture for every idea and one small circuit that is run from the first section to the last. Chapter 19, in Part 2, is the reference for the same ground: each rule of the solver in a few lines, and every option of a run with its default. Read chapter 19 when you want the rule; read this one when you want to see why the rule is there.</p>
+<p>You have now written analog, digital and mixed models. This chapter shows what the simulator does with them, slowly, with a picture for every idea and one small circuit that is run from the first section to the last. Chapter 20, in Part 2, is the reference for the same ground: each rule of the solver in a few lines, and every option of a run with its default. Read chapter 20 when you want the rule; read this one when you want to see why the rule is there.</p>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" class="fig"><defs>
 <marker id="ar-fg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="f-fg"/></marker>
@@ -5275,7 +5275,7 @@ error: the op analysis failed: Newton: E0505: Newton failed to converge after 50
 
 <p>Read it from the right. <strong>The names at the end are where to look</strong>: the node that <code>r1.p</code> and <code>c1.p</code> share never passed the two tests. The number in the middle is the bound: one solve is allowed 500 iterations. The code says which kind of failure it was. The cure is in the model, almost never in the tolerances: here the step in <code>Chatter</code> has no slope for Newton to follow. Chapter 14 lists the run errors and the usual cause of each.</p>
 
-<p>A design with digital parts adds one loop around all of this: solve the analog side, let the digital side react to that solution, and if a reaction changed something an analog model reads, solve again. Chapter 19 gives the bound on those rounds and the error that names the nets when they never agree.</p>
+<p>A design with digital parts adds one loop around all of this: solve the analog side, let the digital side react to that solution, and if a reaction changed something an analog model reads, solve again. Chapter 20 gives the bound on those rounds and the error that names the nets when they never agree.</p>
 
 <h3>Moving through time</h3>
 
@@ -8879,7 +8879,7 @@ print = ["vout"]</pre>
 <div class="part" id="part-in-depth" data-part="2" data-title="In depth">
 <div class="part-num">Part 2</div>
 <div class="part-title">In depth</div>
-<div class="part-lead">How Piperine works underneath: the object model, the device ABI, the solver and its options, the compiler, and the crates. Most models are written without opening this part.</div>
+<div class="part-lead">How Piperine works underneath: the object model, the device ABI and how to write a device against it, the solver and its options, the compiler, and the crates. Most models are written without opening this part.</div>
 </div>
 
 <!-- ===================================================== 17 -->
@@ -8984,74 +8984,322 @@ assert_eq!(front.port("q").unwrap().writers().len(), 1); // the commit `q <- d;`
 <!-- ===================================================== 18 -->
 <section id="abi" class="chapter">
 <p class="ch-num">Chapter 18</p>
-<h2>Device ABI</h2>
+<h2>The device ABI</h2>
 
-<p>Everything the solver simulates is a <strong>device</strong>, and every device meets the solver through one binary interface, the <strong>device ABI</strong>. A resistor compiled from MSL, a BSIM model compiled to OSDI, an AVR microcontroller emulator, the IR interpreter running a model nobody compiled: the solver calls all of them the same way. You never write against it when you write MSL; the compiler does. This chapter is for when you want to know what your module becomes, or to plug in a device that was not written in MSL.</p>
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can read the description of any device, say what each of its entries asks of the solver, and follow a resistor and a flip-flop through every phase of a simulation: which table the solver looks at, and which piece of the device's code it calls.</p>
+</div>
+
+<p>Everything the solver simulates is a <strong>device</strong>: a resistor compiled from MSL, a flip-flop, the interpreter running a model nobody compiled, a simulator of some other kind wrapped to look like a component. The solver meets all of them through one interface, the <strong>device ABI</strong>. The letters stand for <em>application binary interface</em>: an agreement about bytes and calls, written so that the two sides can be built apart, in different languages, and still fit.</p>
+
+<p>You never write against this interface when you write MSL; the compiler does it for you. This chapter is for the day you want to know what your module becomes, or you want to bring a device that was not written in MSL. It explains the ideas and the data. Chapter 19 then writes devices, step by step.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built. The ABI lives in the crate <code>piperine-abi</code>, which has no dependencies and is the only crate a device links against. The solver calls every device through it; the old per-kind device interfaces are gone. Its design was settled by an adversarial review: a builder and a critic went four rounds, and its elegance score rose from 5.5 to 8.1 with no blocker left.</p>
+  <p>This chapter and the next describe the device ABI as the feature <code>device-abi-simplification</code> is building it: the design is approved and the implementation is on its way. Until that feature lands, the listings marked <em>rust</em> in these two chapters do not compile against the crate <code>piperine-abi</code> of the tree, whose names are older. The MSL listings are not affected and run today. The symbol stays <code>piperine_abi_1</code> and the version stays 1.0: the contract has not been released, so it is corrected in place.</p>
 </div>
 
-<h3>Why one ABI</h3>
+<h3>What a device is</h3>
 
-<p>A simulator usually grows one interface per kind of model: one for compiled analog models, one for digital primitives, one for co-simulation, each with its own hooks for setup, temperature, checkpoints and rollback. Piperine has one. The solver calls every device through the same pointers, whether the library came from <code>dlopen</code> (generated Rust, C, an OSDI adapter, an emulator) or lives in the same process (the IR interpreter, a test element, a host stimulus). A bug in coupling is fixed once, for all of them.</p>
+<p>Think of the solver as a mathematician who knows physics and time and has never seen your model. To simulate a circuit it needs, from each component, the answers to two questions. <em>What are you made of?</em> Which nodes do you touch, which parameters do you take, which values do you keep. And <em>what do you compute?</em> Given these voltages, what current flows; given this clock edge, what changes.</p>
 
-<h3>The idea, in five points</h3>
+<p>A device answers the first question with data and the second with code, and that is all a device is:</p>
 
-<ol class="steps">
-<li><strong>A device is a shape plus two kinds of code.</strong> The <em>shape</em> is plain data describing the instance. The code is <em>functions</em>, which are pure (bytes in, bytes out, with partial derivatives), and <em>reactions</em>, which run at an instant and whose only effect is a commit.</li>
-<li><strong>The device has no memory.</strong> Everything that exists over time lives in the solver: unknowns, discrete values, pending commits, integrator and delay histories, limiter iterates. State a device needs is a private pin, just as state in MSL is a <code>signal</code>. So checkpoint, rollback and replay need no entry point.</li>
-<li><strong>A pin is the only shared thing.</strong> A pin is a net seen from an instance, and it obeys the net rules without exception. Ports, internal nodes, branch flows, signals, state, params, temperature, timers, crossings, <code>settle</code>, records: all pins.</li>
-<li><strong>Four analog cells.</strong> What is not a net is an input or an output of a call. A <em>term</em> is a value added to a row, through one of three operators: 1, d/dt or delay. A <em>held input</em> is a value the solver supplies and perturbs (a limiter iterate, a noise source, an AC stimulus). An <em>ambient input</em> is a coordinate of the call (the time, the frequency, the horizon). A <em>watch</em> is an analog output that enters no row (a crossing, a step cap, an operating-point variable).</li>
-<li><strong>One rule runs all code.</strong> A function runs when the solver needs one of its outputs and one of its inputs changed. A reaction runs when an event pin it listens to fires.</li>
-</ol>
+<ul>
+<li>a <strong>shape</strong>, which is plain data that describes one instance: its connections, its parameters, the places where its results go, and the list of its code;</li>
+<li><strong>functions</strong>, which are code that turns values it reads into values it writes, and does nothing else;</li>
+<li><strong>reactions</strong>, which are code that runs when an event fires and asks for changes to happen.</li>
+</ul>
 
-<p>The device says only <em>what</em> a value is. A capacitor says "this is a charge"; equilibrium, TR-BDF2, the truncation test, <code>jω·c</code> in an AC sweep and the history across an undone step are the solver's business.</p>
+<p>A simulator often grows one interface per kind of model: one for compiled analog models, one for digital primitives, one for a co-simulated program, each with its own calls for setup, temperature, saving and restoring. Piperine has one interface for all of them. A fault in how analog and digital meet is then found once and corrected once, for every device there is.</p>
 
-<h3>Who owns what</h3>
+<h3>A device has no memory</h3>
 
-<p>One event owner dispatches to an analog and a digital sub-solver, and the boundary between them is events only. Devices sit below both.</p>
+<p>Here is the idea the rest of the chapter rests on. <strong>A device keeps nothing between two calls.</strong> Every value that has to survive a call is kept by the solver, in a place the shape declared. A device that needs to remember something, the output of a flip-flop or the registers of an emulated processor, declares a place for it and asks the solver to store it there, exactly as a model in MSL keeps its state in a <code>signal</code>.</p>
+
+<p>This sounds like a restriction. It is what makes the interface small, because of what the solver can then do without asking the device anything:</p>
+
+<ul>
+<li><strong>Undo.</strong> A transient step that turns out too long is thrown away. The solver puts its own storage back as it was and tries a shorter one. The device is never told, because it has nothing to put back.</li>
+<li><strong>Redo.</strong> The solver may call the same function twice with the same values, or call it on a copy of its storage to try something out. The answers are the same, so no harm is done.</li>
+<li><strong>Skip.</strong> When the values a function reads did not change since its last call, the solver keeps the last answer and does not call at all.</li>
+<li><strong>Run ahead.</strong> The digital side may run instants that the analog side has not reached yet, and take them back if the analog side disagrees.</li>
+<li><strong>Run in parallel.</strong> Two instances share nothing, so their code can run on two threads at once.</li>
+<li><strong>Test.</strong> A recorded call is a complete test: the same bytes in must give the same bytes out, on any implementation of the device.</li>
+</ul>
+
+<p>So there is no call to save a device, none to restore it, none to tell it that a step was rejected, and no list of capabilities to declare. The device says only <em>what</em> a value is. A capacitor says "this is a charge"; what an equilibrium does with a charge, how it is integrated in time, how it answers at a frequency and what happens to its history when a step is undone are the solver's business.</p>
+
+<p>To check the sentence "the device has no memory" you need to know where memory <em>is</em>. These are the solver's own storage areas that a device author meets. Each is declared by one table of the shape, and each is put back when a step is undone, with the one exception noted.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>The solver keeps</th><th>What it holds</th><th>Declared by</th></tr></thead>
+<tbody>
+<tr><td>the solution vector</td><td>one real number per continuous pin: a potential or a flow</td><td>the continuous pins</td></tr>
+<tr><td>the discrete store</td><td>for each discrete pin its bytes, its bytes before the latest change, and whether it changed</td><td>the discrete pins</td></tr>
+<tr><td>the event marks</td><td>whether each event fired in the present microstep</td><td>the event pins</td></tr>
+<tr><td>the commit queue</td><td>the changes that were asked for and are not due yet</td><td>the commit sites of the reactions</td></tr>
+<tr><td>the term histories</td><td>past values of what is differentiated in time or delayed</td><td>the terms</td></tr>
+<tr><td>the limit memory</td><td>the value a nonlinear quantity is held at during Newton's method</td><td>the limits</td></tr>
+<tr><td>the accepted values</td><td>each crossing's value and each operating-point variable at the last accepted solution</td><td>the crossings, the operating-point variables</td></tr>
+<tr><td>the function results</td><td>the last answer of each analog function, so an unchanged call can be skipped</td><td>the functions</td></tr>
+<tr><td>the trace records</td><td>what the model printed from inside a solve; kept even when the step is undone, because their purpose is to show what the solver tried</td><td>the traces</td></tr>
+</tbody></table></div>
+
+<h3>Two devices to keep in mind</h3>
+
+<p>Two small models are followed through the whole chapter. Meet them before any definition, so that each definition has something to point at.</p>
+
+<p><strong>A resistor.</strong> In MSL it is one line of behavior:</p>
+
+<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 = 1k; }
+analog for Resistor { i(p, n) +> v(p, n) / r; }</pre>
+
+<p>The compiler turns it into a device with this shape. Read it as a form with five sections; the sections that a resistor leaves empty are not shown.</p>
+
+<pre data-lang="text">continuous_pins   p         linkage PORT, position 0
+                  n         linkage PORT, position 1
+discrete_pins     r         linkage PARAMETER   layout F64   initial value 1000.0
+terms             i         operator DIRECT     positive p   negative n
+functions         current   reads     p (CONTINUOUS_PIN_VALUE)
+                                      n (CONTINUOUS_PIN_VALUE)
+                                      r (DISCRETE_PIN_VALUE)
+                            writes    i (TERM_VALUE)
+                            partials  ∂i/∂p   ∂i/∂n   ∂i/∂r</pre>
+
+<p>In words: the resistor touches two nodes that the circuit connects, takes one parameter with a default of 1 kΩ, produces one current that leaves <code>p</code> and enters <code>n</code>, and has one piece of code that computes that current from the two potentials and the resistance, with its three derivatives.</p>
+
+<p><strong>A D flip-flop.</strong> It has no analog part at all:</p>
+
+<pre data-lang="msl">module Dff(in clk: Bit, in d: Bit, out q: Bit = false) {}
+digital for Dff { on clk.rise() { q <- d; } }</pre>
+
+<pre data-lang="text">discrete_pins     clk       linkage PORT, position 0   layout BIT
+                  d         linkage PORT, position 1   layout BIT
+                  q         linkage PORT, position 2   layout BIT   initial value false
+event_pins        rise      linkage PRIVATE
+functions         rising_edge   reads   clk (DISCRETE_PIN_VALUE)
+                                        clk (DISCRETE_PIN_PREVIOUS)
+                                        clk (DISCRETE_PIN_CHANGED)
+                                writes  rise (EVENT_PIN_FIRED)
+reactions         capture       triggered by   rise
+                                reads          d (DISCRETE_PIN_VALUE)
+                                commit sites   q (DISCRETE_PIN_VALUE)</pre>
+
+<p>The edge <code>clk.rise()</code> became a function that looks at the clock and fires a private event when the clock went from low to high. The <code>on</code> block became a reaction that this event triggers. The commit <code>q &lt;- d</code> became a commit site: the one place through which the reaction may change <code>q</code>.</p>
+
+<p>Every word in capitals in these two listings is defined below. For now, notice only that both devices are described by the same form, and that neither holds a value of its own: the resistance, the clock, the output <code>q</code> all live in the solver.</p>
+
+<h3>The nine kinds</h3>
+
+<p>The interface is built from nine kinds of thing. Hold these nine and you are oriented: anything else you meet is an entry of one of four short, closed lists, which the next section gives. Each kind is introduced here with the question it answers and where it shows in the two devices above.</p>
+
+<h4>1. Library and device type</h4>
+
+<p><em>What is loaded?</em> A <strong>library</strong> is a file of compiled code that the solver opens, or code already in the same program. It is a collection of device types with a name and a version. A <strong>device type</strong> is one kind of device: <code>Resistor</code> is a device type, and so is <code>Dff</code>. A device type consists of four entry points, which are the four calls the solver can make on it, and a <em>default shape</em>: the shape an instance has when no parameter value is given. The default shape lets a tool learn what parameters a device type takes without creating anything.</p>
+
+<h4>2. Instance</h4>
+
+<p><em>What is placed in the circuit?</em> An <strong>instance</strong> is one occurrence of a device type. A divider with two resistors has two instances of the device type <code>Resistor</code>. To the solver an instance is an opaque pointer: a handle it passes back on every call and never looks inside. Whatever the instance holds, the solver does not need to know about it, which is the rule of the previous section seen from the other side.</p>
+
+<h4>3. Shape</h4>
+
+<p><em>What is this instance made of?</em> A <strong>shape</strong> is the complete, unchanging description of one instance. It is eleven tables, in three groups: three tables of pins, six analog tables, and two tables of code. The two listings above are shapes with their empty tables left out. A shape depends on structure only, never on values: a resistor of 1 kΩ and one of 2 kΩ have the same shape, and the solver stores a different number for each.</p>
+
+<h4>4. Layout</h4>
+
+<p><em>What do these bytes mean?</em> A <strong>layout</strong> is the only description of bytes in the interface: a size, an alignment, and a list of named fields, each a number of a known width at a known offset. The resistance has the layout <code>F64</code>, one 64-bit real number. A bit has the layout <code>BIT</code>, one byte that is 0 or 1. Whenever the solver stores or passes bytes for a device, a layout says how to read them.</p>
+
+<h4>5. Pin</h4>
+
+<p><em>What does the instance share with the rest of the circuit?</em> A <strong>net</strong> is something of the circuit that instances share: a node whose potential the solver finds, a stored value, an event. A <strong>pin</strong> is one instance's end of one net. The resistor has three pins: <code>p</code> and <code>n</code> on two nodes, and <code>r</code> on the net that stores its resistance. A pin is the only thing two instances can have in common, and every value a device keeps over time is on a pin.</p>
+
+<h4>6. Linkage</h4>
+
+<p><em>Which net is this pin on?</em> The <strong>linkage</strong> is the field of a pin that answers. The resistor's <code>p</code> has the linkage <code>PORT</code> with position 0: it is on whatever net the circuit connects first. Its <code>r</code> has the linkage <code>PARAMETER</code>: it is on a net that the host program writes under the name <code>r</code>. The flip-flop's <code>rise</code> has the linkage <code>PRIVATE</code>: its net belongs to the instance and nothing else reaches it.</p>
+
+<h4>7. Analog table</h4>
+
+<p><em>Where does a result of analog code go?</em> Digital code puts its results in pins: the flip-flop's reaction changes <code>q</code>, which is a pin. Analog code cannot do that. The net of <code>p</code> is a potential that the solver is <em>solving for</em>; nobody assigns it. So everything analog code produces needs another place to go, and the six <strong>analog tables</strong> are those places. The resistor's current goes into a <em>term</em>, the first of the six. The others hold the remaining things that analog code produces: a limit, a small-signal source, a crossing, an operating-point variable and a trace.</p>
+
+<h4>8. Code</h4>
+
+<p><em>What computes?</em> Two tables. A <strong>function</strong> is pure code: called when a result of it is needed, it reads, computes and writes, and has no other effect. A <strong>reaction</strong> is code called at the moment an event fires; its only effect is to make <em>commits</em>, which are requests for a change that applies later, and it makes them through its <strong>commit sites</strong>. The resistor has one function and no reaction. The flip-flop has one of each.</p>
+
+<h4>9. Aspect</h4>
+
+<p><em>How does code say what it reads and writes?</em> In one notation for everything: an <strong>aspect</strong> and an index. An aspect is one facet of the entries of one table. A discrete pin has three facets code can read: its value, its previous value, and whether it changed. So the flip-flop's function reads the pin <code>clk</code> three times, once per aspect: <code>DISCRETE_PIN_VALUE</code>, <code>DISCRETE_PIN_PREVIOUS</code>, <code>DISCRETE_PIN_CHANGED</code>. Reading an aspect gives the facet's present state, and writing it sets that state. The resistor's function writes the aspect <code>TERM_VALUE</code> of the term <code>i</code>.</p>
+
+<p>Those are the nine. One fact ties three of them together and is worth saying once more, because it explains the form of every shape. <strong>The solver keeps, and the code computes.</strong> A shape lists where values are kept (pins, and the analog tables for what pins cannot hold) and what computes (functions and reactions), and nothing else.</p>
+
+<h3>The four catalogues</h3>
+
+<p>Under four of the nine kinds there is a closed list. Closed means that the list is part of the interface: a device cannot add to it. This section says what each entry is for. The tables with their numbers come at the end of the chapter.</p>
+
+<h4>Three pins</h4>
+
+<p>There are three sorts of net, so there are three sorts of pin, each in its own table.</p>
+
+<p>A <strong>continuous pin</strong> is on an <em>unknown</em>: one real number that the analog solver determines. It is the potential of a node, or the flow through a branch. <code>p</code> and <code>n</code> of the resistor are continuous pins. Code may read a continuous pin and may never write it.</p>
+
+<p>A <strong>discrete pin</strong> is on a net that holds bytes of a layout. The bytes change only at a <em>microstep</em>, which is one indivisible step of digital time, so between two microsteps the value is constant. A discrete pin holds one value, or an array of values. The resistance <code>r</code>, the clock <code>clk</code> and the output <code>q</code> are discrete pins. Parameters, signals, state, and constants that the compiler computes once are all discrete pins.</p>
+
+<p>An <strong>event pin</strong> is on an <em>event</em>: a net that holds nothing at all and <em>fires</em> at a microstep. <code>rise</code> of the flip-flop is an event pin. A timer, a detected threshold and the start of a run are events.</p>
+
+<h4>Thirteen linkages</h4>
+
+<p>A linkage names the net a pin is on, and thirteen nets can be named. Three are the ones you have met:</p>
+
+<ul>
+<li><strong>private</strong>: a net of the instance's own. Internal nodes and state are private.</li>
+<li><strong>port</strong>: the net that the circuit connects at a given position. The position counts over the three pin tables together, from 0.</li>
+<li><strong>parameter</strong>: a net that the host writes under the pin's name. The pin's initial value is the parameter's default.</li>
+</ul>
+
+<p>The other ten are the <strong>session nets</strong>: nets that the session, which is one run of the simulator, provides to the whole design. A device that needs the temperature links a discrete pin to the temperature net and reads it like any other pin. The ten are the temperature; whether the run set a temperature; the time resolution; four that say which analysis is running (DC, transient, AC, noise); the event <code>START</code>, which fires once when an analysis begins from initial values; the event <code>SETTLE</code>, which fires at the end of each time point; and a named <em>session parameter</em>, a value the host gives to the whole run under a name.</p>
+
+<p>A linkage may also be marked <code>OPTIONAL</code>. The mark says what happens when nothing provides the net: the pin is then absent and reads as zero bytes, where otherwise an unconnected port gets a net of its own and a missing session parameter is an error.</p>
+
+<h4>Six analog tables</h4>
+
+<p>Each analog table is one promise by the solver about what it does with a result.</p>
+
+<p>A <strong>term</strong> is a real value added to the equation of one unknown and subtracted from the equation of another. The equation of a node says that the currents into it sum to zero, so a term on <code>p</code> and <code>n</code> is a current from one to the other: every circuit simulator calls this a contribution. A term has an <em>operator</em> that says how the value enters: <code>DIRECT</code> adds it as it is (a current), <code>TIME_DERIVATIVE</code> adds its derivative in time (the value is a charge), and <code>DELAY</code> adds the value it had some time ago.</p>
+
+<p>A <strong>limit</strong> is a value the solver holds still between two iterations of Newton's method, for one strongly nonlinear quantity such as the voltage across a junction. An exponential explodes when a guess overshoots; a limit lets the device say "I propose this voltage, but compute with that gentler one for now", and the solver does not declare the solve finished while the two differ.</p>
+
+<p>A <strong>small-signal source</strong> is a source that is zero in every ordinary solve and is injected by one small-signal analysis. It is a <em>noise source</em>, injected by a noise analysis, or a <em>stimulus source</em>, injected by an AC analysis.</p>
+
+<p>A <strong>crossing</strong> is a real value that the solver follows for the moment it passes from non-positive to positive. The solver finds that moment in time and fires an event there. It is how a threshold detected in analog reaches digital code.</p>
+
+<p>An <strong>operating-point variable</strong> is a named value that the solver stores at each accepted solution for the host to read: the transconductance of a transistor, for example.</p>
+
+<p>A <strong>trace</strong> is a record that analog code writes while a solve is in progress, delivered to the host whatever becomes of the step. It is what <code>emit!</code> inside an <code>analog</code> block becomes (chapter 8).</p>
+
+<h4>Twenty-four aspects</h4>
+
+<p>Sixteen aspects are facets of the eleven tables: the value of a continuous pin; the value, previous value and changed mark of a discrete pin; the fired mark of an event pin; the value and the delay of a term; the four facets of a limit; the value and the strength of a small-signal source; the value of a crossing, of an operating-point variable, and the record of a trace.</p>
+
+<p>Seven more belong to no table. They are the <strong>call environment</strong>: values that belong to one call and to no net. They are the time, the frequency, whether the solve is an equilibrium, the two values the solver varies when it approaches a hard solution in stages (a minimum conductance and a scale on the sources), the present tick of digital time, and the <em>horizon</em>, which tells a reaction how far ahead nothing it depends on can change.</p>
+
+<p>The last one, the <strong>step bound</strong>, is a result that needs no table: a function writes it to say "the next transient step is at most this long", and the solver keeps only the smallest.</p>
+
+<h3>How the solver uses a shape</h3>
+
+<p>Now follow the two devices through a simulation. The solver is three parts (chapter 20): an <em>analog solver</em> that owns the unknowns, a <em>digital solver</em> that owns the discrete nets and the events, and an <em>owner</em> above both that owns the clock. Devices sit below, and each part calls only the code that concerns it.</p>
 
 <pre class="mermaid">
 flowchart TB
-  H["Host<br/>(a reaction)"]
-  O["Event owner<br/>discrete store, queue,<br/>records, checkpoints"]
-  A["Analog sub-solver<br/>unknowns, rows,<br/>histories, limit iterates"]
-  D["Digital sub-solver<br/>discrete nets, microsteps"]
-  H -- "commits" --> O
-  O -- "boundary events" --> A
-  A -- "a crossing fires an event pin" --> O
-  O -- "instants (t, n)" --> D
-  subgraph DEV["Devices: shape + code, no memory"]
+  H["Host program"]
+  O["Owner<br/>the clock, checkpoints, what the host observes"]
+  A["Analog solver<br/>solution vector, term histories,<br/>limit memory"]
+  D["Digital solver<br/>discrete store, event marks,<br/>commit queue"]
+  H -- "writes parameters, reads results" --> O
+  O -- "values an analog function reads" --> A
+  A -- "a crossing fires an event" --> O
+  O -- "instants" --> D
+  subgraph DEV["Devices: a shape and code, no memory"]
     AF["analog functions"]
-    DF["discrete functions"]
+    DF["digital functions"]
     R["reactions"]
   end
-  A -- "eval" --> AF
-  D -- "eval" --> DF
+  A -- "evaluate" --> AF
+  D -- "evaluate" --> DF
   D -- "react" --> R
-  R -- "commit" --> O
+  R -- "commit" --> D
 </pre>
 
-<p>The analog side keeps its own copy of the discrete pins its functions read, and that copy changes only through a boundary event. A located crossing is just a commit to the watch's event pin.</p>
+<p>A device has five entry points. One is the exported symbol <code>piperine_abi_1</code>, which hands over the library. The other four belong to each device type: <code>create</code> makes an instance, <code>destroy</code> frees it, <code>evaluate</code> runs one function, and <code>react</code> runs one reaction. The solver offers two calls in return, both usable only from inside a call it made: <code>commit</code>, through which a reaction asks for a change, and a read of one element of an array.</p>
 
-<h3>Six entry points</h3>
+<h4>Load</h4>
 
-<div class="table-wrap"><table>
-<thead><tr><th>Entry</th><th>Side</th><th>Contract</th></tr></thead>
-<tbody>
-<tr><td><code>piperine_abi_1() -> *const Library</code></td><td>device</td><td>The one exported symbol; <code>1</code> is the ABI major.</td></tr>
-<tr><td><code>create(module, values, note) -> Created</code></td><td>device</td><td>An instance and its shape, for these param values.</td></tr>
-<tr><td><code>destroy(instance)</code></td><td>device</td><td>Frees the instance and releases its shape.</td></tr>
-<tr><td><code>eval(instance, k, frame) -> Status</code></td><td>device</td><td>Runs function <code>k</code>: reads its inputs, writes its outputs and the partials that were asked for.</td></tr>
-<tr><td><code>react(instance, k, frame) -> Status</code></td><td>device</td><td>Runs reaction <code>k</code>: reads its inputs, calls <code>commit</code>.</td></tr>
-<tr><td><code>commit(statement, offset, len, bytes, after) -> Status</code></td><td>solver</td><td>Queues one write of the calling reaction. Nothing else calls it, and it does nothing else.</td></tr>
-</tbody></table></div>
+<p>The loader calls <code>piperine_abi_1</code> and gets the library: its name, its version and its device types. It checks the version and reads each default shape. For a design compiled from MSL the compiler has its own idea of what each shape must be, and it compares the two entry by entry; a library that disagrees is not used. At this point a host can already list the parameters of <code>Resistor</code>: it reads the discrete pins of the default shape whose linkage is <code>PARAMETER</code> and finds one, named <code>r</code>, of layout <code>F64</code>, with the initial value 1000.</p>
 
-<h3>What a pin holds</h3>
+<h4>Create and bind</h4>
 
-<p>A pin holds the bytes of its type and nothing else: no byte beside a value says whether the value is established. This contract is still <strong>major 1</strong> and is <strong>unreleased</strong>: until the first release it changes in place, symbol <code>piperine_abi_1</code> and minor 0 included, and a compiled model is always rebuilt against the contract it is loaded by, never loaded against another. The layouts follow from that:</p>
+<p>Take a divider: a source of 3 V, a first resistor of 1 kΩ from the source to a node <code>mid</code>, and a second of 2 kΩ from <code>mid</code> to ground. The owner calls <code>create</code> twice on the device type <code>Resistor</code>, once per instance, passing each the parameter values it was given. Each call hands back an instance and its shape. Both instances get the same shape, because a resistance changes a value, not a structure.</p>
+
+<p>Then the solver <strong>binds</strong>: it checks each shape against the rules of the interface, and connects every pin to its net by reading the pin's linkage. For the first resistor, <code>p</code> is a port at position 0, so it joins the net of the source; <code>n</code> is at position 1, so it joins <code>mid</code>. Its <code>r</code> is a parameter, so the solver makes a net for it and stores 1000 there; the second resistor's net gets 2000. The flip-flop's <code>rise</code> is private, so it gets a net of its own.</p>
+
+<p>From the analog tables the analog solver learns the equations. The term <code>i</code> of the first resistor says: one value, added to the equation of the source node and subtracted from the equation of <code>mid</code>. From the <em>partials</em> that the function <code>current</code> declares, which are the derivatives it promises to compute, the solver learns which entries of its matrix can be nonzero. This pattern depends on declarations only, so it is settled here, once.</p>
+
+<p>From the code tables the solver learns who calls what. A function that writes an analog table is an <strong>analog function</strong>, and the analog solver calls it. A function that writes a pin is a <strong>digital function</strong>, and the digital solver calls it. Nothing in the shape stores this: it follows from what the function writes. <code>current</code> writes a term, so it is analog; <code>rising_edge</code> writes an event pin, so it is digital. The digital solver also works out the order of the digital functions, and which of them depend only on parameters and session nets. That last group is the <strong>parameter cone</strong>, and it comes back under host writes below.</p>
+
+<h4>A DC solve</h4>
+
+<p>To find the operating point the analog solver guesses the unknowns and improves the guess: Newton's method (chapter 11). At each iteration it calls <code>evaluate</code> on the analog functions. For the first resistor the call goes like this. The solver prepares a <strong>frame</strong>, which is the set of buffers for one call. It holds one buffer per read, filled in: the present guess for <code>p</code>, the present guess for <code>n</code>, and the bytes of <code>r</code>. It holds one buffer per write, here one for the value of the term <code>i</code>, and one slot per partial. The function computes <code>(p − n) / r</code> and its derivatives, fills the buffers and returns.</p>
+
+<p>The solver adds the value to the two equations the term names, and uses the partials against <code>p</code> and <code>n</code>, which are the conductance <code>1 / r</code> and its negative, to fill its matrix. It does not ask for the partial against <code>r</code> in an ordinary solve: each call says which partials are wanted, and that one matters only to an analysis of sensitivity.</p>
+
+<p>If an iteration leaves <code>p</code>, <code>n</code> and <code>r</code> exactly as they were, the solver does not call again: a function is called only when the bytes it reads differ from those of its last call. A linear circuit such as the divider is solved in one step of Newton's method and confirmed by the next. Run the operating point and the middle node sits at 2 V: the first resistor carries (3 − 2) / 1 kΩ = 1 mA into it and the second carries 2 / 2 kΩ = 1 mA out of it.</p>
+
+<p>Each term enters a DC solve according to its operator. A <code>DIRECT</code> term is added as it is. A <code>TIME_DERIVATIVE</code> term contributes nothing, because at equilibrium nothing changes in time: this is why a capacitor is an open circuit at DC, and the capacitor's code never has to say so. When the solution is accepted, the solver evaluates the functions that write operating-point variables, crossings and step bounds, and stores those results.</p>
+
+<h4>A transient step</h4>
+
+<p>A transient advances in steps. Before each step the owner takes a <em>checkpoint</em>: a copy of everything the two solvers keep. The analog solver proposes how far to go and solves at the new time, calling the same analog functions with the same frames as in a DC solve. Only the solver's treatment of the terms differs: a <code>TIME_DERIVATIVE</code> term is now differentiated by the integration rule, and the solver keeps the history that the rule needs and tests whether the step was too long for it.</p>
+
+<p>If the step is rejected, the owner restores the checkpoint and the analog solver tries a shorter one. This is the place where having no memory pays: the resistor was called for a step that never happened, and nothing needs to be told to it or undone in it.</p>
+
+<p>The digital side moves between analog steps. The digital solver runs the instants that are due before the end of the proposed step, and stops before a <strong>landing</strong>: an instant whose effect the analog side must see, or that needs to see the analog side. An instant is a landing when it changes a discrete pin that an analog function reads, or runs a reaction that reads a continuous pin. At a landing the analog solver first completes its step up to that time, and only then does the instant run.</p>
+
+<h4>Crossings</h4>
+
+<p>Suppose a device declares a crossing whose value is <code>v − 0.6</code>. After each step the analog solver evaluates the function that writes this value and compares it with the value at the last accepted solution. If it went from non-positive to positive, the threshold was passed somewhere inside the step. The solver then locates the moment inside the step, to within the tolerances in time and in value that the crossing names, and fires the crossing's event pin at that moment. A crossing it cannot locate makes it shorten the step and look again. From there on it is an event like any other, and reactions it triggers run.</p>
+
+<h4>Events and reactions</h4>
+
+<p>Digital time is made of <strong>instants</strong>. An instant is a time, counted in <em>ticks</em> of the session's resolution, together with a <em>microstep</em> number that orders the things that happen at that same time. Nothing digital changes between two microsteps.</p>
+
+<p>Follow the flip-flop through one clock edge. The data port <code>d</code> is high, and at 1 µs something changes <code>clk</code> from low to high.</p>
+
+<ol class="steps">
+<li><strong>The digital solver sees that <code>clk</code> changed.</strong> The function <code>rising_edge</code> reads <code>clk</code>, so the solver calls <code>evaluate</code> on it. The frame holds the value of <code>clk</code> (high), its previous value (low) and its changed mark (1).</li>
+<li><strong>The function writes 1 to the aspect <code>EVENT_PIN_FIRED</code> of <code>rise</code>.</strong> The event fires in this microstep.</li>
+<li><strong>The reaction <code>capture</code> is triggered by <code>rise</code>, so the solver calls <code>react</code> on it.</strong> Its frame holds the value of <code>d</code> as it was when the microstep began: every reaction of a microstep reads the same snapshot, so the order in which they run cannot be observed.</li>
+<li><strong>The reaction makes one commit through its commit site: "set <code>q</code> to high, after no delay".</strong> It does this by calling the solver's <code>commit</code>. Nothing changes yet.</li>
+<li><strong>The commit is due at the next microstep.</strong> There the solver applies it, <code>q</code> becomes high, and whatever reads <code>q</code> is called in turn.</li>
+</ol>
+
+<p>Hold <code>d</code> high and raise the clock at 1 µs: <code>q</code> starts low, and after the edge it is high. The flip-flop's memory, the bit it holds between edges, is the discrete pin <code>q</code> in the solver's store. If the analog solver rejects the step that led here, the store is put back and the edge is replayed; the flip-flop's code is called again and gives the same answer.</p>
+
+<p>A commit may carry a delay. A commit with a delay to a private event pin is how a device says "wake me then", and it is the only timer the interface has. A reaction may also read the aspect <code>HORIZON</code>: the last tick through which nothing that triggers it, and nothing it reads, can change. A device with a clock of its own uses it to do the work of many of its cycles in one call (chapter 19 builds one).</p>
+
+<h4>AC and noise</h4>
+
+<p>The small-signal analyses do not run instants. They start from an operating point and ask how the circuit answers a small disturbance at each frequency. The solver already has what it needs from the last <code>evaluate</code>: the partials. Each term contributes its partials multiplied by the response of its operator: 1 for <code>DIRECT</code>, <code>jω</code> for <code>TIME_DERIVATIVE</code>, a phase rotation for <code>DELAY</code>. The resistor is therefore not called again at any frequency, and a capacitor behaves as <code>jω·c</code> although its code only ever computed a charge. A function is called again per frequency only if it reads the aspect <code>FREQUENCY</code>.</p>
+
+<p>The disturbance itself comes from the small-signal sources. In an AC analysis each stimulus source injects the phasor that a function wrote as its strength. In a noise analysis each noise source injects the spectral density that a function wrote, and the report lists every source by the name the shape gave it.</p>
+
+<h4>Host writes and where conditions</h4>
+
+<p>Between analyses, or during a run, the host may write a parameter: set the first resistor's <code>r</code> to 5 kΩ. The solver does not simply store the number. It first tries the write on a copy of the discrete store, called the <strong>shadow store</strong>, and runs the parameter cone there: the digital functions that depend only on parameters and session nets.</p>
+
+<p>Suppose the resistor had been declared with <code>r: f64 = 1k where r &gt; 0.0</code>. The compiler would have added two entries to its shape: a private boolean discrete pin marked as a <strong>where condition</strong>, and a digital function, in the parameter cone, that computes it from <code>r</code>. After the cone has run on the shadow store, the solver reads every where condition of every instance. If any is false the write is refused, nothing changes, and the refusal names the instance and the pin of the condition. Write −5 to <code>r</code> and that is what happens; write 5000 and the condition holds, so the write is made for real.</p>
+
+<p>Two more outcomes exist for devices whose structure depends on a parameter. A parameter may be marked <code>STRUCTURAL</code>: every change of it needs another shape, so the owner destroys and creates the instances again on each accepted write, and refuses such a write during a run. And a digital function of the parameter cone may return the status <code>RESHAPE</code> when one particular value does not fit the present shape; only the device can know this. Between analyses the owner then creates the instance again with the new value; inside a transient the write is refused.</p>
+
+<h3>The data types</h3>
+
+<p>This section goes through the data of the interface, table by table. Every structure is fixed in memory: fields in the listed order, at the listed offsets, the same whatever language produced them. The marker <code>#[repr(C)]</code> on each listing is how that promise is spelled in Rust: it tells the compiler to lay the fields out in the order written, with the layout rules of the C language, which every systems language can reproduce. The comment after each field is its offset in bytes on a 64-bit machine.</p>
+
+<h4>Conventions</h4>
+
+<p>Four small conventions hold everywhere, and knowing them makes every listing easier to read.</p>
+
+<ul>
+<li><strong>Text and lists are views.</strong> <code>Str</code> is a pointer and a length over text; <code>Bytes</code> is the same over bytes; <code>List&lt;T&gt;</code> is a pointer, a length and a stride over elements, where the stride is the distance from one element to the next.</li>
+<li><strong>An index is a position in a named table of the same shape,</strong> counted from 0 and stored as a 32-bit unsigned number. When the term <code>i</code> names its positive pin, it stores the position of <code>p</code> in the table of continuous pins.</li>
+<li><strong>An enumeration is a 32-bit number with named constants, and the first constant is always 1.</strong> A zero where an enumeration is expected is never valid, so a forgotten field is caught.</li>
+<li><strong>Every entry of every table begins with a name and an origin.</strong> The origin is the position in the source, as <code>file:line:column</code>, that the entry came from. An error about an entry can therefore point at the line of the model that made it.</li>
+</ul>
+
+<p>Something that may be missing is encoded in one of two ways, by the type of the field. A field that holds an index is missing when it holds one of two named values that no index can equal: <code>GROUND</code>, the reference node, which has no equation, and <code>SESSION_DEFAULT</code>, "use the session's own tolerance". A field that holds a value has a bit in a field named <code>present</code>: bit <em>n</em> set means that optional field <em>n</em> holds a value.</p>
+
+<h4>What a pin holds</h4>
+
+<p>A discrete pin holds the bytes of its type and nothing else: no byte beside a value says whether the value is established. This contract is still <strong>major 1</strong> and is <strong>unreleased</strong>: until the first release it changes in place, symbol <code>piperine_abi_1</code> and minor 0 included, and a compiled model is always rebuilt against the contract it is loaded by, never loaded against another. A layout is a size, an alignment and a list of fields, and each field is a <em>leaf</em>: a boolean, an unsigned or signed integer of 8, 16, 32 or 64 bits, or a real of 32 or 64 bits. The layouts of the types you write in MSL follow from that:</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>A pin of type</th><th>Layout</th></tr></thead>
@@ -9062,153 +9310,1402 @@ flowchart TB
 <tr><td>a drive of a resolved net</td><td>The layout of the type driven, then a <code>driving: BOOL</code> field: 0 is a drive that is absent from what <code>resolve</code> receives, 1 a present one. The value pin has the layout of the nature's <code>value</code> type.</td></tr>
 </tbody></table></div>
 
-<p>There is one <code>commit</code>, and a field is <code>{ name, leaf, offset, count }</code>.</p>
+<p>There is one <code>commit</code>, and a field is <code>{ name, leaf, offset, count }</code>. The crate ships four layouts ready to use: <code>BIT</code>, <code>BYTE</code>, <code>F64</code> and <code>NONE</code>, the layout of no bytes at all.</p>
 
-<p>A call returns <code>OK</code>, <code>FAULT</code> (with a message), <code>RESHAPE</code> (these param values need a different shape) or <code>FINISH</code> (a reaction ends the analysis at its instant). Nothing may unwind across the boundary.</p>
+<h4>The library and the device type</h4>
 
-<h3>The Rust side</h3>
-
-<p>In Rust a device is a type that implements one trait. No macro is involved: a generic function produces the C thunks.</p>
-
-<pre data-lang="rust">pub trait Device: Sized + Send + 'static {
-    fn prototype() -> &'static Shape;
-    fn create(values: &Values<'_>) -> Result<(Self, Arc<Shape>), Fault>;
-    fn eval (&self, k: u32, cx: &mut Eval<'_>)  -> Result<(), Fault>;
-    fn react(&self, k: u32, cx: &mut React<'_>) -> Result<Flow, Fault>;      // Flow::Continue | Flow::Finish
+<pre data-lang="rust">#[repr(C)] pub struct Library {
+    pub size: u32,                          // @0
+    pub minor: u32,                         // @4
+    pub name: Str,                          // @8
+    pub build: Str,                         // @24
+    pub device_types: List<DeviceType>,     // @40      size 64
 }
-pub const fn module<D: Device>(name: &'static str) -> Module;       // generic extern "C" thunks; no macro</pre>
 
-<p><code>Eval</code> and <code>React</code> are borrow-checked views over the call's buffers: <code>cx.f64(i)</code> and <code>cx.bytes(i)</code> read input <code>i</code>, <code>cx.set(j, v)</code> writes output <code>j</code>, <code>cx.jac()</code> is the partials, <code>cx.commit(statement, bytes, after)</code> queues a write. A panic becomes a <code>FAULT</code> with its message.</p>
-
-<h3>Three devices</h3>
-
-<p>These are verbatim from the ABI document, with the partials written by hand so the contract shows. The comment above each one is its shape: <code>reads</code> and <code>writes</code> in order, partials as <code>(write ← read)</code>. Generated code computes the partials for you.</p>
-
-<p><strong>A resistor.</strong> In MSL it is one line of behavior:</p>
-
-<pre data-lang="msl">module Resistor(p: Electrical, n: Electrical) { r: f64 = 1k; }
-analog for Resistor { i(p, n) +> v(p, n) / r; }</pre>
-
-<p>As a device it is two port pins, one param pin, one term and one function:</p>
-
-<pre data-lang="rust">// pins:   p, n (PORT continuous);  r (PARAM F64, default 1e3)
-// terms:  T0 FLOW {p, n} "i"
-// fn 0 "i":  reads [p, n, r]   writes [T0]   partials (0←0) (0←1) (0←2)
-fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-    let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
-    cx.set(0, v / r);
-    cx.jac().copy_from_slice(&[1.0 / r, -1.0 / r, -v / (r * r)]);    // the last matters only when seeded
-    Ok(())
+#[repr(C)] pub struct DeviceType {
+    pub name: Str,                          // @0
+    pub default_shape: *const Shape,        // @16
+    pub data: *const c_void,                // @24
+    pub create: CreateFunction,             // @32
+    pub destroy: DestroyFunction,           // @40
+    pub evaluate: EvaluateFunction,         // @48
+    pub react: ReactFunction,               // @56      size 64
 }</pre>
 
-<p>Two resistors of 1&nbsp;kΩ and 2&nbsp;kΩ share this shape; the solver seeds each one's param net with its value.</p>
+<p><strong>A library</strong> is what the function <code>piperine_abi_1</code> hands over. <code>size</code> is the size of the structure as the library was built, and <code>minor</code> its minor version; a loader refuses a library that is shorter than it expects or newer than it knows. The major version is the <code>1</code> in the symbol's name. <code>name</code> and <code>build</code> identify the library to a person, and <code>device_types</code> is the list of what it offers.</p>
 
-<p><strong>A D flip-flop.</strong> The MSL:</p>
+<p><strong>A device type</strong> is a name, a pointer to its default shape, and the four entry points as pointers to code. A pointer written <code>*const Shape</code> is an address of a <code>Shape</code> that the holder may read and may not change. <code>data</code> is the producer's own: the solver passes it along and never interprets it. None of the four entry points may be missing; a device type with no reaction points <code>react</code> at code that answers <code>FAULT</code>.</p>
 
-<pre data-lang="msl">module Dff(in clk: Bit, in d: Bit, out q: Bit = false) {}
-digital for Dff { on clk.rise() { q <- d; } }</pre>
+<h4>The shape</h4>
 
-<p>The edge <code>clk.rise()</code> becomes a discrete function that fires a private event pin; the <code>on</code> block becomes a reaction listening to it; <code>q &lt;- d</code> becomes one commit:</p>
+<p>The shape is the eleven tables, each a list, in three groups. Its first field is its own size in bytes, so that a reader built for an older, shorter shape knows where to stop.</p>
 
-<pre data-lang="rust">// pins: clk, d (PORT BIT);  q (PORT BIT, init LOW);  rise (PRIVATE event)
-// fn 0 "rise":  reads [clk.VALUE, clk.PREVIOUS, clk.CHANGED]   writes [rise]
-// reaction 0:   on [rise]   reads [d]   writes [S0 {q}]
-fn eval(&self, _k: u32, cx: &mut Eval) -> Result<(), Fault> {
-    cx.set(0, (cx.bytes(2) == [1] && cx.bytes(0) == HIGH && cx.bytes(1) == LOW) as u8);
-    Ok(())
+<pre data-lang="rust">#[repr(C)] pub struct Shape {
+    pub size: u32,                                                   // @0
+    // pins
+    pub continuous_pins: List<ContinuousPin>,                        // @8
+    pub discrete_pins: List<DiscretePin>,                            // @32
+    pub event_pins: List<EventPin>,                                  // @56
+    // the analog tables
+    pub terms: List<Term>,                                           // @80
+    pub limits: List<Limit>,                                         // @104
+    pub small_signal_sources: List<SmallSignalSource>,               // @128
+    pub crossings: List<Crossing>,                                   // @152
+    pub operating_point_variables: List<OperatingPointVariable>,     // @176
+    pub traces: List<Trace>,                                         // @200
+    // code
+    pub functions: List<Function>,                                   // @224
+    pub reactions: List<Reaction>,                                   // @248      size 272
+}</pre>
+
+<p>A shape must be complete: how many bytes every read and write has, and whether every index is valid, can be decided from the shape alone, without calling the device. That is what lets the solver check a shape before it trusts it.</p>
+
+<h4>The three pins and the linkage</h4>
+
+<pre data-lang="rust">#[repr(C)] pub struct ContinuousPin {
+    pub name: Str,                  // @0
+    pub origin: Str,                // @16
+    pub unit: Str,                  // @32
+    pub linkage: Linkage,           // @48
+    pub present: u32,               // @60
+    pub hold_potential: f64,        // @64   optional 0
+    pub potential_tolerance: f64,   // @72   optional 1
+    pub flow_tolerance: f64,        // @80   optional 2      size 88
 }
-fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-    cx.commit(0, cx.bytes(0), 0.0)?;                  // q <- d : applies at (t, n+1)
-    Ok(Flow::Continue)
+
+#[repr(C)] pub struct DiscretePin {
+    pub name: Str,                  // @0
+    pub origin: Str,                // @16
+    pub unit: Str,                  // @32
+    pub layout: Layout,             // @48
+    pub linkage: Linkage,           // @80
+    pub present: u32,               // @92
+    pub flags: u32,                 // @96   discrete_pin_flag::*
+    pub initial_value: Bytes,       // @104  optional 0
+    pub element_count: u64,         // @120  optional 1      size 128
+}
+
+#[repr(C)] pub struct EventPin {
+    pub name: Str,                  // @0
+    pub origin: Str,                // @16
+    pub linkage: Linkage,           // @32      size 48
+}
+
+#[repr(C)] pub struct Linkage {
+    pub linkage_kind: u32,      // @0   linkage_kind::*
+    pub port_position: u32,     // @4   PORT only
+    pub flags: u32,             // @8   linkage_flag::OPTIONAL 1      size 12
 }</pre>
 
-<p><strong>An AVR emulator.</strong> Not written in MSL at all: a foreign device with its own clock, coupled through the same six entry points. Its whole CPU state is one private pin, so the solver can checkpoint and roll it back like any signal.</p>
+<p><strong>A continuous pin</strong> has three optional values beside its name, unit and linkage. <code>hold_potential</code> is the value an MSL node is given with <code>= value</code>: it is where Newton's method starts, and during the operating point of a transient the node is tied to that potential, which is how an initial condition is imposed. <code>potential_tolerance</code> and <code>flow_tolerance</code> are the absolute tolerances of the pin's nature; each can tighten the session's tolerance and never loosens it.</p>
 
-<pre data-lang="rust">// pins:  pad_in[8], pad_out[8] (PORT BIT)     adc0 (PORT continuous)     reset (PORT BIT)
-//        firmware (PARAM U8[256], STRUCTURAL)  f_cpu (PARAM F64)
-//        cpu (PRIVATE discrete, QUIET; layout: registers, SRAM, timers, its own tick — plain fields)
-//        adc_val (PRIVATE F64)                log (PRIVATE discrete, RECORD)
-//        irq, wake, sample (PRIVATE event)
-//        resolution (GLOBAL RESOLUTION), start (GLOBAL START)
-// fn 0 "pad change": reads [pad_in[0..8].CHANGED, reset.CHANGED, adc_val.CHANGED]   writes [irq]
-// reaction 0 "run":    on [start, irq, wake]
-//                      reads  [cpu, pad_in[0..8], reset, adc_val, resolution, start.CHANGED, TICK, HORIZON]
-//                      writes [S0 {cpu}, S1..S8 {pad_out[i], LATER}, S9 {wake, LATER|REPLACE},
-//                              S10 {sample, LATER}, S11 {log}]
-// reaction 1 "sample": on [sample]   reads [adc0]   writes [S0 {adc_val}]
-fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
-    if k == 1 { cx.commit(0, &real(cx.f64(0)), 0.0)?; return Ok(Flow::Continue); }
-
-    let mut cpu: Cpu = *cx.get::<Cpu>(CPU).unwrap();           // a copy of the state pin; Cpu: Pod
-    let (now, horizon, res) = (cx.i64(TICK), cx.i64(HORIZON), cx.f64(RES));
-    if cx.bytes(START) == [1] { cpu = Cpu::reset(now); }
-    cpu.set_pads(cx.bits(PAD_IN), cx.bytes(RESET));            // pin-change interrupts are raised here
-    cpu.adc_result(cx.get::<Real>(ADC_VAL));
-
-    // run my own clock through the horizon, or to my first externally visible action
-    let stop = cpu.run(&self.flash, self.ticks_per_cycle, horizon);
-    let dt = (cpu.tick - now) as f64 * res;
-    match stop {
-        Stop::PadWrite { pad, level } => cx.commit(1 + pad, &level, dt)?,   // the edge keeps its exact time
-        Stop::AdcStart                => cx.commit(10, &[], dt)?,           // fire `sample` then
-        Stop::Break { pc }            => cx.commit(11, bytes_of(&Log { pc }), 0.0)?,   // a record
-        Stop::Horizon | Stop::Sleep   => {}
-    }
-    cx.commit(9, &[], cpu.next_wake(now, res))?;               // "advance me to": REPLACE re-arms
-    cx.commit(0, bytes_of(&cpu), 0.0)?;                        // the state, committed like any signal
-    Ok(Flow::Continue)
-}</pre>
+<p><strong>A discrete pin</strong> adds a layout, which says what its bytes are. <code>initial_value</code> is what the net holds when an analysis starts; for a parameter it is the default. With <code>element_count</code> present the pin is an array of that many values, of which the solver stores only those that were written, so a large memory costs what is used of it. The <code>flags</code> are five independent marks:</p>
 
 <ul>
-<li><strong>How far it may run.</strong> <code>HORIZON</code> is the last tick through which nothing it listens to or reads can change. It runs its own clock up to there, or stops earlier at its first output, because that output may come back to it.</li>
-<li><strong>"Wake me at."</strong> A commit with a delay to its private <code>wake</code> event pin; <code>REPLACE</code> re-arms it.</li>
-<li><strong>The ADC.</strong> A second reaction that reads a continuous pin, so only the samples cost an analog landing.</li>
-<li><strong>Rollback.</strong> None of its own: its state is a pin in the owner's checkpoint. An emulator that cannot expose its state marks <code>run</code> <code>IRREVERSIBLE</code> instead, and pays for it with an analog landing at every instant it fires (in a design with a crossing) and a session the host cannot rewind.</li>
+<li><code>UNTRACKED</code>: the store keeps no previous value and no changed mark for the net, and no function reads it. It suits state that is large and that only reactions use.</li>
+<li><code>RECORD_STREAM</code>: every commit to the net is delivered to the host as a record. It is what <code>emit!</code> in a reaction becomes.</li>
+<li><code>RELAXED_LOOP_ALLOWED</code>: a loop of digital functions may pass through this net, and the solver settles it by repeating.</li>
+<li><code>STRUCTURAL</code>: the net refuses a host write during a run, and on a parameter it says that every change needs another shape.</li>
+<li><code>WHERE_CONDITION</code>: the pin is a where condition; it holds a boolean, and it must be true after any host write.</li>
 </ul>
+
+<p><strong>An event pin</strong> has only a name, an origin and a linkage. It has no layout because its net holds nothing, and no options: an event is always tracked.</p>
+
+<p><strong>The linkage</strong> is three small fields. <code>linkage_kind</code> is one of the thirteen. <code>port_position</code> means something only for a port and must be 0 otherwise. <code>flags</code> has the one bit <code>OPTIONAL</code>. Two kinds use the pin's own name as data: a parameter is written by the host under that name, and a session parameter is looked up in the session under it.</p>
+
+<h4>The six analog tables</h4>
+
+<pre data-lang="rust">#[repr(C)] pub struct Term {
+    pub name: Str,              // @0
+    pub origin: Str,            // @16
+    pub operator: u32,          // @32  term_operator::DIRECT 1 | TIME_DERIVATIVE 2 | DELAY 3
+    pub positive: u32,          // @36  a continuous pin, or GROUND
+    pub negative: u32,          // @40  a continuous pin, or GROUND
+    pub state_tolerance: u32,   // @44  a discrete pin holding a real at byte 0, or SESSION_DEFAULT
+    pub maximum_delay: u32,     // @48  a discrete pin holding a real at byte 0, or SESSION_DEFAULT      size 56
+}
+
+#[repr(C)] pub struct Limit { pub name: Str /* @0 */, pub origin: Str /* @16 */ }   // size 32
+
+#[repr(C)] pub struct SmallSignalSource {
+    pub name: Str,                      // @0
+    pub origin: Str,                    // @16
+    pub small_signal_source_kind: u32,  // @32  small_signal_source_kind::NOISE 1 | STIMULUS 2      size 40
+}
+
+#[repr(C)] pub struct Crossing {
+    pub name: Str,              // @0
+    pub origin: Str,            // @16
+    pub event_pin: u32,         // @32  index into event_pins
+    pub time_tolerance: u32,    // @36  a discrete pin holding a real at byte 0, or SESSION_DEFAULT
+    pub value_tolerance: u32,   // @40  a discrete pin holding a real at byte 0, or SESSION_DEFAULT      size 48
+}
+
+#[repr(C)] pub struct OperatingPointVariable {
+    pub name: Str /* @0 */, pub origin: Str /* @16 */, pub layout: Layout /* @32 */ }   // size 64
+
+#[repr(C)] pub struct Trace {
+    pub name: Str /* @0 */, pub origin: Str /* @16 */, pub layout: Layout /* @32 */ }   // size 64</pre>
+
+<p><strong>A term</strong> names the two pins whose equations it enters. <code>positive</code> is the pin whose equation the value is added to and <code>negative</code> the one it is subtracted from; either may be <code>GROUND</code>. Written out, the equation the solver keeps for an unknown is the sum of its direct terms, plus the time derivative of the sum of its time-derivative terms, plus the sum of its delay terms, equal to zero. The last two fields are each used by one operator only. <code>state_tolerance</code> is the tolerance against which a time-derivative term is tested for a step that was too long. <code>maximum_delay</code> is how far back a delay term may look, so that the solver knows how much history to keep. Each is not a number but an <em>index of a discrete pin</em> that holds the number, because a tolerance is usually computed from parameters, and a discrete pin computed by a digital function is how the interface says "computed from parameters".</p>
+
+<p><strong>A limit</strong> is only a name. Everything about it happens through its four aspects, described with the diode of chapter 19.</p>
+
+<p><strong>A small-signal source</strong> is a name and a kind. Its strength, written by a function, is one real for a noise source (a spectral density) and two reals for a stimulus source (the real and imaginary parts of a phasor).</p>
+
+<p><strong>A crossing</strong> names the event pin it fires and two tolerances, in time and in value, each again a discrete pin or the session's default.</p>
+
+<p><strong>An operating-point variable</strong> and <strong>a trace</strong> each have a layout: the first because the host reads it as a typed value, the second because a record has fields.</p>
+
+<h4>Code: functions, reactions and what they touch</h4>
+
+<pre data-lang="rust">#[repr(C)] pub struct Read    { pub aspect: u32 /* @0 */, pub index: u32 /* @4 */, pub element: u64 /* @8 */ }  // size 16
+#[repr(C)] pub struct Write   { pub aspect: u32 /* @0 */, pub index: u32 /* @4 */ }                              // size 8
+#[repr(C)] pub struct Partial { pub write: u32, pub write_offset: u32, pub read: u32, pub read_offset: u32 }     // size 16
+
+#[repr(C)] pub struct Function {
+    pub name: Str,              // @0
+    pub origin: Str,            // @16
+    pub flags: u32,             // @32  function_flag::OWNS_LIMIT_CORRECTION 1
+    pub reads: List<Read>,      // @40
+    pub writes: List<Write>,    // @64
+    pub partials: List<Partial>,// @88      size 112
+}
+
+#[repr(C)] pub struct Reaction {
+    pub name: Str,                      // @0
+    pub origin: Str,                    // @16
+    pub flags: u32,                     // @32  reaction_flag::IRREVERSIBLE 1
+    pub triggering_events: List<u32>,   // @40  indices into event_pins
+    pub reads: List<Read>,              // @64
+    pub commit_sites: List<CommitSite>, // @88      size 112
+}
+
+#[repr(C)] pub struct CommitSite {
+    pub target: Write,          // @0   aspect DISCRETE_PIN_VALUE or EVENT_PIN_FIRED
+    pub offset: u32,            // @8   the first byte commits through the site may write
+    pub length: u32,            // @12  the number of such bytes; an event pin has none
+    pub flags: u32,             // @16  commit_site_flag::REPLACES_PENDING 1
+    pub minimum_delay: f64,     // @24  seconds      size 32
+}</pre>
+
+<p><strong>A read</strong> is an aspect and an index: "the value of continuous pin 0". Its third field, <code>element</code>, picks one element when the pin is an array and is 0 otherwise. <strong>A write</strong> is an aspect and an index.</p>
+
+<p><strong>A partial</strong> declares one derivative that the function computes: the derivative of write number <code>write</code> with respect to read number <code>read</code>. The two numbers are positions in the function's own lists, not in the shape's tables. The resistor's first partial is <code>{ write: 0, read: 0 }</code>: the derivative of the current with respect to <code>p</code>. The two offsets pick a real inside a write or a read that has several fields, and are 0 for a plain real. The solver reads the list of partials at bind to learn its matrix pattern, and the function must then compute exactly those.</p>
+
+<p><strong>A function</strong> is three lists: what it reads, what it writes, and its partials. Its one flag concerns limits and is explained in chapter 19. A function must be <em>pure</em>: its writes and its partials depend only on the bytes it read. That single rule is what permits the solver to skip a call, repeat it, make it on a copy, or make it in any order.</p>
+
+<p><strong>A reaction</strong> lists the event pins that trigger it, what it reads, and its commit sites. Its one flag, <code>IRREVERSIBLE</code>, is for a reaction whose effect the solver cannot take back because it reaches outside the solver's storage: it talks to a program that cannot be rewound, for example. The solver then never runs it ahead of the accepted analog time and calls it exactly once, which costs speed and is the price of the exception.</p>
+
+<p><strong>A commit site</strong> is one place a reaction may commit to. <code>target</code> names a discrete pin, to change its bytes, or an event pin, to fire it. <code>offset</code> and <code>length</code> give the range of bytes that commits through the site may write, so a reaction can change one field of a larger value. <code>REPLACES_PENDING</code> says that each new commit through the site removes the ones still waiting, which is how a timer is re-armed. <code>minimum_delay</code> is a promise that every commit through the site has at least that delay; when the promise is at least one tick, the solver knows the commit cannot change anything at the instant that made it, and can plan further ahead.</p>
+
+<h4>The frames</h4>
+
+<p>A frame is what one call receives. It is built by the solver for the duration of the call and is gone after it.</p>
+
+<pre data-lang="rust">#[repr(C)] pub struct FunctionFrame {
+    pub size: u32,                      // @0
+    pub reads: *const *const u8,        // @8   one pointer per read
+    pub writes: *const *mut u8,         // @16  one pointer per write
+    pub wanted: *const u8,              // @24  one byte per partial: 1 when the caller wants it
+    pub partials: *mut f64,             // @32  one real per partial, zeroed
+    pub message: *mut FailureMessage,   // @40      size 48
+}
+
+#[repr(C)] pub struct ReactionFrame {
+    pub size: u32,                          // @0
+    pub reads: *const *const u8,            // @8
+    pub commit_queue: *const CommitQueue,   // @16
+    pub commit_queue_context: *mut c_void,  // @24
+    pub message: *mut FailureMessage,       // @32      size 40
+}
+
+#[repr(C)] pub struct CommitQueue {
+    pub size: u32,                      // @0
+    pub commit: CommitFunction,         // @8       size 16
+}</pre>
+
+<p><strong>A function frame</strong> has one pointer per read, each to a buffer the solver filled, and one pointer per write, each to a buffer the function fills. <code>wanted</code> has one byte per declared partial, 1 when this call needs that derivative, and <code>partials</code> has one real per declared partial for the answers. A function may compute an unwanted partial anyway; the solver ignores it.</p>
+
+<p>The read and write buffers have exactly the length the shape gives their aspect, and one property that matters in any language: <em>they carry no alignment</em>. A real may start at an odd address. A device therefore copies the bytes out of a read buffer into a variable of its own and copies results back, and never treats a buffer as if it were a variable in place.</p>
+
+<p><strong>A reaction frame</strong> has the reads and, in place of writes, the <code>CommitQueue</code>: the solver's side of the conversation, holding the one call <code>commit</code>. A reaction passes it the number of one of its commit sites, the bytes, and a delay in seconds. With no delay the commit is due at the next microstep; with a delay it is due at the tick nearest to the present time plus the delay.</p>
+
+<p>One more small structure appears when code reads an array pin whole, not one fixed element of it. The read buffer then holds an <code>ArrayView</code>: the number of elements, the size of one, and a call through which the code asks the solver for the bytes of the element it wants. An array of a million elements costs nothing to pass this way.</p>
+
+<p>Both frames end with <code>message</code>, a small buffer in which a device that fails writes a code of its own choosing and a line of text. Every call returns a <strong>status</strong>: <code>OK</code>; <code>FAULT</code>, with the message filled in; <code>RESHAPE</code>, only from a digital function that is trying out a parameter value; or <code>FINISH</code>, only from a reaction, which ends the analysis after the present instant. No error of the device's language may travel across the call: a failure is a status, never an exception.</p>
+
+<h3>Reference</h3>
+
+<p>The tables below collect what the chapter introduced. The normative text, with the size of every structure and the exact rule behind every row, is the specification <em>The Piperine Device ABI</em>, which the same feature publishes beside the language specification.</p>
+
+<h4>The nine kinds</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Kind</th><th>What it is</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>Library and device type</td><td>What is loaded: a versioned collection of device types; each device type is four entry points and a default shape.</td></tr>
+<tr><td>2</td><td>Instance</td><td>One occurrence of a device type; to the solver, an opaque pointer with no memory the solver must know of.</td></tr>
+<tr><td>3</td><td>Shape</td><td>The complete, unchanging description of one instance: eleven tables.</td></tr>
+<tr><td>4</td><td>Layout</td><td>The only description of bytes.</td></tr>
+<tr><td>5</td><td>Pin</td><td>The instance's end of one net of the circuit.</td></tr>
+<tr><td>6</td><td>Linkage</td><td>The field of a pin that says which net it is on.</td></tr>
+<tr><td>7</td><td>Analog table</td><td>A place where a result of analog code goes.</td></tr>
+<tr><td>8</td><td>Code</td><td>A function (pure, called when a result is needed) or a reaction (called when an event fires; it commits through its commit sites).</td></tr>
+<tr><td>9</td><td>Aspect</td><td>The one notation by which code names what it reads and writes: a facet of a table, and an index.</td></tr>
+</tbody></table></div>
+
+<h4>The eleven tables and what the solver promises for each</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Table</th><th>For each entry, the solver must</th></tr></thead>
+<tbody>
+<tr><td><code>continuous_pins</code></td><td>Solve the pin's unknown, and give code its value.</td></tr>
+<tr><td><code>discrete_pins</code></td><td>Hold the net's bytes; change them only at a microstep; say what changed.</td></tr>
+<tr><td><code>event_pins</code></td><td>Mark the microsteps in which the net fires, and run the reactions it triggers.</td></tr>
+<tr><td>(the linkage of those three)</td><td>Put the pin on the net the linkage names.</td></tr>
+<tr><td><code>terms</code></td><td>Add the value, through the term's operator, to the equation of one unknown and subtract it from another's.</td></tr>
+<tr><td><code>limits</code></td><td>Hold a value between Newton iterations, and not converge while it differs from the device's proposal.</td></tr>
+<tr><td><code>small_signal_sources</code></td><td>Read as zero in every solve; in the source's small-signal analysis, inject the strength through the declared partials.</td></tr>
+<tr><td><code>crossings</code></td><td>When the value goes from non-positive to positive between accepted solutions, locate the moment and fire an event.</td></tr>
+<tr><td><code>operating_point_variables</code></td><td>At each accepted solution, store the value for the host to read by name.</td></tr>
+<tr><td><code>traces</code></td><td>Deliver every record that an evaluation wrote, whatever becomes of the step.</td></tr>
+<tr><td><code>functions</code></td><td>Call the code when its kind's schedule requires, and never otherwise.</td></tr>
+<tr><td><code>reactions</code></td><td>Call the code when an event that triggers it fires, and queue its commits.</td></tr>
+</tbody></table></div>
+
+<h4>The thirteen linkages</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th><code>linkage_kind</code></th><th>Value</th><th>The net</th><th>Allowed on</th></tr></thead>
+<tbody>
+<tr><td><code>PRIVATE</code></td><td>1</td><td>a net of the instance's own, which no other instance and no host write reaches</td><td>any pin</td></tr>
+<tr><td><code>PORT</code></td><td>2</td><td>the net of the circuit's connection number <code>port_position</code></td><td>any pin</td></tr>
+<tr><td><code>PARAMETER</code></td><td>3</td><td>a net the host writes under the pin's name, one per instance or one shared by several</td><td>a discrete pin</td></tr>
+<tr><td><code>TEMPERATURE</code></td><td>4</td><td>the run's temperature</td><td>a discrete pin</td></tr>
+<tr><td><code>TEMPERATURE_GIVEN</code></td><td>5</td><td>whether the run set its temperature</td><td>a discrete pin</td></tr>
+<tr><td><code>RESOLUTION</code></td><td>6</td><td>the time resolution, in seconds</td><td>a discrete pin</td></tr>
+<tr><td><code>ANALYSIS_DC</code></td><td>7</td><td>true while the analysis is a DC analysis</td><td>a discrete pin</td></tr>
+<tr><td><code>ANALYSIS_TRANSIENT</code></td><td>8</td><td>true while it is a transient</td><td>a discrete pin</td></tr>
+<tr><td><code>ANALYSIS_AC</code></td><td>9</td><td>true while it is an AC analysis</td><td>a discrete pin</td></tr>
+<tr><td><code>ANALYSIS_NOISE</code></td><td>10</td><td>true while it is a noise analysis</td><td>a discrete pin</td></tr>
+<tr><td><code>START</code></td><td>11</td><td>fires once when an analysis starts from initial values</td><td>an event pin</td></tr>
+<tr><td><code>SETTLE</code></td><td>12</td><td>fires in the settle phase of a time point</td><td>an event pin</td></tr>
+<tr><td><code>SESSION_PARAMETER</code></td><td>13</td><td>the session parameter whose name is the pin's name</td><td>a discrete pin</td></tr>
+</tbody></table></div>
+
+<h4>The twenty-four aspects</h4>
+
+<p>The column <em>Bytes</em> is the length of the buffer a read or a write of the aspect has. A dash means the aspect cannot be read, or cannot be written.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Aspect</th><th>Value</th><th>Of</th><th>Bytes</th><th>Reading it gives</th><th>Writing it sets</th></tr></thead>
+<tbody>
+<tr><td><code>CONTINUOUS_PIN_VALUE</code></td><td>1</td><td>a continuous pin</td><td>8</td><td>the present guess; in a reaction, the accepted solution of its instant</td><td>—</td></tr>
+<tr><td><code>DISCRETE_PIN_VALUE</code></td><td>2</td><td>a discrete pin</td><td>the layout's size</td><td>its bytes</td><td>its new bytes</td></tr>
+<tr><td><code>DISCRETE_PIN_PREVIOUS</code></td><td>3</td><td>a discrete pin</td><td>the layout's size</td><td>its bytes before its latest change</td><td>—</td></tr>
+<tr><td><code>DISCRETE_PIN_CHANGED</code></td><td>4</td><td>a discrete pin</td><td>1</td><td>1 when it changed in this microstep</td><td>—</td></tr>
+<tr><td><code>EVENT_PIN_FIRED</code></td><td>5</td><td>an event pin</td><td>1</td><td>1 when it fired in this microstep</td><td>a nonzero byte fires it</td></tr>
+<tr><td><code>TERM_VALUE</code></td><td>6</td><td>a term</td><td>8</td><td>—</td><td>the term's value</td></tr>
+<tr><td><code>TERM_DELAY</code></td><td>7</td><td>a term</td><td>8</td><td>—</td><td>the delay, in seconds, of a <code>DELAY</code> term</td></tr>
+<tr><td><code>LIMIT_VALUE</code></td><td>8</td><td>a limit</td><td>8</td><td>the value held for this iteration</td><td>the same</td></tr>
+<tr><td><code>LIMIT_PREVIOUS</code></td><td>9</td><td>a limit</td><td>8</td><td>the value held before this iteration</td><td>—</td></tr>
+<tr><td><code>LIMIT_AGE</code></td><td>10</td><td>a limit</td><td>1</td><td>0 when nothing is held yet; 1 when the held value is from the last accepted solution; 2 when it is from the previous iteration</td><td>—</td></tr>
+<tr><td><code>LIMIT_PROPOSED</code></td><td>11</td><td>a limit</td><td>8</td><td>—</td><td>the value the device proposes</td></tr>
+<tr><td><code>SMALL_SIGNAL_SOURCE_VALUE</code></td><td>12</td><td>a small-signal source</td><td>8</td><td>0, always</td><td>—</td></tr>
+<tr><td><code>SMALL_SIGNAL_SOURCE_STRENGTH</code></td><td>13</td><td>a small-signal source</td><td>8 for noise, 16 for a stimulus</td><td>—</td><td>the strength</td></tr>
+<tr><td><code>CROSSING_VALUE</code></td><td>14</td><td>a crossing</td><td>8</td><td>—</td><td>the value whose passage through zero is located</td></tr>
+<tr><td><code>OPERATING_POINT_VARIABLE_VALUE</code></td><td>15</td><td>an operating-point variable</td><td>the layout's size</td><td>—</td><td>the value</td></tr>
+<tr><td><code>TRACE_RECORD</code></td><td>16</td><td>a trace</td><td>the layout's size</td><td>—</td><td>the record</td></tr>
+<tr><td><code>TIME</code></td><td>17</td><td>the call environment</td><td>8</td><td>the time of the solve or of the instant, in seconds</td><td>—</td></tr>
+<tr><td><code>FREQUENCY</code></td><td>18</td><td>the call environment</td><td>8</td><td>the frequency of the sweep point, else 0</td><td>—</td></tr>
+<tr><td><code>EQUILIBRIUM</code></td><td>19</td><td>the call environment</td><td>1</td><td>1 in an equilibrium solve</td><td>—</td></tr>
+<tr><td><code>MINIMUM_CONDUCTANCE</code></td><td>20</td><td>the call environment</td><td>8</td><td>the small conductance the solver adds while it approaches a hard solution; otherwise the session's own</td><td>—</td></tr>
+<tr><td><code>SOURCE_SCALE</code></td><td>21</td><td>the call environment</td><td>8</td><td>the factor on the independent sources while the solver raises them in stages; otherwise 1</td><td>—</td></tr>
+<tr><td><code>TICK</code></td><td>22</td><td>the call environment</td><td>8, a signed integer</td><td>the last tick not after the instant</td><td>—</td></tr>
+<tr><td><code>HORIZON</code></td><td>23</td><td>the call environment</td><td>8, a signed integer</td><td>the last tick through which nothing that triggers the reaction, or that it reads, can change</td><td>—</td></tr>
+<tr><td><code>STEP_BOUND</code></td><td>24</td><td>the step bound</td><td>8</td><td>—</td><td>the longest the next transient step may be, in seconds</td></tr>
+</tbody></table></div>
+
+<p>In MSL the first five of the call environment are <code>now()</code>, <code>freq()</code>, <code>analysis(Static)</code>, <code>gmin()</code> and <code>source_scale()</code>, and the step bound is <code>bound_step(dt)</code>.</p>
+
+<h4>Who may use an aspect</h4>
+
+<p>Not every kind of code may use every aspect. An analog function may not look at an event, because analog code runs between instants, where events do not exist. A digital function may not read a potential, because it would then depend on something that moves continuously. A shape that breaks this table is refused before it is used.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Aspect</th><th>Analog function</th><th>Digital function</th><th>Reaction</th></tr></thead>
+<tbody>
+<tr><td><code>CONTINUOUS_PIN_VALUE</code></td><td>read</td><td>—</td><td>read</td></tr>
+<tr><td><code>DISCRETE_PIN_VALUE</code></td><td>read</td><td>read, write</td><td>read; commit target</td></tr>
+<tr><td><code>DISCRETE_PIN_PREVIOUS</code></td><td>read</td><td>read</td><td>read</td></tr>
+<tr><td><code>DISCRETE_PIN_CHANGED</code></td><td>—</td><td>read, if it then writes only events</td><td>read</td></tr>
+<tr><td><code>EVENT_PIN_FIRED</code></td><td>—</td><td>read, if it then writes only events; write</td><td>read; commit target</td></tr>
+<tr><td><code>TERM_VALUE</code>, <code>LIMIT_PROPOSED</code>, <code>SMALL_SIGNAL_SOURCE_STRENGTH</code>, <code>CROSSING_VALUE</code>, <code>OPERATING_POINT_VARIABLE_VALUE</code>, <code>TRACE_RECORD</code>, <code>STEP_BOUND</code></td><td>write</td><td>—</td><td>—</td></tr>
+<tr><td><code>TERM_DELAY</code></td><td>write, on a <code>DELAY</code> term</td><td>—</td><td>—</td></tr>
+<tr><td><code>LIMIT_VALUE</code></td><td>read, write</td><td>—</td><td>—</td></tr>
+<tr><td><code>LIMIT_PREVIOUS</code>, <code>LIMIT_AGE</code>, <code>SMALL_SIGNAL_SOURCE_VALUE</code></td><td>read</td><td>—</td><td>—</td></tr>
+<tr><td><code>TIME</code>, <code>EQUILIBRIUM</code></td><td>read</td><td>—</td><td>read</td></tr>
+<tr><td><code>FREQUENCY</code></td><td>read</td><td>—</td><td>—</td></tr>
+<tr><td><code>MINIMUM_CONDUCTANCE</code>, <code>SOURCE_SCALE</code></td><td>read</td><td>read</td><td>read</td></tr>
+<tr><td><code>TICK</code>, <code>HORIZON</code></td><td>—</td><td>—</td><td>read</td></tr>
+</tbody></table></div>
+
+<p>Three conditions complete the table. A digital function that reads a changed mark or a fired mark may write nothing but events: a change is visible for one microstep only, so a value computed from it would outlive what it was computed from. No function reads a discrete pin marked <code>UNTRACKED</code> or <code>RECORD_STREAM</code>. And an analog function does not read a discrete pin that is an array.</p>
+
+<h4>The entry points and the statuses</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Entry</th><th>Provided by</th><th>What it does</th><th>Statuses</th></tr></thead>
+<tbody>
+<tr><td><code>piperine_abi_1</code></td><td>the library</td><td>Hands over the library. It is the one exported symbol, and <code>1</code> is the major version.</td><td></td></tr>
+<tr><td><code>create</code></td><td>the device type</td><td>Makes an instance for these parameter values, and hands back the instance and its shape.</td><td><code>OK</code>, <code>FAULT</code></td></tr>
+<tr><td><code>destroy</code></td><td>the device type</td><td>Frees the instance and releases its shape.</td><td></td></tr>
+<tr><td><code>evaluate</code></td><td>the device type</td><td>Runs one function: reads its buffers, fills its writes and the partials that were wanted.</td><td><code>OK</code>, <code>FAULT</code>; <code>RESHAPE</code> from a digital function that is trying a host write</td></tr>
+<tr><td><code>react</code></td><td>the device type</td><td>Runs one reaction: reads its buffers and makes commits.</td><td><code>OK</code>, <code>FAULT</code>, <code>FINISH</code></td></tr>
+<tr><td><code>commit</code></td><td>the solver</td><td>Queues one commit of the calling reaction, through one of its commit sites.</td><td><code>OK</code>, <code>FAULT</code></td></tr>
+<tr><td>the read of an array</td><td>the solver</td><td>Hands a function or a reaction the bytes of one element of an array pin it reads whole.</td><td></td></tr>
+</tbody></table></div>
+
+<p>The four statuses are numbered <code>OK</code> 1, <code>FAULT</code> 2, <code>RESHAPE</code> 3 and <code>FINISH</code> 4.</p>
+
+<h4>The nine rules a shape must pass</h4>
+
+<p>Before the solver uses a shape it validates it against nine rules, in this order, and refuses the shape at the first one it breaks. A refusal names the rule, the table and the name of the entry, its origin and a detail, so the author of the device is told exactly which entry is wrong.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Rule</th><th>A shape is refused when</th></tr></thead>
+<tbody>
+<tr><td><code>UnreadableList</code></td><td>a list cannot be read safely: its stride is smaller than an element, or its pointer is misaligned</td></tr>
+<tr><td><code>UnrecognizedConstant</code></td><td>a constant is not one its field allows, or a flag or presence bit is not defined</td></tr>
+<tr><td><code>IndexOutOfRange</code></td><td>an index points past the end of its table, of an array's elements, or of a layout's bytes</td></tr>
+<tr><td><code>NotApplicable</code></td><td>something is set where it must be zero: an optional field whose presence bit is clear, an element on an aspect that is not of a discrete pin, a port position on a linkage that is not a port</td></tr>
+<tr><td><code>LinkageNotAllowed</code></td><td>a linkage is used on a sort of pin that cannot have it: a parameter on a continuous pin, for example</td></tr>
+<tr><td><code>LinkageRepeated</code></td><td>the port positions are not 0, 1, 2 and so on, each once; or two parameters have the same name</td></tr>
+<tr><td><code>ValueNotAsRequired</code></td><td>bytes do not have the form their use needs: a partial that does not point at a real, a tolerance pin that holds no real, a where condition that holds no boolean, an array with zero elements</td></tr>
+<tr><td><code>AccessNotAllowed</code></td><td>a read, a write or a commit target is outside the table of who may use an aspect; or one function writes both a pin and an analog table</td></tr>
+<tr><td><code>LimitCorrection</code></td><td>a function writes a limit and a term without saying it owns the correction, or says so and still declares a partial against that limit</td></tr>
+</tbody></table></div>
+
+<p>Some checks need more than one shape and are made at bind: that each net has one writer, that the pins on one net agree on its layout, that a loop of digital functions passes only through nets that allow it.</p>
+
+<h3>Where does X go?</h3>
+
+<p>The question this interface was arranged to answer is "I have this; where do I put it?". There is one place for each thing a device author has in hand.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You have</th><th>It goes in</th></tr></thead>
+<tbody>
+<tr><td>a port</td><td>a pin whose linkage is <code>PORT</code></td></tr>
+<tr><td>an internal node; the current through a voltage source</td><td>a continuous pin whose linkage is <code>PRIVATE</code></td></tr>
+<tr><td>the initial condition of a node</td><td><code>hold_potential</code> of its continuous pin</td></tr>
+<tr><td>a parameter; its default</td><td>a discrete pin whose linkage is <code>PARAMETER</code>; its <code>initial_value</code></td></tr>
+<tr><td>a parameter whose every change alters the structure</td><td>the same pin, flagged <code>STRUCTURAL</code></td></tr>
+<tr><td>one parameter value that this structure cannot take</td><td>the status <code>RESHAPE</code>, from a digital function of the parameter cone</td></tr>
+<tr><td>a rule a parameter must obey</td><td>a digital function that computes a boolean discrete pin flagged <code>WHERE_CONDITION</code></td></tr>
+<tr><td>the temperature, a session parameter, the kind of analysis</td><td>a discrete pin linked to that session net</td></tr>
+<tr><td>the time, the frequency, the tick, the horizon</td><td>a read of that aspect of the call environment</td></tr>
+<tr><td>setup code; anything that depends on parameters or temperature only</td><td>a digital function that reads those pins and writes a private discrete pin</td></tr>
+<tr><td>memory; a piece of state; a register</td><td>a private discrete pin, written by commits</td></tr>
+<tr><td>an array; a memory with addresses</td><td>a discrete pin with an <code>element_count</code></td></tr>
+<tr><td>a timer; a breakpoint; "wake me at"</td><td>a commit with a delay to a private event pin</td></tr>
+<tr><td>a current; a charge; a delayed value</td><td>a term with the operator <code>DIRECT</code>; <code>TIME_DERIVATIVE</code>; <code>DELAY</code></td></tr>
+<tr><td>junction limiting</td><td>a limit</td></tr>
+<tr><td>a noise source; an AC stimulus</td><td>a small-signal source of kind <code>NOISE</code>; <code>STIMULUS</code></td></tr>
+<tr><td>a threshold to detect</td><td>a crossing, and the event pin it fires</td></tr>
+<tr><td>a cap on the time step</td><td>a write of the aspect <code>STEP_BOUND</code></td></tr>
+<tr><td>a value the user may want to inspect</td><td>an operating-point variable</td></tr>
+<tr><td>a message from inside a solve</td><td>a trace</td></tr>
+<tr><td>a record from a reaction</td><td>a commit to a discrete pin flagged <code>RECORD_STREAM</code></td></tr>
+<tr><td>the Jacobian</td><td>the partials of the functions</td></tr>
+<tr><td>a failure; a request to end the run</td><td>the status <code>FAULT</code> with a message; the status <code>FINISH</code> from a reaction</td></tr>
+<tr><td>a checkpoint, a restore, a list of capabilities</td><td>nowhere: the device has no memory</td></tr>
+</tbody></table></div>
 
 <h3>What your MSL becomes</h3>
 
-<p>Each MSL construct lands on one ABI piece:</p>
+<p>Read from the other side, each construct of the language lands on one piece of the interface. This is the work the compiler does for you.</p>
 
 <div class="table-wrap"><table>
 <thead><tr><th>You write</th><th>The device gets</th></tr></thead>
 <tbody>
-<tr><td>a contribution <code>i(p, n) +> x</code></td><td>a <strong>term</strong> on <code>{p, n}</code>, operator 1 (<code>FLOW</code>)</td></tr>
-<tr><td><code>v(p, n) +> x</code></td><td>two <code>FLOW</code> terms and a private continuous pin for the branch current</td></tr>
-<tr><td><code>ddt(x)</code>, <code>delay(x, td)</code></td><td>the <strong>term's operator</strong>: <code>DDT</code>, <code>DELAY</code> (<code>idt</code> is stdlib over <code>DDT</code>)</td></tr>
-<tr><td><code>noise(psd, name)</code>, an AC stimulus, <code>limit</code></td><td>a held <strong>input</strong>: <code>NOISE</code>, <code>STIM</code>, <code>LIMIT</code></td></tr>
-<tr><td><code>now()</code>, <code>freq()</code></td><td>an ambient <strong>input</strong>: <code>TIME</code>, <code>FREQ</code></td></tr>
-<tr><td><code>cross(e)</code>, <code>above(e)</code></td><td>a <strong>watch</strong> (<code>CROSS</code>) that fires a private event pin</td></tr>
-<tr><td><code>bound_step(dt)</code></td><td>a <strong>watch</strong> (<code>CAP</code>)</td></tr>
-<tr><td><code>on clk.rise() { … }</code></td><td>a <strong>reaction</strong> on an event pin, fired by a discrete function for the edge</td></tr>
-<tr><td><code>q &lt;- d</code>, <code>after td</code></td><td>a <strong>commit</strong>, with its delay</td></tr>
-<tr><td>a param <code>r: f64</code>; its <code>where</code></td><td>a <code>PARAM</code> <strong>pin</strong>; a boolean pin that must hold for a write to be accepted</td></tr>
-<tr><td>a <code>signal</code>, an internal node</td><td>a private <strong>pin</strong> (discrete, continuous)</td></tr>
-<tr><td><code>temperature()</code>, <code>settle</code></td><td>a global <strong>pin</strong> the session binds (<code>temperature()</code> also reads whether the run set it)</td></tr>
-<tr><td><code>emit!</code></td><td>a commit to a pin flagged <code>RECORD</code></td></tr>
+<tr><td>a contribution <code>i(p, n) +> x</code></td><td>a <strong>term</strong> between <code>p</code> and <code>n</code> with the operator <code>DIRECT</code></td></tr>
+<tr><td><code>v(p, n) +> x</code></td><td>two <code>DIRECT</code> terms and a private continuous pin for the current of the branch</td></tr>
+<tr><td><code>ddt(x)</code>, <code>delay(x, td)</code></td><td>a term with the operator <code>TIME_DERIVATIVE</code>, <code>DELAY</code></td></tr>
+<tr><td><code>limit(…)</code></td><td>a <strong>limit</strong></td></tr>
+<tr><td><code>noise(…)</code>, <code>ac_stim(…)</code></td><td>a <strong>small-signal source</strong> of kind <code>NOISE</code>, <code>STIMULUS</code></td></tr>
+<tr><td><code>cross(e)</code>, <code>above(e)</code></td><td>a <strong>crossing</strong> and the private event pin it fires</td></tr>
+<tr><td><code>bound_step(dt)</code></td><td>a write of <code>STEP_BOUND</code></td></tr>
+<tr><td>a named <code>let</code> in an <code>analog</code> block</td><td>an <strong>operating-point variable</strong></td></tr>
+<tr><td><code>emit!</code> in an <code>analog</code> block</td><td>a <strong>trace</strong></td></tr>
+<tr><td><code>now()</code>, <code>freq()</code>, <code>gmin()</code>, <code>source_scale()</code></td><td>a read of the <strong>call environment</strong></td></tr>
+<tr><td><code>on clk.rise() { … }</code></td><td>a <strong>reaction</strong> triggered by an event pin, which a digital function fires at the edge</td></tr>
+<tr><td><code>q &lt;- d</code>, with or without <code>after td</code></td><td>a <strong>commit site</strong>, and a commit through it with its delay</td></tr>
+<tr><td>a param <code>r: f64</code>; its <code>where</code></td><td>a discrete pin linked as a <code>PARAMETER</code>; a where condition and the digital function that computes it</td></tr>
+<tr><td>a <code>signal</code>; an internal node</td><td>a private discrete pin; a private continuous pin</td></tr>
+<tr><td><code>temperature()</code>, <code>settle</code></td><td>a pin linked to a session net</td></tr>
+<tr><td><code>emit!</code> in a reaction</td><td>a commit to a discrete pin flagged <code>RECORD_STREAM</code></td></tr>
 </tbody></table></div>
 
-<div class="callout good">
-  <p class="callout-label">Good to know</p>
-  <p>Because a function is pure and a device holds no hidden state, a recorded call is a unit test: the same bytes through the compiled device and through the interpreter must give the same answer. In a debug session the solver also checks every Jacobian against finite differences.</p>
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table>
+  <thead><tr><th>You expected</th><th>What the interface does</th></tr></thead>
+  <tbody>
+  <tr><td>A device stores its state in a field of its own and reads it back at the next call.</td><td>The solver may undo a step, repeat a call or skip one, and the field would then be wrong. State goes in a private discrete pin, changed by commits.</td></tr>
+  <tr><td>A function sets the potential of a node.</td><td>No code writes a continuous pin. A function writes a term, and the solver finds the potential that balances the equations.</td></tr>
+  <tr><td>A commit changes the pin at once.</td><td>A commit is due at the next microstep at the earliest. The reaction that made it, and every other reaction of the same microstep, still read the old value.</td></tr>
+  <tr><td>Two resistors of different values have two shapes.</td><td>They share one. A shape is structure; the values are in the solver's store.</td></tr>
+  <tr><td>A function is told whether it is called for DC, a transient or AC.</td><td>It is not. It computes the same thing every time, and the solver treats each term according to its operator.</td></tr>
+  </tbody></table></div>
 </div>
 
-<h3>What it changes in the spec</h3>
-
-<p>The ABI brought a few small changes to the language rules. They are now part of the specification.</p>
-
-<ul>
-<li><strong>Delayed commits do not make time points (<code>LATER</code>).</strong> A commit whose delay always moves time forward by at least one tick changes nothing at the instant that made it. Only its due time is tested, on its own. The one change you can observe: <code>on settle</code> sees fewer time points.</li>
-<li><strong>What a time point is.</strong> A time at which the analog solver produces an accepted solution <em>and</em> runs the time-point procedure. The simulator may accept solutions at other times; those are not time points, and <code>settle</code> does not fire there.</li>
-<li><strong>Two new core functions, <code>gmin()</code> and <code>source_scale()</code>,</strong> in the same family as <code>now()</code> and <code>freq()</code>. They let a model see the solver's continuation variables, as junction models in ngspice do.</li>
-<li><strong>Smaller ones.</strong> Two sentences on bytes (all-zero bytes are the bytes of <code>Logic::X</code>, of <code>None</code> and of every derived default), and records travel as quiet commits.</li>
-</ul>
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>A capacitor in MSL is <code>i(p, n) +> ddt(c * v(p, n))</code>. Without looking back, write down its shape: which pins, which linkage each has, which term with which operator, and what its one function reads and writes. Then say in which solve the term contributes nothing. (Two continuous pins that are ports and a discrete pin <code>c</code> that is a parameter; one term between them with the operator <code>TIME_DERIVATIVE</code>; a function that reads the two potentials and <code>c</code> and writes the charge <code>c · (p − n)</code> as the term's value. The term contributes nothing in a DC solve.)</p>
+</div>
 
 </section>
 
 <!-- ===================================================== 19 -->
-<section id="solver" class="chapter">
+<section id="device-authoring" class="chapter">
 <p class="ch-num">Chapter 19</p>
+<h2>Writing a device</h2>
+
+<div class="callout goal">
+  <p class="callout-label">Goal</p>
+  <p>By the end of this chapter you can write a device without MSL: declare its shape, write its functions and reactions, hand it to the solver, and test it. You will have read six of them: a resistor written twice, a flip-flop, a diode, a comparator, and a counter that runs a clock of its own.</p>
+</div>
+
+<p>Most devices are written in MSL and compiled for you. You write one by hand when the thing you want to simulate is not a model in MSL: a table measured in a laboratory, an existing simulator of a part, an emulator of a processor, a block whose behavior is a program you already have. Chapter 18 explained what a device is and what the solver does with it. This chapter is the practice: every section adds one idea to a device small enough to read in one sitting.</p>
+
+<div class="callout status">
+  <p class="callout-label">Status</p>
+  <p>The listings of this chapter are written against the device ABI that the feature <code>device-abi-simplification</code> is implementing, with the names its approved design fixes. Until that feature lands they do not compile against the tree, and no test runs them yet; when it lands, each listing becomes a piece of a file that the test suite compiles and runs. The examples are in Rust, the language the solver and the compiled backend are written in. The interface itself is bytes and calls, so a device can be written in any language that can produce them.</p>
+</div>
+
+<h3>Three ideas before any code</h3>
+
+<p><strong>A device is a type.</strong> You declare a type, <code>Resistor</code>, and each value of that type is one instance in a circuit. Because a device has no memory (chapter 18), the type usually has nothing in it at all. What it has is methods: the code of the device.</p>
+
+<p><strong>A shape is built once.</strong> The shape of a resistor does not depend on its resistance, so you build it one time, when it is first needed, and every instance shares it. You build it by calling a <em>builder</em>: an object that collects pins, terms and code, one call per entry, and at the end checks the whole and freezes it into a shape.</p>
+
+<p><strong>A function is a method that turns reads into writes.</strong> The solver hands your method the values it declared it reads; the method computes; it hands back the values it declared it writes. It may not do anything else, and that is all the solver ever asks of it.</p>
+
+<p>Two crates are involved. <code>piperine-abi</code> holds the interface, the builder and everything a device needs; it depends on nothing. <code>piperine-abi-macros</code> holds the <em>attributes</em>, an optional convenience that writes the repetitive part of a device for you. The chapter writes the first device without the attributes, so that you see every line, and then shows what they save.</p>
+
+<h3>A resistor by hand</h3>
+
+<p>The resistor of chapter 18 has two ports <code>p</code> and <code>n</code>, a parameter <code>r</code>, one term <code>i</code> from <code>p</code> to <code>n</code>, and one function that computes the current. Writing it takes five steps.</p>
+
+<h4>Step 1: the tables</h4>
+
+<p>Start with the entries that hold values: the pins and the term. Each call to the builder adds one entry to one table of the shape and hands back the <em>index</em> of that entry, which is its position in the table. You need those indices later, to say what the code reads and writes, so keep them together in a structure.</p>
+
+<pre data-lang="rust">/// A resistor. It keeps nothing: its resistance is on a pin.
+pub struct Resistor;
+
+/// Where each entry of a resistor's shape is.
+pub struct ResistorTables {
+    p: ContinuousPinIndex,
+    n: ContinuousPinIndex,
+    r: DiscretePinIndex,
+    i: TermIndex,
+}
+
+impl ResistorTables {
+    /// Adds the pins and the term of a resistor to `shape`.
+    fn declare(shape: &mut ShapeBuilder) -> ResistorTables {
+        let p = shape.continuous_pin(ContinuousPinSpecification::new("p").linkage(Linkage::port(0)));
+        let n = shape.continuous_pin(ContinuousPinSpecification::new("n").linkage(Linkage::port(1)));
+        let r = shape.discrete_pin(
+            DiscretePinSpecification::new("r", &F64).linkage(Linkage::parameter()).initial_value(&1.0e3_f64),
+        );
+        let i = shape.term(TermSpecification::new("i", TermOperator::Direct).positive(p).negative(n));
+        ResistorTables { p, n, r, i }
+    }
+}</pre>
+
+<p>Read it one line at a time.</p>
+
+<ol class="steps">
+<li><strong><code>pub struct Resistor;</code></strong> declares a type with no fields. Each instance of the device is a value of this type, and it holds nothing.</li>
+<li><strong><code>impl ResistorTables { … }</code></strong> An <code>impl</code> block holds the functions that belong to a type. <code>declare</code> belongs to <code>ResistorTables</code> and is called as <code>ResistorTables::declare(…)</code>.</li>
+<li><strong><code>shape: &amp;mut ShapeBuilder</code></strong> The mark <code>&amp;mut</code> before a type means that the function receives the caller's own value and may change it. Here it changes the builder by adding entries to it.</li>
+<li><strong><code>ContinuousPinSpecification::new("p").linkage(Linkage::port(0))</code></strong> A <em>specification</em> is the description of one entry before it is added. This one describes a continuous pin named <code>p</code> whose linkage is a port at position 0. <code>shape.continuous_pin(…)</code> adds it and hands back its index.</li>
+<li><strong><code>DiscretePinSpecification::new("r", &amp;F64)</code></strong> A discrete pin needs a layout; <code>F64</code> is the shipped layout of one real number. Its linkage is a parameter, and its initial value, 1000, is the parameter's default.</li>
+<li><strong><code>TermSpecification::new("i", TermOperator::Direct).positive(p).negative(n)</code></strong> A term named <code>i</code> that is added directly: a current, out of <code>p</code> and into <code>n</code>. <code>positive</code> takes a <code>ContinuousPinIndex</code> and nothing else.</li>
+</ol>
+
+<p>The last point is worth a second look. Each table has its own type of index: <code>ContinuousPinIndex</code>, <code>DiscretePinIndex</code>, <code>TermIndex</code> and so on. If you write <code>.positive(r)</code>, giving a discrete pin where a term needs a continuous one, the program does not compile. A whole family of mistakes, "index 2 of the wrong table", cannot be written.</p>
+
+<h4>Step 2: what the function reads and writes</h4>
+
+<p>Now describe the function <code>current</code>. Its description is a <code>FunctionSpecification</code>: the reads in order, the writes in order, and the partials.</p>
+
+<pre data-lang="rust">impl Resistor {
+    /// What `current` reads, writes and differentiates.
+    fn current_specification(tables: &ResistorTables) -> FunctionSpecification {
+        let mut specification = FunctionSpecification::new("current");
+        let p = specification.read::<f64>(Read::continuous_pin_value(tables.p));
+        let n = specification.read::<f64>(Read::continuous_pin_value(tables.n));
+        let r = specification.read::<f64>(Read::discrete_pin_value(tables.r));
+        let i = specification.write::<f64>(Write::term_value(tables.i));
+        specification.partial(i, p);
+        specification.partial(i, n);
+        specification.partial(i, r);
+        specification
+    }
+}</pre>
+
+<p><code>Read::continuous_pin_value(tables.p)</code> is a read of one aspect: the value of the continuous pin <code>p</code>. There is one such constructor per aspect that can be read, and one <code>Write::…</code> per aspect that can be written, each taking the index type of its own table. The <code>::&lt;f64&gt;</code> after <code>read</code> names the type you will read the bytes as. The builder remembers its size, and when the shape is frozen it checks that the size is the one the aspect has, so a read of a potential as a 32-bit number is refused before the device ever runs.</p>
+
+<p>Each <code>read</code> hands back the position of that read in the function's list, and each <code>write</code> the position of that write. <code>specification.partial(i, p)</code> then declares one derivative: of the write <code>i</code> with respect to the read <code>p</code>. The three calls declare the three derivatives of the current, and their order is the order in which the function will hand them over.</p>
+
+<h4>Step 3: the code</h4>
+
+<p>The physics is an ordinary method with ordinary parameters. Nothing in it knows about frames or buffers.</p>
+
+<pre data-lang="rust">impl Resistor {
+    /// The current through the resistor and its gradient against `p`, `n` and `r`.
+    fn current(&self, p: f64, n: f64, r: f64, i: &mut f64, gradient: &mut [f64; 3]) -> Result<(), Fault> {
+        let v = p - n;
+        *i = v / r;
+        *gradient = [1.0 / r, -1.0 / r, -v / (r * r)];
+        Ok(())
+    }
+}</pre>
+
+<p><code>&amp;self</code> is the instance the method is called on. <code>p</code>, <code>n</code> and <code>r</code> arrive by value: they are the three reads. <code>i: &amp;mut f64</code> is a place the method fills, and <code>*i = v / r</code> stores into it: that is the write. <code>gradient: &amp;mut [f64; 3]</code> is a place for three reals, the three partials, in the order they were declared.</p>
+
+<p>The return type <code>Result&lt;(), Fault&gt;</code> says that the method either succeeds with nothing more to hand back, which is written <code>Ok(())</code>, or fails with a <code>Fault</code>: a code and a message that the solver reports with the name of the instance. A method that divides by a resistance of zero could return <code>Err(Fault::new(…))</code> in place of a number that is not finite.</p>
+
+<h4>Step 4: from the frame to the method and back</h4>
+
+<p>The solver does not call <code>current</code> directly; it calls <code>evaluate</code> with a frame (chapter 18). Something must take the values out of the frame, call the method, and put the results back. In Rust the frame is seen through a <em>lens</em>, <code>FunctionFrameLens</code>: a safe view of the frame that copies values out and in.</p>
+
+<pre data-lang="rust">impl Resistor {
+    /// Unpacks the frame of `current`, calls it and stores its results.
+    fn current_from_frame(&self, frame: &mut FunctionFrameLens<'_>) -> Result<(), Fault> {
+        let p = frame.read::<f64>(0)?;
+        let n = frame.read::<f64>(1)?;
+        let r = frame.read::<f64>(2)?;
+        let mut i = f64::default();
+        let mut gradient = [0.0_f64; 3];
+        self.current(p, n, r, &mut i, &mut gradient)?;
+        frame.write(0, &i)?;
+        frame.partials(&gradient)
+    }
+}</pre>
+
+<p><code>frame.read::&lt;f64&gt;(0)</code> copies read number 0 out of the frame as a real. The <code>?</code> after a call means: if this failed, stop here and pass the failure to my caller. <code>frame.write(0, &amp;i)</code> copies the result into write number 0, and <code>frame.partials(&amp;gradient)</code> stores the three derivatives. The <code>&lt;'_&gt;</code> after the lens's name says that the lens borrows the frame for the length of this call and cannot be kept afterwards, which is the rule that a frame is valid during its call only, enforced by the compiler.</p>
+
+<p>The lens always copies. It offers no way to borrow a value in place, because the buffers of a frame carry no alignment (chapter 18).</p>
+
+<p>Look at the numbers 0, 1 and 2. They must agree with the order of the <code>read</code> calls in step 2, and the order inside <code>gradient</code> must agree with the order of the <code>partial</code> calls. Nothing checks that agreement but you. Keep this in mind; it is the reason the attributes exist.</p>
+
+<h4>Step 5: wiring it up</h4>
+
+<p>Three small pieces remain. The first adds the function to the shape and remembers where it is. The second sends a call for function number <em>k</em> to the right method.</p>
+
+<pre data-lang="rust">impl Resistor {
+    /// The position of `current` in `functions`.
+    const CURRENT: FunctionIndex = FunctionIndex::at(0);
+
+    /// Adds the code of a resistor to `shape`.
+    fn declare_code(shape: &mut ShapeBuilder, tables: &ResistorTables) {
+        shape.function(Resistor::current_specification(tables));
+    }
+
+    /// Runs the function at `function`.
+    fn evaluate_function(&self, function: FunctionIndex, frame: &mut FunctionFrameLens<'_>) -> Result<(), Fault> {
+        match function {
+            Resistor::CURRENT => self.current_from_frame(frame),
+            other => Err(Fault::no_such_function(other)),
+        }
+    }
+}</pre>
+
+<p><code>const</code> declares a value fixed when the program is compiled. <code>match</code> compares <code>function</code> with each case in turn and runs the first that fits; the last case, which gives the value the name <code>other</code>, catches everything else.</p>
+
+<p>The third piece is the shape itself and the promise that makes <code>Resistor</code> a device.</p>
+
+<pre data-lang="rust">impl Resistor {
+    /// The shape every resistor shares.
+    fn shape() -> Result<SharedShape, ShapeRefused> {
+        let mut shape = ShapeBuilder::new();
+        let tables = ResistorTables::declare(&mut shape);
+        Resistor::declare_code(&mut shape, &tables);
+        shape.freeze()
+    }
+}
+
+impl DeviceImplementation for Resistor {
+    fn default_shape() -> &'static Shape { /* the shape above, built once */ }
+    fn create(values: &ParameterValues<'_>) -> Result<(Resistor, SharedShape), Fault> { /* … */ }
+    fn evaluate(&self, function: FunctionIndex, frame: &mut FunctionFrameLens<'_>) -> Result<(), Fault> {
+        self.evaluate_function(function, frame)
+    }
+}</pre>
+
+<p><code>shape()</code> is the three lines that every device has: make a builder, declare the tables, declare the code, freeze. <code>freeze</code> validates the whole against the nine rules of chapter 18 and checks the size of every typed read and write; it gives either a <code>SharedShape</code>, which is a shape that many instances can hold at once, or a <code>ShapeRefused</code> that names the rule and the entry.</p>
+
+<p>A <em>trait</em> is a named list of methods that a type promises to have. <code>DeviceImplementation</code> is the promise "this type is a device", and <code>impl DeviceImplementation for Resistor</code> keeps it with four methods, which are the four entry points of chapter 18 in typed form:</p>
+
+<ul>
+<li><code>default_shape</code> hands over the shape of an instance with no parameter given. A resistor builds its one shape the first time it is asked and keeps it for as long as the library is loaded.</li>
+<li><code>create</code> makes an instance for the given parameter values and hands it back with its shape. A resistor ignores the values, since they change no structure, and hands back a <code>Resistor</code> and the shared shape. The solver puts the values on the parameter pins itself.</li>
+<li><code>evaluate</code> runs one function. It passes the call to <code>evaluate_function</code>.</li>
+<li><code>react</code> runs one reaction. The trait supplies a version that fails with a fault, for devices that have none, so the resistor does not write it.</li>
+</ul>
+
+<p>There is no <code>destroy</code> to write: the instance is an ordinary value, and it is released when the solver is done with it.</p>
+
+<p>Last, the device type and the library. <code>DeviceType::implemented_by::&lt;Resistor&gt;("Resistor")</code> makes a device type out of your type: it produces the four entry points in the binary form the solver calls, which unpack the raw frame into a lens, call your trait's methods, and turn a <code>Fault</code> into the status <code>FAULT</code> with its message. A failure that would abort the program inside your code is caught there too and becomes a <code>FAULT</code>, so nothing ever travels across the boundary but a status. <code>Library::of(name, build, device_types)</code> collects device types into the library that the symbol <code>piperine_abi_1</code> hands to the solver.</p>
+
+<p>Place two of these in a divider across 3 V, with 1 kΩ on top and 2 kΩ below, and the solver calls <code>create</code> twice and <code>evaluate</code> on each at every iteration, as chapter 18 followed.</p>
+
+<h3>The same resistor with the attributes</h3>
+
+<p>Steps 2, 4 and 5 are bookkeeping. They contain no decision: once you have written the method of step 3 and said which parameter is which read, every line of them follows. They are also where the mistakes are, since three lists and a set of numbered positions must be kept in agreement by hand.</p>
+
+<p>An <strong>attribute</strong> is a note in square brackets, written <code>#[…]</code>, placed just before a declaration. By itself a note does nothing. A tool that runs inside the compiler may read it and add code beside the declaration. The attributes of <code>piperine-abi-macros</code> are read by such a tool, and what it adds is exactly the bookkeeping. Here is the whole resistor again:</p>
+
+<pre data-lang="rust">/// A resistor. It keeps nothing: its resistance is on a pin.
+pub struct Resistor;
+
+/// Where each entry of a resistor's shape is.
+#[shape_tables]
+pub struct ResistorTables {
+    #[continuous_pin(linkage = port(0))]
+    p: ContinuousPinIndex,
+    #[continuous_pin(linkage = port(1))]
+    n: ContinuousPinIndex,
+    #[discrete_pin(linkage = parameter, layout = F64, initial_value = 1.0e3_f64)]
+    r: DiscretePinIndex,
+    #[term(operator = direct, positive = p, negative = n)]
+    i: TermIndex,
+}
+
+#[device_code(tables = ResistorTables)]
+impl Resistor {
+    /// The current through the resistor and its gradient against `p`, `n` and `r`.
+    #[function]
+    fn current(
+        &self,
+        #[read(continuous_pin_value(tables.p))] p: f64,
+        #[read(continuous_pin_value(tables.n))] n: f64,
+        #[read(discrete_pin_value(tables.r))] r: f64,
+        #[write(term_value(tables.i))] i: &mut f64,
+        #[partials(of = i, against(p, n, r))] gradient: &mut [f64; 3],
+    ) -> Result<(), Fault> {
+        let v = p - n;
+        *i = v / r;
+        *gradient = [1.0 / r, -1.0 / r, -v / (r * r)];
+        Ok(())
+    }
+}</pre>
+
+<p>The body of <code>current</code> is the method of step 3, unchanged. What is new is that each thing is said once, where it is declared:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>The attribute</th><th>On</th><th>Adds, on your own type</th></tr></thead>
+<tbody>
+<tr><td><code>#[shape_tables]</code></td><td>the structure of indices</td><td>the method <code>declare</code> of step 1, with one builder call per field, in the order of the fields</td></tr>
+<tr><td><code>#[continuous_pin(…)]</code>, <code>#[discrete_pin(…)]</code>, <code>#[term(…)]</code></td><td>a field</td><td>the one builder call for that entry; the field's name is the entry's name</td></tr>
+<tr><td><code>#[function]</code></td><td>a method</td><td><code>current_specification</code> of step 2 and <code>current_from_frame</code> of step 4</td></tr>
+<tr><td><code>#[read(…)]</code></td><td>a parameter taken by value</td><td>one <code>specification.read</code> and one <code>frame.read</code></td></tr>
+<tr><td><code>#[write(…)]</code></td><td>a parameter <code>&amp;mut T</code></td><td>one <code>specification.write</code> and one <code>frame.write</code></td></tr>
+<tr><td><code>#[partials(of = i, against(p, n, r))]</code></td><td>a parameter <code>&amp;mut [f64; N]</code></td><td>three <code>specification.partial</code> calls, and the storing of the gradient</td></tr>
+<tr><td><code>#[device_code(tables = ResistorTables)]</code></td><td>the <code>impl</code> block</td><td>the constant <code>CURRENT</code>, <code>declare_code</code> and <code>evaluate_function</code> of step 5</td></tr>
+</tbody></table></div>
+
+<p>What the tool adds to this listing is, line for line, what you wrote by hand in steps 1, 2, 4 and 5. A test of the attribute crate keeps a copy of that expansion as plain source and fails if the two ever differ, so you can always read what was added.</p>
+
+<p>What stays yours is the last piece of step 5, and it is identical in both forms: the function <code>shape()</code> and the <code>impl DeviceImplementation for Resistor</code>. The attributes never write them, so the builder and the trait stay in your file, where you can see them.</p>
+
+<h4>Three rules that keep the attributes plain</h4>
+
+<p>A tool that writes code for you can become hard to trust: something happens and you cannot see where. These attributes are held to three rules so that they stay easy to see through.</p>
+
+<ol class="steps">
+<li><strong>An attribute adds constants and methods to your own type, and nothing else.</strong> It implements no trait, declares no new type, keeps no global value and registers nothing behind you. Your own declaration is left as you wrote it.</li>
+<li><strong>The attributes know no list of the interface.</strong> <code>#[read(continuous_pin_value(tables.p))]</code> becomes <code>Read::continuous_pin_value(tables.p)</code>. If you name an aspect that does not exist, or give the index of the wrong table, the mistake is found by the Rust compiler itself, on your own text.</li>
+<li><strong>Position is order.</strong> The first <code>#[read]</code> parameter is read 0, the second is read 1. The first field of a kind is entry 0 of its table. The first <code>#[function]</code> method is function 0. There is no other numbering to learn.</li>
+</ol>
+
+<p>Inside <code>#[device_code(tables = ResistorTables)]</code>, the word <code>tables</code> in an attribute stands for the <code>ResistorTables</code> that <code>declare</code> handed back. This is the one thing an attribute takes from its surroundings, and it shows in the expansion as the parameter <code>tables: &amp;ResistorTables</code> of step 2.</p>
+
+<h3>A D flip-flop</h3>
+
+<p>The resistor was all analog. The flip-flop of chapter 18 is all digital, and it brings the other half of the interface: a function that fires an event, a reaction, and a commit site.</p>
+
+<pre data-lang="rust">/// A D flip-flop. Its stored bit is the pin `q`.
+pub struct FlipFlop;
+
+/// Where each entry of a flip-flop's shape is.
+#[shape_tables]
+pub struct FlipFlopTables {
+    #[discrete_pin(linkage = port(0), layout = BIT)]
+    clk: DiscretePinIndex,
+    #[discrete_pin(linkage = port(1), layout = BIT)]
+    d: DiscretePinIndex,
+    #[discrete_pin(linkage = port(2), layout = BIT, initial_value = false)]
+    q: DiscretePinIndex,
+    #[event_pin(linkage = private)]
+    rise: EventPinIndex,
+}
+
+#[device_code(tables = FlipFlopTables)]
+impl FlipFlop {
+    /// Fires `rise` in the microstep in which the clock goes from low to high.
+    #[function]
+    fn rising_edge(
+        &self,
+        #[read(discrete_pin_value(tables.clk))] now: bool,
+        #[read(discrete_pin_previous(tables.clk))] before: bool,
+        #[read(discrete_pin_changed(tables.clk))] changed: bool,
+        #[write(event_pin_fired(tables.rise))] fired: &mut bool,
+    ) -> Result<(), Fault> {
+        *fired = changed && now && !before;
+        Ok(())
+    }
+
+    /// At a rising edge, asks for `q` to take the value of `d`.
+    #[reaction(triggering_events(tables.rise))]
+    fn capture(
+        &self,
+        #[read(discrete_pin_value(tables.d))] d: bool,
+        #[commit_site(discrete_pin_value(tables.q))] q: CommitSiteHandle<'_>,
+    ) -> Result<ReactionOutcome, Fault> {
+        q.commit(&d, 0.0)?;
+        Ok(ReactionOutcome::ContinueAnalysis)
+    }
+}</pre>
+
+<p><strong>The digital function.</strong> <code>rising_edge</code> reads three aspects of the same pin: the clock's value, its previous value, and whether it changed in this microstep. It writes the aspect <code>EVENT_PIN_FIRED</code> of the private event pin <code>rise</code>, and a true byte there fires the event. Nothing in the listing says "this function is digital". It writes a pin, so it is one, and the digital solver calls it whenever the clock changes. Because it reads a changed mark, it may write nothing but events (chapter 18).</p>
+
+<p><strong>The reaction.</strong> <code>#[reaction(triggering_events(tables.rise))]</code> declares a reaction and the event pins that trigger it. A reaction has reads, like a function, and it has no writes. In their place it has <strong>commit sites</strong>. The parameter <code>q</code> is one: <code>#[commit_site(discrete_pin_value(tables.q))]</code> declares that this reaction may commit to the value of the pin <code>q</code>, and gives the method a <code>CommitSiteHandle</code>, which is a handle on that one site.</p>
+
+<p><code>q.commit(&amp;d, 0.0)</code> asks: set this pin to the value of <code>d</code>, after a delay of 0 seconds. The solver queues the request. With no delay it is due at the next microstep, and until then <code>q</code> keeps its value. A handle has two more methods: <code>commit_element</code>, for one element of an array pin, and <code>fire</code>, for a site whose target is an event pin.</p>
+
+<p>A reaction returns <code>Result&lt;ReactionOutcome, Fault&gt;</code>. <code>ReactionOutcome::ContinueAnalysis</code> is the ordinary answer. <code>ReactionOutcome::FinishAnalysis</code> ends the run after the present instant: it is the status <code>FINISH</code>.</p>
+
+<p>Here is what the attributes wrote for the reaction, so that you can see there is nothing more to it than there was for the function:</p>
+
+<pre data-lang="rust">impl FlipFlop {
+    /// What `capture` is triggered by, reads and may commit to.
+    fn capture_specification(tables: &FlipFlopTables) -> ReactionSpecification {
+        let mut specification = ReactionSpecification::new("capture");
+        specification.triggered_by(tables.rise);
+        specification.read::<bool>(Read::discrete_pin_value(tables.d));
+        specification.commit_site(CommitSiteSpecification::new(Write::discrete_pin_value(tables.q)));
+        specification
+    }
+
+    /// Unpacks the frame of `capture` and calls it.
+    fn capture_from_frame(&self, frame: &mut ReactionFrameLens<'_>) -> Result<ReactionOutcome, Fault> {
+        let d = frame.read::<bool>(0)?;
+        let q = frame.commit_site(CommitSiteIndex::at(0));
+        self.capture(d, q)
+    }
+}</pre>
+
+<p>The trait implementation gains one method, because this device has a reaction. <code>run_reaction</code> is the counterpart of <code>evaluate_function</code> and is added by <code>#[device_code]</code> in the same way.</p>
+
+<pre data-lang="rust">impl DeviceImplementation for FlipFlop {
+    fn default_shape() -> &'static Shape { /* the shape, built once */ }
+    fn create(values: &ParameterValues<'_>) -> Result<(FlipFlop, SharedShape), Fault> { /* … */ }
+    fn evaluate(&self, function: FunctionIndex, frame: &mut FunctionFrameLens<'_>) -> Result<(), Fault> {
+        self.evaluate_function(function, frame)
+    }
+    fn react(&self, reaction: ReactionIndex, frame: &mut ReactionFrameLens<'_>) -> Result<ReactionOutcome, Fault> {
+        self.run_reaction(reaction, frame)
+    }
+}</pre>
+
+<p>Where is the flip-flop's memory? Not in <code>FlipFlop</code>, which has no fields. It is the pin <code>q</code>, in the solver's store. The reaction reads <code>d</code> and commits to <code>q</code>, and that is the whole of the state.</p>
+
+<h3>A diode</h3>
+
+<p>A diode's current grows exponentially with its voltage, and that makes Newton's method fragile: one guess a little too high, and the computed current is a number too large to be useful. Every circuit simulator defends itself with <strong>limiting</strong>: while it iterates, the device is not evaluated at the voltage Newton proposed but at a nearby voltage that moved only a little since the previous iteration. This needs memory, the voltage of the previous iteration, and a device has none. So the memory is a <strong>limit</strong>, and the solver keeps it.</p>
+
+<p>A limit has four aspects. Two voltages are involved, and it helps to give them names. The <em>proposed</em> value is the junction voltage that follows from the present guess: anode minus cathode. The <em>held</em> value is the one the device will actually compute with in this iteration.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Aspect</th><th>What it is</th><th>Who touches it</th></tr></thead>
+<tbody>
+<tr><td><code>LIMIT_PROPOSED</code></td><td>the value that follows from the present guess</td><td>the limiting function writes it</td></tr>
+<tr><td><code>LIMIT_PREVIOUS</code></td><td>the held value of the iteration before</td><td>the limiting function reads it</td></tr>
+<tr><td><code>LIMIT_AGE</code></td><td>whether a previous value exists: 0 when nothing is held yet</td><td>the limiting function reads it</td></tr>
+<tr><td><code>LIMIT_VALUE</code></td><td>the held value of this iteration</td><td>the limiting function writes it; every other function reads it</td></tr>
+</tbody></table></div>
+
+<p>The diode has three functions. One limits. One computes the current at the held voltage. One says how strong the noise is.</p>
+
+<pre data-lang="rust">/// The thermal voltage at 300.15 K, in volts.
+const THERMAL_VOLTAGE: f64 = 0.025_865;
+/// The elementary charge, in coulombs.
+const ELEMENTARY_CHARGE: f64 = 1.602_176_634e-19;
+/// The junction voltage above which the exponential is steep enough to need limiting, in volts.
+const CRITICAL_VOLTAGE: f64 = 0.6;
+/// The most the held junction voltage may move in one iteration, in volts.
+const LARGEST_MOVE: f64 = 2.0 * THERMAL_VOLTAGE;
+
+/// A junction diode.
+pub struct Diode;
+
+/// Where each entry of a diode's shape is.
+#[shape_tables]
+pub struct DiodeTables {
+    #[continuous_pin(linkage = port(0))]
+    anode: ContinuousPinIndex,
+    #[continuous_pin(linkage = port(1))]
+    cathode: ContinuousPinIndex,
+    #[discrete_pin(linkage = parameter, layout = F64, initial_value = 1.0e-14_f64)]
+    saturation_current: DiscretePinIndex,
+    #[limit]
+    junction_voltage: LimitIndex,
+    #[small_signal_source(kind = noise)]
+    shot_noise: SmallSignalSourceIndex,
+    #[term(operator = direct, positive = anode, negative = cathode)]
+    current: TermIndex,
+}</pre>
+
+<pre data-lang="rust">#[device_code(tables = DiodeTables)]
+impl Diode {
+    /// Proposes the junction voltage and chooses the one to compute with in this iteration.
+    #[function]
+    #[expect(clippy::too_many_arguments, reason = "one parameter per read and write: two pins and the four aspects of a limit")]
+    fn limit_junction(
+        &self,
+        #[read(continuous_pin_value(tables.anode))] anode: f64,
+        #[read(continuous_pin_value(tables.cathode))] cathode: f64,
+        #[read(limit_previous(tables.junction_voltage))] previous: f64,
+        #[read(limit_age(tables.junction_voltage))] age: u8,
+        #[write(limit_proposed(tables.junction_voltage))] proposed: &mut f64,
+        #[write(limit_value(tables.junction_voltage))] held: &mut f64,
+        #[partials(of = proposed, against(anode, cathode))] gradient: &mut [f64; 2],
+    ) -> Result<(), Fault> {
+        *proposed = anode - cathode;
+        *gradient = [1.0, -1.0];
+        let step = *proposed - previous;
+        let too_far = age != 0 && *proposed > CRITICAL_VOLTAGE && step.abs() > LARGEST_MOVE;
+        *held = if too_far { previous + LARGEST_MOVE.copysign(step) } else { *proposed };
+        Ok(())
+    }
+
+    /// The current through the junction, computed at the held voltage.
+    #[function]
+    fn conduct(
+        &self,
+        #[read(limit_value(tables.junction_voltage))] voltage: f64,
+        #[read(discrete_pin_value(tables.saturation_current))] saturation_current: f64,
+        #[read(small_signal_source_value(tables.shot_noise))] noise: f64,
+        #[write(term_value(tables.current))] current: &mut f64,
+        #[partials(of = current, against(voltage, saturation_current, noise))] gradient: &mut [f64; 3],
+    ) -> Result<(), Fault> {
+        let exponential = (voltage / THERMAL_VOLTAGE).exp();
+        *current = saturation_current * (exponential - 1.0) + noise;
+        *gradient = [saturation_current * exponential / THERMAL_VOLTAGE, exponential - 1.0, 1.0];
+        Ok(())
+    }
+
+    /// The spectral density of the shot noise: twice the elementary charge times the current.
+    #[function]
+    fn shot_noise_density(
+        &self,
+        #[read(limit_value(tables.junction_voltage))] voltage: f64,
+        #[read(discrete_pin_value(tables.saturation_current))] saturation_current: f64,
+        #[write(small_signal_source_strength(tables.shot_noise))] density: &mut f64,
+    ) -> Result<(), Fault> {
+        let current = saturation_current * ((voltage / THERMAL_VOLTAGE).exp() - 1.0);
+        *density = 2.0 * ELEMENTARY_CHARGE * current.abs();
+        Ok(())
+    }
+}</pre>
+
+<p><strong>The limiting function.</strong> <code>limit_junction</code> writes the proposed voltage, anode minus cathode, and its two derivatives, 1 and −1. Then it decides the held voltage. On the first iteration (<code>age</code> is 0) there is nothing to compare with, so the held voltage is the proposed one. Later, if the junction is forward biased and the proposal jumped by more than two thermal voltages, the held voltage moves only that far in the same direction. The limiter of a production model uses a logarithmic step; this one is the same idea in three lines.</p>
+
+<p><strong>The current.</strong> <code>conduct</code> never sees the two pins. It reads the limit's value, the held voltage, and computes the current there. Its first partial is against that read: the conductance of the junction at the held voltage.</p>
+
+<p>This is where the solver does a piece of work for you. The current was computed at the held voltage, and the circuit needs it at the proposed one. The solver knows both values and knows the conductance, because you declared it as a partial against the limit, so it adds the conductance times the difference to the term. To fill its matrix it also needs the derivative of the current against the two pins, which <code>conduct</code> never read. It gets it by chaining: the conductance times the derivatives of the proposed voltage, which <code>limit_junction</code> declared. And it does not call the solve finished while the held and the proposed values differ by more than the tolerance, so a limited iteration is never mistaken for the answer.</p>
+
+<p>In each iteration the solver calls the functions that write a limit first and the functions that write terms second, so <code>conduct</code> always reads the voltage that <code>limit_junction</code> chose in the same iteration. You declared no order. It follows from what the two functions write.</p>
+
+<p><strong>The noise.</strong> A noise source has two aspects. Its <em>value</em> reads as 0 in every solve. <code>conduct</code> adds it to the current all the same and declares a partial against it, the last entry of the gradient, which is 1: this is how the device says "the noise enters here, as a current, with this gain". Its <em>strength</em> is the spectral density, and <code>shot_noise_density</code> writes it. An ordinary solve never needs that write, so it never calls the function; a noise analysis does. The report of the analysis then has one row for this source, under the name <code>shot_noise</code> and the path of the instance.</p>
+
+<p><strong>The parameter count.</strong> <code>limit_junction</code> has seven parameters beside <code>&amp;self</code>, and the project's checker, Clippy, objects to more than seven in all. The line <code>#[expect(clippy::too_many_arguments, reason = "…")]</code> records the exception and the reason for it. Before reaching for it, try the three ways to need fewer parameters: take the gradient of one write as a single array, as every listing here does; read a pin that has several fields as one structure; or write that one function against the lens by hand, as the counter below does. A device may mix the two forms freely.</p>
+
+<p>One flag exists for devices that would rather do the correction themselves. A function marked <code>owns_limit_correction</code> writes the limit and the terms that depend on it in one call, declares no partial against the limit, and hands over values that are already corrected. The solver then only applies the convergence test. Models translated from other simulators often arrive in that form.</p>
+
+<h3>A comparator</h3>
+
+<p>A comparator looks at two analog voltages and produces a digital bit. It is the smallest device that crosses from the analog side to the digital side, and the thing that carries it across is a <strong>crossing</strong>.</p>
+
+<p>Analog code cannot fire an event: the analog solver works between instants. What analog code can do is write a real value into a crossing. The solver follows that value from one accepted solution to the next, and when it passes from non-positive to positive it locates the moment and fires the event pin that the crossing names. A crossing detects one direction only, so a comparator that switches both ways declares two.</p>
+
+<pre data-lang="rust">/// A comparator: `out` is high while `plus` is above `minus`.
+pub struct Comparator;
+
+/// Where each entry of a comparator's shape is.
+#[shape_tables]
+pub struct ComparatorTables {
+    #[continuous_pin(linkage = port(0))]
+    plus: ContinuousPinIndex,
+    #[continuous_pin(linkage = port(1))]
+    minus: ContinuousPinIndex,
+    #[discrete_pin(linkage = port(2), layout = BIT, initial_value = false)]
+    out: DiscretePinIndex,
+    #[event_pin(linkage = start)]
+    start: EventPinIndex,
+    #[event_pin(linkage = private)]
+    rose: EventPinIndex,
+    #[event_pin(linkage = private)]
+    fell: EventPinIndex,
+    #[crossing(event_pin = rose)]
+    rising: CrossingIndex,
+    #[crossing(event_pin = fell)]
+    falling: CrossingIndex,
+}
+
+#[device_code(tables = ComparatorTables)]
+impl Comparator {
+    /// The two values whose passage through zero the solver locates.
+    #[function]
+    fn difference(
+        &self,
+        #[read(continuous_pin_value(tables.plus))] plus: f64,
+        #[read(continuous_pin_value(tables.minus))] minus: f64,
+        #[write(crossing_value(tables.rising))] rising: &mut f64,
+        #[write(crossing_value(tables.falling))] falling: &mut f64,
+    ) -> Result<(), Fault> {
+        *rising = plus - minus;
+        *falling = minus - plus;
+        Ok(())
+    }
+
+    /// Sets the output: by the direction of the crossing, or at the start by comparing.
+    #[reaction(triggering_events(tables.start, tables.rose, tables.fell))]
+    fn decide(
+        &self,
+        #[read(event_pin_fired(tables.rose))] rose: bool,
+        #[read(event_pin_fired(tables.fell))] fell: bool,
+        #[read(continuous_pin_value(tables.plus))] plus: f64,
+        #[read(continuous_pin_value(tables.minus))] minus: f64,
+        #[commit_site(discrete_pin_value(tables.out))] out: CommitSiteHandle<'_>,
+    ) -> Result<ReactionOutcome, Fault> {
+        let high = if rose { true } else if fell { false } else { plus > minus };
+        out.commit(&high, 0.0)?;
+        Ok(ReactionOutcome::ContinueAnalysis)
+    }
+}</pre>
+
+<p><strong>The tables.</strong> The two ports draw no current, so there is no term: a continuous pin with no term of its own only reads a node that other devices drive. <code>#[crossing(event_pin = rose)]</code> declares a crossing and names the event pin it fires; <code>rose</code> is another field of the same structure, declared above it. A crossing may also name two discrete pins that hold its tolerances in time and in value. Left out, as here, the session's own tolerances apply. The event pin <code>start</code> has the linkage <code>start</code>: it is on the session net that fires once when an analysis begins.</p>
+
+<p><strong>The function.</strong> <code>difference</code> writes the two crossing values. It writes analog tables, so it is an analog function, and the solver evaluates it at each accepted solution. It declares no partial: a crossing's value enters no equation.</p>
+
+<p><strong>The reaction.</strong> <code>decide</code> is triggered by three events. It reads the fired marks of <code>rose</code> and <code>fell</code> to know which one brought it here, and commits high or low accordingly. When neither fired, it was the start of the analysis, and there is no crossing to go by, so it reads the two continuous pins and compares them. A reaction may read a continuous pin: it receives the accepted solution of its instant.</p>
+
+<p>Why not compare the two voltages every time, and leave the fired marks out? Because a crossing is located <em>within a tolerance</em>. At the instant the solver reports the crossing, the difference is very close to zero and can be on either side of it. The direction of the crossing is certain; the sign of the difference at that instant is not.</p>
+
+<p>Reading a continuous pin has a cost that is worth knowing. An instant that runs such a reaction is a <em>landing</em> (chapter 18): the analog solver must have an accepted solution at exactly that time before the reaction can run. Here that is no loss, since each of the three events is tied to the analog solution anyway.</p>
+
+<h3>A foreign device: a programmable counter with its own clock</h3>
+
+<p>The last device is of another kind. Imagine something that is not a circuit model at all: an emulator of a microcontroller, a block of firmware, a simulator of another sort. It has a clock of its own, much faster than anything else in the design, and it finds out what it will do next only by running. The interface has to answer two questions for it. How does a device with no memory hold a running machine? And how does it avoid being called once for every tick of its own clock?</p>
+
+<p>A small device shows both answers: a counter in the style of a microcontroller's timer. It counts from 0 up to a value <code>top</code>, one count every <code>period</code> seconds. When it passes <code>top</code> it starts again from 0 and toggles its output. A rising edge on <code>reset</code> starts the count again. And it is <em>programmable</em>: each time it wraps, it samples an analog control voltage and takes its next <code>top</code> from it, one count per 100 mV.</p>
+
+<pre data-lang="rust">/// A counter with a clock of its own. Its registers are private pins.
+pub struct Counter;
+
+/// Where each entry of a counter's shape is.
+#[shape_tables]
+pub struct CounterTables {
+    #[discrete_pin(linkage = port(0), layout = BIT)]
+    reset: DiscretePinIndex,
+    #[discrete_pin(linkage = port(1), layout = BIT, initial_value = false)]
+    out: DiscretePinIndex,
+    #[continuous_pin(linkage = port(2))]
+    control: ContinuousPinIndex,
+    #[discrete_pin(linkage = parameter, layout = F64, initial_value = 1.0e-6_f64)]
+    period: DiscretePinIndex,
+    #[discrete_pin(linkage = resolution, layout = F64)]
+    resolution: DiscretePinIndex,
+    #[discrete_pin(linkage = private, layout = BYTE, initial_value = 0_u8)]
+    count: DiscretePinIndex,
+    #[discrete_pin(linkage = private, layout = F64, initial_value = 0.0_f64)]
+    counted_until: DiscretePinIndex,
+    #[discrete_pin(linkage = private, layout = BYTE, initial_value = 9_u8)]
+    top: DiscretePinIndex,
+    #[event_pin(linkage = start)]
+    start: EventPinIndex,
+    #[event_pin(linkage = private)]
+    restart: EventPinIndex,
+    #[event_pin(linkage = private)]
+    wake: EventPinIndex,
+    #[event_pin(linkage = private)]
+    sample: EventPinIndex,
+}</pre>
+
+<p><strong>State is private pins.</strong> The counter's registers are three private discrete pins: <code>count</code>, the present count; <code>top</code>, the value it counts to; and <code>counted_until</code>, the time up to which <code>count</code> is true. That third one is what a device with its own clock always needs: a note of how far its own time has run. Because the registers are pins, the solver saves them in every checkpoint and puts them back on a rejected step, and the counter needs no code for either. A real emulator does the same with one large pin whose layout lists its registers and its memory.</p>
+
+<p><strong>A session net.</strong> <code>resolution</code> is a discrete pin linked to the session net of the same name. It holds the length of one tick in seconds, and the counter needs it to turn ticks into time.</p>
+
+<p>Two small pieces of code use the attributes. The first is the edge detector of the flip-flop again, on <code>reset</code>. The second is the reaction that programs <code>top</code>.</p>
+
+<pre data-lang="rust">#[device_code(tables = CounterTables)]
+impl Counter {
+    /// Fires `restart` in the microstep in which `reset` goes from low to high.
+    #[function]
+    fn reset_rose(
+        &self,
+        #[read(discrete_pin_value(tables.reset))] now: bool,
+        #[read(discrete_pin_previous(tables.reset))] before: bool,
+        #[read(discrete_pin_changed(tables.reset))] changed: bool,
+        #[write(event_pin_fired(tables.restart))] fired: &mut bool,
+    ) -> Result<(), Fault> {
+        *fired = changed && now && !before;
+        Ok(())
+    }
+
+    /// Reads the control voltage and programs the top of the count: one count per 100 mV.
+    #[reaction(triggering_events(tables.sample))]
+    fn program(
+        &self,
+        #[read(continuous_pin_value(tables.control))] control: f64,
+        #[commit_site(discrete_pin_value(tables.top))] top: CommitSiteHandle<'_>,
+    ) -> Result<ReactionOutcome, Fault> {
+        let counts = (control / 0.1).round().clamp(1.0, 255.0) as u8;
+        top.commit(&counts, 0.0)?;
+        Ok(ReactionOutcome::ContinueAnalysis)
+    }
+}</pre>
+
+<p><strong>Only the samples cost a landing.</strong> <code>program</code> reads a continuous pin, so each instant that runs it is a landing and needs an analog solution at that time. That is why the analog reading is a reaction of its own, triggered by its own event. The main reaction below reads nothing analog, and runs without disturbing the analog solver at all.</p>
+
+<p>The main reaction, <code>run</code>, is written by hand against the builder and the lens. It has ten reads and five commit sites, far too many to be parameters of one method, and it shows the hand-written form of a reaction in full.</p>
+
+<pre data-lang="rust">impl Counter {
+    /// The position of `run` in `reactions`: after `program`, the one reaction the attributes declared.
+    const RUN: ReactionIndex = ReactionIndex::at(1);
+
+    /// What `run` is triggered by, reads and may commit to.
+    fn run_specification(tables: &CounterTables) -> ReactionSpecification {
+        let mut specification = ReactionSpecification::new("run");
+        specification.triggered_by(tables.start);
+        specification.triggered_by(tables.restart);
+        specification.triggered_by(tables.wake);
+        specification.read::<u8>(Read::discrete_pin_value(tables.count));              // read 0
+        specification.read::<f64>(Read::discrete_pin_value(tables.counted_until));     // read 1
+        specification.read::<u8>(Read::discrete_pin_value(tables.top));                // read 2
+        specification.read::<bool>(Read::discrete_pin_value(tables.out));              // read 3
+        specification.read::<f64>(Read::discrete_pin_value(tables.period));            // read 4
+        specification.read::<f64>(Read::discrete_pin_value(tables.resolution));        // read 5
+        specification.read::<bool>(Read::event_pin_fired(tables.restart));             // read 6
+        specification.read::<f64>(Read::time());                                       // read 7
+        specification.read::<i64>(Read::tick());                                       // read 8
+        specification.read::<i64>(Read::horizon());                                    // read 9
+        specification.commit_site(CommitSiteSpecification::new(Write::discrete_pin_value(tables.count)));          // site 0
+        specification.commit_site(CommitSiteSpecification::new(Write::discrete_pin_value(tables.counted_until)));  // site 1
+        specification.commit_site(CommitSiteSpecification::new(Write::discrete_pin_value(tables.out)));            // site 2
+        specification.commit_site(CommitSiteSpecification::new(Write::event_pin_fired(tables.sample)));            // site 3
+        specification.commit_site(CommitSiteSpecification::new(Write::event_pin_fired(tables.wake)).replaces_pending()); // site 4
+        specification
+    }
+}</pre>
+
+<p>The last three reads are aspects of the call environment and name no pin: the time of the instant in seconds, its tick, and the horizon. The last commit site is the timer, marked <code>replaces_pending</code>.</p>
+
+<pre data-lang="rust">impl Counter {
+    /// Runs the counter's own clock as far as it safely can, and asks to be woken for the rest.
+    fn run_from_frame(&self, frame: &mut ReactionFrameLens<'_>) -> Result<ReactionOutcome, Fault> {
+        let mut count = frame.read::<u8>(0)?;
+        let mut counted_until = frame.read::<f64>(1)?;
+        let top = frame.read::<u8>(2)?;
+        let out = frame.read::<bool>(3)?;
+        let period = frame.read::<f64>(4)?;
+        let resolution = frame.read::<f64>(5)?;
+        let restarted = frame.read::<bool>(6)?;
+        let time = frame.read::<f64>(7)?;
+        let tick = frame.read::<i64>(8)?;
+        let horizon = frame.read::<i64>(9)?;
+
+        if restarted {
+            count = 0;
+            counted_until = time;
+        }
+
+        // Nothing this reaction depends on can change before the horizon,
+        // so its own clock may run that far. A commit lands on the nearest tick: allow half of one.
+        let safe_until = time + (horizon - tick) as f64 * resolution + 0.5 * resolution;
+        let mut wrapped_at = None;
+        while wrapped_at.is_none() && counted_until + period <= safe_until {
+            counted_until += period;
+            if count >= top {
+                count = 0;
+                wrapped_at = Some(counted_until);      // the first visible action: stop here
+            } else {
+                count += 1;
+            }
+        }
+
+        if let Some(at) = wrapped_at {
+            frame.commit_site(CommitSiteIndex::at(2)).commit(&!out, at - time)?;   // the edge keeps its exact time
+            frame.commit_site(CommitSiteIndex::at(3)).fire(at - time)?;            // sample the control voltage then
+        }
+        frame.commit_site(CommitSiteIndex::at(0)).commit(&count, 0.0)?;
+        frame.commit_site(CommitSiteIndex::at(1)).commit(&counted_until, 0.0)?;
+        frame.commit_site(CommitSiteIndex::at(4)).fire(counted_until + period - time)?;   // wake me for the next count
+        Ok(ReactionOutcome::ContinueAnalysis)
+    }
+}</pre>
+
+<p>Four ideas are in this method, and they are the four that any device with a clock of its own uses.</p>
+
+<ol class="steps">
+<li><strong>The state comes in as reads and leaves as commits.</strong> The method copies <code>count</code> and <code>counted_until</code> out of the frame, works on the copies, and commits the new values at the end. Between two calls the method holds nothing. If the solver calls it twice for the same instant, both calls start from the same reads.</li>
+<li><strong>The horizon says how far it may run.</strong> <code>HORIZON</code> is the last tick through which nothing that triggers this reaction, and nothing it reads, can change. Up to that time the counter's future is decided, so the method steps its own clock, count by count, through as many periods as fit. One call does the work of all of them. An emulator runs its instructions in this loop.</li>
+<li><strong>It stops at its first visible action.</strong> When the count wraps, the output toggles, and something else in the design may act on that. So the loop stops there. The toggle is committed with the delay <code>at - time</code>, so the edge is placed at its exact time although it was computed early, and <code>sample</code> is fired with the same delay.</li>
+<li><strong>"Wake me at" is a commit to a private event pin.</strong> The last commit fires <code>wake</code> at the time of the next count the method could not run. <code>wake</code> triggers this same reaction, so the counter is called again then. The site is marked <code>replaces_pending</code>: each new commit through it removes the one still waiting. When a reset arrives in between, the method runs, sets a new wake time, and the old one is gone.</li>
+</ol>
+
+<p>Follow it with the defaults: a period of 1 µs and a <code>top</code> of 9. From 0 the counter needs ten periods to wrap, so the output toggles every 10 µs. If nothing else in the design can disturb it, the horizon is far away, and each call runs straight to the next wrap: one call per toggle, where a counter woken at each of its counts would have taken ten.</p>
+
+<p>The solver may find, after the call, that something will change earlier than it had assumed. It then calls the reaction again for the same instant with a smaller horizon, and only the commits of the last call stand. The method needs no code for this, because it started from its reads and kept nothing.</p>
+
+<p>The shape is built as before, with one more line for the reaction written by hand, and <code>react</code> sends each index to the right place.</p>
+
+<pre data-lang="rust">impl Counter {
+    /// The shape every counter shares.
+    fn shape() -> Result<SharedShape, ShapeRefused> {
+        let mut shape = ShapeBuilder::new();
+        let tables = CounterTables::declare(&mut shape);
+        Counter::declare_code(&mut shape, &tables);              // `reset_rose`, and `program` as reaction 0
+        shape.reaction(Counter::run_specification(&tables));     // `run` as reaction 1
+        shape.freeze()
+    }
+}
+
+impl DeviceImplementation for Counter {
+    fn default_shape() -> &'static Shape { /* the shape, built once */ }
+    fn create(values: &ParameterValues<'_>) -> Result<(Counter, SharedShape), Fault> { /* … */ }
+    fn evaluate(&self, function: FunctionIndex, frame: &mut FunctionFrameLens<'_>) -> Result<(), Fault> {
+        self.evaluate_function(function, frame)
+    }
+    fn react(&self, reaction: ReactionIndex, frame: &mut ReactionFrameLens<'_>) -> Result<ReactionOutcome, Fault> {
+        if reaction == Counter::RUN { self.run_from_frame(frame) } else { self.run_reaction(reaction, frame) }
+    }
+}</pre>
+
+<h4>When the state cannot be a pin</h4>
+
+<p>Some foreign devices cannot hand over their state: the emulator is another program, or a piece of hardware on a cable. Such a device keeps its state outside the solver, and the solver cannot rewind it. The interface has one honest answer: mark the reaction <code>irreversible</code>. The solver then never runs that reaction ahead of the accepted analog time, gives it an exact horizon, and calls it once per instant.</p>
+
+<p>The price is real. Every instant that runs an irreversible reaction is a landing, so the analog solver must step to each of them, and a session that contains one cannot be rewound by the host. A device that can express its state as a pin, as the counter does, should.</p>
+
+<h3>The compile errors</h3>
+
+<p>When an attribute is used in a way that cannot be turned into a device, the build stops with a message at the exact word that is wrong. There are ten such messages. Each names what is wrong and what to write.</p>
+
+<p>Take the most common: a parameter that was given no attribute.</p>
+
+<pre data-lang="rust">#[function]
+fn current(
+    &self,
+    #[read(continuous_pin_value(tables.p))] p: f64,
+    n: f64,
+    #[write(term_value(tables.i))] i: &mut f64,
+) -> Result<(), Fault> {
+    *i = p - n;
+    Ok(())
+}</pre>
+
+<pre data-lang="text">error: `n` is neither read nor written: add #[read(...)], #[write(...)], #[partials(...)] or #[commit_site(...)]
+  --> src/resistor.rs:5:5
+   |
+ 5 |     n: f64,
+   |     ^</pre>
+
+<p>Every parameter of a function is one entry of one list, so a parameter that is on no list has no meaning, and the tool says so. The full set:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You wrote</th><th>The message</th></tr></thead>
+<tbody>
+<tr><td>a parameter other than <code>&amp;self</code> with no attribute</td><td><code>`n` is neither read nor written: add #[read(...)], #[write(...)], #[partials(...)] or #[commit_site(...)]</code></td></tr>
+<tr><td>two attributes on one parameter</td><td><code>`n` has two ABI attributes; a parameter is one entry of one list</code></td></tr>
+<tr><td><code>#[partials(of = w, against(r))]</code> where <code>w</code> is not a <code>#[write]</code> parameter of this function, or <code>r</code> is not a <code>#[read]</code> one</td><td><code>`w` is not a #[write] parameter of `current`</code></td></tr>
+<tr><td>a gradient whose array is not as long as its list of reads</td><td><code>the gradient of `i` lists 3 reads and its type holds 2</code></td></tr>
+<tr><td><code>#[write]</code> or <code>#[partials]</code> on a parameter that is not <code>&amp;mut T</code>; or <code>#[read]</code> on a reference</td><td><code>a write is a `&amp;mut T`: the function fills it</code>; <code>a read is taken by value: the frame gives no alignment</code></td></tr>
+<tr><td><code>#[commit_site]</code> in a function; or <code>#[write]</code> or <code>#[partials]</code> in a reaction</td><td><code>a function writes, a reaction commits</code></td></tr>
+<tr><td><code>#[reaction]</code> with no <code>triggering_events(…)</code></td><td><code>a reaction names the event pins that trigger it: #[reaction(triggering_events(...))]</code></td></tr>
+<tr><td>another return type</td><td><code>a function returns Result&lt;(), Fault&gt;</code>; <code>a reaction returns Result&lt;ReactionOutcome, Fault&gt;</code></td></tr>
+<tr><td>a method with no <code>&amp;self</code>, or one that is generic, <code>async</code> or <code>unsafe</code></td><td><code>an ABI function is a plain method taking &amp;self</code></td></tr>
+<tr><td>a key or an attribute that does not exist</td><td><code>unknown key `positiv`; `term` takes: operator, positive, negative, state_tolerance, maximum_delay, name</code></td></tr>
+</tbody></table></div>
+
+<p>Everything else is caught by the Rust compiler with its own messages, because of the second rule: the attributes pass your words through. Give a read the index of the wrong table and you get an ordinary type error, pointing at the index:</p>
+
+<pre data-lang="rust">#[read(continuous_pin_value(tables.r))] r: f64,     // `r` is a DiscretePinIndex</pre>
+
+<pre data-lang="text">error[E0308]: mismatched types
+  --> src/resistor.rs:22:37
+   |
+22 |     #[read(continuous_pin_value(tables.r))] r: f64,
+   |                                 ^^^^^^^^ expected `ContinuousPinIndex`, found `DiscretePinIndex`</pre>
+
+<p>Two mistakes are found later than the build, when the shape is frozen. A read whose type has another size than its aspect, a potential read as a 32-bit number for example, is refused by <code>freeze</code> with the name of the function and the read. And a shape that breaks one of the nine rules is refused with the rule and the entry. Both happen in the first line of your own test, before any solver is involved.</p>
+
+<h3>Testing a device</h3>
+
+<p>A device is unusually easy to test, for the reason chapter 18 gave: a function is pure. The same values in give the same values out, with no setup and nothing to clean up. Three tests are worth writing for every device.</p>
+
+<p><strong>The shape is accepted.</strong> Build the shape and check that <code>freeze</code> accepts it. This runs the whole validation: every index in range, every linkage allowed where it is used, every read and write permitted to the kind of code that makes it.</p>
+
+<p><strong>The method computes what you meant.</strong> With the attributes, or with step 3 by hand, the physics is a plain method. Call it with numbers and compare.</p>
+
+<p><strong>The gradient is the derivative.</strong> A wrong partial is the most common fault in a hand-written device, and the hardest to see: the simulation still runs, and merely converges badly or not at all. Check each partial against a <em>finite difference</em>: move one read a little up and a little down, and divide the change of the result by the size of the move.</p>
+
+<pre data-lang="rust">#[test]
+fn the_shape_of_a_resistor_is_accepted() {
+    Resistor::shape().expect("the shape passes validation");
+}
+
+#[test]
+fn a_resistor_carries_one_milliampere_per_volt_at_one_kilohm() {
+    let (mut i, mut gradient) = (0.0, [0.0; 3]);
+    Resistor.current(3.0, 2.0, 1.0e3, &mut i, &mut gradient).expect("the current");
+    assert!((i - 1.0e-3).abs() < 1.0e-15);
+}
+
+#[test]
+fn the_gradient_of_the_current_is_its_derivative() {
+    // The current at a point, without its gradient.
+    let current_at = |p: f64, n: f64, r: f64| {
+        let (mut i, mut gradient) = (0.0, [0.0; 3]);
+        Resistor.current(p, n, r, &mut i, &mut gradient).expect("the current");
+        i
+    };
+    let (p, n, r, move_by) = (3.0, 2.0, 1.0e3, 1.0e-6);
+    let (mut i, mut gradient) = (0.0, [0.0; 3]);
+    Resistor.current(p, n, r, &mut i, &mut gradient).expect("the current");
+
+    let against_p = (current_at(p + move_by, n, r) - current_at(p - move_by, n, r)) / (2.0 * move_by);
+    let against_n = (current_at(p, n + move_by, r) - current_at(p, n - move_by, r)) / (2.0 * move_by);
+    let against_r = (current_at(p, n, r + move_by) - current_at(p, n, r - move_by)) / (2.0 * move_by);
+    assert!((gradient[0] - against_p).abs() < 1.0e-9);
+    assert!((gradient[1] - against_n).abs() < 1.0e-9);
+    assert!((gradient[2] - against_r).abs() < 1.0e-9);
+}</pre>
+
+<p>The mark <code>#[test]</code> is an attribute of the language itself: it makes a function a test. <code>.expect("…")</code> stops the test with that text if the call failed. <code>current_at</code> is a small function declared in place, between two bars, for use in this test only.</p>
+
+<p>You do not have to write the third test by hand for every function. The crate <code>piperine-abi</code> has a <strong>partials verifier</strong> that does it through <code>evaluate</code>, for every partial a function declares. Given an instance, the number of a function and the bytes of its reads, it calls the function, moves each read that a partial names, calls again, and compares each declared derivative with its finite difference. It lists every partial that disagrees, with the declared and the measured value. At a point where a limit is active, that is, where the held and the proposed values differ, it skips the comparison and says so, because there the function is deliberately not the derivative of what it reads. A debug session of the solver runs the same check on every device while it simulates.</p>
+
+<p>When a shape is refused, the refusal is a value with five parts: the rule, the table, the name of the entry, its origin and a detail. Give two ports the position 0, for example, and <code>freeze</code> refuses with the rule <code>LinkageRepeated</code> and the name of the second pin. An entry declared with an attribute carries the file, line and column of its declaration as its origin, so the refusal points into your source.</p>
+
+<p>Last, a technique for the cautious. A device written twice, once by hand and once with the attributes, must give the same shape, entry by entry, and for the same reads the same writes and partials, byte for byte. The attribute crate tests itself this way on six devices: a resistor, a capacitor, a diode, a flip-flop, a comparator and a converter from digital to analog. The same comparison works between any two implementations of one device, such as a compiled model and the interpreter.</p>
+
+<h3>The pieces, in one place</h3>
+
+<p>This section lists what the chapter used, for when you come back to look something up.</p>
+
+<h4>The builder</h4>
+
+<p><code>ShapeBuilder::new()</code> makes an empty builder. It has one method per table, each taking a specification and handing back the typed index of the new entry: <code>continuous_pin</code>, <code>discrete_pin</code>, <code>event_pin</code>, <code>term</code>, <code>limit</code>, <code>small_signal_source</code>, <code>crossing</code>, <code>operating_point_variable</code>, <code>trace</code>, <code>function</code> and <code>reaction</code>. <code>freeze</code> validates and hands back the shared shape or a refusal.</p>
+
+<p>A linkage is made by <code>Linkage::private()</code>, <code>Linkage::port(position)</code>, <code>Linkage::parameter()</code>, or the constructor named after a session net; <code>.optional()</code> marks it optional.</p>
+
+<h4>The specifications of code</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Call</th><th>What it declares</th></tr></thead>
+<tbody>
+<tr><td><code>FunctionSpecification::new(name)</code></td><td>a function with no reads and no writes yet</td></tr>
+<tr><td><code>.read::&lt;T&gt;(Read)</code></td><td>the next read, taken as the type <code>T</code>; hands back its position</td></tr>
+<tr><td><code>.write::&lt;T&gt;(Write)</code></td><td>the next write; hands back its position</td></tr>
+<tr><td><code>.partial(write, read)</code></td><td>one derivative, of that write against that read</td></tr>
+<tr><td><code>.partial_at(write, write_offset, read, read_offset)</code></td><td>the same for a real inside a write or a read that has several fields</td></tr>
+<tr><td><code>.owns_limit_correction()</code></td><td>the flag of a function that corrects for its own limit</td></tr>
+<tr><td><code>ReactionSpecification::new(name)</code></td><td>a reaction with nothing declared yet</td></tr>
+<tr><td><code>.triggered_by(EventPinIndex)</code></td><td>one event pin that triggers it</td></tr>
+<tr><td><code>.commit_site(CommitSiteSpecification)</code></td><td>the next commit site; hands back its index</td></tr>
+<tr><td><code>.irreversible()</code></td><td>the flag of a reaction the solver cannot take back</td></tr>
+</tbody></table></div>
+
+<p>On a read of a discrete pin that is an array, <code>.element(n)</code> picks one element and <code>.whole_array()</code> asks for the whole, which the method then receives as an <code>ArrayView</code>.</p>
+
+<h4>The lenses</h4>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Call</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>FunctionFrameLens::read::&lt;T&gt;(position)</code></td><td>copies one read out of the frame</td></tr>
+<tr><td><code>.write(position, &amp;value)</code></td><td>copies one result into the frame</td></tr>
+<tr><td><code>.partials(&amp;[f64])</code></td><td>stores the partials, in the declared order</td></tr>
+<tr><td><code>.wanted(partial)</code></td><td>says whether this call needs that partial, for a function that would rather not compute an expensive one in vain</td></tr>
+<tr><td><code>.array(position)</code></td><td>the view of a read of a whole array</td></tr>
+<tr><td><code>ReactionFrameLens::read::&lt;T&gt;(position)</code></td><td>copies one read out of the frame</td></tr>
+<tr><td><code>.commit_site(CommitSiteIndex)</code></td><td>the handle of one commit site</td></tr>
+<tr><td><code>CommitSiteHandle::commit(&amp;value, after)</code></td><td>asks for the pin to take the value after that many seconds</td></tr>
+<tr><td><code>.commit_element(element, &amp;value, after)</code></td><td>the same for one element of an array pin</td></tr>
+<tr><td><code>.fire(after)</code></td><td>asks for the event pin to fire after that many seconds</td></tr>
+</tbody></table></div>
+
+<p>A type can be read and written through a lens when it is <em>plain data</em>: a number, a boolean, or a structure of those with a fixed arrangement in memory. The crate marks such types with the trait <code>PlainData</code>.</p>
+
+<h4>The seventeen attributes</h4>
+
+<p>Four attributes do the work, and thirteen more are written inside them to describe a field or a parameter. Each is named after the piece of the interface it declares.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Attribute</th><th>Goes on</th><th>Declares</th></tr></thead>
+<tbody>
+<tr><td><code>#[shape_tables]</code></td><td>a structure whose fields are typed indices</td><td>the pins and the analog tables of a shape</td></tr>
+<tr><td><code>#[continuous_pin(linkage, unit, hold_potential, potential_tolerance, flow_tolerance)]</code></td><td>a field <code>ContinuousPinIndex</code></td><td>a continuous pin</td></tr>
+<tr><td><code>#[discrete_pin(linkage, layout, unit, initial_value, element_count, untracked, record_stream, relaxed_loop_allowed, structural, where_condition)]</code></td><td>a field <code>DiscretePinIndex</code></td><td>a discrete pin and its five flags</td></tr>
+<tr><td><code>#[event_pin(linkage)]</code></td><td>a field <code>EventPinIndex</code></td><td>an event pin</td></tr>
+<tr><td><code>#[term(operator, positive, negative, state_tolerance, maximum_delay)]</code></td><td>a field <code>TermIndex</code></td><td>a term; the operator is <code>direct</code>, <code>time_derivative</code> or <code>delay</code></td></tr>
+<tr><td><code>#[limit]</code></td><td>a field <code>LimitIndex</code></td><td>a limit</td></tr>
+<tr><td><code>#[small_signal_source(kind)]</code></td><td>a field <code>SmallSignalSourceIndex</code></td><td>a small-signal source; the kind is <code>noise</code> or <code>stimulus</code></td></tr>
+<tr><td><code>#[crossing(event_pin, time_tolerance, value_tolerance)]</code></td><td>a field <code>CrossingIndex</code></td><td>a crossing</td></tr>
+<tr><td><code>#[operating_point_variable(layout)]</code></td><td>a field <code>OperatingPointVariableIndex</code></td><td>an operating-point variable</td></tr>
+<tr><td><code>#[trace(layout)]</code></td><td>a field <code>TraceIndex</code></td><td>a trace</td></tr>
+<tr><td><code>#[device_code(tables = T)]</code></td><td>an <code>impl</code> block</td><td>the two code tables of a shape</td></tr>
+<tr><td><code>#[function(name, owns_limit_correction)]</code></td><td>a method</td><td>a function</td></tr>
+<tr><td><code>#[reaction(triggering_events(…), irreversible)]</code></td><td>a method</td><td>a reaction</td></tr>
+<tr><td><code>#[read(aspect(index), element = n | whole_array)]</code></td><td>a parameter taken by value</td><td>one read</td></tr>
+<tr><td><code>#[write(aspect(index))]</code></td><td>a parameter <code>&amp;mut T</code></td><td>one write</td></tr>
+<tr><td><code>#[partials(of = w, against(r1, r2, …))]</code></td><td>a parameter <code>&amp;mut [f64; N]</code></td><td>the gradient of one write: N partials</td></tr>
+<tr><td><code>#[commit_site(aspect(index), offset, length, minimum_delay, replaces_pending)]</code></td><td>a parameter <code>CommitSiteHandle</code></td><td>one commit site</td></tr>
+</tbody></table></div>
+
+<p>A key that is a flag of the interface is written bare, as <code>structural</code> or <code>replaces_pending</code>. A key that is a field is written <code>key = value</code>. In a field attribute, a value such as <code>positive = p</code> names another field of the same structure, declared above it. The attributes cover a shape with a fixed list of entries; a shape whose number of entries depends on a parameter is built with the builder, and the two mix, since <code>declare</code> is an ordinary method.</p>
+
+<div class="callout mistake">
+  <p class="callout-label">Common mistakes</p>
+  <div class="table-wrap"><table>
+  <thead><tr><th>You expected</th><th>What happens</th></tr></thead>
+  <tbody>
+  <tr><td>A field of the device's own type is a good place for its state.</td><td>The solver may repeat, skip or undo calls, and the field would disagree with the simulation. Declare a private discrete pin and commit to it.</td></tr>
+  <tr><td>A function may cache its last result in the instance to save time.</td><td>It may keep scratch that nothing can observe, and no more. The solver already skips a call whose reads did not change.</td></tr>
+  <tr><td>A wrong partial makes the simulation give wrong answers.</td><td>Usually it makes Newton's method converge slowly or not at all, with correct equations. Run the partials verifier.</td></tr>
+  <tr><td>A reaction can compare two voltages at a crossing to learn its direction.</td><td>The crossing is located within a tolerance, so the sign at that instant is not certain. Read which event fired.</td></tr>
+  <tr><td>The order of the methods in the <code>impl</code> block is a matter of taste.</td><td>With the attributes, position is order: the first <code>#[function]</code> is function 0. Moving a method renumbers the ones after it, which is harmless as long as you use the generated constants and no literal numbers.</td></tr>
+  </tbody></table></div>
+</div>
+
+<div class="callout try">
+  <p class="callout-label">Try it</p>
+  <p>Write the tables and the one function of a capacitor with the attributes. It is the resistor with two changes. (The term's operator is <code>time_derivative</code>, and the method writes a charge, <code>c * (p - n)</code>, as the term's value, with the gradient <code>[c, -c, p - n]</code>. Nothing in the method differentiates in time: the operator asks the solver to.)</p>
+</div>
+
+</section>
+
+<!-- ===================================================== 20 -->
+<section id="solver" class="chapter">
+<p class="ch-num">Chapter 20</p>
 <h2>The solver</h2>
 
 <p>The solver is the part of Piperine that turns devices into numbers. It knows physics and time, not the language: it never sees an MSL expression, only devices that speak the ABI of chapter 18. This chapter explains what it does with them, so that you can predict what a simulation will do and read what it reports.</p>
@@ -9217,7 +10714,7 @@ fn react(&self, k: u32, cx: &mut React) -> Result<Flow, Fault> {
 
 <div class="callout status">
   <p class="callout-label">Status</p>
-  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs run on it through the compiler of chapter 20, and crossings are located inside a step to the tolerances below.</p>
+  <p>Built. The solver runs every analysis below on devices that use the ABI, with numbers bit-for-bit equal to the solver it replaced, whose results were validated against ngspice. Analog MSL designs run on it through the compiler of chapter 21, and crossings are located inside a step to the tolerances below.</p>
 </div>
 
 <h3>Three parts, one boundary</h3>
@@ -9533,7 +11030,7 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 <tr><td>rescue of an operating point</td><td>gmin stepping, then source stepping</td><td>Nowhere. Both are tried, in that order, whenever the direct solve fails.</td></tr>
 </tbody></table></div>
 
-<p><code>reltol</code>, <code>vntol</code>, <code>abstol</code>, <code>gmin</code> and <code>trtol</code> have ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances, and the test suite runs MSL circuits side by side with ngspice to hold that (chapter 20). A crossing that falls in the step right after a jump is the one exception to locating: it fires at that step's end.</p>
+<p><code>reltol</code>, <code>vntol</code>, <code>abstol</code>, <code>gmin</code> and <code>trtol</code> have ngspice's defaults with ngspice's meanings. Matching ngspice is a design goal: on the same circuit the two simulators are expected to agree to within these tolerances, and the test suite runs MSL circuits side by side with ngspice to hold that (chapter 21). A crossing that falls in the step right after a jump is the one exception to locating: it fires at that step's end.</p>
 
 <p>Choosing among these options is the subject of "What the knobs actually do" in chapter 11, which measures what each one costs and buys on one circuit. The short version: for more accuracy lower <code>reltol</code>; use <code>max_step</code> only when something narrow is being stepped over; and treat <code>print_step</code> as a display setting.</p>
 
@@ -9558,12 +11055,12 @@ Caused by: Transient: exceeded the 20 step budget at t = 5.528574e-4 s of 5.0000
 
 </section>
 
-<!-- ===================================================== 20 -->
+<!-- ===================================================== 21 -->
 <section id="compiler" class="chapter">
-<p class="ch-num">Chapter 20</p>
+<p class="ch-num">Chapter 21</p>
 <h2>From source to solver</h2>
 
-<p>The compiler is what connects the two halves of this book: the language of Part 1 and the solver of chapters 18 and 19. It reads your MSL, checks it, flattens the design into an intermediate form and hands the solver one device per instance. This chapter follows a source file down that path, so you know what each stage checks and where an error comes from.</p>
+<p>The compiler is what connects the two halves of this book: the language of Part 1 and the solver of chapters 18 to 20. It reads your MSL, checks it, flattens the design into an intermediate form and hands the solver one device per instance. This chapter follows a source file down that path, so you know what each stage checks and where an error comes from.</p>
 
 <div class="callout status">
   <p class="callout-label">Status</p>
@@ -9673,9 +11170,9 @@ fn terms_block&lt;R: Real&gt;(p: R, n: R, r: R) -&gt; [R; 1] {
 <p>One integrated test for every example of this book, run through the same entry point you use, and a single home for end-to-end scenarios compared with ngspice. Chapter 15 shows how you run a design today: the <code>piperine</code> command.</p>
 </section>
 
-<!-- ===================================================== 21 -->
+<!-- ===================================================== 22 -->
 <section id="structure" class="chapter">
-<p class="ch-num">Chapter 21</p>
+<p class="ch-num">Chapter 22</p>
 <h2>How Piperine is organized</h2>
 
 <p>Piperine is a set of Rust crates, each with one job. Your source goes down through them in a straight line, from text to numbers, and no crate knows about the ones above it: the solver never sees MSL, and the language never sees the solver. This chapter names the crates so that you know where a piece of behavior lives.</p>
@@ -9710,7 +11207,7 @@ flowchart TD
 <tr><td><code>piperine-interp</code></td><td>The reference backend. It walks a body at every call and computes values with their derivatives. It needs no compiler, and every other backend is checked against it.</td></tr>
 <tr><td><code>piperine-transpile</code></td><td>The compiled backend. It prints the design as Rust, compiles it once with <code>rustc</code>, keeps the result in a cache and loads it. The generated source stays on disk for you to read.</td></tr>
 <tr><td><code>piperine-abi</code></td><td>The device interface of chapter 18: what a device is, how the solver calls it and what it may read and write. It depends on nothing else, so any device, compiled from MSL or not, plugs in the same way.</td></tr>
-<tr><td><code>piperine-solver</code></td><td>Owns time and events, runs the analyses of chapter 19 and alternates between the two sides below.</td></tr>
+<tr><td><code>piperine-solver</code></td><td>Owns time and events, runs the analyses of chapter 20 and alternates between the two sides below.</td></tr>
 <tr><td><code>piperine-analog-solver</code></td><td>The continuous side: Newton iterations, linear algebra, TR-BDF2 integration and the location of crossings. It knows nothing digital.</td></tr>
 <tr><td><code>piperine-digital-solver</code></td><td>The discrete side: nets, the commit queue, instants and microsteps. It knows nothing analog.</td></tr>
 </tbody></table></div>

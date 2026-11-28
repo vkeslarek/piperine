@@ -1,4 +1,4 @@
-//! Scope: chapter 21 of the Book, "How Piperine is organized" (feature `root-e2e`, RE-03): the sentences
+//! Scope: chapter 22 of the Book, "How Piperine is organized" (feature `root-e2e`, RE-03): the sentences
 //! of the crate table that state what a crate knows or does, held to the manifests of the crates and to
 //! the compiled backend's cache, and the one about the command line (a `binary` row). The chapter has no
 //! block. Each test opens with the inventory ids it holds, from `tests/book/inventory.tsv`.
