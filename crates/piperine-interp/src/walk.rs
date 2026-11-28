@@ -233,9 +233,9 @@ mod tests {
     }
 
     /// Plain-Rust reference numerics the walk tests compare against.
-    struct WalkFixture;
+    struct ReferenceNumerics;
 
-    impl WalkFixture {
+    impl ReferenceNumerics {
         fn real(v: Value) -> f64 {
             match v {
                 Value::Real(d) => d.v,
@@ -288,11 +288,11 @@ mod tests {
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 0);
         let expect = -(((1.7_f64 + -0.4) * 3.0 - 0.7) / 3.0);
-        assert!(WalkFixture::close(WalkFixture::real(w.eval(neg).unwrap()), expect));
-        assert!(WalkFixture::close(WalkFixture::real(w.eval(ex).unwrap()), expect.exp()));
-        assert!(WalkFixture::close(WalkFixture::real(w.eval(ln).unwrap()), 3.0_f64.ln()));
-        assert!(WalkFixture::close(WalkFixture::real(w.eval(sq).unwrap()), 3.0_f64.sqrt()));
-        assert!(WalkFixture::close(WalkFixture::real(w.eval(ab).unwrap()), expect.abs()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(neg).unwrap()), expect));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ex).unwrap()), expect.exp()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ln).unwrap()), 3.0_f64.ln()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(sq).unwrap()), 3.0_f64.sqrt()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ab).unwrap()), expect.abs()));
         assert_eq!(w.eval(lt).unwrap(), Value::Bool(true));
         assert_eq!(w.eval(ge).unwrap(), Value::Bool(false));
         assert_eq!(w.eval(eq).unwrap(), Value::Bool(true));
@@ -310,9 +310,9 @@ mod tests {
         let nan = e.binary(BinaryOp::Div, zero, zero);
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 0);
-        assert_eq!(WalkFixture::real(w.eval(pos).unwrap()), f64::INFINITY);
-        assert_eq!(WalkFixture::real(w.eval(neg).unwrap()), f64::NEG_INFINITY);
-        assert!(WalkFixture::real(w.eval(nan).unwrap()).is_nan());
+        assert_eq!(ReferenceNumerics::real(w.eval(pos).unwrap()), f64::INFINITY);
+        assert_eq!(ReferenceNumerics::real(w.eval(neg).unwrap()), f64::NEG_INFINITY);
+        assert!(ReferenceNumerics::real(w.eval(nan).unwrap()).is_nan());
     }
 
     #[test]
@@ -333,8 +333,8 @@ mod tests {
         assert_eq!(w.eval(skip_and).unwrap(), Value::Bool(false));
         assert_eq!(w.eval(skip_or).unwrap(), Value::Bool(true));
         assert!(w.eval(run_and).is_err(), "`true && x` must evaluate x");
-        assert_eq!(WalkFixture::real(w.eval(taken).unwrap()), 1.0);
-        assert_eq!(WalkFixture::real(w.eval(other).unwrap()), 1.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(taken).unwrap()), 1.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(other).unwrap()), 1.0);
     }
 
     #[test]
@@ -435,12 +435,12 @@ mod tests {
         }
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 2);
-        assert_eq!(WalkFixture::real(w.eval(call).unwrap()), 3.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(call).unwrap()), 3.0);
         w.exec(let_x).unwrap();
         assert_eq!(w.call_closure(closure, &[4.0]).unwrap(), 12.0);
         assert!(w.call_closure(closure, &[]).is_err());
         for ((new, old), id) in points.iter().zip(calls) {
-            assert!(WalkFixture::close(WalkFixture::real(w.eval(id).unwrap()), WalkFixture::pnjlim(*new, *old, 0.025, 0.6)), "pnjlim({new}, {old})");
+            assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(id).unwrap()), ReferenceNumerics::pnjlim(*new, *old, 0.025, 0.6)), "pnjlim({new}, {old})");
         }
     }
 

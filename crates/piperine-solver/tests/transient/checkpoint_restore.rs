@@ -81,14 +81,13 @@ fn transient_reject_drives_restore_accept_discards() {
 // whose plain-Newton attempt is starved of iterations (max_iter=4) falls
 // through to gmin stepping, which converges.
 
-
 /// Spec ABI-07: plain Newton fails on the starved stiff diode and falls
 /// through to gmin stepping; the fallthrough restores the junction limit's
 /// state (its `AGE` reads 0 again), and gmin stepping converges to the
 /// operating point the unstarved solve reaches.
 #[test]
 fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
-    let (circuit, anode) = CheckpointRestoreCases::diode_circuit();
+    let (circuit, anode) = DiodeCircuit::diode_circuit();
     // `starved_iterations` starve plain Newton on the stiff diode (no damping, as ngspice, takes
     // six where the midpoint damping took four) so it falls through to gmin stepping (which
     // converges from the easy high-gmin start).
@@ -116,16 +115,16 @@ fn dc_homotopy_fallthrough_drives_restore_between_strategies() {
     assert!(ages[starved_iterations + 1..].iter().all(|a| *a > 0), "the converging attempt is not restored: {ages:?}");
     let starved = res.get_node(&CircuitBuilding::node_id(&anode)).unwrap();
 
-    let (circuit, anode) = CheckpointRestoreCases::diode_circuit();
+    let (circuit, anode) = DiodeCircuit::diode_circuit();
     let mut solver = Solver::new(circuit).build();
     let plain = solver.dc().unwrap().solve().unwrap().get_node(&CircuitBuilding::node_id(&anode)).unwrap();
     assert!((starved - plain).abs() < 1e-4, "after the fallthrough {starved} V vs the plain solve {plain} V");
 }
 
-/// The helpers of the checkpoint_restore tests.
-pub struct CheckpointRestoreCases;
+/// The diode circuit a checkpoint is restored on.
+struct DiodeCircuit;
 
-impl CheckpointRestoreCases {
+impl DiodeCircuit {
 
     /// The diode circuit helper `diode_circuit`.
     fn diode_circuit() -> (piperine_solver::prelude::CircuitInstance, piperine_solver::abi::AnalogReference) {

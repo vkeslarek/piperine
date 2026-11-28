@@ -3,48 +3,31 @@
 //! git cannot give, and a git package that resolves its own `path` dependencies. Every
 //! repository is a local one in a temporary directory; no test contacts the network.
 
+use super::resolved_graph::ResolvedGraph;
 use crate::support;
 
 use std::fs;
 
-use piperine_project::{Options, PackageError, PackageGraph, Resolver};
-use support::ProjectFixture;
+use support::{PackageDirectory, GitRepository};
 
-/// Reads the dependency git repository the git tests resolve.
-struct GitProbe;
+/// A repository holding the package `util`.
+struct PackageRepository;
 
-impl GitProbe {
-    fn files(list: &[(String, String)]) -> Vec<(&str, &str)> {
-        list.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect()
-    }
-
-    fn ok(dir: &std::path::Path) -> PackageGraph {
-        match Resolver::resolve(dir, Options::default()) {
-            Ok(graph) => graph,
-            Err(errors) => panic!("resolution failed: {errors:?}"),
-        }
-    }
-
-    fn only(dir: &std::path::Path) -> PackageError {
-        let mut errors = Resolver::resolve(dir, Options::default()).err().expect("the project was accepted");
-        assert_eq!(errors.len(), 1, "{errors:?}");
-        errors.remove(0)
-    }
-
+impl PackageRepository {
     /// A repository holding the package `util` whose crate root is `lib_text`, and its first commit.
     fn util_repo(dir: &std::path::Path, lib_text: &str) -> (git2::Repository, git2::Oid) {
-        let repo = ProjectFixture::repo(dir);
-        let oid = ProjectFixture::commit(&repo, &GitProbe::files(&ProjectFixture::package_files("util", "1.0.0", lib_text)), "util");
+        let repo = GitRepository::repo(dir);
+        let oid = GitRepository::commit(&repo, &ResolvedGraph::files(&PackageDirectory::package_files("util", "1.0.0", lib_text)), "util");
         (repo, oid)
     }
 }
 
 #[test]
 fn a_git_dependency_checks_out_the_default_branch() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, oid) = GitProbe::util_repo(&base.join("util-repo"), "// head\n");
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", ProjectFixture::url(&repo))], "");
-    let graph = GitProbe::ok(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, oid) = PackageRepository::util_repo(&base.join("util-repo"), "// head\n");
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", GitRepository::url(&repo))], "");
+    let graph = ResolvedGraph::ok(&app);
     assert_eq!(graph.graph.crates().len(), 2);
     let root = &graph.graph.crates()[1].root;
     assert!(root.starts_with(app.join("target/deps")), "{root:?}");
@@ -56,15 +39,15 @@ fn a_git_dependency_checks_out_the_default_branch() {
 
 #[test]
 fn branch_tag_and_rev_select_their_commit() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, first) = GitProbe::util_repo(&base.join("util-repo"), "// first\n");
-    ProjectFixture::tag(&repo, "v1", first);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, first) = PackageRepository::util_repo(&base.join("util-repo"), "// first\n");
+    GitRepository::tag(&repo, "v1", first);
     let default = repo.head().unwrap().shorthand().unwrap().to_string();
-    ProjectFixture::branch(&repo, "dev", first);
-    ProjectFixture::switch(&repo, "dev");
-    let second = ProjectFixture::commit(&repo, &[("src/lib.msl", "// second\n")], "second");
-    ProjectFixture::switch(&repo, &default);
-    let third = ProjectFixture::commit(&repo, &[("src/lib.msl", "// third\n")], "third");
+    GitRepository::branch(&repo, "dev", first);
+    GitRepository::switch(&repo, "dev");
+    let second = GitRepository::commit(&repo, &[("src/lib.msl", "// second\n")], "second");
+    GitRepository::switch(&repo, &default);
+    let third = GitRepository::commit(&repo, &[("src/lib.msl", "// third\n")], "third");
     let cases = [
         ("branch = \"dev\"".to_string(), "// second\n", second),
         ("tag = \"v1\"".to_string(), "// first\n", first),
@@ -72,9 +55,9 @@ fn branch_tag_and_rev_select_their_commit() {
         (String::new(), "// third\n", third),
     ];
     for (i, (reference, text, oid)) in cases.iter().enumerate() {
-        let line = format!("util = {{ git = \"{}\", {reference} }}", ProjectFixture::url(&repo)).replace(", }", " }");
-        let app = ProjectFixture::package(&base.join(format!("app{i}")), "app", "1.0.0", &[&line], "");
-        let graph = GitProbe::ok(&app);
+        let line = format!("util = {{ git = \"{}\", {reference} }}", GitRepository::url(&repo)).replace(", }", " }");
+        let app = PackageDirectory::package(&base.join(format!("app{i}")), "app", "1.0.0", &[&line], "");
+        let graph = ResolvedGraph::ok(&app);
         assert_eq!(fs::read_to_string(&graph.graph.crates()[1].root).unwrap(), *text, "{reference}");
         assert_eq!(graph.packages[1].commit, Some(oid.to_string()), "{reference}");
     }
@@ -82,17 +65,17 @@ fn branch_tag_and_rev_select_their_commit() {
 
 #[test]
 fn an_unreachable_repository_or_ref_is_e0172() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, _) = GitProbe::util_repo(&base.join("util-repo"), "");
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, _) = PackageRepository::util_repo(&base.join("util-repo"), "");
     let missing = base.join("no-repo").display().to_string();
     for (line, what) in [
         (format!("util = {{ git = \"{missing}\" }}"), "a path that is no repository"),
-        (format!("util = {{ git = \"{}\", branch = \"nope\" }}", ProjectFixture::url(&repo)), "a missing branch"),
-        (format!("util = {{ git = \"{}\", tag = \"nope\" }}", ProjectFixture::url(&repo)), "a missing tag"),
-        (format!("util = {{ git = \"{}\", rev = \"{}\" }}", ProjectFixture::url(&repo), "0123456789abcdef0123456789abcdef01234567"), "a missing commit"),
+        (format!("util = {{ git = \"{}\", branch = \"nope\" }}", GitRepository::url(&repo)), "a missing branch"),
+        (format!("util = {{ git = \"{}\", tag = \"nope\" }}", GitRepository::url(&repo)), "a missing tag"),
+        (format!("util = {{ git = \"{}\", rev = \"{}\" }}", GitRepository::url(&repo), "0123456789abcdef0123456789abcdef01234567"), "a missing commit"),
     ] {
-        let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &[&line], "");
-        let error = GitProbe::only(&app);
+        let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[&line], "");
+        let error = ResolvedGraph::only(&app);
         assert_eq!(error.code(), "E0172", "{what}");
         assert_eq!(error.file, app.join("Piperine.toml"));
         assert_eq!(&error.text[error.diagnostic.span().range()], "util", "{what}");
@@ -111,14 +94,14 @@ fn an_unreachable_repository_or_ref_is_e0172() {
 
 #[test]
 fn two_commits_of_one_repository_are_two_crates() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, first) = GitProbe::util_repo(&base.join("util-repo"), "// one\n");
-    ProjectFixture::tag(&repo, "v1", first);
-    let second = ProjectFixture::commit(&repo, &[("src/lib.msl", "// two\n")], "two");
-    ProjectFixture::tag(&repo, "v2", second);
-    let lines = [format!("u1 = {{ git = \"{}\", tag = \"v1\", package = \"util\" }}", ProjectFixture::url(&repo)), format!("u2 = {{ git = \"{}\", tag = \"v2\", package = \"util\" }}", ProjectFixture::url(&repo))];
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &[&lines[0], &lines[1]], "");
-    let graph = GitProbe::ok(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, first) = PackageRepository::util_repo(&base.join("util-repo"), "// one\n");
+    GitRepository::tag(&repo, "v1", first);
+    let second = GitRepository::commit(&repo, &[("src/lib.msl", "// two\n")], "two");
+    GitRepository::tag(&repo, "v2", second);
+    let lines = [format!("u1 = {{ git = \"{}\", tag = \"v1\", package = \"util\" }}", GitRepository::url(&repo)), format!("u2 = {{ git = \"{}\", tag = \"v2\", package = \"util\" }}", GitRepository::url(&repo))];
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[&lines[0], &lines[1]], "");
+    let graph = ResolvedGraph::ok(&app);
     let crates = graph.graph.crates();
     assert_eq!(crates.len(), 3);
     assert_ne!(crates[1].root, crates[2].root);
@@ -130,35 +113,35 @@ fn two_commits_of_one_repository_are_two_crates() {
 
 #[test]
 fn one_commit_of_one_repository_is_one_crate() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, first) = GitProbe::util_repo(&base.join("util-repo"), "");
-    ProjectFixture::tag(&repo, "v1", first);
-    let line = format!("util = {{ git = \"{}\", tag = \"v1\" }}", ProjectFixture::url(&repo));
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, first) = PackageRepository::util_repo(&base.join("util-repo"), "");
+    GitRepository::tag(&repo, "v1", first);
+    let line = format!("util = {{ git = \"{}\", tag = \"v1\" }}", GitRepository::url(&repo));
     // `mid` reaches the same repository and tag, and a second spelling of the reference: the
     // revision the tag names.
-    let rev_line = format!("util = {{ git = \"{}\", rev = \"{first}\" }}", ProjectFixture::url(&repo));
-    ProjectFixture::package(&base.join("mid"), "mid", "1.0.0", &[&line], "");
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &["mid = { path = \"../mid\" }", &line], "");
-    let graph = GitProbe::ok(&app);
+    let rev_line = format!("util = {{ git = \"{}\", rev = \"{first}\" }}", GitRepository::url(&repo));
+    PackageDirectory::package(&base.join("mid"), "mid", "1.0.0", &[&line], "");
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["mid = { path = \"../mid\" }", &line], "");
+    let graph = ResolvedGraph::ok(&app);
     let crates = graph.graph.crates();
     assert_eq!(crates.len(), 2 + 1);
     let util_of = |i: usize| crates[i].dependencies.iter().find(|d| d.name == "util").unwrap().krate;
     assert_eq!(util_of(0), util_of(1));
     // The same commit through a `rev`: still one crate.
-    ProjectFixture::package(&base.join("mid"), "mid", "1.0.0", &[&rev_line], "");
-    let graph = GitProbe::ok(&app);
+    PackageDirectory::package(&base.join("mid"), "mid", "1.0.0", &[&rev_line], "");
+    let graph = ResolvedGraph::ok(&app);
     assert_eq!(graph.graph.crates().len(), 3);
 }
 
 #[test]
 fn one_repository_spelled_two_ways_is_one_crate() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (repo, _) = GitProbe::util_repo(&base.join("util-repo.git"), "");
-    let plain = ProjectFixture::url(&repo);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (repo, _) = PackageRepository::util_repo(&base.join("util-repo.git"), "");
+    let plain = GitRepository::url(&repo);
     let spellings = [plain.clone(), format!("{plain}/")];
-    ProjectFixture::package(&base.join("mid"), "mid", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", spellings[1])], "");
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &["mid = { path = \"../mid\" }", &format!("util = {{ git = \"{}\" }}", spellings[0])], "");
-    let graph = GitProbe::ok(&app);
+    PackageDirectory::package(&base.join("mid"), "mid", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", spellings[1])], "");
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["mid = { path = \"../mid\" }", &format!("util = {{ git = \"{}\" }}", spellings[0])], "");
+    let graph = ResolvedGraph::ok(&app);
     // app, mid and one util.
     assert_eq!(graph.graph.crates().len(), 3, "{:?}", graph.graph.crates().iter().map(|c| &c.name).collect::<Vec<_>>());
     // Every spelling of the repository is the same lockfile source: no `/`; a local path keeps its `.git`.
@@ -169,12 +152,12 @@ fn one_repository_spelled_two_ways_is_one_crate() {
 
 #[test]
 fn local_repositories_util_and_util_dot_git_stay_two_crates() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let (plain, _) = GitProbe::util_repo(&base.join("util"), "// plain\n");
-    let (dotgit, _) = GitProbe::util_repo(&base.join("util.git"), "// dotgit\n");
-    let line = |name: &str, repo: &git2::Repository| format!("{name} = {{ git = \"{}\", package = \"util\" }}", ProjectFixture::url(repo));
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &[&line("u1", &plain), &line("u2", &dotgit)], "");
-    let graph = GitProbe::ok(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let (plain, _) = PackageRepository::util_repo(&base.join("util"), "// plain\n");
+    let (dotgit, _) = PackageRepository::util_repo(&base.join("util.git"), "// dotgit\n");
+    let line = |name: &str, repo: &git2::Repository| format!("{name} = {{ git = \"{}\", package = \"util\" }}", GitRepository::url(repo));
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[&line("u1", &plain), &line("u2", &dotgit)], "");
+    let graph = ResolvedGraph::ok(&app);
     assert_eq!(graph.graph.crates().len(), 3, "{:?}", graph.graph.crates().iter().map(|c| &c.name).collect::<Vec<_>>());
     let texts: Vec<String> = graph.graph.crates()[1..].iter().map(|c| fs::read_to_string(&c.root).unwrap()).collect();
     assert!(texts.contains(&"// plain\n".to_string()) && texts.contains(&"// dotgit\n".to_string()), "{texts:?}");
@@ -194,14 +177,14 @@ fn a_trailing_dot_git_is_stripped_only_from_remote_urls() {
 
 #[test]
 fn a_git_package_resolves_its_own_dependencies() {
-    let (_tmp, base) = ProjectFixture::workspace();
-    let repo = ProjectFixture::repo(&base.join("util-repo"));
-    let mut all = ProjectFixture::package_files("util", "1.0.0", "");
+    let (_tmp, base) = PackageDirectory::workspace();
+    let repo = GitRepository::repo(&base.join("util-repo"));
+    let mut all = PackageDirectory::package_files("util", "1.0.0", "");
     all[0].1.push_str("\n[dependencies]\nbase = { path = \"base\" }\n");
-    all.extend(ProjectFixture::package_files("base", "0.1.0", "// base\n").into_iter().map(|(p, t)| (format!("base/{p}"), t)));
-    ProjectFixture::commit(&repo, &GitProbe::files(&all), "util with base");
-    let app = ProjectFixture::package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", ProjectFixture::url(&repo))], "");
-    let graph = GitProbe::ok(&app);
+    all.extend(PackageDirectory::package_files("base", "0.1.0", "// base\n").into_iter().map(|(p, t)| (format!("base/{p}"), t)));
+    GitRepository::commit(&repo, &ResolvedGraph::files(&all), "util with base");
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[&format!("util = {{ git = \"{}\" }}", GitRepository::url(&repo))], "");
+    let graph = ResolvedGraph::ok(&app);
     let names: Vec<&str> = graph.graph.crates().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["app", "util", "base"]);
     let util_root = &graph.graph.crates()[1].root;

@@ -11,6 +11,7 @@ use piperine_ir_fixtures::devices;
 
 use devices::Devices;
 use digital::{Buck, Dx, ValueAliases};
+use super::printed::Printed;
 use piperine_ir::{
     AnalysisKind, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, ChildValue, Constant, Deps, Drive, EmitField, Env, Event, EventSource, Expr, ExprId, FunctionSpec, InstanceSpec, Ir,
     IrBuilder, NetSpec, NodeRef, NodeSpec, Origin, Real, RecordSite, Stmt, Stream, StreamField, Target, Terminal, ValueType,
@@ -65,17 +66,6 @@ impl Read {
     fn is_static(x: &mut Dx<'_>) -> ExprId {
         let o = x.origin();
         x.b.expr(Expr::Env(Env::Static), ValueType::Bool, o)
-    }
-}
-
-/// The text a printed IR must hold, as one block of consecutive lines.
-struct Printed;
-
-impl Printed {
-    fn holds(ir: &Ir, lines: &[&str]) {
-        let text = ir.print_structural();
-        let block = lines.join("\n");
-        assert!(text.contains(&format!("{block}\n")), "missing:\n{block}\n--- in ---\n{text}");
     }
 }
 

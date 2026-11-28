@@ -34,16 +34,16 @@ use std::process::{Command, Output};
 use std::sync::OnceLock;
 use piperine_parity::compile_cache::CompileCache;
 
-/// Associated test helpers of `book`, grouped on one fixture type.
-struct BookFixture;
+/// The Book's single HTML page and what is read out of it: chapters, code spans, blocks and plain text.
+struct BookHtml;
 
-impl BookFixture {
+impl BookHtml {
     fn repo() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
     fn content() -> String {
-        std::fs::read_to_string(BookFixture::repo().join("docs/book/content.html")).expect("docs/book/content.html exists")
+        std::fs::read_to_string(BookHtml::repo().join("docs/book/content.html")).expect("docs/book/content.html exists")
     }
 
     /// The five entities the Book's source uses, decoded.
@@ -61,7 +61,7 @@ impl BookFixture {
 
     /// The decoded text of every `<code>..</code>` span of `html`.
     fn code_spans(html: &str) -> Vec<String> {
-        html.split("<code>").skip(1).filter_map(|s| s.split_once("</code>")).map(|(span, _)| BookFixture::decode(span)).collect()
+        html.split("<code>").skip(1).filter_map(|s| s.split_once("</code>")).map(|(span, _)| BookHtml::decode(span)).collect()
     }
 
     /// The text of `html` with tags removed and whitespace collapsed.
@@ -76,7 +76,7 @@ impl BookFixture {
                 _ => {}
             }
         }
-        BookFixture::decode(&out).split_whitespace().collect::<Vec<_>>().join(" ")
+        BookHtml::decode(&out).split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     /// The attributes `name="value"` of an opening tag's tail.
@@ -85,7 +85,7 @@ impl BookFixture {
         let mut rest = tail;
         while let Some((name, after)) = rest.split_once("=\"") {
             let (value, next) = after.split_once('"').expect("an attribute value closes");
-            out.insert(name.trim().to_string(), BookFixture::decode(value));
+            out.insert(name.trim().to_string(), BookHtml::decode(value));
             rest = next;
         }
         out
@@ -103,7 +103,7 @@ impl BookFixture {
             let (text, _) = body.split_once("</pre>").expect("a block closes");
             let before = html[..at].trim_end();
             let file = before.strip_suffix("-->").and_then(|b| b.rsplit_once("<!--")).and_then(|(_, comment)| comment.strip_prefix(" cli-file: ")).map(|path| path.trim().to_string());
-            out.push(Block { at, lang: lang.to_string(), attrs: BookFixture::attributes(tail), text: BookFixture::decode(text), file });
+            out.push(Block { at, lang: lang.to_string(), attrs: BookHtml::attributes(tail), text: BookHtml::decode(text), file });
             from = at + 1;
         }
         out
@@ -125,6 +125,23 @@ impl BookFixture {
         files
     }
 
+    /// The offsets of the chapter `id` in the whole Book.
+    fn span_of(html: &str, id: &str) -> (usize, usize) {
+        let open = format!("<section id=\"{id}\" class=\"chapter\">");
+        let at = html.find(&open).unwrap_or_else(|| panic!("the Book has a chapter `{id}`"));
+        (at, at + html[at..].find("</section>").expect("a chapter closes"))
+    }
+
+    /// Does `html` hold a block of `lang` whose text is `text`?
+    fn holds(html: &str, lang: &str, text: &str) -> bool {
+        BookHtml::blocks(html).iter().any(|b| b.lang == lang && b.text == text)
+    }
+}
+
+/// A listing of the Book run on the binary, in a directory laid out as the Book says.
+struct ListingRun;
+
+impl ListingRun {
     /// Copies the directory `from` into `to`, leaving out a `target` directory.
     fn copy_tree(from: &Path, to: &Path) {
         std::fs::create_dir_all(to).expect("a directory");
@@ -135,7 +152,7 @@ impl BookFixture {
             }
             let target = to.join(entry.file_name());
             if entry.file_type().expect("a type").is_dir() {
-                BookFixture::copy_tree(&entry.path(), &target);
+                ListingRun::copy_tree(&entry.path(), &target);
             } else {
                 std::fs::copy(entry.path(), &target).expect("a copy");
             }
@@ -151,9 +168,9 @@ impl BookFixture {
 
     /// The directory a listing's command runs in, with the temporary directory that holds it.
     fn workdir(all: &[Block], block: &Block) -> (Option<tempfile::TempDir>, PathBuf) {
-        let files = BookFixture::files_before(all, block.at);
+        let files = BookHtml::files_before(all, block.at);
         match block.attr("data-cli-project") {
-            Some("buck") => (None, BookFixture::repo().join("examples/buck")),
+            Some("buck") => (None, BookHtml::repo().join("examples/buck")),
             project => {
                 let tmp = tempfile::tempdir().expect("tmp");
                 let dir = match project {
@@ -161,12 +178,12 @@ impl BookFixture {
                     None => tmp.path().to_path_buf(),
                 };
                 if project == Some("rc") {
-                    BookFixture::copy_tree(&BookFixture::repo().join("examples/rc"), &dir);
+                    ListingRun::copy_tree(&BookHtml::repo().join("examples/rc"), &dir);
                 }
                 for (path, text) in &files {
                     match (project, path.split_once('/')) {
-                        (Some(name), Some((head, rest))) if head == name => BookFixture::write(&dir, rest, text),
-                        (None, None) => BookFixture::write(&dir, path, text),
+                        (Some(name), Some((head, rest))) if head == name => ListingRun::write(&dir, rest, text),
+                        (None, None) => ListingRun::write(&dir, path, text),
                         _ => {}
                     }
                 }
@@ -183,7 +200,7 @@ impl BookFixture {
         if words.first() != Some(&"piperine") {
             return Err("a listing's command starts with `piperine`".into());
         }
-        let (_tmp, dir) = BookFixture::workdir(all, block);
+        let (_tmp, dir) = ListingRun::workdir(all, block);
         let empty = tempfile::tempdir().expect("tmp");
         let cache = if block.attr("data-cli-cache") == Some("empty") { empty.path() } else { CompileCache::shared().path() };
         let out: Output = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")))
@@ -228,14 +245,30 @@ impl BookFixture {
         Ok(())
     }
 
+    /// The Book's listing whose command starts with `prefix`, run on the binary.
+    fn run_listing(prefix: &str) -> String {
+        let html = BookHtml::content();
+        let all = BookHtml::blocks(&html);
+        let block = all
+            .iter()
+            .find(|b| b.attr("data-cli-output").is_some_and(|c| c.starts_with(prefix)))
+            .unwrap_or_else(|| panic!("the Book has a listing of `{prefix}`"));
+        ListingRun::produce(&all, block).unwrap_or_else(|why| panic!("`{prefix}`: {why}"))
+    }
+}
+
+/// The listings the Book hands to `book_buck`, and which of them a chapter holds.
+struct HeldListings;
+
+impl HeldListings {
     /// Every listing of the whole Book, any chapter and any project but `buck`, run once per test binary
     /// and shared by the tests that read it. The buck's listing runs the 600 us start (minutes) and is
     /// held on demand by `book_buck` (MD-77).
     fn checked() -> &'static [Checked] {
         static CHECKED: OnceLock<Vec<Checked>> = OnceLock::new();
         CHECKED.get_or_init(|| {
-            let html = BookFixture::content();
-            let all = BookFixture::blocks(&html);
+            let html = BookHtml::content();
+            let all = BookHtml::blocks(&html);
             all.iter()
                 .filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-project") != Some("buck"))
                 .map(|block| Checked {
@@ -243,7 +276,7 @@ impl BookFixture {
                     project: block.attr("data-cli-project").map(str::to_string),
                     command: block.attr("data-cli-output").expect("a listing").to_string(),
                     book: block.text.clone(),
-                    got: BookFixture::selection(block).and_then(|()| BookFixture::produce(&all, block)),
+                    got: ListingRun::selection(block).and_then(|()| ListingRun::produce(&all, block)),
                 })
                 .collect()
         })
@@ -266,35 +299,17 @@ impl BookFixture {
 
     /// The listings inside `[from, to)` of the Book whose project is `project`.
     fn listings_of(from: usize, to: usize, project: &str) -> Vec<&'static Checked> {
-        BookFixture::checked().iter().filter(|c| c.at >= from && c.at < to && c.project.as_deref() == Some(project)).collect()
+        HeldListings::checked().iter().filter(|c| c.at >= from && c.at < to && c.project.as_deref() == Some(project)).collect()
     }
+}
 
-    /// The offsets of the chapter `id` in the whole Book.
-    fn span_of(html: &str, id: &str) -> (usize, usize) {
-        let open = format!("<section id=\"{id}\" class=\"chapter\">");
-        let at = html.find(&open).unwrap_or_else(|| panic!("the Book has a chapter `{id}`"));
-        (at, at + html[at..].find("</section>").expect("a chapter closes"))
-    }
+/// A file of an example project.
+struct ExampleFile;
 
+impl ExampleFile {
     /// The text of a file of an example project, without its last line break.
     fn example(path: &str) -> String {
-        std::fs::read_to_string(BookFixture::repo().join("examples").join(path)).unwrap_or_else(|e| panic!("examples/{path}: {e}")).trim_end_matches('\n').to_string()
-    }
-
-    /// Does `html` hold a block of `lang` whose text is `text`?
-    fn holds(html: &str, lang: &str, text: &str) -> bool {
-        BookFixture::blocks(html).iter().any(|b| b.lang == lang && b.text == text)
-    }
-
-    /// The Book's listing whose command starts with `prefix`, run on the binary.
-    fn run_listing(prefix: &str) -> String {
-        let html = BookFixture::content();
-        let all = BookFixture::blocks(&html);
-        let block = all
-            .iter()
-            .find(|b| b.attr("data-cli-output").is_some_and(|c| c.starts_with(prefix)))
-            .unwrap_or_else(|| panic!("the Book has a listing of `{prefix}`"));
-        BookFixture::produce(&all, block).unwrap_or_else(|why| panic!("`{prefix}`: {why}"))
+        std::fs::read_to_string(BookHtml::repo().join("examples").join(path)).unwrap_or_else(|e| panic!("examples/{path}: {e}")).trim_end_matches('\n').to_string()
     }
 }
 
@@ -330,12 +345,12 @@ fn the_plot_in_the_chapter_is_the_file_the_binary_writes() {
     // Book claims held here: cli~a717f995
     // CLI-19 AC 11: the SVG the chapter embeds is the file `piperine run step --plot` writes in
     // `examples/rc`
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
     let at = html.find("<svg").expect("the chapter embeds an SVG");
     let end = html[at..].find("</svg>").expect("the SVG closes") + at + "</svg>".len();
     let tmp = tempfile::tempdir().expect("tmp");
     let dir = tmp.path().join("rc");
-    BookFixture::copy_tree(&BookFixture::repo().join("examples/rc"), &dir);
+    ListingRun::copy_tree(&BookHtml::repo().join("examples/rc"), &dir);
     let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["run", "step", "--plot", "step.svg"]).current_dir(&dir).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().expect("run piperine");
     assert_eq!(out.status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
     let svg = std::fs::read_to_string(dir.join("step.svg")).expect("the plot was written");
@@ -346,15 +361,15 @@ fn the_plot_in_the_chapter_is_the_file_the_binary_writes() {
 fn the_chapter_shows_fmt_and_says_comments_stay() {
     // CLI-19 AC 12: `piperine fmt` and `piperine fmt --check` in code spans, and a sentence
     // saying comments are kept
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
-    let spans = BookFixture::code_spans(&html);
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
+    let spans = BookHtml::code_spans(&html);
     for name in ["piperine fmt", "piperine fmt --check"] {
         assert!(spans.iter().any(|s| s == name), "the chapter names `{name}` in a code span");
     }
-    let text = BookFixture::plain(&html);
+    let text = BookHtml::plain(&html);
     assert!(text.split(". ").any(|s| s.contains("comment") && s.contains("kept")), "a sentence says comments are kept");
     // and the files the chapter shows are formatted: `fmt --check` passes on the RC project
-    let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["fmt", "--check"]).current_dir(BookFixture::repo().join("examples/rc")).output().expect("run piperine");
+    let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(["fmt", "--check"]).current_dir(BookHtml::repo().join("examples/rc")).output().expect("run piperine");
     assert_eq!(out.status.code(), Some(0), "stdout:\n{}", String::from_utf8_lossy(&out.stdout));
 }
 
@@ -362,11 +377,11 @@ fn the_chapter_shows_fmt_and_says_comments_stay() {
 fn the_chapter_shows_the_rc_project_file_for_file() {
     // CLI-19 AC 2: the tree of the RC project and the full text of `Piperine.toml`, `src/lib.msl`
     // and `benches/step.msl`, each equal to the file of `examples/rc`
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
-    assert!(BookFixture::holds(&html, "toml", &BookFixture::example("rc/Piperine.toml")), "the chapter shows examples/rc/Piperine.toml as it is");
-    assert!(BookFixture::holds(&html, "msl", &BookFixture::example("rc/src/lib.msl")), "the chapter shows examples/rc/src/lib.msl as it is");
-    assert!(BookFixture::holds(&html, "msl", &BookFixture::example("rc/benches/step.msl")), "the chapter shows examples/rc/benches/step.msl as it is");
-    let tree = BookFixture::blocks(&html).into_iter().find(|b| b.lang == "text" && b.text.starts_with("rc/")).expect("a tree of the project");
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
+    assert!(BookHtml::holds(&html, "toml", &ExampleFile::example("rc/Piperine.toml")), "the chapter shows examples/rc/Piperine.toml as it is");
+    assert!(BookHtml::holds(&html, "msl", &ExampleFile::example("rc/src/lib.msl")), "the chapter shows examples/rc/src/lib.msl as it is");
+    assert!(BookHtml::holds(&html, "msl", &ExampleFile::example("rc/benches/step.msl")), "the chapter shows examples/rc/benches/step.msl as it is");
+    let tree = BookHtml::blocks(&html).into_iter().find(|b| b.lang == "text" && b.text.starts_with("rc/")).expect("a tree of the project");
     for name in ["Piperine.toml", "src/", "lib.msl", "benches/", "step.msl"] {
         assert!(tree.text.contains(name), "the tree names `{name}`:\n{}", tree.text);
     }
@@ -376,9 +391,9 @@ fn the_chapter_shows_the_rc_project_file_for_file() {
 fn the_welcome_chapter_shows_the_rc_project_file_for_file() {
     // the Book's first chapter prints the same project (the Book's handoff: every file block of
     // the RC project is held to `examples/rc`, the chapter `welcome` included)
-    let html = BookFixture::chapter(&BookFixture::content(), "welcome");
+    let html = BookHtml::chapter(&BookHtml::content(), "welcome");
     for (lang, path) in [("toml", "rc/Piperine.toml"), ("msl", "rc/src/lib.msl"), ("msl", "rc/benches/step.msl")] {
-        assert!(BookFixture::holds(&html, lang, &BookFixture::example(path)), "chapter 1 shows examples/{path} as it is");
+        assert!(BookHtml::holds(&html, lang, &ExampleFile::example(path)), "chapter 1 shows examples/{path} as it is");
     }
 }
 
@@ -386,9 +401,9 @@ fn the_welcome_chapter_shows_the_rc_project_file_for_file() {
 fn the_rc_output_blocks_are_what_the_binary_prints() {
     // CLI-19 AC 3: the standard output of `check`, `run op`, `run step` and `test` in
     // `examples/rc`, and every other RC listing of the chapter, equal to what the binary prints
-    let html = BookFixture::content();
-    let (from, to) = BookFixture::span_of(&html, "cli");
-    let commands = BookFixture::hold(&BookFixture::listings_of(from, to, "rc"));
+    let html = BookHtml::content();
+    let (from, to) = BookHtml::span_of(&html, "cli");
+    let commands = HeldListings::hold(&HeldListings::listings_of(from, to, "rc"));
     for asked in ["piperine check", "piperine run op", "piperine run step", "piperine test"] {
         assert!(commands.iter().any(|c| c == asked), "the chapter shows the output of `{asked}`: {commands:?}");
     }
@@ -398,10 +413,10 @@ fn the_rc_output_blocks_are_what_the_binary_prints() {
 /// (`book_buck`), its selection is not, so the range stays held by default.
 #[test]
 fn every_listing_selects_lines_inside_its_block() {
-    let html = BookFixture::content();
-    let selecting: Vec<Block> = BookFixture::blocks(&html).into_iter().filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-lines").is_some()).collect();
+    let html = BookHtml::content();
+    let selecting: Vec<Block> = BookHtml::blocks(&html).into_iter().filter(|b| b.attr("data-cli-output").is_some() && b.attr("data-cli-lines").is_some()).collect();
     assert!(selecting.iter().any(|b| b.attr("data-cli-project") == Some("buck")), "the buck listing selects lines of its block");
-    let failures: Vec<String> = selecting.iter().filter_map(|b| BookFixture::selection(b).err().map(|why| format!("`{}`: {why}", b.attr("data-cli-output").unwrap_or("")))).collect();
+    let failures: Vec<String> = selecting.iter().filter_map(|b| ListingRun::selection(b).err().map(|why| format!("`{}`: {why}", b.attr("data-cli-output").unwrap_or("")))).collect();
     assert!(failures.is_empty(), "listings with a bad `data-cli-lines`:\n{}", failures.join("\n"));
 }
 
@@ -411,12 +426,12 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
     // verification F6: every listing of the whole Book that claims to be the binary's output, in
     // every chapter and of any project, is the binary's whole output; `data-cli-lines` only
     // selects the lines the page shows, so a line it leaves out is held all the same
-    let all: Vec<&Checked> = BookFixture::checked().iter().collect();
-    let commands = BookFixture::hold(&all);
+    let all: Vec<&Checked> = HeldListings::checked().iter().collect();
+    let commands = HeldListings::hold(&all);
     // the Book shows 56 listings of the binary; the buck's moved to `book_buck` (MD-77), so exactly 55 are held here
     assert_eq!(commands.len(), 56, "the Book shows {} listings: {commands:?}", commands.len());
-    let html = BookFixture::content();
-    let (from, to) = BookFixture::span_of(&html, "cli");
+    let html = BookHtml::content();
+    let (from, to) = BookHtml::span_of(&html, "cli");
     assert!(all.iter().any(|c| c.at >= from && c.at < to) && all.iter().any(|c| c.at < from), "listings of chapter `cli` and of the other chapters are held");
 }
 
@@ -424,41 +439,41 @@ fn every_cli_listing_of_the_book_is_what_the_binary_prints() {
 fn the_buck_block_shows_the_example_files() {
     // CLI-19 AC 4: the buck's bench and its `startup` table equal to the files, and the command in a
     // shell block; what the binary prints for it is held on demand by `book_buck`
-    let html = BookFixture::content();
-    let cli = BookFixture::chapter(&html, "cli");
-    assert!(BookFixture::holds(&cli, "msl", &BookFixture::example("buck/benches/startup.msl")), "the chapter shows examples/buck/benches/startup.msl as it is");
-    let manifest = BookFixture::example("buck/Piperine.toml");
-    let table = BookFixture::blocks(&cli).into_iter().find(|b| b.lang == "toml" && b.text.contains("[run.startup]")).expect("the chapter shows the run table `startup`");
+    let html = BookHtml::content();
+    let cli = BookHtml::chapter(&html, "cli");
+    assert!(BookHtml::holds(&cli, "msl", &ExampleFile::example("buck/benches/startup.msl")), "the chapter shows examples/buck/benches/startup.msl as it is");
+    let manifest = ExampleFile::example("buck/Piperine.toml");
+    let table = BookHtml::blocks(&cli).into_iter().find(|b| b.lang == "toml" && b.text.contains("[run.startup]")).expect("the chapter shows the run table `startup`");
     assert!(manifest.ends_with(&table.text), "the `startup` table is the end of examples/buck/Piperine.toml, as it is:\n{}", table.text);
-    assert!(BookFixture::holds(&cli, "sh", "piperine run startup"), "the chapter gives the command in a shell block");
+    assert!(BookHtml::holds(&cli, "sh", "piperine run startup"), "the chapter gives the command in a shell block");
 }
 
 #[test]
 fn the_chapter_explains_emit_as_print() {
     // CLI-19 AC 5: a part whose heading names `emit!`, an `msl` block with an `emit!` statement,
     // the record line it gives, and `--stream`
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
     let part = html
         .split("<h3>")
         .skip(1)
         .find(|p| p.split_once("</h3>").is_some_and(|(h, _)| h.contains("emit!")))
         .expect("a heading that names `emit!`")
         .to_string();
-    let parts = BookFixture::blocks(&part);
+    let parts = BookHtml::blocks(&part);
     let site = parts.iter().find(|b| b.lang == "msl" && b.text.contains("emit!(\"trip\"")).expect("an msl block with an `emit!` statement");
     let stream = site.text.split("emit!(\"").nth(1).and_then(|s| s.split_once('"')).map(|(s, _)| s).expect("a stream name");
     let record = parts.iter().filter(|b| b.attr("data-cli-output").is_some()).flat_map(|b| b.text.lines()).find(|l| l.starts_with('@') && l.split_whitespace().nth(2) == Some(stream));
     assert!(record.is_some(), "the part shows a record line of the stream `{stream}`");
-    assert!(BookFixture::code_spans(&part).iter().any(|s| s.starts_with("--stream ")), "the part shows `--stream`");
-    assert!(BookFixture::code_spans(&part).iter().any(|s| s == "--all-checks"), "the part shows `--all-checks`");
+    assert!(BookHtml::code_spans(&part).iter().any(|s| s.starts_with("--stream ")), "the part shows `--stream`");
+    assert!(BookHtml::code_spans(&part).iter().any(|s| s == "--all-checks"), "the part shows `--all-checks`");
 }
 
 #[test]
 fn the_chapter_lists_commands_keys_flags_codes() {
     // CLI-19 AC 6: every command, every key of a run table with its flag (CLI-03 AC 1 and 2, and
     // `all_checks` of CLI-06 AC 9), the exit codes, the backend choice, `P0010` and `P0011`
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
-    let spans = BookFixture::code_spans(&html);
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
+    let spans = BookHtml::code_spans(&html);
     let has = |s: &str| spans.iter().any(|span| span == s || span.starts_with(&format!("{s} ")));
     for command in ["new", "check", "run", "test", "build", "fmt", "clean"] {
         assert!(has(&format!("piperine {command}")), "the chapter names `piperine {command}`");
@@ -493,7 +508,7 @@ fn the_chapter_lists_commands_keys_flags_codes() {
     for code in ["0", "1", "2"] {
         assert!(html.contains(&format!("<tr><td>{code}</td>")), "the table of exit codes has the code {code}");
     }
-    let text = BookFixture::plain(&html);
+    let text = BookHtml::plain(&html);
     for code in ["P0010", "P0011"] {
         assert!(text.contains(code), "the chapter names {code}");
     }
@@ -503,7 +518,7 @@ fn the_chapter_lists_commands_keys_flags_codes() {
 fn the_chapter_stands_alone() {
     // CLI-19 AC 7: no `§`, no path into the repository's `crates/`, `docs/`, `.specs/` or
     // `tests/`, no link out of the Book
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
     assert!(!html.contains('§'), "the chapter holds a §");
     for path in ["crates/", "docs/", ".specs/", "tests/"] {
         assert!(!html.contains(path), "the chapter holds `{path}`");
@@ -517,7 +532,7 @@ fn the_chapter_stands_alone() {
 fn the_cycle_counter_prints_three_pulses() {
     // CAT-05 AC 1: three records, `n` = 1 to 3, each within 1 us of 15.9 us past a whole
     // millisecond, and `count` 3 in the last row of the table.
-    let out = BookFixture::run_listing("piperine run cycles.msl");
+    let out = ListingRun::run_listing("piperine run cycles.msl");
     let records: Vec<&str> = out.lines().filter(|l| l.starts_with('@')).collect();
     assert_eq!(records.len(), 3, "{out}");
     for (k, line) in records.iter().enumerate() {
@@ -536,17 +551,17 @@ fn the_clipper_runs_as_the_book_prints() {
     // UE-06 AC 3, UE-07 AC 2: the clipper's listing is the binary's output (`every_cli_listing_of_the_book_is_what_the_binary_prints`
     // holds the bytes): two `clip` records, one per period, each `vin` near 0.72, and the page's
     // prose around it no longer waits for `settle` or `limexp`.
-    let out = BookFixture::run_listing("piperine run clipper.msl");
+    let out = ListingRun::run_listing("piperine run clipper.msl");
     let clips: Vec<&str> = out.lines().filter(|l| l.contains(" clip t=")).collect();
     assert_eq!(clips.len(), 2, "one clip record per period: {out}");
     for clip in clips {
         let vin: f64 = clip.split_whitespace().find_map(|w| w.strip_prefix("vin=")).and_then(|v| v.parse().ok()).unwrap_or_else(|| panic!("vin in `{clip}`"));
         assert!((vin - 0.72).abs() < 0.05, "vin within 50 mV of 0.72 V: {clip}");
     }
-    let html = BookFixture::content();
+    let html = BookHtml::content();
     let at = html.find("piperine run clipper.msl").expect("the clipper's command");
     let callout = &html[at..at + html[at..].find("</div>").expect("the callout closes")];
-    let prose = BookFixture::plain(callout);
+    let prose = BookHtml::plain(callout);
     for gone in ["are compiled", "does not take", "runs nothing", "those three diagnostics"] {
         assert!(!prose.contains(gone), "the clipper's prose still says {gone:?}");
     }
@@ -556,8 +571,8 @@ fn the_clipper_runs_as_the_book_prints() {
 fn the_chapter_shows_the_session_options() {
     // HII-22 AC 2: every option key of a run with its flag in a code span, and a listing that sets
     // some of them whose output is the binary's (an operating point of the divider: 7.5 V)
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
-    let spans = BookFixture::code_spans(&html);
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
+    let spans = BookHtml::code_spans(&html);
     let has = |s: &str| spans.iter().any(|span| span == s || span.starts_with(&format!("{s} ")));
     for (key, flag) in [
         ("reltol", "--reltol"),
@@ -579,7 +594,7 @@ fn the_chapter_shows_the_session_options() {
     for read_by_noise in ["<code>dc</code>, <code>ac</code>, <code>noise</code></td><td>The ends of the sweep", "<code>--per-decade</code></td><td><code>ac</code>, <code>noise</code>", "<code>--points</code></td><td><code>ac</code>, <code>noise</code>", "<code>tf</code>, <code>pz</code>, <code>noise</code></td><td>The voltage source that excites"] {
         assert!(html.contains(read_by_noise), "the key table says `noise` reads the key of {read_by_noise}");
     }
-    let out = BookFixture::run_listing("piperine run lowpass.msl --analysis op --reltol");
+    let out = ListingRun::run_listing("piperine run lowpass.msl --analysis op --reltol");
     let row = out.lines().find(|l| l.starts_with("Lowpass.vout")).unwrap_or_else(|| panic!("the vout row in\n{out}"));
     assert_eq!(row.split_whitespace().last(), Some("7.500000e0"), "{out}");
 }
@@ -589,32 +604,32 @@ fn the_chapter_runs_each_new_analysis() {
     // HII-22 AC 2: one listing per new analysis, and `piperine info`, each the binary's output; the
     // values are the divider's: gain 3/4, input resistance 4 kOhm, one pole at -1/(R1||R2)/C, the
     // two sensitivities, a periodic orbit whose last row is its first, and the three tables of `info`
-    let html = BookFixture::chapter(&BookFixture::content(), "cli");
-    let spans = BookFixture::code_spans(&html);
+    let html = BookHtml::chapter(&BookHtml::content(), "cli");
+    let spans = BookHtml::code_spans(&html);
     for key in ["--input", "--output", "--wrt", "--period", "--tstab"] {
         assert!(spans.iter().any(|span| span == key || span.starts_with(&format!("{key} "))), "the chapter names `{key}`");
     }
     let number = |line: &str, at: usize| -> f64 { line.split_whitespace().nth(at).and_then(|w| w.parse().ok()).unwrap_or_else(|| panic!("a number at {at} of `{line}`")) };
     let row = |out: &str, start: &str| out.lines().find(|l| l.starts_with(start)).map(str::to_string).unwrap_or_else(|| panic!("no `{start}` row in\n{out}"));
 
-    let tf = BookFixture::run_listing("piperine run lowpass.msl --analysis tf");
+    let tf = ListingRun::run_listing("piperine run lowpass.msl --analysis tf");
     assert!((number(&row(&tf, "gain"), 1) - 0.75).abs() < 1e-6, "{tf}");
     assert!((number(&row(&tf, "input_impedance"), 1) - 4000.0).abs() < 1e-3, "{tf}");
 
-    let pz = BookFixture::run_listing("piperine run lowpass.msl --analysis pz");
+    let pz = ListingRun::run_listing("piperine run lowpass.msl --analysis pz");
     let pole = row(&pz, "pole");
     assert!((number(&pole, 1) + 4000.0 / 3.0).abs() < 1e-2, "{pz}");
 
-    let sens = BookFixture::run_listing("piperine run lowpass.msl --analysis sens");
+    let sens = ListingRun::run_listing("piperine run lowpass.msl --analysis sens");
     assert!((number(&row(&sens, "Lowpass.r1.r"), 1) + 1.875e-3).abs() < 1e-9, "{sens}");
     assert!((number(&row(&sens, "Lowpass.r2.r"), 1) - 6.25e-4).abs() < 1e-9, "{sens}");
 
-    let pss = BookFixture::run_listing("piperine run pulse.msl --analysis pss");
+    let pss = ListingRun::run_listing("piperine run pulse.msl --analysis pss");
     let orbit: Vec<&str> = pss.lines().skip_while(|l| !l.starts_with("time")).skip(1).collect();
     let (first, last) = (number(orbit[0], 1), number(orbit[orbit.len() - 1], 1));
     assert!((first - last).abs() < 1e-3, "the orbit closes: {first} against {last}");
 
-    let info = BookFixture::run_listing("piperine info lowpass.msl");
+    let info = ListingRun::run_listing("piperine info lowpass.msl");
     let titles: Vec<&str> = info.lines().filter(|l| ["params", "ports", "streams"].contains(l)).collect();
     assert_eq!(titles, ["params", "ports", "streams"], "{info}");
     assert!(info.contains("Lowpass.r1.r") && info.contains("1.000000e3"), "{info}");
@@ -627,7 +642,7 @@ fn a_plot_draws_a_curve_and_a_legend_per_real_signal_and_a_lane_per_digital_one(
     // gives one curve, one lane and a legend naming both
     let dir = tempfile::tempdir().expect("tmp");
     let design = "module Top() { signal n: Electrical; signal d: Bit = false; }\nanalog for Top { v(n) +> transition(if d { 1.0 } else { 0.0 }); }\ndigital for Top { on at(1u) { d <- true; } }\n";
-    BookFixture::write(dir.path(), "plot.msl", design);
+    ListingRun::write(dir.path(), "plot.msl", design);
     let out = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine")))
         .args(["run", "plot.msl", "--analysis", "transient", "--stop", "3e-6", "--print-step", "1e-6", "--print", "n", "--print", "d", "--plot", "out.svg"])
         .current_dir(dir.path())
@@ -647,7 +662,7 @@ fn blinky_runs_to_its_stop_in_the_book() {
     // HII-17 AC 4 and HII-22 AC 3: the Book's `Blinky`, a design with no analog node, prints its
     // three records and a table that ends at the stop, 3 us, with the counter at 3, exit 0 (a
     // listing is only held when the command exits as the listing claims)
-    let out = BookFixture::run_listing("piperine run blinky.msl --analysis transient --stop 3e-6");
+    let out = ListingRun::run_listing("piperine run blinky.msl --analysis transient --stop 3e-6");
     assert_eq!(out.lines().filter(|l| l.starts_with('@')).count(), 3, "{out}");
     let last = out.lines().rev().find(|l| !l.trim().is_empty()).expect("a table row");
     let cells: Vec<&str> = last.split_whitespace().collect();
@@ -659,9 +674,9 @@ fn blinky_runs_to_its_stop_in_the_book() {
 fn no_book_listing_prints_p0002() {
     // PI-06 (X5): a type mismatch carries the code its spec row names (`E0180`), so the plain
     // `P0002` is no code of the tool: no block and no code span of the Book prints it.
-    let html = BookFixture::content();
-    let printing: Vec<usize> = BookFixture::blocks(&html).iter().filter(|block| block.text.contains("P0002")).map(|block| block.at).collect();
+    let html = BookHtml::content();
+    let printing: Vec<usize> = BookHtml::blocks(&html).iter().filter(|block| block.text.contains("P0002")).map(|block| block.at).collect();
     assert!(printing.is_empty(), "blocks of the Book print P0002 at {printing:?}");
-    let spans: Vec<String> = BookFixture::code_spans(&html).into_iter().filter(|span| span.contains("P0002")).collect();
+    let spans: Vec<String> = BookHtml::code_spans(&html).into_iter().filter(|span| span.contains("P0002")).collect();
     assert!(spans.is_empty(), "code spans of the Book name P0002: {spans:?}");
 }

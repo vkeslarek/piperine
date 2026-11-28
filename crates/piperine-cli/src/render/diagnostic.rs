@@ -46,10 +46,10 @@ mod tests {
     use super::*;
     use piperine_lang::pom::Design;
 
-    /// Associated test helpers of `diagnostic`, grouped on one fixture type.
-    struct DiagnosticFixture;
+    /// A failure as the report a terminal shows for it.
+    struct ReportedFailure;
 
-    impl DiagnosticFixture {
+    impl ReportedFailure {
         fn report(failure: &Failure) -> String {
             let mut err = Vec::new();
             Report::write(failure, &mut err).expect("a vector takes writes");
@@ -64,7 +64,7 @@ mod tests {
         let design = Design::builder().source("top.msl", "struct Ok {}\nanalog for Nope { }\n").build();
         let found = design.diagnostics().to_vec();
         assert_eq!(found.len(), 1, "{found:?}");
-        let text = DiagnosticFixture::report(&Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
+        let text = ReportedFailure::report(&Failure::Diagnostics { stage: "parse", design: Box::new(design), found });
         assert!(text.contains("E0401"), "the code:\n{text}");
         assert!(text.contains("top.msl:2:12"), "the file, line and column:\n{text}");
         assert!(text.contains("analog for Nope { }"), "the excerpt:\n{text}");
@@ -72,6 +72,6 @@ mod tests {
         assert!(!text.contains('\u{1b}'), "no color escape:\n{text}");
         // a failure with no excerpt is its message on one `error:` line
         let host = Failure::Host { code: "P0011", message: "no top".into() };
-        assert_eq!(DiagnosticFixture::report(&host), "error: P0011: no top\n");
+        assert_eq!(ReportedFailure::report(&host), "error: P0011: no top\n");
     }
 }

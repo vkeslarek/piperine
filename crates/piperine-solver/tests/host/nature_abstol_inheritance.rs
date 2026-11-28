@@ -36,7 +36,7 @@ use std::rc::Rc;
 /// Default `vntol` (1e-6): a 5e-7 V step is within tolerance — converged.
 #[test]
 fn default_vntol_accepts_the_step() {
-    let (netlist, old, new) = NatureAbstolInheritanceCases::one_node_step();
+    let (netlist, old, new) = OneNodeStep::one_node_step();
     let tol = Tolerances::default();
     assert!(
         tol.has_converged(Some(old.view()), &new.view(), &netlist),
@@ -51,7 +51,7 @@ fn default_vntol_accepts_the_step() {
 /// nothing else about `Tolerances` or the netlist changed.
 #[test]
 fn tightened_node_vntol_rejects_the_same_step() {
-    let (netlist, old, new) = NatureAbstolInheritanceCases::one_node_step();
+    let (netlist, old, new) = OneNodeStep::one_node_step();
     let mut overrides = HashMap::new();
     overrides.insert(NodeIdentifier::Anonymous(0), 1e-9);
     let tol = Tolerances { node_vntol_overrides: Rc::new(overrides), ..Tolerances::default() };
@@ -90,10 +90,10 @@ fn an_unrelated_node_is_unaffected_by_another_nodes_override() {
     );
 }
 
-/// The helpers of the nature_abstol_inheritance tests.
-pub struct NatureAbstolInheritanceCases;
+/// A one-node circuit stepped under an inherited abstol.
+struct OneNodeStep;
 
-impl NatureAbstolInheritanceCases {
+impl OneNodeStep {
     /// A one-node netlist and a voltage-step update just inside the default
     /// `vntol` (1e-6 V) but well outside a tightened one (1e-9 V) — a
     /// noise-free, deterministic gap (5e-7 V) chosen with headroom on both

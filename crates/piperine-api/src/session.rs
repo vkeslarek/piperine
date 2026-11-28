@@ -922,10 +922,10 @@ impl Session {
 mod tests {
     use super::*;
 
-    /// Associated test helpers of `session`, grouped on one fixture type.
-    struct SessionFixture;
+    /// A session over a design with a structural param, in a temporary directory.
+    struct StructuralSession;
 
-    impl SessionFixture {
+    impl StructuralSession {
         /// A session of a divider on the interpreter with a transient, its design's params all marked
         /// structural: the elaborator marks none (generation is outside what the interpreter runs), so the marking
         /// is written into the IR the session holds.
@@ -949,7 +949,7 @@ mod tests {
         // HII-13 AC 3 (§23.1 rule 7, F12): a set of a structural param at 0.5 us is E0803 naming
         // it, given before the run starts, and the session still runs; the same set at 0 is refused
         // too (F1): the body was elaborated with the old value, so the write would run its variant
-        let (_dir, mut session) = SessionFixture::structural_session();
+        let (_dir, mut session) = StructuralSession::structural_session();
         match session.set_at("r1.r", 2000.0, 5e-7) {
             Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.r1.r"), "{message}"),
             other => panic!("E0803, found {other:?}"),

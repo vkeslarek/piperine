@@ -15,7 +15,7 @@ use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, Solver,
 /// operating point already reads it.
 #[test]
 fn set_temperature_called_before_first_load() {
-    let (circuit, out) = TemperatureCases::circuit();
+    let (circuit, out) = TemperatureCircuit::circuit();
     let run_temperature = 325.0;
     let ctx = Context {
         tolerances: Tolerances { temperature: run_temperature, ..Tolerances::default() },
@@ -34,18 +34,18 @@ fn set_temperature_called_before_first_load() {
 /// solve uses the new temperature.
 #[test]
 fn temperature_sweep_reseeds_every_element() {
-    let (mut circuit, out) = TemperatureCases::circuit();
+    let (mut circuit, out) = TemperatureCircuit::circuit();
     let nominal = Tolerances::default().temperature;
-    assert!((TemperatureCases::v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
+    assert!((TemperatureCircuit::v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
 
     let sweep_t = 380.0;
     circuit.set_temperature(sweep_t);
-    let v = TemperatureCases::v_out(&mut circuit, &out);
+    let v = TemperatureCircuit::v_out(&mut circuit, &out);
     assert!((v - sweep_t * 1.0e-3).abs() < 1e-9, "sweep temperature {sweep_t} reached the device: v(out) = {v}");
 
     // Back to the seeded temperature: nothing stays written.
     circuit.set_temperature(nominal);
-    assert!((TemperatureCases::v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
+    assert!((TemperatureCircuit::v_out(&mut circuit, &out) - nominal * 1.0e-3).abs() < 1e-9);
 }
 
 /// ABI-19 edge case: a device with no `TEMPERATURE` pin is unaffected.
@@ -59,16 +59,16 @@ fn default_set_temperature_is_noop() {
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &src, &mid);
     CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
     let mut circuit = b.build().expect("build");
-    let before = TemperatureCases::v_out(&mut circuit, &mid);
+    let before = TemperatureCircuit::v_out(&mut circuit, &mid);
     circuit.set_temperature(350.0);
-    assert_eq!(TemperatureCases::v_out(&mut circuit, &mid), before);
+    assert_eq!(TemperatureCircuit::v_out(&mut circuit, &mid), before);
     assert!((before - 0.5).abs() < 1e-12);
 }
 
-/// The helpers of the temperature tests.
-pub struct TemperatureCases;
+/// The circuit whose output is read at a temperature.
+struct TemperatureCircuit;
 
-impl TemperatureCases {
+impl TemperatureCircuit {
 
     /// 1 kΩ from `out` to ground, a `Thermo` pulling `T` µA out of `out`:
     /// `v(out) = T` millivolts. Also a source and a resistor the device does not touch.

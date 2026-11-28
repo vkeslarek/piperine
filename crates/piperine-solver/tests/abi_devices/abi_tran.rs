@@ -56,8 +56,8 @@ fn a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step() {
     let tau: f64 = 1.0e3 * 1.5915494309189535e-9;
     let fraction = (tau / 1.0e-15).fract();
     assert!(fraction > 0.5, "the stop must round up on the 1 fs grid: {fraction}");
-    let (_, steps) = AbiTranCases::rc_to(tau);
-    AbiTranCases::assert_strictly_increasing(&steps);
+    let (_, steps) = ChargedCircuit::rc_to(tau);
+    StepChecks::assert_strictly_increasing(&steps);
     let (t, v) = *steps.last().expect("steps");
     assert!((t - tau).abs() < 1.0e-12 * tau, "stopped at t = {t:e}");
     let analytic = 1.0 - (-1.0_f64).exp();
@@ -69,8 +69,8 @@ fn a_stop_off_the_tick_grid_is_reached_once_by_an_integrating_step() {
 #[test]
 fn a_stop_on_the_tick_grid_ends_on_its_own_step() {
     let stop = 1.6e-6;
-    let (tau, steps) = AbiTranCases::rc_to(stop);
-    AbiTranCases::assert_strictly_increasing(&steps);
+    let (tau, steps) = ChargedCircuit::rc_to(stop);
+    StepChecks::assert_strictly_increasing(&steps);
     let (t, v) = *steps.last().expect("steps");
     assert!((t - stop).abs() < 1.0e-12 * stop, "stopped at t = {t:e}");
     let analytic = 1.0 - (-stop / tau).exp();
@@ -83,7 +83,7 @@ fn a_step_that_would_end_one_tick_short_of_the_stop_ends_at_the_stop() {
     // remainder would be a step of a tick, integrated as noise). The grid of 100 ns steps reaches
     // 1 us one tick short of this stop: the step to 1 us is not taken, the last step ends at the stop.
     let stop = 1.0e-6 + TICK;
-    let times = AbiTranCases::capped_rc_times(stop, None);
+    let times = ChargedCircuit::capped_rc_times(stop, None);
     assert_eq!(*times.last().expect("steps"), stop, "the run ends at the stop");
     let before = times[times.len() - 2];
     assert!(stop - before > 0.5e-7, "no step ends within two ticks of the stop: the one before it is at {before:e}");
@@ -96,7 +96,7 @@ fn the_cap_still_bounds_a_step_the_stop_snap_would_stretch() {
     // grid reaches: no step is wider than the cap, and the run still ends at the stop.
     let stop = 1.0e-6 + 1.5 * TICK;
     let cap = 1.0e-7;
-    let times = AbiTranCases::capped_rc_times(stop, Some(cap));
+    let times = ChargedCircuit::capped_rc_times(stop, Some(cap));
     assert_eq!(*times.last().expect("steps"), stop, "the run ends at the stop");
     for pair in times.windows(2) {
         let width = pair[1] - pair[0];
@@ -122,8 +122,8 @@ fn the_stop_is_reached_bit_exactly_and_recorded_once() {
     ];
     for options in runs {
         let stop = options.stop_time;
-        let (_, steps) = AbiTranCases::rc_with(options);
-        AbiTranCases::assert_strictly_increasing(&steps);
+        let (_, steps) = ChargedCircuit::rc_with(options);
+        StepChecks::assert_strictly_increasing(&steps);
         let (t, _) = *steps.last().expect("steps");
         assert_eq!(t.to_bits(), stop.to_bits(), "stop {stop:e}: the last record is at t = {t:e}");
         let at_stop = steps.iter().filter(|(s, _)| *s == stop).count();
@@ -134,7 +134,7 @@ fn the_stop_is_reached_bit_exactly_and_recorded_once() {
 #[test]
 fn a_continuous_init_starts_newton_and_is_held_through_the_operating_point() {
     let tau = 1.0e3 * 1.0e-6;
-    let (mut circuit, out) = AbiTranCases::discharge();
+    let (mut circuit, out) = ChargedCircuit::discharge();
 
     // A plain operating point has no source: the `init` is not a hold there.
     let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
@@ -160,7 +160,7 @@ fn a_rejected_stage_restores_the_term_history() {
     let dt = tau / 100.0;
 
     // The histories after the operating point only: the step budget is spent before any step.
-    let (mut control, _) = AbiTranCases::discharge_of(AbiTranCases::flaky_c());
+    let (mut control, _) = ChargedCircuit::discharge_of(ChargedCircuit::flaky_c());
     {
         let options = TransientAnalysisOptions::new(tau, dt).with_max_steps(0);
         let mut solver = control.transient(options, Context::default()).expect("tran");
@@ -171,7 +171,7 @@ fn a_rejected_stage_restores_the_term_history() {
     // The first step's first stage converges and pushes a row of every history; its second stage
     // (t = dt, past the time the device faults at) fails, and at `dt_min = dt` the run ends there.
     // The rejected attempt must leave nothing of that first stage behind.
-    let (mut failing, _) = AbiTranCases::discharge_of(AbiTranCases::flaky_c());
+    let (mut failing, _) = ChargedCircuit::discharge_of(ChargedCircuit::flaky_c());
     {
         let options = TransientAnalysisOptions::new(tau, dt).with_dt_min(dt);
         let mut solver = failing.transient(options, Context::default()).expect("tran");
@@ -181,9 +181,9 @@ fn a_rejected_stage_restores_the_term_history() {
     assert_eq!(failing.bound().analog.snapshot(), at_start);
 
     // Accepted steps do move the histories, so the comparison above has teeth.
-    let (mut running, _) = AbiTranCases::discharge();
+    let (mut running, _) = ChargedCircuit::discharge();
     running.transient(TransientAnalysisOptions::new(tau, dt), Context::default()).expect("tran").solve().expect("solve");
-    let (mut still, _) = AbiTranCases::discharge();
+    let (mut still, _) = ChargedCircuit::discharge();
     {
         let options = TransientAnalysisOptions::new(tau, dt).with_max_steps(0);
         let _ = still.transient(options, Context::default()).expect("tran").solve();
@@ -203,14 +203,14 @@ fn the_transient_driver_iterates_with_the_plans_strategy() {
         (calls, plan)
     };
     let (operating_calls, operating_plan) = counting_plan();
-    let mut alone = AbiTranCases::diode_clamp();
+    let mut alone = ChargedCircuit::diode_clamp();
     let operating = alone.dc(Context::default()).expect("dc").with_plan(operating_plan).solve().expect("the operating point");
     let operating_iterations = operating_calls.load(std::sync::atomic::Ordering::SeqCst);
     assert!(operating_iterations > 2, "the operating point needs several iterations: {operating_iterations}");
     assert_eq!(operating_iterations, operating.stats.newton_iterations, "the strategy sees every iteration of a DC solve");
 
     let (calls, plan) = counting_plan();
-    let mut circuit = AbiTranCases::diode_clamp();
+    let mut circuit = ChargedCircuit::diode_clamp();
     let mut solver = circuit.transient(TransientAnalysisOptions::new(1.0e-4, 1.0e-6), Context::default()).expect("tran");
     solver.set_plan(plan);
     let result = solver.solve().expect("solve");
@@ -224,13 +224,13 @@ fn the_step_after_a_jump_is_capped_at_a_tenth_of_the_last() {
     // One timer edges every microsecond; a controller that has grown its step (the RC is at rest
     // between edges, the ceiling is 100 ns) would otherwise take a full step into the jump.
     let mut b = CircuitBuilder::new("jumps");
-    AbiTranCases::jump_into_rc(&mut b, "a", 1.0e-6);
+    ChargedCircuit::jump_into_rc(&mut b, "a", 1.0e-6);
     let mut circuit = b.build().expect("build");
     let options = TransientAnalysisOptions::new(4.5e-6, 1.0e-7);
     let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
     let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
     let edges = [1.0e-6, 2.0e-6, 3.0e-6, 4.0e-6];
-    assert_eq!(AbiTranCases::assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
+    assert_eq!(StepChecks::assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
 }
 
 #[test]
@@ -238,20 +238,20 @@ fn two_jumps_in_one_restart_step_restart_from_the_later() {
     // Two timers whose edges are 0.25 us apart: the step after the later edge is capped from the
     // step that landed on it, not from the earlier jump's.
     let mut b = CircuitBuilder::new("two jumps");
-    AbiTranCases::jump_into_rc(&mut b, "a", 1.0e-6);
-    AbiTranCases::jump_into_rc(&mut b, "b", 1.25e-6);
+    ChargedCircuit::jump_into_rc(&mut b, "a", 1.0e-6);
+    ChargedCircuit::jump_into_rc(&mut b, "b", 1.25e-6);
     let mut circuit = b.build().expect("build");
     let options = TransientAnalysisOptions::new(3.0e-6, 1.0e-7);
     let result = circuit.transient(options, Context::default()).expect("tran").solve().expect("solve");
     let times: Vec<f64> = result.iter().map(|s| s.time()).collect();
     let edges = [1.0e-6, 1.25e-6, 2.0e-6, 2.5e-6];
-    assert_eq!(AbiTranCases::assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
+    assert_eq!(StepChecks::assert_jump_steps_are_capped(&times, &edges), 4, "every edge was a landing: {times:?}");
 }
 
-/// The helpers of the abi_tran tests.
-pub struct AbiTranCases;
+/// The RC circuits of the ABI transient tests: charged, flaky, discharging, clamped and jumped.
+struct ChargedCircuit;
 
-impl AbiTranCases {
+impl ChargedCircuit {
 
     /// The charged c helper `charged_c`.
     fn charged_c() -> &'static Module {
@@ -267,7 +267,7 @@ impl AbiTranCases {
     /// twins: `tau = 1 kohm * 1.5915494309189535e-9 F`, 1591549430.92 ticks of the default 1 fs grid.
     fn rc_to(stop: f64) -> (f64, Vec<(f64, f64)>) {
         let options = TransientAnalysisOptions::new(stop, stop / 400.0);
-        AbiTranCases::rc_with(options)
+        ChargedCircuit::rc_with(options)
     }
 
     /// `rc_to` under the given options.
@@ -287,13 +287,6 @@ impl AbiTranCases {
         let result = solver.solve().expect("solve");
         let id = CircuitBuilding::node_id(&out);
         (tau, result.iter().map(|s| (s.time(), s.get_node(&id).expect("v(out)"))).collect())
-    }
-
-    /// Times strictly increase: no record repeats a time (a zero-length step records one).
-    fn assert_strictly_increasing(steps: &[(f64, f64)]) {
-        for pair in steps.windows(2) {
-            assert!(pair[1].0 > pair[0].0, "records at {:e} then {:e}: {steps:?}", pair[0].0, pair[1].0);
-        }
     }
 
     /// A 1 V source through 1 kohm into 1 nF at `out`, with an optional `CAP` watch of `cap` seconds on
@@ -331,7 +324,7 @@ impl AbiTranCases {
 
     /// The discharge helper `discharge`.
     fn discharge() -> (piperine_solver::prelude::CircuitInstance, piperine_solver::prelude::AnalogReference) {
-        AbiTranCases::discharge_of(AbiTranCases::charged_c())
+        ChargedCircuit::discharge_of(ChargedCircuit::charged_c())
     }
 
     /// A 5 V source through 1 kohm into a diode (the operating point needs several Newton
@@ -359,6 +352,18 @@ impl AbiTranCases {
         b.device(mixed::BitDigitalToAnalog::module(), &format!("dac_{name}"), &[("vref", ParamValue::Real(1.0))], &[code(), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(b, &format!("r_{name}"), 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(b, &format!("c_{name}"), 1.0e-9, &c, &gnd);
+    }
+}
+
+/// What the steps of a run must show: strictly increasing, or capped around a jump.
+struct StepChecks;
+
+impl StepChecks {
+    /// Times strictly increase: no record repeats a time (a zero-length step records one).
+    fn assert_strictly_increasing(steps: &[(f64, f64)]) {
+        for pair in steps.windows(2) {
+            assert!(pair[1].0 > pair[0].0, "records at {:e} then {:e}: {steps:?}", pair[0].0, pair[1].0);
+        }
     }
 
     /// The step after each edge in `edges` is at most a tenth of the step that landed on the edge and

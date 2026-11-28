@@ -192,6 +192,3 @@ fn parity_digital_scheduler_snapshot() {
     assert_eq!(nets(3), LOW, "net3");
 }
 
-/// The helpers of the parity_baseline tests.
-pub struct ParityBaselineCases;
-

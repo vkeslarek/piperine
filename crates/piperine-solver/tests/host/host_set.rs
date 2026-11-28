@@ -12,26 +12,25 @@ use piperine_abi::raw::Module;
 use piperine_solver::abi::{AnalogReference, ParamValue, Port, Value};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, TransientAnalysisOptions};
 
-
 #[test]
 fn a_false_check_refuses_a_set() {
-    let (mut circuit, mid) = HostSetCases::divider(CheckedR::module());
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - 0.5).abs() < 1e-12);
+    let (mut circuit, mid) = DividerSession::divider(CheckedR::module());
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - 0.5).abs() < 1e-12);
 
     let err = circuit.set("x", "r", ParamValue::Real(-5.0)).expect_err("r > 0 is false").to_string();
     assert!(err.contains("x.ok"), "the check is named: {err}");
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - 0.5).abs() < 1e-12, "the next solve uses the old value");
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - 0.5).abs() < 1e-12, "the next solve uses the old value");
 
     circuit.set("x", "r", ParamValue::Real(3.0e3)).expect("r > 0 holds");
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - 0.75).abs() < 1e-12, "an accepted write is read");
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - 0.75).abs() < 1e-12, "an accepted write is read");
 }
 
 #[test]
 fn reshape_is_refused_in_a_transient_and_rebinds_between_analyses() {
-    let (mut circuit, mid) = HostSetCases::divider(Collapsible::module());
+    let (mut circuit, mid) = DividerSession::divider(Collapsible::module());
     circuit.set("r1", "r", ParamValue::Real(3.0e3)).expect("a plain write");
     let unknowns = circuit.netlist().all_references().len();
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - 0.25).abs() < 1e-12);
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - 0.25).abs() < 1e-12);
 
     // Inside a transient the write is refused, and nothing changed.
     {
@@ -42,14 +41,14 @@ fn reshape_is_refused_in_a_transient_and_rebinds_between_analyses() {
         assert!(err.contains("another shape"), "{err}");
     }
     assert_eq!(circuit.netlist().all_references().len(), unknowns);
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - 0.25).abs() < 1e-12);
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - 0.25).abs() < 1e-12);
 
     // Between analyses the instance is created and bound again: its private
     // node is gone, and every param net keeps its value (r1 stays 3 kΩ).
     circuit.set("x", "r", ParamValue::Real(50.0)).expect("re-created and re-bound");
     assert_eq!(circuit.netlist().all_references().len(), unknowns - 1, "the internal node collapsed");
     let expected = 50.0 / (3.0e3 + 50.0);
-    assert!((HostSetCases::v_mid(&mut circuit, &mid) - expected).abs() < 1e-12, "v(mid) = {}", HostSetCases::v_mid(&mut circuit, &mid));
+    assert!((DividerSession::v_mid(&mut circuit, &mid) - expected).abs() < 1e-12, "v(mid) = {}", DividerSession::v_mid(&mut circuit, &mid));
 }
 
 #[test]
@@ -100,10 +99,10 @@ fn a_structural_set_during_a_run_is_refused() {
     assert!(bound.host_writes.is_empty());
 }
 
-/// The helpers of the host_set tests.
-pub struct HostSetCases;
+/// The divider the host set tests drive, and the voltage at its middle.
+struct DividerSession;
 
-impl HostSetCases {
+impl DividerSession {
 
     /// A 1 V source over `r1` (1 kΩ) into `x`, a device of `module`, to ground.
     fn divider(module: &'static Module) -> (CircuitInstance, AnalogReference) {

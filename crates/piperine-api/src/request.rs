@@ -234,28 +234,28 @@ mod tests {
 
     const FILE: &str = "Piperine.toml";
 
-    /// Associated test helpers of `request`, grouped on one fixture type.
-    struct RequestFixture;
+    /// A manifest of named runs as text, and what reading it gives: the runs, or the one fault it has.
+    struct RunManifest;
 
-    impl RequestFixture {
+    impl RunManifest {
         /// The manifest text: a `[package]` and then `runs`.
         fn manifest(runs: &str) -> String {
             format!("[package]\nname = \"rc\"\nversion = \"0.1.0\"\n\n{runs}")
         }
 
         fn read(runs: &str) -> Result<Vec<RunSpec>, Vec<Failure>> {
-            RunSpec::read(&RequestFixture::manifest(runs), Path::new(FILE))
+            RunSpec::read(&RunManifest::manifest(runs), Path::new(FILE))
         }
 
         fn one(runs: &str) -> RunSpec {
-            let mut all = RequestFixture::read(runs).unwrap_or_else(|f| panic!("{f:?}"));
+            let mut all = RunManifest::read(runs).unwrap_or_else(|f| panic!("{f:?}"));
             assert_eq!(all.len(), 1, "one run");
             all.remove(0)
         }
 
         /// The single fault of a manifest that has exactly one.
         fn fault(runs: &str) -> Failure {
-            let mut faults = RequestFixture::read(runs).expect_err("the run is refused");
+            let mut faults = RunManifest::read(runs).expect_err("the run is refused");
             assert_eq!(faults.len(), 1, "one fault: {faults:?}");
             faults.remove(0)
         }
@@ -270,7 +270,12 @@ mod tests {
                 other => panic!("a located P0010, found {other:?}"),
             }
         }
+    }
 
+    /// The options a run request spells out.
+    struct SampleOptions;
+
+    impl SampleOptions {
         fn options() -> Options {
             Options {
                 reltol: Some(1e-4),
@@ -293,7 +298,7 @@ mod tests {
     fn a_run_table_reads_its_nineteen_keys() {
         // CLI-03 AC 1: each key read where the design's run table puts it. The analysis-bound
         // numbers are spread over three runs, since each analysis reads its own (CLI-03 AC 7).
-        let runs = RequestFixture::read(
+        let runs = RunManifest::read(
             r#"
 [run.step]
 bench = "benches/step.msl"
@@ -354,28 +359,28 @@ points = 5
         // of HII-01 and `max_steps` (HII-01 amendment), no more
         assert_eq!(RUN_KEYS.len(), 36);
         // a manifest with no run table has no run
-        assert_eq!(RequestFixture::read("").map(|r| r.len()).ok(), Some(0));
+        assert_eq!(RunManifest::read("").map(|r| r.len()).ok(), Some(0));
     }
 
     #[test]
     fn an_unknown_key_or_a_wrong_type_is_p0010_at_its_span() {
         // CLI-03 AC 4: the span covers the key
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nstopp = 1\n");
-        let (code, message, at) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nstopp = 1\n");
+        let (code, message, at) = RunManifest::located(&f);
         assert_eq!((code, at), ("P0010", "stopp"));
         assert!(message.contains("`stopp`"), "{message}");
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"transient\"\nstop = \"x\"\n");
-        let (code, message, at) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"transient\"\nstop = \"x\"\n");
+        let (code, message, at) = RunManifest::located(&f);
         assert_eq!(code, "P0010");
         assert!(at.starts_with("stop") && at.contains("\"x\""), "the span covers `stop` and its value: {at:?}");
         assert!(message.contains("`stop`") && message.contains("number"), "{message}");
         // a list that holds a non-string is the wrong type too
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"op\"\nprint = [1]\n");
-        let (_, _, at) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"op\"\nprint = [1]\n");
+        let (_, _, at) = RunManifest::located(&f);
         assert!(at.starts_with("print"), "{at:?}");
         // every fault of a manifest is returned, in source order
-        let faults = RequestFixture::read("[run.a]\nanalysis = \"op\"\nfoo = 1\nbar = 2\n").expect_err("two unknown keys");
-        let spans: Vec<&str> = faults.iter().map(|f| RequestFixture::located(f).2).collect();
+        let faults = RunManifest::read("[run.a]\nanalysis = \"op\"\nfoo = 1\nbar = 2\n").expect_err("two unknown keys");
+        let spans: Vec<&str> = faults.iter().map(|f| RunManifest::located(f).2).collect();
         assert_eq!(spans, ["foo", "bar"]);
     }
 
@@ -383,8 +388,8 @@ points = 5
     fn analysis_is_one_of_four() {
         // CLI-03 AC 5: absent, the fault is at the run's name; unknown, at the value
         for (runs, at) in [("[run.a]\nstop = 1e-3\n", "a"), ("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n", "\"tran\"")] {
-            let f = RequestFixture::fault(runs);
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(runs);
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", at), "{runs}");
             for name in ["`op`", "`dc`", "`ac`", "`transient`"] {
                 assert!(message.contains(name), "{message} names {name}");
@@ -402,17 +407,17 @@ points = 5
             ("analysis = \"transient\"\nstop = 1e-3\nprint_step = 0\n", "print_step", "0"),
         ];
         for (keys, key, at) in cases {
-            let f = RequestFixture::fault(&format!("[run.a]\n{keys}"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\n{keys}"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", at), "{keys}");
             assert!(message.contains(&format!("`{key}`")), "{message} names `{key}`");
         }
         // contract D10: `from` of a transient is the first time kept, `0 <= from < stop`
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nfrom = 1e-3\n");
-        let (_, message, spanned) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nfrom = 1e-3\n");
+        let (_, message, spanned) = RunManifest::located(&f);
         assert_eq!(spanned, "1e-3");
         assert!(message.contains("`from`"), "{message}");
-        assert!(RequestFixture::read("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nfrom = 0\n").is_ok());
+        assert!(RunManifest::read("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nfrom = 0\n").is_ok());
     }
 
     #[test]
@@ -423,8 +428,8 @@ points = 5
             ("analysis = \"transient\"\nstop = 1e-3\nsweep = \"v1.dc\"\n", "sweep", "transient", "\"v1.dc\""),
             ("analysis = \"op\"\nplot = \"a.svg\"\n", "plot", "op", "\"a.svg\""),
         ] {
-            let f = RequestFixture::fault(&format!("[run.a]\n{keys}"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\n{keys}"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!(code, "P0010");
             assert!(message.contains(&format!("`{key}`")) && message.contains(&format!("`{analysis}`")), "{message}");
             assert_eq!(spanned, at, "the span is the key's value");
@@ -434,12 +439,12 @@ points = 5
     #[test]
     fn a_run_name_is_an_identifier() {
         // spec edge 1: `[run."a b"]` is P0010 at the name
-        let f = RequestFixture::fault("[run.\"a b\"]\nanalysis = \"op\"\n");
-        let (code, message, spanned) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.\"a b\"]\nanalysis = \"op\"\n");
+        let (code, message, spanned) = RunManifest::located(&f);
         assert_eq!(code, "P0010");
         assert!(spanned.contains("a b"), "{spanned:?}");
         assert!(message.contains("`a b`"), "{message}");
-        assert_eq!(RequestFixture::one("[run.a_1]\nanalysis = \"op\"\n").name, "a_1");
+        assert_eq!(RunManifest::one("[run.a_1]\nanalysis = \"op\"\n").name, "a_1");
     }
 
     #[test]
@@ -449,19 +454,19 @@ points = 5
             ["sweep = \"v1.dc\"", "from = 0", "to = 1", "step = 0.25"].iter().filter(|k| !k.starts_with(without)).cloned().collect::<Vec<_>>().join("\n")
         };
         for key in ["sweep", "from", "to", "step"] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"dc\"\n{}\n", whole(key)));
-            let (code, message, _) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"dc\"\n{}\n", whole(key)));
+            let (code, message, _) = RunManifest::located(&f);
             assert_eq!(code, "P0010");
             assert!(message.contains(&format!("`{key}`")), "{message} names `{key}`");
         }
         for (step, at) in [("0", "0"), ("-0.1", "-0.1")] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 0\nto = 1\nstep = {step}\n"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 0\nto = 1\nstep = {step}\n"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", at));
             assert!(message.contains("`step`"), "{message}");
         }
         // a step toward `to`, down
-        let down = RequestFixture::one("[run.a]\nanalysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 1\nto = 0\nstep = -0.25\n");
+        let down = RunManifest::one("[run.a]\nanalysis = \"dc\"\nsweep = \"v1.dc\"\nfrom = 1\nto = 0\nstep = -0.25\n");
         assert_eq!(down.analysis, Analysis::Dc { sweep: "v1.dc".into(), from: 1.0, to: 0.0, step: -0.25 });
     }
 
@@ -475,15 +480,15 @@ points = 5
             ("from = 1e3\nto = 1e2\nper_decade = 10", &["to", "from"]),
         ];
         for (keys, named) in cases {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"ac\"\n{keys}\n"));
-            let (code, message, _) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"ac\"\n{keys}\n"));
+            let (code, message, _) = RunManifest::located(&f);
             assert_eq!(code, "P0010", "{keys}");
             for key in named {
                 assert!(message.contains(&format!("`{key}`")), "{message} names `{key}`");
             }
         }
         // `to` equal to `from` is ordered
-        assert!(RequestFixture::read("[run.a]\nanalysis = \"ac\"\nfrom = 1e3\nto = 1e3\npoints = 1\n").is_ok());
+        assert!(RunManifest::read("[run.a]\nanalysis = \"ac\"\nfrom = 1e3\nto = 1e3\npoints = 1\n").is_ok());
     }
 
     #[test]
@@ -503,7 +508,7 @@ points = 5
     #[test]
     fn a_flag_overrides_a_key() {
         // CLI-03 AC 3: the flag wins; a key no flag names keeps the table's value
-        let table = RequestFixture::one("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nprint_step = 1e-4\nprint = [\"out\"]\nparams = { \"r1.r\" = 2000.0 }\n");
+        let table = RunManifest::one("[run.a]\nanalysis = \"transient\"\nstop = 1e-3\nprint_step = 1e-4\nprint = [\"out\"]\nparams = { \"r1.r\" = 2000.0 }\n");
         let flags = Overrides { stop: Some(2e-3), print: vec!["vin".into()], params: vec![("r1.r".into(), 1000.0)], ..Overrides::default() };
         let merged = table.merged(&flags).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!(merged.analysis, Analysis::Transient { stop: 2e-3, max_step: None, print_step: Some(1e-4), from: None });
@@ -543,9 +548,9 @@ points = 5
             "analysis = \"pss\"\nperiod = 1e-3\n",
         ];
         for analysis in analyses {
-            let spec = RequestFixture::one(&format!("[run.a]\n{analysis}{ALL_OPTIONS}"));
-            assert_eq!(spec.options, RequestFixture::options(), "{analysis}");
-            assert_eq!(RequestFixture::one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");
+            let spec = RunManifest::one(&format!("[run.a]\n{analysis}{ALL_OPTIONS}"));
+            assert_eq!(spec.options, SampleOptions::options(), "{analysis}");
+            assert_eq!(RunManifest::one(&format!("[run.a]\n{analysis}")).options, Options::default(), "{analysis}");
         }
         assert_eq!(RUN_KEYS[20..30], ["reltol", "abstol", "vntol", "trtol", "temp", "resolution", "maxrounds", "maxmicro", "nodeset", "max_steps"]);
     }
@@ -555,12 +560,12 @@ points = 5
         // HII-01 AC 3: not a number greater than 0 is a P0010 at the value, naming the key
         for key in ["reltol", "abstol", "vntol", "trtol", "resolution"] {
             for value in ["0", "-1e-3"] {
-                let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
-                let (code, message, at) = RequestFixture::located(&f);
+                let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
+                let (code, message, at) = RunManifest::located(&f);
                 assert_eq!((code, at), ("P0010", value), "{key} = {value}");
                 assert!(message.contains(&format!("`{key}`")) && message.contains("greater than 0"), "{message}");
             }
-            RequestFixture::one(&format!("[run.a]\nanalysis = \"op\"\n{key} = 1e-9\n"));
+            RunManifest::one(&format!("[run.a]\nanalysis = \"op\"\n{key} = 1e-9\n"));
         }
     }
 
@@ -568,13 +573,13 @@ points = 5
     fn temp_must_be_above_absolute_zero() {
         // HII-01 AC 4: -273.15 itself is refused, a value above it (negative included) is read
         for value in ["-273.15", "-300"] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"op\"\ntemp = {value}\n"));
-            let (code, message, at) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"op\"\ntemp = {value}\n"));
+            let (code, message, at) = RunManifest::located(&f);
             assert_eq!((code, at), ("P0010", value));
             assert!(message.contains("`temp`") && message.contains("-273.15"), "{message}");
         }
-        assert_eq!(RequestFixture::one("[run.a]\nanalysis = \"op\"\ntemp = -273.0\n").options.temp, Some(-273.0));
-        assert_eq!(RequestFixture::one("[run.a]\nanalysis = \"op\"\ntemp = 0\n").options.temp, Some(0.0), "an integer is a number");
+        assert_eq!(RunManifest::one("[run.a]\nanalysis = \"op\"\ntemp = -273.0\n").options.temp, Some(-273.0));
+        assert_eq!(RunManifest::one("[run.a]\nanalysis = \"op\"\ntemp = 0\n").options.temp, Some(0.0), "an integer is a number");
     }
 
     #[test]
@@ -582,13 +587,13 @@ points = 5
         // HII-01 AC 5: 0, a fraction and a negative number are each a P0010 naming the key
         for key in ["maxrounds", "maxmicro", "max_steps"] {
             for value in ["0", "1.5", "-2"] {
-                let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
-                let (code, message, _) = RequestFixture::located(&f);
+                let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"op\"\n{key} = {value}\n"));
+                let (code, message, _) = RunManifest::located(&f);
                 assert_eq!(code, "P0010", "{key} = {value}");
                 assert!(message.contains(&format!("`{key}`")), "{message}");
             }
         }
-        let spec = RequestFixture::one("[run.a]\nanalysis = \"op\"\nmaxrounds = 1\nmaxmicro = 1\n");
+        let spec = RunManifest::one("[run.a]\nanalysis = \"op\"\nmaxrounds = 1\nmaxmicro = 1\n");
         assert_eq!((spec.options.maxrounds, spec.options.maxmicro), (Some(1), Some(1)));
     }
 
@@ -596,7 +601,7 @@ points = 5
     fn a_flag_wins_over_its_option_key() {
         // HII-01 AC 2: a flag replaces the key it shares; a nodeset flag replaces the entry of its
         // path and leaves the others; a bad flag value is a P0010 with no span
-        let table = RequestFixture::one(&format!("[run.a]\nanalysis = \"op\"\n{ALL_OPTIONS}"));
+        let table = RunManifest::one(&format!("[run.a]\nanalysis = \"op\"\n{ALL_OPTIONS}"));
         let flags = Overrides {
             reltol: Some(1e-6),
             temp: Some(-40.0),
@@ -610,7 +615,7 @@ points = 5
             temp: Some(-40.0),
             maxrounds: Some(3),
             nodeset: vec![("Top.a".into(), 9.0), ("Top.b".into(), 0.0), ("Top.c".into(), 2.0)],
-            ..RequestFixture::options()
+            ..SampleOptions::options()
         };
         assert_eq!(merged.options, want);
         let alone = RunSpec::from_flags("a", &Overrides { analysis: Some("op".into()), vntol: Some(1e-7), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
@@ -623,12 +628,12 @@ points = 5
     fn tf_and_pz_need_input_and_output() {
         // HII-04 AC 3 and HII-05 AC 4: a run lacking either key is a P0010 naming it
         for analysis in ["tf", "pz"] {
-            let both = RequestFixture::one(&format!("[run.a]\nanalysis = \"{analysis}\"\ninput = \"v1\"\noutput = \"out\"\n"));
+            let both = RunManifest::one(&format!("[run.a]\nanalysis = \"{analysis}\"\ninput = \"v1\"\noutput = \"out\"\n"));
             let want = if analysis == "tf" { Analysis::Tf { input: "v1".into(), output: "out".into() } } else { Analysis::Pz { input: "v1".into(), output: "out".into() } };
             assert_eq!(both.analysis, want);
             for (keys, missing) in [("output = \"out\"\n", "input"), ("input = \"v1\"\n", "output"), ("", "input")] {
-                let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}"));
-                let (code, message, spanned) = RequestFixture::located(&f);
+                let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}"));
+                let (code, message, spanned) = RunManifest::located(&f);
                 assert_eq!((code, spanned), ("P0010", "a"), "{analysis} {keys}");
                 assert!(message.contains(&format!("`{missing}`")) && message.contains(&format!("`{analysis}`")), "{message}");
             }
@@ -638,8 +643,8 @@ points = 5
         let spec = RunSpec::from_flags("d", &flags).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!(spec.analysis, Analysis::Tf { input: "v1".into(), output: "out".into() });
         // `input` belongs to `tf` and `pz` alone
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"op\"\ninput = \"v1\"\n");
-        let (_, message, spanned) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"op\"\ninput = \"v1\"\n");
+        let (_, message, spanned) = RunManifest::located(&f);
         assert!(message.contains("`input`") && message.contains("`op`"), "{message}");
         assert_eq!(spanned, "\"v1\"");
     }
@@ -648,60 +653,60 @@ points = 5
     fn pss_needs_a_positive_period_and_a_non_negative_tstab() {
         // HII-07 AC 5: a `pss` run lacking `period`, with a `period` not above 0 or a negative
         // `tstab` is a P0010 naming the key
-        let ok = RequestFixture::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\ntstab = 5e-3\nprint_step = 1e-5\n");
+        let ok = RunManifest::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\ntstab = 5e-3\nprint_step = 1e-5\n");
         assert_eq!(ok.analysis, Analysis::Pss { period: 1e-3, tstab: 5e-3, max_step: None, print_step: Some(1e-5) });
         // `tstab` defaults to 0, and 0 itself is allowed
         for keys in ["", "tstab = 0\n"] {
-            let spec = RequestFixture::one(&format!("[run.a]\nanalysis = \"pss\"\nperiod = 2e-3\n{keys}"));
+            let spec = RunManifest::one(&format!("[run.a]\nanalysis = \"pss\"\nperiod = 2e-3\n{keys}"));
             assert_eq!(spec.analysis, Analysis::Pss { period: 2e-3, tstab: 0.0, max_step: None, print_step: None }, "{keys:?}");
         }
         for (keys, key, at) in [("", "period", "a"), ("period = 0\n", "period", "0"), ("period = -1e-3\n", "period", "-1e-3"), ("period = 1e-3\ntstab = -1e-3\n", "tstab", "-1e-3")] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"pss\"\n{keys}"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"pss\"\n{keys}"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", at), "{keys:?}");
             assert!(message.contains(&format!("`{key}`")), "{message}");
         }
         // a flag gives the keys as a table does, and wins over the table
-        let table = RequestFixture::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\n");
+        let table = RunManifest::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\n");
         let merged = table.merged(&Overrides { period: Some(4e-3), tstab: Some(1e-3), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!(merged.analysis, Analysis::Pss { period: 4e-3, tstab: 1e-3, max_step: None, print_step: None });
         // `period` and `tstab` belong to `pss` alone, and `plot` is allowed on it
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"op\"\nperiod = 1e-3\n");
-        assert!(RequestFixture::located(&f).1.contains("`period`"), "{f:?}");
-        RequestFixture::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\nplot = \"p.svg\"\n");
+        let f = RunManifest::fault("[run.a]\nanalysis = \"op\"\nperiod = 1e-3\n");
+        assert!(RunManifest::located(&f).1.contains("`period`"), "{f:?}");
+        RunManifest::one("[run.a]\nanalysis = \"pss\"\nperiod = 1e-3\nplot = \"p.svg\"\n");
     }
 
     #[test]
     fn sens_needs_a_non_empty_wrt() {
         // HII-06 AC 3: no `wrt`, or an empty one, is a P0010 naming the key
-        let ok = RequestFixture::one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\", \"r2.r\"]\n");
+        let ok = RunManifest::one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\", \"r2.r\"]\n");
         assert_eq!(ok.analysis, Analysis::Sens { wrt: vec!["r1.r".into(), "r2.r".into()] });
         for (keys, at) in [("", "a"), ("wrt = []\n", "[]")] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"sens\"\n{keys}"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"sens\"\n{keys}"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", at), "{keys:?}");
             assert!(message.contains("`wrt`"), "{message}");
         }
         // the flag list replaces the key, in the order given
-        let table = RequestFixture::one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\"]\n");
+        let table = RunManifest::one("[run.a]\nanalysis = \"sens\"\nwrt = [\"r1.r\"]\n");
         let merged = table.merged(&Overrides { wrt: vec!["r2.r".into(), "v1.dc".into()], ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
         assert_eq!(merged.analysis, Analysis::Sens { wrt: vec!["r2.r".into(), "v1.dc".into()] });
         // `wrt` belongs to `sens` alone
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"tf\"\ninput = \"v1\"\noutput = \"out\"\nwrt = [\"r1.r\"]\n");
-        assert!(RequestFixture::located(&f).1.contains("`wrt`"), "{f:?}");
+        let f = RunManifest::fault("[run.a]\nanalysis = \"tf\"\ninput = \"v1\"\noutput = \"out\"\nwrt = [\"r1.r\"]\n");
+        assert!(RunManifest::located(&f).1.contains("`wrt`"), "{f:?}");
     }
 
     #[test]
     fn the_eight_analysis_names() {
         // HII-08 AC 3: eight names, in the order listed, each written in an unknown-analysis fault
         assert_eq!(Analysis::NAMES, ["op", "dc", "ac", "transient", "tf", "pz", "sens", "pss", "noise"]);
-        let f = RequestFixture::fault("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n");
-        let (_, message, _) = RequestFixture::located(&f);
+        let f = RunManifest::fault("[run.a]\nanalysis = \"tran\"\nstop = 1e-3\n");
+        let (_, message, _) = RunManifest::located(&f);
         for name in Analysis::NAMES {
             assert!(message.contains(&format!("`{name}`")), "{message} names {name}");
         }
         for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n"), ("pss", "period = 1e-3\n")] {
-            assert_eq!(RequestFixture::one(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}")).analysis.name(), analysis);
+            assert_eq!(RunManifest::one(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}")).analysis.name(), analysis);
         }
     }
 
@@ -709,8 +714,8 @@ points = 5
     fn plot_is_refused_for_tf_pz_and_sens() {
         // HII-08 AC 3: a `plot` key on a run of the three is a P0010 at the key's value, naming both
         for (analysis, keys) in [("tf", "input = \"v1\"\noutput = \"o\"\n"), ("pz", "input = \"v1\"\noutput = \"o\"\n"), ("sens", "wrt = [\"r.r\"]\n")] {
-            let f = RequestFixture::fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}plot = \"p.svg\"\n"));
-            let (code, message, spanned) = RequestFixture::located(&f);
+            let f = RunManifest::fault(&format!("[run.a]\nanalysis = \"{analysis}\"\n{keys}plot = \"p.svg\"\n"));
+            let (code, message, spanned) = RunManifest::located(&f);
             assert_eq!((code, spanned), ("P0010", "\"p.svg\""), "{analysis}");
             assert!(message.contains("`plot`") && message.contains(&format!("`{analysis}`")), "{message}");
         }

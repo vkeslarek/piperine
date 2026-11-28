@@ -18,16 +18,16 @@ fn a_mixed_loop_settles_at_its_operating_point() {
     // comparator goes HIGH, its edge clocks code (HIGH) into q, and the inverter
     // makes code LOW. Round 3: `a` = 0 V crosses back, the comparator goes LOW
     // (a falling edge: q holds). Nothing an analog function reads changes: settled.
-    let (b, a, r) = OperatingPointCases::mixed_loop("q");
+    let (b, a, r) = LoopOperatingPoint::mixed_loop("q");
     let mut circuit = b.build().expect("build");
     let op = circuit.dc(Context::default()).expect("dc").solve().expect("the loop settles");
 
     assert!(op.get_node(&CircuitBuilding::node_id(&a)).unwrap().abs() < 1e-12, "v(a) = {:?}", op.get_node(&CircuitBuilding::node_id(&a)));
     assert!((op.get_node(&CircuitBuilding::node_id(&r)).unwrap() - 0.5).abs() < 1e-12);
     let bound = circuit.bound();
-    assert_eq!(OperatingPointCases::bytes_of(bound, "q"), HIGH.to_vec(), "q");
-    assert_eq!(OperatingPointCases::bytes_of(bound, "code"), LOW.to_vec(), "code = not q");
-    assert_eq!(OperatingPointCases::bytes_of(bound, "cmp"), LOW.to_vec(), "v(a) < v(r)");
+    assert_eq!(LoopOperatingPoint::bytes_of(bound, "q"), HIGH.to_vec(), "q");
+    assert_eq!(LoopOperatingPoint::bytes_of(bound, "code"), LOW.to_vec(), "code = not q");
+    assert_eq!(LoopOperatingPoint::bytes_of(bound, "cmp"), LOW.to_vec(), "v(a) < v(r)");
     assert_eq!(mixed::ReactionCounts::of("comparator"), 2, "up in round 2, down in round 3");
     assert_eq!(mixed::ReactionCounts::of("dff"), 1, "one rising edge");
     assert_eq!(mixed::ReactionCounts::of("settle"), 1, "SETTLE fires once");
@@ -37,7 +37,7 @@ fn a_mixed_loop_settles_at_its_operating_point() {
 fn operating_point_rounds_beyond_the_bound_are_e0506() {
     // The inverter reads the comparator instead of the flip-flop: every round
     // flips the code and `a` crosses the reference again.
-    let (b, _, _) = OperatingPointCases::mixed_loop("cmp");
+    let (b, _, _) = LoopOperatingPoint::mixed_loop("cmp");
     let mut circuit = b.build().expect("build");
     let err = circuit.dc(Context::default()).expect("dc").solve().expect_err("an oscillator does not settle");
     let text = format!("{err}");
@@ -72,10 +72,10 @@ fn globals_hold_the_session_values() {
     assert_eq!(read("vdd"), 1.8, "the NAMED global holds the session parameter");
 }
 
-/// The helpers of the operating_point tests.
-pub struct OperatingPointCases;
+/// The mixed loop whose operating point is read.
+struct LoopOperatingPoint;
 
-impl OperatingPointCases {
+impl LoopOperatingPoint {
     /// The net helper `net`.
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
@@ -96,10 +96,10 @@ impl OperatingPointCases {
         let a = b.node("a");
         let r = b.node("r");
         CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[OperatingPointCases::net("code"), Port::Node(a.clone())]);
-        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), OperatingPointCases::net("cmp")]);
-        b.device(digital::DataFlipFlop::module(), "ff", &[], &[OperatingPointCases::net("cmp"), OperatingPointCases::net("code"), OperatingPointCases::net("q")]);
-        b.device(digital::Inverter::module(), "inv", &[], &[OperatingPointCases::net(code_from), OperatingPointCases::net("code")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[LoopOperatingPoint::net("code"), Port::Node(a.clone())]);
+        b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), LoopOperatingPoint::net("cmp")]);
+        b.device(digital::DataFlipFlop::module(), "ff", &[], &[LoopOperatingPoint::net("cmp"), LoopOperatingPoint::net("code"), LoopOperatingPoint::net("q")]);
+        b.device(digital::Inverter::module(), "inv", &[], &[LoopOperatingPoint::net(code_from), LoopOperatingPoint::net("code")]);
         b.device(mixed::SettleCount::module(), "settle", &[], &[]);
         (b, a, r)
     }

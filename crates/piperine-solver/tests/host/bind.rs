@@ -17,13 +17,13 @@ fn pins_bind_by_role() {
     let (n1, n2) = (b.node("n1"), b.node("n2"));
     b.session_param("k", ParamValue::Real(7.0));
     b.device(
-        BindCases::probe(),
+        BoundProbe::probe(),
         "x1",
         &[("r", ParamValue::Real(2.0e3))],
         &[Port::Node(n1.clone()), Port::Node(n2.clone()), Port::Net("code".into()), Port::Net("o1".into())],
     );
     b.device(
-        BindCases::probe(),
+        BoundProbe::probe(),
         "x2",
         &[],
         &[Port::Node(n2.clone()), Port::Node(gnd), Port::Net("code".into()), Port::Net("o2".into())],
@@ -46,17 +46,17 @@ fn pins_bind_by_role() {
     assert_eq!(circuit.given("x3"), None);
 
     // A PARAM binds by name to a net seeded with the value given, else the prototype's default.
-    let seed = |path: &str| BindCases::real(&plan.nets[names.params[&(path.to_string(), "r".to_string())].0 as usize].init);
+    let seed = |path: &str| BoundProbe::real(&plan.nets[names.params[&(path.to_string(), "r".to_string())].0 as usize].init);
     assert_eq!(seed("x1"), 2.0e3);
     assert_eq!(seed("x2"), 1.0e3);
 
     // A GLOBAL binds by constant to one design-wide net, a NAMED one by name.
     assert_eq!(names.pins[0][5], names.pins[1][5]);
     let Site::Net(temp) = names.pins[0][5] else { panic!("temp is a net") };
-    assert_eq!(BindCases::real(&plan.nets[temp.0 as usize].init), Tolerances::default().temperature);
+    assert_eq!(BoundProbe::real(&plan.nets[temp.0 as usize].init), Tolerances::default().temperature);
     let Site::Net(k) = names.pins[0][6] else { panic!("k is a net") };
     assert_eq!(names.pins[1][6], Site::Net(k));
-    assert_eq!(BindCases::real(&plan.nets[k.0 as usize].init), 7.0);
+    assert_eq!(BoundProbe::real(&plan.nets[k.0 as usize].init), 7.0);
 
     // A PRIVATE pin is allocated: a branch unknown of its own per instance.
     let (Site::Unknown(i1), Site::Unknown(i2)) = (&names.pins[0][7], &names.pins[1][7]) else {
@@ -71,8 +71,8 @@ fn a_built_circuit_names_each_node_as_the_builder_did() {
     let gnd = b.ground();
     let (top, mid) = (b.node("Top.top"), b.node("Top.mid"));
     b.session_param("k", ParamValue::Real(7.0));
-    b.device(BindCases::probe(), "x1", &[], &[Port::Node(top.clone()), Port::Node(mid.clone()), Port::Net("c".into()), Port::Net("o".into())]);
-    b.device(BindCases::probe(), "x2", &[], &[Port::Node(mid.clone()), Port::Node(gnd), Port::Net("c".into()), Port::Net("o2".into())]);
+    b.device(BoundProbe::probe(), "x1", &[], &[Port::Node(top.clone()), Port::Node(mid.clone()), Port::Net("c".into()), Port::Net("o".into())]);
+    b.device(BoundProbe::probe(), "x2", &[], &[Port::Node(mid.clone()), Port::Node(gnd), Port::Net("c".into()), Port::Net("o2".into())]);
     let circuit = b.build().expect("bind");
     assert_eq!(circuit.node("Top.top"), Some(&top));
     assert_eq!(circuit.node("Top.mid"), Some(&mid));
@@ -88,7 +88,7 @@ fn a_built_circuit_names_each_node_as_the_builder_did() {
 fn a_named_global_nobody_set_fails_the_bind_naming_it() {
     let mut b = CircuitBuilder::new("named");
     let n1 = b.node("n1");
-    b.device(BindCases::probe(), "x1", &[], &[Port::Node(n1.clone()), Port::Node(n1)]);
+    b.device(BoundProbe::probe(), "x1", &[], &[Port::Node(n1.clone()), Port::Node(n1)]);
     let err = b.build().err().expect("a NAMED global with no session value").to_string();
     assert!(err.contains("`k`") && err.contains("x1"), "{err}");
 }
@@ -99,7 +99,7 @@ fn ports_on_one_net_share_one_unknown() {
     let (n1, n2) = (b.node("n1"), b.node("n2"));
     b.session_param("k", ParamValue::Real(1.0));
     for path in ["x1", "x2"] {
-        b.device(BindCases::probe(), path, &[], &[Port::Node(n1.clone()), Port::Node(n2.clone())]);
+        b.device(BoundProbe::probe(), path, &[], &[Port::Node(n1.clone()), Port::Node(n2.clone())]);
     }
     let circuit = b.build().expect("bind");
     let names = &circuit.bound().names;
@@ -126,10 +126,10 @@ fn a_pin_abstol_tightens_its_node() {
     let (n, m) = (b.node("n"), b.node("m"));
     b.session_param("k", ParamValue::Real(1.0));
     // x1: `a` (1e-9) on n, `b` (4e-10) on m.
-    b.device(BindCases::probe(), "x1", &[], &[Port::Node(n.clone()), Port::Node(m.clone())]);
+    b.device(BoundProbe::probe(), "x1", &[], &[Port::Node(n.clone()), Port::Node(m.clone())]);
     // x3: both pins on o.
     let o = b.node("o");
-    b.device(BindCases::probe(), "x3", &[], &[Port::Node(o.clone()), Port::Node(o.clone())]);
+    b.device(BoundProbe::probe(), "x3", &[], &[Port::Node(o.clone()), Port::Node(o.clone())]);
     let circuit = b.build().expect("bind");
     let bound = circuit.bound();
     let id = |r: &AnalogReference| match r.variable().as_ref() {
@@ -160,7 +160,7 @@ fn a_discrete_net_an_analog_function_reads_is_flagged() {
     let n = b.node("n");
     b.session_param("k", ParamValue::Real(1.0));
     b.device(
-        BindCases::probe(),
+        BoundProbe::probe(),
         "x1",
         &[],
         &[Port::Node(n.clone()), Port::Node(n), Port::Net("read".into()), Port::Net("unread".into())],
@@ -187,13 +187,13 @@ fn a_shared_param_net_feeds_every_instance_bound_to_it() {
     b.param_net("card", ParamValue::Real(5.0e3));
     for path in ["x1", "x2"] {
         b.device(
-            BindCases::probe(),
+            BoundProbe::probe(),
             path,
             &[("r", ParamValue::Shared("card".into()))],
             &[Port::Node(n.clone()), Port::Node(n.clone())],
         );
     }
-    b.device(BindCases::probe(), "x3", &[("r", ParamValue::Real(9.0e3))], &[Port::Node(n.clone()), Port::Node(n)]);
+    b.device(BoundProbe::probe(), "x3", &[("r", ParamValue::Real(9.0e3))], &[Port::Node(n.clone()), Port::Node(n)]);
     let circuit = b.build().expect("bind");
     let bound = circuit.bound();
     let net = |path: &str| bound.names.params[&(path.to_string(), "r".to_string())];
@@ -201,8 +201,8 @@ fn a_shared_param_net_feeds_every_instance_bound_to_it() {
     assert_eq!(net("x1"), net("x2"), "one net for the model card");
     assert_ne!(net("x1"), net("x3"));
     let nets = &bound.digital.plan().nets;
-    assert_eq!(BindCases::real(&nets[net("x1").0 as usize].init), 5.0e3);
-    assert_eq!(BindCases::real(&nets[net("x3").0 as usize].init), 9.0e3);
+    assert_eq!(BoundProbe::real(&nets[net("x1").0 as usize].init), 5.0e3);
+    assert_eq!(BoundProbe::real(&nets[net("x3").0 as usize].init), 9.0e3);
     assert_eq!(bound.names.slots[&net("x1")], bound.names.slots[&net("x2")], "one analog slot for both");
 }
 
@@ -233,10 +233,10 @@ fn a_window_outside_its_nets_bytes_is_an_error_naming_the_net_and_the_window() {
     assert_eq!(piperine_solver::abi::NameMap::window_bytes("mem", Some((1, 2)), &[], 2).expect("no seed, no bytes"), Vec::<u8>::new());
 }
 
-/// The helpers of the bind tests.
-pub struct BindCases;
+/// A probe bound to a net, and the real it reads.
+struct BoundProbe;
 
-impl BindCases {
+impl BoundProbe {
 
     /// The probe helper `probe`.
     fn probe() -> &'static Module {
@@ -247,5 +247,4 @@ impl BindCases {
     fn real(bytes: &[u8]) -> f64 {
         f64::from_le_bytes(bytes[..8].try_into().expect("8 bytes"))
     }
-
 }

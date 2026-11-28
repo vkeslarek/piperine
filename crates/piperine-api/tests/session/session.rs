@@ -23,17 +23,13 @@ static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 /// The devices of `examples/rc/src/lib.msl`, in one file.
 const DEVICES: &str = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\n\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\n";
 
-/// Associated test helpers of `session`, grouped on one fixture type.
-struct SessionFixture;
+/// A lone file of a design, and the examples project.
+struct LoneSource;
 
-impl SessionFixture {
+impl LoneSource {
     /// `module <name>()` holding a source across a resistor.
     fn portless(name: &str) -> String {
         format!("module {name}() {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n")
-    }
-
-    fn examples_rc() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
     }
 
     /// A lone file holding `text`, in its own temporary directory.
@@ -44,6 +40,15 @@ impl SessionFixture {
         (dir, file)
     }
 
+    fn examples_rc() -> PathBuf {
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc")
+    }
+}
+
+/// A session opened with flags and no settings, and the message of its refusal.
+struct SessionOpening;
+
+impl SessionOpening {
     fn flags(analysis: &str, backend: &str, top: Option<&str>) -> Overrides {
         Overrides { analysis: Some(analysis.into()), backend: Some(backend.into()), top: top.map(str::to_string), ..Overrides::default() }
     }
@@ -55,7 +60,7 @@ impl SessionFixture {
 
     /// A session of the lone file `text` with `overrides`.
     fn open(text: &str, overrides: &Overrides, settings: &Settings) -> Result<Session, Failure> {
-        let (_dir, file) = SessionFixture::lone(text);
+        let (_dir, file) = LoneSource::lone(text);
         let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
         let spec = project.request(None, overrides).unwrap_or_else(|f| panic!("{f}"));
         Session::open(&project, &spec, settings)
@@ -101,13 +106,13 @@ impl Counting {
 fn a_run_fails_on_an_unreached_error_with_the_check_diagnostic() {
     // GN-09 AC 1: `broken` is called by nothing and the top is clean, yet `open` fails with the
     // diagnostic `Types::check_model` (and so `piperine check`) gives
-    let text = format!("{DEVICES}\n{}\nfn broken(x: f64) -> bool {{ x + 1.0 }}\n", SessionFixture::portless("Only"));
-    let (_dir, file) = SessionFixture::lone(&text);
+    let text = format!("{DEVICES}\n{}\nfn broken(x: f64) -> bool {{ x + 1.0 }}\n", LoneSource::portless("Only"));
+    let (_dir, file) = LoneSource::lone(&text);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let spec = project.request(None, &SessionFixture::flags("op", "interp", None)).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &SessionOpening::flags("op", "interp", None)).unwrap_or_else(|f| panic!("{f}"));
     let design = project.design(&spec).unwrap_or_else(|f| panic!("{f}"));
     let expected = piperine_lang::types::Types::check_model(&design).expect_err("the model check fails");
-    match Session::open(&project, &spec, &SessionFixture::unused()) {
+    match Session::open(&project, &spec, &SessionOpening::unused()) {
         Err(Failure::Diagnostics { stage: "typeck", found, .. }) => {
             assert_eq!(found, expected);
             assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0180"]);
@@ -120,8 +125,8 @@ fn a_run_fails_on_an_unreached_error_with_the_check_diagnostic() {
 #[test]
 fn the_top_key_names_the_module() {
     // CLI-04 AC 1: two modules without ports; `top` picks one
-    let text = format!("{DEVICES}\n{}\n{}", SessionFixture::portless("A"), SessionFixture::portless("B"));
-    let session = SessionFixture::open(&text, &SessionFixture::flags("op", "interp", Some("B")), &SessionFixture::unused()).unwrap_or_else(|f| panic!("{f}"));
+    let text = format!("{DEVICES}\n{}\n{}", LoneSource::portless("A"), LoneSource::portless("B"));
+    let session = SessionOpening::open(&text, &SessionOpening::flags("op", "interp", Some("B")), &SessionOpening::unused()).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(session.top(), "B");
     assert_eq!(session.ir().top().path(), "B", "the elaborated top is B");
 }
@@ -129,18 +134,18 @@ fn the_top_key_names_the_module() {
 #[test]
 fn the_one_portless_module_is_the_top() {
     // CLI-04 AC 2: `Resistor` and `Vsource` have ports; `Only` is the one without
-    let text = format!("{DEVICES}\n{}", SessionFixture::portless("Only"));
-    let session = SessionFixture::open(&text, &SessionFixture::flags("op", "interp", None), &SessionFixture::unused()).unwrap_or_else(|f| panic!("{f}"));
+    let text = format!("{DEVICES}\n{}", LoneSource::portless("Only"));
+    let session = SessionOpening::open(&text, &SessionOpening::flags("op", "interp", None), &SessionOpening::unused()).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(session.top(), "Only");
 }
 
 #[test]
 fn no_top_or_several_is_p0011_with_candidates() {
     // CLI-04 AC 3
-    let none = SessionFixture::p0011(SessionFixture::open(DEVICES, &SessionFixture::flags("op", "interp", None), &SessionFixture::unused()));
+    let none = SessionOpening::p0011(SessionOpening::open(DEVICES, &SessionOpening::flags("op", "interp", None), &SessionOpening::unused()));
     assert!(none.contains("no module without ports"), "{none}");
-    let text = format!("{DEVICES}\n{}\n{}", SessionFixture::portless("A"), SessionFixture::portless("B"));
-    let several = SessionFixture::p0011(SessionFixture::open(&text, &SessionFixture::flags("op", "interp", None), &SessionFixture::unused()));
+    let text = format!("{DEVICES}\n{}\n{}", LoneSource::portless("A"), LoneSource::portless("B"));
+    let several = SessionOpening::p0011(SessionOpening::open(&text, &SessionOpening::flags("op", "interp", None), &SessionOpening::unused()));
     assert!(several.contains("A, B"), "both candidates named: {several}");
 }
 
@@ -149,8 +154,8 @@ fn a_missing_rustc_names_rustc_and_the_interpreter() {
     // CLI-04 AC 5
     let cache = tempfile::tempdir().expect("tmp");
     let settings = Settings { rustc: Some(PathBuf::from("/nonexistent/bin/rustc")), cache: cache.path().to_path_buf() };
-    let text = format!("{DEVICES}\n{}", SessionFixture::portless("Top"));
-    match SessionFixture::open(&text, &SessionFixture::flags("op", "rust", None), &settings) {
+    let text = format!("{DEVICES}\n{}", LoneSource::portless("Top"));
+    match SessionOpening::open(&text, &SessionOpening::flags("op", "rust", None), &settings) {
         Err(Failure::Backend(message)) => assert!(message.contains("rustc") && message.contains("interp"), "{message}"),
         Err(other) => panic!("a backend failure, found {other}"),
         Ok(_) => panic!("no rustc, no session"),
@@ -161,9 +166,9 @@ fn a_missing_rustc_names_rustc_and_the_interpreter() {
 fn the_interpreter_refusal_names_the_body_and_the_rust_backend() {
     // CLI-04 AC 6: `examples/rc`'s `Monitor` holds a reaction, which the interpreter does not
     // run; its refusal names the body and the backend that runs it
-    let project = Project::at(&SessionFixture::examples_rc()).unwrap_or_else(|f| panic!("{f}"));
+    let project = Project::at(&LoneSource::examples_rc()).unwrap_or_else(|f| panic!("{f}"));
     let spec = project.request(Some("step"), &Overrides { backend: Some("interp".into()), ..Overrides::default() }).unwrap_or_else(|f| panic!("{f}"));
-    match Session::open(&project, &spec, &SessionFixture::unused()) {
+    match Session::open(&project, &spec, &SessionOpening::unused()) {
         Err(Failure::Backend(message)) => assert!(message.contains("Monitor") && message.contains("--backend rust"), "{message}"),
         Err(other) => panic!("a backend failure, found {other}"),
         Ok(_) => panic!("the interpreter refuses a reaction"),
@@ -175,7 +180,7 @@ fn a_run_compiles_once_and_never_during_an_analysis() {
     // CLI-04 AC 9, under a compiler wrapper that counts
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let compiler = Counting::new();
-    let project = Project::at(&SessionFixture::examples_rc()).unwrap_or_else(|f| panic!("{f}"));
+    let project = Project::at(&LoneSource::examples_rc()).unwrap_or_else(|f| panic!("{f}"));
     let spec: RunSpec = project.request(Some("step"), &Overrides::default()).unwrap_or_else(|f| panic!("{f}"));
     let mut session = Session::open(&project, &spec, &compiler.settings).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(compiler.design_builds(), 1, "one build of the design");
@@ -201,7 +206,7 @@ fn a_top_with_discrete_in_ports_starts_them_at_their_initial_values() {
     let text = format!(
         "{DEVICES}\nmodule Top(in en: Bit = true) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
     );
-    let mut session = SessionFixture::open(&text, &SessionFixture::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = SessionOpening::open(&text, &SessionOpening::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     assert!(session.ir().net_at("Top.en").is_some(), "the port is a net of the top");
     let circuit = session.circuit().expect("a circuit");
     let result = circuit.transient(TransientAnalysisOptions::new(1e-9, 1e-10), Context::default()).expect("tran").solve().unwrap_or_else(|e| panic!("{e}"));
@@ -223,12 +228,12 @@ fn an_undriven_top_port_without_default_refuses_the_analysis() {
     let text = format!(
         "{DEVICES}\nmodule Top(in en: Bit) {{\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) {{ dc: 1.0 }};\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n"
     );
-    let mut refused = SessionFixture::open(&text, &SessionFixture::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    let mut refused = SessionOpening::open(&text, &SessionOpening::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     match refused.run(std::rc::Rc::new(std::cell::RefCell::new(Ignore))) {
         Err(Failure::Host { code: "E0187", message }) => assert!(message.contains("`en`"), "the port is named: {message}"),
         other => panic!("E0187 naming `en`, found {other:?}"),
     }
-    let mut driven = SessionFixture::open(&text, &SessionFixture::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    let mut driven = SessionOpening::open(&text, &SessionOpening::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     driven.drive("en", ParamValue::Bool(true), 0.0).expect("a drive at 0");
     driven.run(std::rc::Rc::new(std::cell::RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
 }
@@ -238,7 +243,7 @@ fn a_top_with_a_node_port_is_refused_by_the_interpreter_naming_the_host_source()
     // PI-07 (D8, R2): a node port of the top elaborates (the IR gains the host source), and the
     // frozen interpreter, which does not run the clock the source reads, refuses it by name
     let text = format!("{DEVICES}\nmodule Top(a: Electrical) {{\n    let r1 = Resistor(a, gnd) {{ r: 1k }};\n}}\n");
-    match SessionFixture::open(&text, &SessionFixture::flags("op", "interp", Some("Top")), &SessionFixture::unused()) {
+    match SessionOpening::open(&text, &SessionOpening::flags("op", "interp", Some("Top")), &SessionOpening::unused()) {
         Err(failure) => assert!(failure.to_string().contains("HostSource"), "{failure}"),
         Ok(_) => panic!("the interpreter ran a host source"),
     }
@@ -252,12 +257,12 @@ fn a_module_typed_param_is_not_set_by_text() {
     let top = "module Top() {\n    cell: Cell = Cell { r: 2k };\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = cell(a);\n}\n";
     let text = format!("{devices}\n{top}");
     // the interpreter runs `f64` and `bool` params only (PI-05), so "the design opens" is its description: elaborated, no backend
-    let (_dir, file) = SessionFixture::lone(&text);
+    let (_dir, file) = LoneSource::lone(&text);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let spec = project.request(None, &SessionFixture::flags("op", "interp", Some("Top"))).unwrap_or_else(|f| panic!("{f}"));
+    let spec = project.request(None, &SessionOpening::flags("op", "interp", Some("Top"))).unwrap_or_else(|f| panic!("{f}"));
     Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })).unwrap_or_else(|f| panic!("the design opens: {f}"));
-    let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..SessionFixture::flags("op", "interp", Some("Top")) };
-    match SessionFixture::open(&text, &overrides, &SessionFixture::unused()) {
+    let overrides = Overrides { params: vec![("Top.cell".to_string(), 1.0)], ..SessionOpening::flags("op", "interp", Some("Top")) };
+    match SessionOpening::open(&text, &overrides, &SessionOpening::unused()) {
         Err(Failure::Diagnostics { found, .. }) => {
             assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}");
             assert!(found[0].diagnostic.message.contains("Top.cell"), "{}", found[0].diagnostic.message);
@@ -267,8 +272,8 @@ fn a_module_typed_param_is_not_set_by_text() {
     }
     // a param declared as an array of templates is bound in the source the same way (generics T121)
     let pair = "module Top() {\n    pair: [Cell; 2] = [Cell { r: 2k }, Cell { r: 3k }];\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let c1 = pair[1](a);\n}\n";
-    let overrides = Overrides { params: vec![("Top.pair".to_string(), 1.0)], ..SessionFixture::flags("op", "interp", Some("Top")) };
-    match SessionFixture::open(&format!("{devices}\n{pair}"), &overrides, &SessionFixture::unused()) {
+    let overrides = Overrides { params: vec![("Top.pair".to_string(), 1.0)], ..SessionOpening::flags("op", "interp", Some("Top")) };
+    match SessionOpening::open(&format!("{devices}\n{pair}"), &overrides, &SessionOpening::unused()) {
         Err(Failure::Diagnostics { found, .. }) => assert_eq!(found.iter().map(|d| d.diagnostic.code.to_string()).collect::<Vec<_>>(), ["E0802"], "{found:?}"),
         Err(other) => panic!("E0802 from elaboration, found {other}"),
         Ok(_) => panic!("a text value was given to a param of an array of templates"),
@@ -290,7 +295,7 @@ fn a_session_returns_the_statistics_of_its_last_transient() {
         ..Overrides::default()
     };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-    let mut session = Session::open(&project, &spec, &SessionFixture::unused()).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = Session::open(&project, &spec, &SessionOpening::unused()).unwrap_or_else(|f| panic!("{f}"));
     assert!(session.statistics().is_none(), "no statistics before a run");
 
     let table = session.run(Rc::new(RefCell::new(Ignore))).unwrap_or_else(|f| panic!("{f}"));
@@ -319,8 +324,8 @@ impl Typed {
         let cache = tempfile::tempdir().expect("a cache");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
         let param_texts = texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect();
-        let overrides = Overrides { param_texts, ..SessionFixture::flags("op", "rust", Some("Top")) };
-        SessionFixture::open(TYPED_PARAMS, &overrides, &settings).map(|session| (session, cache))
+        let overrides = Overrides { param_texts, ..SessionOpening::flags("op", "rust", Some("Top")) };
+        SessionOpening::open(TYPED_PARAMS, &overrides, &settings).map(|session| (session, cache))
     }
 
     /// A session with no `--param`.
@@ -445,9 +450,9 @@ fn an_integer_above_2_pow_53_is_set_exactly() {
         assert_eq!(Typed::shown(&session, "big"), piperine_api::Cell::Int(wanted), "{text}");
     }
     // the description of the design (`Session::describe`, no backend) shows the same exact value
-    let (_dir, file) = SessionFixture::lone(TYPED_PARAMS);
+    let (_dir, file) = LoneSource::lone(TYPED_PARAMS);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { param_texts: vec![("Top.l.big".to_string(), "9007199254740993".to_string())], ..SessionFixture::flags("op", "interp", Some("Top")) };
+    let overrides = Overrides { param_texts: vec![("Top.l.big".to_string(), "9007199254740993".to_string())], ..SessionOpening::flags("op", "interp", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })).unwrap_or_else(|f| panic!("{f}"));
     let shown = metadata.params.into_iter().find(|p| p.path == "Top.l.big").expect("the param").value;
@@ -477,8 +482,8 @@ impl Structural {
         let cache = tempfile::tempdir().expect("a cache");
         let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
         let param_texts = texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect();
-        let overrides = Overrides { param_texts, print: vec![node.to_string()], ..SessionFixture::flags("op", "rust", Some(top)) };
-        let mut session = SessionFixture::open(STRUCTURAL, &overrides, &settings)?;
+        let overrides = Overrides { param_texts, print: vec![node.to_string()], ..SessionOpening::flags("op", "rust", Some(top)) };
+        let mut session = SessionOpening::open(STRUCTURAL, &overrides, &settings)?;
         let table = session.run(Rc::new(RefCell::new(Ignore)))?;
         match &table.rows[0][1] {
             piperine_api::Cell::Real(value) => Ok(*value),
@@ -523,8 +528,8 @@ fn a_leaf_text_is_read_by_the_leafs_type() {
     let cache = tempfile::tempdir().expect("a cache");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let with = |entry: &str, text: &str| {
-        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..SessionFixture::flags("op", "rust", Some("Top")) };
-        SessionFixture::open(source, &overrides, &settings)
+        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..SessionOpening::flags("op", "rust", Some("Top")) };
+        SessionOpening::open(source, &overrides, &settings)
     };
     with("Top.cfg.en", "true").unwrap_or_else(|f| panic!("{f}"));
     with("Top.cfg.n", "0x3").unwrap_or_else(|f| panic!("{f}"));
@@ -556,12 +561,12 @@ fn a_description_shows_the_values_a_run_reads_for_every_param_kind() {
     // F38, HII-10: `Session::describe` and `Session::open` apply a host value through the one write path (`Pins`), so the child of every
     // param a placement passes down reads the same in the description as in the run: an integer, an enum, an `Option`, a leaf of a
     // composite, a scalar a placement scales, and an integer above 2^53
-    let (_dir, file) = SessionFixture::lone(PASSED);
+    let (_dir, file) = LoneSource::lone(PASSED);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let cache = tempfile::tempdir().expect("a cache");
     let settings = || Settings { rustc: None, cache: cache.path().to_path_buf() };
     let texts = [("Top.w.n", "6"), ("Top.w.md", "Slow"), ("Top.w.rs", "3000"), ("Top.w.cfg.g", "2.5"), ("Top.w.rt", "2500"), ("Top.w.big", "9007199254740993")];
-    let overrides = Overrides { param_texts: texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect(), ..SessionFixture::flags("op", "rust", Some("Top")) };
+    let overrides = Overrides { param_texts: texts.iter().map(|(entry, text)| (entry.to_string(), text.to_string())).collect(), ..SessionOpening::flags("op", "rust", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let (_, described) = Session::describe(&project, &spec, &|| Ok(settings())).unwrap_or_else(|f| panic!("{f}"));
     let session = Session::open(&project, &spec, &settings()).unwrap_or_else(|f| panic!("{f}"));
@@ -584,10 +589,10 @@ fn a_description_shows_the_values_a_run_reads_for_every_param_kind() {
 #[test]
 fn a_described_option_and_leaf_reach_the_child() {
     // F38: `Top.w.rs=3000` shows `Some(3000)` in the child, not `None`; `Top.w.cfg.g=2.5` shows 2.5, not 1.0 (numeric `--param` form too)
-    let (_dir, file) = SessionFixture::lone(PASSED);
+    let (_dir, file) = LoneSource::lone(PASSED);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let cache = tempfile::tempdir().expect("a cache");
-    let overrides = Overrides { params: vec![("Top.w.cfg.g".into(), 2.5)], param_texts: vec![("Top.w.rs".to_string(), "3000".to_string())], ..SessionFixture::flags("op", "rust", Some("Top")) };
+    let overrides = Overrides { params: vec![("Top.w.cfg.g".into(), 2.5)], param_texts: vec![("Top.w.rs".to_string(), "3000".to_string())], ..SessionOpening::flags("op", "rust", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: cache.path().to_path_buf() })).unwrap_or_else(|f| panic!("{f}"));
     let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone()).unwrap_or_else(|| panic!("no `{path}`"));
@@ -599,9 +604,9 @@ fn a_described_option_and_leaf_reach_the_child() {
 fn describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_plan() {
     // F34: `Session::describe` with a host value for `Top.w.n`, which a placement passes to an integer param of the child, cannot be
     // evaluated by the interpreter's walk (it holds `f64` and `bool` params only, PI-05): the refusal says so and names `--backend rust`
-    let (_dir, file) = SessionFixture::lone(WRAPPED);
+    let (_dir, file) = LoneSource::lone(WRAPPED);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string())], ..SessionFixture::flags("op", "interp", Some("Top")) };
+    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string())], ..SessionOpening::flags("op", "interp", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     match Session::describe(&project, &spec, &|| Ok(Settings { rustc: None, cache: PathBuf::from("/nonexistent/cache") })) {
         Err(Failure::Host { code: "E0802", message }) => assert!(message.contains("--backend rust") && !message.contains("does not match"), "{message}"),
@@ -614,11 +619,11 @@ fn describing_a_set_the_interpreter_cannot_derive_names_the_interpreter_not_the_
 fn describing_a_rust_request_shows_the_values_a_run_derives_of_every_param_type() {
     // F36, HII-10: `describe` of a Rust request with `Top.w.n = 6` and `Top.w.md = Slow` evaluates what the placement passes to the child
     // (an integer, an enum) through the compiled derive, so it shows the values a run uses, not a refusal
-    let (_dir, file) = SessionFixture::lone(WRAPPED);
+    let (_dir, file) = LoneSource::lone(WRAPPED);
     let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
     let cache = tempfile::tempdir().expect("a cache");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string()), ("Top.w.md".to_string(), "Slow".to_string())], ..SessionFixture::flags("op", "rust", Some("Top")) };
+    let overrides = Overrides { param_texts: vec![("Top.w.n".to_string(), "6".to_string()), ("Top.w.md".to_string(), "Slow".to_string())], ..SessionOpening::flags("op", "rust", Some("Top")) };
     let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
     let (_, metadata) = Session::describe(&project, &spec, &|| Ok(Settings { rustc: settings.rustc.clone(), cache: settings.cache.clone() })).unwrap_or_else(|f| panic!("{f}"));
     let value = |path: &str| metadata.params.iter().find(|p| p.path == path).map(|p| p.value.clone());
@@ -634,7 +639,7 @@ fn params_passed_through_a_wrappers_placement_run() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let cache = tempfile::tempdir().expect("a cache");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-    let mut session = SessionFixture::open(WRAPPED, &SessionFixture::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
+    let mut session = SessionOpening::open(WRAPPED, &SessionOpening::flags("op", "rust", Some("Top")), &settings).unwrap_or_else(|f| panic!("{f}"));
     let shown = |session: &Session, param: &str| session.metadata().params.into_iter().find(|p| p.path == format!("Top.w.i.{param}")).unwrap_or_else(|| panic!("no `{param}`")).value;
     assert_eq!(shown(&session, "n"), piperine_api::Cell::Int(4));
     assert_eq!(shown(&session, "md"), piperine_api::Cell::Text("Fast".into()));
@@ -705,8 +710,8 @@ fn a_refused_text_is_named_as_the_user_wrote_it() {
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let source = "enum Mode { Short, Open }\nmodule Top() { md: Mode = Mode::Short; vs: Option<f64>; signal a: Electrical; }\n";
     for (entry, text) in [("Top.md", "Open"), ("Top.vs", "Some(0.5)")] {
-        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..SessionFixture::flags("op", "rust", Some("Top")) };
-        match SessionFixture::open(source, &overrides, &settings) {
+        let overrides = Overrides { param_texts: vec![(entry.to_string(), text.to_string())], ..SessionOpening::flags("op", "rust", Some("Top")) };
+        match SessionOpening::open(source, &overrides, &settings) {
             Err(Failure::Host { code: "E0802", message }) => assert!(message.contains(entry) && message.contains(&format!("`{text}`")) && !message.contains("value`"), "{message}"),
             Err(other) => panic!("{entry}={text}: E0802 naming the text, found {other}"),
             Ok(_) => panic!("{entry}={text}: accepted"),
@@ -725,8 +730,8 @@ fn a_structural_param_overrides_before_the_run_and_is_refused_during_it() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let cache = tempfile::tempdir().expect("a cache");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
-    let overrides = Overrides { param_texts: vec![("Top.count".to_string(), "3".to_string())], stop: Some(1e-6), ..SessionFixture::flags("transient", "rust", Some("Top")) };
-    let mut session = SessionFixture::open(GENERIC_ARGUMENT, &overrides, &settings).unwrap_or_else(|failure| panic!("{failure}"));
+    let overrides = Overrides { param_texts: vec![("Top.count".to_string(), "3".to_string())], stop: Some(1e-6), ..SessionOpening::flags("transient", "rust", Some("Top")) };
+    let mut session = SessionOpening::open(GENERIC_ARGUMENT, &overrides, &settings).unwrap_or_else(|failure| panic!("{failure}"));
     let bodies: Vec<String> = session.ir().bodies().map(|body| body.name().to_string()).collect();
     assert!(bodies.iter().any(|name| name == "Taps::<3>") && !bodies.iter().any(|name| name == "Taps::<2>"), "the instance takes the overridden value: {bodies:?}");
     match session.set_at("Top.count", 4.0, 5e-7) {
@@ -734,8 +739,8 @@ fn a_structural_param_overrides_before_the_run_and_is_refused_during_it() {
         other => panic!("E0803, found {other:?}"),
     }
     // a sweep of it is refused before anything compiles, naming it as structural
-    let sweep = Overrides { sweep: Some("Top.count".to_string()), from: Some(1.0), to: Some(3.0), step: Some(1.0), ..SessionFixture::flags("dc", "rust", Some("Top")) };
-    match SessionFixture::open(GENERIC_ARGUMENT, &sweep, &settings) {
+    let sweep = Overrides { sweep: Some("Top.count".to_string()), from: Some(1.0), to: Some(3.0), step: Some(1.0), ..SessionOpening::flags("dc", "rust", Some("Top")) };
+    match SessionOpening::open(GENERIC_ARGUMENT, &sweep, &settings) {
         Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("`Top.count` is a structural param"), "{message}"),
         Err(other) => panic!("E0803, found {other:?}"),
         Ok(_) => panic!("E0803, the sweep of a structural param opened"),

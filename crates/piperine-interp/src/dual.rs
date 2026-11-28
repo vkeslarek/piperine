@@ -113,9 +113,9 @@ mod tests {
     const POINTS: [(f64, f64); 3] = [(0.5, 2.0), (1.7, -0.3), (3.0, 4.5)];
 
     /// The dual-number arithmetic oracle: tolerant comparison and seeded operand pairs.
-    struct DualFixture;
+    struct DualOracle;
 
-    impl DualFixture {
+    impl DualOracle {
         fn close(a: f64, b: f64) -> bool {
             (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1.0)
         }
@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn add_and_sub_follow_the_sum_rule() {
         for (x, y) in POINTS {
-            let (a, b) = DualFixture::pair(x, y);
+            let (a, b) = DualOracle::pair(x, y);
             let s = a.clone() + b.clone();
             assert_eq!((s.v, s.d), (x + y, vec![1.0, 1.0]));
             let t = a - b;
@@ -140,20 +140,20 @@ mod tests {
     #[test]
     fn mul_follows_the_product_rule() {
         for (x, y) in POINTS {
-            let (a, b) = DualFixture::pair(x, y);
+            let (a, b) = DualOracle::pair(x, y);
             let p = a * b;
-            assert!(DualFixture::close(p.v, x * y));
-            assert!(DualFixture::close(p.d[0], y) && DualFixture::close(p.d[1], x));
+            assert!(DualOracle::close(p.v, x * y));
+            assert!(DualOracle::close(p.d[0], y) && DualOracle::close(p.d[1], x));
         }
     }
 
     #[test]
     fn div_follows_the_quotient_rule() {
         for (x, y) in POINTS {
-            let (a, b) = DualFixture::pair(x, y);
+            let (a, b) = DualOracle::pair(x, y);
             let q = a / b;
-            assert!(DualFixture::close(q.v, x / y));
-            assert!(DualFixture::close(q.d[0], 1.0 / y) && DualFixture::close(q.d[1], -x / (y * y)));
+            assert!(DualOracle::close(q.v, x / y));
+            assert!(DualOracle::close(q.d[0], 1.0 / y) && DualOracle::close(q.d[1], -x / (y * y)));
         }
     }
 
@@ -170,11 +170,11 @@ mod tests {
         for (x, _) in POINTS {
             let a = Dual::seeded(x, 0, 1);
             let e = a.exp();
-            assert!(DualFixture::close(e.v, x.exp()) && DualFixture::close(e.d[0], x.exp()));
+            assert!(DualOracle::close(e.v, x.exp()) && DualOracle::close(e.d[0], x.exp()));
             let l = a.ln();
-            assert!(DualFixture::close(l.v, x.ln()) && DualFixture::close(l.d[0], 1.0 / x));
+            assert!(DualOracle::close(l.v, x.ln()) && DualOracle::close(l.d[0], 1.0 / x));
             let s = a.sqrt();
-            assert!(DualFixture::close(s.v, x.sqrt()) && DualFixture::close(s.d[0], 0.5 / x.sqrt()));
+            assert!(DualOracle::close(s.v, x.sqrt()) && DualOracle::close(s.d[0], 0.5 / x.sqrt()));
         }
     }
 
@@ -184,7 +184,7 @@ mod tests {
         for (x, _) in POINTS {
             let a = Dual::seeded(x, 0, 1);
             let r = (a.clone() * a).exp();
-            assert!(DualFixture::close(r.d[0], 2.0 * x * (x * x).exp()));
+            assert!(DualOracle::close(r.d[0], 2.0 * x * (x * x).exp()));
         }
     }
 

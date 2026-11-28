@@ -110,11 +110,11 @@ fn equal_builder_sequences_give_equal_irs() {
 
 /// The five device bodies, the divider on top of them, and the `Everything` body that uses each
 /// form the devices do not.
-struct Library;
+pub(crate) struct Library;
 
 impl Library {
     /// All of it, finished, with the divider as top.
-    fn ir() -> Ir {
+    pub(crate) fn ir() -> Ir {
         let mut b = IrBuilder::new();
         Devices::everything(&mut b);
         Devices::capacitor(&mut b);

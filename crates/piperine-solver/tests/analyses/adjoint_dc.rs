@@ -16,7 +16,7 @@ use piperine_solver::prelude::{AdjointOptions, CircuitInstance, Context};
 // the result, not inspected by eye or claimed in a comment.
 #[test]
 fn one_transpose_solve_serves_every_requested_parameter() {
-    let (mut circuit, info) = AdjointDcCases::build("Top");
+    let (mut circuit, info) = AdjointDcCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     // 20 parameter requests over the divider's three differentiable params.
@@ -54,7 +54,7 @@ fn one_transpose_solve_serves_every_requested_parameter() {
 // either half surfaces as a wrong value here.
 #[test]
 fn df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution() {
-    let (mut circuit, info) = AdjointDcCases::build("Top");
+    let (mut circuit, info) = AdjointDcCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let params = vec![("r2".into(), "r".into()), ("v1".into(), "dc".into())];
@@ -90,7 +90,7 @@ fn df_dx_is_built_for_a_scalar_output_from_the_converged_dc_solution() {
 // voltage.)
 #[test]
 fn adjoint_runs_on_a_nonlinear_circuit() {
-    let (mut circuit, info) = AdjointDcCases::build("DiodeTop");
+    let (mut circuit, info) = AdjointDcCircuit::build("DiodeTop");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let result = circuit
@@ -108,10 +108,10 @@ fn adjoint_runs_on_a_nonlinear_circuit() {
     assert_eq!(result.transpose_solves, 1, "nonlinear does not change the solve count");
 }
 
-/// The helpers of the adjoint_dc tests.
-pub struct AdjointDcCases;
+/// The circuit the adjoint operating-point tests solve.
+struct AdjointDcCircuit;
 
-impl AdjointDcCases {
+impl AdjointDcCircuit {
     /// The build helper `build`.
     fn build(top: &str) -> (CircuitInstance, NodeMap) {
         CircuitBuilding::divider_fixture(top)

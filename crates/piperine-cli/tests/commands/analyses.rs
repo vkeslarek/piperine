@@ -3,18 +3,12 @@
 //! file, from a project whose runs are written with the new keys (`input`, `output`, `wrt`,
 //! `period`, `tstab`). Every child gets one cache directory shared by this target.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-use piperine_parity::compile_cache::CompileCache;
+use super::process::PiperineProcess;
 
-/// Associated test helpers of `analyses`, grouped on one fixture type.
-struct AnalysesFixture;
+/// The small designs the analysis tests run: a low-pass divider, a pulsed RC, and the project holding them.
+struct SmallBench;
 
-impl AnalysesFixture {
-    fn piperine_in(dir: &Path, args: &[&str]) -> Output {
-        Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", CompileCache::shared().path()).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
-    }
-
+impl SmallBench {
     /// A 10 V source over 1 kOhm, then 3 kOhm in parallel with 1 uF: gain 3/4, one pole.
     fn lowpass() -> String {
         format!("{PARTS}module Top() {{\n    signal vin: Electrical;\n    signal vout: Electrical;\n    let v1 = Vsource(vin, gnd) {{ dc: 10.0 }};\n    let r1 = Resistor(vin, vout) {{ r: 1k }};\n    let r2 = Resistor(vout, gnd) {{ r: 3k }};\n    let c1 = Capacitor(vout, gnd) {{ c: 1u }};\n}}\n")
@@ -31,18 +25,9 @@ impl AnalysesFixture {
         std::fs::create_dir_all(dir.path().join("src")).expect("mkdir");
         std::fs::write(dir.path().join("src/lib.msl"), "").expect("crate root");
         std::fs::write(dir.path().join("Piperine.toml"), MANIFEST).expect("manifest");
-        std::fs::write(dir.path().join("benches/lowpass.msl"), AnalysesFixture::lowpass()).expect("bench");
-        std::fs::write(dir.path().join("benches/pulsed.msl"), AnalysesFixture::pulsed()).expect("bench");
+        std::fs::write(dir.path().join("benches/lowpass.msl"), SmallBench::lowpass()).expect("bench");
+        std::fs::write(dir.path().join("benches/pulsed.msl"), SmallBench::pulsed()).expect("bench");
         dir
-    }
-
-    fn stdout_of(out: &Output) -> String {
-        assert_eq!(out.status.code(), Some(0), "stderr:\n{}", String::from_utf8_lossy(&out.stderr));
-        String::from_utf8_lossy(&out.stdout).into_owned()
-    }
-
-    fn cells(line: &str) -> Vec<&str> {
-        line.split_whitespace().collect()
     }
 }
 
@@ -92,28 +77,28 @@ const RUNS: [(&str, &str, &[&str], usize); 4] = [
 #[test]
 fn each_new_analysis_prints_header_records_and_table() {
     // HII-08 AC 1: the header names the analysis, an empty line, then the table
-    let dir = AnalysesFixture::project();
+    let dir = SmallBench::project();
     for (run, top, columns, rows) in RUNS {
-        let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &["run", run]));
+        let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &["run", run]));
         let lines: Vec<&str> = out.lines().collect();
         assert_eq!(lines[0], format!("run {run}: {run}, top {top}, backend rust"), "{out}");
         let blank = lines.iter().position(|l| l.is_empty()).unwrap_or_else(|| panic!("no empty line in\n{out}"));
         assert!(lines[1..blank].iter().all(|l| l.starts_with('@')), "between the header and the empty line only records:\n{out}");
-        assert_eq!(AnalysesFixture::cells(lines[blank + 1]), columns, "{out}");
+        assert_eq!(PiperineProcess::cells(lines[blank + 1]), columns, "{out}");
         assert_eq!(lines.len() - blank - 2, rows, "{run}: {out}");
     }
     // the values the analyses give: gain 3/4 and the pole at -(1/R1 + 1/R2)/C
-    let tf = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &["run", "tf"]));
-    let gain: f64 = tf.lines().find(|l| l.starts_with("gain")).and_then(|l| AnalysesFixture::cells(l).get(1).and_then(|v| v.parse().ok())).unwrap_or_else(|| panic!("no gain in\n{tf}"));
+    let tf = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &["run", "tf"]));
+    let gain: f64 = tf.lines().find(|l| l.starts_with("gain")).and_then(|l| PiperineProcess::cells(l).get(1).and_then(|v| v.parse().ok())).unwrap_or_else(|| panic!("no gain in\n{tf}"));
     assert!((gain - 0.75).abs() < 1e-6, "{gain}");
 }
 
 #[test]
 fn each_new_analysis_writes_csv() {
     // HII-08 AC 2: `--csv` writes the table as a file and says so, as for the other analyses
-    let dir = AnalysesFixture::project();
+    let dir = SmallBench::project();
     for (run, _, columns, rows) in RUNS {
-        let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &["run", run, "--csv", "out.csv"]));
+        let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &["run", run, "--csv", "out.csv"]));
         assert!(out.lines().any(|l| l == format!("wrote out.csv ({rows} rows)")), "{run}: {out}");
         let csv = std::fs::read_to_string(dir.path().join("out.csv")).expect("the csv");
         assert_eq!(csv.lines().next().expect("a header"), columns.join(","), "{run}");
@@ -125,10 +110,10 @@ fn each_new_analysis_writes_csv() {
 fn the_new_keys_have_flags() {
     // HII-08 AC 4: a flag gives the key a table gives, on a lone file too
     let dir = tempfile::tempdir().expect("tmp");
-    std::fs::write(dir.path().join("lp.msl"), AnalysesFixture::lowpass()).expect("bench");
-    let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &["run", "lp.msl", "--analysis", "tf", "--input", "v1", "--output", "vout"]));
+    std::fs::write(dir.path().join("lp.msl"), SmallBench::lowpass()).expect("bench");
+    let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &["run", "lp.msl", "--analysis", "tf", "--input", "v1", "--output", "vout"]));
     assert!(out.starts_with("run lp: tf, top Top, backend rust"), "{out}");
-    let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &["run", "lp.msl", "--analysis", "sens", "--wrt", "r1.r", "--print", "vout"]));
+    let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &["run", "lp.msl", "--analysis", "sens", "--wrt", "r1.r", "--print", "vout"]));
     assert!(out.starts_with("run lp: sens, top Top"), "{out}");
 }
 
@@ -139,20 +124,20 @@ fn a_noise_run_prints_one_row_per_frequency_then_the_total() {
     // then the summary line `onoise_total  <value>`; the resistors and capacitor of the lowpass
     // have no noise source, so the density and the total are 0. CSV writes the rows only.
     let dir = tempfile::tempdir().expect("tmp");
-    std::fs::write(dir.path().join("lp.msl"), AnalysesFixture::lowpass()).expect("bench");
+    std::fs::write(dir.path().join("lp.msl"), SmallBench::lowpass()).expect("bench");
     let args = ["run", "lp.msl", "--analysis", "noise", "--output", "vout", "--from", "1", "--to", "1e3", "--per-decade", "1"];
-    let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &args));
+    let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &args));
     let lines: Vec<&str> = out.lines().collect();
     assert_eq!(lines[0], "run lp: noise, top Top, backend rust", "{out}");
     let blank = lines.iter().position(|l| l.is_empty()).unwrap_or_else(|| panic!("no empty line in\n{out}"));
-    assert_eq!(AnalysesFixture::cells(lines[blank + 1]), ["freq", "onoise"], "{out}");
+    assert_eq!(PiperineProcess::cells(lines[blank + 1]), ["freq", "onoise"], "{out}");
     assert_eq!(lines.len() - blank - 2, 4 + 1, "four rows and the total: {out}");
-    let total = AnalysesFixture::cells(lines[lines.len() - 1]);
+    let total = PiperineProcess::cells(lines[lines.len() - 1]);
     assert_eq!(total[0], "onoise_total", "{out}");
     assert_eq!(total[1].parse::<f64>().expect("a number"), 0.0, "{out}");
     let mut with_csv = args.to_vec();
     with_csv.extend(["--csv", "noise.csv"]);
-    let out = AnalysesFixture::stdout_of(&AnalysesFixture::piperine_in(dir.path(), &with_csv));
+    let out = PiperineProcess::stdout_of(&PiperineProcess::piperine_in(dir.path(), &with_csv));
     assert!(out.lines().any(|l| l == "wrote noise.csv (4 rows)"), "{out}");
     assert!(!out.contains("onoise_total"), "CSV writes the rows only: {out}");
     let csv = std::fs::read_to_string(dir.path().join("noise.csv")).expect("the csv");

@@ -322,14 +322,23 @@ mod tests {
 
     use super::*;
 
-    /// Associated test helpers of `recorder`, grouped on one fixture type.
-    struct RecorderFixture;
+    /// A column of a recorded table: an analog unknown or a net.
+    struct ColumnSample;
 
-    impl RecorderFixture {
+    impl ColumnSample {
         fn unknown(index: usize) -> Column {
             Column::Unknown { index }
         }
 
+        fn net(id: u32, ty: ValueType) -> Column {
+            Column::Net { id, ty }
+        }
+    }
+
+    /// The cells the solver would hold at one step, read by column.
+    struct SolverReading;
+
+    impl SolverReading {
         /// The step whose solution is `solution`, read by index.
         fn solution(solution: &[f64]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + '_ {
             move |column| match column {
@@ -338,16 +347,27 @@ mod tests {
             }
         }
 
-        fn times(table: &Table) -> Vec<f64> {
-            table.rows.iter().map(|r| if let Cell::Real(t) = r[0] { t } else { panic!("a time") }).collect()
+        /// One analog unknown and the nets, read as the cells the solver would hold at the step.
+        fn reading<'a>(v: f64, nets: &'a [Cell]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + 'a {
+            move |column| match column {
+                Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
+                Column::Net { id, .. } | Column::Shaped { id, .. } | Column::Param { id, .. } | Column::Array { id, .. } => Ok(nets.get(*id as usize).cloned()),
+                Column::Held { held } => Ok(Some(held.cell_at(0.0))),
+                Column::Empty => Ok(Some(Probe::empty_array())),
+            }
         }
+    }
 
+    /// A recorder over accepted steps, on a grid or off it.
+    struct RecorderBuild;
+
+    impl RecorderBuild {
         /// A run of one node column over `steps`, on a grid of `h` to `stop` from `from`, fed step by
         /// step.
         fn gridded(steps: &[(f64, f64)], h: f64, from: f64, stop: f64) -> Recorder {
-            let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0)], vec!["v".into()], from).with_grid(h, stop);
+            let mut recorder = Recorder::new(vec![ColumnSample::unknown(0)], vec!["v".into()], from).with_grid(h, stop);
             for (t, v) in steps {
-                recorder.step(*t, &RecorderFixture::solution(&[*v]));
+                recorder.step(*t, &SolverReading::solution(&[*v]));
             }
             recorder
         }
@@ -367,8 +387,22 @@ mod tests {
 
         // -- discrete nets -----------------------------------------------------------------------
 
-        fn net(id: u32, ty: ValueType) -> Column {
-            Column::Net { id, ty }
+        /// A recorder of `v` and the net `q` of type `ty`, on a grid of `h` to `stop`.
+        fn with_net(ty: &ValueType, h: f64, stop: f64) -> Recorder {
+            Recorder::new(vec![ColumnSample::unknown(0), ColumnSample::net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0).with_grid(h, stop)
+        }
+    }
+
+    /// A recorded table and what is read back out of it: its times, its net cells and the bytes of a cell.
+    struct RecordedTable;
+
+    impl RecordedTable {
+        fn times(table: &Table) -> Vec<f64> {
+            table.rows.iter().map(|r| if let Cell::Real(t) = r[0] { t } else { panic!("a time") }).collect()
+        }
+
+        fn q(table: &Table) -> Vec<Cell> {
+            table.rows.iter().map(|r| r[2].clone()).collect()
         }
 
         /// The bytes of `cell` as a carrier of `ty` holds them: the value at its offset.
@@ -386,43 +420,24 @@ mod tests {
             }
             out
         }
-
-        /// One analog unknown and the nets, read as the cells the solver would hold at the step.
-        fn reading<'a>(v: f64, nets: &'a [Cell]) -> impl Fn(&Column) -> Result<Option<Cell>, Failure> + 'a {
-            move |column| match column {
-                Column::Unknown { .. } => Ok(Some(Cell::Real(v))),
-                Column::Net { id, .. } | Column::Shaped { id, .. } | Column::Param { id, .. } | Column::Array { id, .. } => Ok(nets.get(*id as usize).cloned()),
-                Column::Held { held } => Ok(Some(held.cell_at(0.0))),
-                Column::Empty => Ok(Some(Probe::empty_array())),
-            }
-        }
-
-        /// A recorder of `v` and the net `q` of type `ty`, on a grid of `h` to `stop`.
-        fn with_net(ty: &ValueType, h: f64, stop: f64) -> Recorder {
-            Recorder::new(vec![RecorderFixture::unknown(0), RecorderFixture::net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0).with_grid(h, stop)
-        }
-
-        fn q(table: &Table) -> Vec<Cell> {
-            table.rows.iter().map(|r| r[2].clone()).collect()
-        }
     }
 
     #[test]
     fn the_recorder_reports_the_time_of_the_last_step_it_saw() {
         // HII-17 AC 3 (CLI-05 AC 11): how far a run got is its last observed step, `None` before one
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0)], vec!["a".into()], 0.0);
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(0)], vec!["a".into()], 0.0);
         assert_eq!(recorder.reached(), None);
-        recorder.step(0.0, &RecorderFixture::solution(&[1.0]));
-        recorder.step(2e-6, &RecorderFixture::solution(&[1.0]));
+        recorder.step(0.0, &SolverReading::solution(&[1.0]));
+        recorder.step(2e-6, &SolverReading::solution(&[1.0]));
         assert_eq!(recorder.reached(), Some(2e-6));
     }
 
     #[test]
     fn without_a_grid_each_step_at_or_after_from_is_a_row() {
         // LR-03 AC 1: every step from `from` on is a row: the time and each column's cell
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(1), RecorderFixture::unknown(0)], vec!["b".into(), "a".into()], 0.0);
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(1), ColumnSample::unknown(0)], vec!["b".into(), "a".into()], 0.0);
         for (t, a, b) in [(0.0, 1.0, 10.0), (0.4, 2.0, 20.0), (1.0, 3.0, 30.0)] {
-            recorder.step(t, &RecorderFixture::solution(&[a, b]));
+            recorder.step(t, &SolverReading::solution(&[a, b]));
         }
         let table = recorder.finish().expect("table");
         assert_eq!(table.columns, ["time", "b", "a"]);
@@ -436,21 +451,21 @@ mod tests {
     #[test]
     fn a_from_past_the_start_drops_the_start_row() {
         // LR-03 AC 2: a step before `from` is no row; a step at `from` is
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0)], vec!["a".into()], 0.4);
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(0)], vec!["a".into()], 0.4);
         for (t, a) in [(0.0, 1.0), (0.3, 2.0), (0.4, 3.0), (0.9, 4.0)] {
-            recorder.step(t, &RecorderFixture::solution(&[a]));
+            recorder.step(t, &SolverReading::solution(&[a]));
         }
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::times(&table), [0.4, 0.9]);
+        assert_eq!(RecordedTable::times(&table), [0.4, 0.9]);
         assert_eq!(table.rows[0][1], Cell::Real(3.0));
     }
 
     #[test]
     fn a_signal_named_twice_gives_two_equal_columns() {
         // spec edge 3: a signal printed twice is two columns holding the same values
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0), RecorderFixture::unknown(0)], vec!["a".into(), "a".into()], 0.0);
-        recorder.step(0.0, &RecorderFixture::solution(&[5.0]));
-        recorder.step(1.0, &RecorderFixture::solution(&[6.0]));
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(0), ColumnSample::unknown(0)], vec!["a".into(), "a".into()], 0.0);
+        recorder.step(0.0, &SolverReading::solution(&[5.0]));
+        recorder.step(1.0, &SolverReading::solution(&[6.0]));
         let table = recorder.finish().expect("table");
         assert_eq!(table.columns, ["time", "a", "a"]);
         for row in &table.rows {
@@ -462,8 +477,8 @@ mod tests {
     fn a_column_that_reads_nothing_fails_naming_it() {
         // LR-03 AC 3: a column a step holds no value for is a failure naming its label, never a
         // zero or a skipped cell
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0), RecorderFixture::unknown(7)], vec!["a".into(), "ghost".into()], 0.0);
-        recorder.step(0.0, &RecorderFixture::solution(&[1.0]));
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(0), ColumnSample::unknown(7)], vec!["a".into(), "ghost".into()], 0.0);
+        recorder.step(0.0, &SolverReading::solution(&[1.0]));
         match recorder.finish() {
             Err(Failure::Backend(message)) => assert!(message.contains("`ghost`"), "{message}"),
             other => panic!("a Failure naming ghost, found {other:?}"),
@@ -474,24 +489,24 @@ mod tests {
     fn grid_rows_run_from_the_first_multiple_not_before_from_to_stop() {
         // LR-05 AC 1: 0.5 on a grid from 0.6 to 2.0: the multiples 1.0, 1.5 and 2.0
         let steps = [(0.0, 0.0), (0.7, 7.0), (1.3, 13.0), (2.0, 20.0)];
-        let table = RecorderFixture::gridded(&steps, 0.5, 0.6, 2.0).finish().expect("table");
-        assert_eq!(RecorderFixture::times(&table), [1.0, 1.5, 2.0]);
+        let table = RecorderBuild::gridded(&steps, 0.5, 0.6, 2.0).finish().expect("table");
+        assert_eq!(RecordedTable::times(&table), [1.0, 1.5, 2.0]);
         // a `from` that is a multiple keeps it
-        assert_eq!(RecorderFixture::times(&RecorderFixture::gridded(&steps, 0.5, 1.0, 2.0).finish().expect("table")), [1.0, 1.5, 2.0]);
+        assert_eq!(RecordedTable::times(&RecorderBuild::gridded(&steps, 0.5, 1.0, 2.0).finish().expect("table")), [1.0, 1.5, 2.0]);
     }
 
     #[test]
     fn a_real_column_is_bit_equal_to_on_grid() {
         // LR-06 AC 1: the recorder's rows are the rows `on_grid` makes of the table of every step,
         // compared by bits, with and without `from`, for grids that miss and hit the steps
-        let steps = RecorderFixture::irregular();
+        let steps = RecorderBuild::irregular();
         let all = Table {
             columns: vec!["time".into(), "v".into()],
             rows: steps.iter().map(|(t, v)| vec![Cell::Real(*t), Cell::Real(*v)]).collect(),
         };
         for (h, from) in [(0.01, 0.0), (0.0137, 0.0), (0.01, 0.25), (0.0137, 0.3331), (0.1, 0.0), (0.25, 0.2)] {
             let expected = all.on_grid(h, from, 1.0).unwrap_or_else(|f| panic!("{f}"));
-            let table = RecorderFixture::gridded(&steps, h, from, 1.0).finish().unwrap_or_else(|f| panic!("{f}"));
+            let table = RecorderBuild::gridded(&steps, h, from, 1.0).finish().unwrap_or_else(|f| panic!("{f}"));
             assert_eq!(table.rows.len(), expected.rows.len(), "h {h} from {from}");
             for (row, want) in table.rows.iter().zip(&expected.rows) {
                 for (cell, want) in row.iter().zip(want) {
@@ -508,7 +523,7 @@ mod tests {
         // interpolation (1/3 + (0.9 - 1/3) is 0.8999999999999999, not 0.9)
         let a = 1.0 / 3.0;
         assert_ne!(a + (0.9 - a), 0.9, "the interpolation would differ from the value");
-        let table = RecorderFixture::gridded(&[(0.0, 0.0), (0.25, a), (0.5, 0.9)], 0.5, 0.0, 0.5).finish().expect("table");
+        let table = RecorderBuild::gridded(&[(0.0, 0.0), (0.25, a), (0.5, 0.9)], 0.5, 0.0, 0.5).finish().expect("table");
         assert_eq!(table.rows[1], vec![Cell::Real(0.5), Cell::Real(0.9)]);
     }
 
@@ -516,10 +531,10 @@ mod tests {
     fn each_grid_row_is_made_when_its_step_arrives() {
         // LR-04 AC 1, LR-05 AC 2: after each step the rows are the multiples up to it, and the
         // recorder holds one step, the previous
-        let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0)], vec!["v".into()], 0.0).with_grid(0.5, 2.0);
+        let mut recorder = Recorder::new(vec![ColumnSample::unknown(0)], vec!["v".into()], 0.0).with_grid(0.5, 2.0);
         let mut counts = Vec::new();
         for (t, v) in [(0.0, 0.0), (0.3, 3.0), (1.2, 12.0), (1.4, 14.0), (2.0, 20.0)] {
-            recorder.step(t, &RecorderFixture::solution(&[v]));
+            recorder.step(t, &SolverReading::solution(&[v]));
             let held = recorder.grid.as_ref().and_then(|g| g.prev.as_ref()).map(|(t, cells)| (*t, cells.len()));
             assert_eq!(held, Some((t, 1)), "the step just taken is the one held");
             counts.push(recorder.rows.len());
@@ -533,8 +548,8 @@ mod tests {
         // LR-05 AC 5: a multiple a hair past the last step (within 1e-9 of the step) is a row of
         // the last step's values; the run's last step is 0.3 less a rounding
         let last = 0.3 - 1e-12;
-        let table = RecorderFixture::gridded(&[(0.0, 0.0), (0.1, 1.0), (last, 3.0)], 0.1, 0.0, 0.3).finish().expect("table");
-        assert_eq!(RecorderFixture::times(&table).len(), 4, "0, 0.1, 0.2 and 3 * 0.1");
+        let table = RecorderBuild::gridded(&[(0.0, 0.0), (0.1, 1.0), (last, 3.0)], 0.1, 0.0, 0.3).finish().expect("table");
+        assert_eq!(RecordedTable::times(&table).len(), 4, "0, 0.1, 0.2 and 3 * 0.1");
         assert_eq!(table.rows[3][1], Cell::Real(3.0));
     }
 
@@ -542,7 +557,7 @@ mod tests {
     fn a_row_past_the_last_step_fails() {
         // LR-05 AC 6: a multiple further past the last step than rounding is a failure with
         // `on_grid`'s message, never a row held past the run's end
-        match RecorderFixture::gridded(&[(0.0, 0.0), (1.0, 1.0)], 0.5, 0.0, 2.0).finish() {
+        match RecorderBuild::gridded(&[(0.0, 0.0), (1.0, 1.0)], 0.5, 0.0, 2.0).finish() {
             Err(Failure::Backend(message)) => assert!(message.contains("the print grid reaches 1.5, past the last step of the run at 1"), "{message}"),
             other => panic!("a failure, found {other:?}"),
         }
@@ -551,7 +566,7 @@ mod tests {
     #[test]
     fn a_print_step_past_stop_gives_the_row_at_zero() {
         // edge case: a print step greater than stop gives the one row at 0
-        let table = RecorderFixture::gridded(&[(0.0, 4.0), (1.0, 8.0), (2.5, 9.0)], 10.0, 0.0, 2.5).finish().expect("table");
+        let table = RecorderBuild::gridded(&[(0.0, 4.0), (1.0, 8.0), (2.5, 9.0)], 10.0, 0.0, 2.5).finish().expect("table");
         assert_eq!(table.rows, [vec![Cell::Real(0.0), Cell::Real(4.0)]]);
     }
 
@@ -560,14 +575,14 @@ mod tests {
         // LR-05 AC 4: at 0.5 the net is what the last instant at or before 0.5 left, though two
         // instants between the analog steps changed it; at 1.0 it is the change at 0.9
         let ty = ValueType::Bool;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.5);
-        recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.5);
+        recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
         for (time, value) in [(0.4, true), (0.4, false), (0.9, true)] {
-            recorder.change("T.q", time, &RecorderFixture::bytes(&ty, &Cell::Bool(value)));
+            recorder.change("T.q", time, &RecordedTable::bytes(&ty, &Cell::Bool(value)));
         }
-        recorder.step(1.5, &RecorderFixture::reading(0.0, &[Cell::Bool(true)]));
+        recorder.step(1.5, &SolverReading::reading(0.0, &[Cell::Bool(true)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::q(&table), [Cell::Bool(false), Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
+        assert_eq!(RecordedTable::q(&table), [Cell::Bool(false), Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
     }
 
     #[test]
@@ -575,20 +590,20 @@ mod tests {
         // LR-05 AC 4: a change at 0.5 between the steps at 0 and 1 is in the rows from 0.5 on
         // (a row at the instant of the change shows it) and not in 0.25
         let ty = ValueType::Bool;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.25, 1.0);
-        recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
-        recorder.change("T.q", 0.5, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-        recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Bool(true)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.25, 1.0);
+        recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
+        recorder.change("T.q", 0.5, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+        recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Bool(true)]));
         let table = recorder.finish().expect("table");
         let want = [false, false, true, true, true].map(Cell::Bool);
-        assert_eq!(RecorderFixture::q(&table), want);
+        assert_eq!(RecordedTable::q(&table), want);
     }
 
     #[test]
     fn a_discrete_column_that_changes_only_at_steps_equals_on_grid() {
         // LR-06 AC 3: when a net changes only at accepted steps, the held column is the column
         // `on_grid` makes of the table of every step, for a bool and an integer
-        let steps = RecorderFixture::irregular();
+        let steps = RecorderBuild::irregular();
         for ty in [ValueType::Bool, ValueType::Int(32)] {
             let cell = |n: usize| if ty == ValueType::Bool { Cell::Bool(n / 7 % 2 == 1) } else { Cell::Int((n / 7) as i128) };
             let all = Table {
@@ -596,13 +611,13 @@ mod tests {
                 rows: steps.iter().enumerate().map(|(n, (t, v))| vec![Cell::Real(*t), Cell::Real(*v), cell(n)]).collect(),
             };
             for (h, from) in [(0.01, 0.0), (0.0137, 0.3331), (0.25, 0.2)] {
-                let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0), RecorderFixture::net(0, ty.clone())], vec!["v".into(), "T.q".into()], from).with_grid(h, 1.0);
+                let mut recorder = Recorder::new(vec![ColumnSample::unknown(0), ColumnSample::net(0, ty.clone())], vec!["v".into(), "T.q".into()], from).with_grid(h, 1.0);
                 for (n, (t, v)) in steps.iter().enumerate() {
                     // the solver reports a change when it commits it, before the step's call
                     if n == 0 || cell(n) != cell(n - 1) {
-                        recorder.change("T.q", *t, &RecorderFixture::bytes(&ty, &cell(n)));
+                        recorder.change("T.q", *t, &RecordedTable::bytes(&ty, &cell(n)));
                     }
-                    recorder.step(*t, &RecorderFixture::reading(*v, &[cell(n)]));
+                    recorder.step(*t, &SolverReading::reading(*v, &[cell(n)]));
                 }
                 let want = all.on_grid(h, from, 1.0).unwrap_or_else(|f| panic!("{f}"));
                 let got = recorder.finish().unwrap_or_else(|f| panic!("{f}"));
@@ -621,13 +636,13 @@ mod tests {
         // is after it
         let ty = ValueType::Bool;
         for (late, at_row) in [(1e-10, true), (1e-6, false)] {
-            let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.0);
-            recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
-            recorder.change("T.q", 0.5 + late, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-            recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Bool(true)]));
+            let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.0);
+            recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
+            recorder.change("T.q", 0.5 + late, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+            recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Bool(true)]));
             let table = recorder.finish().expect("table");
-            assert_eq!(RecorderFixture::q(&table)[1], Cell::Bool(at_row), "a change {late} past the row");
-            assert_eq!(RecorderFixture::q(&table)[2], Cell::Bool(true));
+            assert_eq!(RecordedTable::q(&table)[1], Cell::Bool(at_row), "a change {late} past the row");
+            assert_eq!(RecordedTable::q(&table)[2], Cell::Bool(true));
         }
     }
 
@@ -637,13 +652,13 @@ mod tests {
         // made at the step at 0.5, and the change 1e-10 past it (slack 5e-10) arrives after; the
         // row shows the changed value and its analog cell stays the step's own
         let ty = ValueType::Bool;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.0);
-        recorder.step(0.0, &RecorderFixture::reading(1.0, &[Cell::Bool(false)]));
-        recorder.step(0.5, &RecorderFixture::reading(2.0, &[Cell::Bool(false)]));
-        recorder.change("T.q", 0.5 + 1e-10, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-        recorder.step(1.0, &RecorderFixture::reading(4.0, &[Cell::Bool(true)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &SolverReading::reading(1.0, &[Cell::Bool(false)]));
+        recorder.step(0.5, &SolverReading::reading(2.0, &[Cell::Bool(false)]));
+        recorder.change("T.q", 0.5 + 1e-10, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+        recorder.step(1.0, &SolverReading::reading(4.0, &[Cell::Bool(true)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
+        assert_eq!(RecordedTable::q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(true)]);
         let v: Vec<Cell> = table.rows.iter().map(|r| r[1].clone()).collect();
         assert_eq!(v, [Cell::Real(1.0), Cell::Real(2.0), Cell::Real(4.0)]);
     }
@@ -654,18 +669,18 @@ mod tests {
         // arrive (the last wins); a change 1e-6 past the row, beyond its slack, is not the row's.
         // A second net column is updated beside the first
         let ty = ValueType::Bool;
-        let columns = vec![RecorderFixture::unknown(0), RecorderFixture::net(0, ty.clone()), RecorderFixture::net(1, ty.clone())];
+        let columns = vec![ColumnSample::unknown(0), ColumnSample::net(0, ty.clone()), ColumnSample::net(1, ty.clone())];
         let labels = vec!["v".into(), "T.q".into(), "T.r".into()];
         let mut recorder = Recorder::new(columns, labels, 0.0).with_grid(0.5, 1.0);
         let off = [Cell::Bool(false), Cell::Bool(false)];
-        recorder.step(0.0, &RecorderFixture::reading(1.0, &off));
-        recorder.step(0.5, &RecorderFixture::reading(2.0, &off));
-        recorder.step(0.5 + 2e-10, &RecorderFixture::reading(2.0, &off));
-        recorder.change("T.q", 0.5 + 3e-10, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-        recorder.change("T.r", 0.5 + 3e-10, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-        recorder.change("T.q", 0.5 + 4e-10, &RecorderFixture::bytes(&ty, &Cell::Bool(false)));
-        recorder.change("T.r", 0.5 + 1e-6, &RecorderFixture::bytes(&ty, &Cell::Bool(false)));
-        recorder.step(1.0, &RecorderFixture::reading(4.0, &[Cell::Bool(false), Cell::Bool(false)]));
+        recorder.step(0.0, &SolverReading::reading(1.0, &off));
+        recorder.step(0.5, &SolverReading::reading(2.0, &off));
+        recorder.step(0.5 + 2e-10, &SolverReading::reading(2.0, &off));
+        recorder.change("T.q", 0.5 + 3e-10, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.r", 0.5 + 3e-10, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.q", 0.5 + 4e-10, &RecordedTable::bytes(&ty, &Cell::Bool(false)));
+        recorder.change("T.r", 0.5 + 1e-6, &RecordedTable::bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &SolverReading::reading(4.0, &[Cell::Bool(false), Cell::Bool(false)]));
         let table = recorder.finish().expect("table");
         let col = |at: usize| table.rows.iter().map(|r| r[at].clone()).collect::<Vec<_>>();
         assert_eq!(col(2), [Cell::Bool(false), Cell::Bool(false), Cell::Bool(false)]);
@@ -678,12 +693,12 @@ mod tests {
         // LR-05 AC 4: a net of type f64 holds its last value; only a node or a flow is
         // interpolated
         let ty = ValueType::F64;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.0);
-        recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Real(1.0)]));
-        recorder.change("T.q", 1.0, &RecorderFixture::bytes(&ty, &Cell::Real(5.0)));
-        recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Real(5.0)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Real(1.0)]));
+        recorder.change("T.q", 1.0, &RecordedTable::bytes(&ty, &Cell::Real(5.0)));
+        recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Real(5.0)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::q(&table), [Cell::Real(1.0), Cell::Real(1.0), Cell::Real(5.0)]);
+        assert_eq!(RecordedTable::q(&table), [Cell::Real(1.0), Cell::Real(1.0), Cell::Real(5.0)]);
     }
 
     #[test]
@@ -691,13 +706,13 @@ mod tests {
         // LR-05 with the explicit model: a net's bytes are its value, so all-zero bytes are `false`,
         // at the start and after a change
         let ty = ValueType::Bool;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.0);
-        recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
-        recorder.change("T.q", 0.5, &RecorderFixture::bytes(&ty, &Cell::Bool(true)));
-        recorder.change("T.q", 0.75, &RecorderFixture::bytes(&ty, &Cell::Bool(false)));
-        recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
+        recorder.change("T.q", 0.5, &RecordedTable::bytes(&ty, &Cell::Bool(true)));
+        recorder.change("T.q", 0.75, &RecordedTable::bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(false)]);
+        assert_eq!(RecordedTable::q(&table), [Cell::Bool(false), Cell::Bool(true), Cell::Bool(false)]);
     }
 
     #[test]
@@ -706,12 +721,12 @@ mod tests {
         // run fails naming the net and the time, never taking the reader's value
         let ty = ValueType::Bool;
         for grid in [true, false] {
-            let mut recorder = Recorder::new(vec![RecorderFixture::unknown(0), RecorderFixture::net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0);
+            let mut recorder = Recorder::new(vec![ColumnSample::unknown(0), ColumnSample::net(0, ty.clone())], vec!["v".into(), "T.q".into()], 0.0);
             if grid {
                 recorder = recorder.with_grid(0.5, 1.0);
             }
-            recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
-            recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Bool(true)]));
+            recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
+            recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Bool(true)]));
             match recorder.finish() {
                 Err(Failure::Backend(message)) => assert!(message.contains("`T.q`") && message.contains("at 1"), "{message}"),
                 other => panic!("a failure naming the net, found {other:?}"),
@@ -724,11 +739,11 @@ mod tests {
         // contract.md point 2: a run restored from a state has no change for the nets it holds;
         // the first step is what the reader says, and the changes after it add up from there
         let ty = ValueType::Bool;
-        let mut recorder = RecorderFixture::with_net(&ty, 0.5, 1.0);
-        recorder.step(0.0, &RecorderFixture::reading(0.0, &[Cell::Bool(true)]));
-        recorder.change("T.q", 0.75, &RecorderFixture::bytes(&ty, &Cell::Bool(false)));
-        recorder.step(1.0, &RecorderFixture::reading(0.0, &[Cell::Bool(false)]));
+        let mut recorder = RecorderBuild::with_net(&ty, 0.5, 1.0);
+        recorder.step(0.0, &SolverReading::reading(0.0, &[Cell::Bool(true)]));
+        recorder.change("T.q", 0.75, &RecordedTable::bytes(&ty, &Cell::Bool(false)));
+        recorder.step(1.0, &SolverReading::reading(0.0, &[Cell::Bool(false)]));
         let table = recorder.finish().expect("table");
-        assert_eq!(RecorderFixture::q(&table), [Cell::Bool(true), Cell::Bool(true), Cell::Bool(false)]);
+        assert_eq!(RecordedTable::q(&table), [Cell::Bool(true), Cell::Bool(true), Cell::Bool(false)]);
     }
 }

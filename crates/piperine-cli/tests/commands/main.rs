@@ -5,5 +5,7 @@ mod commands;
 mod info;
 mod integrated;
 mod options;
+mod process;
+mod project_directories;
 mod run;
 mod usage;

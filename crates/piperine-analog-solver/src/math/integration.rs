@@ -288,10 +288,10 @@ mod tests {
 
     // ── TR-BDF2 ───────────────────────────────────────────────────────────
 
-    /// Builds the tolerances the tests vary.
-    struct ToleranceCases;
+    /// Tolerances with a charge tolerance varied.
+    struct ChargeTolerance;
 
-    impl ToleranceCases {
+    impl ChargeTolerance {
         /// Tolerances with `chgtol` as given and every other value as the run's default.
         fn with_chgtol(chgtol: f64) -> Tolerances {
             Tolerances { chgtol, ..Tolerances::default() }
@@ -306,8 +306,8 @@ mod tests {
         let state = DdtState { q: [0.0, 1e-16, 3e-16], i: [0.0, 0.0], abstol: Some(0.0) };
         let slope_scale = (1.0 - TrBdf2::GAMMA) / TrBdf2::GAMMA;
         let error = 3e-16 - (1e-16 + slope_scale * 1e-16);
-        let under = TrBdf2::state_lte(&[state], &ToleranceCases::with_chgtol(1e-14), 1e-9);
-        let above = TrBdf2::state_lte(&[state], &ToleranceCases::with_chgtol(1e-16), 1e-9);
+        let under = TrBdf2::state_lte(&[state], &ChargeTolerance::with_chgtol(1e-14), 1e-9);
+        let above = TrBdf2::state_lte(&[state], &ChargeTolerance::with_chgtol(1e-16), 1e-9);
         assert!((under - error / 1e-17).abs() < 1e-6 * under, "chgtol above the charge: {under}");
         assert!((above - error / 3e-19).abs() < 1e-6 * above, "chgtol below the charge: {above}");
         assert!(above > 10.0 * under);

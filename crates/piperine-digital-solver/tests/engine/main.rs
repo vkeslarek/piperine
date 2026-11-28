@@ -6,6 +6,7 @@
 mod advance;
 mod checkpoint;
 mod devices;
+mod engine_binding;
 mod functions;
 mod host;
 mod instant;

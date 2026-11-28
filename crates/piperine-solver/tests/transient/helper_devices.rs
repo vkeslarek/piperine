@@ -22,7 +22,7 @@ fn divider_reads_the_analytic_ratio() {
     CircuitBuilding::add_resistor(&mut b, "r2", r2, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let v = HelperDevicesCases::dc_node(&mut circuit, &mid);
+    let v = DeviceNode::dc_node(&mut circuit, &mid);
     let analytic = vin * r2 / (r1 + r2);
     assert!((v - analytic).abs() < 1.0e-9, "v(mid) = {v} vs analytic {analytic}");
 }
@@ -65,7 +65,7 @@ fn diode_satisfies_its_own_equation() {
     CircuitBuilding::add_diode(&mut b, "d1", is_sat, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let vd = HelperDevicesCases::dc_node(&mut circuit, &mid);
+    let vd = DeviceNode::dc_node(&mut circuit, &mid);
     let i_resistor = (vin - vd) / r;
     let i_diode = is_sat * ((vd / vt).exp() - 1.0);
     assert!(
@@ -74,10 +74,10 @@ fn diode_satisfies_its_own_equation() {
     );
 }
 
-/// The helpers of the helper_devices tests.
-pub struct HelperDevicesCases;
+/// The voltage at a node of a helper device's operating point.
+struct DeviceNode;
 
-impl HelperDevicesCases {
+impl DeviceNode {
     /// The dc node helper `dc_node`.
     fn dc_node(circuit: &mut CircuitInstance, node: &AnalogReference) -> f64 {
         let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");

@@ -25,10 +25,10 @@ static DDT_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
 
 impl Device for Resistor {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::shared(&FLOW_SHAPE, op::FLOW).shape()
+        CheckedDevices::shared(&FLOW_SHAPE, op::FLOW).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Resistor, Arc::clone(VerifyCases::shared(&FLOW_SHAPE, op::FLOW))))
+        Ok((Resistor, Arc::clone(CheckedDevices::shared(&FLOW_SHAPE, op::FLOW))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let (v, r) = (cx.f64(0) - cx.f64(1), cx.f64(2));
@@ -43,13 +43,13 @@ impl Device for Resistor {
 
 impl Device for Capacitor {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::shared(&DDT_SHAPE, op::DDT).shape()
+        CheckedDevices::shared(&DDT_SHAPE, op::DDT).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Capacitor, Arc::clone(VerifyCases::shared(&DDT_SHAPE, op::DDT))))
+        Ok((Capacitor, Arc::clone(CheckedDevices::shared(&DDT_SHAPE, op::DDT))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
-        VerifyCases::capacitor_eval(cx, 1.0);
+        CheckedDevices::capacitor_eval(cx, 1.0);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
@@ -59,13 +59,13 @@ impl Device for Capacitor {
 
 impl Device for SkewedCapacitor {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::shared(&DDT_SHAPE, op::DDT).shape()
+        CheckedDevices::shared(&DDT_SHAPE, op::DDT).shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((SkewedCapacitor, Arc::clone(VerifyCases::shared(&DDT_SHAPE, op::DDT))))
+        Ok((SkewedCapacitor, Arc::clone(CheckedDevices::shared(&DDT_SHAPE, op::DDT))))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
-        VerifyCases::capacitor_eval(cx, 1.01);
+        CheckedDevices::capacitor_eval(cx, 1.01);
         Ok(())
     }
     fn react(&self, _k: u32, _cx: &mut React<'_>) -> Result<Flow, Fault> {
@@ -80,10 +80,10 @@ struct Limiter;
 
 impl Device for Limiter {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::limiter_shape().shape()
+        CheckedDevices::limiter_shape().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Limiter, Arc::clone(VerifyCases::limiter_shape())))
+        Ok((Limiter, Arc::clone(CheckedDevices::limiter_shape())))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let (v, last) = (cx.f64(0) - cx.f64(1), cx.f64(2));
@@ -99,21 +99,21 @@ impl Device for Limiter {
 
 #[test]
 fn exact_partials_verify() {
-    let r = Handle::create(VerifyCases::leaked::<Resistor>("r"), &[]).unwrap();
-    let c = Handle::create(VerifyCases::leaked::<Capacitor>("c"), &[]).unwrap();
+    let r = Handle::create(CheckedDevices::leaked::<Resistor>("r"), &[]).unwrap();
+    let c = Handle::create(CheckedDevices::leaked::<Capacitor>("c"), &[]).unwrap();
     for at in [[1.2, -0.3, 1e3], [0.0, 0.0, 47.0], [-5.0, 2.0, 0.5]] {
-        assert_eq!(verify_partials(&r, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "resistor at {at:?}");
+        assert_eq!(verify_partials(&r, 0, &CheckedDevices::point(&at), 1e-6), Ok(Verdict::Exact), "resistor at {at:?}");
     }
     for at in [[1.2, -0.3, 1e-12], [0.7, 0.1, 2e-9], [-3.0, 4.0, 1.0]] {
-        assert_eq!(verify_partials(&c, 0, &VerifyCases::point(&at), 1e-6), Ok(Verdict::Exact), "capacitor at {at:?}");
+        assert_eq!(verify_partials(&c, 0, &CheckedDevices::point(&at), 1e-6), Ok(Verdict::Exact), "capacitor at {at:?}");
     }
 }
 
 #[test]
 fn a_wrong_partial_is_reported_with_its_index() {
-    let c = Handle::create(VerifyCases::leaked::<SkewedCapacitor>("c_skew"), &[]).unwrap();
+    let c = Handle::create(CheckedDevices::leaked::<SkewedCapacitor>("c_skew"), &[]).unwrap();
     let cap = 2e-9;
-    let verdict = verify_partials(&c, 0, &VerifyCases::point(&[0.7, 0.1, cap]), 1e-3).unwrap();
+    let verdict = verify_partials(&c, 0, &CheckedDevices::point(&[0.7, 0.1, cap]), 1e-3).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a 1 % error is not found: {verdict:?}") };
     assert_eq!(found.len(), 1, "only partial 1 is wrong: {found:?}");
     let m = found[0];
@@ -124,11 +124,11 @@ fn a_wrong_partial_is_reported_with_its_index() {
 
 #[test]
 fn a_point_where_the_limit_is_active_is_skipped() {
-    let h = Handle::create(VerifyCases::leaked::<Limiter>("lim"), &[]).unwrap();
+    let h = Handle::create(CheckedDevices::leaked::<Limiter>("lim"), &[]).unwrap();
     // v = 0.9 against LAST = 0.5: clamped to 0.6, so LIMITED != PROPOSED.
-    assert_eq!(verify_partials(&h, 0, &VerifyCases::point(&[1.0, 0.1, 0.5]), 1e-6), Ok(Verdict::Skipped { limit: 0 }));
+    assert_eq!(verify_partials(&h, 0, &CheckedDevices::point(&[1.0, 0.1, 0.5]), 1e-6), Ok(Verdict::Skipped { limit: 0 }));
     // v = 0.55 against LAST = 0.5: inside the band, the partials are compared.
-    assert_eq!(verify_partials(&h, 0, &VerifyCases::point(&[0.6, 0.05, 0.5]), 1e-6), Ok(Verdict::Exact));
+    assert_eq!(verify_partials(&h, 0, &CheckedDevices::point(&[0.6, 0.05, 0.5]), 1e-6), Ok(Verdict::Exact));
 }
 
 /// One port, f(x) with a declared df/dx: `NanJac` declares NaN; `WrongLog`
@@ -139,10 +139,10 @@ struct WrongLog;
 
 impl Device for NanJac {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::one_port().shape()
+        CheckedDevices::one_port().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((NanJac, Arc::clone(VerifyCases::one_port())))
+        Ok((NanJac, Arc::clone(CheckedDevices::one_port())))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let x = cx.f64(0);
@@ -157,10 +157,10 @@ impl Device for NanJac {
 
 impl Device for WrongLog {
     fn prototype() -> &'static Shape<'static> {
-        VerifyCases::one_port().shape()
+        CheckedDevices::one_port().shape()
     }
     fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((WrongLog, Arc::clone(VerifyCases::one_port())))
+        Ok((WrongLog, Arc::clone(CheckedDevices::one_port())))
     }
     fn eval(&self, _k: u32, cx: &mut Eval<'_>) -> Result<(), Fault> {
         let x = cx.f64(0);
@@ -175,8 +175,8 @@ impl Device for WrongLog {
 
 #[test]
 fn a_non_finite_partial_is_a_mismatch() {
-    let h = Handle::create(VerifyCases::leaked::<NanJac>("nan"), &[]).unwrap();
-    let verdict = verify_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6).unwrap();
+    let h = Handle::create(CheckedDevices::leaked::<NanJac>("nan"), &[]).unwrap();
+    let verdict = verify_partials(&h, 0, &CheckedDevices::point(&[2.0]), 1e-6).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a NaN partial verified: {verdict:?}") };
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].partial, 0);
@@ -184,18 +184,18 @@ fn a_non_finite_partial_is_a_mismatch() {
     assert!((found[0].finite - 4.0).abs() < 1e-6, "the finite difference is 2x = 4: {}", found[0].finite);
 
     // x − h < 0: the finite difference is NaN, which is not a pass either.
-    let h = Handle::create(VerifyCases::leaked::<WrongLog>("log"), &[]).unwrap();
-    let verdict = verify_partials(&h, 0, &VerifyCases::point(&[1e-7]), 1e-6).unwrap();
+    let h = Handle::create(CheckedDevices::leaked::<WrongLog>("log"), &[]).unwrap();
+    let verdict = verify_partials(&h, 0, &CheckedDevices::point(&[1e-7]), 1e-6).unwrap();
     let Verdict::Mismatch(found) = verdict else { panic!("a NaN finite difference verified: {verdict:?}") };
     assert_eq!(found[0].partial, 0);
     assert!(found[0].finite.is_nan());
-    assert!(matches!(verify_partials(&h, 0, &VerifyCases::point(&[2.0]), 1e-6), Ok(Verdict::Mismatch(_))));
+    assert!(matches!(verify_partials(&h, 0, &CheckedDevices::point(&[2.0]), 1e-6), Ok(Verdict::Mismatch(_))));
 }
 
-/// The devices and points the verification tests use.
-pub struct VerifyCases;
+/// The devices and points the verification tests check.
+struct CheckedDevices;
 
-impl VerifyCases {
+impl CheckedDevices {
     /// The pin helper `pin`.
     fn pin(index: u32) -> Cell {
         Cell { kind: cell::PIN, index, part: part::VALUE }
@@ -211,7 +211,7 @@ impl VerifyCases {
         let t = s.term(TermSpec { name: "t", origin: "", op, plus: p, minus: n, abstol: DEFAULT, max: DEFAULT });
         s.function(FunctionSpec {
             name: "f",
-            reads: vec![VerifyCases::pin(p), VerifyCases::pin(n), VerifyCases::pin(k)],
+            reads: vec![CheckedDevices::pin(p), CheckedDevices::pin(n), CheckedDevices::pin(k)],
             writes: vec![Cell { kind: cell::TERM, index: t, part: part::VALUE }],
             partials: (0..3).map(|read| Partial { write: 0, to: 0, read, at: 0 }).collect(),
             ..FunctionSpec::default()
@@ -221,7 +221,7 @@ impl VerifyCases {
 
     /// The shared helper `shared`.
     fn shared(cell: &'static OnceLock<ShapeRef>, op: u32) -> &'static ShapeRef {
-        cell.get_or_init(|| VerifyCases::two_terminal(op))
+        cell.get_or_init(|| CheckedDevices::two_terminal(op))
     }
 
     /// The capacitor eval helper `capacitor_eval`.
@@ -241,7 +241,7 @@ impl VerifyCases {
             let i0 = s.input(InputSpec { name: "vd", origin: "", kind: input::LIMIT });
             s.function(FunctionSpec {
                 name: "limit",
-                reads: vec![VerifyCases::pin(a), VerifyCases::pin(k), Cell { kind: cell::INPUT, index: i0, part: part::LAST }],
+                reads: vec![CheckedDevices::pin(a), CheckedDevices::pin(k), Cell { kind: cell::INPUT, index: i0, part: part::LAST }],
                 writes: vec![
                     Cell { kind: cell::INPUT, index: i0, part: part::PROPOSED },
                     Cell { kind: cell::INPUT, index: i0, part: part::LIMITED },
@@ -272,7 +272,7 @@ impl VerifyCases {
             let t = s.term(TermSpec { name: "t", origin: "", op: op::FLOW, plus: p, minus: piperine_abi::raw::GROUND, abstol: DEFAULT, max: DEFAULT });
             s.function(FunctionSpec {
                 name: "f",
-                reads: vec![VerifyCases::pin(p)],
+                reads: vec![CheckedDevices::pin(p)],
                 writes: vec![Cell { kind: cell::TERM, index: t, part: part::VALUE }],
                 partials: vec![Partial { write: 0, to: 0, read: 0, at: 0 }],
                 ..FunctionSpec::default()

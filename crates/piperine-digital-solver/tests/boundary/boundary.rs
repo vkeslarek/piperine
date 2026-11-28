@@ -20,7 +20,7 @@ use piperine_digital_solver::limits::DigitalLimits;
 
 #[test]
 fn the_crate_depends_on_the_abi_crate_only() {
-    let manifest = fs::read_to_string(BoundaryReading::crate_dir().join("Cargo.toml")).expect("the manifest");
+    let manifest = fs::read_to_string(CrateSources::crate_dir().join("Cargo.toml")).expect("the manifest");
     let mut in_dependencies = false;
     let mut deps = Vec::new();
     for line in manifest.lines() {
@@ -46,10 +46,10 @@ fn abi_modules_name_no_analog_or_owner_item() {
         ["Analog", "Reference"].concat(),
     ];
     let mut found = Vec::new();
-    for (path, text) in BoundaryReading::sources(&BoundaryReading::crate_dir().join("src")) {
+    for (path, text) in CrateSources::sources(&CrateSources::crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
             for word in &banned {
-                if BoundaryReading::code(line).contains(word.as_str()) {
+                if CrateSources::code(line).contains(word.as_str()) {
                     found.push(format!("{}:{}: {word}", path.display(), n + 1));
                 }
             }
@@ -61,9 +61,9 @@ fn abi_modules_name_no_analog_or_owner_item() {
 #[test]
 fn abi_modules_hold_no_unsafe() {
     let mut found = Vec::new();
-    for (path, text) in BoundaryReading::sources(&BoundaryReading::crate_dir().join("src")) {
+    for (path, text) in CrateSources::sources(&CrateSources::crate_dir().join("src")) {
         for (n, line) in text.lines().enumerate() {
-            if BoundaryReading::code(line).contains("unsafe") {
+            if CrateSources::code(line).contains("unsafe") {
                 found.push(format!("{}:{}", path.display(), n + 1));
             }
         }
@@ -107,10 +107,10 @@ fn the_facade_offers_every_operation_of_the_discrete_side() {
     assert!(d.drain_observations().iter().any(|o| matches!(o, Observation::Change { net, .. } if net == "n")));
 }
 
-/// Reads the crate for the boundary tests.
-pub struct BoundaryReading;
+/// The crate's source files and their code.
+struct CrateSources;
 
-impl BoundaryReading {
+impl CrateSources {
     /// The crate dir helper `crate_dir`.
     fn crate_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -122,7 +122,7 @@ impl BoundaryReading {
         for entry in fs::read_dir(dir).expect("a readable directory") {
             let path = entry.expect("an entry").path();
             if path.is_dir() {
-                found.extend(BoundaryReading::sources(&path));
+                found.extend(CrateSources::sources(&path));
             } else if path.extension().is_some_and(|e| e == "rs") {
                 let text = fs::read_to_string(&path).expect("a readable file");
                 found.push((path, text));

@@ -37,9 +37,9 @@ fn a_crossing_between_operating_point_rounds_fires_in_the_later_round() {
     let gnd = b.ground();
     let a = b.node("a");
     let r = b.node("r");
-    b.device(CrossingRulesCases::riser(), "src", &[], &[Port::Node(a.clone())]);
+    b.device(RiserCircuit::riser(), "src", &[], &[Port::Node(a.clone())]);
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a), Port::Node(r), CrossingRulesCases::net("out")]);
+    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a), Port::Node(r), RiserCircuit::net("out")]);
     let seen = Rc::new(RefCell::new(Vec::new()));
     let mut solver = Solver::new(b.build().expect("build")).with_sink(Box::new(Collect(Rc::clone(&seen)))).build();
     solver.dc().expect("dc").solve().expect("the operating point");
@@ -63,7 +63,7 @@ fn a_crossing_between_two_operating_points_fires_at_the_later() {
     let r = b.node("r");
     CircuitBuilding::add_voltage_source(&mut b, "va", 0.3, &a, &gnd);
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a), Port::Node(r), CrossingRulesCases::net("out")]);
+    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a), Port::Node(r), RiserCircuit::net("out")]);
     let mut circuit = b.build().expect("build");
     circuit.dc(Context::default()).expect("dc").solve().expect("point 1");
     let out = |c: &piperine_solver::prelude::CircuitInstance| {
@@ -83,11 +83,11 @@ fn an_invalid_ttol_or_etol_fails_the_analysis_with_e0510() {
     // SCX-03 AC 8 (§17.3 resolution): a ttol or etol that is not finite and positive
     for which in ["ttol", "etol"] {
         for bad in [0.0, -1.0e-12, f64::NAN, f64::INFINITY] {
-            let err = CrossingRulesCases::failing(|b, top| {
+            let err = RiserCircuit::failing(|b, top| {
                 let gnd = b.ground();
                 let r = b.node("r");
                 CircuitBuilding::add_voltage_source(b, "vr", 0.5, &r, &gnd);
-                b.device(CrossingRulesCases::tol_comparator(), "cmp", &[(which, ParamValue::Real(bad))], &[Port::Node(top), Port::Node(r)]);
+                b.device(ToleranceComparison::tol_comparator(), "cmp", &[(which, ParamValue::Real(bad))], &[Port::Node(top), Port::Node(r)]);
             });
             assert!(
                 err.contains("E0510") && err.contains("`cmp`") && err.contains("`rise`") && err.contains(which),
@@ -95,11 +95,11 @@ fn an_invalid_ttol_or_etol_fails_the_analysis_with_e0510() {
             );
         }
     }
-    let ok = CrossingRulesCases::failing(|b, top| {
+    let ok = RiserCircuit::failing(|b, top| {
         let gnd = b.ground();
         let r = b.node("r");
         CircuitBuilding::add_voltage_source(b, "vr", 0.5, &r, &gnd);
-        b.device(CrossingRulesCases::tol_comparator(), "cmp", &[], &[Port::Node(top), Port::Node(r)]);
+        b.device(ToleranceComparison::tol_comparator(), "cmp", &[], &[Port::Node(top), Port::Node(r)]);
     });
     assert_eq!(ok, "", "1 ps and 1 ps are valid");
 }
@@ -112,25 +112,25 @@ fn an_invalid_step_cap_fails_the_analysis_with_e0509() {
     // `bound_step(inf)` never reaches the watch, the generated code faults it as E0509 first
     // (`source_environment::a_non_positive_bound_step_is_e0509`).
     for bad in [0.0, -1.0e-9, f64::NAN, f64::NEG_INFINITY] {
-        let err = CrossingRulesCases::failing(|b, top| {
+        let err = RiserCircuit::failing(|b, top| {
             b.device(mixed::Capped::module(), "cc", &[("cap", ParamValue::Real(bad))], &[Port::Node(top)]);
         });
         assert!(err.contains("E0509") && err.contains("`cc`") && err.contains("watch `cap`"), "cap {bad}: {err:?}");
     }
-    let ok = CrossingRulesCases::failing(|b, top| {
+    let ok = RiserCircuit::failing(|b, top| {
         b.device(mixed::Capped::module(), "cc", &[("cap", ParamValue::Real(1.0e-6))], &[Port::Node(top)]);
     });
     assert_eq!(ok, "", "1 µs is valid");
-    let infinite = CrossingRulesCases::failing(|b, top| {
+    let infinite = RiserCircuit::failing(|b, top| {
         b.device(mixed::Capped::module(), "cc", &[("cap", ParamValue::Real(f64::INFINITY))], &[Port::Node(top)]);
     });
     assert_eq!(infinite, "", "the watch encodes `not executed` as +∞: it caps nothing");
 }
 
-/// The helpers of the crossing_rules tests.
-pub struct CrossingRulesCases;
+/// The rising and failing circuits the crossing rules run.
+struct RiserCircuit;
 
-impl CrossingRulesCases {
+impl RiserCircuit {
     /// The net helper `net`.
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
@@ -140,13 +140,6 @@ impl CrossingRulesCases {
     fn riser() -> &'static Module {
         Riser::module()
     }
-
-    /// The tol comparator helper `tol_comparator`.
-    fn tol_comparator() -> &'static Module {
-        ToleranceWatch::module()
-    }
-
-    // ─── SCX-03 ─────────────────────────────────────────────────────────────────
 
     /// A transient of the 1 V 1 kHz sine with `add` placed on it; the error text.
     fn failing(add: impl FnOnce(&mut CircuitBuilder, piperine_solver::abi::AnalogReference)) -> String {
@@ -165,4 +158,16 @@ impl CrossingRulesCases {
             Err(e) => e.to_string(),
         }
     }
+}
+
+/// The tolerance two crossing times are compared with.
+struct ToleranceComparison;
+
+impl ToleranceComparison {
+    /// The tol comparator helper `tol_comparator`.
+    fn tol_comparator() -> &'static Module {
+        ToleranceWatch::module()
+    }
+
+    // ─── SCX-03 ─────────────────────────────────────────────────────────────────
 }

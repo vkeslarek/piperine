@@ -3,6 +3,7 @@
 //! misplaced or duplicated `limit`/`ac_stim` sites and contributions, wrong types in analog
 //! positions, duplicated paths. A built IR checks clean; a lone top instance prints and checks.
 
+use super::model::Library;
 use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
@@ -16,18 +17,9 @@ use serde_json::{Value, json};
 struct Corpus;
 
 impl Corpus {
-    fn ir() -> Ir {
-        let mut b = IrBuilder::new();
-        Devices::everything(&mut b);
-        Devices::capacitor(&mut b);
-        Devices::isource(&mut b);
-        Devices::diode(&mut b);
-        let top = Devices::divider(&mut b);
-        b.finish(top)
-    }
 
     fn value() -> Value {
-        serde_json::to_value(Corpus::ir()).expect("serialize")
+        serde_json::to_value(Library::ir()).expect("serialize")
     }
 }
 
@@ -190,7 +182,7 @@ impl Entries {
 
 #[test]
 fn a_built_ir_checks_clean() {
-    assert_eq!(Corpus::ir().check(), Vec::<Broken>::new());
+    assert_eq!(Library::ir().check(), Vec::<Broken>::new());
     for (make, name, line, params) in [
         (Devices::resistor as fn(&mut IrBuilder) -> _, "resistor", 5, vec![1000.0]),
         (Devices::capacitor, "capacitor", 11, vec![1e-12]),

@@ -35,15 +35,15 @@ fn the_sink_receives_everything_in_instant_order() {
     let a = b.node("a");
     let r = b.node("r");
     CircuitBuilding::add_voltage_source(&mut b, "vr", 0.5, &r, &gnd);
-    b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[HostSurfaceCases::net("code"), Port::Node(a.clone())]);
-    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), HostSurfaceCases::net("cmp")]);
-    b.device(digital::DataFlipFlop::module(), "ff", &[], &[HostSurfaceCases::net("cmp"), HostSurfaceCases::net("code"), HostSurfaceCases::net("q")]);
-    b.device(digital::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("q"), HostSurfaceCases::net("code")]);
+    b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[SurfaceCircuit::net("code"), Port::Node(a.clone())]);
+    b.device(mixed::Comparator::module(), "cmp", &[], &[Port::Node(a.clone()), Port::Node(r.clone()), SurfaceCircuit::net("cmp")]);
+    b.device(digital::DataFlipFlop::module(), "ff", &[], &[SurfaceCircuit::net("cmp"), SurfaceCircuit::net("code"), SurfaceCircuit::net("q")]);
+    b.device(digital::Inverter::module(), "inv", &[], &[SurfaceCircuit::net("q"), SurfaceCircuit::net("code")]);
     b.device(mixed::ConductanceTracer::module(), "tr", &[], &[Port::Node(r)]);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-6))], &[HostSurfaceCases::net("go")]);
-    b.device(digital::MultiRecorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
-    let (mut solver, seen) = HostSurfaceCases::with_sink(b.build().expect("build"), 5.0e-6, 1.0e-7);
-    HostSurfaceCases::tran(&mut solver);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-6))], &[SurfaceCircuit::net("go")]);
+    b.device(digital::MultiRecorder::module(), "rec", &[], &[SurfaceCircuit::net("go"), SurfaceCircuit::net("log")]);
+    let (mut solver, seen) = SurfaceReading::with_sink(b.build().expect("build"), 5.0e-6, 1.0e-7);
+    SurfaceCircuit::tran(&mut solver);
     let seen = seen.borrow();
 
     let has = |f: &dyn Fn(&Observation) -> bool| seen.iter().any(f);
@@ -79,15 +79,15 @@ fn records_of_an_undone_instant_do_not_reach_the_sink() {
     // The recorder fires at 0.2 ms, inside the first attempt (to 1 ms), which the
     // truncation test rejects: that instant is undone and replayed.
     let mut b = CircuitBuilder::new("undone");
-    HostSurfaceCases::sine_rc(&mut b);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-4))], &[HostSurfaceCases::net("go")]);
-    b.device(digital::MultiRecorder::module(), "rec", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("log")]);
-    let (mut solver, seen) = HostSurfaceCases::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
-    let result = HostSurfaceCases::tran(&mut solver);
+    SurfaceCircuit::sine_rc(&mut b);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(2.0e-4))], &[SurfaceCircuit::net("go")]);
+    b.device(digital::MultiRecorder::module(), "rec", &[], &[SurfaceCircuit::net("go"), SurfaceCircuit::net("log")]);
+    let (mut solver, seen) = SurfaceReading::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
+    let result = SurfaceCircuit::tran(&mut solver);
     assert!(result.stats.steps_rejected >= 1);
     assert!(mixed::ReactionCounts::of("recorder") >= 2, "the instant ran again after the rejection ({})", mixed::ReactionCounts::of("recorder"));
     let expected: Vec<Vec<u8>> = (1..=8u8).map(|i| vec![i]).collect();
-    assert_eq!(HostSurfaceCases::records(&seen.borrow()), expected, "each record reaches the sink once");
+    assert_eq!(SurfaceReading::records(&seen.borrow()), expected, "each record reaches the sink once");
 }
 
 #[test]
@@ -98,27 +98,27 @@ fn an_irreversible_reaction_runs_once_at_an_accepted_time() {
     mixed::FlakyConductance::arm((1.1e-4, 1.2e-4));
     let at = 2.0e-4;
     let mut b = CircuitBuilder::new("irreversible");
-    HostSurfaceCases::sine_rc(&mut b);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[HostSurfaceCases::net("go")]);
-    b.device(digital::Stub::module(), "emu", &[], &[HostSurfaceCases::net("go"), HostSurfaceCases::net("out")]);
-    let (mut solver, _) = HostSurfaceCases::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
-    let result = HostSurfaceCases::tran(&mut solver);
+    SurfaceCircuit::sine_rc(&mut b);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[SurfaceCircuit::net("go")]);
+    b.device(digital::Stub::module(), "emu", &[], &[SurfaceCircuit::net("go"), SurfaceCircuit::net("out")]);
+    let (mut solver, _) = SurfaceReading::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-3);
+    let result = SurfaceCircuit::tran(&mut solver);
     assert!(mixed::FlakyConductance::has_faulted(), "the Newton failure happened");
     assert!(result.stats.steps_rejected >= 1);
     assert_eq!(mixed::ReactionCounts::of("stub"), 1, "the irreversible reaction ran once");
     assert!(result.iter().any(|s| (s.time() - at).abs() < 1.0e-15), "its instant is an accepted time");
-    assert_eq!(HostSurfaceCases::bytes_of(solver.circuit().bound(), "out"), HIGH.to_vec());
+    assert_eq!(SurfaceReading::bytes_of(solver.circuit().bound(), "out"), HIGH.to_vec());
 }
 
 #[test]
 fn finish_ends_the_analysis_at_an_accepted_time() {
     let at = 3.0e-4;
     let mut b = CircuitBuilder::new("finish");
-    HostSurfaceCases::sine_rc(&mut b);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[HostSurfaceCases::net("go")]);
-    b.device(mixed::Finisher::module(), "end", &[], &[HostSurfaceCases::net("go")]);
-    let (mut solver, _) = HostSurfaceCases::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-5);
-    let result = HostSurfaceCases::tran(&mut solver);
+    SurfaceCircuit::sine_rc(&mut b);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[SurfaceCircuit::net("go")]);
+    b.device(mixed::Finisher::module(), "end", &[], &[SurfaceCircuit::net("go")]);
+    let (mut solver, _) = SurfaceReading::with_sink(b.build().expect("build"), 1.0e-3, 1.0e-5);
+    let result = SurfaceCircuit::tran(&mut solver);
     let last = result.last().unwrap().time();
     assert!((last - at).abs() < 1.0e-15, "the last recorded time is the FINISH instant: {last}");
     assert!(mixed::ReactionCounts::of("finisher") >= 1);
@@ -128,12 +128,12 @@ fn finish_ends_the_analysis_at_an_accepted_time() {
 fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
     let at = 2.5e-4;
     let mut b = CircuitBuilder::new("waiter");
-    HostSurfaceCases::sine_rc(&mut b);
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[HostSurfaceCases::net("go")]);
-    b.device(digital::Inverter::module(), "inv", &[], &[HostSurfaceCases::net("h"), HostSurfaceCases::net("hy")]);
+    SurfaceCircuit::sine_rc(&mut b);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(at))], &[SurfaceCircuit::net("go")]);
+    b.device(digital::Inverter::module(), "inv", &[], &[SurfaceCircuit::net("h"), SurfaceCircuit::net("hy")]);
     let circuit = b.build().expect("build");
     let h = circuit.bound().names.nets["net:h"].0;
-    let (mut solver, seen) = HostSurfaceCases::with_sink(circuit, 1.0e-3, 1.0e-5);
+    let (mut solver, seen) = SurfaceReading::with_sink(circuit, 1.0e-3, 1.0e-5);
     let calls = Rc::new(Cell::new(0u32));
     let times = Rc::new(RefCell::new(Vec::new()));
     let (c, t) = (Rc::clone(&calls), Rc::clone(&times));
@@ -145,14 +145,14 @@ fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
             cx.set(h, 0, &HIGH).expect("the host write");
         }),
     );
-    let result = HostSurfaceCases::tran(&mut solver);
+    let result = SurfaceCircuit::tran(&mut solver);
 
     assert_eq!(calls.get(), 1, "called once");
     assert!((times.borrow()[0] - at).abs() < 1.0e-15, "at its instant");
     assert!(result.iter().any(|s| (s.time() - at).abs() < 1.0e-15), "an accepted time");
     let bound = solver.circuit().bound();
-    assert_eq!(HostSurfaceCases::bytes_of(bound, "h"), HIGH.to_vec());
-    assert_eq!(HostSurfaceCases::bytes_of(bound, "hy"), LOW.to_vec(), "the write ran its readers");
+    assert_eq!(SurfaceReading::bytes_of(bound, "h"), HIGH.to_vec());
+    assert_eq!(SurfaceReading::bytes_of(bound, "hy"), LOW.to_vec(), "the write ran its readers");
     let h_changes: Vec<f64> = seen
         .borrow()
         .iter()
@@ -163,33 +163,13 @@ fn a_host_waiter_is_called_once_and_its_write_is_due_next_microstep() {
     assert!((h_changes[0] - at).abs() < 1.0e-15, "applied within the instant");
 }
 
-/// The helpers of the host_surface tests.
-pub struct HostSurfaceCases;
+/// The circuits the host surface tests run: a net, a sine-driven RC and its transient.
+struct SurfaceCircuit;
 
-impl HostSurfaceCases {
+impl SurfaceCircuit {
     /// The net helper `net`.
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
-    }
-
-    /// The bytes of helper `bytes_of`.
-    fn bytes_of(bound: &Bound, name: &str) -> Vec<u8> {
-        bound.digital.read(bound.names.nets[&format!("net:{name}")]).to_vec()
-    }
-
-    /// A solver over `circuit` whose sink collects into the returned list.
-    fn with_sink(circuit: CircuitInstance, stop: f64, dt: f64) -> (Solver, Rc<RefCell<Vec<Observation>>>) {
-        let seen = Rc::new(RefCell::new(Vec::new()));
-        let solver = Solver::new(circuit)
-            .with_tran_opts(TransientAnalysisOptions::new(stop, dt))
-            .with_sink(Box::new(Collect(Rc::clone(&seen))))
-            .build();
-        (solver, seen)
-    }
-
-    /// The tran helper `tran`.
-    fn tran(solver: &mut Solver) -> TransientAnalysisResult {
-        solver.tran().expect("tran").solve().expect("solve")
     }
 
     /// A 1 V, 1 kHz sine through 1 kΩ into 1 µF beside a 1 mS conductance that
@@ -207,6 +187,31 @@ impl HostSurfaceCases {
         CircuitBuilding::add_capacitor(b, "c1", 1.0e-6, &out, &gnd);
         b.device(mixed::FlakyConductance::module(), "g1", &[], &[Port::Node(out.clone()), Port::Node(gnd)]);
         out
+    }
+
+    /// The tran helper `tran`.
+    fn tran(solver: &mut Solver) -> TransientAnalysisResult {
+        solver.tran().expect("tran").solve().expect("solve")
+    }
+}
+
+/// What the host surface tests read back: bytes, a sink and the records.
+struct SurfaceReading;
+
+impl SurfaceReading {
+    /// The bytes of helper `bytes_of`.
+    fn bytes_of(bound: &Bound, name: &str) -> Vec<u8> {
+        bound.digital.read(bound.names.nets[&format!("net:{name}")]).to_vec()
+    }
+
+    /// A solver over `circuit` whose sink collects into the returned list.
+    fn with_sink(circuit: CircuitInstance, stop: f64, dt: f64) -> (Solver, Rc<RefCell<Vec<Observation>>>) {
+        let seen = Rc::new(RefCell::new(Vec::new()));
+        let solver = Solver::new(circuit)
+            .with_tran_opts(TransientAnalysisOptions::new(stop, dt))
+            .with_sink(Box::new(Collect(Rc::clone(&seen))))
+            .build();
+        (solver, seen)
     }
 
     /// The records helper `records`.

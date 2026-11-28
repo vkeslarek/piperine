@@ -5,4 +5,5 @@ mod lock;
 mod manifest;
 mod paths;
 mod project;
+mod resolved_graph;
 mod support;

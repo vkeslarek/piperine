@@ -5,10 +5,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// Builds throwaway packages, workspaces and git repositories for the project tests.
-pub struct ProjectFixture;
+/// Throwaway packages and workspaces written into a temporary directory.
+pub struct PackageDirectory;
 
-impl ProjectFixture {
+impl PackageDirectory {
     /// Write the package `name` at `dir`: a manifest with the given `[dependencies]` lines (each one
     /// `key = { ... }`) and `src/lib.msl` holding `lib_text`. Returns `dir`.
     pub fn package(dir: &Path, name: &str, version: &str, deps: &[&str], lib_text: &str) -> PathBuf {
@@ -20,8 +20,8 @@ impl ProjectFixture {
                 manifest.push('\n');
             }
         }
-        ProjectFixture::write(&dir.join("Piperine.toml"), &manifest);
-        ProjectFixture::write(&dir.join("src/lib.msl"), lib_text);
+        PackageDirectory::write(&dir.join("Piperine.toml"), &manifest);
+        PackageDirectory::write(&dir.join("src/lib.msl"), lib_text);
         dir.to_path_buf()
     }
 
@@ -38,6 +38,19 @@ impl ProjectFixture {
         (tmp, base)
     }
 
+    /// The files of a package `name` (manifest and a crate root holding `lib_text`), for `commit`.
+    pub fn package_files(name: &str, version: &str, lib_text: &str) -> Vec<(String, String)> {
+        vec![
+            ("Piperine.toml".to_string(), format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\n")),
+            ("src/lib.msl".to_string(), lib_text.to_string()),
+        ]
+    }
+}
+
+/// Throwaway git repositories: their commits, branches, tags and urls.
+pub struct GitRepository;
+
+impl GitRepository {
     /// A new repository at `dir` (created, with its directories). Every repository of the tests is
     /// a local one, named to the resolver by its filesystem path: no test contacts the network.
     pub fn repo(dir: &Path) -> git2::Repository {
@@ -49,7 +62,7 @@ impl ProjectFixture {
     pub fn commit(repo: &git2::Repository, files: &[(&str, &str)], message: &str) -> git2::Oid {
         let workdir = repo.workdir().unwrap().to_path_buf();
         for (path, text) in files {
-            ProjectFixture::write(&workdir.join(path), text);
+            PackageDirectory::write(&workdir.join(path), text);
         }
         let mut index = repo.index().unwrap();
         index.add_all(["*"], git2::IndexAddOption::DEFAULT, None).unwrap();
@@ -81,13 +94,4 @@ impl ProjectFixture {
     pub fn url(repo: &git2::Repository) -> String {
         repo.workdir().unwrap().to_str().unwrap().trim_end_matches('/').to_string()
     }
-
-    /// The files of a package `name` (manifest and a crate root holding `lib_text`), for `commit`.
-    pub fn package_files(name: &str, version: &str, lib_text: &str) -> Vec<(String, String)> {
-        vec![
-            ("Piperine.toml".to_string(), format!("[package]\nname = \"{name}\"\nversion = \"{version}\"\n")),
-            ("src/lib.msl".to_string(), lib_text.to_string()),
-        ]
-    }
 }
-

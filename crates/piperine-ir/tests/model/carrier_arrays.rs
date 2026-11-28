@@ -7,14 +7,14 @@ use piperine_ir::{
     NetSpec, NodeArray, NodeRef, NodeRole, NodeSpec, Origin, Projection, Stmt, ValueType,
 };
 
-/// Bodies and designs this target checks, each beside the MSL it transcribes.
-struct Fixture;
+/// The bodies and designs the carrier-array tests check, each beside the MSL it transcribes.
+struct CarrierArrayDesign;
 
-impl Fixture {
+impl CarrierArrayDesign {
     const FILE: &'static str = "ram.msl";
 
     fn origin(line: u32) -> Origin {
-        Origin { file: Fixture::FILE.into(), line, col: 5 }
+        Origin { file: CarrierArrayDesign::FILE.into(), line, col: 5 }
     }
 
     /// `module Ram() { signal mem: [Bit<u8>; 8] = 0; signal en: Bit = false; }`: carrier 0 is the array, carrier 1 a
@@ -22,7 +22,7 @@ impl Fixture {
     fn memory(b: &mut IrBuilder) -> BodyId {
         let spec = BodySpec {
             name: "Ram".into(),
-            origin: Fixture::origin(1),
+            origin: CarrierArrayDesign::origin(1),
             params: vec![],
             nodes: vec![],
             branches: vec![],
@@ -38,11 +38,11 @@ impl Fixture {
             ty: ValueType::UInt(8),
             role: CarrierRole::Signal,
             init: Some(Constant::Int(0)),
-            origin: Fixture::origin(2),
+            origin: CarrierArrayDesign::origin(2),
             count: Some(8),
         };
         b.carrier(body, mem);
-        let en = Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: Fixture::origin(3), count: None };
+        let en = Carrier { name: "en".into(), ty: ValueType::Bool, role: CarrierRole::Signal, init: None, origin: CarrierArrayDesign::origin(3), count: None };
         b.carrier(body, en);
         body
     }
@@ -51,7 +51,7 @@ impl Fixture {
     fn spec(name: &str, nodes: Vec<BodyNode>) -> BodySpec {
         BodySpec {
             name: name.into(),
-            origin: Fixture::origin(1),
+            origin: CarrierArrayDesign::origin(1),
             params: vec![],
             nodes,
             branches: vec![],
@@ -65,25 +65,25 @@ impl Fixture {
 
     /// An expression of `kind` typed `ty` at `line`.
     fn expr(b: &mut IrBuilder, kind: Expr, ty: ValueType, line: u32) -> ExprId {
-        b.expr(kind, ty, Fixture::origin(line))
+        b.expr(kind, ty, CarrierArrayDesign::origin(line))
     }
 
     /// The design whose top places `body` once, binding one net per carrier.
     fn design(b: IrBuilder, body: BodyId, carriers: &[(&str, ValueType)]) -> Ir {
-        Fixture::design_with_nodes(b, body, carriers, 0)
+        CarrierArrayDesign::design_with_nodes(b, body, carriers, 0)
     }
 
-    /// [`design`](Fixture::design) with `nodes` nodes of the first nature, `Ram.bl[k]`, bound to the body's nodes.
+    /// [`design`](CarrierArrayDesign::design) with `nodes` nodes of the first nature, `Ram.bl[k]`, bound to the body's nodes.
     fn design_with_nodes(mut b: IrBuilder, body: BodyId, carriers: &[(&str, ValueType)], nodes: u32) -> Ir {
         let top = b.next_instance_id();
         let nets: Vec<NetId> = carriers
             .iter()
-            .map(|(name, ty)| b.net(NetSpec { path: format!("Ram.{name}"), ty: ty.clone(), declared_by: top, init: None, origin: Fixture::origin(2) }))
+            .map(|(name, ty)| b.net(NetSpec { path: format!("Ram.{name}"), ty: ty.clone(), declared_by: top, init: None, origin: CarrierArrayDesign::origin(2) }))
             .collect();
         let nature = b.find_nature("Electrical");
         let bound: Vec<NodeRef> = match nature {
             Some(nature) => (0..nodes)
-                .map(|k| NodeRef::Node(b.node(NodeSpec { path: format!("Ram.bl[{k}]"), nature, declared_by: top, init: None, origin: Fixture::origin(2) })))
+                .map(|k| NodeRef::Node(b.node(NodeSpec { path: format!("Ram.bl[{k}]"), nature, declared_by: top, init: None, origin: CarrierArrayDesign::origin(2) })))
                 .collect(),
             None => Vec::new(),
         };
@@ -94,7 +94,7 @@ impl Fixture {
             parent: None,
             nodes: bound,
             params: vec![],
-            origin: Fixture::origin(1),
+            origin: CarrierArrayDesign::origin(1),
         });
         b.bind_nets(id, nets).unwrap();
         b.finish(id)
@@ -103,15 +103,15 @@ impl Fixture {
     /// The array memory with the reads `reads` put in a reaction of the body, one `let` each.
     fn with_reads(reads: impl FnOnce(&mut IrBuilder) -> Vec<ExprId>) -> Vec<piperine_ir::Broken> {
         let mut b = IrBuilder::new();
-        let body = Fixture::memory(&mut b);
+        let body = CarrierArrayDesign::memory(&mut b);
         let mut lets = Vec::new();
         for (k, read) in reads(&mut b).into_iter().enumerate() {
             lets.push(b.stmt(Stmt::Let { local: k as u32, init: read }));
         }
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Fixture::origin(4) });
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) });
         let locals = (0..lets.len()).map(|k| piperine_ir::Local { name: format!("v{k}"), ty: ValueType::UInt(8), mutable: false }).collect();
-        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: lets, locals, origin: Fixture::origin(5) });
-        Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check()
+        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: lets, locals, origin: CarrierArrayDesign::origin(5) });
+        CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check()
     }
 }
 
@@ -119,54 +119,54 @@ impl Fixture {
 fn element_forms_are_checked_against_the_array() {
     // CV-24: `x[i]`, `x[k].prev()` and `x[k].changed()` on an array carrier with an integer index and a constant
     // element below the count are well formed.
-    let ok = Fixture::with_reads(|b| {
-        let at = Fixture::expr(b, Expr::Int(3), ValueType::UInt(8), 6);
-        let read = Fixture::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6);
-        let previous = Fixture::expr(b, Expr::ElementPrevious { carrier: 0, index: at }, ValueType::UInt(8), 7);
+    let ok = CarrierArrayDesign::with_reads(|b| {
+        let at = CarrierArrayDesign::expr(b, Expr::Int(3), ValueType::UInt(8), 6);
+        let read = CarrierArrayDesign::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6);
+        let previous = CarrierArrayDesign::expr(b, Expr::ElementPrevious { carrier: 0, index: at }, ValueType::UInt(8), 7);
         vec![read, previous]
     });
     assert_eq!(ok, vec![], "the element forms of an array carrier are well formed");
 
     // each refused form is one entry that names its rule
-    let past = Fixture::with_reads(|b| {
-        let at = Fixture::expr(b, Expr::Int(8), ValueType::UInt(8), 6);
-        vec![Fixture::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6)]
+    let past = CarrierArrayDesign::with_reads(|b| {
+        let at = CarrierArrayDesign::expr(b, Expr::Int(8), ValueType::UInt(8), 6);
+        vec![CarrierArrayDesign::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6)]
     });
     assert_eq!(past.len(), 1, "{past:#?}");
     assert!(past[0].what.contains("the constant index 8") && past[0].what.contains("out of range for an array of 8"), "{past:#?}");
 
-    let scalar = Fixture::with_reads(|b| {
-        let at = Fixture::expr(b, Expr::Int(0), ValueType::UInt(8), 6);
-        vec![Fixture::expr(b, Expr::CarrierElement { carrier: 1, index: at }, ValueType::UInt(8), 6)]
+    let scalar = CarrierArrayDesign::with_reads(|b| {
+        let at = CarrierArrayDesign::expr(b, Expr::Int(0), ValueType::UInt(8), 6);
+        vec![CarrierArrayDesign::expr(b, Expr::CarrierElement { carrier: 1, index: at }, ValueType::UInt(8), 6)]
     });
     assert!(scalar.iter().any(|e| e.what.contains("which is no array of carriers")), "{scalar:#?}");
 
-    let real_index = Fixture::with_reads(|b| {
-        let at = Fixture::expr(b, Expr::Real(piperine_ir::Real::new(1.0)), ValueType::F64, 6);
-        vec![Fixture::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6)]
+    let real_index = CarrierArrayDesign::with_reads(|b| {
+        let at = CarrierArrayDesign::expr(b, Expr::Real(piperine_ir::Real::new(1.0)), ValueType::F64, 6);
+        vec![CarrierArrayDesign::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(8), 6)]
     });
     assert!(real_index.iter().any(|e| e.what.contains("the index of an element read must be an integer")), "{real_index:#?}");
 
     // an element read typed other than the element's type, and `changed()` typed other than `bool`
-    let mistyped = Fixture::with_reads(|b| {
-        let at = Fixture::expr(b, Expr::Int(0), ValueType::UInt(8), 6);
-        let wrong = Fixture::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(16), 6);
-        let flag = Fixture::expr(b, Expr::ElementChanged { carrier: 0, index: at }, ValueType::UInt(8), 7);
+    let mistyped = CarrierArrayDesign::with_reads(|b| {
+        let at = CarrierArrayDesign::expr(b, Expr::Int(0), ValueType::UInt(8), 6);
+        let wrong = CarrierArrayDesign::expr(b, Expr::CarrierElement { carrier: 0, index: at }, ValueType::UInt(16), 6);
+        let flag = CarrierArrayDesign::expr(b, Expr::ElementChanged { carrier: 0, index: at }, ValueType::UInt(8), 7);
         vec![wrong, flag]
     });
     assert!(mistyped.iter().any(|e| e.what.contains("typed u16, its form gives u8")), "{mistyped:#?}");
     assert!(mistyped.iter().any(|e| e.what.contains("typed u8, its form gives bool")), "{mistyped:#?}");
 
     // a whole read is typed `[u8; 8]`, and its previous value is not read whole
-    let whole = Fixture::with_reads(|b| {
+    let whole = CarrierArrayDesign::with_reads(|b| {
         let array = ValueType::Array(Box::new(ValueType::UInt(8)), 8);
-        let whole = Fixture::expr(b, Expr::Carrier(0), array, 6);
-        let wrong = Fixture::expr(b, Expr::Previous(0), ValueType::UInt(8), 7);
+        let whole = CarrierArrayDesign::expr(b, Expr::Carrier(0), array, 6);
+        let wrong = CarrierArrayDesign::expr(b, Expr::Previous(0), ValueType::UInt(8), 7);
         let _ = whole;
         vec![wrong]
     });
     assert!(whole.iter().any(|e| e.what.contains("an array of carriers: read one element's")), "{whole:#?}");
-    let untyped = Fixture::with_reads(|b| vec![Fixture::expr(b, Expr::Carrier(0), ValueType::UInt(8), 6)]);
+    let untyped = CarrierArrayDesign::with_reads(|b| vec![CarrierArrayDesign::expr(b, Expr::Carrier(0), ValueType::UInt(8), 6)]);
     assert!(untyped.iter().any(|e| e.what.contains("typed u8, its form gives [u8; 8]")), "a whole read is the array: {untyped:#?}");
 }
 
@@ -174,17 +174,17 @@ fn element_forms_are_checked_against_the_array() {
 fn an_element_event_names_an_element_of_an_array_carrier() {
     // CV-24: `on mem[3].changed()` is `EventSource::ElementChanged { carrier: 0, element: 3 }`.
     let mut b = IrBuilder::new();
-    let body = Fixture::memory(&mut b);
-    b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: Fixture::origin(4) });
-    let ir = Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
+    let body = CarrierArrayDesign::memory(&mut b);
+    b.event(body, Event { source: EventSource::ElementChanged { carrier: 0, element: 3 }, guard: None, origin: CarrierArrayDesign::origin(4) });
+    let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
     assert_eq!(ir.check(), vec![]);
     assert!(ir.to_string().contains("event E0 changed mem[3]"), "{ir}");
 
     for (carrier, element, what) in [(0, 8, "out of range for an array of 8"), (1, 0, "which is no array of carriers"), (9, 0, "out of range (2 carriers)")] {
         let mut b = IrBuilder::new();
-        let body = Fixture::memory(&mut b);
-        b.event(body, Event { source: EventSource::ElementChanged { carrier, element }, guard: None, origin: Fixture::origin(4) });
-        let broken = Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check();
+        let body = CarrierArrayDesign::memory(&mut b);
+        b.event(body, Event { source: EventSource::ElementChanged { carrier, element }, guard: None, origin: CarrierArrayDesign::origin(4) });
+        let broken = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]).check();
         assert!(broken.iter().any(|e| e.what.contains(what)), "carrier {carrier} element {element}: {broken:#?}");
     }
 }
@@ -196,11 +196,11 @@ fn an_array_of_nodes_names_consecutive_body_nodes_and_round_trips() {
     let potential = piperine_ir::Quantity { name: "Voltage".into(), access: "v".into(), units: "V".into(), abstol: piperine_ir::Real::new(1e-6) };
     let nature = b.nature("Electrical", potential, None);
     let nodes: Vec<BodyNode> = (0..4)
-        .map(|k| BodyNode { name: format!("bl[{k}]"), nature, role: NodeRole::Signal, init: None, origin: Fixture::origin(2) })
+        .map(|k| BodyNode { name: format!("bl[{k}]"), nature, role: NodeRole::Signal, init: None, origin: CarrierArrayDesign::origin(2) })
         .collect();
-    let body = b.body(Fixture::spec("Ladder", nodes));
-    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: Fixture::origin(2) });
-    let ir = Fixture::design_with_nodes(b, body, &[], 4);
+    let body = b.body(CarrierArrayDesign::spec("Ladder", nodes));
+    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) });
+    let ir = CarrierArrayDesign::design_with_nodes(b, body, &[], 4);
     assert_eq!(ir.check(), vec![]);
     let json = serde_json::to_string(&ir).expect("an IR serializes");
     let back: Ir = serde_json::from_str(&json).expect("and reads back");
@@ -209,9 +209,9 @@ fn an_array_of_nodes_names_consecutive_body_nodes_and_round_trips() {
 
     // an array that runs past the body's nodes, and one whose nodes are named otherwise, are each refused
     let mut b = IrBuilder::new();
-    let body = b.body(Fixture::spec("Bad", vec![]));
-    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: Fixture::origin(2) });
-    let broken = Fixture::design(b, body, &[]).check();
+    let body = b.body(CarrierArrayDesign::spec("Bad", vec![]));
+    b.node_array(body, NodeArray { name: "bl".into(), first: 0, count: 4, origin: CarrierArrayDesign::origin(2) });
+    let broken = CarrierArrayDesign::design(b, body, &[]).check();
     assert!(broken.iter().any(|e| e.what.contains("array of nodes bl holds nodes 0..4, out of range (0 nodes)")), "{broken:#?}");
 }
 
@@ -227,22 +227,22 @@ impl Registers {
     /// The design with the body `Regs` and the statements `write` returns as one reaction; its broken invariants.
     fn checked(write: impl FnOnce(&mut IrBuilder) -> Vec<Stmt>) -> (Ir, Vec<piperine_ir::Broken>) {
         let mut b = IrBuilder::new();
-        let body = b.body(Fixture::spec("Regs", vec![]));
+        let body = b.body(CarrierArrayDesign::spec("Regs", vec![]));
         let carrier = |name: &str, ty: ValueType, count: Option<u64>, line: u32| Carrier {
             name: name.into(),
             ty,
             role: CarrierRole::Signal,
             init: None,
-            origin: Fixture::origin(line),
+            origin: CarrierArrayDesign::origin(line),
             count,
         };
         b.carrier(body, carrier("mem", ValueType::UInt(8), Some(8), 2));
         b.carrier(body, carrier("st", Registers::pair(), None, 3));
         b.carrier(body, carrier("en", ValueType::Bool, None, 4));
         let stmts: Vec<_> = write(&mut b).into_iter().map(|stmt| b.stmt(stmt)).collect();
-        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Fixture::origin(5) });
-        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts, locals: vec![], origin: Fixture::origin(6) });
-        let ir = Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("st", Registers::pair()), ("en", ValueType::Bool)]);
+        let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(5) });
+        b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts, locals: vec![], origin: CarrierArrayDesign::origin(6) });
+        let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("st", Registers::pair()), ("en", ValueType::Bool)]);
         let broken = ir.check();
         (ir, broken)
     }
@@ -259,9 +259,9 @@ fn commit_targets_and_windows_are_checked() {
     // their targets.
     let (ir, broken) = Registers::checked(|b| {
         let (five, three, yes) = (
-            Fixture::expr(b, Expr::Int(5), ValueType::UInt(8), 7),
-            Fixture::expr(b, Expr::Int(3), ValueType::UInt(8), 7),
-            Fixture::expr(b, Expr::Bool(true), ValueType::Bool, 8),
+            CarrierArrayDesign::expr(b, Expr::Int(5), ValueType::UInt(8), 7),
+            CarrierArrayDesign::expr(b, Expr::Int(3), ValueType::UInt(8), 7),
+            CarrierArrayDesign::expr(b, Expr::Bool(true), ValueType::Bool, 8),
         );
         vec![
             Registers::commit(0, five, Some(CommitTarget { element: Some(three), path: vec![] })),
@@ -279,35 +279,35 @@ fn commit_targets_and_windows_are_checked() {
     };
     refused(
         |b| {
-            let (yes, at) = (Fixture::expr(b, Expr::Bool(true), ValueType::Bool, 7), Fixture::expr(b, Expr::Int(0), ValueType::UInt(8), 7));
+            let (yes, at) = (CarrierArrayDesign::expr(b, Expr::Bool(true), ValueType::Bool, 7), CarrierArrayDesign::expr(b, Expr::Int(0), ValueType::UInt(8), 7));
             vec![Registers::commit(2, yes, Some(CommitTarget { element: Some(at), path: vec![] }))]
         },
         "which is no array of carriers",
     );
     refused(
         |b| {
-            let (five, at) = (Fixture::expr(b, Expr::Int(5), ValueType::UInt(8), 7), Fixture::expr(b, Expr::Int(8), ValueType::UInt(8), 7));
+            let (five, at) = (CarrierArrayDesign::expr(b, Expr::Int(5), ValueType::UInt(8), 7), CarrierArrayDesign::expr(b, Expr::Int(8), ValueType::UInt(8), 7));
             vec![Registers::commit(0, five, Some(CommitTarget { element: Some(at), path: vec![] }))]
         },
         "the constant index 8 of a commit's element is out of range for an array of 8",
     );
     refused(
         |b| {
-            let (yes, at) = (Fixture::expr(b, Expr::Bool(true), ValueType::Bool, 7), Fixture::expr(b, Expr::Int(0), ValueType::UInt(8), 7));
+            let (yes, at) = (CarrierArrayDesign::expr(b, Expr::Bool(true), ValueType::Bool, 7), CarrierArrayDesign::expr(b, Expr::Int(0), ValueType::UInt(8), 7));
             vec![Registers::commit(0, yes, Some(CommitTarget { element: Some(at), path: vec![] }))]
         },
         "the value of a commit must be u8, found bool",
     );
     refused(
         |b| {
-            let five = Fixture::expr(b, Expr::Int(5), ValueType::UInt(8), 7);
+            let five = CarrierArrayDesign::expr(b, Expr::Int(5), ValueType::UInt(8), 7);
             vec![Registers::commit(1, five, Some(CommitTarget { element: None, path: vec![Projection::Field(2)] }))]
         },
         "field 2 of a tuple of 2",
     );
     refused(
         |b| {
-            let yes = Fixture::expr(b, Expr::Bool(true), ValueType::Bool, 7);
+            let yes = CarrierArrayDesign::expr(b, Expr::Bool(true), ValueType::Bool, 7);
             vec![Registers::commit(1, yes, Some(CommitTarget { element: None, path: vec![Projection::Field(0)] }))]
         },
         "the value of a commit must be u8, found bool",
@@ -316,10 +316,10 @@ fn commit_targets_and_windows_are_checked() {
     // a definition of one element: `mem[2] = 7;` is well formed, element 9 is not
     for (element, ok) in [(2u64, true), (9, false)] {
         let mut b = IrBuilder::new();
-        let body = Fixture::memory(&mut b);
-        let value = Fixture::expr(&mut b, Expr::Int(7), ValueType::UInt(8), 7);
-        b.drive(body, Drive { carrier: 0, value, after: None, origin: Fixture::origin(7), element: Some(element), path: vec![] });
-        let ir = Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
+        let body = CarrierArrayDesign::memory(&mut b);
+        let value = CarrierArrayDesign::expr(&mut b, Expr::Int(7), ValueType::UInt(8), 7);
+        b.drive(body, Drive { carrier: 0, value, after: None, origin: CarrierArrayDesign::origin(7), element: Some(element), path: vec![] });
+        let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
         let broken = ir.check();
         if ok {
             assert_eq!(broken, vec![]);
@@ -332,18 +332,18 @@ fn commit_targets_and_windows_are_checked() {
     // a window of an array carrier given to a child's port: element 3 as a scalar is inside `mem`, element 8 is not
     for (first, ok) in [(3u64, true), (8, false)] {
         let mut b = IrBuilder::new();
-        let leaf = b.body(Fixture::spec("Leaf", vec![]));
-        b.carrier(leaf, Carrier { name: "d".into(), ty: ValueType::UInt(8), role: CarrierRole::In, init: None, origin: Fixture::origin(2), count: None });
-        let child = Child { name: "leaf".into(), body: leaf, nodes: vec![], params: vec![], origin: Fixture::origin(3) };
-        let ram = b.body(BodySpec { children: vec![child], ..Fixture::spec("Ram", vec![]) });
+        let leaf = b.body(CarrierArrayDesign::spec("Leaf", vec![]));
+        b.carrier(leaf, Carrier { name: "d".into(), ty: ValueType::UInt(8), role: CarrierRole::In, init: None, origin: CarrierArrayDesign::origin(2), count: None });
+        let child = Child { name: "leaf".into(), body: leaf, nodes: vec![], params: vec![], origin: CarrierArrayDesign::origin(3) };
+        let ram = b.body(BodySpec { children: vec![child], ..CarrierArrayDesign::spec("Ram", vec![]) });
         b.carrier(
             ram,
-            Carrier { name: "mem".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: None, origin: Fixture::origin(4), count: Some(8) },
+            Carrier { name: "mem".into(), ty: ValueType::UInt(8), role: CarrierRole::Signal, init: None, origin: CarrierArrayDesign::origin(4), count: Some(8) },
         );
         b.bind_child_carriers(ram, 0, vec![Some(0)]);
         b.bind_child_windows(ram, 0, vec![Some(CarrierWindow { first, length: None })]);
         let top = b.next_instance_id();
-        let net = b.net(NetSpec { path: "Ram.mem".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: Fixture::origin(4) });
+        let net = b.net(NetSpec { path: "Ram.mem".into(), ty: ValueType::UInt(8), declared_by: top, init: None, origin: CarrierArrayDesign::origin(4) });
         let spec = |path: &str, body: BodyId, parent: Option<piperine_ir::InstanceId>| InstanceSpec {
             path: path.into(),
             name: path.rsplit('.').next().unwrap_or(path).into(),
@@ -351,7 +351,7 @@ fn commit_targets_and_windows_are_checked() {
             parent,
             nodes: vec![],
             params: vec![],
-            origin: Fixture::origin(1),
+            origin: CarrierArrayDesign::origin(1),
         };
         let top = b.instance(spec("Ram", ram, None));
         b.bind_nets(top, vec![net]).unwrap();
@@ -372,21 +372,21 @@ fn an_element_commit_in_a_loop_is_one_statement() {
     // §12.1.14: a commit in a loop is one statement, however many times the loop runs it; an element commit counts
     // like any other.
     let mut b = IrBuilder::new();
-    let body = Fixture::memory(&mut b);
-    let (zero, eight) = (Fixture::expr(&mut b, Expr::Int(0), ValueType::UInt(8), 7), Fixture::expr(&mut b, Expr::Int(8), ValueType::UInt(8), 7));
-    let (index, five) = (Fixture::expr(&mut b, Expr::Local(0), ValueType::UInt(8), 8), Fixture::expr(&mut b, Expr::Int(5), ValueType::UInt(8), 8));
+    let body = CarrierArrayDesign::memory(&mut b);
+    let (zero, eight) = (CarrierArrayDesign::expr(&mut b, Expr::Int(0), ValueType::UInt(8), 7), CarrierArrayDesign::expr(&mut b, Expr::Int(8), ValueType::UInt(8), 7));
+    let (index, five) = (CarrierArrayDesign::expr(&mut b, Expr::Local(0), ValueType::UInt(8), 8), CarrierArrayDesign::expr(&mut b, Expr::Int(5), ValueType::UInt(8), 8));
     let commit = b.stmt(Stmt::Commit { carrier: 0, value: five, after: None, target: Some(CommitTarget { element: Some(index), path: vec![] }) });
-    let looped = Fixture::expr(
+    let looped = CarrierArrayDesign::expr(
         &mut b,
         Expr::ForRange { local: 0, low: zero, high: eight, inclusive: false, reverse: false, body: vec![commit] },
         ValueType::Unit,
         7,
     );
     let run = b.stmt(Stmt::Expr(looped));
-    let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: Fixture::origin(4) });
+    let go = b.event(body, Event { source: EventSource::Settle, guard: None, origin: CarrierArrayDesign::origin(4) });
     let local = piperine_ir::Local { name: "k".into(), ty: ValueType::UInt(8), mutable: false };
-    let reaction = b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![run], locals: vec![local], origin: Fixture::origin(5) });
-    let ir = Fixture::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
+    let reaction = b.reaction(body, piperine_ir::Reaction { on: vec![go], stmts: vec![run], locals: vec![local], origin: CarrierArrayDesign::origin(5) });
+    let ir = CarrierArrayDesign::design(b, body, &[("mem", ValueType::UInt(8)), ("en", ValueType::Bool)]);
     assert_eq!(ir.check(), vec![]);
     assert_eq!(ir.body(body).reaction_statements(reaction), vec![commit], "the loop's one commit is one statement");
 }

@@ -59,7 +59,7 @@ fn the_observer_is_called_once_per_accepted_step_in_time_order() {
     let d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     a.proposals.extend([1.0, 2.0, 3.0]);
-    let (rig, _sink, observer) = StepObserverCases::rig();
+    let (rig, _sink, observer) = ObservedRun::rig();
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_step_observer(observer);
     p.transient(3.0).unwrap();
     assert_eq!(*rig.times.borrow(), [1.0, 2.0, 3.0]);
@@ -72,9 +72,9 @@ fn the_sink_has_every_observation_up_to_the_step_before_the_observer() {
     let log = ScriptedLog::new();
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
-    d.instant_observations.extend([vec![StepObserverCases::change("n.a", 1.0)], vec![StepObserverCases::change("n.b", 2.0), StepObserverCases::change("n.c", 2.0)], vec![]]);
+    d.instant_observations.extend([vec![ObservedRun::change("n.a", 1.0)], vec![ObservedRun::change("n.b", 2.0), ObservedRun::change("n.c", 2.0)], vec![]]);
     a.proposals.extend([1.0, 2.0, 3.0]);
-    let (rig, sink, observer) = StepObserverCases::rig();
+    let (rig, sink, observer) = ObservedRun::rig();
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink).with_step_observer(observer);
     p.transient(3.0).unwrap();
     assert_eq!(*rig.sink_len_at_call.borrow(), [1, 3, 3]);
@@ -91,7 +91,7 @@ fn a_rejected_or_retaken_attempt_is_never_observed() {
     let mut a = ScriptedAnalog::new(&log);
     a.proposals.extend([2.0, 2.0, 2.0]);
     a.attempts.extend([Attempt::Rejected, Attempt::LandedEarlier(0.5)]);
-    let (rig, _sink, observer) = StepObserverCases::rig();
+    let (rig, _sink, observer) = ObservedRun::rig();
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_step_observer(observer);
     p.transient(1.0).unwrap();
     let attempts = ScriptedLog::calls(&log, |c| matches!(c, Call::Attempt { .. })).len();
@@ -133,9 +133,9 @@ impl StepObserver for Reader {
 #[test]
 fn a_transient_observes_its_start_and_every_accepted_step() {
     // LR-01 AC 4: one call for the start and one per accepted step; the first is at the start time
-    let (circuit, _c) = StepObserverCases::build();
-    let probe = StepObserverCases::build().0.transient(StepObserverCases::options(), Context::default()).expect("tran").solve().expect("solve");
-    let (result, seen) = StepObserverCases::run_observed(circuit, StepObserverCases::options(), None, StepObserverCases::net_count(&probe));
+    let (circuit, _c) = ObservedRun::build();
+    let probe = ObservedRun::build().0.transient(ObservedRun::options(), Context::default()).expect("tran").solve().expect("solve");
+    let (result, seen) = ObservedRun::run_observed(circuit, ObservedRun::options(), None, ObservedRun::net_count(&probe));
     assert!(result.stats.steps_accepted > 20, "{} steps", result.stats.steps_accepted);
     assert_eq!(seen.times.len(), result.stats.steps_accepted as usize + 1);
     assert_eq!(seen.times[0], 0.0);
@@ -147,10 +147,10 @@ fn a_transient_observes_its_start_and_every_accepted_step() {
 fn each_observed_step_holds_the_values_of_the_kept_step() {
     // LR-01 AC 5: every unknown and every net's bytes at each call equal the step of the
     // `Keep::Every` result at the same position
-    let (circuit, c) = StepObserverCases::build();
-    let probe = StepObserverCases::build().0.transient(StepObserverCases::options(), Context::default()).expect("tran").solve().expect("solve");
-    let count = StepObserverCases::net_count(&probe);
-    let (result, seen) = StepObserverCases::run_observed(circuit, StepObserverCases::options(), None, count);
+    let (circuit, c) = ObservedRun::build();
+    let probe = ObservedRun::build().0.transient(ObservedRun::options(), Context::default()).expect("tran").solve().expect("solve");
+    let count = ObservedRun::net_count(&probe);
+    let (result, seen) = ObservedRun::run_observed(circuit, ObservedRun::options(), None, count);
     assert_eq!(seen.times.len(), result.len());
     let mut distinct_code = std::collections::HashSet::new();
     for (i, step) in result.iter().enumerate() {
@@ -163,7 +163,7 @@ fn each_observed_step_holds_the_values_of_the_kept_step() {
         let v_c = step.get_node(&CircuitBuilding::node_id(&c)).expect("v(c)");
         assert_eq!(seen.solutions[i][c.idx().expect("an unknown")], v_c, "v(c) at {:e} s", step.time());
         // every reference with an index holds the kept step's value
-        for reference in StepObserverCases::result_references(&step) {
+        for reference in ObservedRun::result_references(&step) {
             assert_eq!(seen.solutions[i][reference.0], reference.1, "unknown {} at {:e} s", reference.0, step.time());
         }
     }
@@ -173,16 +173,16 @@ fn each_observed_step_holds_the_values_of_the_kept_step() {
 #[test]
 fn a_resumed_transient_observes_its_start() {
     // LR-01 AC 6: a run re-entered at a captured step observes that state first, then each step
-    let (mut circuit, c) = StepObserverCases::build();
+    let (mut circuit, c) = ObservedRun::build();
     let leg1 = circuit
         .transient(TransientAnalysisOptions::new(STOP / 2.0, 1.0e-5), Context::default())
         .expect("tran")
         .solve()
         .expect("solve");
-    let count = StepObserverCases::net_count(&leg1);
+    let count = ObservedRun::net_count(&leg1);
     let captured = leg1.last().expect("steps").clone();
-    let opts = StepObserverCases::options().with_start(captured.time());
-    let (result, seen) = StepObserverCases::run_observed(circuit, opts, Some(&captured), count);
+    let opts = ObservedRun::options().with_start(captured.time());
+    let (result, seen) = ObservedRun::run_observed(circuit, opts, Some(&captured), count);
     assert_eq!(seen.times.len(), result.stats.steps_accepted as usize + 1);
     assert_eq!(seen.times[0], captured.time());
     assert_eq!(seen.solutions[0][c.idx().expect("an unknown")], captured.get_node(&CircuitBuilding::node_id(&c)).expect("v(c)"));
@@ -212,9 +212,9 @@ fn without_an_observer_the_result_and_the_sink_stream_are_unchanged() {
     // LR-01 AC 7: a run with no observer and a run with one return the same steps and deliver
     // the same observations to the sink, value for value
     let run = |observer: bool| {
-        let (circuit, _c) = StepObserverCases::build();
+        let (circuit, _c) = ObservedRun::build();
         let log = Log::default();
-        let mut solver = Solver::new(circuit).with_tran_opts(StepObserverCases::options()).with_sink(Box::new(log.clone()));
+        let mut solver = Solver::new(circuit).with_tran_opts(ObservedRun::options()).with_sink(Box::new(log.clone()));
         if observer {
             solver = solver.with_step_observer(Box::new(Nothing));
         }
@@ -232,8 +232,8 @@ fn without_an_observer_the_result_and_the_sink_stream_are_unchanged() {
     for (a, b) in plain.iter().zip(observed.iter()) {
         assert_eq!(a.time(), b.time());
         assert_eq!(a.digital_nets(), b.digital_nets());
-        for (r, v) in StepObserverCases::result_references(a) {
-            assert_eq!(Some(v), StepObserverCases::result_references(b).into_iter().find(|(i, _)| *i == r).map(|(_, v)| v));
+        for (r, v) in ObservedRun::result_references(a) {
+            assert_eq!(Some(v), ObservedRun::result_references(b).into_iter().find(|(i, _)| *i == r).map(|(_, v)| v));
         }
     }
 }
@@ -242,18 +242,18 @@ fn without_an_observer_the_result_and_the_sink_stream_are_unchanged() {
 fn keep_last_holds_only_the_last_step_with_its_reentry_state() {
     // LR-02 AC 1: one step, the last one, the very step a `Keep::Every` run ends on; and it
     // carries the state a transient re-enters from (a run started from it goes on)
-    let (mut circuit, c) = StepObserverCases::build();
-    let full = StepObserverCases::run_kept(&mut circuit, STOP, Keep::Every, None);
-    let (mut circuit, _) = StepObserverCases::build();
-    let last = StepObserverCases::run_kept(&mut circuit, STOP, Keep::Last, None);
+    let (mut circuit, c) = ObservedRun::build();
+    let full = ObservedRun::run_kept(&mut circuit, STOP, Keep::Every, None);
+    let (mut circuit, _) = ObservedRun::build();
+    let last = ObservedRun::run_kept(&mut circuit, STOP, Keep::Last, None);
     assert_eq!(last.len(), 1, "one step kept");
     assert_eq!(last.stats.steps_accepted, full.stats.steps_accepted);
     let (kept, whole) = (last.last().unwrap(), full.last().unwrap());
     assert_eq!(kept.time(), STOP);
     assert_eq!(kept.time(), whole.time());
-    assert_eq!(StepObserverCases::contents(kept), StepObserverCases::contents(whole));
+    assert_eq!(ObservedRun::contents(kept), ObservedRun::contents(whole));
     assert_eq!(kept.get_node(&CircuitBuilding::node_id(&c)), whole.get_node(&CircuitBuilding::node_id(&c)));
-    let go_on = StepObserverCases::run_kept(&mut circuit, 2.0 * STOP, Keep::Every, Some(kept));
+    let go_on = ObservedRun::run_kept(&mut circuit, 2.0 * STOP, Keep::Every, Some(kept));
     assert_eq!(go_on.iter().next().unwrap().time(), STOP, "re-entered at the kept step");
     assert!(go_on.last().unwrap().time() > STOP);
 }
@@ -263,18 +263,18 @@ fn reentry_from_the_kept_step_equals_reentry_from_a_full_run() {
     // LR-02 AC 2: the half run captured from a `Keep::Every` result and from a `Keep::Last` one
     // continue to the same steps, bit for bit
     let half = STOP / 2.0;
-    let (mut a, _) = StepObserverCases::build();
-    let from_full = StepObserverCases::run_kept(&mut a, half, Keep::Every, None).last().unwrap().clone();
-    let (mut b, _) = StepObserverCases::build();
-    let from_last = StepObserverCases::run_kept(&mut b, half, Keep::Last, None).last().unwrap().clone();
-    assert_eq!(StepObserverCases::contents(&from_full), StepObserverCases::contents(&from_last));
-    let a2 = StepObserverCases::run_kept(&mut a, STOP, Keep::Every, Some(&from_full));
-    let b2 = StepObserverCases::run_kept(&mut b, STOP, Keep::Every, Some(&from_last));
+    let (mut a, _) = ObservedRun::build();
+    let from_full = ObservedRun::run_kept(&mut a, half, Keep::Every, None).last().unwrap().clone();
+    let (mut b, _) = ObservedRun::build();
+    let from_last = ObservedRun::run_kept(&mut b, half, Keep::Last, None).last().unwrap().clone();
+    assert_eq!(ObservedRun::contents(&from_full), ObservedRun::contents(&from_last));
+    let a2 = ObservedRun::run_kept(&mut a, STOP, Keep::Every, Some(&from_full));
+    let b2 = ObservedRun::run_kept(&mut b, STOP, Keep::Every, Some(&from_last));
     assert!(a2.len() > 10, "{} steps", a2.len());
     assert_eq!(a2.len(), b2.len());
     for (x, y) in a2.iter().zip(b2.iter()) {
         assert_eq!(x.time(), y.time());
-        assert_eq!(StepObserverCases::contents(x), StepObserverCases::contents(y), "at {:e} s", x.time());
+        assert_eq!(ObservedRun::contents(x), ObservedRun::contents(y), "at {:e} s", x.time());
     }
     assert_eq!(a2.stats.steps_accepted, b2.stats.steps_accepted);
     assert_eq!(a2.stats.steps_rejected, b2.stats.steps_rejected);
@@ -284,7 +284,7 @@ fn reentry_from_the_kept_step_equals_reentry_from_a_full_run() {
 fn the_default_keeps_every_accepted_step() {
     // LR-02 AC 3: with no `keep` set a run holds the start and every accepted step
     assert_eq!(TransientAnalysisOptions::new(STOP, 1.0e-5).keep, Keep::Every);
-    let (mut circuit, _) = StepObserverCases::build();
+    let (mut circuit, _) = ObservedRun::build();
     let mut tran = circuit.transient(TransientAnalysisOptions::new(STOP, 1.0e-5), Context::default()).expect("tran");
     let result = tran.solve().expect("solve");
     assert_eq!(result.len(), result.stats.steps_accepted as usize + 1);
@@ -293,22 +293,22 @@ fn the_default_keeps_every_accepted_step() {
 #[test]
 fn keep_last_refuses_device_state_recording() {
     // LR-02 AC 4: `Keep::Last` with `record_device_state`, or with a probe selection, fails at setup
-    let (mut circuit, _) = StepObserverCases::build();
-    let with_state = TransientAnalysisOptions { record_device_state: true, ..StepObserverCases::options().with_keep(Keep::Last) };
+    let (mut circuit, _) = ObservedRun::build();
+    let with_state = TransientAnalysisOptions { record_device_state: true, ..ObservedRun::options().with_keep(Keep::Last) };
     let err = circuit.transient(with_state, Context::default()).err().expect("refused");
     assert!(err.to_string().contains("Keep::Last") && err.to_string().contains("record_device_state"), "{err}");
     let selection = ProbeSelection::new().request("clk", "out");
-    let with_selection = StepObserverCases::options().with_keep(Keep::Last).with_probe_selection(selection);
+    let with_selection = ObservedRun::options().with_keep(Keep::Last).with_probe_selection(selection);
     let err = circuit.transient(with_selection, Context::default()).err().expect("refused");
     assert!(err.to_string().contains("Keep::Last") && err.to_string().contains("probe_selection"), "{err}");
     // and the same options keeping every step are accepted
-    assert!(circuit.transient(TransientAnalysisOptions { record_device_state: true, ..StepObserverCases::options() }, Context::default()).is_ok());
+    assert!(circuit.transient(TransientAnalysisOptions { record_device_state: true, ..ObservedRun::options() }, Context::default()).is_ok());
 }
 
-/// The helpers of the step_observer tests.
-pub struct StepObserverCases;
+/// A run under a step observer, what it kept and what it returned.
+struct ObservedRun;
 
-impl StepObserverCases {
+impl ObservedRun {
     /// The change helper `change`.
     fn change(path: &str, time: f64) -> Observation {
         Observation { path: path.into(), analysis: AnalysisKind::OperatingPoint, time, kind: ObservationKind::Change { bytes: vec![1] } }
@@ -334,9 +334,9 @@ impl StepObserverCases {
         let gnd = b.ground();
         let o = b.node("o");
         let c = b.node("c");
-        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[StepObserverCases::net("code")]);
-        b.device(digital::Counter::module(), "cnt", &[], &[StepObserverCases::net("code"), StepObserverCases::net("n")]);
-        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[StepObserverCases::net("code"), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[ObservedRun::net("code")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[ObservedRun::net("code"), ObservedRun::net("n")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[ObservedRun::net("code"), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-7, &c, &gnd);
         (b.build().expect("build"), c)
@@ -371,7 +371,7 @@ impl StepObserverCases {
 
     /// Every `(index, value)` of the unknowns a step holds, read through the netlist of a fresh build.
     fn result_references(step: &TransientStep) -> Vec<(usize, f64)> {
-        let (circuit, _) = StepObserverCases::build();
+        let (circuit, _) = ObservedRun::build();
         circuit
             .netlist()
             .all_references()
@@ -399,7 +399,7 @@ impl StepObserverCases {
 
     /// A step's unknowns by index and its nets, to compare two steps value for value.
     fn contents(step: &TransientStep) -> (Vec<(usize, f64)>, Option<piperine_solver::prelude::DigitalNets>) {
-        let mut unknowns = StepObserverCases::result_references(step);
+        let mut unknowns = ObservedRun::result_references(step);
         unknowns.sort_by_key(|(i, _)| *i);
         (unknowns, step.digital_nets().cloned())
     }

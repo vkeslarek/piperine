@@ -40,11 +40,11 @@ fn observations_reach_the_sink_after_acceptance_in_instant_order() {
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     // The operating point's quiet and settle instants, then two transient landings.
-    d.instant_observations.extend([vec![ProtocolSinkCases::obs("top.op", 0.0)], vec![], vec![ProtocolSinkCases::obs("top.b", 1.0)], vec![ProtocolSinkCases::obs("top.c", 2.0)]]);
+    d.instant_observations.extend([vec![SinkObservations::obs("top.op", 0.0)], vec![], vec![SinkObservations::obs("top.b", 1.0)], vec![SinkObservations::obs("top.c", 2.0)]]);
     // The first advance runs an instant at 0.5 s before the landing at 1 s.
-    d.advance_observations.push_back(vec![ProtocolSinkCases::obs("top.a", 0.5)]);
+    d.advance_observations.push_back(vec![SinkObservations::obs("top.a", 0.5)]);
     a.proposals.extend([1.0, 2.0]);
-    let (sink, seen) = ProtocolSinkCases::collecting(&log);
+    let (sink, seen) = SinkObservations::collecting(&log);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
     p.operating_point().unwrap();
     p.transient(2.0).unwrap();
@@ -61,8 +61,8 @@ fn observations_reach_the_sink_after_acceptance_in_instant_order() {
         ]
     );
     // `top.a` and `top.b` arrive only after the first acceptance, `top.c` after the second.
-    let first_accept = ProtocolSinkCases::position(&log, 0, |c| matches!(c, Call::Accept));
-    let second_accept = ProtocolSinkCases::position(&log, 1, |c| matches!(c, Call::Accept));
+    let first_accept = SinkObservations::position(&log, 0, |c| matches!(c, Call::Accept));
+    let second_accept = SinkObservations::position(&log, 1, |c| matches!(c, Call::Accept));
     let at = |path: &str| seen.borrow().iter().find(|(_, o)| o.path == path).map(|(i, _)| *i).unwrap();
     assert!(at("top.a") > first_accept && at("top.b") > first_accept);
     assert!(at("top.c") > second_accept);
@@ -74,11 +74,11 @@ fn an_undone_instant_delivers_nothing() {
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     // Each advance observes one instant; the first two are undone.
-    d.advance_observations.extend([vec![ProtocolSinkCases::obs("undone.rejected", 1.0)], vec![ProtocolSinkCases::obs("undone.earlier", 1.5)], vec![ProtocolSinkCases::obs("kept", 0.5)]]);
+    d.advance_observations.extend([vec![SinkObservations::obs("undone.rejected", 1.0)], vec![SinkObservations::obs("undone.earlier", 1.5)], vec![SinkObservations::obs("kept", 0.5)]]);
     d.advances.extend([Advance::Reached, Advance::Reached, Advance::Reached]);
     a.proposals.extend([2.0, 2.0, 2.0]);
     a.attempts.extend([Attempt::Rejected, Attempt::LandedEarlier(0.5)]);
-    let (sink, seen) = ProtocolSinkCases::collecting(&log);
+    let (sink, seen) = SinkObservations::collecting(&log);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
     p.transient(1.0).unwrap();
     let paths: Vec<String> = seen.borrow().iter().map(|(_, o)| o.path.clone()).collect();
@@ -100,7 +100,7 @@ fn a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration() {
     a.traces.push_back(vec![trace.clone()]);
     a.attempts.push_back(Attempt::Rejected);
     a.proposals.extend([1.0, 1.0]);
-    let (sink, seen) = ProtocolSinkCases::collecting(&log);
+    let (sink, seen) = SinkObservations::collecting(&log);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
     p.transient(1.0).unwrap();
     let got: Vec<Observation> = seen.borrow().iter().map(|(_, o)| o.clone()).collect();
@@ -108,8 +108,8 @@ fn a_trace_of_a_rejected_attempt_is_delivered_with_its_iteration() {
     // It arrived after the rejected attempt, at the acceptance that reached its
     // time (traces are delivered in time order, F13), though its step was undone.
     let index = seen.borrow()[0].0;
-    assert!(index > ProtocolSinkCases::position(&log, 0, |c| matches!(c, Call::DiscreteRestore(_))));
-    assert!(index > ProtocolSinkCases::position(&log, 0, |c| matches!(c, Call::Accept)));
+    assert!(index > SinkObservations::position(&log, 0, |c| matches!(c, Call::DiscreteRestore(_))));
+    assert!(index > SinkObservations::position(&log, 0, |c| matches!(c, Call::Accept)));
 }
 
 #[test]
@@ -117,9 +117,9 @@ fn no_sink_means_observations_are_dropped_not_kept() {
     let log = ScriptedLog::new();
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
-    d.advance_observations.extend((0..50).map(|i| vec![ProtocolSinkCases::obs("x", i as f64)]));
-    d.instant_observations.extend((0..50).map(|i| vec![ProtocolSinkCases::obs("y", i as f64)]));
-    a.traces.extend((0..50).map(|_| vec![ProtocolSinkCases::obs("t", 0.0)]));
+    d.advance_observations.extend((0..50).map(|i| vec![SinkObservations::obs("x", i as f64)]));
+    d.instant_observations.extend((0..50).map(|i| vec![SinkObservations::obs("y", i as f64)]));
+    a.traces.extend((0..50).map(|_| vec![SinkObservations::obs("t", 0.0)]));
     a.proposals.extend((1..=50).map(|i| i as f64 * SPT));
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT));
     p.operating_point().unwrap();
@@ -138,12 +138,12 @@ fn traces_reach_the_sink_in_time_order() {
     let mut a = ScriptedAnalog::new(&log);
     // A step to 2 s is rejected (its trace stays, A5), a step to 1 s is accepted,
     // then a step to 2 s. Instants run before each landing and at it.
-    d.advance_observations.extend([vec![ProtocolSinkCases::obs("undone", 1.5)], vec![ProtocolSinkCases::obs("before.1", 0.5)], vec![ProtocolSinkCases::obs("before.2", 1.5)]]);
-    d.instant_observations.extend([vec![ProtocolSinkCases::obs("at.1", 1.0)], vec![ProtocolSinkCases::obs("at.2", 2.0)]]);
-    a.traces.extend([vec![ProtocolSinkCases::trace("trace.rejected", 2.0, 1)], vec![ProtocolSinkCases::trace("trace.1", 1.0, 2)], vec![ProtocolSinkCases::trace("trace.2", 2.0, 3)]]);
+    d.advance_observations.extend([vec![SinkObservations::obs("undone", 1.5)], vec![SinkObservations::obs("before.1", 0.5)], vec![SinkObservations::obs("before.2", 1.5)]]);
+    d.instant_observations.extend([vec![SinkObservations::obs("at.1", 1.0)], vec![SinkObservations::obs("at.2", 2.0)]]);
+    a.traces.extend([vec![SinkObservations::trace("trace.rejected", 2.0, 1)], vec![SinkObservations::trace("trace.1", 1.0, 2)], vec![SinkObservations::trace("trace.2", 2.0, 3)]]);
     a.attempts.push_back(Attempt::Rejected);
     a.proposals.extend([2.0, 1.0, 2.0]);
-    let (sink, seen) = ProtocolSinkCases::collecting(&log);
+    let (sink, seen) = SinkObservations::collecting(&log);
     let mut p = Protocol::new(d, a, ProtocolOptions::new(SPT)).with_sink(sink);
     p.transient(2.0).unwrap();
     let got: Vec<(String, f64)> = seen.borrow().iter().map(|(_, o)| (o.path.clone(), o.time)).collect();
@@ -162,10 +162,10 @@ fn traces_reach_the_sink_in_time_order() {
     assert_eq!(got, want, "one stream in time order; at one time the solve's traces precede its instant");
 }
 
-/// The helpers of the protocol_sink tests.
-pub struct ProtocolSinkCases;
+/// The observations a sink collects, in order.
+struct SinkObservations;
 
-impl ProtocolSinkCases {
+impl SinkObservations {
     /// The obs helper `obs`.
     fn obs(path: &str, time: f64) -> Observation {
         Observation {

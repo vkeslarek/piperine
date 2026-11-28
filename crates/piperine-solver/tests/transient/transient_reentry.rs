@@ -32,17 +32,17 @@ fn reentry_from_captured_state_matches_continuous_run() {
     };
 
     // Reference: one continuous 0→2T run.
-    let (mut circuit_a, info_a) = TransientReentryCases::build_rc();
+    let (mut circuit_a, info_a) = ResumedCircuit::build_rc();
     let opts_a = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0);
-    let ic_a = TransientReentryCases::discharged_ic(&info_a, &circuit_a);
+    let ic_a = ResumedCircuit::discharged_ic(&info_a, &circuit_a);
     let mut solver_a = circuit_a.transient(opts_a, Context::default()).expect("tran A");
     solver_a.apply_initial_conditions(ic_a);
     let full = solver_a.solve().expect("solve A");
     let v_full_end = read_out(full.last().expect("A has steps"), &info_a);
 
     // Leg 1: 0→T, capture the final step.
-    let (mut circuit_b, info_b) = TransientReentryCases::build_rc();
-    let ic_b = TransientReentryCases::discharged_ic(&info_b, &circuit_b);
+    let (mut circuit_b, info_b) = ResumedCircuit::build_rc();
+    let ic_b = ResumedCircuit::discharged_ic(&info_b, &circuit_b);
     let mut solver_b1 = circuit_b
         .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
         .expect("tran B1");
@@ -86,8 +86,8 @@ fn reentry_from_captured_state_matches_continuous_run() {
 #[test]
 fn a_host_write_since_the_capture_applies_at_the_reentry() {
     let t_half = 1.0e-3;
-    let (mut circuit, info) = TransientReentryCases::build_rc();
-    let ic = TransientReentryCases::discharged_ic(&info, &circuit);
+    let (mut circuit, info) = ResumedCircuit::build_rc();
+    let ic = ResumedCircuit::discharged_ic(&info, &circuit);
     let mut leg1 = circuit
         .transient(TransientAnalysisOptions::new(t_half, t_half / 100.0), Context::default())
         .expect("tran 1");
@@ -131,7 +131,7 @@ fn a_late_start_solves_the_operating_point_at_its_start() {
 #[test]
 fn a_step_the_host_built_cannot_be_reentered() {
     let t_half = 1.0e-3;
-    let (mut circuit, _info) = TransientReentryCases::build_rc();
+    let (mut circuit, _info) = ResumedCircuit::build_rc();
     let opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0).with_start(t_half);
     let foreign = TransientStep::new(t_half, std::collections::HashMap::new());
     let mut solver = circuit.transient(opts, Context::default()).expect("tran");
@@ -146,14 +146,14 @@ fn a_step_the_host_built_cannot_be_reentered() {
 #[test]
 fn a_late_start_runs_no_instant_before_it() {
     let start = 3.0e-4;
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
     let opts = TransientAnalysisOptions::new(start + STOP, 1.0e-5).with_start(start);
     let result = circuit.transient(opts, Context::default()).expect("tran").solve().expect("solve");
     assert_eq!(result.iter().next().expect("steps").time(), start, "the run starts at S");
     let mut edges = 0;
     for step in result.iter() {
         assert!(step.time() >= start, "a step at {:e} s precedes the start", step.time());
-        let (clk, n) = TransientReentryCases::expected_at(step.time() - start);
+        let (clk, n) = ClockedReentry::expected_at(step.time() - start);
         assert_eq!(step.digital_named("code"), Some(&clk[..]), "code at {:e} s (S + {:e})", step.time(), step.time() - start);
         assert_eq!(mixed::MixedParts::count_of(step.digital_named("n").expect("n")), n, "edges counted by {:e} s", step.time());
         edges = edges.max(n);
@@ -165,14 +165,14 @@ fn a_late_start_runs_no_instant_before_it() {
 /// naming the value; the circuit still runs after.
 #[test]
 fn a_start_that_is_not_finite_fails_before_the_operating_point() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
     for (start, shown) in [(f64::NAN, "NaN"), (f64::INFINITY, "inf"), (-1.0e-3, "-1e-3")] {
         let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_start(start);
         let err = circuit.transient(opts, Context::default()).expect("tran").solve().expect_err("a bad start");
         let text = err.to_string();
         assert!(text.contains("start time") && text.contains(shown), "{text}");
     }
-    let after = TransientReentryCases::run_clocked(&mut circuit, None);
+    let after = ClockedReentry::run_clocked(&mut circuit, None);
     assert!(after.len() > 20, "the circuit still runs: {} steps", after.len());
 }
 
@@ -180,10 +180,10 @@ fn a_start_that_is_not_finite_fails_before_the_operating_point() {
 /// reached by one step that integrates, recorded once, on 1 − e^(−t/τ).
 #[test]
 fn an_off_grid_reentry_reaches_a_stop_within_the_next_tick_once() {
-    let (mut circuit, out, captured) = TransientReentryCases::rc_captured_at_tau();
+    let (mut circuit, out, captured) = ResumedCircuit::rc_captured_at_tau();
     let tau = captured.time();
     for stop in [tau + 1.0e-15, tau + 0.5e-15, tau + 2.0e-15] {
-        let leg = TransientReentryCases::reenter(&mut circuit, &captured, stop).unwrap_or_else(|e| panic!("stop τ + {:e} s: {e}", stop - tau));
+        let leg = ResumedCircuit::reenter(&mut circuit, &captured, stop).unwrap_or_else(|e| panic!("stop τ + {:e} s: {e}", stop - tau));
         let times: Vec<f64> = leg.iter().map(|s| s.time()).collect();
         assert_eq!(times.first(), Some(&tau), "the run starts at the capture");
         for pair in times.windows(2) {
@@ -201,10 +201,10 @@ fn an_off_grid_reentry_reaches_a_stop_within_the_next_tick_once() {
 /// step to reach it: the run fails loud instead of returning the capture alone.
 #[test]
 fn a_stop_inside_the_reentry_tick_fails_loud() {
-    let (mut circuit, _out, captured) = TransientReentryCases::rc_captured_at_tau();
+    let (mut circuit, _out, captured) = ResumedCircuit::rc_captured_at_tau();
     let stop = captured.time() + 0.05e-15;
     assert!(stop > captured.time());
-    let err = TransientReentryCases::reenter(&mut circuit, &captured, stop).expect_err("no step reaches a stop inside the tick");
+    let err = ResumedCircuit::reenter(&mut circuit, &captured, stop).expect_err("no step reaches a stop inside the tick");
     assert!(err.to_string().contains("no step reaches it"), "{err}");
 }
 
@@ -218,12 +218,12 @@ const STOP: f64 = 1.0e-3;
 
 #[test]
 fn every_step_carries_the_digital_net_values() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let result = TransientReentryCases::run_clocked(&mut circuit, None);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let result = ClockedReentry::run_clocked(&mut circuit, None);
     assert!(result.len() > 20, "{} steps", result.len());
     let mut highs = 0;
     for step in result.iter() {
-        let (clk, n) = TransientReentryCases::expected_at(step.time());
+        let (clk, n) = ClockedReentry::expected_at(step.time());
         let nets = step.digital_nets().unwrap_or_else(|| panic!("the step at {:e} s carries no digital values", step.time()));
         assert!(nets.names().iter().any(|name| name == "code"), "{:?}", nets.names());
         assert_eq!(step.digital_named("code"), Some(&clk[..]), "code at {:e} s", step.time());
@@ -235,8 +235,8 @@ fn every_step_carries_the_digital_net_values() {
 
 #[test]
 fn reentry_from_any_captured_step_matches_the_continuous_run() {
-    let (mut circuit, c) = TransientReentryCases::build_clocked_rc();
-    let full = TransientReentryCases::run_clocked(&mut circuit, None);
+    let (mut circuit, c) = ClockedReentry::build_clocked_rc();
+    let full = ClockedReentry::run_clocked(&mut circuit, None);
     let last = full.last().expect("steps");
     let v_full = last.get_node(&CircuitBuilding::node_id(&c)).expect("v(c)");
     let n_full = mixed::MixedParts::count_of(last.digital_named("n").expect("n"));
@@ -247,7 +247,7 @@ fn reentry_from_any_captured_step_matches_the_continuous_run() {
     assert!(picks.len() > 5);
     for &i in &picks {
         let captured = full.get(i).unwrap().clone();
-        let leg = TransientReentryCases::run_clocked(&mut circuit, Some(&captured));
+        let leg = ClockedReentry::run_clocked(&mut circuit, Some(&captured));
         let first = leg.iter().next().expect("the re-entered run has steps");
         assert_eq!(first.time(), captured.time());
         assert_eq!(first.get_node(&CircuitBuilding::node_id(&c)), captured.get_node(&CircuitBuilding::node_id(&c)), "re-entry starts at the captured state");
@@ -264,13 +264,13 @@ fn reentry_from_any_captured_step_matches_the_continuous_run() {
 
 #[test]
 fn a_reentry_from_every_recorded_step_continues_bit_for_bit() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let full = TransientReentryCases::run_clocked(&mut circuit, None);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let full = ClockedReentry::run_clocked(&mut circuit, None);
     assert!(full.len() > 20, "{} steps", full.len());
     for i in 0..full.len() {
         let captured = full.get(i).expect("a recorded step").clone();
-        let leg = TransientReentryCases::run_clocked(&mut circuit, Some(&captured));
-        TransientReentryCases::assert_bit_for_bit(&full, &leg, i);
+        let leg = ClockedReentry::run_clocked(&mut circuit, Some(&captured));
+        BitComparison::assert_bit_for_bit(&full, &leg, i);
     }
 }
 
@@ -278,14 +278,14 @@ fn a_reentry_from_every_recorded_step_continues_bit_for_bit() {
 /// restart (first-order stage, the jump estimate, the step size), and the run re-entered there takes it.
 #[test]
 fn a_reentry_after_a_jump_takes_the_same_restart() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let full = TransientReentryCases::run_clocked(&mut circuit, None);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let full = ClockedReentry::run_clocked(&mut circuit, None);
     let edges: Vec<usize> = (0..full.len()).filter(|&i| i > 0 && (full.get(i).unwrap().time() / HALF).fract() == 0.0).collect();
     assert!(edges.len() >= 8, "the run records every edge of the clock: {edges:?}");
     for i in edges {
         let captured = full.get(i).expect("a recorded step").clone();
-        let leg = TransientReentryCases::run_clocked(&mut circuit, Some(&captured));
-        TransientReentryCases::assert_bit_for_bit(&full, &leg, i);
+        let leg = ClockedReentry::run_clocked(&mut circuit, Some(&captured));
+        BitComparison::assert_bit_for_bit(&full, &leg, i);
     }
 }
 
@@ -295,13 +295,13 @@ fn a_reentry_after_a_jump_takes_the_same_restart() {
 #[test]
 fn the_reentry_state_holds_the_newton_history_and_the_controller() {
     let t_half = 1.0e-3;
-    let (mut circuit, info) = TransientReentryCases::build_rc();
+    let (mut circuit, info) = ResumedCircuit::build_rc();
     let run = |circuit: &mut CircuitInstance, from: Option<&TransientStep>| {
         let mut opts = TransientAnalysisOptions::new(2.0 * t_half, t_half / 100.0);
         if let Some(step) = from {
             opts = opts.with_start(step.time());
         }
-        let ic = TransientReentryCases::discharged_ic(&info, circuit);
+        let ic = ResumedCircuit::discharged_ic(&info, circuit);
         let mut solver = circuit.transient(opts, Context::default()).expect("tran");
         match from {
             Some(step) => solver.with_initial_state(step),
@@ -316,7 +316,7 @@ fn the_reentry_state_holds_the_newton_history_and_the_controller() {
     for i in (1..full.len()).step_by(3) {
         let captured = full.get(i).expect("a recorded step").clone();
         let leg = run(&mut circuit, Some(&captured));
-        TransientReentryCases::assert_bit_for_bit(&full, &leg, i);
+        BitComparison::assert_bit_for_bit(&full, &leg, i);
     }
 }
 
@@ -325,13 +325,13 @@ fn the_reentry_state_holds_the_newton_history_and_the_controller() {
 /// that never stopped.
 #[test]
 fn a_reentry_with_another_stop_lands_on_the_old_stop() {
-    let (mut circuit, c) = TransientReentryCases::build_clocked_rc();
+    let (mut circuit, c) = ClockedReentry::build_clocked_rc();
     let old_stop = 4.5e-4;
     let mut leg1 = circuit.transient(TransientAnalysisOptions::new(old_stop, 1.0e-5), Context::default()).expect("tran 1");
     let captured = leg1.solve().expect("solve 1").last().expect("steps").clone();
     assert_eq!(captured.time(), old_stop, "the first run ends at its stop");
 
-    let full = TransientReentryCases::run_clocked(&mut circuit, None);
+    let full = ClockedReentry::run_clocked(&mut circuit, None);
     let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_start(old_stop);
     let mut leg2 = circuit.transient(opts, Context::default()).expect("tran 2");
     leg2.with_initial_state(&captured);
@@ -350,19 +350,19 @@ fn a_reentry_with_another_stop_lands_on_the_old_stop() {
 
 #[test]
 fn reentry_last_step_attaches_state_to_the_last_step_only() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let every = TransientReentryCases::run_clocked_with(&mut circuit, Reentry::EveryStep);
-    let last_only = TransientReentryCases::run_clocked_with(&mut circuit, Reentry::LastStep);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let every = ClockedReentry::run_clocked_with(&mut circuit, Reentry::EveryStep);
+    let last_only = ClockedReentry::run_clocked_with(&mut circuit, Reentry::LastStep);
     assert!(last_only.len() > 20, "{} steps", last_only.len());
     // The option changes the state kept, not the run.
-    TransientReentryCases::assert_bit_for_bit(&every, &last_only, 0);
+    BitComparison::assert_bit_for_bit(&every, &last_only, 0);
     for i in 0..last_only.len() - 1 {
         let step = last_only.get(i).expect("a recorded step").clone();
-        let err = TransientReentryCases::reenter_clocked(&mut circuit, &step).err().unwrap_or_else(|| panic!("step {i} (t = {:e} s) carries a re-entry state under LastStep", step.time()));
+        let err = ClockedReentry::reenter_clocked(&mut circuit, &step).err().unwrap_or_else(|| panic!("step {i} (t = {:e} s) carries a re-entry state under LastStep", step.time()));
         assert!(err.to_string().contains("carries no state of the device instances"), "step {i}: {err}");
     }
     let last = last_only.last().expect("steps").clone();
-    let leg = TransientReentryCases::reenter_clocked(&mut circuit, &last).expect("the last step is re-entered");
+    let leg = ClockedReentry::reenter_clocked(&mut circuit, &last).expect("the last step is re-entered");
     assert_eq!(leg.iter().next().expect("steps").time(), last.time(), "the re-entry starts at the last step");
     assert_eq!(leg.last().expect("steps").time(), STOP + 1.0e-4);
 }
@@ -370,11 +370,11 @@ fn reentry_last_step_attaches_state_to_the_last_step_only() {
 #[test]
 fn the_default_reentry_keeps_every_step_state() {
     assert_eq!(TransientAnalysisOptions::new(STOP, 1.0e-5).reentry, Reentry::EveryStep);
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let result = TransientReentryCases::run_clocked(&mut circuit, None);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let result = ClockedReentry::run_clocked(&mut circuit, None);
     for i in 0..result.len() {
         let step = result.get(i).expect("a recorded step").clone();
-        TransientReentryCases::reenter_clocked(&mut circuit, &step).unwrap_or_else(|e| panic!("step {i} (t = {:e} s) has no re-entry state by default: {e}", step.time()));
+        ClockedReentry::reenter_clocked(&mut circuit, &step).unwrap_or_else(|e| panic!("step {i} (t = {:e} s) has no re-entry state by default: {e}", step.time()));
     }
 }
 
@@ -382,17 +382,17 @@ fn the_default_reentry_keeps_every_step_state() {
 /// transient recorded state for does today.
 #[test]
 fn a_middle_step_under_last_step_cannot_be_reentered() {
-    let (mut circuit, _c) = TransientReentryCases::build_clocked_rc();
-    let result = TransientReentryCases::run_clocked_with(&mut circuit, Reentry::LastStep);
+    let (mut circuit, _c) = ClockedReentry::build_clocked_rc();
+    let result = ClockedReentry::run_clocked_with(&mut circuit, Reentry::LastStep);
     let middle = result.get(result.len() / 2).expect("a middle step").clone();
-    let err = TransientReentryCases::reenter_clocked(&mut circuit, &middle).expect_err("a middle step holds no state under LastStep");
+    let err = ClockedReentry::reenter_clocked(&mut circuit, &middle).expect_err("a middle step holds no state under LastStep");
     assert!(err.to_string().contains("carries no state of the device instances"), "{err}");
 }
 
-/// The helpers of the transient_reentry tests.
-pub struct TransientReentryCases;
+/// The RC circuit a transient resumes on: charged, captured and re-entered.
+struct ResumedCircuit;
 
-impl TransientReentryCases {
+impl ResumedCircuit {
     /// `v(out) = 0` initial condition (discharged capacitor) so the runs show
     /// the charge transient instead of the DC steady state.
     fn discharged_ic(
@@ -453,16 +453,21 @@ impl TransientReentryCases {
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
     }
+}
 
+/// The clocked RC circuit a transient re-enters, and what it is expected to give.
+struct ClockedReentry;
+
+impl ClockedReentry {
     /// The build clocked rc helper `build_clocked_rc`.
     fn build_clocked_rc() -> (CircuitInstance, AnalogReference) {
         let mut b = CircuitBuilder::new("clock -> dac -> rc");
         let gnd = b.ground();
         let o = b.node("o");
         let c = b.node("c");
-        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[TransientReentryCases::net("code")]);
-        b.device(digital::Counter::module(), "cnt", &[], &[TransientReentryCases::net("code"), TransientReentryCases::net("n")]);
-        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[TransientReentryCases::net("code"), Port::Node(o.clone())]);
+        b.device(digital::Timer::module(), "clk", &[("half", ParamValue::Real(HALF))], &[ResumedCircuit::net("code")]);
+        b.device(digital::Counter::module(), "cnt", &[], &[ResumedCircuit::net("code"), ResumedCircuit::net("n")]);
+        b.device(mixed::BitDigitalToAnalog::module(), "dac", &[("vref", ParamValue::Real(1.0))], &[ResumedCircuit::net("code"), Port::Node(o.clone())]);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &o, &c);
         CircuitBuilding::add_capacitor(&mut b, "c1", 1.0e-7, &c, &gnd);
         (b.build().expect("build"), c)
@@ -495,6 +500,25 @@ impl TransientReentryCases {
     // stop, takes every later step the continuous run took, bit for bit.
     // ---------------------------------------------------------------------------
 
+    /// The run clocked with helper `run_clocked_with`.
+    fn run_clocked_with(circuit: &mut CircuitInstance, reentry: Reentry) -> TransientAnalysisResult {
+        let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_reentry(reentry);
+        circuit.transient(opts, Context::default()).expect("tran").solve().expect("solve")
+    }
+
+    /// The run `from` steps through the state `captured` carries, until `STOP`, or its failure.
+    fn reenter_clocked(circuit: &mut CircuitInstance, captured: &TransientStep) -> piperine_solver::prelude::Result<TransientAnalysisResult> {
+        let opts = TransientAnalysisOptions::new(STOP + 1.0e-4, 1.0e-5).with_start(captured.time());
+        let mut solver = circuit.transient(opts, Context::default()).expect("tran");
+        solver.with_initial_state(captured);
+        solver.solve()
+    }
+}
+
+/// Two runs equal bit for bit.
+struct BitComparison;
+
+impl BitComparison {
     /// Every accepted time and every unknown of `leg`, the run re-entered at step `from` of `full`,
     /// against `full` from that step on: `f64::to_bits` equal.
     fn assert_bit_for_bit(full: &TransientAnalysisResult, leg: &TransientAnalysisResult, from: usize) {
@@ -517,18 +541,4 @@ impl TransientReentryCases {
     // ---------------------------------------------------------------------------
     // `Reentry::LastStep` (HYG-13): the state a run re-enters from is kept on the last step only.
     // ---------------------------------------------------------------------------
-
-    /// The run clocked with helper `run_clocked_with`.
-    fn run_clocked_with(circuit: &mut CircuitInstance, reentry: Reentry) -> TransientAnalysisResult {
-        let opts = TransientAnalysisOptions::new(STOP, 1.0e-5).with_reentry(reentry);
-        circuit.transient(opts, Context::default()).expect("tran").solve().expect("solve")
-    }
-
-    /// The run `from` steps through the state `captured` carries, until `STOP`, or its failure.
-    fn reenter_clocked(circuit: &mut CircuitInstance, captured: &TransientStep) -> piperine_solver::prelude::Result<TransientAnalysisResult> {
-        let opts = TransientAnalysisOptions::new(STOP + 1.0e-4, 1.0e-5).with_start(captured.time());
-        let mut solver = circuit.transient(opts, Context::default()).expect("tran");
-        solver.with_initial_state(captured);
-        solver.solve()
-    }
 }

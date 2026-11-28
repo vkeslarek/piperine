@@ -4,6 +4,7 @@
 //! abi.md (§3.1 P3, §4, §5, §6, §11.4, §11.5), cited at each assertion; the bodies are the
 //! hand-built buck slice of `piperine-ir/tests/support/digital.rs`.
 
+use super::shape_entry::ShapeEntry;
 use piperine_abi::layout::{BIT, BYTE, F64, LOW, NONE};
 use piperine_abi::raw::{Cell, Layout, Pin, Shape, cell, global, kind, leaf, part, pin_flag, role};
 use piperine_ir::{
@@ -57,33 +58,12 @@ impl Alone {
     }
 }
 
-/// Entries of a shape, found by name.
+/// Entries of a shape the digital tests list by name.
 struct Find;
 
 impl Find {
-    fn pin(shape: &Shape<'_>, name: &str) -> u32 {
-        shape.pins.iter().position(|p| p.name.as_str() == name).unwrap_or_else(|| panic!("no pin `{name}`")) as u32
-    }
-
     fn function_names(shape: &Shape<'_>) -> Vec<String> {
         shape.functions.iter().map(|f| f.name.as_str().to_string()).collect()
-    }
-
-    /// Function `name`: its reads, its writes and its partials as `(write, read)`.
-    fn function(shape: &Shape<'_>, name: &str) -> (Vec<Cell>, Vec<Cell>, Vec<(u32, u32)>) {
-        let f = shape.functions.iter().find(|f| f.name.as_str() == name).unwrap_or_else(|| panic!("no function `{name}`"));
-        (f.reads.iter().copied().collect(), f.writes.iter().copied().collect(), f.partials.iter().map(|p| (p.write, p.read)).collect())
-    }
-
-    /// Reaction `name`: `on`, its reads and its statements as `(pin, offset, len, flags,
-    /// min_after)`.
-    fn reaction(shape: &Shape<'_>, name: &str) -> (Vec<u32>, Vec<Cell>, Vec<(u32, u32, u32, u32, f64)>) {
-        let r = shape.reactions.iter().find(|r| r.name.as_str() == name).unwrap_or_else(|| panic!("no reaction `{name}`"));
-        (
-            r.on.iter().copied().collect(),
-            r.reads.iter().copied().collect(),
-            r.writes.iter().map(|w| (w.pin, w.offset, w.len, w.flags, w.min_after)).collect(),
-        )
     }
 }
 
@@ -137,10 +117,10 @@ impl PinView {
     }
 }
 
-/// Fixtures of the test `an_option_carrier_pin_is_presence_then_payload`, hoisted out of its body.
-struct OptionCarrierPinFixture;
+/// The bodies the digital shape tests lay out, one per shape they read, each beside the MSL it transcribes.
+struct ShapeBodies;
 
-impl OptionCarrierPinFixture {
+impl ShapeBodies {
     // EU-16 AC 4 (C68), abi.md P3 and P5: the pin `piperine-plan` lays out for a carrier of `Option<u8>` is a `BOOL`
     // presence field `some` at 0 and the payload `value` (`U8`) at 1, two bytes with no field that holds a flag; an
     // `Option<f64>` is the presence byte then the eight bytes of the real
@@ -152,27 +132,7 @@ impl OptionCarrierPinFixture {
         }
         body
     }
-}
 
-#[test]
-fn an_option_carrier_pin_is_presence_then_payload() {
-    let (ir, body) = Alone::design(OptionCarrierPinFixture::options);
-    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-    let pins: Vec<&Pin<'_>> = plan.shape().shape().pins.iter().collect();
-    assert_eq!(pins.len(), 2, "one pin per carrier");
-    let some = ("some".to_string(), leaf::BOOL, 0, 1);
-    assert_eq!(DigitalShapeProbe::layout(&pins[0].layout), (2, 1, vec![some.clone(), ("value".to_string(), leaf::U8, 1, 1)]), "`Option<u8>`");
-    assert_eq!(DigitalShapeProbe::layout(&pins[1].layout), (9, 1, vec![some, ("value".to_string(), leaf::F64, 1, 1)]), "`Option<f64>`: the payload follows the presence byte");
-    for pin in pins {
-        assert_eq!(pin.kind, kind::DISCRETE, "pin {}", pin.name.as_str());
-        assert!(pin.layout.fields.iter().all(|f| f.name.as_str() == "some" || f.name.as_str() == "value"), "pin {}: the value only", pin.name.as_str());
-    }
-}
-
-/// Fixtures of the test `carriers_are_discrete_pins_that_hold_the_value_only`, hoisted out of its body.
-struct CarriersDiscretePinsFixture;
-
-impl CarriersDiscretePinsFixture {
     // A body with one carrier of each width class, built for this test: names are the type.
     fn widths(b: &mut IrBuilder) -> BodyId {
         let body = b.body(Buck::spec("Widths", "widths.msl", 1));
@@ -199,11 +159,127 @@ impl CarriersDiscretePinsFixture {
         }
         body
     }
+
+    // A guard reading another carrier and a param: `on clk.changed() if en && k > 0.0`
+    // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
+    fn event_guarded(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(BodySpec { params: vec![Buck::param("k", "g.msl", 1, Some(1.0), None)], ..Buck::spec("Guarded", "g.msl", 1) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 20));
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30));
+        let mut x = Dx::new(b, "g.msl", 2, 22);
+        let en = x.carrier(1, ValueType::Bool);
+        let k = x.param(0, ValueType::F64);
+        let zero = x.real(0.0);
+        let positive = x.bin(piperine_ir::BinaryOp::Gt, k, zero, ValueType::Bool);
+        let guard = x.bin(piperine_ir::BinaryOp::And, en, positive, ValueType::Bool);
+        b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) });
+        body
+    }
+
+    // RS-12 AC 4 "one statement per commit in source order": `then` is written before `else`, so
+    // its commit is the earlier statement. The two arms commit to one carrier with different
+    // literal delays, so each statement's `LATER` bound tells the arms apart (verification F-B3):
+    //   on clk.changed() {
+    //       if c { b <- 2 after 1n; } else { b <- 3 after 2n; }
+    //   }
+    fn arms(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(Buck::spec("Arms", "a.msl", 1));
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20));
+        b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30));
+        b.carrier(body, Buck::carrier("b", ValueAliases::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
+        let mut x = Dx::new(b, "a.msl", 3, 9);
+        let c = x.carrier(1, ValueType::Bool);
+        let two = x.int(2, ValueAliases::u(8));
+        let one_ns = x.real(1e-9);
+        let then = x.commit(2, two, Some(one_ns));
+        let three = x.int(3, ValueAliases::u(8));
+        let two_ns = x.real(2e-9);
+        let otherwise = x.commit(2, three, Some(two_ns));
+        let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
+        let branch = x.when(c, vec![then], Some(otherwise));
+        let branch = x.stmt(branch);
+        Buck::reaction(b, body, vec![changed], vec![branch], vec![], "a.msl", 2);
+        body
+    }
+
+    // abi.md §6 C1 and RS-12 AC 4: `LATER` with `min_after` only when the delay is a literal
+    // constant greater than 0. A body committing `q` six ways, and a drive with a literal delay:
+    //   on clk.changed() {
+    //       q <- x after 2n;  q <- x after 0.0;  q <- x after -1n;  q <- x;
+    //       q <- x after t;   q <- x after 0.5 / t;
+    //   }
+    //   y = x after 3n;
+    fn delays(b: &mut IrBuilder) -> BodyId {
+        let body = b.body(BodySpec { params: vec![Buck::param("t", "d.msl", 1, Some(1e-9), None)], ..Buck::spec("Delays", "d.msl", 1) });
+        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 20));
+        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 30));
+        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 40));
+        b.carrier(body, Buck::carrier("y", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 50));
+        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("d.msl", 2, 8) });
+        let mut x = Dx::new(b, "d.msl", 3, 9);
+        let mut stmts = Vec::new();
+        for delay in 0..6 {
+            let value = x.carrier(1, ValueType::Bool);
+            let after = match delay {
+                0 => Some(x.real(2e-9)),
+                1 => Some(x.real(0.0)),
+                2 => Some(x.real(-1e-9)),
+                3 => None,
+                4 => Some(x.param(0, ValueType::F64)),
+                _ => {
+                    let half = x.real(0.5);
+                    let t = x.param(0, ValueType::F64);
+                    Some(x.bin(piperine_ir::BinaryOp::Div, half, t, ValueType::F64))
+                }
+            };
+            stmts.push(x.commit(2, value, after));
+        }
+        Buck::reaction(b, body, vec![changed], stmts, vec![], "d.msl", 2);
+        let mut x = Dx::new(b, "d.msl", 5, 9);
+        let value = x.carrier(1, ValueType::Bool);
+        let after = x.real(3e-9);
+        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5), element: None, path: vec![] });
+        body
+    }
+
+    // A guarded `cross` (`on cross(v(a)) if en`): the watch fires a private event pin
+    // `cross:0`, and the event function fires the event pin when that pin fired and the guard
+    // holds (R1: the non-probing part of a guard is a discrete function).
+    fn watch_guarded(b: &mut IrBuilder) -> BodyId {
+        let el = Buck::electrical(b);
+        let body = b.body(BodySpec {
+            nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Buck::origin("gc.msl", 1, 10) }],
+            ..Buck::spec("GuardedCross", "gc.msl", 1)
+        });
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "gc.msl", 1, 30));
+        let mut x = Dx::new(b, "gc.msl", 2, 12);
+        let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
+        let en = x.carrier(0, ValueType::Bool);
+        let guard = en;
+        b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
+        body
+    }
+}
+
+#[test]
+fn an_option_carrier_pin_is_presence_then_payload() {
+    let (ir, body) = Alone::design(ShapeBodies::options);
+    let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
+    let pins: Vec<&Pin<'_>> = plan.shape().shape().pins.iter().collect();
+    assert_eq!(pins.len(), 2, "one pin per carrier");
+    let some = ("some".to_string(), leaf::BOOL, 0, 1);
+    assert_eq!(DigitalShapeProbe::layout(&pins[0].layout), (2, 1, vec![some.clone(), ("value".to_string(), leaf::U8, 1, 1)]), "`Option<u8>`");
+    assert_eq!(DigitalShapeProbe::layout(&pins[1].layout), (9, 1, vec![some, ("value".to_string(), leaf::F64, 1, 1)]), "`Option<f64>`: the payload follows the presence byte");
+    for pin in pins {
+        assert_eq!(pin.kind, kind::DISCRETE, "pin {}", pin.name.as_str());
+        assert!(pin.layout.fields.iter().all(|f| f.name.as_str() == "some" || f.name.as_str() == "value"), "pin {}: the value only", pin.name.as_str());
+    }
 }
 
 #[test]
 fn carriers_are_discrete_pins_that_hold_the_value_only() {
-    let (ir, body) = Alone::design(CarriersDiscretePinsFixture::widths);
+    let (ir, body) = Alone::design(ShapeBodies::widths);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let pins: Vec<&Pin<'_>> = shape.pins.iter().collect();
@@ -315,8 +391,8 @@ fn a_drive_is_a_discrete_function() {
     let (ir, body) = Alone::design(Buck::ref_ramp);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (target, reference, at_target) = (Find::pin(shape, "target"), Find::pin(shape, "reference"), Find::pin(shape, "at_target"));
-    let (reads, writes, partials) = Find::function(shape, "drive:at_target");
+    let (target, reference, at_target) = (ShapeEntry::pin(shape, "target"), ShapeEntry::pin(shape, "reference"), ShapeEntry::pin(shape, "at_target"));
+    let (reads, writes, partials) = ShapeEntry::function(shape, "drive:at_target");
     assert_eq!(reads, [DigitalShapeProbe::pin(target, part::VALUE), DigitalShapeProbe::pin(reference, part::VALUE)], "reads the VALUE of each carrier it reaches");
     assert_eq!(writes, [DigitalShapeProbe::pin(at_target, part::VALUE)], "writes the carrier's pin");
     assert_eq!(partials, [], "no real field: no partial");
@@ -332,30 +408,9 @@ fn a_drive_is_a_discrete_function() {
     let (ir, body) = Alone::design(Buck::dpwm);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (reads, writes, _) = Find::function(shape, "drive:sample");
-    assert_eq!(reads, [DigitalShapeProbe::pin(Find::pin(shape, "count"), part::VALUE)]);
-    assert_eq!(writes, [DigitalShapeProbe::pin(Find::pin(shape, "sample"), part::VALUE)]);
-}
-
-/// Fixtures of the test `an_event_is_an_event_pin_and_its_function`, hoisted out of its body.
-struct EventEventPinFixture;
-
-impl EventEventPinFixture {
-    // A guard reading another carrier and a param: `on clk.changed() if en && k > 0.0`
-    // reads the VALUE of `en` and the param `k` besides `clk`'s two cells.
-    fn guarded(b: &mut IrBuilder) -> BodyId {
-        let body = b.body(BodySpec { params: vec![Buck::param("k", "g.msl", 1, Some(1.0), None)], ..Buck::spec("Guarded", "g.msl", 1) });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 20));
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "g.msl", 1, 30));
-        let mut x = Dx::new(b, "g.msl", 2, 22);
-        let en = x.carrier(1, ValueType::Bool);
-        let k = x.param(0, ValueType::F64);
-        let zero = x.real(0.0);
-        let positive = x.bin(piperine_ir::BinaryOp::Gt, k, zero, ValueType::Bool);
-        let guard = x.bin(piperine_ir::BinaryOp::And, en, positive, ValueType::Bool);
-        b.event(body, Event { source: EventSource::Changed(0), guard: Some(guard), origin: Buck::origin("g.msl", 2, 8) });
-        body
-    }
+    let (reads, writes, _) = ShapeEntry::function(shape, "drive:sample");
+    assert_eq!(reads, [DigitalShapeProbe::pin(ShapeEntry::pin(shape, "count"), part::VALUE)]);
+    assert_eq!(writes, [DigitalShapeProbe::pin(ShapeEntry::pin(shape, "sample"), part::VALUE)]);
 }
 
 #[test]
@@ -383,7 +438,7 @@ fn an_event_is_an_event_pin_and_its_function() {
     assert_eq!(DigitalShapeProbe::layout(&rise.layout), DigitalShapeProbe::layout(&NONE), "an event pin holds nothing");
     assert_eq!(rise.name.as_str(), "event:0");
     assert_eq!(Find::function_names(shape), ["event:0"], "one function: the event's");
-    let (reads, writes, partials) = Find::function(shape, "event:0");
+    let (reads, writes, partials) = ShapeEntry::function(shape, "event:0");
     assert_eq!(reads, [DigitalShapeProbe::pin(0, part::VALUE), DigitalShapeProbe::pin(0, part::CHANGED)]);
     assert_eq!(writes, [DigitalShapeProbe::pin(3, part::CHANGED)], "fires the event pin: abi.md §4.1, an event pin is written through CHANGED");
     assert_eq!(partials, []);
@@ -393,23 +448,23 @@ fn an_event_is_an_event_pin_and_its_function() {
     let (ir, body) = Alone::design(Buck::osc);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let clk = Find::pin(shape, "clk");
-    let (reads, writes, _) = Find::function(shape, "event:0");
+    let clk = ShapeEntry::pin(shape, "clk");
+    let (reads, writes, _) = ShapeEntry::function(shape, "event:0");
     assert_eq!(reads, [DigitalShapeProbe::pin(clk, part::VALUE), DigitalShapeProbe::pin(clk, part::CHANGED)]);
-    assert_eq!(writes, [DigitalShapeProbe::pin(Find::pin(shape, "event:0"), part::CHANGED)]);
+    assert_eq!(writes, [DigitalShapeProbe::pin(ShapeEntry::pin(shape, "event:0"), part::CHANGED)]);
 
-    let (ir, body) = Alone::design(EventEventPinFixture::guarded);
+    let (ir, body) = Alone::design(ShapeBodies::event_guarded);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (k, clk, en) = (Find::pin(shape, "k"), Find::pin(shape, "clk"), Find::pin(shape, "en"));
-    let (reads, writes, _) = Find::function(shape, "event:0");
+    let (k, clk, en) = (ShapeEntry::pin(shape, "k"), ShapeEntry::pin(shape, "clk"), ShapeEntry::pin(shape, "en"));
+    let (reads, writes, _) = ShapeEntry::function(shape, "event:0");
     let mut got = reads.clone();
     got.sort_by_key(|c| (c.index, c.part));
     let mut want = vec![DigitalShapeProbe::pin(k, part::VALUE), DigitalShapeProbe::pin(clk, part::VALUE), DigitalShapeProbe::pin(clk, part::CHANGED), DigitalShapeProbe::pin(en, part::VALUE)];
     want.sort_by_key(|c| (c.index, c.part));
     assert_eq!(got, want, "the carrier's VALUE and CHANGED and every pin of the guard, once each");
-    assert_eq!(writes, [DigitalShapeProbe::pin(Find::pin(shape, "event:0"), part::CHANGED)]);
-    assert!(shape.pins.get(Find::pin(shape, "event:0") as usize).is_some_and(|p| p.kind == kind::EVENT && p.role == role::PRIVATE));
+    assert_eq!(writes, [DigitalShapeProbe::pin(ShapeEntry::pin(shape, "event:0"), part::CHANGED)]);
+    assert!(shape.pins.get(ShapeEntry::pin(shape, "event:0") as usize).is_some_and(|p| p.kind == kind::EVENT && p.role == role::PRIVATE));
     assert_eq!(plan.functions()[0].reads.iter().filter(|r| matches!(r, Source::CarrierChanged(_))).count(), 1);
 }
 
@@ -421,9 +476,9 @@ fn a_delayed_drive_is_a_pin_an_event_and_a_reaction() {
     let (ir, body) = Alone::design(Buck::gate_driver);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (tpd, hs_cmd, ls_cmd, hs_gate) = (Find::pin(shape, "tpd"), Find::pin(shape, "hs_cmd"), Find::pin(shape, "ls_cmd"), Find::pin(shape, "hs_gate"));
-    let now = Find::pin(shape, "drive:hs_gate.now");
-    let changed = Find::pin(shape, "drive:hs_gate.changed");
+    let (tpd, hs_cmd, ls_cmd, hs_gate) = (ShapeEntry::pin(shape, "tpd"), ShapeEntry::pin(shape, "hs_cmd"), ShapeEntry::pin(shape, "ls_cmd"), ShapeEntry::pin(shape, "hs_gate"));
+    let now = ShapeEntry::pin(shape, "drive:hs_gate.now");
+    let changed = ShapeEntry::pin(shape, "drive:hs_gate.changed");
     let now_pin = shape.pins.get(now as usize).expect("the undelayed pin");
     assert_eq!((now_pin.kind, now_pin.role, now_pin.flags), (kind::DISCRETE, role::PRIVATE, 0), "a private discrete pin");
     assert_eq!(DigitalShapeProbe::layout(&now_pin.layout), DigitalShapeProbe::layout(&BIT), "in the carrier's layout");
@@ -431,16 +486,16 @@ fn a_delayed_drive_is_a_pin_an_event_and_a_reaction() {
     assert_eq!((event_pin.kind, event_pin.role), (kind::EVENT, role::PRIVATE));
 
     // The drive's function writes the undelayed pin, not the carrier.
-    let (reads, writes, _) = Find::function(shape, "drive:hs_gate");
+    let (reads, writes, _) = ShapeEntry::function(shape, "drive:hs_gate");
     assert_eq!(reads, [DigitalShapeProbe::pin(hs_cmd, part::VALUE), DigitalShapeProbe::pin(ls_cmd, part::VALUE)]);
     assert_eq!(writes, [DigitalShapeProbe::pin(now, part::VALUE)]);
     // The `changed` event on it: VALUE and CHANGED of the undelayed pin (RS-12 AC 3).
-    let (reads, writes, _) = Find::function(shape, "drive:hs_gate.changed");
+    let (reads, writes, _) = ShapeEntry::function(shape, "drive:hs_gate.changed");
     assert_eq!(reads, [DigitalShapeProbe::pin(now, part::VALUE), DigitalShapeProbe::pin(now, part::CHANGED)]);
     assert_eq!(writes, [DigitalShapeProbe::pin(changed, part::CHANGED)]);
     // The reaction: on that event, reading the undelayed value and what the delay reads (`tpd`),
     // one statement on the whole of `hs_gate` (2 bytes, `BIT`); `tpd` is no literal: no `LATER`.
-    let (on, reads, statements) = Find::reaction(shape, "drive:hs_gate");
+    let (on, reads, statements) = ShapeEntry::reaction(shape, "drive:hs_gate");
     assert_eq!(on, [changed]);
     let mut got = reads.clone();
     got.sort_by_key(|c| c.index);
@@ -462,7 +517,7 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     assert_eq!(shape.reactions.len(), 1);
-    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
+    let (on, reads, statements) = ShapeEntry::reaction(shape, "reaction:0");
     assert_eq!(on, [3], "on the event pin `rise`");
     assert_eq!(reads, [DigitalShapeProbe::pin(1, part::VALUE)], "reads `d`");
     assert_eq!(statements, [(2, 0, 1, 0, 0.0)], "S0 {{q}}");
@@ -475,8 +530,8 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let (ir, body) = Alone::design(Buck::dpwm);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
-    assert_eq!(on, [Find::pin(shape, "event:0")]);
+    let (on, reads, statements) = ShapeEntry::reaction(shape, "reaction:0");
+    assert_eq!(on, [ShapeEntry::pin(shape, "event:0")]);
     let mut read: Vec<&str> = reads
         .iter()
         .map(|c| {
@@ -501,122 +556,45 @@ fn a_reaction_lists_its_events_reads_and_statements() {
     let (ir, body) = Alone::design(Buck::ref_ramp);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let reference = Find::pin(shape, "reference");
-    let (_, reads, statements) = Find::reaction(shape, "reaction:0");
-    assert_eq!(reads, [DigitalShapeProbe::pin(Find::pin(shape, "run"), part::VALUE), DigitalShapeProbe::pin(Find::pin(shape, "target"), part::VALUE), DigitalShapeProbe::pin(reference, part::VALUE)]);
+    let reference = ShapeEntry::pin(shape, "reference");
+    let (_, reads, statements) = ShapeEntry::reaction(shape, "reaction:0");
+    assert_eq!(reads, [DigitalShapeProbe::pin(ShapeEntry::pin(shape, "run"), part::VALUE), DigitalShapeProbe::pin(ShapeEntry::pin(shape, "target"), part::VALUE), DigitalShapeProbe::pin(reference, part::VALUE)]);
     assert_eq!(statements, [(reference, 0, 2, 0, 0.0); 3]);
-}
-
-/// Fixtures of the test `an_if_lists_its_then_statement_before_its_else`, hoisted out of its body.
-struct IfListsStatementFixture;
-
-impl IfListsStatementFixture {
-    // RS-12 AC 4 "one statement per commit in source order": `then` is written before `else`, so
-    // its commit is the earlier statement. The two arms commit to one carrier with different
-    // literal delays, so each statement's `LATER` bound tells the arms apart (verification F-B3):
-    //   on clk.changed() {
-    //       if c { b <- 2 after 1n; } else { b <- 3 after 2n; }
-    //   }
-    fn arms(b: &mut IrBuilder) -> BodyId {
-        let body = b.body(Buck::spec("Arms", "a.msl", 1));
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "a.msl", 1, 20));
-        b.carrier(body, Buck::carrier("c", ValueType::Bool, CarrierRole::In, Some(Constant::Bool(false)), "a.msl", 1, 30));
-        b.carrier(body, Buck::carrier("b", ValueAliases::u(8), CarrierRole::Out, None, "a.msl", 1, 40));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("a.msl", 2, 8) });
-        let mut x = Dx::new(b, "a.msl", 3, 9);
-        let c = x.carrier(1, ValueType::Bool);
-        let two = x.int(2, ValueAliases::u(8));
-        let one_ns = x.real(1e-9);
-        let then = x.commit(2, two, Some(one_ns));
-        let three = x.int(3, ValueAliases::u(8));
-        let two_ns = x.real(2e-9);
-        let otherwise = x.commit(2, three, Some(two_ns));
-        let otherwise = x.block(vec![otherwise], None, ValueType::Unit);
-        let branch = x.when(c, vec![then], Some(otherwise));
-        let branch = x.stmt(branch);
-        Buck::reaction(b, body, vec![changed], vec![branch], vec![], "a.msl", 2);
-        body
-    }
 }
 
 #[test]
 fn an_if_lists_its_then_statement_before_its_else() {
-    let (ir, body) = Alone::design(IfListsStatementFixture::arms);
+    let (ir, body) = Alone::design(ShapeBodies::arms);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let later = piperine_abi::raw::statement_flag::LATER;
-    let b = Find::pin(shape, "b");
+    let b = ShapeEntry::pin(shape, "b");
     // `b`'s `Bit<u8>` pin is 1 byte; statement 0 is the `then` commit (1 ns), statement 1 the
     // `else` commit (2 ns)
-    let (_, _, statements) = Find::reaction(shape, "reaction:0");
+    let (_, _, statements) = ShapeEntry::reaction(shape, "reaction:0");
     assert_eq!(statements, [(b, 0, 1, later, 1e-9), (b, 0, 1, later, 2e-9)]);
     let mins: Vec<(Target, Option<f64>)> = plan.reactions()[0].statements.iter().map(|st| (st.target, st.min_after)).collect();
     assert_eq!(mins, [(Target::Carrier(2), Some(1e-9)), (Target::Carrier(2), Some(2e-9))]);
 }
 
-/// Fixtures of the test `only_a_literal_positive_delay_is_later`, hoisted out of its body.
-struct OnlyLiteralPositiveFixture;
-
-impl OnlyLiteralPositiveFixture {
-    // abi.md §6 C1 and RS-12 AC 4: `LATER` with `min_after` only when the delay is a literal
-    // constant greater than 0. A body committing `q` six ways, and a drive with a literal delay:
-    //   on clk.changed() {
-    //       q <- x after 2n;  q <- x after 0.0;  q <- x after -1n;  q <- x;
-    //       q <- x after t;   q <- x after 0.5 / t;
-    //   }
-    //   y = x after 3n;
-    fn delays(b: &mut IrBuilder) -> BodyId {
-        let body = b.body(BodySpec { params: vec![Buck::param("t", "d.msl", 1, Some(1e-9), None)], ..Buck::spec("Delays", "d.msl", 1) });
-        b.carrier(body, Buck::carrier("clk", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 20));
-        b.carrier(body, Buck::carrier("x", ValueType::Bool, CarrierRole::In, None, "d.msl", 1, 30));
-        b.carrier(body, Buck::carrier("q", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 40));
-        b.carrier(body, Buck::carrier("y", ValueType::Bool, CarrierRole::Out, None, "d.msl", 1, 50));
-        let changed = b.event(body, Event { source: EventSource::Changed(0), guard: None, origin: Buck::origin("d.msl", 2, 8) });
-        let mut x = Dx::new(b, "d.msl", 3, 9);
-        let mut stmts = Vec::new();
-        for delay in 0..6 {
-            let value = x.carrier(1, ValueType::Bool);
-            let after = match delay {
-                0 => Some(x.real(2e-9)),
-                1 => Some(x.real(0.0)),
-                2 => Some(x.real(-1e-9)),
-                3 => None,
-                4 => Some(x.param(0, ValueType::F64)),
-                _ => {
-                    let half = x.real(0.5);
-                    let t = x.param(0, ValueType::F64);
-                    Some(x.bin(piperine_ir::BinaryOp::Div, half, t, ValueType::F64))
-                }
-            };
-            stmts.push(x.commit(2, value, after));
-        }
-        Buck::reaction(b, body, vec![changed], stmts, vec![], "d.msl", 2);
-        let mut x = Dx::new(b, "d.msl", 5, 9);
-        let value = x.carrier(1, ValueType::Bool);
-        let after = x.real(3e-9);
-        b.drive(body, piperine_ir::Drive { carrier: 3, value, after: Some(after), origin: Buck::origin("d.msl", 5, 5), element: None, path: vec![] });
-        body
-    }
-}
-
 #[test]
 fn only_a_literal_positive_delay_is_later() {
-    let (ir, body) = Alone::design(OnlyLiteralPositiveFixture::delays);
+    let (ir, body) = Alone::design(ShapeBodies::delays);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     let later = piperine_abi::raw::statement_flag::LATER;
-    let (_, _, statements) = Find::reaction(shape, "reaction:0");
+    let (_, _, statements) = ShapeEntry::reaction(shape, "reaction:0");
     let flags: Vec<(u32, f64)> = statements.iter().map(|st| (st.3, st.4)).collect();
     assert_eq!(flags, [(later, 2e-9), (0, 0.0), (0, 0.0), (0, 0.0), (0, 0.0), (0, 0.0)]);
     let mins: Vec<Option<f64>> = plan.reactions()[0].statements.iter().map(|st| st.min_after).collect();
     assert_eq!(mins, [Some(2e-9), None, None, None, None, None]);
     // the delayed drive's reaction follows the same rule
-    let (_, _, statements) = Find::reaction(shape, "drive:y");
-    assert_eq!(statements, [(Find::pin(shape, "y"), 0, 1, later, 3e-9)]);
+    let (_, _, statements) = ShapeEntry::reaction(shape, "drive:y");
+    assert_eq!(statements, [(ShapeEntry::pin(shape, "y"), 0, 1, later, 3e-9)]);
     // the oscillator's `after 0.5 / f` reads a param: no flag
     let (ir, body) = Alone::design(Buck::osc);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-    let (_, _, statements) = Find::reaction(plan.shape().shape(), "reaction:0");
+    let (_, _, statements) = ShapeEntry::reaction(plan.shape().shape(), "reaction:0");
     assert_eq!(statements.iter().map(|st| st.3).collect::<Vec<_>>(), [0]);
 }
 
@@ -627,47 +605,24 @@ fn a_probing_reaction_reads_the_continuous_pin() {
     let (ir, body) = Alone::design(Buck::adc);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let ain = Find::pin(shape, "ain");
+    let ain = ShapeEntry::pin(shape, "ain");
     assert!(shape.pins.get(ain as usize).is_some_and(|p| p.kind == kind::CONTINUOUS));
-    let (on, reads, statements) = Find::reaction(shape, "reaction:0");
-    assert_eq!(on, [Find::pin(shape, "event:0")]);
+    let (on, reads, statements) = ShapeEntry::reaction(shape, "reaction:0");
+    assert_eq!(on, [ShapeEntry::pin(shape, "event:0")]);
     assert_eq!(
         reads,
-        [DigitalShapeProbe::pin(ain, part::VALUE), DigitalShapeProbe::pin(Find::pin(shape, "vref"), part::VALUE), DigitalShapeProbe::pin(Find::pin(shape, "tconv"), part::VALUE), DigitalShapeProbe::pin(Find::pin(shape, "tstrobe"), part::VALUE)]
+        [DigitalShapeProbe::pin(ain, part::VALUE), DigitalShapeProbe::pin(ShapeEntry::pin(shape, "vref"), part::VALUE), DigitalShapeProbe::pin(ShapeEntry::pin(shape, "tconv"), part::VALUE), DigitalShapeProbe::pin(ShapeEntry::pin(shape, "tstrobe"), part::VALUE)]
     );
     assert!(plan.reactions()[0].reads.contains(&Source::Node(0)));
     // code (a `u10`: 4 bytes), done, done: the three commits in source order
-    let (code, done) = (Find::pin(shape, "code"), Find::pin(shape, "done"));
+    let (code, done) = (ShapeEntry::pin(shape, "code"), ShapeEntry::pin(shape, "done"));
     assert_eq!(statements, [(code, 0, 2, 0, 0.0), (done, 0, 1, 0, 0.0), (done, 0, 1, 0, 0.0)]);
     // a reaction that probes nothing reads no continuous pin: the flip-flop's
     let (ir, body) = Alone::design(Buck::dff);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (_, reads, _) = Find::reaction(shape, "reaction:0");
+    let (_, reads, _) = ShapeEntry::reaction(shape, "reaction:0");
     assert!(reads.iter().all(|c| shape.pins.get(c.index as usize).is_some_and(|p| p.kind != kind::CONTINUOUS)));
-}
-
-/// Fixtures of the test `a_cross_event_is_a_watch_with_partials`, hoisted out of its body.
-struct CrossEventWatchFixture;
-
-impl CrossEventWatchFixture {
-    // A guarded `cross` (`on cross(v(a)) if en`): the watch fires a private event pin
-    // `cross:0`, and the event function fires the event pin when that pin fired and the guard
-    // holds (R1: the non-probing part of a guard is a discrete function).
-    fn guarded(b: &mut IrBuilder) -> BodyId {
-        let el = Buck::electrical(b);
-        let body = b.body(BodySpec {
-            nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: piperine_ir::NodeRole::Port, init: None, origin: Buck::origin("gc.msl", 1, 10) }],
-            ..Buck::spec("GuardedCross", "gc.msl", 1)
-        });
-        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, "gc.msl", 1, 30));
-        let mut x = Dx::new(b, "gc.msl", 2, 12);
-        let v = x.probe(piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Ground);
-        let en = x.carrier(0, ValueType::Bool);
-        let guard = en;
-        b.event(body, Event { source: EventSource::Cross { e: v, ttol: None, etol: None }, guard: Some(guard), origin: Buck::origin("gc.msl", 2, 8) });
-        body
-    }
 }
 
 #[test]
@@ -681,8 +636,8 @@ fn a_cross_event_is_a_watch_with_partials() {
     let (ir, body) = Alone::design(Buck::comparator);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (a, vth, hyst, d) = (Find::pin(shape, "a"), Find::pin(shape, "vth"), Find::pin(shape, "hyst"), Find::pin(shape, "d"));
-    let (up, down) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
+    let (a, vth, hyst, d) = (ShapeEntry::pin(shape, "a"), ShapeEntry::pin(shape, "vth"), ShapeEntry::pin(shape, "hyst"), ShapeEntry::pin(shape, "d"));
+    let (up, down) = (ShapeEntry::pin(shape, "event:0"), ShapeEntry::pin(shape, "event:1"));
     let d_pin = shape.pins.get(d as usize).expect("d");
     assert_eq!((d_pin.kind, d_pin.role, d_pin.init.as_slice()), (kind::DISCRETE, role::PORT, &LOW[..]), "out (PORT BIT, init LOW)");
     for e in [up, down] {
@@ -701,7 +656,7 @@ fn a_cross_event_is_a_watch_with_partials() {
     // continuous pin of its set); `vth` and `hyst` are read, not differentiated
     let watch = |w: u32| Cell { kind: cell::WATCH, index: w, part: part::VALUE };
     for (k, w) in [(0, 0), (1, 1)] {
-        let (reads, writes, partials) = Find::function(shape, &format!("cross:{k}"));
+        let (reads, writes, partials) = ShapeEntry::function(shape, &format!("cross:{k}"));
         assert_eq!(reads, [DigitalShapeProbe::pin(a, part::VALUE), DigitalShapeProbe::pin(vth, part::VALUE), DigitalShapeProbe::pin(hyst, part::VALUE)]);
         assert_eq!(writes, [watch(w)]);
         assert_eq!(partials, [(0, 0)], "(0 <- a)");
@@ -709,17 +664,17 @@ fn a_cross_event_is_a_watch_with_partials() {
     assert_eq!(Find::function_names(shape), ["cross:0", "cross:1"], "no function writes an event pin: the watches do (P1)");
     assert_eq!(plan.functions()[0].mode, Mode::Cross(0));
     // reaction 0: on [up] writes [S0 {out}]; reaction 1: on [down] writes [S0 {out}]
-    assert_eq!(Find::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 1, 0, 0.0)]));
-    assert_eq!(Find::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 1, 0, 0.0)]));
+    assert_eq!(ShapeEntry::reaction(shape, "reaction:0"), (vec![up], vec![], vec![(d, 0, 1, 0, 0.0)]));
+    assert_eq!(ShapeEntry::reaction(shape, "reaction:1"), (vec![down], vec![], vec![(d, 0, 1, 0, 0.0)]));
 
-    let (ir, body) = Alone::design(CrossEventWatchFixture::guarded);
+    let (ir, body) = Alone::design(ShapeBodies::watch_guarded);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (a, en, event, crossed) = (Find::pin(shape, "a"), Find::pin(shape, "en"), Find::pin(shape, "event:0"), Find::pin(shape, "cross:0"));
+    let (a, en, event, crossed) = (ShapeEntry::pin(shape, "a"), ShapeEntry::pin(shape, "en"), ShapeEntry::pin(shape, "event:0"), ShapeEntry::pin(shape, "cross:0"));
     assert!(shape.pins.get(crossed as usize).is_some_and(|p| p.kind == kind::EVENT && p.role == role::PRIVATE));
     assert_eq!(shape.watches.get(0).map(|w| w.event), Some(crossed), "the watch fires its own pin");
-    assert_eq!(Find::function(shape, "cross:0"), (vec![DigitalShapeProbe::pin(a, part::VALUE)], vec![watch(0)], vec![(0, 0)]));
-    let (reads, writes, _) = Find::function(shape, "event:0");
+    assert_eq!(ShapeEntry::function(shape, "cross:0"), (vec![DigitalShapeProbe::pin(a, part::VALUE)], vec![watch(0)], vec![(0, 0)]));
+    let (reads, writes, _) = ShapeEntry::function(shape, "event:0");
     assert_eq!(reads, [DigitalShapeProbe::pin(en, part::VALUE), DigitalShapeProbe::pin(crossed, part::CHANGED)]);
     assert_eq!(writes, [DigitalShapeProbe::pin(event, part::CHANGED)]);
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
@@ -733,8 +688,8 @@ fn an_analog_read_of_a_carrier_is_a_read_of_terms() {
     let (ir, body) = Alone::design(Buck::switch);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (p, n, ron, roff, g) = (Find::pin(shape, "p"), Find::pin(shape, "n"), Find::pin(shape, "ron"), Find::pin(shape, "roff"), Find::pin(shape, "g"));
-    let (reads, writes, partials) = Find::function(shape, "terms");
+    let (p, n, ron, roff, g) = (ShapeEntry::pin(shape, "p"), ShapeEntry::pin(shape, "n"), ShapeEntry::pin(shape, "ron"), ShapeEntry::pin(shape, "roff"), ShapeEntry::pin(shape, "g"));
+    let (reads, writes, partials) = ShapeEntry::function(shape, "terms");
     assert_eq!(reads, [DigitalShapeProbe::pin(p, part::VALUE), DigitalShapeProbe::pin(n, part::VALUE), DigitalShapeProbe::pin(ron, part::VALUE), DigitalShapeProbe::pin(roff, part::VALUE), DigitalShapeProbe::pin(g, part::VALUE)]);
     assert_eq!(writes, [Cell { kind: cell::TERM, index: 0, part: part::VALUE }]);
     assert_eq!(partials, [(0, 0), (0, 1)], "against p and n only");
@@ -820,7 +775,7 @@ fn every_record_layout_holds_its_declared_fields_only() {
         (vec!["code", "ok", "count"], 8, 4),
     ];
     for ((name, _), (names, size, align)) in streams.iter().zip(want.clone()) {
-        let p = shape.pins.get(Find::pin(shape, name) as usize).expect("the record pin");
+        let p = shape.pins.get(ShapeEntry::pin(shape, name) as usize).expect("the record pin");
         let fields: Vec<String> = p.layout.fields.iter().map(|f| f.name.as_str().to_string()).collect();
         assert_eq!(fields.iter().map(String::as_str).collect::<Vec<_>>(), names, "{name}: the declared fields and nothing after them");
         assert_eq!((p.layout.size, p.layout.align), (size, align), "{name}");
@@ -892,7 +847,7 @@ fn a_guard_or_a_decision_adds_no_read_and_no_resolution_pin() {
         let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
         let shape = plan.shape().shape();
         assert_eq!(plan.reactions()[0].reads, [], "{name}");
-        assert_eq!(Find::reaction(shape, "reaction:0").1, [], "{name}");
+        assert_eq!(ShapeEntry::reaction(shape, "reaction:0").1, [], "{name}");
         assert!(!DigitalShapeProbe::has_pin(shape, "resolution"), "{name}");
     }
     let (ir, body) = Alone::design(|b| Merging::deciding(b, "Known"));
@@ -932,22 +887,22 @@ fn a_settle_event_reads_the_global_settle_pin() {
     let (ir, body) = Alone::design(|b| Settling::body(b, false));
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let settle = Find::pin(shape, "settle");
+    let settle = ShapeEntry::pin(shape, "settle");
     let view = shape.pins.get(settle as usize).expect("the settle pin");
     assert_eq!((view.kind, view.role, view.global), (kind::EVENT, role::GLOBAL, global::SETTLE));
-    let event = Find::pin(shape, "event:0");
-    let (reads, writes, _) = Find::function(shape, "event:0");
+    let event = ShapeEntry::pin(shape, "event:0");
+    let (reads, writes, _) = ShapeEntry::function(shape, "event:0");
     assert_eq!(reads, [DigitalShapeProbe::pin(settle, part::CHANGED)], "an unguarded settle reads the settle pin alone");
     assert_eq!(writes, [DigitalShapeProbe::pin(event, part::CHANGED)]);
     assert_eq!(plan.functions()[0].reads, [Source::Settle]);
-    assert_eq!(Find::reaction(shape, "reaction:0").0, vec![event], "the reaction listens to the event pin, never to SETTLE");
+    assert_eq!(ShapeEntry::reaction(shape, "reaction:0").0, vec![event], "the reaction listens to the event pin, never to SETTLE");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 
     let (ir, body) = Alone::design(|b| Settling::body(b, true));
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (ready, settle) = (Find::pin(shape, "ready"), Find::pin(shape, "settle"));
-    let (reads, _, _) = Find::function(shape, "event:0");
+    let (ready, settle) = (ShapeEntry::pin(shape, "ready"), ShapeEntry::pin(shape, "settle"));
+    let (reads, _, _) = ShapeEntry::function(shape, "event:0");
     assert_eq!(reads, [DigitalShapeProbe::pin(ready, part::VALUE), DigitalShapeProbe::pin(settle, part::CHANGED)], "§13 rule 1: the guard is read in the same microstep");
     assert_eq!(piperine_abi::validate::validate(shape), Ok(()));
 }
@@ -1027,11 +982,11 @@ fn an_event_function_reading_another_event_runs_after_it() {
     let (ir, body) = Alone::design(Guarding::body);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (guarded, read) = (Find::pin(shape, "event:0"), Find::pin(shape, "event:1"));
-    let (reads, writes, _) = Find::function(shape, "event:0");
+    let (guarded, read) = (ShapeEntry::pin(shape, "event:0"), ShapeEntry::pin(shape, "event:1"));
+    let (reads, writes, _) = ShapeEntry::function(shape, "event:0");
     assert!(reads.contains(&DigitalShapeProbe::pin(read, part::CHANGED)), "the guarded event reads the other event's pin: {reads:?}");
     assert_eq!(writes, [DigitalShapeProbe::pin(guarded, part::CHANGED)]);
-    let (_, writes, _) = Find::function(shape, "event:1");
+    let (_, writes, _) = ShapeEntry::function(shape, "event:1");
     assert_eq!(writes, [DigitalShapeProbe::pin(read, part::CHANGED)], "the read event writes its own pin");
     assert_eq!(plan.functions()[0].reads.iter().filter(|s| **s == Source::Fired(1)).count(), 1, "{:?}", plan.functions()[0].reads);
     let declared = Find::function_names(shape);
@@ -1102,7 +1057,7 @@ fn a_resolved_carrier_has_value_drive_and_others_pins() {
     let (ir, body) = Alone::design(Resolved::holder);
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
-    let (value, drive, others) = (Find::pin(shape, "w"), Find::pin(shape, "w.drive"), Find::pin(shape, "w.others"));
+    let (value, drive, others) = (ShapeEntry::pin(shape, "w"), ShapeEntry::pin(shape, "w.drive"), ShapeEntry::pin(shape, "w.others"));
     assert!(value < drive && drive < others, "the value pin is the carrier's own; the drive and others pins follow every body pin");
     assert_eq!(shape.pins.iter().filter(|p| p.name.as_str() == "seen.drive" || p.name.as_str() == "seen.others").count(), 0, "a signal that is not resolved has neither");
 
@@ -1118,11 +1073,11 @@ fn a_resolved_carrier_has_value_drive_and_others_pins() {
         "the drive pin holds `X` and a plain `driving` byte"
     );
 
-    let (_, writes, _) = Find::function(shape, "drive:w");
+    let (_, writes, _) = ShapeEntry::function(shape, "drive:w");
     assert_eq!(writes, [DigitalShapeProbe::pin(drive, part::VALUE)], "a definition of a resolved carrier writes its drive pin, not the value pin");
     let k = Find::function_names(shape).iter().position(|n| n == "drive:w").expect("its index");
     assert_eq!(plan.functions()[k].writes, [Target::ResolvedDrive(0)]);
-    let (reads, _, _) = Find::function(shape, "drive:seen");
+    let (reads, _, _) = ShapeEntry::function(shape, "drive:seen");
     assert_eq!(reads, [DigitalShapeProbe::pin(others, part::VALUE)], "`w.others()` reads the others pin");
     let k = Find::function_names(shape).iter().position(|n| n == "drive:seen").expect("its index");
     assert_eq!(plan.functions()[k].reads, [Source::Others(0)]);
@@ -1136,14 +1091,14 @@ fn the_drive_layout_appends_a_plain_driving_byte() {
     let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
     let shape = plan.shape().shape();
     for name in ["d0", "d1"] {
-        let drive = shape.pins.get(Find::pin(shape, name) as usize).expect("the pin");
+        let drive = shape.pins.get(ShapeEntry::pin(shape, name) as usize).expect("the pin");
         assert_eq!(
             DigitalShapeProbe::layout(&drive.layout),
             (2, 1, vec![("v".to_string(), leaf::BOOL, 0, 1), ("driving".to_string(), leaf::BOOL, 1, 1)]),
             "{name}: the drive input of a resolver is a drive layout"
         );
     }
-    assert_eq!(DigitalShapeProbe::layout(&shape.pins.get(Find::pin(shape, "v") as usize).expect("the pin").layout), DigitalShapeProbe::integer(leaf::U8, 1), "the value output is `V` alone");
+    assert_eq!(DigitalShapeProbe::layout(&shape.pins.get(ShapeEntry::pin(shape, "v") as usize).expect("the pin").layout), DigitalShapeProbe::integer(leaf::U8, 1), "the value output is `V` alone");
 
     // the layout is a function of the driven type: an `f64` aligns the byte to 8 and rounds the size to 16
     let wide = piperine_plan::DriveLayout::of(&ir, &ValueType::F64).expect("an f64 is driven");

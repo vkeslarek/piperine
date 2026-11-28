@@ -19,13 +19,13 @@ fn the_operating_point_follows_the_call_sequence() {
     let log = ScriptedLog::new();
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
-    d.instants.push_back(ProtocolOperatingPointCases::changing());
+    d.instants.push_back(OperatingPointSequences::changing());
     a.equilibria.push_back(Accepted { fired: vec![], samples: vec![0.5] });
     a.equilibria.push_back(Accepted { fired: vec![9], samples: vec![0.75] });
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1e-12));
     p.operating_point().unwrap();
     assert_eq!(
-        ProtocolOperatingPointCases::sequence(&log),
+        OperatingPointSequences::sequence(&log),
         [
             Call::Start,
             Call::Equilibrium,
@@ -46,7 +46,7 @@ fn rounds_beyond_the_bound_are_e0506_naming_the_nets() {
         let log = ScriptedLog::new();
         let mut d = ScriptedDiscrete::new(&log);
         let a = ScriptedAnalog::new(&log);
-        d.instants.extend((0..40).map(|_| ProtocolOperatingPointCases::changing()));
+        d.instants.extend((0..40).map(|_| OperatingPointSequences::changing()));
         d.names.push((7, "top.cmp.out".into()));
         let mut options = ProtocolOptions::new(1e-12);
         if let Some(b) = bound {
@@ -74,11 +74,11 @@ fn an_operating_point_without_unknowns_runs_the_instant_only() {
     let mut d = ScriptedDiscrete::new(&log);
     let mut a = ScriptedAnalog::new(&log);
     a.unknowns = false;
-    d.instants.push_back(ProtocolOperatingPointCases::changing());
+    d.instants.push_back(OperatingPointSequences::changing());
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1e-12));
     p.operating_point().unwrap();
     assert_eq!(
-        ProtocolOperatingPointCases::sequence(&log),
+        OperatingPointSequences::sequence(&log),
         [
             Call::Start,
             Call::RunInstant { at: 0, samples: vec![], limit: ScriptedLog::horizon(0, 0), mode: QUIET },
@@ -120,7 +120,7 @@ fn a_settle_commit_of_a_dc_point_lands_at_the_next_point() {
     p.operating_point().unwrap();
     let settle = |tick| Call::RunInstant { at: tick, samples: vec![], limit: ScriptedLog::horizon(0, 0), mode: SETTLE };
     assert_eq!(
-        ProtocolOperatingPointCases::settle_sequence(&log),
+        OperatingPointSequences::settle_sequence(&log),
         [
             Call::Start,
             Call::LandSettleCommits(0),
@@ -144,14 +144,14 @@ fn a_settle_commit_of_the_last_point_is_dropped() {
     let mut p = Protocol::new(d, a, ProtocolOptions::new(1e-12));
     p.operating_point().unwrap();
     p.end_sweep();
-    assert_eq!(ProtocolOperatingPointCases::settle_sequence(&log).last(), Some(&Call::DropSettleCommits));
+    assert_eq!(OperatingPointSequences::settle_sequence(&log).last(), Some(&Call::DropSettleCommits));
     assert_eq!(ScriptedLog::calls(&log, |c| matches!(c, Call::LandSettleCommits(_))), [Call::LandSettleCommits(0)], "only the point's own start landed any");
 }
 
-/// The helpers of the protocol_operating_point tests.
-pub struct ProtocolOperatingPointCases;
+/// The sequences of changes and settles an operating point runs.
+struct OperatingPointSequences;
 
-impl ProtocolOperatingPointCases {
+impl OperatingPointSequences {
     /// The changing helper `changing`.
     fn changing() -> Outcome {
         Outcome { boundary: vec![Boundary { slot: 7, bytes: vec![1] }], ..Outcome::default() }

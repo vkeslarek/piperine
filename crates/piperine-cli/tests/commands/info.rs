@@ -2,26 +2,8 @@
 //! backend, then the tables `params`, `ports` and `streams`, building nothing and simulating
 //! nothing; a design that does not elaborate gets the diagnostics `piperine check` prints, exit 1.
 
-use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
-
-/// Associated test helpers of `info`, grouped on one fixture type.
-struct InfoFixture;
-
-impl InfoFixture {
-    /// `piperine <args>` in `dir`, on a cache of its own: `info` builds nothing, so the cache stays empty.
-    fn piperine_in(dir: &Path, cache: &Path, args: &[&str]) -> Output {
-        Command::new(PathBuf::from(env!("CARGO_BIN_EXE_piperine"))).args(args).current_dir(dir).env("PIPERINE_CACHE_DIR", cache).env_remove("PIPERINE_BACKEND").output().unwrap_or_else(|e| panic!("cannot run {}: {e}", PathBuf::from(env!("CARGO_BIN_EXE_piperine")).display()))
-    }
-
-    fn text(bytes: &[u8]) -> String {
-        String::from_utf8_lossy(bytes).into_owned()
-    }
-
-    fn cells(line: &str) -> Vec<&str> {
-        line.split_whitespace().collect()
-    }
-}
+use std::path::Path;
+use super::process::PiperineProcess;
 
 #[test]
 fn info_prints_params_ports_and_streams() {
@@ -30,23 +12,23 @@ fn info_prints_params_ports_and_streams() {
     // of the low-pass are among the params; nothing was compiled
     let cache = tempfile::tempdir().expect("tmp");
     let rc = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/rc");
-    let out = InfoFixture::piperine_in(&rc, cache.path(), &["info"]);
-    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", InfoFixture::text(&out.stderr));
-    let stdout = InfoFixture::text(&out.stdout);
+    let out = PiperineProcess::piperine_cached(&rc, cache.path(), &["info"]);
+    assert_eq!(out.status.code(), Some(0), "stderr:\n{}", PiperineProcess::text(&out.stderr));
+    let stdout = PiperineProcess::text(&out.stdout);
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines[0], "info op: top Step, backend rust", "{stdout}");
     let at = |title: &str| lines.iter().position(|l| *l == title).unwrap_or_else(|| panic!("no `{title}` table in\n{stdout}"));
     let (params, ports, streams) = (at("params"), at("ports"), at("streams"));
     assert!(params < ports && ports < streams, "{stdout}");
-    assert_eq!(InfoFixture::cells(lines[params + 1]), ["path", "type", "value", "where", "structural"]);
-    let row = |path: &str| lines[params + 2..ports].iter().find(|l| InfoFixture::cells(l).first() == Some(&path)).unwrap_or_else(|| panic!("no param {path} in\n{stdout}"));
-    let r1 = InfoFixture::cells(row("Step.r1.r"));
+    assert_eq!(PiperineProcess::cells(lines[params + 1]), ["path", "type", "value", "where", "structural"]);
+    let row = |path: &str| lines[params + 2..ports].iter().find(|l| PiperineProcess::cells(l).first() == Some(&path)).unwrap_or_else(|| panic!("no param {path} in\n{stdout}"));
+    let r1 = PiperineProcess::cells(row("Step.r1.r"));
     assert_eq!(&r1[..3], ["Step.r1.r", "f64", "1.000000e3"], "{stdout}");
     assert!(r1.contains(&"where") || r1.iter().any(|c| *c == ">"), "the `where` text is shown: {r1:?}");
     assert_eq!(r1.last(), Some(&"false"), "not structural: {r1:?}");
-    assert!(InfoFixture::cells(row("Step.c1.c")).contains(&"1.000000e-9"), "{stdout}");
-    assert_eq!(InfoFixture::cells(lines[ports + 1]), ["name", "direction", "type"]);
-    assert_eq!(InfoFixture::cells(lines[streams + 1]), ["stream", "fields"]);
+    assert!(PiperineProcess::cells(row("Step.c1.c")).contains(&"1.000000e-9"), "{stdout}");
+    assert_eq!(PiperineProcess::cells(lines[ports + 1]), ["name", "direction", "type"]);
+    assert_eq!(PiperineProcess::cells(lines[streams + 1]), ["stream", "fields"]);
     assert!(std::fs::read_dir(cache.path()).expect("cache").next().is_none(), "nothing was compiled");
 }
 
@@ -56,11 +38,11 @@ fn info_of_a_broken_design_prints_diagnostics_and_exits_1() {
     // HII-11 AC 2: a design that does not elaborate: the diagnostics of `check`, exit 1, no table
     let cache = tempfile::tempdir().expect("tmp");
     let broken = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/projects/type_error");
-    let out = InfoFixture::piperine_in(&broken, cache.path(), &["info"]);
-    assert_eq!(out.status.code(), Some(1), "stdout:\n{}", InfoFixture::text(&out.stdout));
-    assert!(InfoFixture::text(&out.stdout).is_empty(), "no table: {}", InfoFixture::text(&out.stdout));
-    let check = InfoFixture::piperine_in(&broken, cache.path(), &["check"]);
-    let (shown, checked) = (InfoFixture::text(&out.stderr), InfoFixture::text(&check.stderr));
+    let out = PiperineProcess::piperine_cached(&broken, cache.path(), &["info"]);
+    assert_eq!(out.status.code(), Some(1), "stdout:\n{}", PiperineProcess::text(&out.stdout));
+    assert!(PiperineProcess::text(&out.stdout).is_empty(), "no table: {}", PiperineProcess::text(&out.stdout));
+    let check = PiperineProcess::piperine_cached(&broken, cache.path(), &["check"]);
+    let (shown, checked) = (PiperineProcess::text(&out.stderr), PiperineProcess::text(&check.stderr));
     let code = checked.lines().find(|l| l.trim().starts_with('E') || l.trim().starts_with('P')).unwrap_or_else(|| panic!("no code in\n{checked}")).trim().to_string();
     assert!(shown.contains(&code), "info reports the diagnostic `{code}` that check does:\n{shown}");
 }
