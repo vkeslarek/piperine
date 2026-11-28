@@ -38,7 +38,7 @@ fn with_probe_selection_builder_stores_requests() {
 #[test]
 fn empty_selection_and_no_global_flag_records_nothing() {
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7);
-    let res = ProbeSelectionCases::run_with(opts);
+    let res = ProbeRun::run_with(opts);
     assert!(res.len() > 1, "transient produced steps");
     for step in res.iter() {
         assert!(
@@ -56,7 +56,7 @@ fn record_device_state_true_records_full_banks() {
         record_device_state: true,
         ..TransientAnalysisOptions::new(1e-6, 1e-7)
     };
-    let res = ProbeSelectionCases::run_with(opts);
+    let res = ProbeRun::run_with(opts);
     let last = res.last().expect("at least one step");
     let banks = last
         .device_state("stub")
@@ -75,7 +75,7 @@ fn probe_selection_records_only_requested_state_observable() {
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7).with_probe_selection(
         ProbeSelection::new().request("stub", "state[0]"),
     );
-    let res = ProbeSelectionCases::run_with(opts);
+    let res = ProbeRun::run_with(opts);
     let last = res.last().expect("at least one step");
     let banks = last
         .device_state("stub")
@@ -95,7 +95,7 @@ fn probe_selection_records_only_requested_var_observable() {
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7).with_probe_selection(
         ProbeSelection::new().request("stub", "var[0]"),
     );
-    let res = ProbeSelectionCases::run_with(opts);
+    let res = ProbeRun::run_with(opts);
     let last = res.last().expect("at least one step");
     let banks = last
         .device_state("stub")
@@ -116,7 +116,7 @@ fn selective_recording_advances_per_accepted_step() {
     let opts = TransientAnalysisOptions::new(5e-6, 1e-6).with_probe_selection(
         ProbeSelection::new().request("stub", "state[0]"),
     );
-    let res = ProbeSelectionCases::run_with(opts);
+    let res = ProbeRun::run_with(opts);
     assert!(res.len() >= 3, "at least three steps");
     let first = res
         .get(1)
@@ -144,7 +144,7 @@ fn ten_devices_one_observable_records_only_that_device() {
     let opts = TransientAnalysisOptions::new(1e-5, 1e-7)
         .with_dt_max(1e-7)
         .with_probe_selection(ProbeSelection::new().request("dev3", "state[0]"));
-    let res = ProbeSelectionCases::run_with_devices(opts, &labels);
+    let res = ProbeRun::run_with_devices(opts, &labels);
     assert!(res.len() >= 100, "at least 100 steps recorded");
 
     for step in res.iter() {
@@ -170,7 +170,7 @@ fn ten_devices_one_observable_records_only_that_device() {
 fn unknown_observable_fails_loud_at_setup() {
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7)
         .with_probe_selection(ProbeSelection::new().request("stub", "nonexistent"));
-    let err = ProbeSelectionCases::tran_setup_result(opts).expect_err("unknown observable should fail");
+    let err = ProbeRun::tran_setup_result(opts).expect_err("unknown observable should fail");
     let msg = format!("{err}");
     assert!(
         msg.contains("device `stub` has no observable `nonexistent`"),
@@ -184,7 +184,7 @@ fn unknown_observable_fails_loud_at_setup() {
 fn unknown_device_fails_loud_at_setup() {
     let opts = TransientAnalysisOptions::new(1e-6, 1e-7)
         .with_probe_selection(ProbeSelection::new().request("ghost", "state[0]"));
-    let err = ProbeSelectionCases::tran_setup_result(opts).expect_err("unknown device should fail");
+    let err = ProbeRun::tran_setup_result(opts).expect_err("unknown device should fail");
     let msg = format!("{err}");
     assert!(
         msg.contains("device `ghost` not found"),
@@ -203,13 +203,13 @@ fn valid_probe_selection_passes_setup() {
                 .request("stub", "state[0]")
                 .request("stub", "var[0]"),
         );
-    ProbeSelectionCases::tran_setup_result(opts).expect("valid selection must not fail setup");
+    ProbeRun::tran_setup_result(opts).expect("valid selection must not fail setup");
 }
 
-/// The helpers of the probe_selection tests.
-pub struct ProbeSelectionCases;
+/// A circuit run with a probe selection, with or without devices.
+struct ProbeRun;
 
-impl ProbeSelectionCases {
+impl ProbeRun {
 
     /// A ramp source over `labels.len()` stubs on one node.
     fn circuit_of(labels: &[&str]) -> CircuitInstance {
@@ -226,7 +226,7 @@ impl ProbeSelectionCases {
     /// A transient of one stub: the recorded `device_state` map reflects exactly
     /// what the selection chose to put there.
     fn run_with(opts: TransientAnalysisOptions) -> piperine_solver::prelude::TransientAnalysisResult {
-        let mut solver = Solver::new(ProbeSelectionCases::circuit_of(&["stub"])).with_tran_opts(opts).build();
+        let mut solver = Solver::new(ProbeRun::circuit_of(&["stub"])).with_tran_opts(opts).build();
         solver.tran().expect("transient solves").solve().expect("transient runs")
     }
 
@@ -238,7 +238,7 @@ impl ProbeSelectionCases {
         opts: TransientAnalysisOptions,
         labels: &[&str],
     ) -> piperine_solver::prelude::TransientAnalysisResult {
-        let mut solver = Solver::new(ProbeSelectionCases::circuit_of(labels)).with_tran_opts(opts).build();
+        let mut solver = Solver::new(ProbeRun::circuit_of(labels)).with_tran_opts(opts).build();
         solver.tran().expect("transient solves").solve().expect("transient runs")
     }
 
@@ -255,7 +255,7 @@ impl ProbeSelectionCases {
     fn tran_setup_result(
         opts: TransientAnalysisOptions,
     ) -> piperine_solver::Result<()> {
-        let mut solver = Solver::new(ProbeSelectionCases::circuit_of(&["stub"])).with_tran_opts(opts).build();
+        let mut solver = Solver::new(ProbeRun::circuit_of(&["stub"])).with_tran_opts(opts).build();
         solver.tran().map(|_| ())
     }
 }

@@ -12,14 +12,13 @@ use piperine_solver::abi::{AnalogReference, ParamValue, Port, Stamp};
 use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context};
 use piperine_solver::prelude::{ParamRequest, ParamStampCollector, SensitivityEngine};
 
-
 // ── analytic and fallback coexist; both contribute; fallback named ───────────
 
 #[test]
 fn analytic_and_fallback_paths_coexist_and_the_fallback_is_named() {
-    let (mut circuit, n1, _n2) = SensitivityFallbackCases::circuit();
+    let (mut circuit, n1, _n2) = FallbackCircuit::circuit();
     let dc = circuit.dc(Context::default()).unwrap().solve().expect("dc solve");
-    let op = SensitivityFallbackCases::op_vector(&circuit, &dc);
+    let op = FallbackCircuit::op_vector(&circuit, &dc);
 
     let mut collector = ParamStampCollector::new(&mut circuit, Context::default());
 
@@ -32,8 +31,8 @@ fn analytic_and_fallback_paths_coexist_and_the_fallback_is_named() {
 
     // Both paths deliver ∂F/∂g = V(n1,n2) = 1.0 at node n1 (the gnd terminal is
     // ground for the fallback, so it lands only on n1 — the value is the check).
-    let an_v = SensitivityFallbackCases::rhs_at(&an.stamps, &n1);
-    let fb_v = SensitivityFallbackCases::rhs_at(&fb.stamps, &n1);
+    let an_v = FallbackCircuit::rhs_at(&an.stamps, &n1);
+    let fb_v = FallbackCircuit::rhs_at(&fb.stamps, &n1);
     assert!((an_v - 1.0).abs() < 1e-6, "analytic ∂F(n1)/∂g = V = 1.0, got {an_v}");
     assert!((fb_v - 1.0).abs() < 1e-3, "fallback ∂F(n1)/∂g = V = 1.0 (FD), got {fb_v}");
 
@@ -46,9 +45,9 @@ fn analytic_and_fallback_paths_coexist_and_the_fallback_is_named() {
 
 #[test]
 fn the_fallback_does_not_re_solve_the_operating_point() {
-    let (mut circuit, n1, _n2) = SensitivityFallbackCases::circuit();
+    let (mut circuit, n1, _n2) = FallbackCircuit::circuit();
     let dc_before = circuit.dc(Context::default()).unwrap().solve().expect("dc solve");
-    let op = SensitivityFallbackCases::op_vector(&circuit, &dc_before);
+    let op = FallbackCircuit::op_vector(&circuit, &dc_before);
     let v_before = dc_before.get_node(&CircuitBuilding::node_id(&n1)).unwrap();
 
     let mut collector = ParamStampCollector::new(&mut circuit, Context::default());
@@ -74,14 +73,14 @@ fn the_fallback_does_not_re_solve_the_operating_point() {
 
 #[test]
 fn the_fallback_restores_a_host_written_param() {
-    let (mut circuit, n1, _n2) = SensitivityFallbackCases::circuit();
+    let (mut circuit, n1, _n2) = FallbackCircuit::circuit();
     circuit.set("gfb", "g", ParamValue::Real(2e-3)).expect("host write");
     let dc = circuit.dc(Context::default()).unwrap().solve().expect("dc solve");
-    let op = SensitivityFallbackCases::op_vector(&circuit, &dc);
+    let op = FallbackCircuit::op_vector(&circuit, &dc);
 
     let mut collector = ParamStampCollector::new(&mut circuit, Context::default());
     let fb = collector.collect(&ParamRequest { label: "gfb".into(), param: "g".into() }, &op).unwrap();
-    let fb_v = SensitivityFallbackCases::rhs_at(&fb.stamps, &n1);
+    let fb_v = FallbackCircuit::rhs_at(&fb.stamps, &n1);
     assert!((fb_v - 1.0).abs() < 1e-3, "fallback ∂F(n1)/∂g = V = 1.0 (FD), got {fb_v}");
 
     circuit.dc(Context::default()).unwrap().solve().expect("dc re-solve");
@@ -90,10 +89,10 @@ fn the_fallback_restores_a_host_written_param() {
     assert!((g_after - 2e-3).abs() < 1e-15, "the written value is restored, not the default: {g_after}");
 }
 
-/// The helpers of the sensitivity_fallback tests.
-pub struct SensitivityFallbackCases;
+/// The circuit whose sensitivity falls back, its operating-point vector and right-hand side.
+struct FallbackCircuit;
 
-impl SensitivityFallbackCases {
+impl FallbackCircuit {
 
     /// 1 V across two parallel conductors: one declaring its param partial, one
     /// not. Each sees V(n1, gnd) = 1.0 → ∂(g·V)/∂g = 1.0.

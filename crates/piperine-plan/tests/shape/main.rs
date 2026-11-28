@@ -7,4 +7,5 @@ mod digital_shape;
 mod nan_param;
 mod number_widths;
 mod operators_shape;
+mod shape_entry;
 mod structure_shape;

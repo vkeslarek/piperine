@@ -87,10 +87,10 @@ mod tests {
         }
     }
 
-    /// Builds the matrix stamps the tests sum.
-    struct StampCases;
+    /// A matrix the stamp tests sum.
+    struct StampMatrix;
 
-    impl StampCases {
+    impl StampMatrix {
         fn m(r: usize, c: usize, v: f64) -> Stamp<Ix, f64> {
             Stamp::Matrix(Ix(Some(r)), Ix(Some(c)), v)
         }
@@ -101,7 +101,7 @@ mod tests {
         // Unknowns: 0 = node a, 1 = flow of v1, 2 = flow of v2. Both sources
         // tie a to ground: the two branch rows are the same equation `a = V`,
         // so the flows are only determined through their sum (the null vector).
-        let stamps = vec![StampCases::m(0, 1, 1.0), StampCases::m(0, 2, 1.0), StampCases::m(1, 0, 1.0), StampCases::m(2, 0, 1.0)];
+        let stamps = vec![StampMatrix::m(0, 1, 1.0), StampMatrix::m(0, 2, 1.0), StampMatrix::m(1, 0, 1.0), StampMatrix::m(2, 0, 1.0)];
         let report = SingularityReport::of(3, &stamps);
         assert_eq!(report.unknowns, vec![1, 2], "both flows, never the node");
         assert_eq!(report.skipped, None);
@@ -111,7 +111,7 @@ mod tests {
     fn a_node_reached_only_through_capacitors_is_singular_at_dc() {
         // Unknowns: 0 = a driven node (1 S to ground), 1 = a floating node whose
         // only connections are capacitors, which stamp nothing at DC.
-        let stamps = vec![StampCases::m(0, 0, 1.0), StampCases::m(1, 0, 0.0), StampCases::m(0, 1, 0.0), StampCases::m(1, 1, 0.0)];
+        let stamps = vec![StampMatrix::m(0, 0, 1.0), StampMatrix::m(1, 0, 0.0), StampMatrix::m(0, 1, 0.0), StampMatrix::m(1, 1, 0.0)];
         let report = SingularityReport::of(2, &stamps);
         assert_eq!(report.unknowns, vec![1]);
     }
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn a_singular_system_above_the_dense_bound_says_it_skipped() {
         let size = MAX_DENSE + 1;
-        let stamps: Vec<Stamp<Ix, f64>> = (1..size).map(|i| StampCases::m(i, i, 1.0)).collect();
+        let stamps: Vec<Stamp<Ix, f64>> = (1..size).map(|i| StampMatrix::m(i, i, 1.0)).collect();
         let report = SingularityReport::of(size, &stamps);
         assert_eq!(report.skipped, Some(size));
         assert!(report.unknowns.is_empty());

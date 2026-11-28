@@ -40,7 +40,7 @@ const NONLINEAR_REL: f64 = 5.0e-2;
 // practice — `1e-3` relative agreement is a defensible tight bar.
 #[test]
 fn adjoint_matches_sens_on_the_linear_divider() {
-    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("Top");
+    let (mut circuit, info) = AdjointCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![("r2".to_string(), "r".to_string()), ("v1".to_string(), "dc".to_string())];
 
@@ -79,7 +79,7 @@ fn adjoint_matches_sens_on_the_linear_divider() {
 // (within FD noise). This is the spec's edge case in action.
 #[test]
 fn adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter() {
-    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("RcTop");
+    let (mut circuit, info) = AdjointCircuit::build("RcTop");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![("c1".to_string(), "c".to_string())];
 
@@ -116,7 +116,7 @@ fn adjoint_and_sens_agree_on_zero_for_a_dc_invisible_parameter() {
 // lowers V(mid)).
 #[test]
 fn adjoint_matches_sens_on_a_nonlinear_diode_circuit() {
-    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("DiodeTop");
+    let (mut circuit, info) = AdjointCircuit::build("DiodeTop");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
     let params = vec![
         ("r1".to_string(), "r".to_string()),
@@ -168,7 +168,7 @@ fn adjoint_matches_sens_on_a_nonlinear_diode_circuit() {
 // suite.
 #[test]
 fn a_20_parameter_gradient_costs_exactly_one_extra_solve() {
-    let (mut circuit, info) = AdjointAgainstSensitivityCases::build("Top");
+    let (mut circuit, info) = AdjointCircuit::build("Top");
     let mid = CircuitBuilding::net_for(&circuit, &info, "mid");
 
     let mut params = Vec::with_capacity(20);
@@ -193,10 +193,10 @@ fn a_20_parameter_gradient_costs_exactly_one_extra_solve() {
     );
 }
 
-/// The helpers of the adjoint_vs_sens tests.
-pub struct AdjointAgainstSensitivityCases;
+/// The circuit the adjoint and the sensitivity are compared on.
+struct AdjointCircuit;
 
-impl AdjointAgainstSensitivityCases {
+impl AdjointCircuit {
     /// The build helper `build`.
     fn build(top: &str) -> (CircuitInstance, NodeMap) {
         CircuitBuilding::divider_fixture(top)

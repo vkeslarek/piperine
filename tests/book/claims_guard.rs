@@ -5,12 +5,7 @@
 //! workspace crate: it is a repository-policy proof over the Book's text, the shape
 //! `ROOT_TARGET_EXEMPTIONS` of `suite_hygiene.rs` registers.
 
-#[allow(dead_code)] // the support modules are shared by every Book target; this one uses part of each
-#[path = "support"]
-mod support {
-    pub mod book;
-    pub mod inventory;
-}
+use crate::support;
 
 use support::book::{Book, Sentence};
 use support::inventory::{Coverage, Inventory, Kind, Row, Verdict};

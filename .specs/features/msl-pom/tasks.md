@@ -12,14 +12,14 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Done
 **Approved**: 2026-11-13 - user: "Coloca o Fable para planejar essa feature, depois roda ela usando Sonnet impl) e Opus (verifier)"
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^warning')`
-**Run design**: `cargo test -p piperine-lang --test pom_design`
-**Run tree**: `cargo test -p piperine-lang --test pom_tree`
-**Run body**: `cargo test -p piperine-lang --test pom_body`
-**Run corpus**: `cargo test -p piperine-lang --test pom_corpus`
-**Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run classify**: `cargo test -p piperine-lang --test pom_classify`
-**Run reflect**: `cargo test -p piperine-lang --test pom_reflect`
-**Run docs**: `cargo test -p piperine-lang --test pom_docs`
+**Run design**: `cargo test -p piperine-lang --test pom design::`
+**Run tree**: `cargo test -p piperine-lang --test pom tree::`
+**Run body**: `cargo test -p piperine-lang --test pom body::`
+**Run corpus**: `cargo test -p piperine-lang --test pom corpus::`
+**Run resolve**: `cargo test -p piperine-lang --test pom resolve::`
+**Run classify**: `cargo test -p piperine-lang --test pom classify::`
+**Run reflect**: `cargo test -p piperine-lang --test pom reflect::`
+**Run docs**: `cargo test -p piperine-lang --test pom docs::`
 
 Executors: Sonnet sub-agents, one commit per task. Verifier: Opus. Work in `/home/keslarek/Git/piperine-msl-spec`, branch `feature/msl-pom`. Do not set `CARGO_TARGET_DIR` (the environment provides it). Never pass `--workspace`: the other crates do not build and are out of scope. `CLAUDE.md` still describes the retired Verilog-AMS pipeline; for this feature the facts are in `spec.md` and `design.md`.
 
@@ -1336,7 +1336,7 @@ Proof: run design | test nested_mod_files_follow_rust_layout ... ok
 Proof: run design | test mod_cycle_is_e0161_and_not_reloaded ... ok
 
 **C92** - `Design::load(path)` on a temp directory gives the same `dump()` as the in-memory build of the same files; an unreadable root gives an empty root and one `E0161` naming the path (POM-01, AC 10)
-Proof: `cargo test -p piperine-lang --test pom_design 2>&1 | tee /dev/stderr | grep -cE 'test (load_from_disk_equals_in_memory_build|unreadable_root_is_an_empty_root_with_e0161) \.\.\. ok' | grep -qx 2`
+Proof: `cargo test -p piperine-lang --test pom design:: 2>&1 | tee /dev/stderr | grep -cE 'test (load_from_disk_equals_in_memory_build|unreadable_root_is_an_empty_root_with_e0161) \.\.\. ok' | grep -qx 2`
 
 **C93** - `Design` and every public storage type of `pom` implement `Serialize` and `Deserialize` (POM-15, AC 1)
 Proof: run reflect | test design_and_storage_types_implement_serde ... ok

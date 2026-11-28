@@ -3,9 +3,10 @@
 //! Every expression is given the type the MSL source gives it, written out at each node: the
 //! fixture states the types, `Ir::check` judges them.
 
+use crate::devices::Devices;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Constant, Drive, Event,
-    EventSource, Expr, ExprId, FunctionId, IrBuilder, LevelPart, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param, Quantity,
+    EventSource, Expr, ExprId, FunctionId, IrBuilder, LevelPart, MathFn, Method, NatureId, NodeRole, Operator, Origin, Param,
     QuantityRole, Reaction, Real, Stmt, StmtId, Terminal, UnaryOp, ValueType,
 };
 
@@ -239,14 +240,9 @@ impl Buck {
         Carrier { name: name.into(), ty, role, init, origin: Buck::origin(file, line, col), count: None }
     }
 
-    /// The `Electrical` nature of `std/carriers.msl`, added once per builder.
+    /// The `Electrical` nature of `std/carriers.msl`, added once per builder: [`Devices::electrical`].
     pub fn electrical(b: &mut IrBuilder) -> NatureId {
-        if let Some(id) = b.find_nature("Electrical") {
-            return id;
-        }
-        let voltage = Quantity { name: "Voltage".into(), access: "v".into(), units: "V".into(), abstol: Real::new(1e-6) };
-        let current = Quantity { name: "Current".into(), access: "i".into(), units: "A".into(), abstol: Real::new(1e-12) };
-        b.nature("Electrical", voltage, Some(current))
+        Devices::electrical(b)
     }
 
     /// `c.rise()` of a `Bit` carrier: `Changed(c)` guarded by `c` (spec, "`rise()`, `fall()` in the IR").

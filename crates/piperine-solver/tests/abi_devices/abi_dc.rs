@@ -16,9 +16,9 @@ use piperine_solver::prelude::{AnalogReference, CircuitBuilder, CircuitInstance,
 #[test]
 fn divider_reads_the_analytic_ratio_on_devices() {
     let (vin, r1, r2) = (7.0, 1.5e3, 4.5e3);
-    let (mut circuit, mid) = AbiDcCases::divider(vin, r1, r2);
+    let (mut circuit, mid) = DividerOperatingPoint::divider(vin, r1, r2);
 
-    let v = AbiDcCases::dc_node(&mut circuit, &mid);
+    let v = DividerOperatingPoint::dc_node(&mut circuit, &mid);
     let analytic = vin * r2 / (r1 + r2);
     assert!((v - analytic).abs() < 1.0e-9, "v(mid) = {v} vs analytic {analytic}");
 }
@@ -35,7 +35,7 @@ fn diode_satisfies_its_own_equation_on_devices() {
     CircuitBuilding::add_diode(&mut b, "d1", is_sat, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
-    let vd = AbiDcCases::dc_node(&mut circuit, &mid);
+    let vd = DividerOperatingPoint::dc_node(&mut circuit, &mid);
     let i_resistor = (vin - vd) / r;
     let i_diode = is_sat * ((vd / vt).exp() - 1.0);
     assert!(
@@ -47,7 +47,7 @@ fn diode_satisfies_its_own_equation_on_devices() {
 #[test]
 fn source_stepping_scales_sources_through_the_ambient_input() {
     let (vin, r1, r2) = (8.0, 1.0e3, 3.0e3);
-    let (mut circuit, mid) = AbiDcCases::divider(vin, r1, r2);
+    let (mut circuit, mid) = DividerOperatingPoint::divider(vin, r1, r2);
     let at = mid.idx().expect("mid is solved");
     let full = vin * r2 / (r1 + r2);
 
@@ -107,10 +107,10 @@ fn the_dc_driver_iterates_with_the_plans_strategy() {
     assert_eq!(seen, result.stats.newton_iterations as usize, "one damp_update per iteration of the plan's strategy");
 }
 
-/// The helpers of the abi_dc tests.
-pub struct AbiDcCases;
+/// The divider the ABI operating-point tests solve, and the voltage at one of its nodes.
+struct DividerOperatingPoint;
 
-impl AbiDcCases {
+impl DividerOperatingPoint {
     /// The dc node helper `dc_node`.
     fn dc_node(circuit: &mut CircuitInstance, node: &AnalogReference) -> f64 {
         let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
@@ -128,5 +128,4 @@ impl AbiDcCases {
         CircuitBuilding::add_resistor(&mut b, "r2", r2, &mid, &gnd);
         (b.build().expect("build"), mid)
     }
-
 }

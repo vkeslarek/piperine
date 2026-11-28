@@ -17,7 +17,7 @@ use piperine_solver::prelude::{CircuitBuilder, CircuitInstance, Context, PssAnal
 /// within 1 %.
 #[test]
 fn sine_rc_converges_to_the_analytic_phasor() {
-    let (mut circuit, info) = PssCases::build("Top");
+    let (mut circuit, info) = PssCircuit::build("Top");
     let out = info.id("out");
 
     let opts = PssAnalysisOptions::new(1.0e-3);
@@ -52,7 +52,7 @@ fn sine_rc_converges_to_the_analytic_phasor() {
 /// (never return a fake orbit).
 #[test]
 fn non_periodic_circuit_fails_loud() {
-    let (mut circuit, _info) = PssCases::build("RampTop");
+    let (mut circuit, _info) = PssCircuit::build("RampTop");
     let mut opts = PssAnalysisOptions::new(1.0e-3);
     opts.max_shoot_iter = 6;
     let err = circuit
@@ -75,7 +75,7 @@ fn non_periodic_circuit_fails_loud() {
 /// and the suggested re-run period.
 #[test]
 fn digital_divider_reports_k_times_period() {
-    let (mut circuit, _info) = PssCases::build("DivTop");
+    let (mut circuit, _info) = PssCircuit::build("DivTop");
     let err = circuit
         .pss(PssAnalysisOptions::new(1.0e-3), Context::default())
         .expect("pss")
@@ -100,10 +100,10 @@ fn a_result_with_no_step_has_no_final_step_error() {
     }
 }
 
-/// The helpers of the pss tests.
-pub struct PssCases;
+/// The circuit the periodic steady-state tests solve.
+struct PssCircuit;
 
-impl PssCases {
+impl PssCircuit {
     /// The circuits of the former Verilog-A fixture, from hand-written devices.
     ///
     /// - `Top`: sine-driven RC, f = 1 kHz, tau = RC = 1 ms, so `wRC` is about 6.283;

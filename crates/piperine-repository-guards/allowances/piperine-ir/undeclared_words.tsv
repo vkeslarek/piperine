@@ -134,7 +134,6 @@ crates/piperine-ir/tests/model/resolved.rs::expr	1
 crates/piperine-ir/tests/model/shape.rs::dx	1
 crates/piperine-ir/tests/model/shape.rs::expr	1
 crates/piperine-ir/tests/model/shape.rs::stmts	1
-crates/piperine-ir/tests/model/structure.rs::contribute_expr	1
 crates/piperine-ir/tests/model/structure.rs::ex	1
 crates/piperine-ir/tests/model/structure.rs::stim_read	1
 crates/piperine-ir/tests/model/structure.rs::stims	1

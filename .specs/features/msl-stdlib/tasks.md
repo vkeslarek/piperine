@@ -13,12 +13,12 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Design**: `.specs/features/msl-stdlib/design.md`
 **Status**: Done
 **Build**: `cargo build -p piperine-lang --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`
-**Run resolve**: `cargo test -p piperine-lang --test pom_resolve`
-**Run docs**: `cargo test -p piperine-lang --test pom_docs`
-**Run std**: `cargo test -p piperine-lang --test std_library`
-**Run excerpts**: `cargo test -p piperine-lang --test std_excerpts`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
-**Run book**: `cargo test -p piperine-lang --test book`
+**Run resolve**: `cargo test -p piperine-lang --test pom resolve::`
+**Run docs**: `cargo test -p piperine-lang --test pom docs::`
+**Run std**: `cargo test -p piperine-lang --test std library::`
+**Run excerpts**: `cargo test -p piperine-lang --test std excerpts::`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
+**Run book**: `cargo test -p piperine-lang --test spec_structure book::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 **Start condition.** Execution starts after `feature/msl-packages` is merged to `main` and this branch (`feature/msl-stdlib`) is rebased onto it. The first worker re-reads `crates/piperine-lang/src/pom/stdlib.rs`, `src/pom/design.rs` and `src/pom/resolve/` before T5: they may have moved since this plan was written.

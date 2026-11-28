@@ -29,7 +29,7 @@ examples: a throwaway binary in the scratchpad over `piperine-lang` (nothing com
 | C13 | `crates/piperine-parity/tests/parity_corpus.rs` `every_twin_has_its_files_in_one_scenario_directory` | yes - planted trees in `the_layout_guards_report_planted_trees` |
 | C14 | `crates/piperine-parity/tests/parity_corpus.rs` `tests_ngspice_holds_no_twin` | yes |
 | C15 | `crates/piperine-cli/tests/twins.rs` `every_twin_prints_the_bytes_it_printed_before_the_move` | yes - exact bytes after the header per backend; the seven old goldens moved with 0-line diffs, `.cir` byte-identical, the 16 `.msl` differ in their first comment line only |
-| C16 | `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'` | yes |
+| C16 | `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity` | yes |
 | C17 | `git diff --quiet <merge-base> -- contract.rs parity_{op,dc,ac,tran,tf,pz,sens,pss,temp}.rs` | yes - no tolerance edited; `tests/scenarios.rs` writes values only through `ToleranceContract` (the 1e-9-of-a-step grid match and the `tran_floor` 1 us window copy `parity_tran.rs`) |
 | C18 | `tests/scenarios.rs` `every_twin_has_a_scenario_test` | yes |
 | C19 | `tests/scenarios.rs` `divider` | yes - `DC_VOLTAGE` on `vin`, `mid`; `Check::report` fails when ngspice ran and nothing was compared |

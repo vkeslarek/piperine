@@ -22,14 +22,14 @@ fn the_protocol_module_names_no_sub_solver_item() {
         let path = entry.expect("dir entry").path();
         let text = std::fs::read_to_string(&path).expect("read a protocol source");
         files += 1;
-        let found = ProtocolSeamCases::sub_solver_names(&text);
+        let found = SubSolverNames::sub_solver_names(&text);
         assert!(found.is_empty(), "{} names a sub-solver item: {found:?}", path.display());
     }
     assert!(files >= 2, "the scan saw {files} files in src/protocol");
     // The scan catches what it forbids.
-    assert_eq!(ProtocolSeamCases::sub_solver_names("use piperine_digital_solver::events::LogicValue;").len(), 1);
-    assert_eq!(ProtocolSeamCases::sub_solver_names("use piperine_analog_solver::netlist::Netlist;").len(), 1);
-    assert_eq!(ProtocolSeamCases::sub_solver_names("x: piperine_analog_solver::error::Result<()>").len(), 0);
+    assert_eq!(SubSolverNames::sub_solver_names("use piperine_digital_solver::events::LogicValue;").len(), 1);
+    assert_eq!(SubSolverNames::sub_solver_names("use piperine_analog_solver::netlist::Netlist;").len(), 1);
+    assert_eq!(SubSolverNames::sub_solver_names("x: piperine_analog_solver::error::Result<()>").len(), 0);
 }
 
 #[test]
@@ -80,10 +80,10 @@ fn the_stubs_replay_their_script_and_record_calls() {
     ]);
 }
 
-/// The helpers of the protocol_seam tests.
-pub struct ProtocolSeamCases;
+/// The names of the sub-solvers a run lists.
+struct SubSolverNames;
 
-impl ProtocolSeamCases {
+impl SubSolverNames {
     /// Each line of `text` that names an item of a sub-solver other than the
     /// analog crate's `error` module.
     fn sub_solver_names(text: &str) -> Vec<String> {

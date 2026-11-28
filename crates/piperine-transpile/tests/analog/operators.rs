@@ -13,9 +13,8 @@ use piperine_transpile::{Settings, Transpiler};
 use std::sync::Arc;
 
 use piperine_ir_fixtures::operators;
-use crate::compiled;
 
-use compiled::{Bytes, Device};
+use piperine_parity::compiled::{FedBytes, CompiledDevice};
 use operators::{Operators, OperatorWrites};
 
 
@@ -78,10 +77,10 @@ fn the_delay_terms_clamp_td_to_max() {
     // param `td`, and writes the flow `0.5·u`, the term `u`, the history term `-x = -a`, and the
     // `TIME` of that term, `min(td, max)`; with `max = 2e-9`:
     //   td = 1e-9 -> TIME 1e-9, td = 5e-9 -> TIME 2e-9 (held to `max`), td = 0 -> TIME 0.
-    let device = Device::of_body(Bodies::delayed(Some(2e-9)), "Op");
-    let (a, u) = (Bytes::real(0.5), Bytes::real(0.25));
+    let device = CompiledDevice::of_body(Bodies::delayed(Some(2e-9)), "Op");
+    let (a, u) = (FedBytes::real(0.5), FedBytes::real(0.25));
     for (td, time) in [(1e-9, 1e-9), (5e-9, 2e-9), (0.0, 0.0)] {
-        let written = device.run("terms", &[&a, &u, &Bytes::real(td)]).expect("terms");
+        let written = device.run("terms", &[&a, &u, &FedBytes::real(td)]).expect("terms");
         assert_eq!(written, [0.125, 0.25, -0.5, time], "td = {td}");
     }
 }
@@ -90,22 +89,22 @@ fn the_delay_terms_clamp_td_to_max() {
 fn the_delay_function_faults_453() {
     // D5: a negative `td` is the fault 453 of `terms`; a `max` that is not positive is the fault
     // 453 of `delay0.max`, and a positive one is written to the bound pin (§14.6.4).
-    let device = Device::of_body(Bodies::delayed(Some(2e-9)), "Op");
-    let (a, u) = (Bytes::real(0.5), Bytes::real(0.25));
-    let fault = device.run("terms", &[&a, &u, &Bytes::real(-1e-9)]).expect_err("a negative td");
+    let device = CompiledDevice::of_body(Bodies::delayed(Some(2e-9)), "Op");
+    let (a, u) = (FedBytes::real(0.5), FedBytes::real(0.25));
+    let fault = device.run("terms", &[&a, &u, &FedBytes::real(-1e-9)]).expect_err("a negative td");
     assert_eq!(fault.code, 453, "{fault}");
     assert!(fault.message.contains("E0453") && fault.message.contains("delay site 0"), "{fault}");
     assert_eq!(device.run("delay0.max", &[]).expect("a positive max"), [2e-9]);
     for bound in [0.0, -1e-9] {
-        let fault = Device::of_body(Bodies::delayed(Some(bound)), "Op").run("delay0.max", &[]).expect_err("a max that is not positive");
+        let fault = CompiledDevice::of_body(Bodies::delayed(Some(bound)), "Op").run("delay0.max", &[]).expect_err("a max that is not positive");
         assert_eq!(fault.code, 453, "max = {bound}: {fault}");
         assert!(fault.message.contains("max that is not positive"), "{fault}");
     }
     // without a `max` the bound is `td` itself (D4): written as it is, 0 allowed, a negative one a fault
-    let unbounded = Device::of_body(Bodies::delayed(None), "Op");
-    assert_eq!(unbounded.run("delay0.max", &[&Bytes::real(3e-9)]).expect("td as the bound"), [3e-9]);
-    assert_eq!(unbounded.run("delay0.max", &[&Bytes::real(0.0)]).expect("td = 0 is allowed"), [0.0]);
-    assert_eq!(unbounded.run("delay0.max", &[&Bytes::real(-1e-9)]).expect_err("a negative td").code, 453);
+    let unbounded = CompiledDevice::of_body(Bodies::delayed(None), "Op");
+    assert_eq!(unbounded.run("delay0.max", &[&FedBytes::real(3e-9)]).expect("td as the bound"), [3e-9]);
+    assert_eq!(unbounded.run("delay0.max", &[&FedBytes::real(0.0)]).expect("td = 0 is allowed"), [0.0]);
+    assert_eq!(unbounded.run("delay0.max", &[&FedBytes::real(-1e-9)]).expect_err("a negative td").code, 453);
 }
 
 
@@ -113,23 +112,23 @@ fn the_delay_function_faults_453() {
 fn the_noise_function_writes_its_density_and_faults_454() {
     // §14.8: the function `noise:0` writes the `PSD` of the input; a density that is negative or
     // not finite is the fault 454 naming the source (D9 of the density's own contract).
-    let device = Device::of_body(Bodies::noisy(Expr::Param(0)), "Op");
+    let device = CompiledDevice::of_body(Bodies::noisy(Expr::Param(0)), "Op");
     // the function reads the param and the sweep's frequency, which a fault names
-    let at = Bytes::real(2e3);
-    assert_eq!(device.run("noise:0", &[&Bytes::real(4e-21), &at]).expect("a density"), [4e-21]);
-    assert_eq!(device.run("noise:0", &[&Bytes::real(0.0), &at]).expect("zero is a density"), [0.0]);
+    let at = FedBytes::real(2e3);
+    assert_eq!(device.run("noise:0", &[&FedBytes::real(4e-21), &at]).expect("a density"), [4e-21]);
+    assert_eq!(device.run("noise:0", &[&FedBytes::real(0.0), &at]).expect("zero is a density"), [0.0]);
     for bad in [-1e-21, f64::NAN, f64::INFINITY] {
-        let fault = device.run("noise:0", &[&Bytes::real(bad), &at]).expect_err("a bad density");
+        let fault = device.run("noise:0", &[&FedBytes::real(bad), &at]).expect_err("a bad density");
         assert_eq!(fault.code, 454, "{bad}: {fault}");
         assert!(fault.message.contains("E0454") && fault.message.contains("`thermal`") && fault.message.contains("at 2000 Hz"), "{bad}: {fault}");
     }
     // a density that reads `freq()` names the frequency it was read at
-    let flicker = Device::of_body(Bodies::noisy(Expr::Env(Env::Freq)), "Op");
-    assert_eq!(flicker.run("noise:0", &[&Bytes::real(1e3)]).expect("psd = freq"), [1e3]);
-    let fault = flicker.run("noise:0", &[&Bytes::real(-5.0)]).expect_err("a negative frequency");
+    let flicker = CompiledDevice::of_body(Bodies::noisy(Expr::Env(Env::Freq)), "Op");
+    assert_eq!(flicker.run("noise:0", &[&FedBytes::real(1e3)]).expect("psd = freq"), [1e3]);
+    let fault = flicker.run("noise:0", &[&FedBytes::real(-5.0)]).expect_err("a negative frequency");
     assert!(fault.message.contains("at -5 Hz"), "{fault}");
     // `terms` reads the input's value: 0 in a solve, here whatever the call gives (a partial too)
-    let (written, jac) = device.run_cells("terms", &[&Bytes::real(0.75)]).expect("terms");
+    let (written, jac) = device.run_cells("terms", &[&FedBytes::real(0.75)]).expect("terms");
     assert_eq!(f64::from_le_bytes(written[0][..8].try_into().expect("an f64")), 0.75);
     assert_eq!(jac, [1.0]);
 }
@@ -178,7 +177,7 @@ fn a_reaction_reads_noise_as_zero() {
 fn a_session_parameter_reads_its_pin_or_none() {
     // §14.4: `simparam(name)` is `Some` of the parameter when the host gave it, else `None`; its
     // `Value` part is the parameter or 0. `terms` reads the pin and writes the flow.
-    let device = Device::of_body(Bodies::parameterised(), "Op");
+    let device = CompiledDevice::of_body(Bodies::parameterised(), "Op");
     assert_eq!(device.run("terms", &[&Bodies::option_pin(Some(7.0))]).expect("given"), [7.0]);
     assert_eq!(device.run("terms", &[&Bodies::option_pin(Some(-3.5))]).expect("given"), [-3.5]);
     assert_eq!(device.run("terms", &[&Bodies::option_pin(None)]).expect("not given"), [0.0], "None is no value: the part is the default");
@@ -190,12 +189,12 @@ fn a_trace_writes_its_watch_only_where_it_executes() {
     // abi.md A5: the watch's record is a `BOOL` presence byte, then the stream's fields; where the
     // statement does not execute the record is empty (all zero). With `a = 0.75` the arm runs and
     // the record is presence 1, padding, `x = 0.75` at offset 8; with `a = 0.25` it is all zero.
-    let device = Device::of_body(Bodies::traced_above_half(), "Op");
-    let (written, _) = device.run_cells("terms", &[&Bytes::real(0.75)]).expect("the arm runs");
+    let device = CompiledDevice::of_body(Bodies::traced_above_half(), "Op");
+    let (written, _) = device.run_cells("terms", &[&FedBytes::real(0.75)]).expect("the arm runs");
     let mut expected = vec![0u8; 16];
     expected[0] = 1;
     expected[8..].copy_from_slice(&0.75f64.to_le_bytes());
     assert_eq!(written, [expected]);
-    let (written, _) = device.run_cells("terms", &[&Bytes::real(0.25)]).expect("the arm does not run");
+    let (written, _) = device.run_cells("terms", &[&FedBytes::real(0.25)]).expect("the arm does not run");
     assert_eq!(written, [vec![0u8; 16]], "no record where the statement does not execute");
 }

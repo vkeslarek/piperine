@@ -44,104 +44,109 @@ const R: f64 = 1e3;
 const C: f64 = 1e-9;
 const LEVEL: f64 = 0.5;
 
-fn at(line: u32) -> Origin {
-    Origin { file: F.into(), line, col: 1 }
-}
+/// The bodies with no carrier: `Monitor` and the `Step` design that places it.
+struct CarrierlessBodies;
 
-/// `Monitor` (step.msl:4-5): no carrier, one event, one reaction, one stream.
-fn monitor(b: &mut IrBuilder) -> BodyId {
-    let el = Buck::electrical(b);
-    let body = b.body(BodySpec {
-        params: vec![Buck::param("level", F, 4, Some(LEVEL), None)],
-        nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 4, 16) }],
-        ..Buck::spec("Monitor", F, 4)
-    });
-    let trip = b.stream(body, Stream { name: "trip".into(), fields: vec![StreamField { name: "v".into(), ty: ValueType::F64 }] });
-    let mut x = Dx::new(b, F, 5, 32);
-    let v = x.probe(Terminal::Node(0), Terminal::Ground);
-    let level = x.param(0, ValueType::F64);
-    let rising = x.bin(BinaryOp::Sub, v, level, ValueType::F64);
-    x.at(5, 57);
-    let v = x.probe(Terminal::Node(0), Terminal::Ground);
-    let emit = x.b.stmt(Stmt::Emit { stream: trip, fields: vec![EmitField::Value { field: 0, value: v }] });
-    let cross = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 5, 26) });
-    Buck::reaction(b, body, vec![cross], vec![emit], vec![], F, 5);
-    body
-}
+impl CarrierlessBodies {
+    fn at(line: u32) -> Origin {
+        Origin { file: F.into(), line, col: 1 }
+    }
 
-/// `Step` (step.msl:7-14) as the top, its four children placed under it.
-fn step() -> Ir {
-    let mut b = IrBuilder::new();
-    let (vsrc, res, cap) = (Devices::vsource(&mut b), Devices::resistor(&mut b), Devices::capacitor(&mut b));
-    let mon = monitor(&mut b);
-    let el = Devices::electrical(&mut b);
-    let signals: [(&str, Option<f64>); 2] = [("vin", None), ("vout", Some(0.0))];
-    // (name, body, terminals by signal index, params); `None` is ground
-    let places: [(&str, BodyId, Vec<Option<usize>>, Vec<f64>); 4] = [
-        ("v1", vsrc, vec![Some(0), None], vec![1.0, 0.0]),
-        ("r1", res, vec![Some(0), Some(1)], vec![R]),
-        ("c1", cap, vec![Some(1), None], vec![C]),
-        ("mon", mon, vec![Some(1)], vec![LEVEL]),
-    ];
-    let terminal = |n: &Option<usize>| n.map_or(Terminal::Ground, |i| Terminal::Node(i as u32));
-    let real = |v: &f64| Constant::Real(Real::new(*v));
-    let top_body = b.body(BodySpec {
-        name: "Step".into(),
-        origin: at(7),
-        params: vec![],
-        nodes: signals
+    /// `Monitor` (step.msl:4-5): no carrier, one event, one reaction, one stream.
+    fn monitor(b: &mut IrBuilder) -> BodyId {
+        let el = Buck::electrical(b);
+        let body = b.body(BodySpec {
+            params: vec![Buck::param("level", F, 4, Some(LEVEL), None)],
+            nodes: vec![BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: Buck::origin(F, 4, 16) }],
+            ..Buck::spec("Monitor", F, 4)
+        });
+        let trip = b.stream(body, Stream { name: "trip".into(), fields: vec![StreamField { name: "v".into(), ty: ValueType::F64 }] });
+        let mut x = Dx::new(b, F, 5, 32);
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let level = x.param(0, ValueType::F64);
+        let rising = x.bin(BinaryOp::Sub, v, level, ValueType::F64);
+        x.at(5, 57);
+        let v = x.probe(Terminal::Node(0), Terminal::Ground);
+        let emit = x.b.stmt(Stmt::Emit { stream: trip, fields: vec![EmitField::Value { field: 0, value: v }] });
+        let cross = b.event(body, Event { source: EventSource::Cross { e: rising, ttol: None, etol: None }, guard: None, origin: Buck::origin(F, 5, 26) });
+        Buck::reaction(b, body, vec![cross], vec![emit], vec![], F, 5);
+        body
+    }
+
+    /// `Step` (step.msl:7-14) as the top, its four children placed under it.
+    fn step() -> Ir {
+        let mut b = IrBuilder::new();
+        let (vsrc, res, cap) = (Devices::vsource(&mut b), Devices::resistor(&mut b), Devices::capacitor(&mut b));
+        let mon = CarrierlessBodies::monitor(&mut b);
+        let el = Devices::electrical(&mut b);
+        let signals: [(&str, Option<f64>); 2] = [("vin", None), ("vout", Some(0.0))];
+        // (name, body, terminals by signal index, params); `None` is ground
+        let places: [(&str, BodyId, Vec<Option<usize>>, Vec<f64>); 4] = [
+            ("v1", vsrc, vec![Some(0), None], vec![1.0, 0.0]),
+            ("r1", res, vec![Some(0), Some(1)], vec![R]),
+            ("c1", cap, vec![Some(1), None], vec![C]),
+            ("mon", mon, vec![Some(1)], vec![LEVEL]),
+        ];
+        let terminal = |n: &Option<usize>| n.map_or(Terminal::Ground, |i| Terminal::Node(i as u32));
+        let real = |v: &f64| Constant::Real(Real::new(*v));
+        let top_body = b.body(BodySpec {
+            name: "Step".into(),
+            origin: CarrierlessBodies::at(7),
+            params: vec![],
+            nodes: signals
+                .iter()
+                .enumerate()
+                .map(|(i, (n, init))| BodyNode { name: n.to_string(), nature: el, role: NodeRole::Signal, init: init.map(Real::new), origin: CarrierlessBodies::at(8 + i as u32) })
+                .collect(),
+            branches: Vec::<Branch>::new(),
+            limits: vec![],
+            stims: vec![],
+            locals: vec![],
+            analog: None,
+            children: places
+                .iter()
+                .enumerate()
+                .map(|(i, (name, body, nodes, params))| Child {
+                    name: name.to_string(),
+                    body: *body,
+                    nodes: nodes.iter().map(terminal).collect(),
+                    params: params.iter().enumerate().map(|(k, v)| (k as u32, real(v))).collect(),
+                    origin: CarrierlessBodies::at(10 + i as u32),
+                })
+                .collect(),
+        });
+        let top = b.next_instance_id();
+        let ids: Vec<_> = signals
             .iter()
             .enumerate()
-            .map(|(i, (n, init))| BodyNode { name: n.to_string(), nature: el, role: NodeRole::Signal, init: init.map(Real::new), origin: at(8 + i as u32) })
-            .collect(),
-        branches: Vec::<Branch>::new(),
-        limits: vec![],
-        stims: vec![],
-        locals: vec![],
-        analog: None,
-        children: places
-            .iter()
-            .enumerate()
-            .map(|(i, (name, body, nodes, params))| Child {
+            .map(|(i, (n, init))| {
+                b.node(NodeSpec { path: format!("Step.{n}"), nature: el, declared_by: top, init: init.map(Real::new), origin: CarrierlessBodies::at(8 + i as u32) })
+            })
+            .collect();
+        let top = b.instance(InstanceSpec {
+            path: "Step".into(),
+            name: "Step".into(),
+            body: top_body,
+            parent: None,
+            nodes: ids.iter().map(|id| NodeRef::Node(*id)).collect(),
+            params: vec![],
+            origin: CarrierlessBodies::at(7),
+        });
+        for (i, (name, body, nodes, params)) in places.iter().enumerate() {
+            b.instance(InstanceSpec {
+                path: format!("Step.{name}"),
                 name: name.to_string(),
                 body: *body,
-                nodes: nodes.iter().map(terminal).collect(),
-                params: params.iter().enumerate().map(|(k, v)| (k as u32, real(v))).collect(),
-                origin: at(10 + i as u32),
-            })
-            .collect(),
-    });
-    let top = b.next_instance_id();
-    let ids: Vec<_> = signals
-        .iter()
-        .enumerate()
-        .map(|(i, (n, init))| {
-            b.node(NodeSpec { path: format!("Step.{n}"), nature: el, declared_by: top, init: init.map(Real::new), origin: at(8 + i as u32) })
-        })
-        .collect();
-    let top = b.instance(InstanceSpec {
-        path: "Step".into(),
-        name: "Step".into(),
-        body: top_body,
-        parent: None,
-        nodes: ids.iter().map(|id| NodeRef::Node(*id)).collect(),
-        params: vec![],
-        origin: at(7),
-    });
-    for (i, (name, body, nodes, params)) in places.iter().enumerate() {
-        b.instance(InstanceSpec {
-            path: format!("Step.{name}"),
-            name: name.to_string(),
-            body: *body,
-            parent: Some(top),
-            nodes: nodes.iter().map(|n| n.map_or(NodeRef::Ground, |k| NodeRef::Node(ids[k]))).collect(),
-            params: params.iter().map(real).collect(),
-            origin: at(10 + i as u32),
-        });
+                parent: Some(top),
+                nodes: nodes.iter().map(|n| n.map_or(NodeRef::Ground, |k| NodeRef::Node(ids[k]))).collect(),
+                params: params.iter().map(real).collect(),
+                origin: CarrierlessBodies::at(10 + i as u32),
+            });
+        }
+        let ir = b.finish(top);
+        assert_eq!(ir.check(), vec![], "the fixture passes check()");
+        ir
     }
-    let ir = b.finish(top);
-    assert_eq!(ir.check(), vec![], "the fixture passes check()");
-    ir
 }
 
 #[derive(Clone, Default)]
@@ -155,7 +160,7 @@ impl Sink for Seen {
 
 #[test]
 fn a_reaction_with_no_carrier_runs_and_its_record_arrives() {
-    let ir = Arc::new(step());
+    let ir = Arc::new(CarrierlessBodies::step());
     let cache = tempfile::tempdir().expect("a temp dir");
     let settings = Settings { rustc: None, cache: cache.path().to_path_buf() };
     let compiled = Transpiler::new(ir.clone()).unwrap_or_else(|e| panic!("{e}")).compile(&settings).unwrap_or_else(|e| panic!("{e}"));

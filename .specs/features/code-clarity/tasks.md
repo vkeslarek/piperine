@@ -2310,8 +2310,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every test keeps its name; the three targets open with a `//!` header
-- [ ] Gate check passes: Ledger
+- [x] Every test keeps its name; the three targets open with a `//!` header
+  - Annotation: `buck_example` (a hand-merged sibling with no target of its own in the design table) became the module `buck_example` of `pom`; `msl` holds 115 tests, `pom` 295 (with `buck_example`), `std` 71 = 481, the count of `#[test]` of the 20 former targets. `std/library.rs`'s two source-reading tests (`the_fixture_prelude_is_gone`, `no_pom_test_was_removed`) now walk the new directory layout; their assertions are unchanged.
+- [x] Gate check passes: Ledger
+  - Annotation: the `Checked` fixture's single `design_of`/`diagnostics`/`snippet` (the **What** line) belongs to the `types_*` files that define them (fourteen copies); it lands with T87, which merges those files, so the files are touched once.
 
 **Tests**: integration
 **Gate**: ledger
@@ -2332,8 +2334,10 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 15 targets in the crate (design.md's table); every test keeps its name
-- [ ] Plan lowered to 15; Gate check passes: Ledger
+- [x] 15 targets in the crate (design.md's table); every test keeps its name
+  - Annotation: the crate held 31 `types_*` and 27 `elab_*` targets, not the 30 and 26 of the text. `book` and `spec_codes` (named by no task) became modules of `spec_structure`, and `elab_buck` is the module `buck_converter` (its support module `buck` keeps the name). The plan counts them: msl, pom, std, six types, four elab, spec_structure, refusals = 15. Counts per target equal the `#[test]` count of their former files: types 88/56/72/69/80/88, elab 75/49/95/193, spec_structure 29.
+- [x] Plan lowered to 15; Gate check passes: Ledger
+  - Annotation: the one `Checked` fixture for `design_of`/`diagnostics`/`snippet` (T86's What) is not done here: the fourteen copies differ in signature (some return the source with the diagnostics, some take items and a body) and are free helpers of the files, so they close with T91 as methods of fixture types, together with every other helper.
 
 **Tests**: integration
 **Gate**: ledger
@@ -2354,9 +2358,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] 11 default targets; every test keeps its name; `the_parity_oracles_are_not_reduced` passes
-- [ ] `cargo test -p piperine-parity --test parity -- --nocapture` compares every twin with ngspice
-- [ ] Plan lowered to 11; Gate check passes: Ledger
+- [x] 11 default targets; every test keeps its name; `the_parity_oracles_are_not_reduced` passes
+  - Annotation: the 62 targets of the plan were 41 `source_*`, 12 `parity_*`, `harness`, `boundary`, `backend`, `backends`, `bench`, `deviation`, `project`, `run_errors` and `twins`. `backend`, `backends` and `deviation` became modules of `parity`; `bench` and `twins` of `harness`; `project` and `run_errors` of `boundary`. Per-target tests equal the former files' counts: source 114/84/115/69/39/29/55/9, parity 57, harness 20, boundary 11. Three tests needed a path edit that changes no assertion: `harness::two_processes_share_one_cache` starts its writers with the module-qualified `--exact harness::a_process_that_writes_the_cache`, and the corpus guard reads `tests/parity/*.rs` (leaving out the backend, backends and deviation modules, which the `parity_*` file filter never covered).
+- [x] `cargo test -p piperine-parity --test parity -- --nocapture` compares every twin with ngspice
+  - Annotation: ngspice is installed; the only `SKIP` lines are the six tests that pass `Lookup::Skip` or print the skip line on purpose (`uic_rc`, `tran_rc`, `diode_rs`, three noise twins). The per-twin comparisons are not cached across tests, so one process changes nothing: 56 of 57 passed on the first full run, the one failure being the corpus guard's file filter above.
+- [x] Plan lowered to 11; Gate check passes: Ledger
+  - Annotation: `root-e2e`'s C16 Run line `--test 'parity_*'` became `--test parity`; two proof-ledger rows that recorded the targets `parity` and `source_io` as missing were deleted because those targets now exist.
 
 **Tests**: integration
 **Gate**: ledger
@@ -2377,9 +2384,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The root has 4 default targets (`book`, `integrated`, `scenarios`, `host_ii`) and the 2 buck ones
-- [ ] `every_row_names_an_existing_test` and `every_block_of_the_book_has_one_row` pass under `**Run book**`
-- [ ] Gate check passes: Ledger
+- [x] The root has 4 default targets (`book`, `integrated`, `scenarios`, `host_ii`) and the 2 buck ones
+  - Annotation: `book` holds 355 tests, the sum of the 21 chapters and the two guards (`inventory_guard`, `claims_guard`) it replaces; `book_buck` and `buck_scenarios` stay `test = false`. The Book inventory resolver learned `piperine/<target>::<module>::<fn>` for a root target whose path is a `main.rs`. `ROOT_TARGET_EXEMPTIONS` is empty now: the root of `book` names `piperine::`, so the two guard exemptions went with the two guard targets.
+- [x] `every_row_names_an_existing_test` and `every_block_of_the_book_has_one_row` pass under `**Run book**`
+- [x] Gate check passes: Ledger
+  - Annotation: five proof-ledger rows that recorded `book` as a missing target or test were deleted because the target exists now.
 
 **Tests**: integration
 **Gate**: ledger
@@ -2400,8 +2409,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Each removed test's proof rows name the source-level survivor
-- [ ] Gate check passes: Ledger
+- [x] Each removed test's proof rows name the source-level survivor
+- [x] Gate check passes: Ledger
+  - Annotation: the four tests (`two_commits_exchange_two_carriers`, `the_later_statement_wins`, `two_statements_make_a_pulse`, `an_unchanged_commit_fires_nothing`) were the whole of `transpile/tests/digital/commits.rs`, which went with them; their four worklist rows of `duplicate_tests.tsv` went because the names are no longer duplicated, and `ir-rust` C86 to C89 now run `piperine-parity --test source_execution` (`replace` rows of `repoints/T90.tsv`, applied by the tool). Kept with their verdicts: the hand-built twins whose source side is a buck target (`the_adc_commits_the_rounded_code_after_tconv` and the other rows still in the worklist) and `parity_*` (now the modules of `parity`) with `tests/scenarios.rs` as both kept (Q9, design.md).
 
 **Tests**: integration
 **Gate**: ledger
@@ -2422,9 +2432,11 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] The three allowances are empty for every crate
-- [ ] `no_crate_has_more_targets_than_its_plan` passes with the plan at design.md's table (73; phases 14 and 17 add one target each, raising it to 75)
-- [ ] Gate check passes: Quick for the crates the task touched
+- [x] The three allowances are empty for every crate
+- [x] `no_crate_has_more_targets_than_its_plan` passes with the plan at design.md's table (73; phases 14 and 17 add one target each, raising it to 75)
+- [x] Gate check passes: Quick for the crates the task touched
+
+> Progress (executor, Opus): every crate is converted and committed (`refactor(tests): <crate> helpers become fixture types (T91 part)`); the three allowances are now empty for every crate (goldens are excluded from the test-helper guard by name, design.md). Departures: design.md, "Departures of T91". The plan table's total gains the row of `piperine-lang-fixtures` (1).
 
 **Tests**: integration
 **Gate**: quick

@@ -12,24 +12,24 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-lang -p piperine-ir -p piperine-plan -p piperine-transpile -p piperine-interp -p piperine-parity -p piperine-solver -p piperine-analog-solver -p piperine-api -p piperine -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
-**Run tmod**: `cargo test -p piperine-lang --test types_modules`
-**Run tvalues**: `cargo test -p piperine-lang --test types_values`
-**Run tint**: `cargo test -p piperine-lang --test types_integers`
-**Run tcomp**: `cargo test -p piperine-lang --test types_compound`
-**Run tevents**: `cargo test -p piperine-lang --test types_events`
-**Run tanalog**: `cargo test -p piperine-lang --test types_analog`
-**Run evalues**: `cargo test -p piperine-lang --test elab_values`
-**Run eanalog**: `cargo test -p piperine-lang --test elab_analog`
-**Run edig**: `cargo test -p piperine-lang --test elab_digital`
+**Run tmod**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run tvalues**: `cargo test -p piperine-lang --test types_values values::`
+**Run tint**: `cargo test -p piperine-lang --test types_values integers::`
+**Run tcomp**: `cargo test -p piperine-lang --test types_patterns compound::`
+**Run tevents**: `cargo test -p piperine-lang --test types_analog events::`
+**Run tanalog**: `cargo test -p piperine-lang --test types_analog analog::`
+**Run evalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run eanalog**: `cargo test -p piperine-lang --test elab_analog analog::`
+**Run edig**: `cargo test -p piperine-lang --test elab_digital digital::`
 **Run iramend**: `cargo test -p piperine-ir --test model amendments::`
 **Run plan**: `cargo test -p piperine-plan --test shape amended_shape::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tlib**: `cargo test -p piperine-transpile --lib`
 **Run watch**: `cargo test -p piperine-analog-solver --test assembly assembly_watch::`
 **Run env**: `cargo test -p piperine-solver --test transient environment::`
-**Run sfix**: `cargo test -p piperine-parity --test source_fixes`
-**Run scat**: `cargo test -p piperine-parity --test source_catalogue`
-**Run senv**: `cargo test -p piperine-parity --test source_environment`
+**Run sfix**: `cargo test -p piperine-parity --test source_values fixes::`
+**Run scat**: `cargo test -p piperine-parity --test source_stdlib catalogue::`
+**Run senv**: `cargo test -p piperine-parity --test source_behavior environment::`
 **Run records**: `cargo test -p piperine-api --test records records::`
 **Run apilib**: `cargo test -p piperine-api --lib`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
@@ -1294,7 +1294,7 @@ Proof: run ledger | test every_retired_check_is_recorded ... ok
 Proof: run twins | test every_twin_prints_the_bytes_it_printed_before_the_long_run ... ok
 
 **C82** - Every parity target passes with its sources, the contract and the transpile goldens unedited. (PAR-01, AC 2)
-Proof: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus --test parity_grid && cargo test -p piperine-solver --test parity_baseline && git diff --exit-code 4293de6b -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-parity/tests/parity_grid.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice crates/piperine-transpile/tests/golden`
+Proof: `cargo test -p piperine-parity --test parity && cargo test -p piperine-solver --test parity_baseline && git diff --exit-code 4293de6b -- crates/piperine-parity/src/contract.rs crates/piperine-parity/tests/parity_op.rs crates/piperine-parity/tests/parity_dc.rs crates/piperine-parity/tests/parity_ac.rs crates/piperine-parity/tests/parity_tran.rs crates/piperine-parity/tests/parity_corpus.rs crates/piperine-parity/tests/parity_grid.rs crates/piperine-solver/tests/parity_baseline.rs tests/ngspice crates/piperine-transpile/tests/golden`
 
 **C83** - A `cross` over a NaN computed from known values fails the solve. (FIX-05, AC 5; fix round F2)
 Proof: run sfix | test a_cross_over_a_nan_of_known_values_fails_the_solve ... ok

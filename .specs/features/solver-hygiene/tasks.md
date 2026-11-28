@@ -13,21 +13,21 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Approved**: 2026-11-17 - user: "Pode fazer com Opus por agora, com Sonnet implementando e Opus verificando"
 **Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-parity -p piperine-cli --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`; `cargo test -p piperine-repository-guards --test boundaries`
 **Run deviationlib**: `cargo test -p piperine-parity --lib deviation`
-**Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test deviation -- --nocapture`
-**Run parity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran --test parity_corpus`
+**Run deviation**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity deviation:: -- --nocapture`
+**Run parity**: `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run analogddt**: `cargo test -p piperine-analog-solver --test assembly assembly_ddt::`
 **Run analoglib**: `cargo test -p piperine-analog-solver --lib`
 **Run reentry**: `cargo test -p piperine-solver --test transient transient_reentry::`
 **Run failure**: `cargo test -p piperine-solver --test transient failure_rules::`
-**Run runerrors**: `cargo test -p piperine-parity --test run_errors`
+**Run runerrors**: `cargo test -p piperine-parity --test boundary run_errors::`
 **Run truncation**: `cargo test -p piperine-solver --test transient truncation::`
 **Run abitran**: `cargo test -p piperine-solver --test abi_devices abi_tran::`
 **Run abidc**: `cargo test -p piperine-solver --test abi_devices abi_dc::`
 **Run protocol**: `cargo test -p piperine-solver --test protocol protocol_transient::`
 **Run protocolreal**: `cargo test -p piperine-solver --test protocol protocol_real::`
 **Run hostset**: `cargo test -p piperine-solver --test host host_set::`
-**Run boundary**: `cargo test -p piperine-parity --test boundary`
+**Run boundary**: `cargo test -p piperine-parity --test boundary boundary::`
 **Run abidevices**: `cargo test -p piperine-solver --test abi_devices abi_devices::`
 **Run digital**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
 **Run instant**: `cargo test -p piperine-digital-solver --test engine instant::`

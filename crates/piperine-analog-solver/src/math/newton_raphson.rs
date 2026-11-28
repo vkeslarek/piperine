@@ -662,10 +662,10 @@ mod tests {
         assert!(run.detail.contains("6 iterations"), "{err}");
     }
 
-    /// Builds the solver the timing tests inspect.
-    struct TimingCases;
+    /// The solver the timing tests inspect after one solve.
+    struct SolverTiming;
 
-    impl TimingCases {
+    impl SolverTiming {
         /// One converging solve of a unit diagonal system, with timing on or off.
         fn solver_after_one_solve(timing: bool) -> Solver {
             let mut system = Diagonal::new(vec![1.0], |_, _| 1.0);
@@ -683,14 +683,14 @@ mod tests {
 
     #[test]
     fn without_timing_a_solve_reads_no_clock() {
-        let solver = TimingCases::solver_after_one_solve(false);
+        let solver = SolverTiming::solver_after_one_solve(false);
         assert_eq!(solver.assembly_time_ns(), 0);
         assert_eq!(solver.solve_time_ns(), 0);
     }
 
     #[test]
     fn with_timing_a_solve_reports_both_totals() {
-        let solver = TimingCases::solver_after_one_solve(true);
+        let solver = SolverTiming::solver_after_one_solve(true);
         assert!(solver.assembly_time_ns() > 0, "assembly time");
         assert!(solver.solve_time_ns() > 0, "solve time");
     }

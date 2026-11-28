@@ -28,5 +28,3 @@ crates/piperine-numbers/tests/floats/transcendental.rs::x	1
 crates/piperine-numbers/tests/floats/transcendental.rs::y	1
 crates/piperine-numbers/tests/integers/integers.rs::wide_integers_above_128_bits_agree_with_big_integers_modulo_two_to_the_n	1
 crates/piperine-numbers/tests/integers/integers.rs::wide_integers_up_to_128_bits_agree_with_u128_and_i128	1
-crates/piperine-numbers/tests/integers/random.rs::Xorshift	1
-crates/piperine-numbers/tests/integers/random.rs::next_u64	1

@@ -12,24 +12,24 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesmodel**: `cargo test -p piperine-lang --test types_model`
-**Run typesgen**: `cargo test -p piperine-lang --test types_generics`
-**Run typestraits**: `cargo test -p piperine-lang --test types_traits`
-**Run typeshandles**: `cargo test -p piperine-lang --test types_handles`
-**Run elabgen**: `cargo test -p piperine-lang --test elab_generics`
-**Run elabhandles**: `cargo test -p piperine-lang --test elab_handles`
+**Run typesmodel**: `cargo test -p piperine-lang --test types_modules model::`
+**Run typesgen**: `cargo test -p piperine-lang --test types_generics generics::`
+**Run typestraits**: `cargo test -p piperine-lang --test types_generics traits::`
+**Run typeshandles**: `cargo test -p piperine-lang --test types_carriers handles::`
+**Run elabgen**: `cargo test -p piperine-lang --test elab_structure generics::`
+**Run elabhandles**: `cargo test -p piperine-lang --test elab_structure handles::`
 **Run irgen**: `cargo test -p piperine-ir --test model generics::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run tgen**: `cargo test -p piperine-transpile --test print generics::`
 **Run plancomp**: `cargo test -p piperine-plan --test shape composite_shape::`
-**Run srcgen**: `cargo test -p piperine-parity --test source_generics`
-**Run srchandles**: `cargo test -p piperine-parity --test source_handles`
-**Run parityproject**: `cargo test -p piperine-parity --test project`
+**Run srcgen**: `cargo test -p piperine-parity --test source_structure generics::`
+**Run srchandles**: `cargo test -p piperine-parity --test source_structure handles::`
+**Run parityproject**: `cargo test -p piperine-parity --test boundary project::`
 **Run apiproject**: `cargo test -p piperine-api --test session project::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

@@ -20,18 +20,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run checkpoint**: `cargo test -p piperine-digital-solver --test engine checkpoint::`
 **Run prototran**: `cargo test -p piperine-solver --test protocol protocol_transient::`
 **Run protoop**: `cargo test -p piperine-solver --test protocol protocol_operating_point::`
-**Run typesevents**: `cargo test -p piperine-lang --test types_events`
-**Run typesanalog**: `cargo test -p piperine-lang --test types_analog`
-**Run elabdigital**: `cargo test -p piperine-lang --test elab_digital`
-**Run sourceevents**: `cargo test -p piperine-parity --test source_events`
-**Run sourcelimexp**: `cargo test -p piperine-parity --test source_limexp`
-**Run paritytran**: `cargo test -p piperine-parity --test parity_tran`
+**Run typesevents**: `cargo test -p piperine-lang --test types_analog events::`
+**Run typesanalog**: `cargo test -p piperine-lang --test types_analog analog::`
+**Run elabdigital**: `cargo test -p piperine-lang --test elab_digital digital::`
+**Run sourceevents**: `cargo test -p piperine-parity --test source_execution events::`
+**Run sourcelimexp**: `cargo test -p piperine-parity --test source_behavior limexp::`
+**Run paritytran**: `cargo test -p piperine-parity --test parity tran::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run bookanalog**: `cargo test -p piperine --test book_analog`
-**Run bookmixed**: `cargo test -p piperine --test book_mixed`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookvalues**: `cargo test -p piperine --test book_values`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run bookanalog**: `cargo test -p piperine --test book analog::`
+**Run bookmixed**: `cargo test -p piperine --test book mixed::`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookvalues**: `cargo test -p piperine --test book values::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

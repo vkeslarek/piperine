@@ -5,12 +5,10 @@ crates/piperine-device-fixtures/src/solver_devices/abi_sensitivity.rs::Gd	1
 crates/piperine-device-fixtures/src/solver_devices/abi_sensitivity.rs::gd_shape	1
 crates/piperine-device-fixtures/src/solver_devices/abi_tran.rs::ChargedC	1
 crates/piperine-device-fixtures/src/solver_devices/abi_tran.rs::FlakyC	1
-crates/piperine-device-fixtures/src/solver_devices/checkpoint_restore.rs::pnjlim	1
 crates/piperine-device-fixtures/src/solver_devices/crossing_rules.rs::tol_shape	1
 crates/piperine-device-fixtures/src/solver_devices/environment.rs::EnvProbe	1
 crates/piperine-device-fixtures/src/solver_devices/host_set.rs::CheckedR	1
 crates/piperine-device-fixtures/src/solver_devices/limiting_report.rs::ld_shape	1
-crates/piperine-device-fixtures/src/solver_devices/limiting_report.rs::pnjlim	1
 crates/piperine-device-fixtures/src/solver_devices/parity_baseline.rs::GatedISink	1
 crates/piperine-device-fixtures/src/solver_devices/parity_baseline.rs::SineVsrc	1
 crates/piperine-device-fixtures/src/solver_devices/parity_baseline.rs::src_shape	1

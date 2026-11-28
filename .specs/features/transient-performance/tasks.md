@@ -330,7 +330,7 @@ Why this order: the statistics come first because every gate is stated in them. 
 - [ ] `tests/jump_step.rs` (new target, `//!` header): an RC driven by a ramp with a digital landing (a reaction that reads a continuous pin) in the middle of a step that fails the tolerance is rejected and retaken smaller (TP-04 AC 1, AC 2); the instants run ahead of the rejected step leave no record (TP-09 AC 2)
 - [ ] the parity guard passes with nothing edited: `Run parity`, `Run twins`, `Run grid`; if a parity value, a twin's bytes or a pinned grid would move, STOP and report (D5) - no parity file, fixture or tolerance is edited
 - [ ] a mixed-signal golden that moves (buck listings, Book buck rows, `tests/book/mixed.rs`) is updated and listed in `.specs/features/transient-performance/moved.md` with old value, new value and the requirement; no record and no digital column is in the list; no tolerance is retuned
-- [ ] Gate check passes: `Run solver`, the parity guard, then `cargo test -p piperine --test book_mixed` and `Run bucklong`
+- [ ] Gate check passes: `Run solver`, the parity guard, then `cargo test -p piperine --test book mixed::` and `Run bucklong`
 - [ ] Test count: 2 new tests
 - [ ] every new struct, enum and method has a doc comment; no free function is added; no abbreviation in a new name
 
@@ -355,7 +355,7 @@ Why this order: the statistics come first because every gate is stated in them. 
 - [ ] the worker records in `tasks.md` Handoff whether `DdtState::q[0]` of a jump step is the state with the delivered values (design "The estimate")
 - [ ] the parity guard passes with nothing edited: `Run parity`, `Run twins`, `Run grid`; if a parity value, a twin's bytes or a pinned grid would move, STOP and report (D5) - no parity file, fixture or tolerance is edited
 - [ ] a mixed-signal golden that moves (buck listings, Book buck rows, `tests/book/mixed.rs`) is updated and listed in `.specs/features/transient-performance/moved.md` with old value, new value and the requirement; no record and no digital column is in the list; no tolerance is retuned
-- [ ] Gate check passes: `Run solver`, the parity guard, `cargo test -p piperine --test book_mixed`, `Run bucklong`
+- [ ] Gate check passes: `Run solver`, the parity guard, `cargo test -p piperine --test book mixed::`, `Run bucklong`
 - [ ] Test count: 4 new tests
 - [ ] every new struct, enum and method has a doc comment; no free function is added; no abbreviation in a new name
 
@@ -817,7 +817,7 @@ Proof: run solver | test the_observations_of_both_rules_come_in_time_order ... o
 Proof: run parity | test tran_rc ... ok
 
 **C41** - Without ngspice the parity targets print the skip line and the twins still run (TP-09, AC 5; T23)
-Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity_tran -- --nocapture`
+Proof: `env PATH=/usr/bin/nonexistent:$HOME/.cargo/bin:/bin cargo test -p piperine-parity --test parity tran:: -- --nocapture`
 
 **C42** - `moved.md` lists every moved mixed golden with old value, new value and requirement (TP-09, AC 6; T23) (retired by code-clarity T10: a pin on a comment of tests/e2e/buck/Piperine.toml and the table of the transient-performance moved.md; neither is behaviour)
 Proof: run ledger | test every_retired_check_is_recorded ... ok

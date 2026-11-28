@@ -31,7 +31,7 @@ use std::sync::Arc;
 /// regression in routing surfaces here, not only in the value baseline.
 #[test]
 fn parity_default_plan_completes_run_and_reaches_stop_time() {
-    let circuit = StepFoldCases::build_rc_circuit(1.0);
+    let circuit = FoldedCircuit::build_rc_circuit(1.0);
     let opts = TransientAnalysisOptions::new(1e-3, 1e-5);
     let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
     let res = solver.tran().unwrap().solve().unwrap();
@@ -86,7 +86,7 @@ fn custom_stepper_receives_propose_calls_through_plan() {
         rejects: rejects.clone(),
     }));
 
-    let circuit = StepFoldCases::build_rc_circuit(1.0);
+    let circuit = FoldedCircuit::build_rc_circuit(1.0);
     let opts = TransientAnalysisOptions::new(1e-3, 1e-5);
     let mut solver = Solver::new(circuit).with_tran_opts(opts).build();
     let mut tran = solver.tran().unwrap();
@@ -118,10 +118,10 @@ fn default_plan_stepper_is_routed_through_accessor() {
         "default reject_dt shrinks dt: {dt_after_reject}");
 }
 
-/// The helpers of the stepper_fold tests.
-pub struct StepFoldCases;
+/// The RC circuit the stepper folds.
+struct FoldedCircuit;
 
-impl StepFoldCases {
+impl FoldedCircuit {
     // ── helpers: minimal RC divider circuit ────────────────────────────────────
 
     /// Constant voltage source `v` held for the whole run, so the RC divider

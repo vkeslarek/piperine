@@ -427,36 +427,46 @@ mod tests {
     use num_complex::Complex;
     use piperine_solver::prelude::{NodeIdentifier, TransferType};
 
-    /// time, a real, a bool, an integer.
-    fn run(steps: &[(f64, f64, bool, i128)]) -> Table {
-        Table {
-            columns: vec!["time".into(), "v".into(), "b".into(), "n".into()],
-            rows: steps.iter().map(|(t, v, b, n)| vec![Cell::Real(*t), Cell::Real(*v), Cell::Bool(*b), Cell::Int(*n)]).collect(),
-        }
-    }
+    /// A table of one run of four columns, and its times.
+    struct SampleTable;
 
-    fn times(table: &Table) -> Vec<f64> {
-        table.rows.iter().map(|r| if let Cell::Real(t) = r[0] { t } else { panic!("a time") }).collect()
+    impl SampleTable {
+        /// time, a real, a bool, an integer.
+        fn run(steps: &[(f64, f64, bool, i128)]) -> Table {
+            Table {
+                columns: vec!["time".into(), "v".into(), "b".into(), "n".into()],
+                rows: steps.iter().map(|(t, v, b, n)| vec![Cell::Real(*t), Cell::Real(*v), Cell::Bool(*b), Cell::Int(*n)]).collect(),
+            }
+        }
+
+        fn times(table: &Table) -> Vec<f64> {
+            table.rows.iter().map(|r| if let Cell::Real(t) = r[0] { t } else { panic!("a time") }).collect()
+        }
+
+        /// An `Option<u8>` cell: `None`, or `Some(n)`.
+        fn option(held: Option<i128>) -> Cell {
+            Cell::Composite(Box::new(CompositeCell::Option(held.map(|n| Box::new(CompositeCell::Scalar(Cell::Int(n)))))))
+        }
     }
 
     #[test]
     fn a_print_grid_has_one_row_per_multiple() {
         // CLI-11 AC 4: accepted steps at 0, 0.3, 0.7, 1, 2.5; step 1, stop 2.5: the multiples
         // 0, 1, 2 are not past 2.5 and 3 is
-        let table = run(&[(0.0, 0.0, false, 0), (0.3, 3.0, false, 0), (0.7, 1.0, false, 0), (1.0, 9.0, false, 0), (2.5, 0.0, false, 0)]);
+        let table = SampleTable::run(&[(0.0, 0.0, false, 0), (0.3, 3.0, false, 0), (0.7, 1.0, false, 0), (1.0, 9.0, false, 0), (2.5, 0.0, false, 0)]);
         let grid = table.on_grid(1.0, 0.0, 2.5).expect("grid");
-        assert_eq!(times(&grid), [0.0, 1.0, 2.0]);
+        assert_eq!(SampleTable::times(&grid), [0.0, 1.0, 2.0]);
         assert_eq!(grid.columns, table.columns);
         // a stop that is a multiple keeps it: 0.5, 1.0 with stop 1.0 and step 0.5 is 3 rows
-        let table = run(&[(0.0, 0.0, false, 0), (1.0, 1.0, false, 0)]);
-        assert_eq!(times(&table.on_grid(0.5, 0.0, 1.0).expect("grid")), [0.0, 0.5, 1.0]);
+        let table = SampleTable::run(&[(0.0, 0.0, false, 0), (1.0, 1.0, false, 0)]);
+        assert_eq!(SampleTable::times(&table.on_grid(0.5, 0.0, 1.0).expect("grid")), [0.0, 0.5, 1.0]);
         // CLI-11 AC 4, `from`: the rows start at the first multiple not before `from` (0.5:
         // multiples 1 and 2); the table starts at 0.6, as a run with `record_from` 0.5 would
-        let table = run(&[(0.6, 6.0, false, 0), (1.5, 15.0, false, 0), (2.0, 20.0, false, 0)]);
-        assert_eq!(times(&table.on_grid(1.0, 0.5, 2.0).expect("grid")), [1.0, 2.0]);
+        let table = SampleTable::run(&[(0.6, 6.0, false, 0), (1.5, 15.0, false, 0), (2.0, 20.0, false, 0)]);
+        assert_eq!(SampleTable::times(&table.on_grid(1.0, 0.5, 2.0).expect("grid")), [1.0, 2.0]);
         // a multiple before the first kept step is no row: from 0.5 against a table from 1.2
-        let table = run(&[(1.2, 1.0, false, 0), (2.0, 2.0, false, 0)]);
-        assert_eq!(times(&table.on_grid(1.0, 0.5, 2.0).expect("grid")), [2.0]);
+        let table = SampleTable::run(&[(1.2, 1.0, false, 0), (2.0, 2.0, false, 0)]);
+        assert_eq!(SampleTable::times(&table.on_grid(1.0, 0.5, 2.0).expect("grid")), [2.0]);
     }
 
     #[test]
@@ -464,7 +474,7 @@ mod tests {
         // CLI-11 AC 5: v is 1 at 0.7 and 9 at 1.0, so at 0.9 it is 1 + 8 * 0.2 / 0.3 = 6.333...;
         // at 1.0, an accepted step, it is that step's 9 exactly; b and n hold the last step at
         // or before the time: at 0.9 the values of 0.7, at 1.0 those of 1.0
-        let table = run(&[(0.0, 0.0, false, 0), (0.7, 1.0, true, 7), (1.0, 9.0, false, 10), (2.0, 3.0, true, 20)]);
+        let table = SampleTable::run(&[(0.0, 0.0, false, 0), (0.7, 1.0, true, 7), (1.0, 9.0, false, 10), (2.0, 3.0, true, 20)]);
         let grid = table.on_grid(0.3, 0.0, 1.8).expect("grid");
         let at = |t: f64| grid.rows.iter().find(|r| r[0] == Cell::Real(t)).unwrap_or_else(|| panic!("no row at {t}: {grid:?}")).clone();
         // the multiples of 0.3 are k * 0.3 as the grid computes them
@@ -494,16 +504,11 @@ mod tests {
     #[test]
     fn a_grid_wider_than_the_run_is_the_row_at_zero() {
         // edge case: `print_step` greater than `stop` gives the single row at time 0
-        let table = run(&[(0.0, 4.0, true, 1), (1.0, 8.0, false, 2), (2.5, 9.0, false, 3)]);
+        let table = SampleTable::run(&[(0.0, 4.0, true, 1), (1.0, 8.0, false, 2), (2.5, 9.0, false, 3)]);
         let grid = table.on_grid(10.0, 0.0, 2.5).expect("grid");
         assert_eq!(grid.rows, [vec![Cell::Real(0.0), Cell::Real(4.0), Cell::Bool(true), Cell::Int(1)]]);
         // a table the run cut short of `stop` is a failure, never a row held past its end
         assert!(table.on_grid(1.0, 0.0, 3.5).is_err());
-    }
-
-    /// An `Option<u8>` cell: `None`, or `Some(n)`.
-    fn option(held: Option<i128>) -> Cell {
-        Cell::Composite(Box::new(CompositeCell::Option(held.map(|n| Box::new(CompositeCell::Scalar(Cell::Int(n)))))))
     }
 
     #[test]
@@ -511,16 +516,16 @@ mod tests {
         // part VIII, the absent cell: the `value` leaf of a `None` is `Cell::Absent`, never an empty text, and the
         // leaves are those of every row; a row with no cell for a column, or a plain cell in a composite column, is
         // a `Failure` the host does not fill in
-        let table = Table { columns: vec!["time".into(), "o".into()], rows: vec![vec![Cell::Real(0.0), option(None)], vec![Cell::Real(1.0), option(Some(7))]] };
+        let table = Table { columns: vec!["time".into(), "o".into()], rows: vec![vec![Cell::Real(0.0), SampleTable::option(None)], vec![Cell::Real(1.0), SampleTable::option(Some(7))]] };
         let expanded = table.expanded(true).expect("every row is readable");
         assert_eq!(expanded.columns, ["time", "o.some", "o.value"]);
         assert_eq!(expanded.rows[0], [Cell::Real(0.0), Cell::Bool(false), Cell::Absent], "no payload in a `None`");
         assert_eq!(expanded.rows[1], [Cell::Real(1.0), Cell::Bool(true), Cell::Int(7)]);
 
-        let short = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), option(None)], vec![Cell::Real(1.0)]] };
+        let short = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), SampleTable::option(None)], vec![Cell::Real(1.0)]] };
         let refused = short.expanded(true).expect_err("a row with no cell for a column");
         assert!(refused.to_string().contains("row 1 has no cell for column `o`"), "{refused}");
-        let plain = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), option(Some(1))], vec![Cell::Real(1.0), Cell::Int(2)]] };
+        let plain = Table { columns: table.columns.clone(), rows: vec![vec![Cell::Real(0.0), SampleTable::option(Some(1))], vec![Cell::Real(1.0), Cell::Int(2)]] };
         let refused = plain.expanded(true).expect_err("a plain cell in a composite column");
         assert!(refused.to_string().contains("plain value"), "{refused}");
     }

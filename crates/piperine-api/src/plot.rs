@@ -318,16 +318,26 @@ impl Plot {
 mod tests {
     use super::*;
 
-    fn real_table(columns: &[&str], rows: &[&[Cell]]) -> Table {
-        Table { columns: columns.iter().map(|c| c.to_string()).collect(), rows: rows.iter().map(|r| r.to_vec()).collect() }
+    /// The table and analysis a plot is built from.
+    struct PlotInput;
+
+    impl PlotInput {
+        fn real_table(columns: &[&str], rows: &[&[Cell]]) -> Table {
+            Table { columns: columns.iter().map(|c| c.to_string()).collect(), rows: rows.iter().map(|r| r.to_vec()).collect() }
+        }
+
+        fn transient() -> Analysis {
+            Analysis::Transient { stop: 4.0, max_step: None, print_step: None, from: None }
+        }
     }
 
-    fn transient() -> Analysis {
-        Analysis::Transient { stop: 4.0, max_step: None, print_step: None, from: None }
-    }
+    /// Whether two reals of a plot agree.
+    struct PlotCloseness;
 
-    fn near(a: f64, b: f64) -> bool {
-        (a - b).abs() <= 1e-9
+    impl PlotCloseness {
+        fn near(a: f64, b: f64) -> bool {
+            (a - b).abs() <= 1e-9
+        }
     }
 
     #[test]
@@ -337,7 +347,7 @@ mod tests {
         // bottom edge 430). Time 0..4 s maps onto x 70..780, v 0..8 onto y 430..20.
         let r = |t: f64, v: f64| vec![Cell::Real(t), Cell::Real(v)];
         let table = Table { columns: vec!["time".into(), "v".into()], rows: vec![r(0.0, 0.0), r(1.0, 2.0), r(2.0, 4.0), r(3.0, 6.0), r(4.0, 8.0)] };
-        let plot = Plot::of(&table, &transient()).expect("a plot");
+        let plot = Plot::of(&table, &PlotInput::transient()).expect("a plot");
         assert_eq!((plot.width, plot.height), (800.0, 480.0));
         let panel = &plot.panels[0];
         assert_eq!(panel.area, Rect { x: 70.0, y: 20.0, w: 710.0, h: 410.0 });
@@ -351,15 +361,15 @@ mod tests {
         let run = &panel.series[0].runs[0];
         assert_eq!(run.len(), 5);
         for (got, want) in run.iter().zip(want) {
-            assert!(near(got.0, want.0) && near(got.1, want.1), "{got:?} against {want:?}");
+            assert!(PlotCloseness::near(got.0, want.0) && PlotCloseness::near(got.1, want.1), "{got:?} against {want:?}");
         }
         assert_eq!(panel.series[0].label, "v");
         assert_eq!(panel.x.title, "time");
         // the mapping itself: the middle of a linear axis, and of a log axis (1e5 is half way,
         // in decades, between 1e3 and 1e7: 70 + 710 * 2 / 4 = 425)
-        assert!(near(panel.y.place(4.0, 430.0, 20.0), 225.0));
+        assert!(PlotCloseness::near(panel.y.place(4.0, 430.0, 20.0), 225.0));
         let log = Axis { title: "freq".into(), min: 1e3, max: 1e7, log: true, ticks: vec![] };
-        assert!(near(log.place(1e5, 70.0, 780.0), 425.0));
+        assert!(PlotCloseness::near(log.place(1e5, 70.0, 780.0), 425.0));
     }
 
     #[test]
@@ -392,11 +402,11 @@ mod tests {
         // CLI-22 AC 5: the real column `v` is a series, the bool column `b` a lane of 28 under
         // the plot area, which gives up that height: 410 - 28 = 382, so the lane is at
         // y = 20 + 382 = 402, from x = 70, 710 wide
-        let table = real_table(
+        let table = PlotInput::real_table(
             &["time", "v", "b"],
             &[&[Cell::Real(0.0), Cell::Real(0.0), Cell::Bool(false)], &[Cell::Real(1.0), Cell::Real(1.0), Cell::Bool(true)], &[Cell::Real(2.0), Cell::Real(2.0), Cell::Bool(false)]],
         );
-        let plot = Plot::of(&table, &transient()).expect("a plot");
+        let plot = Plot::of(&table, &PlotInput::transient()).expect("a plot");
         assert_eq!(plot.panels[0].series.iter().map(|s| s.label.as_str()).collect::<Vec<_>>(), ["v"]);
         assert_eq!(plot.panels[0].area.h, 382.0);
         assert_eq!(plot.lanes.len(), 1);
@@ -430,14 +440,14 @@ mod tests {
         //   1e3 -> (70, 20)   1e5 -> (425, 285 - 265 * 36.9897 / 40 = 39.9...)   1e7 -> (780, 285)
         let want = [(70.0, 20.0), (425.0, 285.0 - 265.0 * (40.0 + 20.0 * corner.log10()) / 40.0), (780.0, 285.0)];
         for (got, want) in db.runs[0].iter().zip(want) {
-            assert!(near(got.0, want.0) && near(got.1, want.1), "{got:?} against {want:?}");
+            assert!(PlotCloseness::near(got.0, want.0) && PlotCloseness::near(got.1, want.1), "{got:?} against {want:?}");
         }
         assert!((want[1].1 - 40.0).abs() < 0.1, "{:?}", want[1]);
         // degrees: -90..0 has ticks of step 10 (10; step 5 would be 19); y = 590 - 265 * (p + 90) / 90,
         // so -45 is at 590 - 132.5 = 457.5
         assert_eq!((plot.panels[1].y.min, plot.panels[1].y.max), (-90.0, 0.0));
         assert_eq!(plot.panels[1].y.title, "phase (degrees)");
-        assert!(near(plot.panels[1].series[0].runs[0][1].1, 457.5));
+        assert!(PlotCloseness::near(plot.panels[1].series[0].runs[0][1].1, 457.5));
         // a zero magnitude has no decibels: the path breaks there
         let broken = Table { columns: table.columns.clone(), rows: vec![row(1e3, 1.0, 0.0), row(1e5, 0.0, -45.0), row(1e7, 1.0, -90.0)] };
         let plot = Plot::of(&broken, &ac).expect("a plot");
@@ -462,7 +472,7 @@ mod tests {
         // CLI-22 AC 9: v is 0, NaN, 2, 3: two runs, the first of one point, the second of two
         let r = |t: f64, v: Cell| vec![Cell::Real(t), v];
         let table = Table { columns: vec!["time".into(), "v".into()], rows: vec![r(0.0, Cell::Real(0.0)), r(1.0, Cell::Real(f64::NAN)), r(2.0, Cell::Real(2.0)), r(3.0, Cell::Real(3.0))] };
-        let plot = Plot::of(&table, &transient()).expect("a plot");
+        let plot = Plot::of(&table, &PlotInput::transient()).expect("a plot");
         let lengths: Vec<usize> = plot.panels[0].series[0].runs.iter().map(Vec::len).collect();
         assert_eq!(lengths, [1, 2]);
     }

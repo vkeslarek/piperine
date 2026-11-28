@@ -11,6 +11,7 @@ mod generics;
 mod model;
 mod number_widths;
 mod operators;
+mod printed;
 mod resolved;
 mod shape;
 mod structure;

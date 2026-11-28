@@ -148,10 +148,15 @@ impl Ngspice {
 mod tests {
     use super::*;
 
-    fn directory_with_ngspice() -> tempfile::TempDir {
-        let directory = tempfile::tempdir().expect("temp dir");
-        std::fs::write(directory.path().join("ngspice"), "").expect("write a stand-in binary");
-        directory
+    /// A directory holding an empty file named `ngspice`, standing in for the binary.
+    struct EmptyBinaryDirectory;
+
+    impl EmptyBinaryDirectory {
+        fn directory_with_ngspice() -> tempfile::TempDir {
+            let directory = tempfile::tempdir().expect("temp dir");
+            std::fs::write(directory.path().join("ngspice"), "").expect("write a stand-in binary");
+            directory
+        }
     }
 
     #[test]
@@ -173,8 +178,8 @@ mod tests {
 
     #[test]
     fn the_binary_comes_from_the_variable_or_the_path() {
-        let on_path = directory_with_ngspice();
-        let elsewhere = directory_with_ngspice();
+        let on_path = EmptyBinaryDirectory::directory_with_ngspice();
+        let elsewhere = EmptyBinaryDirectory::directory_with_ngspice();
         let named = elsewhere.path().join("ngspice");
         let path = std::env::join_paths([on_path.path()]).expect("join paths");
 

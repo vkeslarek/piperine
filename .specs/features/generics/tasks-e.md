@@ -12,18 +12,18 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Draft
 **Approved**: 2026-11-23 - user: "Sim. E aceito os outros"
 **Build**: `cargo build -p piperine-abi -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesmodel**: `cargo test -p piperine-lang --test types_model`
-**Run stdlibrary**: `cargo test -p piperine-lang --test std_library`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
-**Run srcstd**: `cargo test -p piperine-parity --test source_stdlib_generic`
+**Run typesmodel**: `cargo test -p piperine-lang --test types_modules model::`
+**Run stdlibrary**: `cargo test -p piperine-lang --test std library::`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
+**Run srcstd**: `cargo test -p piperine-parity --test source_stdlib stdlib_generic::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
-**Run elabgenr**: `cargo test -p piperine-lang --test elab_generation`
-**Run srcgenr**: `cargo test -p piperine-parity --test source_generation`
-**Run typesresults**: `cargo test -p piperine-lang --test types_results`
-**Run elabresults**: `cargo test -p piperine-lang --test elab_results`
-**Run elabtemplates**: `cargo test -p piperine-lang --test elab_templates`
-**Run typestempl**: `cargo test -p piperine-lang --test types_templates`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
+**Run elabgenr**: `cargo test -p piperine-lang --test elab_structure generation::`
+**Run srcgenr**: `cargo test -p piperine-parity --test source_structure generation::`
+**Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`
+**Run elabresults**: `cargo test -p piperine-lang --test elab_digital results::`
+**Run elabtemplates**: `cargo test -p piperine-lang --test elab_structure templates::`
+**Run typestempl**: `cargo test -p piperine-lang --test types_generics templates::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 **Run suite**: `cargo test -p piperine-repository-guards --test suite`

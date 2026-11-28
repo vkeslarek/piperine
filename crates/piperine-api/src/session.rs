@@ -922,21 +922,26 @@ impl Session {
 mod tests {
     use super::*;
 
-    /// A session of a divider on the interpreter with a transient, its design's params all marked
-    /// structural: the elaborator marks none (generation is outside what the interpreter runs), so the marking
-    /// is written into the IR the session holds.
-    fn structural_session() -> (tempfile::TempDir, Session) {
-        let dir = tempfile::tempdir().expect("tmp");
-        let file = dir.path().join("bench.msl");
-        let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Top() {\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
-        std::fs::write(&file, text).expect("write");
-        let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
-        let overrides = crate::request::Overrides { analysis: Some("transient".into()), stop: Some(1e-6), backend: Some("interp".into()), top: Some("Top".into()), ..Default::default() };
-        let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
-        let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: dir.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
-        let marked = serde_json::to_string(session.ir()).expect("serialize").replace("\"structural\":false", "\"structural\":true");
-        session.ir = Arc::new(serde_json::from_str(&marked).expect("deserialize"));
-        (dir, session)
+    /// A session over a design with a structural param, in a temporary directory.
+    struct StructuralSession;
+
+    impl StructuralSession {
+        /// A session of a divider on the interpreter with a transient, its design's params all marked
+        /// structural: the elaborator marks none (generation is outside what the interpreter runs), so the marking
+        /// is written into the IR the session holds.
+        fn structural_session() -> (tempfile::TempDir, Session) {
+            let dir = tempfile::tempdir().expect("tmp");
+            let file = dir.path().join("bench.msl");
+            let text = "pub module Resistor(p: Electrical, n: Electrical) { r: f64 where r > 0.0; }\nanalog for Resistor { i(p, n) +> v(p, n) / r; }\npub module Vsource(p: Electrical, n: Electrical) { dc: f64 = 1.0; }\nanalog for Vsource { v(p, n) +> dc; }\nmodule Top() {\n    signal a: Electrical;\n    let v1 = Vsource(a, gnd) { dc: 1.0 };\n    let r1 = Resistor(a, gnd) { r: 1k };\n}\n";
+            std::fs::write(&file, text).expect("write");
+            let project = Project::file(&file).unwrap_or_else(|f| panic!("{f}"));
+            let overrides = crate::request::Overrides { analysis: Some("transient".into()), stop: Some(1e-6), backend: Some("interp".into()), top: Some("Top".into()), ..Default::default() };
+            let spec = project.request(None, &overrides).unwrap_or_else(|f| panic!("{f}"));
+            let mut session = Session::open(&project, &spec, &Settings { rustc: None, cache: dir.path().to_path_buf() }).unwrap_or_else(|f| panic!("{f}"));
+            let marked = serde_json::to_string(session.ir()).expect("serialize").replace("\"structural\":false", "\"structural\":true");
+            session.ir = Arc::new(serde_json::from_str(&marked).expect("deserialize"));
+            (dir, session)
+        }
     }
 
     #[test]
@@ -944,7 +949,7 @@ mod tests {
         // HII-13 AC 3 (§23.1 rule 7, F12): a set of a structural param at 0.5 us is E0803 naming
         // it, given before the run starts, and the session still runs; the same set at 0 is refused
         // too (F1): the body was elaborated with the old value, so the write would run its variant
-        let (_dir, mut session) = structural_session();
+        let (_dir, mut session) = StructuralSession::structural_session();
         match session.set_at("r1.r", 2000.0, 5e-7) {
             Err(Failure::Host { code: "E0803", message }) => assert!(message.contains("Top.r1.r"), "{message}"),
             other => panic!("E0803, found {other:?}"),

@@ -23,7 +23,8 @@ use crate::models;
 
 use circuits::HandCircuits;
 use devices::{Devices, Ex};
-use models::{Models, View};
+use models::Models;
+use piperine_device_fixtures::shapes::View;
 
 /// Hand-built bodies the five devices do not cover.
 struct Odd;

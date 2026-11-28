@@ -20,10 +20,10 @@ use piperine_solver::prelude::{AdjointOptions, CircuitBuilder, CircuitInstance, 
 
 #[test]
 fn sensitivity_uses_declared_partials_and_falls_back_to_a_finite_difference() {
-    let wrt = AbiSensitivityCases::params(&[("r1", "r"), ("r2", "r"), ("v1", "dc")]);
+    let wrt = SensitivityDivider::params(&[("r1", "r"), ("r2", "r"), ("v1", "dc")]);
     let run = |difference: bool| {
-        let (mut circuit, mid) = AbiSensitivityCases::divider();
-        let output = AbiSensitivityCases::net_of(&circuit, &mid);
+        let (mut circuit, mid) = SensitivityDivider::divider();
+        let output = SensitivityDivider::net_of(&circuit, &mid);
         let label = output.label().to_string();
         let mut options = AdjointOptions::new(output, wrt.clone());
         options.finite_difference_only = difference;
@@ -59,7 +59,7 @@ fn a_structural_param_sensitivity_fails_loud() {
     );
     CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
     let mut circuit = b.build().expect("build");
-    let options = AdjointOptions::new(AbiSensitivityCases::net_of(&circuit, &mid), AbiSensitivityCases::params(&[("r1", "w")]));
+    let options = AdjointOptions::new(SensitivityDivider::net_of(&circuit, &mid), SensitivityDivider::params(&[("r1", "w")]));
     let err = circuit.adjoint(options, Context::default()).expect("adjoint").solve().err().expect("refused");
     assert!(err.to_string().contains("STRUCTURAL"), "{err}");
 }
@@ -71,7 +71,7 @@ fn a_derivative_chains_through_a_discrete_function() {
     let top = b.node("top");
     let mid = b.node("mid");
     CircuitBuilding::add_voltage_source(&mut b, "v1", 10.0, &top, &gnd);
-    b.device(AbiSensitivityCases::gd(), "x1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top), Port::Node(mid.clone())]);
+    b.device(SensitivityDivider::gd(), "x1", &[("r", ParamValue::Real(1.0e3))], &[Port::Node(top), Port::Node(mid.clone())]);
     CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
     let mut circuit = b.build().expect("build");
 
@@ -89,9 +89,9 @@ fn a_derivative_chains_through_a_discrete_function() {
             bound.analog.set_discrete(slot, &bytes);
         }
     }
-    let output = AbiSensitivityCases::net_of(&circuit, &mid);
+    let output = SensitivityDivider::net_of(&circuit, &mid);
     let out = output.label().to_string();
-    let options = AdjointOptions::new(output, AbiSensitivityCases::params(&[("x1", "r")]));
+    let options = AdjointOptions::new(output, SensitivityDivider::params(&[("x1", "r")]));
     let result = circuit.adjoint(options, Context::default()).expect("adjoint").solve().expect("solve");
 
     // v(mid) = 10 r2 / (r + r2), so dv/dr = -10 r2 / (r + r2)^2 = -2.5e-3.
@@ -100,10 +100,10 @@ fn a_derivative_chains_through_a_discrete_function() {
     assert!(result.fallback_users.is_empty());
 }
 
-/// The helpers of the abi_sens tests.
-pub struct AbiSensitivityCases;
+/// The divider the ABI sensitivity tests differentiate, its nets and params.
+struct SensitivityDivider;
 
-impl AbiSensitivityCases {
+impl SensitivityDivider {
 
     /// The gd helper `gd`.
     fn gd() -> &'static Module {

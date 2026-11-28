@@ -8,13 +8,25 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::support;
+use support::PackageDirectory;
 
 use piperine_lang::pom::Reflect;
 use piperine_project::ProjectRoot;
 
-fn write(path: &Path, text: &str) {
-    fs::create_dir_all(path.parent().unwrap()).unwrap();
-    fs::write(path, text).unwrap();
+/// The Rust source files under a directory.
+struct SourceFiles;
+
+impl SourceFiles {
+    fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
+        for entry in fs::read_dir(dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                SourceFiles::sources(&path, out);
+            } else if path.extension().is_some_and(|e| e == "rs") {
+                out.push(path);
+            }
+        }
+    }
 }
 
 #[test]
@@ -22,15 +34,15 @@ fn the_project_root_is_the_nearest_manifest() {
     let tmp = tempfile::tempdir().unwrap();
     let base = tmp.path().canonicalize().unwrap();
     let app = base.join("ws/app");
-    write(&app.join("Piperine.toml"), "");
-    write(&app.join("src/deep/x.msl"), "");
+    PackageDirectory::write(&app.join("Piperine.toml"), "");
+    PackageDirectory::write(&app.join("src/deep/x.msl"), "");
     // The directory itself, and any directory below it.
     assert_eq!(ProjectRoot::find_root(&app), Some(app.clone()));
     assert_eq!(ProjectRoot::find_root(&app.join("src/deep")), Some(app.clone()));
     // The nearest of two manifests wins.
     let inner = app.join("vendor/inner");
-    write(&inner.join("Piperine.toml"), "");
-    write(&inner.join("src/x.msl"), "");
+    PackageDirectory::write(&inner.join("Piperine.toml"), "");
+    PackageDirectory::write(&inner.join("src/x.msl"), "");
     assert_eq!(ProjectRoot::find_root(&inner.join("src")), Some(inner.clone()));
     assert_eq!(ProjectRoot::find_root(&app.join("vendor")), Some(app.clone()));
     // No manifest on the way up: none. (The temporary directory is searched up to the filesystem
@@ -38,17 +50,6 @@ fn the_project_root_is_the_nearest_manifest() {
     let bare = base.join("bare/deeper");
     fs::create_dir_all(&bare).unwrap();
     assert_eq!(ProjectRoot::find_root(&bare), None);
-}
-
-fn sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    for entry in fs::read_dir(dir).unwrap() {
-        let path = entry.unwrap().path();
-        if path.is_dir() {
-            sources(&path, out);
-        } else if path.extension().is_some_and(|e| e == "rs") {
-            out.push(path);
-        }
-    }
 }
 
 #[test]
@@ -65,7 +66,7 @@ fn the_crate_holds_no_retired_surface() {
         assert!(!root.join(gone).exists(), "{gone} still exists");
     }
     let mut files = Vec::new();
-    sources(&root.join("src"), &mut files);
+    SourceFiles::sources(&root.join("src"), &mut files);
     assert!(files.len() >= 2, "{files:?}");
     // The crate's sources: the tests spell a retired table (`[plugins]`) to prove it is refused.
     for file in files {
@@ -78,9 +79,9 @@ fn the_crate_holds_no_retired_surface() {
 
 #[test]
 fn load_project_builds_the_design_of_a_package_graph() {
-    let (_tmp, base) = support::workspace();
-    let app = support::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "use util::Cell;\nmodule Top() { let c = Cell(); }\n");
-    support::package(&base.join("util"), "util", "1.0.0", &[], "pub module Cell() {}\n");
+    let (_tmp, base) = support::PackageDirectory::workspace();
+    let app = support::PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "use util::Cell;\nmodule Top() { let c = Cell(); }\n");
+    support::PackageDirectory::package(&base.join("util"), "util", "1.0.0", &[], "pub module Cell() {}\n");
     let design = ProjectRoot::load(&app).expect("a clean project");
     let names: Vec<&str> = design.crates().iter().map(|c| c.name()).collect();
     assert_eq!(names, ["app", "util", "std"]);
@@ -93,10 +94,10 @@ fn load_project_builds_the_design_of_a_package_graph() {
 
 #[test]
 fn a_package_error_stops_load_project() {
-    let (_tmp, base) = support::workspace();
+    let (_tmp, base) = support::PackageDirectory::workspace();
     let app = base.join("app");
-    support::write(&app.join("Piperine.toml"), "[package]\nname = \"app\"\nversion = \"1.0.0\"\nflavour = \"x\"\n");
-    support::write(&app.join("src/lib.msl"), "");
+    support::PackageDirectory::write(&app.join("Piperine.toml"), "[package]\nname = \"app\"\nversion = \"1.0.0\"\nflavour = \"x\"\n");
+    support::PackageDirectory::write(&app.join("src/lib.msl"), "");
     let errors = ProjectRoot::load(&app).err().expect("no design for a package error");
     assert_eq!(errors.len(), 1, "{errors:?}");
     assert_eq!(errors[0].code(), "E0171");
@@ -104,8 +105,8 @@ fn a_package_error_stops_load_project() {
 
 #[test]
 fn a_model_error_is_a_diagnostic_not_a_package_error() {
-    let (_tmp, base) = support::workspace();
-    let app = support::package(&base.join("app"), "app", "1.0.0", &[], "use nowhere::X;\n");
+    let (_tmp, base) = support::PackageDirectory::workspace();
+    let app = support::PackageDirectory::package(&base.join("app"), "app", "1.0.0", &[], "use nowhere::X;\n");
     let design = ProjectRoot::load(&app).expect("a language error is not a package error");
     let codes: Vec<&str> = design.diagnostics().iter().map(|d| d.diagnostic.code.as_ref()).collect();
     assert_eq!(codes, ["E0161"]);
@@ -116,7 +117,7 @@ fn the_crate_reports_exactly_the_package_phase_codes() {
     use std::collections::BTreeSet;
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = Vec::new();
-    sources(&root.join("src"), &mut files);
+    SourceFiles::sources(&root.join("src"), &mut files);
     let mut reported = BTreeSet::new();
     for file in files {
         let text = fs::read_to_string(file).unwrap();

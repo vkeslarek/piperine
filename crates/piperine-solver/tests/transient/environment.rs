@@ -20,10 +20,10 @@ const GMIN: f64 = 3.0e-12;
 fn a_reaction_reads_temperature_gmin_and_source_scale() {
     // ENV-03 AC 3 and 4: in the operating point (START) and in the transient (go at 100 ns) the
     // reaction reads the host's 350 K, the session's 3e-12 S and 1.0, and commits them
-    let mut solver = EnvironmentCases::solver();
+    let mut solver = EnvironmentProbe::solver();
     solver.dc().expect("dc").solve().expect("the operating point");
     assert_eq!(READ.with(|r| r.borrow().clone()), vec![[KELVIN, GMIN, 1.0]], "START in the operating point");
-    assert_eq!([EnvironmentCases::carrier(&solver, "rt"), EnvironmentCases::carrier(&solver, "rg"), EnvironmentCases::carrier(&solver, "rs")], [KELVIN, GMIN, 1.0]);
+    assert_eq!([EnvironmentProbe::carrier(&solver, "rt"), EnvironmentProbe::carrier(&solver, "rg"), EnvironmentProbe::carrier(&solver, "rs")], [KELVIN, GMIN, 1.0]);
     READ.with(|r| r.borrow_mut().clear());
     solver.tran().expect("tran").solve().expect("the transient");
     assert_eq!(
@@ -36,11 +36,11 @@ fn a_reaction_reads_temperature_gmin_and_source_scale() {
 #[test]
 fn a_discrete_function_reads_gmin_and_source_scale() {
     // ENV-03 AC 3: the discrete function writes GMIN and SOURCE_SCALE to fg and fs
-    let mut solver = EnvironmentCases::solver();
+    let mut solver = EnvironmentProbe::solver();
     solver.dc().expect("dc").solve().expect("the operating point");
-    assert_eq!([EnvironmentCases::carrier(&solver, "fg"), EnvironmentCases::carrier(&solver, "fs")], [GMIN, 1.0]);
+    assert_eq!([EnvironmentProbe::carrier(&solver, "fg"), EnvironmentProbe::carrier(&solver, "fs")], [GMIN, 1.0]);
     solver.tran().expect("tran").solve().expect("the transient");
-    assert_eq!([EnvironmentCases::carrier(&solver, "fg"), EnvironmentCases::carrier(&solver, "fs")], [GMIN, 1.0]);
+    assert_eq!([EnvironmentProbe::carrier(&solver, "fg"), EnvironmentProbe::carrier(&solver, "fs")], [GMIN, 1.0]);
 }
 
 #[test]
@@ -53,10 +53,10 @@ fn analog_and_reactions_read_one_gmin_at_the_transient_start() {
     let gnd = b.ground();
     let out = b.node("out");
     CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &out, &gnd);
-    b.device(EnvironmentCases::gmin_load(), "g", &[], &[Port::Node(out.clone())]);
+    b.device(EnvironmentProbe::gmin_load(), "g", &[], &[Port::Node(out.clone())]);
     b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[Port::Net("go".into())]);
     let ports: Vec<Port> = ["fg", "fs", "rt", "rg", "rs", "go"].map(|n| Port::Net(n.into())).into();
-    b.device(EnvironmentCases::probe(), "env", &[], &ports);
+    b.device(EnvironmentProbe::probe(), "env", &[], &ports);
     let mut context = Context::default();
     context.tolerances.gmin = GMIN;
     let mut solver = Solver::new(b.build().expect("build"))
@@ -79,7 +79,7 @@ fn analog_and_reactions_read_one_gmin_at_the_transient_start() {
 fn an_ac_operating_point_carries_the_ac_flag() {
     // FIX-11 AC 3 (§11.1.1): the operating point of an AC analysis is `analysis(Ac)`, not
     // `analysis(Dc)`; `START` fires once there
-    let (mut circuit, _) = EnvironmentCases::flag_circuit();
+    let (mut circuit, _) = EnvironmentProbe::flag_circuit();
     circuit.ac(Context::default()).expect("ac");
     assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, false, true, false]]);
 }
@@ -87,7 +87,7 @@ fn an_ac_operating_point_carries_the_ac_flag() {
 #[test]
 fn a_noise_operating_point_carries_the_noise_flag() {
     // FIX-11 AC 4: the operating point of a noise analysis is `analysis(Noise)`
-    let (mut circuit, mid) = EnvironmentCases::flag_circuit();
+    let (mut circuit, mid) = EnvironmentProbe::flag_circuit();
     let options = piperine_solver::prelude::NoiseAnalysisOptions {
         sweep_options: piperine_solver::prelude::AcSweepAnalysisOptions { start_frequency: 1.0e3, stop_frequency: 1.0e5, steps: 5, logarithmic: true },
         output_node: mid,
@@ -103,20 +103,20 @@ fn a_noise_operating_point_carries_the_noise_flag() {
 fn a_transient_operating_point_carries_the_tran_flag() {
     // FIX-11 AC 2: the operating point of a transient is `analysis(Transient)`; the plain operating
     // point stays `analysis(Dc)`
-    let (circuit, _) = EnvironmentCases::flag_circuit();
+    let (circuit, _) = EnvironmentProbe::flag_circuit();
     let mut solver = Solver::new(circuit).with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8)).build();
     solver.tran().expect("tran").solve().expect("the transient");
     assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[false, true, false, false]]);
-    let (circuit, _) = EnvironmentCases::flag_circuit();
+    let (circuit, _) = EnvironmentProbe::flag_circuit();
     let mut solver = Solver::new(circuit).build();
     solver.dc().expect("dc").solve().expect("the operating point");
     assert_eq!(FLAGS.with(|f| f.borrow().clone()), vec![[true, false, false, false]]);
 }
 
-/// The helpers of the environment tests.
-pub struct EnvironmentCases;
+/// The environment a device reads: its probe, solver, carrier and gmin load.
+struct EnvironmentProbe;
 
-impl EnvironmentCases {
+impl EnvironmentProbe {
 
     /// The probe helper `probe`.
     fn probe() -> &'static Module {
@@ -135,7 +135,7 @@ impl EnvironmentCases {
         CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
         b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[Port::Net("go".into())]);
         let ports: Vec<Port> = ["fg", "fs", "rt", "rg", "rs", "go"].map(|n| Port::Net(n.into())).into();
-        b.device(EnvironmentCases::probe(), "env", &[], &ports);
+        b.device(EnvironmentProbe::probe(), "env", &[], &ports);
         let mut context = Context::default();
         context.tolerances.temperature = KELVIN;
         context.tolerances.gmin = GMIN;
@@ -171,7 +171,7 @@ impl EnvironmentCases {
         CircuitBuilding::add_voltage_source(&mut b, "v1", 1.0, &top, &gnd);
         CircuitBuilding::add_resistor(&mut b, "r1", 1.0e3, &top, &mid);
         CircuitBuilding::add_resistor(&mut b, "r2", 1.0e3, &mid, &gnd);
-        b.device(EnvironmentCases::flag_probe(), "flags", &[], &[]);
+        b.device(EnvironmentProbe::flag_probe(), "flags", &[], &[]);
         FLAGS.with(|f| f.borrow_mut().clear());
         (b.build().expect("build"), CircuitBuilding::node_id(&mid))
     }

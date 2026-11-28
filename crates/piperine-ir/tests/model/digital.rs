@@ -10,6 +10,7 @@ use piperine_ir_fixtures::devices;
 
 use digital::{Buck, Dx, ValueAliases};
 use devices::Devices;
+use super::printed::Printed;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodySpec, Branch, BranchKind, CarrierRole, Child, Constant, Deps, Drive, FunctionId, FunctionSpec, InstanceId,
     InstanceSpec, Ir, IrBuilder, Local, Method, NetId, NetSpec, NodeRef, NodeSpec, Operator, Origin, QuantityRole, Real,
@@ -212,17 +213,6 @@ impl Design {
             locals: params,
             body,
         })
-    }
-}
-
-/// The structural print of `ir` holds `lines`, consecutive and in order.
-struct Printed;
-
-impl Printed {
-    fn holds(ir: &Ir, lines: &[&str]) {
-        let text = ir.print_structural();
-        let block = lines.join("\n");
-        assert!(text.contains(&format!("{block}\n")), "missing:\n{block}\n--- in ---\n{text}");
     }
 }
 

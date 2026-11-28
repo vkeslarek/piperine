@@ -22,7 +22,7 @@
 | C13 | `run corpus / test every_twin_has_its_files_in_one_scenario_directory ... ok` | pass |
 | C14 | `run corpus / test tests_ngspice_holds_no_twin ... ok` | pass |
 | C15 | `run twins / test every_twin_prints_the_bytes_it_printed_before_the_move ... ok` | pass |
-| C16 | `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'` | pass |
+| C16 | `env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity` | pass |
 | C17 | `git diff --quiet $(git merge-base HEAD origin/main) -- crates/piperine-parity/src/contract.rs crates/piperine-` | pass |
 | C18 | `run scenarios / test every_twin_has_a_scenario_test ... ok` | pass |
 | C19 | `run scenarios / test divider ... ok` | pass |
@@ -262,7 +262,7 @@ test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; fin
      Running unittests src/lib.rs (/var/tmp/piperine-target-a/debug/deps/piperine_parity-6187a033365891a7)
 ```
 
-`env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test 'parity_*'` - exit 0
+`env -u PIPERINE_NGSPICE cargo test -p piperine-parity --test parity` - exit 0
 
 ```
 

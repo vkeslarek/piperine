@@ -12,37 +12,37 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Status**: Approved
 **Approved**: 2026-11-20 - under the user's standing AFK rule - user: "Eu gostaria que engatilhasse até o 12"
 **Build**: `cargo build -p piperine-abi -p piperine-analog-solver -p piperine-digital-solver -p piperine-solver -p piperine-ir -p piperine-interp -p piperine-plan -p piperine-transpile -p piperine-lang -p piperine-project -p piperine-api -p piperine-cli -p piperine-parity -p piperine --all-targets 2>&1 | tee /dev/stderr | (! grep -qE '^(warning|error)')`; `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run speccodes**: `cargo test -p piperine-lang --test spec_codes`
-**Run typesvalues**: `cargo test -p piperine-lang --test types_values`
-**Run typesmodules**: `cargo test -p piperine-lang --test types_modules`
-**Run typescarriers**: `cargo test -p piperine-lang --test types_carriers`
-**Run typesresults**: `cargo test -p piperine-lang --test types_results`
+**Run speccodes**: `cargo test -p piperine-lang --test spec_structure codes::`
+**Run typesvalues**: `cargo test -p piperine-lang --test types_values values::`
+**Run typesmodules**: `cargo test -p piperine-lang --test types_modules modules::`
+**Run typescarriers**: `cargo test -p piperine-lang --test types_carriers carriers::`
+**Run typesresults**: `cargo test -p piperine-lang --test types_modules results::`
 **Run hygiene**: `cargo test -p piperine-repository-guards --test suite suite_hygiene::`
-**Run typesstructure**: `cargo test -p piperine-lang --test types_structure`
-**Run elabvalues**: `cargo test -p piperine-lang --test elab_values`
-**Run elabanalog**: `cargo test -p piperine-lang --test elab_analog`
-**Run elabentry**: `cargo test -p piperine-lang --test elab_entry`
-**Run elabinstances**: `cargo test -p piperine-lang --test elab_instances`
-**Run elabparams**: `cargo test -p piperine-lang --test elab_params`
-**Run elabfiles**: `cargo test -p piperine-lang --test elab_files`
-**Run msformat**: `cargo test -p piperine-lang --test msl_format`
-**Run stdgalleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run typesstructure**: `cargo test -p piperine-lang --test types_modules structure::`
+**Run elabvalues**: `cargo test -p piperine-lang --test elab_values values::`
+**Run elabanalog**: `cargo test -p piperine-lang --test elab_analog analog::`
+**Run elabentry**: `cargo test -p piperine-lang --test elab_values entry::`
+**Run elabinstances**: `cargo test -p piperine-lang --test elab_structure instances::`
+**Run elabparams**: `cargo test -p piperine-lang --test elab_values params::`
+**Run elabfiles**: `cargo test -p piperine-lang --test elab_structure files::`
+**Run msformat**: `cargo test -p piperine-lang --test msl format::`
+**Run stdgalleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run irchecks**: `cargo test -p piperine-ir --test model check::`
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run apisources**: `cargo test -p piperine-api --test host host_sources::`
 **Run apisession**: `cargo test -p piperine-api --test session session::`
-**Run runerrors**: `cargo test -p piperine-parity --test run_errors`
-**Run sourcehost**: `cargo test -p piperine-parity --test source_host`
-**Run sourceparams**: `cargo test -p piperine-parity --test source_params`
-**Run sourcetables**: `cargo test -p piperine-parity --test source_tables`
+**Run runerrors**: `cargo test -p piperine-parity --test boundary run_errors::`
+**Run sourcehost**: `cargo test -p piperine-parity --test source_host host::`
+**Run sourceparams**: `cargo test -p piperine-parity --test source_structure params::`
+**Run sourcetables**: `cargo test -p piperine-parity --test source_io tables::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
 **Run clicommands**: `cargo test -p piperine-cli --test commands commands::`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run bookdigital**: `cargo test -p piperine --test book_digital`
-**Run bookcorestd**: `cargo test -p piperine --test book_core_std`
-**Run bookpackages**: `cargo test -p piperine --test book_packages`
-**Run bookcheatsheet**: `cargo test -p piperine --test book_cheatsheet`
-**Run bookinventory**: `cargo test -p piperine --test book_inventory`
+**Run bookdigital**: `cargo test -p piperine --test book digital::`
+**Run bookcorestd**: `cargo test -p piperine --test book core_std::`
+**Run bookpackages**: `cargo test -p piperine --test book packages::`
+**Run bookcheatsheet**: `cargo test -p piperine --test book cheatsheet::`
+**Run bookinventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_commits --test buck_records --test buck_supervisor --test buck_time --test buck_boundary --test buck_closed_loop --test buck_power`
 

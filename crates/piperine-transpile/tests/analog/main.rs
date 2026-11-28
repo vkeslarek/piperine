@@ -6,5 +6,3 @@ mod differential;
 mod operators;
 mod residue;
 mod structure;
-#[path = "../support/compiled.rs"]
-mod compiled;

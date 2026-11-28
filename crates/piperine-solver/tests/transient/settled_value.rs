@@ -13,9 +13,9 @@ use piperine_solver::prelude::{CircuitBuilder, Solver, TransientAnalysisOptions}
 #[test]
 fn x_changed_does_not_fire_when_the_settled_value_is_unchanged() {
     let mut b = CircuitBuilder::new("settled");
-    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[SettledValueCases::net("go")]);
-    b.device(TwoWrites::module(), "tw", &[], &[SettledValueCases::net("x"), SettledValueCases::net("go")]);
-    b.device(SettledWatch::module(), "w", &[], &[SettledValueCases::net("x")]);
+    b.device(mixed::Delay::module(), "kick", &[("at", ParamValue::Real(1.0e-7))], &[SettledNet::net("go")]);
+    b.device(TwoWrites::module(), "tw", &[], &[SettledNet::net("x"), SettledNet::net("go")]);
+    b.device(SettledWatch::module(), "w", &[], &[SettledNet::net("x")]);
     let mut solver =
         Solver::new(b.build().expect("build")).with_tran_opts(TransientAnalysisOptions::new(2.0e-7, 1.0e-8)).build();
     solver.tran().expect("tran").solve().expect("solve");
@@ -27,13 +27,12 @@ fn x_changed_does_not_fire_when_the_settled_value_is_unchanged() {
     assert_eq!(bound.digital.read(bound.names.nets["net:x"]), LOW, "the later statement wins");
 }
 
-/// The helpers of the settled_value tests.
-pub struct SettledValueCases;
+/// The net whose settled value is read.
+struct SettledNet;
 
-impl SettledValueCases {
+impl SettledNet {
     /// The net helper `net`.
     fn net(name: &str) -> Port {
         Port::Net(name.to_string())
     }
-
 }

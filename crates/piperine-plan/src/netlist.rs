@@ -266,30 +266,35 @@ mod tests {
         }
     }
 
-    fn empty_design() -> Ir {
-        let origin = || Origin { file: "netlist.rs".into(), line: 1, col: 1 };
-        let mut b = IrBuilder::new();
-        let body = b.body(BodySpec {
-            name: "Top".into(),
-            origin: origin(),
-            params: Vec::new(),
-            nodes: Vec::new(),
-            branches: Vec::new(),
-            limits: Vec::new(),
-            stims: Vec::new(),
-            locals: Vec::new(),
-            analog: None,
-            children: Vec::new(),
-        });
-        let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: Vec::new(), params: Vec::new(), origin: origin() });
-        b.finish(top)
+    /// An empty design the netlist tests place instances in.
+    struct EmptyDesign;
+
+    impl EmptyDesign {
+        fn empty_design() -> Ir {
+            let origin = || Origin { file: "netlist.rs".into(), line: 1, col: 1 };
+            let mut b = IrBuilder::new();
+            let body = b.body(BodySpec {
+                name: "Top".into(),
+                origin: origin(),
+                params: Vec::new(),
+                nodes: Vec::new(),
+                branches: Vec::new(),
+                limits: Vec::new(),
+                stims: Vec::new(),
+                locals: Vec::new(),
+                analog: None,
+                children: Vec::new(),
+            });
+            let top = b.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: Vec::new(), params: Vec::new(), origin: origin() });
+            b.finish(top)
+        }
     }
 
     #[test]
     fn with_microsteps_reaches_the_builder() {
         // HII-02 AC 7: the bound a netlist carries is the bound the circuit binds the digital
         // engine with; a netlist that was never given one keeps the engine's 1000
-        let ir = empty_design();
+        let ir = EmptyDesign::empty_design();
         let given = Netlist::new(&ir).with_microsteps(7).circuit(&Nothing).expect("binds");
         assert_eq!(given.bound().microsteps, 7);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");
@@ -299,7 +304,7 @@ mod tests {
     #[test]
     fn with_time_point_rule_reaches_the_digital_engine() {
         // the rule a netlist carries is the rule the engine binds with; the default is Observable
-        let ir = empty_design();
+        let ir = EmptyDesign::empty_design();
         let given = Netlist::new(&ir).with_time_point_rule(TimePointRule::Declared).circuit(&Nothing).expect("binds");
         assert_eq!(given.bound().digital.time_point_rule(), TimePointRule::Declared);
         let default = Netlist::new(&ir).circuit(&Nothing).expect("binds");

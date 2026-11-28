@@ -2,6 +2,7 @@
 //! whose store holds only the elements written, an element never written reads the array's initial value and its
 //! `PREVIOUS` is that value, and a rewind restores the map. T67 adds windows and element commits to this target.
 
+use piperine_device_fixtures::solver_devices::array_windows::Poker;
 use piperine_digital_solver::net::{NetId, NetSpec};
 use piperine_digital_solver::store::Store;
 
@@ -110,6 +111,11 @@ impl Kit {
         InstancePlan { path: path.to_string(), handle: Handle::create(module, &[]).expect("a fixture device creates"), pins }
     }
 
+    /// An instance named `path` of the compiled `module` whose pins are bound as `pins`.
+    fn placed(path: &str, module: &'static Module, pins: Vec<Binding>) -> InstancePlan {
+        InstancePlan { path: path.to_string(), handle: Handle::create(module, &[]).expect("a fixture device creates"), pins }
+    }
+
     /// An engine over `nets` and `instances`, started.
     fn engine(nets: Vec<NetSpec>, instances: Vec<InstancePlan>) -> Digital {
         let plan = DigitalPlan::bind(nets, instances, Resolution::default()).expect("the fixture plan binds");
@@ -121,38 +127,6 @@ impl Kit {
     /// Runs the instant at `at` to its end.
     fn instant(engine: &mut Digital, at: Tick) {
         engine.run_instant(at, &[], Horizon::uniform(Tick(i64::MAX)), Mode::default()).expect("the instant runs");
-    }
-}
-
-/// Writes `1` to its scalar pin when `go` fires: bound to one element of an array net, a write of that element.
-struct Poker;
-static POKER_SHAPE: OnceLock<ShapeRef> = OnceLock::new();
-static POKER: OnceLock<Module> = OnceLock::new();
-
-impl Device for Poker {
-    fn prototype() -> &'static Shape<'static> {
-        POKER_SHAPE.get_or_init(Poker::shape).shape()
-    }
-    fn create(_: &Values<'_>) -> Result<(Self, ShapeRef), Fault> {
-        Ok((Poker, Arc::clone(POKER_SHAPE.get_or_init(Poker::shape))))
-    }
-    fn eval(&self, _k: u32, _cx: &mut Eval) -> Result<(), Fault> {
-        Ok(())
-    }
-    fn react(&self, _k: u32, cx: &mut React) -> Result<Flow, Fault> {
-        cx.commit(0, &[1], 0.0)?;
-        Ok(Flow::Continue)
-    }
-}
-
-impl Poker {
-    /// pins: `bit` (0, `BIT`), `go` (1, event); reaction 0 on `go` writes statement 0 on `bit`.
-    fn shape() -> ShapeRef {
-        let mut buffer = ShapeBuf::new();
-        let bit = buffer.pin(PinSpec::discrete("bit", role::PORT, &BIT));
-        let go = buffer.pin(PinSpec::event("go", role::PRIVATE));
-        buffer.reaction(ReactionSpec { name: "poke", on: vec![go], writes: vec![Kit::statement(bit)], ..ReactionSpec::default() });
-        buffer.freeze()
     }
 }
 
@@ -249,7 +223,7 @@ fn an_element_window_reads_and_writes_one_element() {
     ];
     let lines = NetId(0);
     let instances = vec![
-        Kit::instance::<Poker>("poker", &POKER, "poker", vec![Binding::ArrayElement { net: lines, element: 5 }, Binding::Net(NetId(1))]),
+        Kit::placed("poker", Poker::module(), vec![Binding::ArrayElement { net: lines, element: 5 }, Binding::Net(NetId(1))]),
         // `Summer` declares 8 elements: `all` sums elements 0..8 of the net, `high` elements 6..14
         Kit::instance::<Summer>("all", &SUMMER, "summer", vec![Binding::ArrayWindow { net: lines, first: 0, length: 8 }, Binding::Net(NetId(2)), Binding::Net(NetId(4))]),
         Kit::instance::<Summer>("high", &SUMMER, "summer", vec![Binding::ArrayWindow { net: lines, first: 6, length: 8 }, Binding::Net(NetId(3)), Binding::Net(NetId(5))]),

@@ -36,14 +36,19 @@ mod tests {
     use super::*;
     use piperine_api::CompositeCell;
 
-    fn line(record: &Record) -> String {
-        let mut out = Vec::new();
-        RecordLine::write(record, &mut out).expect("a vector takes writes");
-        String::from_utf8(out).expect("text")
-    }
+    /// A record of the render tests and the terminal line it lays out as.
+    struct SampleRecord;
 
-    fn record(time: f64, instance: &str, stream: &str, fields: Vec<(&str, Field)>) -> Record {
-        Record { time, instance: instance.into(), stream: stream.into(), fields: fields.into_iter().map(|(n, f)| (n.to_string(), f)).collect(), iteration: None, analysis: None }
+    impl SampleRecord {
+        fn record(time: f64, instance: &str, stream: &str, fields: Vec<(&str, Field)>) -> Record {
+            Record { time, instance: instance.into(), stream: stream.into(), fields: fields.into_iter().map(|(n, f)| (n.to_string(), f)).collect(), iteration: None, analysis: None }
+        }
+
+        fn line(record: &Record) -> String {
+            let mut out = Vec::new();
+            RecordLine::write(record, &mut out).expect("a vector takes writes");
+            String::from_utf8(out).expect("text")
+        }
     }
 
     #[test]
@@ -51,18 +56,18 @@ mod tests {
         // CLI-06 AC 2: `@<time> <instance path> <stream> <field>=<value> ...`; the lines are the
         // Book's (chapter 13): a real, a text in double quotes (AC 4), a bool, an integer, an
         // an absent `Option` as `None` (AC 5), and a record with no field
-        let trip = record(6.931472e-7, "Step.mon", "trip", vec![("v", Field::Real(0.5))]);
-        assert_eq!(line(&trip), "@6.931472e-7 Step.mon trip v=5.000000e-1\n");
-        let check = record(
+        let trip = SampleRecord::record(6.931472e-7, "Step.mon", "trip", vec![("v", Field::Real(0.5))]);
+        assert_eq!(SampleRecord::line(&trip), "@6.931472e-7 Step.mon trip v=5.000000e-1\n");
+        let check = SampleRecord::record(
             6.931472e-7,
             "Step.mon",
             "checks",
             vec![("kind", Field::Text("require".into())), ("name", Field::Text("crossed_upward".into())), ("pass", Field::Bool(true))],
         );
-        assert_eq!(line(&check), "@6.931472e-7 Step.mon checks kind=\"require\" name=\"crossed_upward\" pass=true\n");
+        assert_eq!(SampleRecord::line(&check), "@6.931472e-7 Step.mon checks kind=\"require\" name=\"crossed_upward\" pass=true\n");
         let absent = Field::Composite(Box::new(CompositeCell::Option(None)));
-        let lost = record(5e-7, "AdderTop.add", "lost", vec![("t", Field::Real(5e-7)), ("a", Field::Int(3)), ("b", absent)]);
-        assert_eq!(line(&lost), "@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=None\n");
-        assert_eq!(line(&record(0.0, "Top", "tick", vec![])), "@0.000000e0 Top tick\n");
+        let lost = SampleRecord::record(5e-7, "AdderTop.add", "lost", vec![("t", Field::Real(5e-7)), ("a", Field::Int(3)), ("b", absent)]);
+        assert_eq!(SampleRecord::line(&lost), "@5.000000e-7 AdderTop.add lost t=5.000000e-7 a=3 b=None\n");
+        assert_eq!(SampleRecord::line(&SampleRecord::record(0.0, "Top", "tick", vec![])), "@0.000000e0 Top tick\n");
     }
 }

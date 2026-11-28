@@ -26,9 +26,9 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run differential**: `cargo test -p piperine-transpile --test analog differential::`
 **Run residue**: `cargo test -p piperine-transpile --test analog residue::`
 **Run session**: `cargo test -p piperine-transpile --test compile session::`
-**Run backend**: `cargo test -p piperine-parity --test backend`
-**Run parity**: `cargo test -p piperine-parity --test parity_op --test parity_dc --test parity_ac --test parity_tran`
-**Run backends**: `cargo test -p piperine-parity --test backends`
+**Run backend**: `cargo test -p piperine-parity --test parity backend::`
+**Run parity**: `cargo test -p piperine-parity --test parity`
+**Run backends**: `cargo test -p piperine-parity --test parity backends::`
 **Run contract**: `cargo test -p piperine-parity --lib`
 **Run irdigital**: `cargo test -p piperine-ir --test model digital::`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
@@ -39,7 +39,8 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run commits**: `cargo test -p piperine-transpile --test digital commits::`
 **Run dpwm**: `cargo test -p piperine-transpile --test digital dpwm::`
 **Run pid**: `cargo test -p piperine-transpile --test digital pid::`
-**Run boundary**: `cargo test -p piperine-parity --test boundary`
+**Run boundary**: `cargo test -p piperine-parity --test boundary boundary::`
+**Run source_execution**: `cargo test -p piperine-parity --test source_execution`
 
 Executors (S10): Sonnet implements; Opus implements the delicate tasks directly, those where a mistake gives a wrong number with no error or that hold `unsafe`: T3, T7, T8, T15, T26, T27, T31, T33, T35, T39. A different Opus verifies the feature. The worktree, the branch and the shared cargo target directory are told at dispatch; where parallel worktrees share one target directory, `touch crates/<crate>/src/lib.rs` for each crate a command builds before running it.
 
@@ -1508,16 +1509,16 @@ Proof: run planshape | test every_buck_slice_shape_validates ... ok
 Proof: run dpwm | test the_oscillator_toggles_every_half_period ... ok
 
 **C86** - `a <- b; b <- a;` exchanges the two values at the next microstep. (RS-13, AC 2; T42)
-Proof: run commits | test two_commits_exchange_two_carriers ... ok
+Proof: run source_execution | test commits::two_commits_exchange_two_carriers ... ok
 
 **C87** - Two statements to one carrier in one microstep: the later statement's value stays. (RS-13, AC 3; T42)
-Proof: run commits | test the_later_statement_wins ... ok
+Proof: run source_execution | test commits::the_later_statement_wins ... ok
 
 **C88** - `p <- true after t; p <- false after t + w;` holds `p` true from `t` to `t + w`. (RS-13, AC 4; T42)
-Proof: run commits | test two_statements_make_a_pulse ... ok
+Proof: run source_execution | test commits::two_statements_make_a_pulse ... ok
 
 **C89** - A commit of the value a carrier already holds fires no `changed`. (RS-13, AC 5; T42)
-Proof: run commits | test an_unchanged_commit_fires_nothing ... ok
+Proof: run source_execution | test commits::an_unchanged_commit_fires_nothing ... ok
 
 **C90** - Duty word 1325 over 8 periods: `hs` 166 counts in five periods and 165 in three, in bit-reversed order; `ls` from 4 counts after `hs` falls to count 396; never both. (RS-13, AC 6; T43)
 Proof: run dpwm | test the_dpwm_dithers_keeps_dead_time_and_never_overlaps ... ok

@@ -73,61 +73,67 @@ mod bound {
         AcSweepAnalysisOptions, CircuitInstance, Context, NodeIdentifier, Tolerances, TransientAnalysisOptions,
     };
 
-    /// The solver node of the design node at `path`: node `i` of the IR is `Anonymous(i)`.
-    pub fn node(ir: &Ir, path: &str) -> NodeIdentifier {
-        NodeIdentifier::Anonymous(ir.node_at(path).unwrap_or_else(|| panic!("no node {path}")).id().index())
+    /// Builds, solves and tolerance-checks the hand-built circuits.
+    pub struct CircuitProbe;
+
+    impl CircuitProbe {
+        /// The solver node of the design node at `path`: node `i` of the IR is `Anonymous(i)`.
+        pub fn node(ir: &Ir, path: &str) -> NodeIdentifier {
+            NodeIdentifier::Anonymous(ir.node_at(path).unwrap_or_else(|| panic!("no node {path}")).id().index())
+        }
+
+        pub fn built(ir: Ir) -> (Ir, CircuitInstance) {
+            let interp = Interpreter::new(Arc::new(ir.clone())).expect("a checked IR");
+            let circuit = interp.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
+            (ir, circuit)
+        }
+
+        pub fn dc(circuit: &mut CircuitInstance, id: &NodeIdentifier) -> f64 {
+            let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
+            result.get_node(id).expect("the node is solved")
+        }
+
+        pub fn tolerances() -> Tolerances {
+            Tolerances::default()
+        }
+
+        /// Newton's own stopping tolerances tightened: at the defaults a converged diode sits a few
+        /// 1e-8 (relative) from the fixed point, the solver's residual test, not the circuit.
+        pub fn tight() -> Context {
+            Context { tolerances: Tolerances { reltol: 1e-12, vntol: 1e-14, abstol: 1e-16, ..Tolerances::default() }, ..Context::default() }
+        }
+
+        pub fn ac_magnitude(circuit: &mut CircuitInstance, id: &NodeIdentifier, hz: f64) -> f64 {
+            let opts = AcSweepAnalysisOptions { start_frequency: hz, stop_frequency: hz, steps: 1, logarithmic: false };
+            let mut ac = circuit.ac(Context::default()).expect("ac");
+            let sweep = ac.solve_sweep(opts).expect("sweep");
+            sweep.get(0).expect("one point").get_node(id).expect("the node").norm()
+        }
+
+        pub fn follow(circuit: &mut CircuitInstance, id: &NodeIdentifier, stop: f64) -> Vec<(f64, f64)> {
+            let opts = TransientAnalysisOptions::new(stop, stop / 400.0);
+            let result = circuit.transient(opts, Context::default()).expect("transient").solve().expect("solve");
+            result.iter().map(|s| (s.time(), s.get_node(id).expect("the node"))).collect()
+        }
     }
 
-    pub fn built(ir: Ir) -> (Ir, CircuitInstance) {
-        let interp = Interpreter::new(Arc::new(ir.clone())).expect("a checked IR");
-        let circuit = interp.circuit().unwrap_or_else(|e| panic!("circuit: {e}"));
-        (ir, circuit)
-    }
-
-    pub fn dc(circuit: &mut CircuitInstance, id: &NodeIdentifier) -> f64 {
-        let result = circuit.dc(Context::default()).expect("dc").solve().expect("solve");
-        result.get_node(id).expect("the node is solved")
-    }
-
-    pub fn tolerances() -> Tolerances {
-        Tolerances::default()
-    }
-
-    /// Newton's own stopping tolerances tightened: at the defaults a converged diode sits a few
-    /// 1e-8 (relative) from the fixed point, the solver's residual test, not the circuit.
-    pub fn tight() -> Context {
-        Context { tolerances: Tolerances { reltol: 1e-12, vntol: 1e-14, abstol: 1e-16, ..Tolerances::default() }, ..Context::default() }
-    }
-
-    pub fn ac_magnitude(circuit: &mut CircuitInstance, id: &NodeIdentifier, hz: f64) -> f64 {
-        let opts = AcSweepAnalysisOptions { start_frequency: hz, stop_frequency: hz, steps: 1, logarithmic: false };
-        let mut ac = circuit.ac(Context::default()).expect("ac");
-        let sweep = ac.solve_sweep(opts).expect("sweep");
-        sweep.get(0).expect("one point").get_node(id).expect("the node").norm()
-    }
-
-    pub fn follow(circuit: &mut CircuitInstance, id: &NodeIdentifier, stop: f64) -> Vec<(f64, f64)> {
-        let opts = TransientAnalysisOptions::new(stop, stop / 400.0);
-        let result = circuit.transient(opts, Context::default()).expect("transient").solve().expect("solve");
-        result.iter().map(|s| (s.time(), s.get_node(id).expect("the node"))).collect()
-    }
 }
 
 #[test]
 fn the_divider_reads_seven_and_a_half_volts() {
-    let (ir, mut circuit) = bound::built(HandCircuits::divider());
-    let mid = bound::node(&ir, "Divider.mid");
-    let v = bound::dc(&mut circuit, &mid);
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::divider());
+    let mid = bound::CircuitProbe::node(&ir, "Divider.mid");
+    let v = bound::CircuitProbe::dc(&mut circuit, &mid);
     assert!((v - 7.5).abs() < 1e-9, "v(mid) = {v}");
 }
 
 #[test]
 fn a_diode_converges_to_the_shockley_point() {
-    let (ir, mut circuit) = bound::built(HandCircuits::diode());
-    let a = bound::node(&ir, "DiodeCircuit.a");
-    let vd = circuit.dc(bound::tight()).expect("dc").solve().expect("solve").get_node(&a).expect("v(a)");
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::diode());
+    let a = bound::CircuitProbe::node(&ir, "DiodeCircuit.a");
+    let vd = circuit.dc(bound::CircuitProbe::tight()).expect("dc").solve().expect("solve").get_node(&a).expect("v(a)");
     // the source is 0.8 V behind 1 ohm: (0.8 - vd) = is*(exp(vd/nvt) - 1) + gmin*vd
-    let (is, t, gmin) = (1e-14, bound::tolerances().temperature, bound::tolerances().gmin);
+    let (is, t, gmin) = (1e-14, bound::CircuitProbe::tolerances().temperature, bound::CircuitProbe::tolerances().gmin);
     let nvt = 1.380649e-23 * t / 1.602176634e-19;
     let residue = |v: f64| (0.8 - v) - (is * ((v / nvt).exp() - 1.0) + gmin * v);
     assert!(residue(vd).abs() <= 1e-9 * (0.8 - vd).abs(), "v(a) = {vd}, residue {}", residue(vd));
@@ -138,18 +144,18 @@ fn a_diode_converges_to_the_shockley_point() {
 
 #[test]
 fn an_rc_low_pass_is_at_minus_three_db_at_its_corner() {
-    let (ir, mut circuit) = bound::built(HandCircuits::rc_lowpass());
-    let out = bound::node(&ir, "RcLowpass.out");
-    let m = bound::ac_magnitude(&mut circuit, &out, 100e3);
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::rc_lowpass());
+    let out = bound::CircuitProbe::node(&ir, "RcLowpass.out");
+    let m = bound::CircuitProbe::ac_magnitude(&mut circuit, &out, 100e3);
     assert!((m - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-9, "|v(out)| = {m}");
 }
 
 #[test]
 fn a_held_node_starts_the_transient() {
-    let (ir, mut circuit) = bound::built(HandCircuits::rc_held());
-    let out = bound::node(&ir, "RcHeld.out");
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::rc_held());
+    let out = bound::CircuitProbe::node(&ir, "RcHeld.out");
     let rc = 1000.0 * HandCircuits::FARADS;
-    let steps = bound::follow(&mut circuit, &out, rc);
+    let steps = bound::CircuitProbe::follow(&mut circuit, &out, rc);
     let (t0, v0) = steps[0];
     assert_eq!(t0, 0.0);
     assert!(v0.abs() < 1e-9, "out at the first step: {v0}");
@@ -178,7 +184,7 @@ fn one_module_per_body_with_behaviour_or_a_held_node() {
 
 #[test]
 fn a_circuit_binds_instances_nodes_and_params() {
-    let (ir, mut circuit) = bound::built(HandCircuits::divider());
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::divider());
     let bound = circuit.bound();
     let mut paths = bound.names.instances.clone();
     paths.sort();
@@ -192,13 +198,13 @@ fn a_circuit_binds_instances_nodes_and_params() {
         let named = circuit.node(node.path()).unwrap_or_else(|| panic!("no solver node {}", node.path()));
         // the reference the path names is node `i` of the IR, `Anonymous(i)`
         let identity = piperine_solver::prelude::Net::from(named).label().to_string();
-        assert_eq!(identity, format!("v({})", bound::node(&ir, node.path())), "{}", node.path());
+        assert_eq!(identity, format!("v({})", bound::CircuitProbe::node(&ir, node.path())), "{}", node.path());
     }
     // the params hold their bound values: r2 = 3 k, so mid = 7.5 V; and `set` addresses them by path
-    let mid = bound::node(&ir, "Divider.mid");
-    assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
+    let mid = bound::CircuitProbe::node(&ir, "Divider.mid");
+    assert!((bound::CircuitProbe::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
     circuit.set("Divider.r2", "r", piperine_solver::prelude::ParamValue::Real(1000.0)).expect("set");
-    assert!((bound::dc(&mut circuit, &mid) - 5.0).abs() < 1e-9);
+    assert!((bound::CircuitProbe::dc(&mut circuit, &mid) - 5.0).abs() < 1e-9);
 }
 
 #[test]
@@ -206,7 +212,7 @@ fn an_unset_param_keeps_its_default() {
     // The diode's `is`, `n` and `cj0` are bound at their defaults (1e-14, 1, 0): the circuit
     // passes no value for them, and their pins hold the defaults. The source's `dc` = 0.8 is off
     // its default 0 and is passed; its `ac` = 0 is not.
-    let (_, mut circuit) = bound::built(HandCircuits::diode());
+    let (_, mut circuit) = bound::CircuitProbe::built(HandCircuits::diode());
     // what `create` receives
     let d1 = circuit.given("DiodeCircuit.d1").expect("the diode instance");
     assert!(d1.is_empty(), "the diode is created with {d1:?}");
@@ -228,16 +234,16 @@ fn an_unset_param_keeps_its_default() {
 #[test]
 fn a_set_that_breaks_a_where_is_refused() {
     use piperine_solver::prelude::ParamValue;
-    let (ir, mut circuit) = bound::built(HandCircuits::divider());
-    let mid = bound::node(&ir, "Divider.mid");
-    assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
+    let (ir, mut circuit) = bound::CircuitProbe::built(HandCircuits::divider());
+    let mid = bound::CircuitProbe::node(&ir, "Divider.mid");
+    assert!((bound::CircuitProbe::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
     // `r` has `where r > 0`: a negative value is refused and the next dc reads what it read
     let refused = circuit.set("Divider.r1", "r", ParamValue::Real(-1.0));
     assert!(refused.is_err(), "r = -1 breaks `where r > 0`");
-    assert!((bound::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
+    assert!((bound::CircuitProbe::dc(&mut circuit, &mid) - 7.5).abs() < 1e-9);
     let zero = circuit.set("Divider.r1", "r", ParamValue::Real(0.0));
     assert!(zero.is_err(), "r = 0 breaks `where r > 0`");
     // a legal value is accepted and changes the result: r1 = 3 k, r2 = 3 k, so mid = 5 V
     circuit.set("Divider.r1", "r", ParamValue::Real(3000.0)).expect("a legal value");
-    assert!((bound::dc(&mut circuit, &mid) - 5.0).abs() < 1e-9);
+    assert!((bound::CircuitProbe::dc(&mut circuit, &mid) - 5.0).abs() < 1e-9);
 }

@@ -588,45 +588,62 @@ mod tests {
 
     use super::*;
 
-    fn origin() -> Origin {
-        Origin { file: "params.rs".into(), line: 1, col: 1 }
+    /// An IR of a parent whose param scales its child's, and the pieces it is built from.
+    struct ScaleChain;
+
+    impl ScaleChain {
+        fn origin() -> Origin {
+            Origin { file: "params.rs".into(), line: 1, col: 1 }
+        }
+
+        fn param(name: &str) -> Param {
+            Param { name: name.into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1.0))), check: None, structural: false, origin: ScaleChain::origin() }
+        }
+
+        fn body(b: &mut IrBuilder, name: &str, params: Vec<Param>, children: Vec<Child>) -> BodyId {
+            b.body(BodySpec { name: name.into(), origin: ScaleChain::origin(), params, nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children })
+        }
+
+        fn placed(name: &str, body: BodyId) -> Child {
+            Child { name: name.into(), body, nodes: vec![], params: vec![], origin: ScaleChain::origin() }
+        }
+
+        fn scaled(b: &mut IrBuilder, owner: BodyId, scale: f64) {
+            let k = b.expr(Expr::Real(Real::new(scale)), ValueType::F64, ScaleChain::origin());
+            let p = b.expr(Expr::Param(0), ValueType::F64, ScaleChain::origin());
+            let product = b.expr(Expr::Binary { op: BinaryOp::Mul, lhs: p, rhs: k }, ValueType::F64, ScaleChain::origin());
+            b.child_param(owner, 0, 0, ChildValue::Expr(product));
+        }
+
+        /// `Top { t }` places `Mid { rr: t * 3.0 }`, which places `Leaf { r: rr * 2.0 }`; the
+        /// elaborated values are those of `t = 1`.
+        fn chain() -> Ir {
+            let mut b = IrBuilder::new();
+            let leaf = ScaleChain::body(&mut b, "Leaf", vec![ScaleChain::param("r")], vec![]);
+            let mid = ScaleChain::body(&mut b, "Mid", vec![ScaleChain::param("rr")], vec![ScaleChain::placed("l", leaf)]);
+            let top = ScaleChain::body(&mut b, "Top", vec![ScaleChain::param("t")], vec![ScaleChain::placed("m", mid)]);
+            ScaleChain::scaled(&mut b, mid, 2.0);
+            ScaleChain::scaled(&mut b, top, 3.0);
+            let instance = |b: &mut IrBuilder, path: &str, name: &str, body, parent, v: f64| {
+                b.instance(InstanceSpec { path: path.into(), name: name.into(), body, parent, nodes: vec![], params: vec![Constant::Real(Real::new(v))], origin: ScaleChain::origin() })
+            };
+            let t = instance(&mut b, "Top", "Top", top, None, 1.0);
+            let m = instance(&mut b, "Top.m", "m", mid, Some(t), 3.0);
+            instance(&mut b, "Top.m.l", "l", leaf, Some(m), 6.0);
+            b.finish(t)
+        }
     }
 
-    fn param(name: &str) -> Param {
-        Param { name: name.into(), ty: ValueType::F64, default: Some(Constant::Real(Real::new(1.0))), check: None, structural: false, origin: origin() }
-    }
+    /// The callback that accepts every change of a param edit and records what was written.
+    struct ChangeSink;
 
-    fn body(b: &mut IrBuilder, name: &str, params: Vec<Param>, children: Vec<Child>) -> BodyId {
-        b.body(BodySpec { name: name.into(), origin: origin(), params, nodes: vec![], branches: vec![], limits: vec![], stims: vec![], locals: vec![], analog: None, children })
-    }
-
-    fn placed(name: &str, body: BodyId) -> Child {
-        Child { name: name.into(), body, nodes: vec![], params: vec![], origin: origin() }
-    }
-
-    fn scaled(b: &mut IrBuilder, owner: BodyId, scale: f64) {
-        let k = b.expr(Expr::Real(Real::new(scale)), ValueType::F64, origin());
-        let p = b.expr(Expr::Param(0), ValueType::F64, origin());
-        let product = b.expr(Expr::Binary { op: BinaryOp::Mul, lhs: p, rhs: k }, ValueType::F64, origin());
-        b.child_param(owner, 0, 0, ChildValue::Expr(product));
-    }
-
-    /// `Top { t }` places `Mid { rr: t * 3.0 }`, which places `Leaf { r: rr * 2.0 }`; the
-    /// elaborated values are those of `t = 1`.
-    fn chain() -> Ir {
-        let mut b = IrBuilder::new();
-        let leaf = body(&mut b, "Leaf", vec![param("r")], vec![]);
-        let mid = body(&mut b, "Mid", vec![param("rr")], vec![placed("l", leaf)]);
-        let top = body(&mut b, "Top", vec![param("t")], vec![placed("m", mid)]);
-        scaled(&mut b, mid, 2.0);
-        scaled(&mut b, top, 3.0);
-        let instance = |b: &mut IrBuilder, path: &str, name: &str, body, parent, v: f64| {
-            b.instance(InstanceSpec { path: path.into(), name: name.into(), body, parent, nodes: vec![], params: vec![Constant::Real(Real::new(v))], origin: origin() })
-        };
-        let t = instance(&mut b, "Top", "Top", top, None, 1.0);
-        let m = instance(&mut b, "Top.m", "m", mid, Some(t), 3.0);
-        instance(&mut b, "Top.m.l", "l", leaf, Some(m), 6.0);
-        b.finish(t)
+    impl ChangeSink {
+        fn accept(written: &mut Vec<String>) -> impl FnMut(&Changed) -> Result<(), String> + '_ {
+            move |change| {
+                written.push(format!("{}={}", change.label(), change.value));
+                Ok(())
+            }
+        }
     }
 
     /// The generated functions the fixture's expressions print as.
@@ -643,20 +660,13 @@ mod tests {
         }
     }
 
-    fn accept(written: &mut Vec<String>) -> impl FnMut(&Changed) -> Result<(), String> + '_ {
-        move |change| {
-            written.push(format!("{}={}", change.label(), change.value));
-            Ok(())
-        }
-    }
-
     #[test]
     fn a_set_derives_its_children() {
         // HII-18 AC 1: `t = 5` gives `Top.m.rr = 15` and `Top.m.l.r = 30` (a chain derives top
         // down), written in instance order, the set param first
-        let mut params = Params::of(&chain());
+        let mut params = Params::of(&ScaleChain::chain());
         let mut written = Vec::new();
-        let changes = params.set("Top", "t", 5.0, Some(&Scales), &mut accept(&mut written)).expect("set");
+        let changes = params.set("Top", "t", 5.0, Some(&Scales), &mut ChangeSink::accept(&mut written)).expect("set");
         assert_eq!(written, ["Top.t=5", "Top.m.rr=15", "Top.m.l.r=30"]);
         assert_eq!(changes.iter().map(|c| c.derived).collect::<Vec<_>>(), [false, true, true]);
         assert_eq!(params.get("Top.m", "rr"), Some(15.0));
@@ -667,7 +677,7 @@ mod tests {
     fn a_refused_child_restores_every_param() {
         // HII-18 AC 4: the leaf refuses its recomputed value: the writes already made are undone
         // with their old values, and the table keeps what it had
-        let mut params = Params::of(&chain());
+        let mut params = Params::of(&ScaleChain::chain());
         let mut written = Vec::new();
         let mut refuse_leaf = |change: &Changed| {
             written.push(format!("{}={}", change.label(), change.value));
@@ -685,9 +695,9 @@ mod tests {
     #[test]
     fn a_derived_param_cannot_be_set_directly() {
         // HII-20 AC 1: `Top.m.rr` derives from `t` of `Top`; the refusal names it
-        let mut params = Params::of(&chain());
+        let mut params = Params::of(&ScaleChain::chain());
         let mut written = Vec::new();
-        let failure = params.set("Top.m", "rr", 7.0, Some(&Scales), &mut accept(&mut written)).expect_err("refused");
+        let failure = params.set("Top.m", "rr", 7.0, Some(&Scales), &mut ChangeSink::accept(&mut written)).expect_err("refused");
         match failure {
             Failure::Host { code, message } => assert!(code == "E0802" && message.contains("`t`") && message.contains("`Top`"), "{code}: {message}"),
             other => panic!("a host failure, found {other}"),
@@ -699,9 +709,9 @@ mod tests {
     fn the_interpreter_refuses_a_set_others_derive_from() {
         // HII-20 AC 2: with no generated functions a set of `t` is refused naming the derived
         // params and `--backend rust`
-        let mut params = Params::of(&chain());
+        let mut params = Params::of(&ScaleChain::chain());
         let mut written = Vec::new();
-        let failure = params.set("Top", "t", 5.0, None, &mut accept(&mut written)).expect_err("refused");
+        let failure = params.set("Top", "t", 5.0, None, &mut ChangeSink::accept(&mut written)).expect_err("refused");
         match failure {
             Failure::Host { code, message } => assert!(code == "E0802" && message.contains("Top.m.rr") && message.contains("--backend rust"), "{code}: {message}"),
             other => panic!("a host failure, found {other}"),
@@ -713,7 +723,7 @@ mod tests {
     fn no_set_gives_the_folded_constants() {
         // HII-20 AC 3: the table is what the instance table holds, so a run with no `set` gives
         // the values it always did
-        let ir = chain();
+        let ir = ScaleChain::chain();
         let params = Params::of(&ir);
         for instance in ir.instances() {
             for (param, given) in instance.body().params().iter().zip(instance.params()) {

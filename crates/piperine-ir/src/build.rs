@@ -668,10 +668,10 @@ impl IrBuilder {
 mod tests {
     use super::*;
 
-    /// The builders of these tests.
-    struct Fixture;
+    /// A one-body design in a builder, and the origin its parts share.
+    struct SampleBuilder;
 
-    impl Fixture {
+    impl SampleBuilder {
         /// The origin every node of these tests is written at.
         fn origin() -> Origin {
             Origin { file: "build.rs".into(), line: 1, col: 1 }
@@ -682,7 +682,7 @@ mod tests {
             let mut builder = IrBuilder::new();
             let body = builder.body(BodySpec {
                 name: "Top".into(),
-                origin: Fixture::origin(),
+                origin: SampleBuilder::origin(),
                 params: vec![],
                 nodes: vec![],
                 branches: vec![],
@@ -692,15 +692,15 @@ mod tests {
                 analog: None,
                 children: vec![],
             });
-            let instance = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: Fixture::origin() });
-            let net = builder.net(NetSpec { path: "Top.n".into(), ty: ValueType::F64, declared_by: instance, init: None, origin: Fixture::origin() });
+            let instance = builder.instance(InstanceSpec { path: "Top".into(), name: "Top".into(), body, parent: None, nodes: vec![NodeRef::Ground], params: vec![], origin: SampleBuilder::origin() });
+            let net = builder.net(NetSpec { path: "Top.n".into(), ty: ValueType::F64, declared_by: instance, init: None, origin: SampleBuilder::origin() });
             (builder, instance, net)
         }
     }
 
     #[test]
     fn a_builder_call_with_an_id_it_never_handed_out_names_the_id_and_the_count() {
-        let (mut builder, instance, net) = Fixture::builder();
+        let (mut builder, instance, net) = SampleBuilder::builder();
         let resolution = Resolution { resolver: instance, driven: ValueType::F64, drives: vec![], holders: vec![], others: vec![] };
         let stale_net = NetId(7);
         let stale_instance = InstanceId(9);

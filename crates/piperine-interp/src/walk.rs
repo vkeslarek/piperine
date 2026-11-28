@@ -232,15 +232,37 @@ mod tests {
         }
     }
 
-    fn real(v: Value) -> f64 {
-        match v {
-            Value::Real(d) => d.v,
-            other => panic!("expected a real, found {other:?}"),
-        }
-    }
+    /// Plain-Rust reference numerics the walk tests compare against.
+    struct ReferenceNumerics;
 
-    fn close(a: f64, b: f64) -> bool {
-        (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1e-300)
+    impl ReferenceNumerics {
+        fn real(v: Value) -> f64 {
+            match v {
+                Value::Real(d) => d.v,
+                other => panic!("expected a real, found {other:?}"),
+            }
+        }
+
+        fn close(a: f64, b: f64) -> bool {
+            (a - b).abs() <= 1e-12 * a.abs().max(b.abs()).max(1e-300)
+        }
+
+        /// `pnjlim` as the standard library writes it, in plain Rust.
+        fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
+            if new > vcrit && (new - old).abs() > 2.0 * nvt {
+                if old > 0.0 {
+                    let arg = (new - old) / nvt;
+                    if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
+                } else {
+                    nvt * (new / nvt).ln()
+                }
+            } else if new < 0.0 {
+                let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
+                if new < arg { arg } else { new }
+            } else {
+                new
+            }
+        }
     }
 
     #[test]
@@ -266,11 +288,11 @@ mod tests {
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 0);
         let expect = -(((1.7_f64 + -0.4) * 3.0 - 0.7) / 3.0);
-        assert!(close(real(w.eval(neg).unwrap()), expect));
-        assert!(close(real(w.eval(ex).unwrap()), expect.exp()));
-        assert!(close(real(w.eval(ln).unwrap()), 3.0_f64.ln()));
-        assert!(close(real(w.eval(sq).unwrap()), 3.0_f64.sqrt()));
-        assert!(close(real(w.eval(ab).unwrap()), expect.abs()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(neg).unwrap()), expect));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ex).unwrap()), expect.exp()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ln).unwrap()), 3.0_f64.ln()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(sq).unwrap()), 3.0_f64.sqrt()));
+        assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(ab).unwrap()), expect.abs()));
         assert_eq!(w.eval(lt).unwrap(), Value::Bool(true));
         assert_eq!(w.eval(ge).unwrap(), Value::Bool(false));
         assert_eq!(w.eval(eq).unwrap(), Value::Bool(true));
@@ -288,9 +310,9 @@ mod tests {
         let nan = e.binary(BinaryOp::Div, zero, zero);
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 0);
-        assert_eq!(real(w.eval(pos).unwrap()), f64::INFINITY);
-        assert_eq!(real(w.eval(neg).unwrap()), f64::NEG_INFINITY);
-        assert!(real(w.eval(nan).unwrap()).is_nan());
+        assert_eq!(ReferenceNumerics::real(w.eval(pos).unwrap()), f64::INFINITY);
+        assert_eq!(ReferenceNumerics::real(w.eval(neg).unwrap()), f64::NEG_INFINITY);
+        assert!(ReferenceNumerics::real(w.eval(nan).unwrap()).is_nan());
     }
 
     #[test]
@@ -311,8 +333,8 @@ mod tests {
         assert_eq!(w.eval(skip_and).unwrap(), Value::Bool(false));
         assert_eq!(w.eval(skip_or).unwrap(), Value::Bool(true));
         assert!(w.eval(run_and).is_err(), "`true && x` must evaluate x");
-        assert_eq!(real(w.eval(taken).unwrap()), 1.0);
-        assert_eq!(real(w.eval(other).unwrap()), 1.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(taken).unwrap()), 1.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(other).unwrap()), 1.0);
     }
 
     #[test]
@@ -371,23 +393,6 @@ mod tests {
         assert_eq!(w.eval_bool(flag).unwrap_err().code, Walk::UNDECLARED);
     }
 
-    /// `pnjlim` as the standard library writes it, in plain Rust.
-    fn pnjlim(new: f64, old: f64, nvt: f64, vcrit: f64) -> f64 {
-        if new > vcrit && (new - old).abs() > 2.0 * nvt {
-            if old > 0.0 {
-                let arg = (new - old) / nvt;
-                if arg > 0.0 { old + nvt * (2.0 + (arg - 2.0).ln()) } else { old - nvt * (2.0 + (2.0 - arg).ln()) }
-            } else {
-                nvt * (new / nvt).ln()
-            }
-        } else if new < 0.0 {
-            let arg = if old > 0.0 { -old - 1.0 } else { 2.0 * old - 1.0 };
-            if new < arg { arg } else { new }
-        } else {
-            new
-        }
-    }
-
     #[test]
     fn calls_bind_parameters_and_closures_see_locals() {
         let mut lab = Lab::new();
@@ -430,12 +435,12 @@ mod tests {
         }
         let ir = lab.finish();
         let mut w = Walk::new(&ir, vec![], 2);
-        assert_eq!(real(w.eval(call).unwrap()), 3.0);
+        assert_eq!(ReferenceNumerics::real(w.eval(call).unwrap()), 3.0);
         w.exec(let_x).unwrap();
         assert_eq!(w.call_closure(closure, &[4.0]).unwrap(), 12.0);
         assert!(w.call_closure(closure, &[]).is_err());
         for ((new, old), id) in points.iter().zip(calls) {
-            assert!(close(real(w.eval(id).unwrap()), pnjlim(*new, *old, 0.025, 0.6)), "pnjlim({new}, {old})");
+            assert!(ReferenceNumerics::close(ReferenceNumerics::real(w.eval(id).unwrap()), ReferenceNumerics::pnjlim(*new, *old, 0.025, 0.6)), "pnjlim({new}, {old})");
         }
     }
 

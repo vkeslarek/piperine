@@ -42,52 +42,57 @@ fn an_ir_that_fails_check_gives_no_source() {
 
 const F: &str = "sampled.msl";
 
-fn at(line: u32, col: u32) -> Origin {
-    Buck::origin(F, line, col)
-}
+/// The `Sampled` body, whose site reads a carrier as a real.
+struct SampledBody;
 
-/// An `analog` body over one port `a` with `en: Bit` as an `in` carrier:
-///
-/// ```text
-/// module Sampled(a: Electrical, in en: Bit) {}            // sampled.msl:1
-/// analog for Sampled {
-///     let x = <the site, over en>;                // sampled.msl:3
-///     i(a) +> x;                                          // sampled.msl:4
-/// }
-/// ```
-///
-/// `site` builds the `limit` or `ac_stim` expression from `en` read as a real (the
-/// analog read of a carrier §3.3.5 allows), with `limits`/`stims` naming its site.
-fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut IrBuilder, piperine_ir::ExprId) -> piperine_ir::ExprId) -> BodyId {
-    let el = Buck::electrical(b);
-    let mut x = Dx::new(b, F, 3, 20);
-    let en = x.carrier(0, ValueType::Bool);
-    let one = x.real(1.0);
-    let zero = x.real(0.0);
-    let level = x.if_(en, one, zero, ValueType::F64);
-    let init = site(b, level);
-    let let_x = b.stmt(Stmt::Let { local: 0, init });
-    let value = b.expr(Expr::Local(0), ValueType::F64, at(4, 13));
-    let contribute = b.stmt(Stmt::Contribute {
-        branch: 0,
-        quantity: QuantityRole::Flow,
-        addends: vec![Addend { operator: Operator::Direct, negated: false, value }],
-    });
-    let body = b.body(BodySpec {
-        nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: at(1, 16) }],
-        branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
-        limits,
-        stims,
-        locals: vec![
-            Local { name: "x".into(), ty: ValueType::F64, mutable: false },
-            Local { name: "new".into(), ty: ValueType::F64, mutable: false },
-            Local { name: "old".into(), ty: ValueType::F64, mutable: false },
-        ],
-        analog: Some(vec![let_x, contribute]),
-        ..Buck::spec("Sampled", F, 1)
-    });
-    b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 33));
-    body
+impl SampledBody {
+    fn at(line: u32, col: u32) -> Origin {
+        Buck::origin(F, line, col)
+    }
+
+    /// An `analog` body over one port `a` with `en: Bit` as an `in` carrier:
+    ///
+    /// ```text
+    /// module Sampled(a: Electrical, in en: Bit) {}            // sampled.msl:1
+    /// analog for Sampled {
+    ///     let x = <the site, over en>;                // sampled.msl:3
+    ///     i(a) +> x;                                          // sampled.msl:4
+    /// }
+    /// ```
+    ///
+    /// `site` builds the `limit` or `ac_stim` expression from `en` read as a real (the
+    /// analog read of a carrier §3.3.5 allows), with `limits`/`stims` naming its site.
+    fn sampled(b: &mut IrBuilder, limits: Vec<Site>, stims: Vec<Site>, site: fn(&mut IrBuilder, piperine_ir::ExprId) -> piperine_ir::ExprId) -> BodyId {
+        let el = Buck::electrical(b);
+        let mut x = Dx::new(b, F, 3, 20);
+        let en = x.carrier(0, ValueType::Bool);
+        let one = x.real(1.0);
+        let zero = x.real(0.0);
+        let level = x.if_(en, one, zero, ValueType::F64);
+        let init = site(b, level);
+        let let_x = b.stmt(Stmt::Let { local: 0, init });
+        let value = b.expr(Expr::Local(0), ValueType::F64, SampledBody::at(4, 13));
+        let contribute = b.stmt(Stmt::Contribute {
+            branch: 0,
+            quantity: QuantityRole::Flow,
+            addends: vec![Addend { operator: Operator::Direct, negated: false, value }],
+        });
+        let body = b.body(BodySpec {
+            nodes: vec![piperine_ir::BodyNode { name: "a".into(), nature: el, role: NodeRole::Port, init: None, origin: SampledBody::at(1, 16) }],
+            branches: vec![Branch { plus: Terminal::Node(0), minus: Terminal::Ground, kind: BranchKind::Flow }],
+            limits,
+            stims,
+            locals: vec![
+                Local { name: "x".into(), ty: ValueType::F64, mutable: false },
+                Local { name: "new".into(), ty: ValueType::F64, mutable: false },
+                Local { name: "old".into(), ty: ValueType::F64, mutable: false },
+            ],
+            analog: Some(vec![let_x, contribute]),
+            ..Buck::spec("Sampled", F, 1)
+        });
+        b.carrier(body, Buck::carrier("en", ValueType::Bool, CarrierRole::In, None, F, 1, 33));
+        body
+    }
 }
 
 #[test]
@@ -103,16 +108,16 @@ fn a_limit_or_stim_function_reading_a_carrier_lowers() {
     };
     let limit = source(|b| {
         let limit = |b: &mut IrBuilder, level| {
-            let new = b.expr(Expr::Local(1), ValueType::F64, at(3, 40));
-            let f = b.expr(Expr::Closure { params: vec![1, 2], body: new }, ValueType::Fn(vec![ValueType::F64; 2], Box::new(ValueType::F64)), at(3, 30));
-            b.expr(Expr::Limit { site: 0, x: level, f, seed: None }, ValueType::F64, at(3, 13))
+            let new = b.expr(Expr::Local(1), ValueType::F64, SampledBody::at(3, 40));
+            let f = b.expr(Expr::Closure { params: vec![1, 2], body: new }, ValueType::Fn(vec![ValueType::F64; 2], Box::new(ValueType::F64)), SampledBody::at(3, 30));
+            b.expr(Expr::Limit { site: 0, x: level, f, seed: None }, ValueType::F64, SampledBody::at(3, 13))
         };
-        sampled(b, vec![Site { name: "lim".into(), origin: at(3, 13), enabled: None }], vec![], limit)
+        SampledBody::sampled(b, vec![Site { name: "lim".into(), origin: SampledBody::at(3, 13), enabled: None }], vec![], limit)
     });
     assert!(limit.contains("lim_limit_block") && limit.contains("en"), "{limit}");
     let stim = source(|b| {
-        let stim = |b: &mut IrBuilder, level| b.expr(Expr::Stim { site: 0, mag: level, phase: None }, ValueType::F64, at(3, 13));
-        sampled(b, vec![], vec![Site { name: "ac".into(), origin: at(3, 13), enabled: None }], stim)
+        let stim = |b: &mut IrBuilder, level| b.expr(Expr::Stim { site: 0, mag: level, phase: None }, ValueType::F64, SampledBody::at(3, 13));
+        SampledBody::sampled(b, vec![], vec![Site { name: "ac".into(), origin: SampledBody::at(3, 13), enabled: None }], stim)
     });
     assert!(stim.contains("ac_stim_block") && stim.contains("en"), "{stim}");
 }

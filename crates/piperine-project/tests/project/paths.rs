@@ -2,33 +2,21 @@
 //! each path relative to the manifest that names it, the graph that mirrors the manifests, a
 //! shared dependency as one crate, and the located package that is not there (`E0172`, `E0175`).
 
+use super::resolved_graph::ResolvedGraph;
 use crate::support;
 
-use piperine_project::{Manifest, Options, PackageError, PackageGraph, Requirement, Version, Resolver};
-use support::{package, workspace};
-
-fn ok(dir: &std::path::Path) -> PackageGraph {
-    match Resolver::resolve(dir, Options::default()) {
-        Ok(graph) => graph,
-        Err(errors) => panic!("resolution failed: {errors:?}"),
-    }
-}
-
-fn only(dir: &std::path::Path) -> PackageError {
-    let mut errors = Resolver::resolve(dir, Options::default()).err().expect("the project was accepted");
-    assert_eq!(errors.len(), 1, "{errors:?}");
-    errors.remove(0)
-}
+use piperine_project::{Manifest, Requirement, Version};
+use support::{PackageDirectory};
 
 #[test]
 fn path_dependencies_are_relative_to_their_manifest() {
-    let (_tmp, base) = workspace();
+    let (_tmp, base) = PackageDirectory::workspace();
     // From `app`, `../base` would be `ws/base`, which does not exist: only `util`'s own
     // manifest reaches `ws/libs/base`.
-    let app = package(&base.join("ws/app"), "app", "1.0.0", &["util = { path = \"../libs/util\" }"], "");
-    package(&base.join("ws/libs/util"), "util", "1.0.0", &["base = { path = \"../base\" }"], "");
-    package(&base.join("ws/libs/base"), "base", "1.0.0", &[], "");
-    let graph = ok(&app);
+    let app = PackageDirectory::package(&base.join("ws/app"), "app", "1.0.0", &["util = { path = \"../libs/util\" }"], "");
+    PackageDirectory::package(&base.join("ws/libs/util"), "util", "1.0.0", &["base = { path = \"../base\" }"], "");
+    PackageDirectory::package(&base.join("ws/libs/base"), "base", "1.0.0", &[], "");
+    let graph = ResolvedGraph::ok(&app);
     let names: Vec<&str> = graph.graph.crates().iter().map(|c| c.name.as_str()).collect();
     assert_eq!(names, ["app", "util", "base"]);
     assert_eq!(graph.graph.crates()[2].root, base.join("ws/libs/base/src/lib.msl"));
@@ -36,11 +24,11 @@ fn path_dependencies_are_relative_to_their_manifest() {
 
 #[test]
 fn the_graph_mirrors_the_manifests() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
-    package(&base.join("util"), "util", "2.3.4", &["base = { path = \"../base\" }"], "");
-    package(&base.join("base"), "base", "0.1.0", &[], "");
-    let graph = ok(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
+    PackageDirectory::package(&base.join("util"), "util", "2.3.4", &["base = { path = \"../base\" }"], "");
+    PackageDirectory::package(&base.join("base"), "base", "0.1.0", &[], "");
+    let graph = ResolvedGraph::ok(&app);
     let crates = graph.graph.crates();
     assert_eq!(crates.len(), 3);
     for (node, name) in crates.iter().zip(["app", "util", "base"]) {
@@ -60,12 +48,12 @@ fn the_graph_mirrors_the_manifests() {
 
 #[test]
 fn a_shared_dependency_is_one_crate() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }", "base = { path = \"../base\" }"], "");
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }", "base = { path = \"../base\" }"], "");
     // `util` spells the shared directory another way.
-    package(&base.join("util"), "util", "1.0.0", &["base = { path = \"../util/../base\" }"], "");
-    package(&base.join("base"), "base", "1.0.0", &[], "");
-    let graph = ok(&app);
+    PackageDirectory::package(&base.join("util"), "util", "1.0.0", &["base = { path = \"../util/../base\" }"], "");
+    PackageDirectory::package(&base.join("base"), "base", "1.0.0", &[], "");
+    let graph = ResolvedGraph::ok(&app);
     let crates = graph.graph.crates();
     assert_eq!(crates.len(), 3);
     let base_id = |i: usize| crates[i].dependencies.iter().find(|d| d.name == "base").unwrap().krate;
@@ -75,32 +63,32 @@ fn a_shared_dependency_is_one_crate() {
 
 #[test]
 fn a_path_without_a_package_is_e0172() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../nowhere\" }"], "");
-    let error = only(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../nowhere\" }"], "");
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0172");
     assert_eq!(error.file, app.join("Piperine.toml"));
     assert_eq!(&error.text[error.diagnostic.span().range()], "util");
     // A directory that exists but holds no manifest is the same fault.
     std::fs::create_dir_all(base.join("empty")).unwrap();
-    let app = package(&base.join("app2"), "app2", "1.0.0", &["util = { path = \"../empty\" }"], "");
-    assert_eq!(only(&app).code(), "E0172");
+    let app = PackageDirectory::package(&base.join("app2"), "app2", "1.0.0", &["util = { path = \"../empty\" }"], "");
+    assert_eq!(ResolvedGraph::only(&app).code(), "E0172");
 }
 
 #[test]
 fn a_package_without_a_crate_root_is_e0175() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
-    package(&base.join("util"), "util", "1.0.0", &[], "");
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
+    PackageDirectory::package(&base.join("util"), "util", "1.0.0", &[], "");
     std::fs::remove_file(base.join("util/src/lib.msl")).unwrap();
-    let error = only(&app);
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0175");
     assert_eq!(error.file, app.join("Piperine.toml"));
     assert_eq!(&error.text[error.diagnostic.span().range()], "util");
     assert!(error.diagnostic.message.contains(&base.join("util/src/lib.msl").display().to_string()), "{}", error.diagnostic.message);
     // The root package: a zero span in its own manifest.
     std::fs::remove_file(app.join("src/lib.msl")).unwrap();
-    let error = only(&app);
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0175");
     assert_eq!(error.file, app.join("Piperine.toml"));
     assert!(error.diagnostic.span().is_empty());
@@ -109,10 +97,10 @@ fn a_package_without_a_crate_root_is_e0175() {
 
 #[test]
 fn a_package_of_another_name_is_e0173() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
-    package(&base.join("util"), "utils", "1.0.0", &[], "");
-    let error = only(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\" }"], "");
+    PackageDirectory::package(&base.join("util"), "utils", "1.0.0", &[], "");
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0173");
     assert_eq!(error.file, app.join("Piperine.toml"));
     assert_eq!(&error.text[error.diagnostic.span().range()], "util");
@@ -122,18 +110,18 @@ fn a_package_of_another_name_is_e0173() {
 
 #[test]
 fn package_key_renames_a_dependency() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["u2 = { path = \"../util\", package = \"util\" }"], "");
-    package(&base.join("util"), "util", "1.0.0", &[], "");
-    let graph = ok(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["u2 = { path = \"../util\", package = \"util\" }"], "");
+    PackageDirectory::package(&base.join("util"), "util", "1.0.0", &[], "");
+    let graph = ResolvedGraph::ok(&app);
     let crates = graph.graph.crates();
     assert_eq!(crates[1].name, "util");
     let edge = &crates[0].dependencies[0];
     assert_eq!(edge.name, "u2");
     assert_eq!(edge.krate, graph.packages[1].krate);
     // With `package` given, the key is no longer the name asked for.
-    let app = package(&base.join("app3"), "app3", "1.0.0", &["util = { path = \"../util\", package = \"other\" }"], "");
-    let error = only(&app);
+    let app = PackageDirectory::package(&base.join("app3"), "app3", "1.0.0", &["util = { path = \"../util\", package = \"other\" }"], "");
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0173");
     assert!(error.diagnostic.message.contains("`other`") && error.diagnostic.message.contains("`util`"), "{}", error.diagnostic.message);
 }
@@ -199,50 +187,50 @@ fn a_requirement_at_the_integer_limit_does_not_overflow() {
 
 #[test]
 fn an_unsatisfied_requirement_is_e0173() {
-    let (_tmp, base) = workspace();
-    let app = package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\", version = \"1.2\" }"], "");
-    package(&base.join("util"), "util", "2.0.0", &[], "");
-    let error = only(&app);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let app = PackageDirectory::package(&base.join("app"), "app", "1.0.0", &["util = { path = \"../util\", version = \"1.2\" }"], "");
+    PackageDirectory::package(&base.join("util"), "util", "2.0.0", &[], "");
+    let error = ResolvedGraph::only(&app);
     assert_eq!(error.code(), "E0173");
     assert_eq!(&error.text[error.diagnostic.span().range()], "util");
     let message = &error.diagnostic.message;
     assert!(message.contains("1.2") && message.contains("2.0.0"), "{message}");
     // A satisfied requirement resolves.
-    package(&base.join("util"), "util", "1.9.0", &[], "");
-    ok(&app);
+    PackageDirectory::package(&base.join("util"), "util", "1.9.0", &[], "");
+    ResolvedGraph::ok(&app);
 }
 
 #[test]
 fn a_dependency_cycle_is_e0174_with_its_chain() {
-    let (_tmp, base) = workspace();
-    let a = package(&base.join("a"), "a", "1.0.0", &["b = { path = \"../b\" }"], "");
-    package(&base.join("b"), "b", "1.0.0", &["c = { path = \"../c\" }"], "");
-    package(&base.join("c"), "c", "1.0.0", &["a = { path = \"../a\" }"], "");
-    let error = only(&a);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let a = PackageDirectory::package(&base.join("a"), "a", "1.0.0", &["b = { path = \"../b\" }"], "");
+    PackageDirectory::package(&base.join("b"), "b", "1.0.0", &["c = { path = \"../c\" }"], "");
+    PackageDirectory::package(&base.join("c"), "c", "1.0.0", &["a = { path = \"../a\" }"], "");
+    let error = ResolvedGraph::only(&a);
     assert_eq!(error.code(), "E0174");
     assert_eq!(error.file, base.join("c/Piperine.toml"));
     assert_eq!(&error.text[error.diagnostic.span().range()], "a");
     assert!(error.diagnostic.message.contains("a -> b -> c -> a"), "{}", error.diagnostic.message);
     // Two packages.
-    let x = package(&base.join("x"), "x", "1.0.0", &["y = { path = \"../y\" }"], "");
-    package(&base.join("y"), "y", "1.0.0", &["x = { path = \"../x\" }"], "");
-    let error = only(&x);
+    let x = PackageDirectory::package(&base.join("x"), "x", "1.0.0", &["y = { path = \"../y\" }"], "");
+    PackageDirectory::package(&base.join("y"), "y", "1.0.0", &["x = { path = \"../x\" }"], "");
+    let error = ResolvedGraph::only(&x);
     assert_eq!(error.code(), "E0174");
     assert!(error.diagnostic.message.contains("x -> y -> x"), "{}", error.diagnostic.message);
     // A cycle that does not pass through the root names only the cycle.
-    let r = package(&base.join("r"), "r", "1.0.0", &["p = { path = \"../p\" }"], "");
-    package(&base.join("p"), "p", "1.0.0", &["q = { path = \"../q\" }"], "");
-    package(&base.join("q"), "q", "1.0.0", &["p = { path = \"../p\" }"], "");
-    let error = only(&r);
+    let r = PackageDirectory::package(&base.join("r"), "r", "1.0.0", &["p = { path = \"../p\" }"], "");
+    PackageDirectory::package(&base.join("p"), "p", "1.0.0", &["q = { path = \"../q\" }"], "");
+    PackageDirectory::package(&base.join("q"), "q", "1.0.0", &["p = { path = \"../p\" }"], "");
+    let error = ResolvedGraph::only(&r);
     assert_eq!(error.code(), "E0174");
     assert!(error.diagnostic.message.contains("p -> q -> p") && !error.diagnostic.message.contains("r ->"), "{}", error.diagnostic.message);
 }
 
 #[test]
 fn a_package_that_depends_on_itself_is_e0174() {
-    let (_tmp, base) = workspace();
-    let me = package(&base.join("me"), "me", "1.0.0", &["me = { path = \".\" }"], "");
-    let error = only(&me);
+    let (_tmp, base) = PackageDirectory::workspace();
+    let me = PackageDirectory::package(&base.join("me"), "me", "1.0.0", &["me = { path = \".\" }"], "");
+    let error = ResolvedGraph::only(&me);
     assert_eq!(error.code(), "E0174");
     assert_eq!(&error.text[error.diagnostic.span().range()], "me");
     assert!(error.diagnostic.message.contains("me -> me"), "{}", error.diagnostic.message);

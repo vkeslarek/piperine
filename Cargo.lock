@@ -1196,6 +1196,7 @@ dependencies = [
  "num-complex",
  "piperine-abi",
  "piperine-digital-solver",
+ "piperine-heap-fixtures",
  "piperine-interp",
  "piperine-ir",
  "piperine-lang",
@@ -1243,10 +1244,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-heap-fixtures"
+version = "0.2.0"
+
+[[package]]
 name = "piperine-interp"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
  "piperine-ir",
  "piperine-ir-fixtures",
  "piperine-plan",
@@ -1277,6 +1283,7 @@ dependencies = [
  "logos",
  "miette",
  "piperine-ir",
+ "piperine-lang-fixtures",
  "piperine-numbers",
  "piperine-transpile",
  "serde",
@@ -1286,10 +1293,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "piperine-lang-fixtures"
+version = "0.2.0"
+dependencies = [
+ "piperine-ir",
+ "piperine-lang",
+]
+
+[[package]]
 name = "piperine-numbers"
 version = "0.2.0"
 dependencies = [
  "num-bigint",
+ "piperine-numbers-fixtures",
+]
+
+[[package]]
+name = "piperine-numbers-fixtures"
+version = "0.2.0"
+dependencies = [
+ "num-bigint",
+ "piperine-numbers",
 ]
 
 [[package]]
@@ -1304,6 +1328,7 @@ dependencies = [
  "piperine-ir-fixtures",
  "piperine-lang",
  "piperine-numbers",
+ "piperine-numbers-fixtures",
  "piperine-plan",
  "piperine-solver",
  "piperine-transpile",
@@ -1315,6 +1340,7 @@ name = "piperine-plan"
 version = "0.2.0"
 dependencies = [
  "piperine-abi",
+ "piperine-device-fixtures",
  "piperine-digital-solver",
  "piperine-interp",
  "piperine-ir",

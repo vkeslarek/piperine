@@ -22,21 +22,21 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run tops**: `cargo test -p piperine-transpile --test analog operators::`
 **Run tgolden**: `cargo test -p piperine-transpile --test golden`
 **Run frozen**: `cargo test -p piperine-interp --test interpreter frozen::`
-**Run typeops**: `cargo test -p piperine-lang --test types_analog_operators`
-**Run elabops**: `cargo test -p piperine-lang --test elab_operators`
-**Run subset**: `cargo test -p piperine-lang --test types_subset`
-**Run spartial**: `cargo test -p piperine-parity --test source_partial`
-**Run sdelay**: `cargo test -p piperine-parity --test source_delay`
-**Run snoise**: `cargo test -p piperine-parity --test source_noise`
-**Run ssession**: `cargo test -p piperine-parity --test source_session`
-**Run straces**: `cargo test -p piperine-parity --test source_traces`
-**Run tevents**: `cargo test -p piperine-lang --test types_events`
-**Run sslew**: `cargo test -p piperine-parity --test source_slew`
-**Run partran**: `cargo test -p piperine-parity --test parity_tran`
-**Run parac**: `cargo test -p piperine-parity --test parity_ac`
-**Run parop**: `cargo test -p piperine-parity --test parity_op`
-**Run parnoise**: `cargo test -p piperine-parity --test parity_noise`
-**Run corpus**: `cargo test -p piperine-parity --test parity_corpus`
+**Run typeops**: `cargo test -p piperine-lang --test types_analog analog_operators::`
+**Run elabops**: `cargo test -p piperine-lang --test elab_analog operators::`
+**Run subset**: `cargo test -p piperine-lang --test types_modules subset::`
+**Run spartial**: `cargo test -p piperine-parity --test source_behavior partial::`
+**Run sdelay**: `cargo test -p piperine-parity --test source_behavior delay::`
+**Run snoise**: `cargo test -p piperine-parity --test source_io noise::`
+**Run ssession**: `cargo test -p piperine-parity --test source_io session::`
+**Run straces**: `cargo test -p piperine-parity --test source_io traces::`
+**Run tevents**: `cargo test -p piperine-lang --test types_analog events::`
+**Run sslew**: `cargo test -p piperine-parity --test source_behavior slew::`
+**Run partran**: `cargo test -p piperine-parity --test parity tran::`
+**Run parac**: `cargo test -p piperine-parity --test parity ac::`
+**Run parop**: `cargo test -p piperine-parity --test parity op::`
+**Run parnoise**: `cargo test -p piperine-parity --test parity noise::`
+**Run corpus**: `cargo test -p piperine-parity --test parity corpus::`
 **Run contract**: `cargo test -p piperine-parity --lib contract`
 **Run apinoise**: `cargo test -p piperine-api --test params noise::`
 **Run apioptions**: `cargo test -p piperine-api --test params options::`
@@ -47,7 +47,7 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run clioptions**: `cargo test -p piperine-cli --test commands options::`
 **Run twins**: `cargo test -p piperine-cli --test twins`
 **Run clibook**: `cargo test -p piperine-cli --test book`
-**Run inventory**: `cargo test -p piperine --test book_inventory`
+**Run inventory**: `cargo test -p piperine --test book inventory_guard::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 
 Executors: every task is Sonnet (user rule: "Implementação sempre em Sonnet e verificação em Opus"); a different Opus verifies the feature. The worktree is `/home/keslarek/Git/piperine-analog-operators`, branch `feature/analog-operators`. Every cargo command runs with `CARGO_TARGET_DIR=/var/tmp/piperine-target-b CARGO_INCREMENTAL=0 CARGO_PROFILE_DEV_DEBUG=0 TMPDIR=/var/tmp/piperine-tmp-b`, in the foreground; never `pkill` by pattern; where parallel worktrees share the target directory, `touch crates/<crate>/src/lib.rs` before a gate so cargo rebuilds this tree's sources. If `df /` passes 90 %, stop and report.

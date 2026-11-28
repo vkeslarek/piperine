@@ -20,15 +20,15 @@ Implement these tasks with the `tlc-spec-driven` skill: **activate it by name an
 **Run interp**: `cargo test -p piperine-interp --test interpreter frozen::`
 **Run planarr**: `cargo test -p piperine-plan --test shape carrier_arrays::`
 **Run tarr**: `cargo test -p piperine-transpile --test digital carrier_arrays::`
-**Run typesarr**: `cargo test -p piperine-lang --test types_carrier_arrays`
-**Run elabarr**: `cargo test -p piperine-lang --test elab_carrier_arrays`
-**Run srcarr**: `cargo test -p piperine-parity --test source_carrier_arrays`
-**Run src**: `cargo test -p piperine-parity --test source_explicit`
+**Run typesarr**: `cargo test -p piperine-lang --test types_carriers carrier_arrays::`
+**Run elabarr**: `cargo test -p piperine-lang --test elab_digital carrier_arrays::`
+**Run srcarr**: `cargo test -p piperine-parity --test source_carriers carrier_arrays::`
+**Run src**: `cargo test -p piperine-parity --test source_values explicit::`
 **Run storage**: `cargo test -p piperine-api --test memory carrier_array_storage::`
 **Run apiarr**: `cargo test -p piperine-api --test host carrier_arrays::`
 **Run clirun**: `cargo test -p piperine-cli --test commands run::`
-**Run book**: `cargo test -p piperine --test book_natures --test book_modules --test book_inventory`
-**Run galleries**: `cargo test -p piperine-lang --test std_galleries`
+**Run book**: `cargo test -p piperine --test book`
+**Run galleries**: `cargo test -p piperine-lang --test std galleries::`
 **Run ledger**: `cargo test -p piperine-repository-guards --test proof_ledger`
 Buck targets: `cargo test -p piperine-parity --test buck_whole --test buck_dpwm --test buck_control --test buck_supervisor --test buck_boundary --test buck_closed_loop --test buck_power`
 

@@ -5,6 +5,7 @@
 use piperine_ir_fixtures::devices;
 
 use devices::{Devices, Ex};
+use piperine_ir_fixtures::operators::Operators;
 use piperine_ir::{
     Addend, BinaryOp, BodyId, BodyNode, BodySpec, Branch, BranchKind, Carrier, CarrierRole, Child, Condition, Constant, Contribution, Derivative, Drive, EventSource, Expr, ExprId, FunctionSpec, Hoisted, Inflow, Merge, Reach, ReachedItem,
     InstanceSpec, Ir, IrBuilder, NetSpec, NodeRef, NodeRole, NodeSpec, Operator, Origin, Param, QuantityRole, Event, Reaction, Real, Site, Stmt, StmtId, Target, Terminal,
@@ -457,14 +458,10 @@ impl Switching {
         b.expr(Expr::Stim { site: 0, mag: magnitude, phase: None }, ValueType::F64, Self::at())
     }
 
-    /// `i(a, gnd) +> <value>;`
-    fn contribute_expr(b: &mut IrBuilder, value: ExprId) -> StmtId {
-        b.stmt(Stmt::Contribute { branch: 0, quantity: QuantityRole::Flow, addends: vec![Addend { operator: Operator::Direct, negated: false, value }] })
-    }
 
     /// `if en { i(a, gnd) +> <read>; }` where `read` builds the contributed value.
     fn read_under_a_condition(b: &mut IrBuilder, read: ExprId) -> StmtId {
-        let (cond, taken) = (Self::carrier_high(b), Self::contribute_expr(b, read));
+        let (cond, taken) = (Self::carrier_high(b), Operators::contribute(b, read));
         Self::branch_on(b, cond, vec![taken], vec![])
     }
 }
@@ -494,7 +491,7 @@ fn a_top_level_limit_has_no_enabled() {
     // `i(a, gnd) +> limit(..)` at the top of the block, on a site that claims an `enabled`.
     let ir = Switching::ir_with_sites(BranchKind::Flow, |b| {
         let (read, enabled) = (Switching::limit_read(b), Switching::carrier_high(b));
-        Written { analog: vec![Switching::contribute_expr(b, read)], limits: vec![Switching::named("lim", Some(enabled))], ..Written::default() }
+        Written { analog: vec![Operators::contribute(b, read)], limits: vec![Switching::named("lim", Some(enabled))], ..Written::default() }
     });
     assert!(Switching::names(&ir.check(), "limit site 0 has an `enabled` but is read outside every condition"), "{:?}", ir.check());
 }

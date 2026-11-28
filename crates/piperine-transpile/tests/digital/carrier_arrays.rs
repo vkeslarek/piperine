@@ -19,10 +19,10 @@ const F: &str = "ram.msl";
 const NS: i64 = 1_000_000;
 const BIT: ValueType = ValueType::Bool;
 
-/// The bodies of this target, each beside the MSL it transcribes.
-struct Fixture;
+/// The `Ram` body, whose carriers are arrays.
+struct MemoryBody;
 
-impl Fixture {
+impl MemoryBody {
     /// ```text
     /// module Ram(in clk: Bit, out q: Bit<u8> = 0, out hit: Bit = false) {
     ///     signal mem: [Bit<u8>; 4] = 5;
@@ -79,7 +79,7 @@ fn element_reads_and_commits_compile_and_run() {
     let mut w = TopDesign::new();
     let osc = Buck::osc(&mut w.b);
     w.place("osc", osc, vec![Constant::Real(piperine_ir::Real::new(200e6))], &[("clk", BIT)]);
-    let ram = Fixture::ram(&mut w.b);
+    let ram = MemoryBody::ram(&mut w.b);
     w.place("ram", ram, vec![], &[("clk", BIT), ("mem", ValueAliases::u(8)), ("k", ValueAliases::u(8)), ("q", ValueAliases::u(8)), ("hit", BIT)]);
     let seen = BuiltDesign::new(w.finish()).run(10e-9, 1e-9);
     // §12.1.1 and CV-25: at the first rising edge (2.5 ns) `mem[k] <- 9` commits element 2, the commit lands at the

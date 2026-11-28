@@ -795,30 +795,40 @@ mod tests {
     use super::AnalogPrinter;
     use piperine_ir_fixtures::devices::Devices;
 
-    /// The five M1 bodies in one `Ir`.
-    fn library() -> (Ir, [BodyId; 5]) {
-        let mut b = IrBuilder::new();
-        let r = Devices::resistor(&mut b);
-        let c = Devices::capacitor(&mut b);
-        let v = Devices::vsource(&mut b);
-        let i = Devices::isource(&mut b);
-        let d = Devices::diode(&mut b);
-        let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
-        (b.finish(top), [r, c, v, i, d])
+    /// The device bodies whose terms the tests print.
+    struct AnalogLibrary;
+
+    impl AnalogLibrary {
+        /// The five M1 bodies in one `Ir`.
+        fn library() -> (Ir, [BodyId; 5]) {
+            let mut b = IrBuilder::new();
+            let r = Devices::resistor(&mut b);
+            let c = Devices::capacitor(&mut b);
+            let v = Devices::vsource(&mut b);
+            let i = Devices::isource(&mut b);
+            let d = Devices::diode(&mut b);
+            let top = Devices::alone(&mut b, r, "R", 1, vec![1000.0]);
+            (b.finish(top), [r, c, v, i, d])
+        }
     }
 
-    /// The text of the `terms` function of `body`.
-    fn terms(ir: &Ir, body: BodyId) -> String {
-        let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
-        let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
-        AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"))
+    /// The terms function of a body as printed text.
+    struct TermsPrint;
+
+    impl TermsPrint {
+        /// The text of the `terms` function of `body`.
+        fn terms(ir: &Ir, body: BodyId) -> String {
+            let plan = BodyPlan::build(ir.body(body)).expect("the body plans");
+            let k = plan.functions().iter().position(|f| f.mode == Mode::Terms).expect("a terms function");
+            AnalogPrinter::new(ir.body(body), &plan).terms(k).unwrap_or_else(|e| panic!("{e}"))
+        }
     }
 
     /// A probe that ends on an own terminal, which `check()` keeps out of a branch, has no text: the
     /// printer answers `None` (a refused probe) where it used to panic.
     #[test]
     fn a_probe_on_an_own_terminal_has_no_text_not_a_panic() {
-        let (ir, [resistor, ..]) = library();
+        let (ir, [resistor, ..]) = AnalogLibrary::library();
         let plan = BodyPlan::build(ir.body(resistor)).expect("the body plans");
         let printer = AnalogPrinter::new(ir.body(resistor), &plan);
         assert_eq!(printer.values().probe(Terminal::Own(0), Terminal::Ground), None);
@@ -826,7 +836,7 @@ mod tests {
 
     #[test]
     fn an_affine_term_is_printed_as_constant_plus_fold() {
-        let (ir, [r, c, ..]) = library();
+        let (ir, [r, c, ..]) = AnalogLibrary::library();
         // Functions run limit sites, stimuli, the terms, then the checks: a body with neither site
         // has `terms` at index 0.
         // `i(p, n) +> v(p, n) / r` (devices.msl:8): reads p, n (the pins, slots 0 and 1), r; the
@@ -859,7 +869,7 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, r), resistor);
+        assert_eq!(TermsPrint::terms(&ir, r), resistor);
 
         // `i(p, n) +> ddt(c * v(p, n))` (devices.msl:14): a charge is never affine, so it is
         // written as its value at the iterate
@@ -890,12 +900,12 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, c), capacitor);
+        assert_eq!(TermsPrint::terms(&ir, c), capacitor);
     }
 
     #[test]
     fn a_slice_holds_only_what_its_outputs_reach() {
-        let (ir, [.., d]) = library();
+        let (ir, [.., d]) = AnalogLibrary::library();
         // devices.msl:36-42. The terms read the limited `vd` (the site's held value, slot 0), not
         // `v(a, k)`; `vcrit` reaches only the `limit` site's seed and closure, so the terms' slice
         // has no `let vcrit`, and `limit(…)` is the held value `vd_limit_`. Reads in the plan's
@@ -942,14 +952,14 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, d), diode);
-        let text = terms(&ir, d);
+        assert_eq!(TermsPrint::terms(&ir, d), diode);
+        let text = TermsPrint::terms(&ir, d);
         assert!(!text.contains("vcrit") && !text.contains("pnjlim") && !text.contains("v(a, k)"), "{text}");
     }
 
     #[test]
     fn a_potential_branch_prints_its_flow_and_equation_terms() {
-        let (ir, [_, _, v, ..]) = library();
+        let (ir, [_, _, v, ..]) = AnalogLibrary::library();
         // `v(p, n) +> dc * source_scale_() + ac_stim(ac)` (devices.msl:21), abi.md A1: term 0
         // `b0.flow` is the branch's flow pin, term 1 `b0.eq` is v(p, n) minus the contributed
         // potential. Reads: p, n, the flow pin, the stimulus (slots 0 to 3), dc, ac, source_scale_;
@@ -997,6 +1007,6 @@ fn terms(cx_: &mut Eval<'_>) -> Result<(), Fault> {
     }
     Ok(())
 }";
-        assert_eq!(terms(&ir, v), vsource);
+        assert_eq!(TermsPrint::terms(&ir, v), vsource);
     }
 }

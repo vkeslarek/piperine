@@ -38,19 +38,24 @@ const BLINKY: &str = "module Osc(out clk: Bit = false) {\n    f: f64 = 1M where 
 /// `BLINKY` and a module that calls `finish` at 2 us, a run the model ends itself.
 const FINISHING: &str = "module Stopper() {}\ndigital for Stopper { on at(2u) { finish(); } }\n";
 
-fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
-    run_source(BLINKY, stop, print_step)
-}
+/// The run of a digital-only design, to a stop and with a print step.
+struct DigitalRun;
 
-fn run_source(source: &str, stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
-    StreamRun::run_streams(source, stop, print_step, Vec::new())
+impl DigitalRun {
+    fn run(stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
+        DigitalRun::run_source(BLINKY, stop, print_step)
+    }
+
+    fn run_source(source: &str, stop: f64, print_step: Option<f64>) -> Result<(Table, Vec<Record>), Failure> {
+        StreamRun::run_streams(source, stop, print_step, Vec::new())
+    }
 }
 
 #[test]
 fn a_digital_only_transient_reaches_its_stop() {
     // HII-17 AC 1 and 4: three rising edges by 3 us (at 0.5, 1.5 and 2.5 us, the Book's listing),
     // a table whose last row is the stop
-    let (table, records) = run(3e-6, None).unwrap_or_else(|f| panic!("{f}"));
+    let (table, records) = DigitalRun::run(3e-6, None).unwrap_or_else(|f| panic!("{f}"));
     assert_eq!(records.iter().filter(|r| r.stream == "edge").count(), 3, "{records:?}");
     let last = table.rows.last().expect("a table with rows");
     assert_eq!(last[0], Cell::Real(3e-6));
@@ -62,7 +67,7 @@ fn a_digital_only_grid_holds_net_values() {
     // HII-17 AC 2 (LR-05 AC 4): each row holds the value after the last instant at or before it.
     // The clock rises at 0.5, 1.5, 2.5 us and falls at 1, 2, 3 us, so on the 1 us grid it is low;
     // the counter reads 0, 1, 2, 3
-    let (table, _) = run(3e-6, Some(1e-6)).unwrap_or_else(|f| panic!("{f}"));
+    let (table, _) = DigitalRun::run(3e-6, Some(1e-6)).unwrap_or_else(|f| panic!("{f}"));
     let times: Vec<Cell> = table.rows.iter().map(|r| r[0].clone()).collect();
     assert_eq!(times, [0.0, 1e-6, 2e-6, 3e-6].map(Cell::Real));
     let counts: Vec<Cell> = table.rows.iter().map(|r| r[2].clone()).collect();
@@ -76,7 +81,7 @@ fn a_digital_only_run_ended_by_finish_is_ok() {
     // `finish` at 2 us, in a run to 5 us, is not "ended before its stop": it gives its table up to
     // 2 us (the counter has seen the edge at 0.5 us and 1.5 us) and no failure
     let source = BLINKY.replace("    let ctr = Counter(clk, count);\n", "    let ctr = Counter(clk, count);\n    let stop = Stopper();\n") + FINISHING;
-    let (table, records) = run_source(&source, 5e-6, None).unwrap_or_else(|f| panic!("{f}"));
+    let (table, records) = DigitalRun::run_source(&source, 5e-6, None).unwrap_or_else(|f| panic!("{f}"));
     let last = table.rows.last().expect("a table with rows");
     let Cell::Real(ended) = last[0] else { panic!("a time: {last:?}") };
     assert!((ended - 2e-6).abs() <= 1e-12, "the table ends at the finish instant: {last:?}");
