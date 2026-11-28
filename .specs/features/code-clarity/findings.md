@@ -101,7 +101,7 @@ Where they concentrate, and the owner each group lacks:
 | `abi/src/thunk.rs:156,162,229,235,258,264,316,322` `create`, `create_with`, `destroy`, `destroy_with`, `eval`, `eval_with`, `react`, `react_with` | `extern "C"` functions whose addresses fill the ABI's function table |
 | `abi/src/caller.rs:209,215` `trampoline`, `element_trampoline` | `extern "C"` callbacks |
 | the exported `piperine_abi_1` symbol of generated code | the ABI's one exported symbol (printed by `piperine-transpile` into the generated source, not a Rust item of the tree) |
-| `abi/src/thunk.rs` `module`, `library` | generated code spells `piperine_abi::thunk::{library, module}` and `module::<T>(..)`; the five transpile goldens pin them, and design.md "What may move" lets a golden move only in T132/T137. Recorded as exceptions by Phase 11 fix round 1 (P11-4). Owner: user review at T155 / device-abi-simplification |
+| `abi/src/thunk.rs` `module`, `library` | generated code spells `piperine_abi::thunk::{library, module}` and `module::<T>(..)`; the five transpile goldens pin them, and design.md "What may move" lets a golden move only in T132/T137. Recorded as exceptions by Phase 11 fix round 1 (P11-4). Owner: user review at T155 |
 | every `#[test] fn` (4 496) | the test harness needs a free function |
 
 Nothing else needs to stay free. `const fn row(..)` table builders (`pom/builtin.rs:36`, `types/catalogue.rs:58-62`) become associated `const fn`s of the row type.

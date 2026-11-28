@@ -556,36 +556,36 @@ impl<D: DiscreteSide, A: AnalogSide> Protocol<D, A> {
         analog_mark: &A::Mark,
     ) -> Result<Outcome> {
         let StepInstant { tick: tick_c, time: t_c, settle, unknowns, stop_tick } = *step;
-                        let mode = InstantMode { is_static: false, settle };
-            let crossing = if unknowns { tick_c } else { stop_tick };
-            let limit = Horizon { stop: stop_tick, crossing };
-            self.land_settle_commits(tick_c, settle);
-            // A step that may be retaken settles once, after its last round (§15 step 4): its
-            // instant runs without the settle phase, and the phase follows the retakes.
-            let deferred = unknowns && settle && jump.possible(&crossings);
-            let rounds = InstantMode { settle: settle && !deferred, ..mode };
-            let mut outcome = if crossings.is_empty() && self.discrete.is_idle_at(tick_c) {
-                self.discrete.pass_instant(tick_c);
-                Outcome::default()
-            } else {
-                self.statistics.record_instant(if crossings.is_empty() { InstantCause::Scheduled } else { InstantCause::Crossing });
-                self.run_whole_instant(tick_c, samples, limit, rounds).map_err(|e| Self::at(t_c, e))?
-            };
-            // a value passed through within the instant left the settle phase to follow its retake
-            let passed = !outcome.passing.is_empty();
-            if unknowns && (passed || jump.wanted(&crossings, &outcome)) {
-                let continued = InstantMode { settle: false, ..mode };
-                outcome = self
-                    .read_instant(analog_mark, tick_c, crossings, outcome, jump.reads_jump(), limit, continued)
-                    .map_err(|e| Self::at(t_c, e))?;
-            }
-            if deferred || (passed && rounds.settle) {
-                // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
-                self.discrete.reopen(tick_c, false);
-                let samples = self.samples.clone();
-                let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| Self::at(t_c, e))?;
-                outcome.absorb_settle(settled);
-            }
+        let mode = InstantMode { is_static: false, settle };
+        let crossing = if unknowns { tick_c } else { stop_tick };
+        let limit = Horizon { stop: stop_tick, crossing };
+        self.land_settle_commits(tick_c, settle);
+        // A step that may be retaken settles once, after its last round (§15 step 4): its
+        // instant runs without the settle phase, and the phase follows the retakes.
+        let deferred = unknowns && settle && jump.possible(&crossings);
+        let rounds = InstantMode { settle: settle && !deferred, ..mode };
+        let mut outcome = if crossings.is_empty() && self.discrete.is_idle_at(tick_c) {
+            self.discrete.pass_instant(tick_c);
+            Outcome::default()
+        } else {
+            self.statistics.record_instant(if crossings.is_empty() { InstantCause::Scheduled } else { InstantCause::Crossing });
+            self.run_whole_instant(tick_c, samples, limit, rounds).map_err(|e| Self::at(t_c, e))?
+        };
+        // a value passed through within the instant left the settle phase to follow its retake
+        let passed = !outcome.passing.is_empty();
+        if unknowns && (passed || jump.wanted(&crossings, &outcome)) {
+            let continued = InstantMode { settle: false, ..mode };
+            outcome = self
+                .read_instant(analog_mark, tick_c, crossings, outcome, jump.reads_jump(), limit, continued)
+                .map_err(|e| Self::at(t_c, e))?;
+        }
+        if deferred || (passed && rounds.settle) {
+            // the settle phase follows the instant's last microstep: its records are stamped `(t, last)`
+            self.discrete.reopen(tick_c, false);
+            let samples = self.samples.clone();
+            let settled = self.run_whole_instant(tick_c, &samples, limit, mode).map_err(|e| Self::at(t_c, e))?;
+            outcome.absorb_settle(settled);
+        }
         Ok(outcome)
     }
 
