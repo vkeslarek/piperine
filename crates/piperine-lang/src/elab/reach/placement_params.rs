@@ -66,7 +66,7 @@ pub(in crate::elab) struct PlacementSite<'a> {
 impl Elaboration<'_, '_> {
     /// The params a placement of `module` at `site` binds, reporting nothing (see the module documentation).
     pub(in crate::elab) fn fold_placement_params(&mut self, module: DeclId, site: &PlacementSite) -> PlacementParams {
-        let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
+        let params: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut bindings = Bindings::new();
         let mut folded = PlacementParams::default();
         let template_values = match site.template.map(|template| self.template_constants(template)).transpose() {
@@ -77,7 +77,7 @@ impl Elaboration<'_, '_> {
             }
         };
         for param in &params {
-            let data = self.design.decl_data(*param).clone();
+            let data = self.state.design.decl_data(*param).clone();
             let DeclKind::Param(declared) = &data.kind else { continue };
             let fixed = template_values.iter().find(|(bound, _, _)| bound == param).map(|(_, value, _)| *value);
             let given = site.fields.iter().find(|field| field.res == Resolution::Decl(*param)).map(|field| field.value).filter(|_| site.template.is_none());
@@ -109,10 +109,10 @@ impl Elaboration<'_, '_> {
             folded.values.insert(*param, value);
         }
         for param in &params {
-            let data = self.design.decl_data(*param).clone();
+            let data = self.state.design.decl_data(*param).clone();
             let DeclKind::Param(declared) = &data.kind else { continue };
             let Some(condition) = declared.where_ else { continue };
-            if let Ok(Constant::Bool(false)) = self.consts.value(condition, &bindings) {
+            if let Ok(Constant::Bool(false)) = self.state.consts.value(condition, &bindings) {
                 folded.faults.push(ParamFault::WhereFalse(data.name.as_ref().map_or("", |n| n.text.as_str()).to_string()));
             }
         }
@@ -136,7 +136,7 @@ impl Elaboration<'_, '_> {
     /// The param `decl` of the frame `scope.frame` that its placement left to be read in place (`DeferredParam`): the given value
     /// lowered in the caller's frame, the default in the frame itself. `None` for a param the frame does not defer.
     pub(in crate::elab) fn lower_deferred_param(&mut self, scope: &mut Scope, decl: DeclId) -> Option<LoweredExpr> {
-        match self.frames.get(scope.frame)?.deferred_params.get(&decl).copied()? {
+        match self.state.structure.frames.get(scope.values.frame)?.deferred_params.get(&decl).copied()? {
             DeferredParam::Given(expr) => self.in_caller(scope, |this, scope| this.lower_expr(scope, expr)),
             DeferredParam::Default(expr) => self.lower_expr(scope, expr),
         }

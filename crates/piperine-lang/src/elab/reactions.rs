@@ -15,7 +15,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_commit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, place: ExprId, value: ExprId, after: Option<ExprId>) -> bool {
         let target = self.place_target(scope, place);
         if let Some(target) = &target {
-            self.record_drive_site(target, super::drive_overlaps::DriveWay::Commit, scope.file, self.design.expr_node(place).span);
+            self.record_drive_site(target, super::drive_overlaps::DriveWay::Commit, scope.values.file, self.state.design.expr_node(place).span);
         }
         let wanted = target.as_ref().map(|t| t.ty.clone());
         let value = match &wanted {
@@ -28,7 +28,7 @@ impl Elaboration<'_, '_> {
         };
         match (target, value, after) {
             (Some(target), Some(value), Some(after)) => {
-                self.structure.committed.insert(target.carrier);
+                self.state.digital.structure.committed.insert(target.carrier);
                 out.push(self.stmt(Stmt::Commit { carrier: target.carrier, value, after, target: target.commit_target() }));
                 true
             }

@@ -71,8 +71,8 @@ impl Elaboration<'_, '_> {
     pub(super) fn element_lookup(&mut self, scope: &mut Scope, expr: ExprId) -> Lookup {
         let mut at = self.peel_parens(expr);
         let mut indexes = Vec::new();
-        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(at).kind.clone() {
-            if matches!(self.design.expr_node(index).kind, ExprKind::Range { .. }) {
+        while let ExprKind::Index { expr: inner, index } = self.state.design.expr_node(at).kind.clone() {
+            if matches!(self.state.design.expr_node(index).kind, ExprKind::Range { .. }) {
                 return Lookup::No;
             }
             indexes.push(index);
@@ -84,9 +84,9 @@ impl Elaboration<'_, '_> {
         let bundled = self.bundle_leaf(scope, at);
         // a handle bound to an element is that element
         if indexes.is_empty() && generated.is_empty() && bundled.as_ref().is_none_or(|place| place.elements.is_empty()) {
-            let bound = match &self.design.expr_node(at).kind {
-                ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                    Some(Resolution::Decl(decl)) => scope.handles.get(&decl).copied(),
+            let bound = match &self.state.design.expr_node(at).kind {
+                ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                    Some(Resolution::Decl(decl)) => scope.digital.handles.get(&decl).copied(),
                     _ => None,
                 },
                 _ => None,
@@ -103,24 +103,24 @@ impl Elaboration<'_, '_> {
                 place.decl
             }
             None => {
-                let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return Lookup::No };
-                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
+                let ExprKind::Path(path) = self.state.design.expr_node(at).kind.clone() else { return Lookup::No };
+                let Some(Resolution::Decl(decl)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else { return Lookup::No };
                 decl
             }
         };
-        let Some(array) = self.consts.typed_carrier_array(decl) else { return Lookup::No };
-        let span = self.design.expr_node(expr).span;
-        if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
-            self.element_of_empty_array(scope.file, span);
+        let Some(array) = self.state.consts.typed_carrier_array(decl) else { return Lookup::No };
+        let span = self.state.design.expr_node(expr).span;
+        if !indexes.is_empty() && self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
+            self.element_of_empty_array(scope.values.file, span);
             return Lookup::Failed;
         }
-        let Some(carrier) = self.frame_carrier(scope.frame, decl) else { return Lookup::No };
-        let Some(shape) = self.shape_in(&array, scope.frame) else {
-            self.refuse(scope.file, span, DigitalForm::ElementOfArrayWhoseLengthIsNot);
+        let Some(carrier) = self.frame_carrier(scope.values.frame, decl) else { return Lookup::No };
+        let Some(shape) = self.shape_in(&array, scope.values.frame) else {
+            self.refuse(scope.values.file, span, DigitalForm::ElementOfArrayWhoseLengthIsNot);
             return Lookup::Failed;
         };
         if generated.len() + indexes.len() != shape.dims.len() {
-            self.refuse(scope.file, span, DigitalForm::PartOfNestedArrayOfCarriersAs);
+            self.refuse(scope.values.file, span, DigitalForm::PartOfNestedArrayOfCarriersAs);
             return Lookup::Failed;
         }
         match self.flat_element(scope, carrier, &shape, (&generated, &indexes), span) {
@@ -133,27 +133,27 @@ impl Elaboration<'_, '_> {
     /// the iterations of the loops that declare it and that `scope` is inside, outermost first (§8.2.23). Empty for a
     /// carrier declared outside generation, or for code outside its loops.
     pub(super) fn generated_carrier_levels(&self, scope: &Scope, root: ExprId) -> Vec<u64> {
-        let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return Vec::new() };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return Vec::new() };
-        if self.generated.of(decl).is_none() || !self.frames[scope.frame].carriers.contains_key(&decl) {
+        let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return Vec::new() };
+        let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { return Vec::new() };
+        if self.state.structure.generated.of(decl).is_none() || !self.state.structure.frames[scope.values.frame].carriers.contains_key(&decl) {
             return Vec::new();
         }
-        self.implicit_ordinals(decl, &scope.ordinals)
+        self.implicit_ordinals(decl, &scope.digital.ordinals)
     }
 
     /// The flat element of the array carrier `carrier` named by `(fixed, indexes)`, one per level: the levels generation
     /// fixes, then the written indexes. The index expression and the element when every index folds. `None` after a
     /// diagnostic (`E0104` for a constant past the end).
     pub(super) fn flat_element(&mut self, scope: &mut Scope, carrier: u32, shape: &ArrayShape, (fixed, indexes): (&[u64], &[ExprId]), span: crate::msl::Span) -> Option<ElementRef> {
-        let origin = self.locator.origin(scope.file, span);
+        let origin = self.state.locator.origin(scope.values.file, span);
         let mut lowered = Vec::with_capacity(fixed.len() + indexes.len());
         for ordinal in fixed {
             lowered.push(self.emit(Expr::Int(i128::from(*ordinal)), ValueType::UInt(64), origin.clone()));
         }
         // an index over constants, the loop variables of generation and of unrolled loops included, is its constant
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
         for index in indexes {
-            let folded = match self.consts.value(*index, &bindings) {
+            let folded = match self.state.consts.value(*index, &bindings) {
                 Ok(piperine_ir::Constant::Int(at)) => Some(self.emit(Expr::Int(at), ValueType::UInt(64), origin.clone())),
                 _ => None,
             };
@@ -166,7 +166,7 @@ impl Elaboration<'_, '_> {
         for (constant, length) in constants.iter().zip(&shape.dims) {
             if let Some(at) = constant.filter(|at| at >= length) {
                 let message = format!("the element {at} is out of range for an array of {length} carriers (§1 rule 11)");
-                self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                self.report(scope.values.file, Diagnostic::new("E0104", message, span, "index out of range"));
                 return None;
             }
         }
@@ -197,7 +197,7 @@ impl Elaboration<'_, '_> {
 
     /// The value of a lowered index when it is a constant.
     fn constant_index(&self, index: LoweredExpr) -> Option<u64> {
-        match self.ir.expr_kind(index) {
+        match self.state.builder.expr_kind(index) {
             Some(Expr::Int(n)) => u64::try_from(*n).ok(),
             _ => None,
         }
@@ -222,11 +222,11 @@ impl Elaboration<'_, '_> {
     /// index into the array of every element's `part`: the analog side reads constant elements only. Digital code (a
     /// definition, a guard, a reaction) reads one at a run time element through the array's view (abi.md §3, `WHOLE`).
     fn element_part(&mut self, scope: &Scope, element: ElementRef, part: ElementPart, origin: Origin) -> LoweredExpr {
-        let ty = part.value_type(&self.structure.carriers[element.carrier as usize].ty);
+        let ty = part.value_type(&self.state.digital.structure.carriers[element.carrier as usize].ty);
         if let Some(at) = element.constant {
             return self.constant_element_part(scope, element.carrier, at, part, origin);
         }
-        if scope.in_analog_block {
+        if scope.analog.in_analog_block {
             let array = self.elements_of_array(scope, element.carrier, part, origin.clone());
             return self.emit(Expr::Index { expr: array, index: element.index }, ty, origin);
         }
@@ -236,13 +236,13 @@ impl Elaboration<'_, '_> {
     /// `part` of the constant element `at` of the array carrier `carrier`. The `analog` block reads the value and the
     /// previous value of an element through its mirror (`analog_mirror`): the analog side holds one slot per carrier.
     fn constant_element_part(&mut self, scope: &Scope, carrier: u32, at: u64, part: ElementPart, origin: Origin) -> LoweredExpr {
-        let ty = part.value_type(&self.structure.carriers[carrier as usize].ty);
+        let ty = part.value_type(&self.state.digital.structure.carriers[carrier as usize].ty);
         match part {
-            ElementPart::Value if scope.in_analog_block => {
+            ElementPart::Value if scope.analog.in_analog_block => {
                 let mirror = self.analog_mirror(carrier, at, origin.clone());
                 self.emit(Expr::Carrier(mirror), ty, origin)
             }
-            ElementPart::Previous if scope.in_analog_block => {
+            ElementPart::Previous if scope.analog.in_analog_block => {
                 let mirror = self.analog_mirror(carrier, at, origin.clone());
                 self.emit(Expr::Previous(mirror), ty, origin)
             }
@@ -256,7 +256,7 @@ impl Elaboration<'_, '_> {
     /// The array of `part` of every element of the array carrier `carrier`, each a constant element read: how code that
     /// becomes a function reads an array of carriers whole (abi.md §3).
     pub(super) fn elements_of_array(&mut self, scope: &Scope, carrier: u32, part: ElementPart, origin: Origin) -> LoweredExpr {
-        let held = self.structure.carriers[carrier as usize].clone();
+        let held = self.state.digital.structure.carriers[carrier as usize].clone();
         let count = held.count.unwrap_or(0);
         let ty = part.value_type(&held.ty);
         let mut parts = Vec::with_capacity(count as usize);
@@ -271,16 +271,16 @@ impl Elaboration<'_, '_> {
     /// it reads, the size of one value; the definition is a function of the digital side, re-run when the element
     /// changes, so the mirror and the element hold one value at every instant.
     fn analog_mirror(&mut self, carrier: u32, at: u64, origin: Origin) -> u32 {
-        if let Some(mirror) = self.structure.analog_mirrors.get(&(carrier, at)) {
+        if let Some(mirror) = self.state.digital.structure.analog_mirrors.get(&(carrier, at)) {
             return *mirror;
         }
-        let held = self.structure.carriers[carrier as usize].clone();
+        let held = self.state.digital.structure.carriers[carrier as usize].clone();
         let name = format!("{}$analog[{at}]", held.name);
         let mirror = self.add_carrier(piperine_ir::Carrier { name, ty: held.ty.clone(), role: piperine_ir::CarrierRole::Internal, init: None, origin: origin.clone(), count: None });
         let index = self.emit(Expr::Int(i128::from(at)), ValueType::UInt(64), origin.clone());
         let value = self.emit(Expr::CarrierElement { carrier, index }, held.ty, origin.clone());
-        self.structure.drives.push(piperine_ir::Drive { carrier: mirror, value, after: None, origin, element: None, path: Vec::new() });
-        self.structure.analog_mirrors.insert((carrier, at), mirror);
+        self.state.digital.structure.drives.push(piperine_ir::Drive { carrier: mirror, value, after: None, origin, element: None, path: Vec::new() });
+        self.state.digital.structure.analog_mirrors.insert((carrier, at), mirror);
         mirror
     }
 
@@ -288,7 +288,7 @@ impl Elaboration<'_, '_> {
     /// does not fold (QC4, `E0188`, the code of a non-constant where a constant is required).
     pub(super) fn folded_element(&mut self, scope: &Scope, recv: ExprId, element: ElementRef) -> Option<u64> {
         if element.constant.is_none() {
-            let span = self.design.expr_node(recv).span;
+            let span = self.state.design.expr_node(recv).span;
             self.not_folded(scope, span, "the element of an event head");
         }
         element.constant
@@ -299,9 +299,9 @@ impl Elaboration<'_, '_> {
     /// `E0188` for a constant expected where `what` (the source text at `span`) does not fold at
     /// elaboration: it names the expression written.
     pub(super) fn not_folded(&mut self, scope: &Scope, span: crate::msl::Span, what: &str) {
-        let text = self.design.file_data(scope.file).text.get(span.start..span.end).unwrap_or("").to_string();
+        let text = self.state.design.file_data(scope.values.file).text.get(span.start..span.end).unwrap_or("").to_string();
         let message = format!("not a const expression: {what} must fold at elaboration, and `{text}` does not");
-        self.report(scope.file, Diagnostic::new("E0188", message, span, "not a const expression"));
+        self.report(scope.values.file, Diagnostic::new("E0188", message, span, "not a const expression"));
     }
 }
 
@@ -313,11 +313,11 @@ impl Elaboration<'_, '_> {
         if indexes.len() > shape.dims.len() {
             return None;
         }
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
         let mut flat = 0u64;
         for (index, length) in indexes.iter().zip(&shape.dims) {
-            let span = self.design.expr_node(*index).span;
-            let folded = match self.consts.value(*index, &bindings) {
+            let span = self.state.design.expr_node(*index).span;
+            let folded = match self.state.consts.value(*index, &bindings) {
                 Ok(piperine_ir::Constant::Int(at)) => u64::try_from(at).ok(),
                 _ => None,
             };
@@ -327,7 +327,7 @@ impl Elaboration<'_, '_> {
             };
             if at >= *length {
                 let message = format!("the element {at} is out of range for an array of {length} (§1 rule 11)");
-                self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                self.report(scope.values.file, Diagnostic::new("E0104", message, span, "index out of range"));
                 return None;
             }
             flat = flat * length + at;
@@ -343,21 +343,21 @@ impl Elaboration<'_, '_> {
     fn node_run(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, u64, bool)>> {
         let mut at = self.peel_parens(arg);
         let mut indexes = Vec::new();
-        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(at).kind.clone() {
+        while let ExprKind::Index { expr: inner, index } = self.state.design.expr_node(at).kind.clone() {
             indexes.push(index);
             at = self.peel_parens(inner);
         }
         indexes.reverse();
         // a name of this module, a field of a bundle of it (at the element of an array of bundles it names, in front of the written
         // indexes: `d[k].p` is the element `k` of the leaf `d.p`), or a `pub` array of nodes of a placed child (`c.tap[k]`)
-        let (frame, decl) = match self.design.expr_node(at).kind.clone() {
+        let (frame, decl) = match self.state.design.expr_node(at).kind.clone() {
             ExprKind::Path(path) => {
-                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
-                (scope.frame, decl)
+                let Some(Resolution::Decl(decl)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else { return Some(None) };
+                (scope.values.frame, decl)
             }
             ExprKind::Field { .. } if let Some(place) = self.bundle_leaf(scope, at) => {
                 indexes.splice(0..0, place.elements);
-                (scope.frame, place.decl)
+                (scope.values.frame, place.decl)
             }
             ExprKind::Field { .. } => {
                 let (frame, item) = self.reached_item(scope, at)?;
@@ -368,44 +368,44 @@ impl Elaboration<'_, '_> {
             }
             _ => return Some(None),
         };
-        let Some(shape) = self.frames.get(frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
+        let Some(shape) = self.state.structure.frames.get(frame).and_then(|f| f.node_shapes.get(&decl)).cloned() else {
             // a node of an arm that was not elaborated (§8.2.24)
-            if self.generated.of(decl).is_some_and(Vec::is_empty) {
-                self.refer_outside_generation(scope.file, self.design.expr_node(arg).span, decl, None);
+            if self.state.structure.generated.of(decl).is_some_and(Vec::is_empty) {
+                self.refer_outside_generation(scope.values.file, self.state.design.expr_node(arg).span, decl, None);
                 return None;
             }
             return Some(None);
         };
-        let span = self.design.expr_node(arg).span;
+        let span = self.state.design.expr_node(arg).span;
         let Some(piperine_ir::Terminal::Node(first)) = self.frame_node(frame, decl) else { return Some(None) };
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
+        let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
         // inside the generation `for`s that declare the array, the name is the iteration's element (§8.2.23)
-        let implicit = self.implicit_ordinals(decl, &scope.ordinals);
-        let generated = self.generated.of(decl).is_some();
+        let implicit = self.implicit_ordinals(decl, &scope.digital.ordinals);
+        let generated = self.state.structure.generated.of(decl).is_some();
         let mut flat = 0u64;
         let mut levels = implicit.len();
         for (ordinal, length) in implicit.iter().zip(&shape.dims) {
             flat = flat * length + ordinal;
         }
         if indexes.len() + implicit.len() > shape.dims.len() {
-            self.refuse(scope.file, span, DigitalForm::IndexOfArrayOfNodesPastIts);
+            self.refuse(scope.values.file, span, DigitalForm::IndexOfArrayOfNodesPastIts);
             return None;
         }
         for (index, length) in indexes.iter().zip(&shape.dims[implicit.len()..]) {
-            let folded = match self.consts.value(*index, &bindings) {
+            let folded = match self.state.consts.value(*index, &bindings) {
                 Ok(piperine_ir::Constant::Int(at)) => u64::try_from(at).ok(),
                 _ => None,
             };
             let Some(at) = folded else {
-                self.not_folded(scope, self.design.expr_node(*index).span, "the index of an array of nodes");
+                self.not_folded(scope, self.state.design.expr_node(*index).span, "the index of an array of nodes");
                 return None;
             };
             if at >= *length {
                 if generated {
-                    self.refer_outside_generation(scope.file, span, decl, Some((at, *length)));
+                    self.refer_outside_generation(scope.values.file, span, decl, Some((at, *length)));
                 } else {
                     let message = format!("the element {at} is out of range for an array of {length} nodes (§1 rule 11)");
-                    self.report(scope.file, Diagnostic::new("E0104", message, span, "index out of range"));
+                    self.report(scope.values.file, Diagnostic::new("E0104", message, span, "index out of range"));
                 }
                 return None;
             }
@@ -422,7 +422,7 @@ impl Elaboration<'_, '_> {
         match self.node_run(scope, arg)? {
             Some((first, _, true)) => Some(Some(piperine_ir::Terminal::Node(first))),
             Some(_) => {
-                self.refuse(scope.file, self.design.expr_node(arg).span, DigitalForm::ArrayOfNodesOrPartOfNested);
+                self.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArrayOfNodesOrPartOfNested);
                 None
             }
             None => Some(None),
@@ -435,7 +435,7 @@ impl Elaboration<'_, '_> {
         match self.node_run(scope, arg)? {
             Some((first, length, false)) => Some((0..length as u32).map(|k| piperine_ir::Terminal::Node(first + k)).collect()),
             _ => {
-                self.refuse(scope.file, self.design.expr_node(arg).span, DigitalForm::ArgumentAtArrayPortOfNodesThat);
+                self.refuse(scope.values.file, self.state.design.expr_node(arg).span, DigitalForm::ArgumentAtArrayPortOfNodesThat);
                 None
             }
         }
@@ -450,7 +450,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carrier_window(&mut self, scope: &Scope, arg: ExprId) -> Option<Option<(u32, Option<piperine_ir::CarrierWindow>)>> {
         let mut at = self.peel_parens(arg);
         let mut indexes = Vec::new();
-        while let ExprKind::Index { expr: inner, index } = self.design.expr_node(at).kind.clone() {
+        while let ExprKind::Index { expr: inner, index } = self.state.design.expr_node(at).kind.clone() {
             indexes.push(index);
             at = self.peel_parens(inner);
         }
@@ -462,24 +462,24 @@ impl Elaboration<'_, '_> {
                 place.decl
             }
             None => {
-                let ExprKind::Path(path) = self.design.expr_node(at).kind.clone() else { return None };
-                let Some(Resolution::Decl(decl)) = self.design.path_node(path).segments.last().map(|s| s.res) else { return None };
+                let ExprKind::Path(path) = self.state.design.expr_node(at).kind.clone() else { return None };
+                let Some(Resolution::Decl(decl)) = self.state.design.path_node(path).segments.last().map(|s| s.res) else { return None };
                 decl
             }
         };
-        let array = self.consts.typed_carrier_array(decl)?;
-        let span = self.design.expr_node(arg).span;
-        if !indexes.is_empty() && self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
-            self.element_of_empty_array(scope.file, span);
+        let array = self.state.consts.typed_carrier_array(decl)?;
+        let span = self.state.design.expr_node(arg).span;
+        if !indexes.is_empty() && self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&decl)) {
+            self.element_of_empty_array(scope.values.file, span);
             return Some(None);
         }
-        let carrier = self.frame_carrier(scope.frame, decl)?;
-        let shape = self.shape_in(&array, scope.frame)?;
+        let carrier = self.frame_carrier(scope.values.frame, decl)?;
+        let shape = self.shape_in(&array, scope.values.frame)?;
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = self.generated_carrier_levels(scope, at);
         let levels = generated.len() + indexes.len();
         if levels > shape.dims.len() {
-            self.refuse(scope.file, span, DigitalForm::IndexOfArrayOfCarriersPastIts);
+            self.refuse(scope.values.file, span, DigitalForm::IndexOfArrayOfCarriersPastIts);
             return Some(None);
         }
         if levels == 0 {

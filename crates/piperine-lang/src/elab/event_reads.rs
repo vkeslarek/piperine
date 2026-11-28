@@ -23,8 +23,8 @@ impl Elaboration<'_, '_> {
     /// event `k` and the continuous conjuncts `c` of its guard. `None` after a diagnostic.
     pub(super) fn lower_event_read(&mut self, scope: &mut Scope, expr: ExprId) -> Option<LoweredExpr> {
         // `x[i].changed()` at an index only run time knows is not an event: it reads the element's change (CV-24)
-        if let ExprKind::MethodCall { recv, .. } = &self.design.expr_node(self.peel_parens(expr)).kind.clone()
-            && self.types.builtin(self.peel_parens(expr)) == Some(Builtin::Changed)
+        if let ExprKind::MethodCall { recv, .. } = &self.state.design.expr_node(self.peel_parens(expr)).kind.clone()
+            && self.state.types.builtin(self.peel_parens(expr)) == Some(Builtin::Changed)
             && let Lookup::Found(element) = self.element_lookup(scope, *recv)
             && element.constant.is_none()
         {
@@ -52,7 +52,7 @@ impl Elaboration<'_, '_> {
     /// head's first), else one appended.
     fn read_event(&mut self, disjunct: &Disjunct) -> u32 {
         if disjunct.discrete.is_empty()
-            && let Some(held) = self.structure.events.iter().position(|e: &Event| e.guard.is_none() && e.source == disjunct.source)
+            && let Some(held) = self.state.digital.structure.events.iter().position(|e: &Event| e.guard.is_none() && e.source == disjunct.source)
         {
             return held as u32;
         }

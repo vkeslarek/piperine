@@ -18,23 +18,23 @@ impl Elaboration<'_, '_> {
     /// it; an initial value over elements every `out` port holds is `E0223`.
     pub(super) fn judge_element_coverage(&mut self, module: DeclId, instance: &str) {
         // an item refused inside generation is the one diagnostic: it names elements the refusal dropped, no cascade
-        if !self.generated.refused.is_empty() {
+        if !self.state.structure.generated.refused.is_empty() {
             return;
         }
         // the carriers declared inside generation are the body's too, one array each (§8.2.23)
-        let mut children = self.design.decl_data(module).children.clone();
-        children.extend(self.generated.elaborated());
+        let mut children = self.state.design.decl_data(module).children.clone();
+        children.extend(self.state.structure.generated.elaborated());
         // each field of a bundle port or signal is a carrier of its own (`pom/bundles.rs`)
-        let children = self.design.module_items(&children);
+        let children = self.state.design.module_items(&children);
         for decl in children {
-            let missing = self.types.defers_missing_initial_value(decl);
-            let handed = self.types.defers_handed_initial_value(decl);
-            let defined = self.types.defers_defined_initial_value(decl);
+            let missing = self.state.types.defers_missing_initial_value(decl);
+            let handed = self.state.types.defers_handed_initial_value(decl);
+            let defined = self.state.types.defers_defined_initial_value(decl);
             if !missing && !handed && !defined {
                 continue;
             }
             // a scalar carrier is one element: a drive written inside generation is judged here as well
-            let (Some(carrier), Some(array)) = (self.frames[0].carriers.get(&decl).copied(), self.consts.typed_carrier(decl)) else { continue };
+            let (Some(carrier), Some(array)) = (self.state.structure.frames[0].carriers.get(&decl).copied(), self.state.consts.typed_carrier(decl)) else { continue };
             let Some(shape) = self.shape_in(&array, 0) else { continue };
             let total = shape.count();
             if missing {
@@ -53,11 +53,11 @@ impl Elaboration<'_, '_> {
     fn judge_missing_initial_value(&mut self, decl: DeclId, carrier: u32, array: &Ty, total: u64, instance: &str) {
         let mut coverage = self.handed_coverage(carrier, total);
         self.cover_definitions(&mut coverage, carrier);
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
-        let Some(unnamed) = coverage.unnamed(&self.design.element_naming(decl)) else { return };
+        let Some(unnamed) = coverage.unnamed(&self.state.design.element_naming(decl)) else { return };
         let Ty::Carrier { value, .. } = array.innermost() else { return };
-        let found = value.name(self.design);
+        let found = value.name(self.state.design);
         let message = format!("`{unnamed}` in `{instance}` has no initial value and its type `{found}` does not implement `Default`: a carrier has a value from (0, 0) on (§3.3.4)");
         let help = format!("write `= value` after the type of `{name}`, or drive every element");
         self.report(data.file, Diagnostic::new("E0187", message, data.span, "no initial value").with_help(help));
@@ -68,7 +68,7 @@ impl Elaboration<'_, '_> {
         if !self.handed_coverage(carrier, total).is_complete() {
             return;
         }
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("`{name}` has an initial value and every element is handed to an `out` port in `{instance}`: the instance holds the drive, so the declaring module may give none (§5.2.6)");
         self.report(data.file, Diagnostic::new("E0223", message, data.span, "initial value without the drive"));
@@ -82,7 +82,7 @@ impl Elaboration<'_, '_> {
         if !coverage.is_complete() {
             return;
         }
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = format!("`{name}` has an initial value and an undelayed definition of every element in `{instance}`: the definitions would replace it in the microstep that commits them (§8.2.21)");
         self.report(data.file, Diagnostic::new("E0338", message, data.span, "initial value under an undelayed definition"));
@@ -90,7 +90,7 @@ impl Elaboration<'_, '_> {
 
     /// The elements of carrier `carrier` that an undelayed definition names.
     fn cover_definitions(&self, coverage: &mut ElementCoverage, carrier: u32) {
-        for drive in self.structure.drives.iter().filter(|drive| drive.carrier == carrier && drive.after.is_none()) {
+        for drive in self.state.digital.structure.drives.iter().filter(|drive| drive.carrier == carrier && drive.after.is_none()) {
             Self::cover_drive(coverage, drive);
         }
     }
@@ -98,7 +98,7 @@ impl Elaboration<'_, '_> {
     /// The elements of carrier `carrier` (`total` of them) that children hold at an `out` port.
     fn handed_coverage(&self, carrier: u32, total: u64) -> ElementCoverage {
         let mut coverage = ElementCoverage::counted(total);
-        for (_, window) in self.structure.handed.iter().filter(|(handed, _)| *handed == carrier) {
+        for (_, window) in self.state.digital.structure.handed.iter().filter(|(handed, _)| *handed == carrier) {
             match window {
                 None => coverage.cover_all(),
                 Some(CarrierWindow { first, length: None }) => coverage.cover_run(*first, first + 1),

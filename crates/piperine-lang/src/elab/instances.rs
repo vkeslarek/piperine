@@ -55,7 +55,7 @@ impl Instance {
 
     /// Each argument as the source spells it: a type as written, a number, a function's name, `closure$k`.
     pub(super) fn argument_names(&self, elaboration: &Elaboration<'_, '_>) -> Vec<String> {
-        let design = elaboration.design;
+        let design = elaboration.state.design;
         self.arguments
             .iter()
             .map(|argument| match argument {
@@ -75,11 +75,11 @@ impl Elaboration<'_, '_> {
     pub(super) fn instance_substitution(&self, function: DeclId, arguments: &[ConcreteValue]) -> Substitution {
         let mut substitution = Substitution::new();
         // a method of a generic `impl` takes the parameters of the `impl`
-        let owner = self.design.decl_data(function).parent.filter(|owner| matches!(self.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.design.decl_data(*owner).generics_span.is_some()).unwrap_or(function);
-        let signature = GenericSignature::of(self.design, owner);
+        let owner = self.state.design.decl_data(function).parent.filter(|owner| matches!(self.state.design.decl_data(*owner).kind, DeclKind::Impl(_)) && self.state.design.decl_data(*owner).generics_span.is_some()).unwrap_or(function);
+        let signature = GenericSignature::of(self.state.design, owner);
         // a function a trait declares runs for one type, which is `Self`: its one argument
         if let (true, Some(ConcreteValue::Type(ty))) = (self.is_trait_function(function), arguments.first())
-            && let Some(owner) = self.design.decl_data(function).parent
+            && let Some(owner) = self.state.design.decl_data(function).parent
         {
             substitution.bind(owner, GenericValue::Type(ty.clone()));
         }
@@ -106,9 +106,9 @@ impl Elaboration<'_, '_> {
         match value {
             ConcreteValue::Closure(closure) => self.typed(*closure),
             ConcreteValue::Function(function) => {
-                let data = self.design.decl_data(*function);
+                let data = self.state.design.decl_data(*function);
                 let DeclKind::Fn(signature) = &data.kind else { return None };
-                let inputs: Option<Vec<Ty>> = data.children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::FnParam(_))).map(|param| self.typed_local(param)).collect();
+                let inputs: Option<Vec<Ty>> = data.children.iter().copied().filter(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::FnParam(_))).map(|param| self.typed_local(param)).collect();
                 let output = signature.ret.and_then(|ret| self.typed_written(ret)).unwrap_or(Ty::Unit);
                 Some(Ty::Fn(inputs?, Box::new(output)))
             }
@@ -119,8 +119,8 @@ impl Elaboration<'_, '_> {
     /// The instance the call `call` makes, from the instantiation the checker recorded folded under the
     /// substitution of the instance being lowered, with its obligations discharged. `None` after a diagnostic.
     pub(super) fn concrete_instance(&mut self, call: ExprId) -> Option<Instance> {
-        let recorded = self.types.instantiation(call)?.clone();
-        let (file, span) = (self.design.decl_data(self.design.expr_node(call).owner).file, self.design.expr_node(call).span);
+        let recorded = self.state.types.instantiation(call)?.clone();
+        let (file, span) = (self.state.design.decl_data(self.state.design.expr_node(call).owner).file, self.state.design.expr_node(call).span);
         let mut arguments = Vec::new();
         for value in &recorded.arguments {
             arguments.push(self.fold_argument(value, file, span)?);
@@ -140,7 +140,7 @@ impl Elaboration<'_, '_> {
     fn fold_argument(&mut self, value: &GenericValue, file: FileId, span: Span) -> Option<ConcreteValue> {
         match value {
             GenericValue::Type(ty) => {
-                let ty = self.consts.substitution().apply(ty);
+                let ty = self.state.consts.substitution().apply(ty);
                 if ty.has_param() {
                     self.refuse(file, span, StructureForm::GenericArgumentThatIsStillParameter);
                     return None;
@@ -156,14 +156,14 @@ impl Elaboration<'_, '_> {
     /// A const argument as a value: a number, a `bool`, a const parameter of the enclosing instance or an
     /// expression over them.
     fn fold_term(&mut self, term: &ConstTerm, file: FileId, span: Span) -> Option<ConcreteValue> {
-        match self.consts.substitution().apply_term(term) {
+        match self.state.consts.substitution().apply_term(term) {
             ConstTerm::Value(value) => Some(ConcreteValue::Const(value)),
             ConstTerm::Bool(value) => Some(ConcreteValue::Bool(value)),
             // an expression over const parameters folds the way the checker folds a length: syntactically, over their values
-            ConstTerm::Expr(expr) if let Some(value) = self.types.fold_with(expr, self.enclosing_values()).and_then(|value| i128::try_from(value).ok()) => Some(ConcreteValue::Const(value)),
+            ConstTerm::Expr(expr) if let Some(value) = self.state.types.fold_with(expr, self.enclosing_values()).and_then(|value| i128::try_from(value).ok()) => Some(ConcreteValue::Const(value)),
             ConstTerm::Expr(expr) => {
                 let bindings = self.enclosing_bindings();
-                match self.consts.value(expr, &bindings) {
+                match self.state.consts.value(expr, &bindings) {
                     Ok(Constant::Int(value)) => Some(ConcreteValue::Const(value)),
                     Ok(Constant::Bool(value)) => Some(ConcreteValue::Bool(value)),
                     Ok(_) => {
@@ -185,19 +185,19 @@ impl Elaboration<'_, '_> {
 
     /// The integer const arguments of the instance being lowered by parameter: what a syntactic fold of an expression reads.
     fn enclosing_values(&self) -> BTreeMap<DeclId, u128> {
-        let generic = self.consts.substitution().entries().filter_map(|(parameter, value)| match value {
+        let generic = self.state.consts.substitution().entries().filter_map(|(parameter, value)| match value {
             GenericValue::Const(ConstTerm::Value(number)) => u128::try_from(*number).ok().map(|number| (parameter, number)),
             _ => None,
         });
         // the key params of the body being lowered: an argument `{ count }` reads the value the body was lowered for
-        let keys = self.body_keys.integers().into_iter().filter_map(|(param, number)| u128::try_from(number).ok().map(|number| (param, number)));
+        let keys = self.state.structure.body_keys.integers().into_iter().filter_map(|(param, number)| u128::try_from(number).ok().map(|number| (param, number)));
         generic.chain(keys).collect()
     }
 
     /// The const parameters of the instance being lowered bound to their values.
     fn enclosing_bindings(&self) -> Bindings {
         let mut bindings = Bindings::new();
-        for (parameter, value) in self.consts.substitution().entries() {
+        for (parameter, value) in self.state.consts.substitution().entries() {
             match value {
                 GenericValue::Const(ConstTerm::Value(number)) => bindings.bind(parameter, Constant::Int(*number)),
                 GenericValue::Const(ConstTerm::Bool(flag)) => bindings.bind(parameter, Constant::Bool(*flag)),
@@ -210,7 +210,7 @@ impl Elaboration<'_, '_> {
     /// The integer const arguments of `instance` by parameter, and the level count of each type argument: what an array
     /// length folds over.
     fn instance_values(&self, instance: &Instance) -> BTreeMap<DeclId, u128> {
-        let signature = GenericSignature::of(self.design, instance.item);
+        let signature = GenericSignature::of(self.state.design, instance.item);
         signature
             .parameters()
             .iter()
@@ -227,9 +227,9 @@ impl Elaboration<'_, '_> {
     /// The const parameters of `instance`'s function bound to its const arguments.
     pub(super) fn instance_bindings(&self, instance: &Instance) -> Bindings {
         let mut bindings = Bindings::new();
-        let signature = GenericSignature::of(self.design, instance.item);
+        let signature = GenericSignature::of(self.state.design, instance.item);
         for (parameter, argument) in signature.parameters().iter().zip(&instance.arguments) {
-            if !matches!(self.design.decl_data(parameter.decl).kind, DeclKind::GenericParam(GenericParamData::Const { .. })) {
+            if !matches!(self.state.design.decl_data(parameter.decl).kind, DeclKind::GenericParam(GenericParamData::Const { .. })) {
                 continue;
             }
             match argument {
@@ -245,9 +245,9 @@ impl Elaboration<'_, '_> {
     /// array lengths and the const expressions, for these arguments. `None` after a diagnostic.
     pub(super) fn discharge(&mut self, instance: &Instance, bindings: &Bindings) -> Option<()> {
         // the `where` reads the instance's own type arguments (`A::WIDTH == B::WIDTH`)
-        let outer = self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
+        let outer = self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments));
         let discharged = self.discharge_under_substitution(instance, bindings);
-        self.consts.set_substitution(outer);
+        self.state.consts.set_substitution(outer);
         discharged
     }
 
@@ -256,13 +256,13 @@ impl Elaboration<'_, '_> {
         let name = instance.name(self);
         let values = self.instance_values(instance);
         let mut holds = true;
-        for obligation in self.types.obligations(instance.item).to_vec() {
+        for obligation in self.state.types.obligations(instance.item).to_vec() {
             match obligation {
-                Obligation::Where { item, condition } => match self.consts.value(condition, bindings) {
+                Obligation::Where { item, condition } => match self.state.consts.value(condition, bindings) {
                     Ok(Constant::Bool(true)) => {}
                     Ok(Constant::Bool(false)) => {
-                        let data = self.design.decl_data(item);
-                        let span = self.design.expr_node(condition).span;
+                        let data = self.state.design.decl_data(item);
+                        let span = self.state.design.expr_node(condition).span;
                         self.report(data.file, Diagnostic::new("E0127", format!("the `where` of `{name}` is false for these arguments (§3 rule 8)"), span, "a `where` that is false"));
                         holds = false;
                     }
@@ -282,7 +282,7 @@ impl Elaboration<'_, '_> {
                     }
                 }
                 Obligation::Constant { expr, file, span } => {
-                    if self.types.fold_with(expr, values.clone()).is_none() {
+                    if self.state.types.fold_with(expr, values.clone()).is_none() {
                         self.report(file, Diagnostic::new("E0104", format!("a const expression of `{name}` does not fold: it underflows, overflows or divides by zero for these arguments"), span, "panics"));
                         holds = false;
                     }
@@ -297,11 +297,11 @@ impl Elaboration<'_, '_> {
         match length {
             Length::Fixed(count) => Some(i128::from(*count)),
             Length::Generic(ConstTerm::Value(count)) => Some(*count),
-            Length::Generic(ConstTerm::Expr(expr)) => self.types.fold_with(*expr, values.clone()).and_then(|count| i128::try_from(count).ok()),
+            Length::Generic(ConstTerm::Expr(expr)) => self.state.types.fold_with(*expr, values.clone()).and_then(|count| i128::try_from(count).ok()),
             Length::Generic(ConstTerm::Param(parameter)) => values.get(parameter).and_then(|count| i128::try_from(*count).ok()),
             // `T::WIDTH` of the argument the instance gives the parameter `T` (§2)
             Length::Generic(ConstTerm::Width(parameter)) => {
-                let signature = GenericSignature::of(self.design, instance.item);
+                let signature = GenericSignature::of(self.state.design, instance.item);
                 let argument = signature.parameters().iter().zip(&instance.arguments).find_map(|(candidate, argument)| (candidate.decl == *parameter).then_some(argument))?;
                 match argument {
                     ConcreteValue::Type(given) => self.level_count(given).map(i128::from),
@@ -314,15 +314,15 @@ impl Elaboration<'_, '_> {
 
     /// The name of the item a closure is written in: two items each have a `closure$0`, so the instance names the item too.
     pub(super) fn closure_owner_name(&self, closure: ExprId) -> String {
-        let owner = self.design.expr_node(closure).owner;
-        self.design.decl_data(owner).name.as_ref().map_or_else(String::new, |name| name.text.clone())
+        let owner = self.state.design.expr_node(closure).owner;
+        self.state.design.decl_data(owner).name.as_ref().map_or_else(String::new, |name| name.text.clone())
     }
 
     /// The position of the closure `closure` among the closures of the item it is written in, in source order.
     pub(super) fn closure_ordinal(&self, closure: ExprId) -> usize {
-        let owner = self.design.expr_node(closure).owner;
+        let owner = self.state.design.expr_node(closure).owner;
         (0..closure.0).filter(|index| {
-            let node = self.design.expr_node(ExprId(*index));
+            let node = self.state.design.expr_node(ExprId(*index));
             node.owner == owner && matches!(node.kind, crate::pom::ExprKind::Closure { .. })
         }).count()
     }

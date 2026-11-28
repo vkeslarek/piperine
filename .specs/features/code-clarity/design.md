@@ -393,6 +393,43 @@ Target module map of `crates/piperine-lang/src/elab/` (73 files + `consts/`; the
 
 Order: T92 (state and `Scope` partitioned), T93 to T97 (one lowering each; in T97 the two `#[allow(clippy::too_many_arguments)]` of `generation.rs` become a parameter object), T98 (`ConstEval`), T99 (`Elaboration` keeps the pass order). Each of T93 to T99 runs the Golden gate: the elaborator is the path to every golden.
 
+**Annotation (T92, the partition as built)**: `Elaboration<'d, 't> { state: ElaborationState<'d, 't> }` (the two lifetimes stay: `Types` is borrowed for `'t`, shorter than the design's `'d`). The partition by concern, each field placed by the files that read it under the map above:
+
+| Holder | Fields |
+|---|---|
+| `ElaborationState` (root, read by every concern) | `design`, `types`, `consts` (`ConstEval`), `builder` (was `ir`), `locator`, `overrides`, `impls` (`ImplTable`), `diagnostics` |
+| `ExpressionTables` (`state.values`) | `expr_types`, `expr_continuous`, `stmt_continuous`, `expr_origins`, `divergences`, `type_arena` |
+| `FunctionTables` (`state.functions`) | `variants` |
+| `AnalogSites` (`state.analog`) | `natures`, `ammeters`, `looped`, `cycles` |
+| `DigitalTables` (`state.digital`) | `structure` (the type `Structure`), `resolvers` |
+| `StructureTables` (`state.structure`) | `body_ids`, `plans`, `param_plans`, `instance_param_plans`, `body_depths`, `lowering`, `keys`, `body_variants`, `frames`, `child_indices`, `generated`, `body_keys`, `reach_frames`, `nested_demands`, `refused_modules`, `unrolled_names` |
+| `ValueScope` (`scope.values`) | `file`, `params`, `locals`, `local_index`, `options`, `frame`, `keys`, `unrolled`, `let_sources`, `local_inits`, `loops`, `result`, `decisions`, `pending`, `inline_exits` |
+| `AnalogScope` (`scope.analog`) | `limits`, `stims`, `branches`, `nesting`, `guards`, `hoisted_steps`, `block_depth`, `limit_name`, `at_solution`, `value_input`, `differentiated`, `flow_leaves`, `values`, `option_values`, `forks`, `in_analog_code` (was `analog`), `bounds`, `conditions`, `addend_lets`, `merged`, `contributions`, `in_analog_block`, `expanding` |
+| `DigitalScope` (`scope.digital`) | `texts`, `handles`, `no_locals`, `ordinals` |
+
+Departures from the sketch above: the value table is `ExpressionTables`, because `types/value/tables.rs` already declares `ValueTables` and `no_bare_type_name_is_declared_twice` refuses a second; `consts` and `impls` sit at the root, since every concern folds through the one and resolves calls through the other; the `Scope` flag `analog` is `in_analog_code`, since `scope.analog` now names the `AnalogScope`; `cycles` and `looped` are `AnalogSites`' and `unrolled_names` is `StructureTables`', by the files that read them (`unroll.rs`, `hoist.rs`), not by the concern the words suggest.
+
+Where the tables live until their directory exists: one file per concern at the `elab/` root, `value_state.rs` (`ExpressionTables`, `ValueScope`), `function_state.rs`, `analog_state.rs` (`AnalogSites`, `AnalogScope`), `digital_state.rs` (`DigitalTables`, `DigitalScope`) and `structure_state.rs`. `elab/analog/` and `elab/functions/` cannot be made before T94 and T95 move `analog.rs` and `functions.rs` (a module may not be both `x.rs` and `x/mod.rs`). Each task of T93 to T97 moves its file with the rest: `git mv elab/<concern>_state.rs elab/<directory>/state.rs`.
+
+Visibility is set for that move. A field only its own concern's files read is `pub(super)`: at the root that is `crate::elab`, and after the move it narrows to the directory by itself. A field another concern, the root (`elaborator.rs`) or `consts/` reads is `pub(in crate::elab)`, and stays reachable after the move; the struct types, `Scope`, its fields, `Scope::new`, `Scope::adopt_standalone` and `StructureTables::new` are `pub(in crate::elab)` too. So no move of T93 to T97 has to touch a field's visibility to compile. What a move may have to widen is a type a field names (`Structure` of `carriers.rs`, `Frame`, `ModulePlan`, …): one that is `pub(super)` in a file that moves into a directory becomes `pub(in crate::elab)`, or the compiler warns of a private type in an interface (`private_interfaces`). Turning a `pub(in crate::elab)` field into a method of its owner is a later choice, not a condition of the moves.
+
+The views T93 to T97 add, the shape of Phase 10's (`types/value/mod.rs`):
+
+```rust
+/// Lowers value code (§1.5, §3): the owner of the methods of `elab/value/`.
+pub(in crate::elab) struct ValueLowering<'e, 'd, 't> {
+    /// The run this view lowers through.
+    elaboration: &'e mut Elaboration<'d, 't>,
+}
+// `new`, and `Deref`/`DerefMut` to `Elaboration<'d, 't>`, as `ExpressionTyping` has to `Checker`.
+impl<'d, 't> Elaboration<'d, 't> {
+    /// The view that lowers value code.
+    pub(in crate::elab) fn values(&mut self) -> ValueLowering<'_, 'd, 't> { ValueLowering::new(self) }
+}
+```
+
+The accessors are `values()`, `functions()`, `analog()`, `digital()`, `structure()` (no method of that name exists today). A moved method keeps `self.state.<table>.<field>` (field access passes through `DerefMut`); a call into another concern becomes `self.<accessor>().method(..)`; a call to a method that stays on `Elaboration` (`report`, `refuse*`, `internal_error`, `emit`, `stmt`, …) is unchanged through `Deref`. Two-phase borrows do not pass through `DerefMut` (Phase 10): when an argument reads `self` (`self.values().x(self.state.design, ..)`), bind it to a `let` first or call through `self.elaboration.`. Scope parts need no view: a method reads `scope.<part>.<field>`.
+
 ### The other owners — B5, B6a
 
 One task per finding; the owner names are the inventory's.

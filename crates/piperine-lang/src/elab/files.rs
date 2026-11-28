@@ -118,9 +118,9 @@ impl Elaboration<'_, '_> {
     /// text is part of the elaborated design, read now and never again). A file with no text is
     /// `E0612` or `E0613` at the `include_str!` (`const_fault`).
     pub(super) fn read_included_files(&mut self) {
-        let consts: Vec<DeclId> = self.types.reached().iter().copied().filter(|decl| self.is_text_const(*decl)).collect();
+        let consts: Vec<DeclId> = self.state.types.reached().iter().copied().filter(|decl| self.is_text_const(*decl)).collect();
         for decl in consts {
-            if let Err(fault) = self.consts.text(decl) {
+            if let Err(fault) = self.state.consts.text(decl) {
                 self.const_fault(&fault, "an `include_str!`");
             }
         }
@@ -129,17 +129,17 @@ impl Elaboration<'_, '_> {
     /// Whether `expr` reads a `const` whose `include_str!` file has no text: its fault is already
     /// reported (`read_included_files`), so the reader adds none.
     pub(super) fn names_unreadable_file(&mut self, expr: ExprId) -> bool {
-        let ExprKind::Path(path) = &self.design.expr_node(expr).kind else { return false };
-        match self.design.path_node(*path).segments.last().map(|segment| segment.res) {
-            Some(Resolution::Decl(decl)) if self.is_text_const(decl) => self.consts.text(decl).is_err(),
+        let ExprKind::Path(path) = &self.state.design.expr_node(expr).kind else { return false };
+        match self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
+            Some(Resolution::Decl(decl)) if self.is_text_const(decl) => self.state.consts.text(decl).is_err(),
             _ => false,
         }
     }
 
     /// Whether `decl` is a `const` item whose initializer is an `include_str!`.
     fn is_text_const(&self, decl: DeclId) -> bool {
-        match &self.design.decl_data(decl).kind {
-            DeclKind::Const(ConstData { value: Some(value), .. }) => matches!(self.design.expr_node(*value).kind, ExprKind::IncludeStr(_)),
+        match &self.state.design.decl_data(decl).kind {
+            DeclKind::Const(ConstData { value: Some(value), .. }) => matches!(self.state.design.expr_node(*value).kind, ExprKind::IncludeStr(_)),
             _ => false,
         }
     }

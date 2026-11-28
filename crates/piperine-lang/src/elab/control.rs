@@ -19,18 +19,18 @@ impl Elaboration<'_, '_> {
     /// `let x;` (§1.7.5): a local with no value yet. The checker proves it is assigned before it is
     /// read, so the IR local starts as the zero of its type and is assignable. `false` after a diagnostic.
     pub(super) fn lower_deferred_let(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, pat: PatId, file: FileId, span: crate::msl::Span) -> bool {
-        let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind.clone() else {
+        let PatKind::Ident { binding, sub: None, .. } = self.state.design.pat_node(pat).kind.clone() else {
             self.refuse(file, span, ValueForm::DeferredLetWhosePatternIsNotName);
             return false;
         };
         let Some(local) = self.bind_local(scope, binding) else { return false };
-        let ty = scope.locals[local as usize].ty.clone();
-        let origin = self.locator.origin(file, span);
+        let ty = scope.values.locals[local as usize].ty.clone();
+        let origin = self.state.locator.origin(file, span);
         let Some(init) = self.zero(&ty, origin) else {
             self.refuse(file, span, ValueForm::DeferredLetOfTypeWithNoZero);
             return false;
         };
-        let slot = &mut scope.locals[local as usize];
+        let slot = &mut scope.values.locals[local as usize];
         slot.ty = ty;
         slot.mutable = true;
         out.push(self.stmt(Stmt::Let { local, init }));
@@ -39,16 +39,16 @@ impl Elaboration<'_, '_> {
 
     /// `place = value;` or `place op= value;` as a statement of `out`. `false` after a diagnostic.
     pub(super) fn lower_assignment(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> bool {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return false };
         let Some(place) = self.place_of(scope, lhs) else { return false };
         if self.place_type(scope, &place).is_none() {
-            self.refuse(scope.file, node.span, ValueForm::AssignmentToPlaceWhoseTypeHasNo);
+            self.refuse(scope.values.file, node.span, ValueForm::AssignmentToPlaceWhoseTypeHasNo);
             return false;
         }
         // `a &= b` on a library type is `a = a & b`: the call of the operator's `impl` function (Appendix H.10 rule 4)
         if op.is_some()
-            && let Some(Callee::Method(function)) = self.types.callee(expr)
+            && let Some(Callee::Method(function)) = self.state.types.callee(expr)
         {
             let origin = self.expr_origin(expr);
             let Some(value) = self.lower_method_call(scope, expr, function, lhs, &[rhs], origin) else { return false };
@@ -73,19 +73,19 @@ impl Elaboration<'_, '_> {
 
     /// The IR local an assignment's target names: a `let mut` or deferred local.
     pub(super) fn assigned_local(&mut self, scope: &Scope, target: ExprId) -> Option<u32> {
-        let node = self.design.expr_node(self.peel_parens(target)).clone();
+        let node = self.state.design.expr_node(self.peel_parens(target)).clone();
         let ExprKind::Path(path) = &node.kind else {
-            self.refuse(scope.file, node.span, ValueForm::AssignmentToFieldOrElement);
+            self.refuse(scope.values.file, node.span, ValueForm::AssignmentToFieldOrElement);
             return None;
         };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else {
-            self.refuse(scope.file, node.span, ValueForm::AssignmentToNameThatIsNotLocal);
+        let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else {
+            self.refuse(scope.values.file, node.span, ValueForm::AssignmentToNameThatIsNotLocal);
             return None;
         };
-        match scope.local_index.get(&decl) {
-            Some(index) if scope.locals[*index as usize].mutable => Some(*index),
+        match scope.values.local_index.get(&decl) {
+            Some(index) if scope.values.locals[*index as usize].mutable => Some(*index),
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::AssignmentToLocalThatIsNotMutable);
+                self.refuse(scope.values.file, node.span, ValueForm::AssignmentToLocalThatIsNotMutable);
                 None
             }
         }
@@ -97,7 +97,7 @@ impl Elaboration<'_, '_> {
 impl Elaboration<'_, '_> {
     /// `while cond { body }`, whose condition is read before every iteration: type `()`.
     pub(super) fn lower_while(&mut self, scope: &mut Scope, cond: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
-        if let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() {
+        if let ExprKind::Let { pat, expr } = self.state.design.expr_node(cond).kind.clone() {
             return self.lower_while_let(scope, pat, expr, body, origin);
         }
         let cond = self.lower_expr(scope, cond)?;
@@ -108,11 +108,11 @@ impl Elaboration<'_, '_> {
     /// The statements of a loop body, lowered with the frame of a loop whose value has type
     /// `value` pushed (`break` reads it).
     pub(super) fn lower_loop_body(&mut self, scope: &mut Scope, body: &BlockNode) -> Option<Vec<LoweredStmt>> {
-        scope.loops.push(LoopFrame);
-        let raised = scope.inline_exits.last().map(|frame| frame.flag_uses);
+        scope.values.loops.push(LoopFrame);
+        let raised = scope.values.inline_exits.last().map(|frame| frame.flag_uses);
         let lowered = self.lower_statements(scope, &body.stmts);
-        scope.loops.pop();
-        if let (Some(before), Some(frame)) = (raised, scope.inline_exits.last_mut()) {
+        scope.values.loops.pop();
+        if let (Some(before), Some(frame)) = (raised, scope.values.inline_exits.last_mut()) {
             frame.loop_flagged |= frame.flag_uses > before;
         }
         let (mut stmts, tail) = lowered?;
@@ -135,14 +135,14 @@ impl Elaboration<'_, '_> {
 
     /// `for k in low..high { body }` (or `..=`) over an integer range: a `ForRange`.
     pub(super) fn lower_for(&mut self, scope: &mut Scope, pat: PatId, iter: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
-        let node = self.design.expr_node(self.peel_parens(iter)).clone();
+        let node = self.state.design.expr_node(self.peel_parens(iter)).clone();
         // an array, an iterator chain or a named range runs as the loop of `iterators.rs`
         let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = node.kind else {
             return self.lower_sequence_for(scope, pat, iter, body, origin);
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
         let (variable, binding) = self.for_variable(scope, pat)?;
-        scope.locals[variable as usize].ty = self.type_of(low);
+        scope.values.locals[variable as usize].ty = self.type_of(low);
         let copy = self.assignable_copy(scope, binding, variable);
         let mut body = self.lower_loop_body(scope, body)?;
         body.splice(0..0, copy);
@@ -152,15 +152,15 @@ impl Elaboration<'_, '_> {
     /// The local the pattern of a `for` binds, never assignable (the loop writes it), and the name
     /// it binds: a name, or a fresh local for `_`.
     fn for_variable(&mut self, scope: &mut Scope, pat: PatId) -> Option<(u32, Option<DeclId>)> {
-        let node = self.design.pat_node(pat).clone();
+        let node = self.state.design.pat_node(pat).clone();
         match node.kind {
             PatKind::Ident { binding, sub: None, .. } => Some((self.bind_local_as(scope, binding, false)?, Some(binding))),
             PatKind::Wild => {
-                scope.locals.push(Local { name: "_".to_string(), ty: ValueType::Unit, mutable: false });
-                Some((scope.locals.len() as u32 - 1, None))
+                scope.values.locals.push(Local { name: "_".to_string(), ty: ValueType::Unit, mutable: false });
+                Some((scope.values.locals.len() as u32 - 1, None))
             }
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::ForPatternThatIsNotName);
+                self.refuse(scope.values.file, node.span, ValueForm::ForPatternThatIsNotName);
                 None
             }
         }
@@ -168,8 +168,8 @@ impl Elaboration<'_, '_> {
 
     /// `break` or `break value`: leaves the innermost loop.
     pub(super) fn lower_break(&mut self, scope: &mut Scope, value: Option<ExprId>, span: crate::msl::Span, origin: Origin) -> Option<LoweredExpr> {
-        if scope.loops.is_empty() {
-            self.refuse(scope.file, span, ValueForm::BreakOutsideLoop);
+        if scope.values.loops.is_empty() {
+            self.refuse(scope.values.file, span, ValueForm::BreakOutsideLoop);
             return None;
         }
         let value = match value {

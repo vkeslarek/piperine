@@ -43,16 +43,16 @@ pub(super) struct Environment {
 impl Environment {
     /// The environment `scope` has now.
     pub(super) fn of(scope: &Scope) -> Environment {
-        Environment { values: scope.values.clone(), options: scope.option_values.clone(), texts: scope.texts.clone(), handles: scope.handles.clone(), unrolled: scope.unrolled.clone() }
+        Environment { values: scope.analog.values.clone(), options: scope.analog.option_values.clone(), texts: scope.digital.texts.clone(), handles: scope.digital.handles.clone(), unrolled: scope.values.unrolled.clone() }
     }
 
     /// Puts this environment back in `scope`.
     pub(super) fn restore(self, scope: &mut Scope) {
-        scope.values = self.values;
-        scope.option_values = self.options;
-        scope.texts = self.texts;
-        scope.handles = self.handles;
-        scope.unrolled = self.unrolled;
+        scope.analog.values = self.values;
+        scope.analog.option_values = self.options;
+        scope.digital.texts = self.texts;
+        scope.digital.handles = self.handles;
+        scope.values.unrolled = self.unrolled;
     }
 }
 
@@ -73,22 +73,22 @@ impl Argument {
     pub(super) fn bind(self, scope: &mut Scope) {
         match self {
             Argument::Value { param, value, folded } => {
-                scope.values.insert(param, value);
+                scope.analog.values.insert(param, value);
                 match folded {
-                    Some(constant) => scope.unrolled.bind(param, constant),
+                    Some(constant) => scope.values.unrolled.bind(param, constant),
                     None => {
-                        scope.unrolled.unbind(param);
+                        scope.values.unrolled.unbind(param);
                     }
                 }
             }
             Argument::Option { param, flag, payload } => {
-                scope.option_values.insert(param, (flag, payload));
+                scope.analog.option_values.insert(param, (flag, payload));
             }
             Argument::Text { param, text } => {
-                scope.texts.insert(param, text);
+                scope.digital.texts.insert(param, text);
             }
             Argument::Handle { param, target } => {
-                scope.handles.insert(param, target);
+                scope.digital.handles.insert(param, target);
             }
         }
     }
@@ -99,16 +99,16 @@ impl Elaboration<'_, '_> {
     /// probe, a core primitive, an `extern` function, a module) and is lowered as it always is. `Some(None)` after a
     /// diagnostic.
     pub(super) fn expand_function_call(&mut self, scope: &mut Scope, call: ExprId) -> Option<Option<LoweredExpr>> {
-        let Some(Callee::Function(function)) = self.types.callee(call) else { return None };
-        if matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
+        let Some(Callee::Function(function)) = self.state.types.callee(call) else { return None };
+        if matches!(&self.state.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some()) {
             return None;
         }
-        let Some(binding) = self.types.binding(call).map(<[_]>::to_vec) else {
-            self.refuse(scope.file, self.design.expr_node(call).span, StructureForm::CallWhoseArgumentsTypeCheckerDidNot);
+        let Some(binding) = self.state.types.binding(call).map(<[_]>::to_vec) else {
+            self.refuse(scope.values.file, self.state.design.expr_node(call).span, StructureForm::CallWhoseArgumentsTypeCheckerDidNot);
             return Some(None);
         };
         // a generic `fn` runs for the arguments the checker read from the call
-        if self.design.decl_data(function).generics_span.is_some() {
+        if self.state.design.decl_data(function).generics_span.is_some() {
             let Some(instance) = self.concrete_instance(call) else { return Some(None) };
             let substitution = self.instance_substitution(instance.item, &instance.arguments);
             return Some(self.expand_under(scope, call, instance.item, binding, Some(substitution)));
@@ -126,10 +126,10 @@ impl Elaboration<'_, '_> {
 
     /// `expand` under the substitution of the instance, when there is one.
     fn expand_under(&mut self, scope: &mut Scope, call: ExprId, function: DeclId, slots: Vec<Option<ExprId>>, substitution: Option<Substitution>) -> Option<LoweredExpr> {
-        let outer = substitution.map(|substitution| self.consts.set_substitution(substitution));
+        let outer = substitution.map(|substitution| self.state.consts.set_substitution(substitution));
         let expanded = self.expand(scope, call, function, &slots);
         if let Some(outer) = outer {
-            self.consts.set_substitution(outer);
+            self.state.consts.set_substitution(outer);
         }
         expanded
     }
@@ -137,15 +137,15 @@ impl Elaboration<'_, '_> {
     /// The call `call` of `function` with the argument `slots` (one per parameter, `None` for one left out),
     /// expanded: its body run over the environment its parameters make (`symbolic.rs`). `None` after a diagnostic.
     fn expand(&mut self, scope: &mut Scope, call: ExprId, function: DeclId, slots: &[Option<ExprId>]) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(call).span;
-        let data = self.design.decl_data(function).clone();
+        let span = self.state.design.expr_node(call).span;
+        let data = self.state.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let Some(body) = f.body.clone() else {
-            self.refuse(scope.file, span, StructureForm::CallOfFunctionWithNoBodyInside);
+            self.refuse(scope.values.file, span, StructureForm::CallOfFunctionWithNoBodyInside);
             return None;
         };
-        if self.types.emits(function).is_some() {
-            self.refuse(scope.file, span, StructureForm::CallOfFunctionThatEmitsInsideDdx);
+        if self.state.types.emits(function).is_some() {
+            self.refuse(scope.values.file, span, StructureForm::CallOfFunctionThatEmitsInsideDdx);
             return None;
         }
         if !self.may_expand(scope, function, span) {
@@ -156,12 +156,12 @@ impl Elaboration<'_, '_> {
         for argument in arguments {
             argument.bind(scope);
         }
-        if scope.expanding.is_empty() {
-            scope.forks = 0;
+        if scope.analog.expanding.is_empty() {
+            scope.analog.forks = 0;
         }
-        scope.expanding.push(Expansion::begin(function, scope.decisions));
+        scope.analog.expanding.push(Expansion::begin(function, scope.values.decisions));
         let value = crate::stack::Stack::deep(|| self.run_body(scope, &body, span));
-        scope.expanding.pop();
+        scope.analog.expanding.pop();
         before.restore(scope);
         value
     }
@@ -169,11 +169,11 @@ impl Elaboration<'_, '_> {
     /// Whether the call of `function` may be expanded one level deeper: a recursion is followed to 1 024 calls and
     /// while the decisions it hangs on fold (`E0126` naming the function otherwise, §3 rule 12).
     pub(super) fn may_expand(&mut self, scope: &Scope, function: DeclId, span: Span) -> bool {
-        if scope.expanding.len() >= DEPTH {
+        if scope.analog.expanding.len() >= DEPTH {
             self.unfoldable_recursion(scope, function, span, "it is deeper than 1 024 calls");
             return false;
         }
-        if scope.expanding.iter().any(|open| open.hangs_on_unfolded(function, scope.decisions)) {
+        if scope.analog.expanding.iter().any(|open| open.hangs_on_unfolded(function, scope.values.decisions)) {
             self.unfoldable_recursion(scope, function, span, "a decision it hangs on does not fold");
             return false;
         }
@@ -182,8 +182,8 @@ impl Elaboration<'_, '_> {
 
     /// Each parameter of `function` with its argument evaluated where the call stands. `None` after a diagnostic.
     pub(super) fn expanded_arguments(&mut self, scope: &mut Scope, call: ExprId, children: &[DeclId], slots: &[Option<ExprId>]) -> Option<Vec<Argument>> {
-        let span = self.design.expr_node(call).span;
-        let params: Vec<DeclId> = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        let span = self.state.design.expr_node(call).span;
+        let params: Vec<DeclId> = children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         let mut arguments = Vec::new();
         for (param, slot) in params.iter().zip(slots) {
             let argument = match (self.typed_local(*param), *slot) {
@@ -192,14 +192,14 @@ impl Elaboration<'_, '_> {
                     Argument::Option { param: *param, flag, payload }
                 }
                 (_, None) => {
-                    self.refuse(scope.file, span, StructureForm::CallThatLeavesOutArgumentInsideDdx);
+                    self.refuse(scope.values.file, span, StructureForm::CallThatLeavesOutArgumentInsideDdx);
                     return None;
                 }
-                (_, Some(arg)) if self.types.handle(*param) => Argument::Handle { param: *param, target: self.handle_argument_target(scope, arg) },
+                (_, Some(arg)) if self.state.types.handle(*param) => Argument::Handle { param: *param, target: self.handle_argument_target(scope, arg) },
                 (Some(Ty::Str), Some(arg)) => match self.text_of(scope, arg) {
                     Some(text) => Argument::Text { param: *param, text },
                     None => {
-                        self.refuse(scope.file, self.design.expr_node(arg).span, StructureForm::StrThatIsNotTextAfterExpansion);
+                        self.refuse(scope.values.file, self.state.design.expr_node(arg).span, StructureForm::StrThatIsNotTextAfterExpansion);
                         return None;
                     }
                 },
@@ -216,8 +216,8 @@ impl Elaboration<'_, '_> {
     /// The constant `expr` folds to over the frame's params and the names an expansion has bound; `None` when it is no
     /// scalar constant here.
     pub(super) fn fold_scalar(&mut self, scope: &Scope, expr: ExprId) -> Option<Constant> {
-        let bindings = self.frame_bindings(scope.frame).overlaid(&scope.unrolled);
-        match self.consts.value(expr, &bindings) {
+        let bindings = self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled);
+        match self.state.consts.value(expr, &bindings) {
             Ok(constant @ (Constant::Int(_) | Constant::Bool(_) | Constant::Real(_))) => Some(constant),
             _ => None,
         }

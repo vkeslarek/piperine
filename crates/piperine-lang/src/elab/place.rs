@@ -64,13 +64,13 @@ struct Parent<'a> {
 impl Elaboration<'_, '_> {
     /// The top instance and, below it, the whole tree. `None` after a diagnostic.
     pub(super) fn place_top(&mut self, top: DeclId) -> Option<InstanceId> {
-        let data = self.design.decl_data(top).clone();
+        let data = self.state.design.decl_data(top).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let span = data.name.as_ref().map_or(data.span, |n| n.span);
-        let placing = Placing { module: top, instance: None, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.locator.decl(top) };
+        let placing = Placing { module: top, instance: None, path: name.clone(), name, parent: None, ports: Vec::new(), carrier_ports: Vec::new(), given: Vec::new(), file: data.file, span, origin: self.state.locator.decl(top) };
         let path = placing.path.clone();
         let placed = self.place(placing, &mut Vec::new())?;
-        HostSources::new(&mut self.ir).place(placed.instance, &path, &placed.host_ports);
+        HostSources::new(&mut self.state.builder).place(placed.instance, &path, &placed.host_ports);
         Some(placed.instance)
     }
 
@@ -88,13 +88,13 @@ impl Elaboration<'_, '_> {
         // generation that the params bring to an end (§8.2.7), bounded by the depth of D7
         let key = self.body_key(placing.module, placing.instance.as_ref(), &bindings)?;
         if stack.contains(&key) {
-            let module = self.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+            let module = self.state.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
             let message = format!("module `{module}` places itself (through `{}`)", placing.path);
             self.report(placing.file, Diagnostic::new("E0341", message, placing.span, "recursive placement"));
             return None;
         }
         let plan = self.body_plan(placing.module, placing.instance.as_ref(), &bindings)?;
-        let declared_by = self.ir.next_instance_id();
+        let declared_by = self.state.builder.next_instance_id();
         let mut ports = placing.ports.iter().copied();
         let mut nodes = Vec::new();
         let mut host_ports = Vec::new();
@@ -105,29 +105,29 @@ impl Elaboration<'_, '_> {
                 NodeRole::Port => match ports.next() {
                     Some(bound) => nodes.push(bound),
                     None if placing.parent.is_none() => {
-                        let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                        let id = self.state.builder.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                         host_ports.push(HostPort { name: node.name.clone(), node: id, nature: node.nature, origin: node.origin.clone() });
                         nodes.push(NodeRef::Node(id));
                     }
                     None => nodes.push(NodeRef::Ground),
                 },
                 NodeRole::Signal => {
-                    let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                    let id = self.state.builder.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
                 }
                 // The child's node as this body names it (`p.sn`): made before any child is placed, so a placement connects to
                 // it whatever the order of the two (§8.2), and made one node with the child's own once the child is placed.
                 NodeRole::Reached => {
-                    let id = self.ir.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
+                    let id = self.state.builder.node(NodeSpec { path: format!("{}.{}", placing.path, node.name), nature: node.nature, declared_by, init: node.init, origin: node.origin.clone() });
                     nodes.push(NodeRef::Node(id));
                 }
             }
         }
         self.merge_instance_nodes(&plan, &nodes);
         let nets = self.nets(&placing, &plan, declared_by);
-        let instance = self.ir.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
+        let instance = self.state.builder.instance(InstanceSpec { path: placing.path.clone(), name: placing.name, body: plan.body, parent: placing.parent, nodes: nodes.clone(), params, origin: placing.origin });
         if !nets.is_empty() {
-            if let Err(error) = self.ir.bind_nets(instance, nets.clone()) {
+            if let Err(error) = self.state.builder.bind_nets(instance, nets.clone()) {
                 self.internal_error(&error.to_string());
             }
         }
@@ -139,7 +139,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             let host_port = placing.parent.is_none() && (resolved.carrier as usize) < plan.port_carriers;
-            self.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
+            self.state.digital.resolvers.record(ResolvedUse { instance, path: placing.path.clone(), net: nets[resolved.carrier as usize], plan: resolved.clone(), value: carrier.ty.clone(), driven: driven.clone(), host_port });
         }
         stack.push(key);
         let reached = self.place_children(&plan, instance, &placing.path, &bindings, (&nodes, &nets), stack);
@@ -178,17 +178,17 @@ impl Elaboration<'_, '_> {
             match reach.item {
                 ReachedItem::Node { node, child_node } => {
                     if let Some(own) = placed.nodes.get(child_node as usize) {
-                        if let Err(error) = self.ir.bind_reached_node(instance, node, *own) {
+                        if let Err(error) = self.state.builder.bind_reached_node(instance, node, *own) {
                             self.internal_error(&error.to_string());
                         }
                         if let Some(NodeRef::Node(standing)) = nodes.get(node as usize) {
-                            self.ir.merge_nodes(*own, *standing);
+                            self.state.builder.merge_nodes(*own, *standing);
                         }
                     }
                 }
                 ReachedItem::Carrier { carrier, child_carrier } => {
                     if let Some(own) = placed.nets.get(child_carrier as usize) {
-                        if let Err(error) = self.ir.bind_reached_net(instance, carrier, *own) {
+                        if let Err(error) = self.state.builder.bind_reached_net(instance, carrier, *own) {
                             self.internal_error(&error.to_string());
                         }
                         self.record_reached_drive(plan, path, instance, carrier, *own);
@@ -205,7 +205,7 @@ impl Elaboration<'_, '_> {
         let Some(resolved) = plan.resolved.iter().find(|resolved| resolved.carrier == carrier) else { return };
         let carried = &plan.carriers[carrier as usize];
         let CarrierRole::Resolved { driven, .. } = &carried.role else { return };
-        self.resolvers.record(ResolvedUse { instance, path: path.to_string(), net, plan: resolved.clone(), value: carried.ty.clone(), driven: driven.clone(), host_port: false });
+        self.state.digital.resolvers.record(ResolvedUse { instance, path: path.to_string(), net, plan: resolved.clone(), value: carried.ty.clone(), driven: driven.clone(), host_port: false });
     }
 
     /// Makes the two ends of each branch the body merges one node in the instance whose nodes are
@@ -217,8 +217,8 @@ impl Elaboration<'_, '_> {
         };
         for (plus, minus) in &plan.merges {
             match (end(plus), end(minus)) {
-                (kept, NodeRef::Node(merged)) => self.ir.merge_nodes(kept, merged),
-                (NodeRef::Node(merged), kept @ NodeRef::Ground) => self.ir.merge_nodes(kept, merged),
+                (kept, NodeRef::Node(merged)) => self.state.builder.merge_nodes(kept, merged),
+                (NodeRef::Node(merged), kept @ NodeRef::Ground) => self.state.builder.merge_nodes(kept, merged),
                 _ => {}
             }
         }
@@ -247,9 +247,9 @@ impl Elaboration<'_, '_> {
             let net = match given {
                 Some(net) => net,
                 None => {
-                    let made = self.ir.net(NetSpec { path: at.clone(), ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() });
+                    let made = self.state.builder.net(NetSpec { path: at.clone(), ty: carrier.ty.clone(), declared_by, init: carrier.init, origin: carrier.origin.clone() });
                     if matches!(carrier.role, CarrierRole::Resolved { .. }) && !reached {
-                        self.resolvers.declare(made, DeclaredNet { declared_by, path: at, origin: carrier.origin.clone() });
+                        self.state.digital.resolvers.declare(made, DeclaredNet { declared_by, path: at, origin: carrier.origin.clone() });
                     }
                     made
                 }
@@ -263,8 +263,8 @@ impl Elaboration<'_, '_> {
     /// param value that reads the parent's params evaluated over the parent's bound values
     /// `bindings` (DIG-09 AC 11).
     fn place_child(&mut self, child: &super::children::ChildPlan, parent: &Parent, stack: &mut Vec<BodyKey>) -> Option<Placed> {
-        let node = self.design.expr_node(child.call).clone();
-        let file = self.design.decl_data(node.owner).file;
+        let node = self.state.design.expr_node(child.call).clone();
+        let file = self.state.design.decl_data(node.owner).file;
         let ports = child
             .terminals
             .iter()
@@ -301,7 +301,7 @@ impl Elaboration<'_, '_> {
             given,
             file,
             span: node.span,
-            origin: self.locator.origin(file, node.span),
+            origin: self.state.locator.origin(file, node.span),
         };
         self.place(placing, stack)
     }
@@ -342,8 +342,8 @@ impl Elaboration<'_, '_> {
         }
         for (index, param) in plans.iter().enumerate() {
             let Some(cond) = param.where_ else { continue };
-            let at = placing.given.iter().find(|(i, _, _)| *i as usize == index).map(|(_, _, expr)| self.design.expr_node(*expr).span).unwrap_or(placing.span);
-            match self.consts.value(cond, &bindings) {
+            let at = placing.given.iter().find(|(i, _, _)| *i as usize == index).map(|(_, _, expr)| self.state.design.expr_node(*expr).span).unwrap_or(placing.span);
+            match self.state.consts.value(cond, &bindings) {
                 Ok(Constant::Bool(true)) => {}
                 Ok(Constant::Bool(false)) => {
                     let message = format!("the `where` of the param `{}.{}` is false for the value {}", placing.path, param.name, values[index]);
@@ -362,12 +362,12 @@ impl Elaboration<'_, '_> {
         }
         // the `where` of an instance of a generic module is discharged when its body is asked for (`generic_bodies.rs`)
         if placing.instance.is_none()
-            && let DeclKind::Module(m) = &self.design.decl_data(placing.module).kind
+            && let DeclKind::Module(m) = &self.state.design.decl_data(placing.module).kind
             && let Some(cond) = m.where_
         {
-            match self.consts.value(cond, &bindings) {
+            match self.state.consts.value(cond, &bindings) {
                 Ok(Constant::Bool(false)) => {
-                    let message = format!("the `where` of module `{}` is false for the instance `{}`", self.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()), placing.path);
+                    let message = format!("the `where` of module `{}` is false for the instance `{}`", self.state.design.decl_data(placing.module).name.as_ref().map_or("", |n| n.text.as_str()), placing.path);
                     self.report(placing.file, Diagnostic::new("E0317", message, placing.span, "`where` is false"));
                     ok = false;
                 }
@@ -384,10 +384,10 @@ impl Elaboration<'_, '_> {
     /// The default of `param` at `placing`, folded over the values its earlier params take there (`bound`) under the arguments of
     /// the instance of a generic module it places. `Err` after the diagnostic of a default that does not fold.
     fn default_of_instance(&mut self, placing: &Placing, param: &ParamPlan, bound: &Bindings) -> Result<Option<Constant>, ()> {
-        let outer = placing.instance.as_ref().map(|instance| self.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
+        let outer = placing.instance.as_ref().map(|instance| self.state.consts.set_substitution(self.instance_substitution(instance.item, &instance.arguments)));
         let folded = self.default_at(param, bound);
         if let Some(outer) = outer {
-            self.consts.set_substitution(outer);
+            self.state.consts.set_substitution(outer);
         }
         folded.map_err(|fault| self.const_fault(&fault, "a param default"))
     }

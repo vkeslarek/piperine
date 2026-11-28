@@ -62,8 +62,8 @@ impl PatternTest {
 impl Elaboration<'_, '_> {
     /// The test pattern `pat` makes of `subject`, and the names it binds. `None` after a diagnostic.
     pub(super) fn test_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId) -> Option<PatternTest> {
-        let node = self.design.pat_node(pat).clone();
-        let origin = self.locator.origin(scope.file, node.span);
+        let node = self.state.design.pat_node(pat).clone();
+        let origin = self.state.locator.origin(scope.values.file, node.span);
         if let PatKind::Or(alternatives) = &node.kind {
             return self.test_alternatives(scope, subject, alternatives, origin);
         }
@@ -91,7 +91,7 @@ impl Elaboration<'_, '_> {
                     ValueType::Enum(_) => self.test_variant_pattern(scope, subject, pat, &base, origin),
                     ValueType::Tuple(_) | ValueType::Struct(_) => self.test_aggregate_pattern(scope, subject, pat, &base, origin),
                     _ => {
-                        self.refuse(scope.file, node.span, PatternForm::PatternWithFieldsOverValueThatIs);
+                        self.refuse(scope.values.file, node.span, PatternForm::PatternWithFieldsOverValueThatIs);
                         None
                     }
                 }
@@ -116,12 +116,12 @@ impl Elaboration<'_, '_> {
                 }
             }
             PatKind::Path(path) => {
-                let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+                let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 self.test_named_value(scope, subject, res, origin)
             }
             PatKind::Ident { res: res @ (Resolution::Decl(_) | Resolution::Builtin(_)), sub: None, .. } => self.test_named_value(scope, subject, *res, origin),
             _ => {
-                self.refuse(scope.file, node.span, PatternForm::ThisPattern);
+                self.refuse(scope.values.file, node.span, PatternForm::ThisPattern);
                 None
             }
         }
@@ -133,8 +133,8 @@ impl Elaboration<'_, '_> {
         let base = self.type_of(read);
         // An enum value is tested for its variant.
         if let (Resolution::Decl(variant), ValueType::Enum(_)) = (res, &base) {
-            if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) {
-                let position = EnumLayout::variant_tag(self.design, variant)? as u32;
+            if matches!(self.state.design.decl_data(variant).kind, DeclKind::Variant(_)) {
+                let position = EnumLayout::variant_tag(self.state.design, variant)? as u32;
                 return Some(PatternTest::when(self.emit(Expr::IsVariant { expr: read, variant: position }, ValueType::Bool, origin)));
             }
         }
@@ -226,11 +226,11 @@ impl Elaboration<'_, '_> {
     /// The test of a pattern over an `Option` subject: `None` is `!is`; `Some(p)` is `is` and `p`
     /// over the payload, whose names it binds.
     fn option_test(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId) -> Option<PatternTest> {
-        let node = self.design.pat_node(pat).clone();
-        let origin = self.locator.origin(scope.file, node.span);
+        let node = self.state.design.pat_node(pat).clone();
+        let origin = self.state.locator.origin(scope.values.file, node.span);
         let present = self.read_pair(scope, subject, false, origin.clone())?;
         let res = match &node.kind {
-            PatKind::Path(path) => self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
+            PatKind::Path(path) => self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res),
             PatKind::Ident { res, .. } => *res,
             _ => Resolution::Unresolved,
         };
@@ -245,7 +245,7 @@ impl Elaboration<'_, '_> {
             _ => {}
         }
         let PatKind::TupleStruct { pats, .. } = &node.kind else {
-            self.refuse(scope.file, node.span, PatternForm::PatternOfOption);
+            self.refuse(scope.values.file, node.span, PatternForm::PatternOfOption);
             return None;
         };
         let [inner] = pats.as_slice() else { return None };
@@ -279,17 +279,17 @@ impl Elaboration<'_, '_> {
     /// `Some(p)` over an `Option` in code with no local (a drive): `_` or a value, tested against
     /// the payload read again; a name has no local to bind.
     fn reread_payload_test(&mut self, scope: &mut Scope, subject: &Subject, present: LoweredExpr, inner: PatId) -> Option<PatternTest> {
-        let node = self.design.pat_node(inner).clone();
-        let origin = self.locator.origin(scope.file, node.span);
+        let node = self.state.design.pat_node(inner).clone();
+        let origin = self.state.locator.origin(scope.values.file, node.span);
         let value = match &node.kind {
             PatKind::Wild => return Some(PatternTest::when(present)),
             PatKind::Ident { res: Resolution::Unresolved, sub: None, .. } => {
-                self.refuse(scope.file, node.span, PatternForm::BindingInsideSomeInDefinition);
+                self.refuse(scope.values.file, node.span, PatternForm::BindingInsideSomeInDefinition);
                 return None;
             }
             PatKind::Lit(expr) => self.lower_expr(scope, *expr)?,
             PatKind::Path(path) => {
-                let res = self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+                let res = self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 let read = self.read_pair(scope, subject, true, origin.clone())?;
                 let base = self.type_of(read);
                 self.path_value(res, &base, origin.clone())?
@@ -300,7 +300,7 @@ impl Elaboration<'_, '_> {
                 self.path_value(*res, &base, origin.clone())?
             }
             _ => {
-                self.refuse(scope.file, node.span, PatternForm::PatternInsideSomeInDefinition);
+                self.refuse(scope.values.file, node.span, PatternForm::PatternInsideSomeInDefinition);
                 return None;
             }
         };
@@ -312,12 +312,12 @@ impl Elaboration<'_, '_> {
     /// The value a path pattern names: a unit variant or a constant, of the subject's type.
     fn path_value(&mut self, res: Resolution, base: &ValueType, origin: Origin) -> Option<LoweredExpr> {
         match res {
-            Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Variant(_)) => {
+            Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Variant(_)) => {
                 let ValueType::Enum(id) = base else { return None };
-                let position = EnumLayout::variant_tag(self.design, d)? as u32;
+                let position = EnumLayout::variant_tag(self.state.design, d)? as u32;
                 Some(self.emit(Expr::VariantOf { ty: *id, variant: position, fields: Vec::new() }, base.clone(), origin))
             }
-            Resolution::Decl(d) if matches!(self.design.decl_data(d).kind, DeclKind::Const(_)) => match self.consts.constant(d) {
+            Resolution::Decl(d) if matches!(self.state.design.decl_data(d).kind, DeclKind::Const(_)) => match self.state.consts.constant(d) {
                 Ok(value) => Some(self.constant_expr(value, base.clone(), origin)),
                 Err(fault) => {
                     self.const_fault(&fault, "a `const` pattern");
@@ -334,7 +334,7 @@ impl Elaboration<'_, '_> {
 
     /// The value of a `bool` literal pattern; `None` for any other literal.
     fn bool_literal(&self, expr: ExprId) -> Option<bool> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Lit(lit) => match lit.kind {
                 LitKind::Bool(b) => Some(b),
                 _ => None,
@@ -350,12 +350,12 @@ impl Elaboration<'_, '_> {
     /// into a fresh assignable local at the head of the loop body, which the name then stands
     /// for, so the loop's own variable is never written. `None` when the body does not assign it.
     pub(super) fn assignable_copy(&mut self, scope: &mut Scope, binding: Option<DeclId>, variable: u32) -> Option<LoweredStmt> {
-        let binding = binding.filter(|binding| self.types.is_assigned(*binding))?;
-        let held = scope.locals[variable as usize].clone();
-        let copy = scope.locals.len() as u32;
-        scope.locals.push(Local { name: held.name, ty: held.ty.clone(), mutable: true });
-        scope.local_index.insert(binding, copy);
-        let origin = self.locator.origin(scope.file, self.design.decl_data(binding).span);
+        let binding = binding.filter(|binding| self.state.types.is_assigned(*binding))?;
+        let held = scope.values.locals[variable as usize].clone();
+        let copy = scope.values.locals.len() as u32;
+        scope.values.locals.push(Local { name: held.name, ty: held.ty.clone(), mutable: true });
+        scope.values.local_index.insert(binding, copy);
+        let origin = self.state.locator.origin(scope.values.file, self.state.design.decl_data(binding).span);
         let init = self.emit(Expr::Local(variable), held.ty, origin);
         Some(self.stmt(Stmt::Let { local: copy, init }))
     }
@@ -363,9 +363,9 @@ impl Elaboration<'_, '_> {
     /// A local for each name of `bindings`, holding the type of its value: the pairs of (local,
     /// value) that `binding_lets` writes where the names are read. `None` after a diagnostic.
     pub(super) fn bind_names(&mut self, scope: &mut Scope, bindings: &[(DeclId, LoweredExpr)]) -> Option<Vec<(u32, LoweredExpr)>> {
-        if scope.no_locals && !bindings.is_empty() {
-            let span = self.design.decl_data(bindings[0].0).span;
-            self.refuse(scope.file, span, PatternForm::NameBoundByPatternInDefinition);
+        if scope.digital.no_locals && !bindings.is_empty() {
+            let span = self.state.design.decl_data(bindings[0].0).span;
+            self.refuse(scope.values.file, span, PatternForm::NameBoundByPatternInDefinition);
             return None;
         }
         let mut names = Vec::with_capacity(bindings.len());
@@ -375,7 +375,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             let local = self.bind_local(scope, *decl)?;
-            scope.locals[local as usize].ty = self.type_of(*value);
+            scope.values.locals[local as usize].ty = self.type_of(*value);
             names.push((local, *value));
         }
         Some(names)
@@ -384,20 +384,20 @@ impl Elaboration<'_, '_> {
     /// The name `decl` of an `Option` that `packed` holds: its flag to the local `name.is` and its
     /// payload to `name.val`, as `let` binds one (D8), and the two reads that fill them.
     fn bind_option_name(&mut self, scope: &mut Scope, decl: DeclId, packed: LoweredExpr) -> Option<Vec<(u32, LoweredExpr)>> {
-        let data = self.design.decl_data(decl);
+        let data = self.state.design.decl_data(decl);
         let (name, span) = (data.name.as_ref().map_or_else(String::new, |n| n.text.clone()), data.span);
-        if self.types.is_assigned(decl) {
-            self.refuse(scope.file, span, PatternForm::AssignmentToLocalOfTypeOption);
+        if self.state.types.is_assigned(decl) {
+            self.refuse(scope.values.file, span, PatternForm::AssignmentToLocalOfTypeOption);
             return None;
         }
         let ValueType::Option(payload) = self.type_of(packed) else { return None };
-        let origin = self.locator.origin(scope.file, span);
+        let origin = self.state.locator.origin(scope.values.file, span);
         let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());
         let val = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Value }, *payload, origin);
-        let first = scope.locals.len() as u32;
-        scope.locals.push(Local { name: format!("{name}.is"), ty: ValueType::Bool, mutable: false });
-        scope.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(val), mutable: false });
-        scope.options.insert(decl, (first, first + 1));
+        let first = scope.values.locals.len() as u32;
+        scope.values.locals.push(Local { name: format!("{name}.is"), ty: ValueType::Bool, mutable: false });
+        scope.values.locals.push(Local { name: format!("{name}.val"), ty: self.type_of(val), mutable: false });
+        scope.values.options.insert(decl, (first, first + 1));
         Some(vec![(first, is), (first + 1, val)])
     }
 
@@ -415,7 +415,7 @@ impl Elaboration<'_, '_> {
     /// expressions of its pair.
     pub(super) fn subject_of(&mut self, scope: &mut Scope, scrutinee: ExprId, share_option: bool) -> Option<(Subject, Vec<LoweredStmt>)> {
         let option = matches!(self.typed(scrutinee), Some(Ty::Option(_)));
-        if option && scope.no_locals {
+        if option && scope.digital.no_locals {
             return Some((Subject::RereadPair(scrutinee), Vec::new()));
         }
         if option && share_option {
@@ -424,29 +424,29 @@ impl Elaboration<'_, '_> {
         }
         if option {
             let pair = self.lower_option(scope, scrutinee)?;
-            let k = scope.locals.iter().filter(|l| l.name.starts_with("match$") && !l.name.ends_with(".val")).count();
+            let k = scope.values.locals.iter().filter(|l| l.name.starts_with("match$") && !l.name.ends_with(".val")).count();
             let (is_ty, val_ty) = (self.type_of(pair.is), self.type_of(pair.val));
-            let is = scope.locals.len() as u32;
-            scope.locals.push(Local { name: format!("match${k}.is"), ty: is_ty.clone(), mutable: false });
-            scope.locals.push(Local { name: format!("match${k}.val"), ty: val_ty.clone(), mutable: false });
+            let is = scope.values.locals.len() as u32;
+            scope.values.locals.push(Local { name: format!("match${k}.is"), ty: is_ty.clone(), mutable: false });
+            scope.values.locals.push(Local { name: format!("match${k}.val"), ty: val_ty.clone(), mutable: false });
             let first = self.stmt(Stmt::Let { local: is, init: pair.is });
             let second = self.stmt(Stmt::Let { local: is + 1, init: pair.val });
             return Some((Subject::Pair { is: (is, is_ty), val: (is + 1, val_ty) }, vec![first, second]));
         }
-        if scope.no_locals || self.simple_read(scrutinee) {
+        if scope.digital.no_locals || self.simple_read(scrutinee) {
             return Some((Subject::Reread(scrutinee), Vec::new()));
         }
         let lowered = self.lower_expr(scope, scrutinee)?;
         let ty = self.type_of(lowered);
-        let index = scope.locals.len() as u32;
-        let name = format!("match${}", scope.locals.iter().filter(|l| l.name.starts_with("match$")).count());
-        scope.locals.push(Local { name, ty: ty.clone(), mutable: false });
+        let index = scope.values.locals.len() as u32;
+        let name = format!("match${}", scope.values.locals.iter().filter(|l| l.name.starts_with("match$")).count());
+        scope.values.locals.push(Local { name, ty: ty.clone(), mutable: false });
         Some((Subject::Local(index, ty), vec![self.stmt(Stmt::Let { local: index, init: lowered })]))
     }
 
     /// The block `stmts` under the `lets` that bind the names of its pattern, as one expression.
     fn bound_block(&mut self, scope: &mut Scope, lets: Vec<LoweredStmt>, stmts: &[StmtId], span: Span) -> Option<LoweredExpr> {
-        let origin = self.locator.origin(scope.file, span);
+        let origin = self.state.locator.origin(scope.values.file, span);
         let (rest, result) = self.lower_statements(scope, stmts)?;
         let mut lowered = lets;
         lowered.extend(rest);
@@ -461,14 +461,14 @@ impl Elaboration<'_, '_> {
     /// that is more than its tail expression.
     fn bound_half(&mut self, scope: &mut Scope, lets: Vec<LoweredStmt>, stmts: &[StmtId], span: Span, half: LevelPart) -> Option<LoweredExpr> {
         let [stmt] = stmts else {
-            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
+            self.refuse(scope.values.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
-        let StmtKind::Expr { expr, semi: false } = self.design.stmt_node(*stmt).kind.clone() else {
-            self.refuse(scope.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
+        let StmtKind::Expr { expr, semi: false } = self.state.design.stmt_node(*stmt).kind.clone() else {
+            self.refuse(scope.values.file, span, PatternForm::IfLetOfOptionValuesWhoseBlock);
             return None;
         };
-        let origin = self.locator.origin(scope.file, span);
+        let origin = self.state.locator.origin(scope.values.file, span);
         let value = self.lower_arm_value(scope, expr, Some(half))?;
         let ty = self.type_of(value);
         let block = self.emit(Expr::Block { stmts: lets.clone(), value: Some(value) }, ty, origin);
@@ -486,27 +486,27 @@ impl Elaboration<'_, '_> {
 
     /// `if let p = e { A } else { B }`: `{ let s = e; if test(s, p) { let names; A } else { B } }`.
     pub(super) fn lower_if_let(&mut self, scope: &mut Scope, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, base: ValueType, half: Option<LevelPart>, origin: Origin) -> Option<LoweredExpr> {
-        let ExprKind::Let { pat, expr } = self.design.expr_node(cond).kind.clone() else { return None };
+        let ExprKind::Let { pat, expr } = self.state.design.expr_node(cond).kind.clone() else { return None };
         let (subject, prelude) = self.subject_of(scope, expr, true)?;
         let matched = self.test_pattern(scope, &subject, pat)?;
         let names = self.bind_names(scope, &matched.bindings)?;
         let test = self.condition_of(&matched, &origin);
         let arm = Self::enter_arm(scope, Some(test), true);
-        scope.guards.push(ArmCondition::IfLet);
+        scope.analog.guards.push(ArmCondition::IfLet);
         let lets = self.binding_lets(&names);
         let taken = match half {
             Some(half) => self.bound_half(scope, lets, &then.stmts, then.span, half),
             None => self.bound_block(scope, lets, &then.stmts, then.span),
         };
-        scope.guards.pop();
+        scope.analog.guards.pop();
         Self::leave_arm(scope, arm);
         let arm = Self::enter_arm(scope, Some(test), false);
-        scope.guards.push(ArmCondition::IfLet);
+        scope.analog.guards.push(ArmCondition::IfLet);
         let otherwise = match else_ {
             Some(else_) => self.lower_arm_value(scope, else_, half),
             None => Some(self.emit(Expr::Unit, ValueType::Unit, origin.clone())),
         };
-        scope.guards.pop();
+        scope.analog.guards.pop();
         Self::leave_arm(scope, arm);
         let (taken, otherwise) = (taken?, otherwise?);
         let (taken, otherwise) = (self.fit_to(taken, &base), self.fit_to(otherwise, &base));
@@ -521,9 +521,9 @@ impl Elaboration<'_, '_> {
     /// `while let p = e { body }` as `loop { let s = e; if test(s, p) { let names; body } else { break } }`,
     /// `e` read again at each iteration.
     pub(super) fn lower_while_let(&mut self, scope: &mut Scope, pat: PatId, scrutinee: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
-        scope.loops.push(super::control::LoopFrame);
+        scope.values.loops.push(super::control::LoopFrame);
         let looped = self.lower_while_let_body(scope, pat, scrutinee, body, &origin);
-        scope.loops.pop();
+        scope.values.loops.pop();
         let body = looped?;
         Some(self.emit(Expr::Loop { body }, ValueType::Unit, origin))
     }
@@ -553,7 +553,7 @@ impl Elaboration<'_, '_> {
         let Some(names) = self.bind_names(scope, &matched.bindings) else { return false };
         out.extend(prelude);
         if let Some(test) = matched.test {
-            let origin = self.locator.origin(file, otherwise.span);
+            let origin = self.state.locator.origin(file, otherwise.span);
             let failed = self.emit(Expr::Unary { op: UnaryOp::Not, expr: test }, ValueType::Bool, origin.clone());
             let Some(leave) = self.lower_block(scope, file, &otherwise.stmts, otherwise.span) else { return false };
             let leave = self.fit_to(leave, &ValueType::Unit);

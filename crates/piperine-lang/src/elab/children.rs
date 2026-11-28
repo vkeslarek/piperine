@@ -51,9 +51,9 @@ impl Elaboration<'_, '_> {
     /// reaches into a grandchild (`NodeRole::Reached`) is the child's own view of it, so its slot
     /// names it too.
     pub(super) fn pad_child_nodes(&mut self) {
-        let nodes: std::collections::BTreeMap<piperine_ir::BodyId, Vec<NodeRole>> = self.plans.values().map(|plan| (plan.body, plan.nodes.iter().map(|n| n.role).collect())).collect();
+        let nodes: std::collections::BTreeMap<piperine_ir::BodyId, Vec<NodeRole>> = self.state.structure.plans.values().map(|plan| (plan.body, plan.nodes.iter().map(|n| n.role).collect())).collect();
         let slots: Vec<(piperine_ir::BodyId, u32, Vec<Terminal>)> = self
-            .plans
+            .state.structure.plans
             .values()
             .flat_map(|plan| {
                 plan.children.iter().enumerate().filter_map(|(index, child)| {
@@ -67,7 +67,7 @@ impl Elaboration<'_, '_> {
             })
             .collect();
         for (body, child, nodes) in slots {
-            self.ir.set_child_nodes(body, child, nodes);
+            self.state.builder.set_child_nodes(body, child, nodes);
         }
     }
 
@@ -75,19 +75,19 @@ impl Elaboration<'_, '_> {
     /// placement reads. A placement of a module the type checker did not reach is skipped: it
     /// was refused already.
     pub(super) fn lower_children(&mut self, scope: &mut Scope, module: DeclId) -> Vec<(Child, ChildPlan)> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let calls = data.instances.clone();
         let mut ordinals: Vec<(DeclId, u32)> = Vec::new();
         let mut out = Vec::new();
         for call in calls {
-            let Some(child_module) = self.placed_module(call, &scope.keys) else { continue };
+            let Some(child_module) = self.placed_module(call, &scope.values.keys) else { continue };
             // A module with a result or a value input is hoisted into this body, not placed (`hoist.rs`).
             if self.hoisted_callee(call).is_some() {
                 continue;
             }
             // a placement in generation is one child per iteration, named by its ordinals (`sec[1]`); an arm not elaborated has none
-            let owner = self.design.expr_node(call).owner;
-            let iterations = match self.generated.of(owner) {
+            let owner = self.state.design.expr_node(call).owner;
+            let iterations = match self.state.structure.generated.of(owner) {
                 Some(iterations) => iterations.clone(),
                 None => vec![Iteration::default()],
             };
@@ -103,13 +103,13 @@ impl Elaboration<'_, '_> {
                     }
                 };
                 for (variable, value) in &iteration.values {
-                    scope.unrolled.bind(*variable, Constant::Int(*value));
+                    scope.values.unrolled.bind(*variable, Constant::Int(*value));
                 }
-                scope.ordinals = iteration.ordinals.clone();
+                scope.digital.ordinals = iteration.ordinals.clone();
                 let lowered = self.lower_child(scope, call, child_module, ordinal, out.len() as u32);
-                scope.ordinals.clear();
+                scope.digital.ordinals.clear();
                 for (variable, _) in &iteration.values {
-                    scope.unrolled.unbind(*variable);
+                    scope.values.unrolled.unbind(*variable);
                 }
                 if let Some((mut child, mut plan)) = lowered {
                     let suffix = iteration.subscripts();
@@ -125,9 +125,9 @@ impl Elaboration<'_, '_> {
     /// The `{ name: value }` fields the placement `call` of `module` writes, in source order: the
     /// fields of the struct template it calls, else the block after the call.
     pub(super) fn placement_fields(&self, call: ExprId, module: DeclId) -> Vec<FieldInit> {
-        let ExprKind::Call { callee, params, .. } = &self.design.expr_node(call).kind else { return Vec::new() };
+        let ExprKind::Call { callee, params, .. } = &self.state.design.expr_node(call).kind else { return Vec::new() };
         // `(Cell { cs: 2.0 })(x)`: the template written in place, through parentheses
-        match &self.design.expr_node(self.peel_parens(*callee)).kind {
+        match &self.state.design.expr_node(self.peel_parens(*callee)).kind {
             ExprKind::Struct { fields, class: StructClass::Template(m), .. } if *m == module => fields.clone(),
             _ => params.clone().unwrap_or_default(),
         }
@@ -138,9 +138,9 @@ impl Elaboration<'_, '_> {
     /// `None` after a diagnostic (`E0319` for a key param with neither).
     pub(super) fn child_key_values(&mut self, scope: &Scope, (module, instance): (DeclId, Option<&Instance>), fields: &[FieldInit], file: FileId, span: crate::msl::Span) -> Option<Bindings> {
         let mut values = Bindings::new();
-        for key in self.keys.of(module).to_vec() {
+        for key in self.state.structure.keys.of(module).to_vec() {
             let written = match fields.iter().find(|f| f.res == Resolution::Decl(key)) {
-                Some(field) => match self.fold_param_value(field.value, &scope.keys.overlaid(&scope.unrolled)) {
+                Some(field) => match self.fold_param_value(field.value, &scope.values.keys.overlaid(&scope.values.unrolled)) {
                     Ok(value) => Some(value),
                     Err(fault) => {
                         self.const_fault(&fault, "the value of a param that fixes structure");
@@ -177,7 +177,7 @@ impl Elaboration<'_, '_> {
         match written.or(default) {
             Some(value) => Some(value),
             None => {
-                let name = self.design.decl_data(key).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+                let name = self.state.design.decl_data(key).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
                 self.report(file, Diagnostic::new("E0319", format!("the placement leaves the required param `{name}` unbound"), span, "required param not bound"));
                 None
             }
@@ -187,8 +187,8 @@ impl Elaboration<'_, '_> {
     /// Whether the placement `call` is written through an expression that is no name (`(if c { .. } else { .. })(x)`): a choice of
     /// templates, whose head folds at elaboration (§8.4.6).
     pub(super) fn has_an_expression_head(&self, call: ExprId) -> bool {
-        let ExprKind::Call { callee, class: CallClass::Instance { module: Some(_), via: None }, .. } = &self.design.expr_node(call).kind else { return false };
-        matches!(self.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) | ExprKind::Index { .. })
+        let ExprKind::Call { callee, class: CallClass::Instance { module: Some(_), via: None }, .. } = &self.state.design.expr_node(call).kind else { return false };
+        matches!(self.state.design.expr_node(self.peel_parens(*callee)).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_) | ExprKind::Index { .. })
     }
 
     /// The template a placement through a template value places (§8.4.4, §8.4.9): the value the param of module type holds in the
@@ -198,19 +198,19 @@ impl Elaboration<'_, '_> {
     pub(super) fn template_through(&mut self, scope: &Scope, call: ExprId, class: &CallClass) -> Result<Option<TemplateValue>, ()> {
         let CallClass::Instance { module: placed, via } = class else { return Ok(None) };
         // a placement in the body of a hoisted module reads the params its own placement bound, not the keys of the body that holds it
-        let keys = if scope.frame == 0 { scope.keys.clone() } else { self.frame_bindings(scope.frame) };
+        let keys = if scope.values.frame == 0 { scope.values.keys.clone() } else { self.frame_bindings(scope.values.frame) };
         match via {
             Some(via) if placed.is_some_and(|placed| *via == placed) => return Ok(None),
-            Some(via) if self.is_module_param(*via) => return Ok(keys.get(*via).and_then(|number| self.consts.templates().get(number)).cloned()),
+            Some(via) if self.is_module_param(*via) => return Ok(keys.get(*via).and_then(|number| self.state.consts.templates().get(number)).cloned()),
             Some(_) => {}
             // a choice of templates written as the head folds as any head does; a module named by its path places by name
             None if !self.has_an_expression_head(call) => return Ok(None),
             None => {}
         }
-        let ExprKind::Call { callee, .. } = &self.design.expr_node(call).kind else { return Ok(None) };
-        let folded = self.fold_param_value(*callee, &keys.overlaid(&scope.unrolled));
+        let ExprKind::Call { callee, .. } = &self.state.design.expr_node(call).kind else { return Ok(None) };
+        let folded = self.fold_param_value(*callee, &keys.overlaid(&scope.values.unrolled));
         match folded {
-            Ok(number) => Ok(self.consts.templates().get(number).cloned()),
+            Ok(number) => Ok(self.state.consts.templates().get(number).cloned()),
             Err(fault) => {
                 self.const_fault(&fault, "the head of a placement through a template");
                 Err(())
@@ -221,14 +221,14 @@ impl Elaboration<'_, '_> {
     /// The values the key params of `module` take at the placement `call`: the template's when the placement goes through one,
     /// else the ones its block writes (`child_key_values`). `None` after a diagnostic.
     pub(super) fn placement_key_values(&mut self, scope: &Scope, call: ExprId, module: DeclId, span: crate::msl::Span) -> Option<Bindings> {
-        let ExprKind::Call { class, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        let ExprKind::Call { class, .. } = self.state.design.expr_node(call).kind.clone() else { return None };
         let instance = if self.is_generic_module(module) { Some(self.placement_instance(scope, call, module)?) } else { None };
         match self.template_through(scope, call, &class) {
             Err(()) => None,
-            Ok(Some(template)) => self.template_values(&template, instance.as_ref(), scope.file, span).map(|(_, keys)| keys),
+            Ok(Some(template)) => self.template_values(&template, instance.as_ref(), scope.values.file, span).map(|(_, keys)| keys),
             Ok(None) => {
                 let fields = self.placement_fields(call, module);
-                self.child_key_values(scope, (module, instance.as_ref()), &fields, scope.file, span)
+                self.child_key_values(scope, (module, instance.as_ref()), &fields, scope.values.file, span)
             }
         }
     }
@@ -236,7 +236,7 @@ impl Elaboration<'_, '_> {
     /// What a placement through a template gives its module: the constant of each param the block
     /// binds, as `lower_child` keeps them, and the values of the module's key params.
     fn template_values(&mut self, template: &TemplateValue, instance: Option<&Instance>, file: FileId, span: crate::msl::Span) -> Option<(Vec<(u32, Option<Constant>, ExprId)>, Bindings)> {
-        let params: Vec<DeclId> = self.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
+        let params: Vec<DeclId> = self.state.design.decl_data(template.module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let constants = match self.template_constants(template) {
             Ok(constants) => constants,
             Err(fault) => {
@@ -246,7 +246,7 @@ impl Elaboration<'_, '_> {
         };
         let given: Vec<(u32, Option<Constant>, ExprId)> = constants.iter().filter_map(|(param, value, expr)| Some((params.iter().position(|p| p == param)? as u32, Some(*value), *expr))).collect();
         let mut keys = Bindings::new();
-        for key in self.keys.of(template.module).to_vec() {
+        for key in self.state.structure.keys.of(template.module).to_vec() {
             let written = constants.iter().find(|(param, _, _)| *param == key).map(|(_, value, _)| *value);
             let value = self.key_value((template.module, instance), key, written, &keys, (file, span))?;
             self.bind_param(&mut keys, key, value);
@@ -255,8 +255,8 @@ impl Elaboration<'_, '_> {
     }
 
     fn lower_child(&mut self, scope: &Scope, call: ExprId, module: DeclId, ordinal: u32, index: u32) -> Option<(Child, ChildPlan)> {
-        let node = self.design.expr_node(call).clone();
-        let file = self.design.decl_data(node.owner).file;
+        let node = self.state.design.expr_node(call).clone();
+        let file = self.state.design.decl_data(node.owner).file;
         let ExprKind::Call { args, class, .. } = &node.kind else { return None };
         let placed = match class {
             CallClass::Instance { module: Some(m), .. } => *m == module,
@@ -269,19 +269,19 @@ impl Elaboration<'_, '_> {
         }
         let Ok(through) = self.template_through(scope, call, class) else { return None };
         let fields = if through.is_some() { Vec::new() } else { self.placement_fields(call, module) };
-        let module_name = self.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let module_name = self.state.design.decl_data(module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let name = self.placement_name(call, &module_name, ordinal);
         let mut ok = true;
         let mut bound = PortBindings { terminals: Vec::new(), carriers: Vec::new(), windows: Vec::new() };
-        let ports: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
+        let ports: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         for (port, arg) in ports.iter().zip(args) {
             // a bundle port is given each field in turn (`bundles.rs`)
-            if self.design.is_bundle_owner(*port) {
+            if self.state.design.is_bundle_owner(*port) {
                 ok &= self.bind_bundle_port(scope, &name, *port, arg.value, &mut bound);
                 continue;
             }
             let (terminals, carriers, windows) = (&mut bound.terminals, &mut bound.carriers, &mut bound.windows);
-            if self.types.node_array(*port).is_some() {
+            if self.state.types.node_array(*port).is_some() {
                 match self.node_array_terminals(scope, arg.value) {
                     Some(nodes) => terminals.extend(nodes),
                     None => ok = false,
@@ -289,17 +289,17 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             // a port of an array of length 0 has no carrier in the child, so it binds nothing (§1.2.3)
-            if self.types.carrier_array(*port).is_some_and(Ty::has_fixed_zero_length) {
+            if self.state.types.carrier_array(*port).is_some_and(Ty::has_fixed_zero_length) {
                 continue;
             }
-            if self.types.carrier(*port).is_some() {
+            if self.state.types.carrier(*port).is_some() {
                 match self.lower_carrier_argument(scope, &name, *port, arg.value) {
                     Some((carrier, window)) => {
-                        if matches!(&self.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
-                            self.structure.handed.push((carrier, window));
-                            let span = self.design.expr_node(arg.value).span;
+                        if matches!(&self.state.design.decl_data(*port).kind, DeclKind::Port(data) if data.dir == Some(crate::pom::Dir::Out)) {
+                            self.state.digital.structure.handed.push((carrier, window));
+                            let span = self.state.design.expr_node(arg.value).span;
                             let reach = super::drive_overlaps::ElementReach::of_window(window);
-                            self.structure.drive_sites.push(super::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::drive_overlaps::DriveWay::Handed, file: scope.file, span });
+                            self.state.digital.structure.drive_sites.push(super::drive_overlaps::DriveSite { carrier, reach, fields: Vec::new(), way: super::drive_overlaps::DriveWay::Handed, file: scope.values.file, span });
                         }
                         carriers.push(Some(carrier));
                         windows.push(window);
@@ -350,31 +350,31 @@ impl Elaboration<'_, '_> {
         }
         let (_, body) = self.request_body(module, instance.as_ref(), &key_values)?;
         let params = given.iter().filter_map(|(index, value, _)| value.map(|v| (*index, v))).collect();
-        let origin = self.locator.origin(file, node.span);
+        let origin = self.state.locator.origin(file, node.span);
         // The slots of the child's own nodes are added once every body is built (`pad_child_nodes`).
         let child = Child { name: name.clone(), body, nodes: terminals.clone(), params, origin };
         // The authored child shows the carriers it connects (ir-rust "Left for msl-digital").
         if !carriers.is_empty() {
-            self.structure.child_carriers.push((index, carriers.clone()));
+            self.state.digital.structure.child_carriers.push((index, carriers.clone()));
         }
         // the part of an array of carriers each port is given (`elements.rs`)
         if windows.iter().any(Option::is_some) {
-            self.structure.child_windows.push((index, windows));
+            self.state.digital.structure.child_windows.push((index, windows));
         }
-        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call, unrolled: scope.unrolled.clone() }))
+        Some((child, ChildPlan { name, module, instance, body, terminals, carriers, given, call, unrolled: scope.values.unrolled.clone() }))
     }
 
     /// The carrier of the parent an argument at the carrier port `port` of the placement
     /// `instance` is bound to: the carrier it names, or for an expression at an `in` port the
     /// carrier of its anonymous definition (§8.2.9). `None` after a diagnostic.
     pub(super) fn lower_carrier_argument(&mut self, scope: &Scope, instance: &str, port: DeclId, arg: ExprId) -> Option<(u32, Option<piperine_ir::CarrierWindow>)> {
-        let node = self.design.expr_node(arg).clone();
+        let node = self.state.design.expr_node(arg).clone();
         // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
         let generated = !self.generated_carrier_levels(scope, arg).is_empty();
         // a field of a bundle of this module (`column.wl`) is a carrier of its own (`pom/bundles.rs`); a field of an element of an
         // array of bundles (`lanes[k].a`) is the window of that element of its leaf
         if let Some(place) = self.bundle_leaf(scope, arg)
-            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&place.decl)).copied()
+            && let Some(index) = self.state.structure.frames.get(scope.values.frame).and_then(|f| f.carriers.get(&place.decl)).copied()
         {
             if place.elements.is_empty() {
                 return Some((index, None));
@@ -383,8 +383,8 @@ impl Elaboration<'_, '_> {
         }
         if !generated
             && let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && let Some(index) = self.frames.get(scope.frame).and_then(|f| f.carriers.get(&decl))
+            && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(index) = self.state.structure.frames.get(scope.values.frame).and_then(|f| f.carriers.get(&decl))
         {
             return Some((*index, None));
         }
@@ -394,11 +394,11 @@ impl Elaboration<'_, '_> {
         {
             return found;
         }
-        match &self.design.decl_data(port).kind {
+        match &self.state.design.decl_data(port).kind {
             DeclKind::Port(p) if p.dir == Some(crate::pom::Dir::In) => self.anonymous_definition(scope, instance, port, arg).map(|carrier| (carrier, None)),
             // The checker refuses an expression at an `out` port first (`E0314`).
             _ => {
-                self.refuse(scope.file, node.span, StructureForm::ExpressionAtOutCarrierPort);
+                self.refuse(scope.values.file, node.span, StructureForm::ExpressionAtOutCarrierPort);
                 None
             }
         }
@@ -406,10 +406,10 @@ impl Elaboration<'_, '_> {
 
     /// The name of the `let` that binds the placement, else `<module>#<k>` (§21 rule 3).
     fn placement_name(&self, call: ExprId, module: &str, ordinal: u32) -> String {
-        let owner = self.design.expr_node(call).owner;
-        if let DeclKind::Let(l) = &self.design.decl_data(owner).kind
+        let owner = self.state.design.expr_node(call).owner;
+        if let DeclKind::Let(l) = &self.state.design.decl_data(owner).kind
             && l.value == call
-            && let crate::pom::PatKind::Ident { name, sub: None, .. } = &self.design.pat_node(l.pat).kind
+            && let crate::pom::PatKind::Ident { name, sub: None, .. } = &self.state.design.pat_node(l.pat).kind
         {
             return name.text.clone();
         }
@@ -420,7 +420,7 @@ impl Elaboration<'_, '_> {
     /// parent; one that does is lowered over the parent's params and kept beside the child as a
     /// `ChildValue::Expr`. `None` after a diagnostic.
     fn lower_given(&mut self, scope: &Scope, file: FileId, module: DeclId, child: u32, fields: &[FieldInit]) -> Option<Vec<(u32, Option<Constant>, ExprId)>> {
-        let params: Vec<DeclId> = self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
+        let params: Vec<DeclId> = self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Param(_))).collect();
         let mut seen = BTreeSet::new();
         let mut out = Vec::new();
         let mut ok = true;
@@ -439,7 +439,7 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             }
-            let bindings = if self.is_template_param(params[index]) { scope.keys.clone() } else { Bindings::new() }.overlaid(&scope.unrolled);
+            let bindings = if self.is_template_param(params[index]) { scope.values.keys.clone() } else { Bindings::new() }.overlaid(&scope.values.unrolled);
             match self.fold_param_value(field.value, &bindings) {
                 Ok(value) => out.push((index as u32, Some(value), field.value)),
                 // A value over the parent's params (`{ r: r_top }`, `{ l }`): the authored child
@@ -447,12 +447,12 @@ impl Elaboration<'_, '_> {
                 Err(ConstFault::UnboundParam { .. }) => {
                     let mut sub = Self::sub_scope(scope);
                     match self.lower_param_expression(&mut sub, field.value) {
-                        Some(value) if sub.locals.is_empty() => {
-                            self.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));
+                        Some(value) if sub.values.locals.is_empty() => {
+                            self.state.digital.structure.child_params.push((child, index as u32, ChildValue::Expr(value)));
                             out.push((index as u32, None, field.value));
                         }
                         Some(_) => {
-                            self.refuse(file, self.design.expr_node(field.value).span, StructureForm::LetInParamValue);
+                            self.refuse(file, self.state.design.expr_node(field.value).span, StructureForm::LetInParamValue);
                             ok = false;
                         }
                         None => ok = false,
@@ -470,10 +470,10 @@ impl Elaboration<'_, '_> {
     /// The value `expr` gives a param of the child when it reads the parent's params (§3.2.3): the expression itself, and for an
     /// `Option` param a value of `T`, or `Some(value)` written out, as `Some` of it (`OptionPack`). `None` after a diagnostic.
     fn lower_param_expression(&mut self, scope: &mut Scope, expr: ExprId) -> Option<piperine_ir::ExprId> {
-        let payload = if self.types.implicit_some(expr) {
+        let payload = if self.state.types.implicit_some(expr) {
             Some(expr)
         } else if self.is_some_call(expr) {
-            match &self.design.expr_node(expr).kind {
+            match &self.state.design.expr_node(expr).kind {
                 ExprKind::Call { args, .. } => args.first().map(|arg| arg.value),
                 _ => None,
             }

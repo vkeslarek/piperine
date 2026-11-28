@@ -22,10 +22,10 @@ impl Elaboration<'_, '_> {
     /// expression.
     pub(super) fn lower_record_statement(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId) -> Option<bool> {
         let expr = self.peel_parens(expr);
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Emit { stream, fields } => Some(self.lower_emit(scope, out, expr, stream, fields)),
-            ExprKind::Call { args, .. } => match self.types.callee(expr) {
+            ExprKind::Call { args, .. } => match self.state.types.callee(expr) {
                 Some(Callee::Function(function)) if self.is_inlined(function) => {
                     let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
                     Some(self.inline_emitting(scope, out, function, &args))
@@ -40,10 +40,10 @@ impl Elaboration<'_, '_> {
     /// `str`, a text that exists at elaboration only (§1.2.9), or reads a session parameter, which the IR keeps
     /// in the body that reads it and never in a function (`multiplicity()`, §8.5.2).
     pub(super) fn is_inlined(&self, function: DeclId) -> bool {
-        let takes_text = self.design.decl_data(function).children.iter().any(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
-        let is_extern = matches!(&self.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
+        let takes_text = self.state.design.decl_data(function).children.iter().any(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_)) && matches!(self.typed_local(*c), Some(Ty::Str)));
+        let is_extern = matches!(&self.state.design.decl_data(function).kind, DeclKind::Fn(f) if f.abi.is_some());
         // an `extern` function has no body to inline; its call is the call of a generic `extern` function, refused by name
-        !is_extern && (self.types.emits(function).is_some() || takes_text || self.takes_handle(function) || self.reads_session_parameter(function))
+        !is_extern && (self.state.types.emits(function).is_some() || takes_text || self.takes_handle(function) || self.reads_session_parameter(function))
     }
 
     /// Whether `function` reads a session parameter: its body calls `simparam`, or calls a function that does, however deep.
@@ -54,13 +54,13 @@ impl Elaboration<'_, '_> {
             if !seen.insert(at) {
                 continue;
             }
-            let DeclKind::Fn(f) = &self.design.decl_data(at).kind else { continue };
+            let DeclKind::Fn(f) = &self.state.design.decl_data(at).kind else { continue };
             let Some(body) = &f.body else { continue };
             for expr in self.body_exprs(body) {
-                if !matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) {
+                if !matches!(self.state.design.expr_node(expr).kind, ExprKind::Call { .. }) {
                     continue;
                 }
-                match self.types.callee(expr) {
+                match self.state.types.callee(expr) {
                     Some(Callee::Core(id)) if id.info().name == "simparam" => return true,
                     Some(Callee::Function(callee)) => pending.push(callee),
                     _ => {}
@@ -73,11 +73,11 @@ impl Elaboration<'_, '_> {
     /// `emit!(stream, fields)`: one site of the body's stream named `stream`.
     fn lower_emit(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, expr: ExprId, stream: &Lit, fields: &[FieldInit]) -> bool {
         let name = stream.str_value().unwrap_or_default();
-        let index = match self.structure.streams.iter().position(|s| s.name == name) {
+        let index = match self.state.digital.structure.streams.iter().position(|s| s.name == name) {
             Some(at) => at,
             None => {
-                self.structure.streams.push(Stream { name: name.clone(), fields: Vec::new() });
-                self.structure.streams.len() - 1
+                self.state.digital.structure.streams.push(Stream { name: name.clone(), fields: Vec::new() });
+                self.state.digital.structure.streams.len() - 1
             }
         };
         let mut lowered = Vec::new();
@@ -89,8 +89,8 @@ impl Elaboration<'_, '_> {
                     // A file with no text was reported as `E0612` or `E0613` by `read_included_files`.
                     None if self.names_unreadable_file(field.value) => ok = false,
                     None => {
-                        let span = self.design.expr_node(field.value).span;
-                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                        let span = self.state.design.expr_node(field.value).span;
+                        self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                         ok = false;
                     }
                 }
@@ -101,8 +101,8 @@ impl Elaboration<'_, '_> {
                 Some(Ty::Option(payload)) => match self.value_type(&payload) {
                     Some(payload) => self.lower_stored(scope, field.value, &ValueType::Option(Box::new(payload))),
                     None => {
-                        let span = self.design.expr_node(field.value).span;
-                        self.refuse(scope.file, span, ValueForm::OptionRecordFieldWhosePayloadHasNo);
+                        let span = self.state.design.expr_node(field.value).span;
+                        self.refuse(scope.values.file, span, ValueForm::OptionRecordFieldWhosePayloadHasNo);
                         None
                     }
                 },
@@ -113,7 +113,7 @@ impl Elaboration<'_, '_> {
                 continue;
             };
             let ty = self.type_of(value);
-            let fields_of = &mut self.structure.streams[index].fields;
+            let fields_of = &mut self.state.digital.structure.streams[index].fields;
             let at = match fields_of.iter().position(|f| f.name == field.name.text) {
                 Some(at) => at,
                 None => {
@@ -123,11 +123,11 @@ impl Elaboration<'_, '_> {
             };
             lowered.push(EmitField::Value { field: at as u32, value });
         }
-        if ok && scope.analog {
+        if ok && scope.analog.in_analog_code {
             // `emit!` in the `analog` block is a trace (§19 rule 4): one `TRACE` watch per site,
             // written where the statement executes (`traces.rs`)
-            let site = self.structure.traces.len() as u32;
-            self.structure.traces.push(TraceSite { stream: index as u32, origin: self.expr_origin(expr) });
+            let site = self.state.digital.structure.traces.len() as u32;
+            self.state.digital.structure.traces.push(TraceSite { stream: index as u32, origin: self.expr_origin(expr) });
             out.push(self.stmt(Stmt::Trace { site, fields: lowered }));
         } else if ok {
             out.push(self.stmt(Stmt::Emit { stream: index as u32, fields: lowered }));
@@ -139,17 +139,17 @@ impl Elaboration<'_, '_> {
     /// `str` (its literal, or the file an `include_str!` reads, once, §20 rule 3), a `let` bound to a
     /// text, or a `str` param of an inlined function bound to one.
     pub(super) fn text_of(&mut self, scope: &Scope, expr: ExprId) -> Option<String> {
-        let design = self.design;
+        let design = self.state.design;
         match &design.expr_node(self.peel_parens(expr)).kind {
             ExprKind::Lit(lit) => lit.str_value(),
             ExprKind::Path(path) => match design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(decl)) => match &design.decl_data(decl).kind {
                     DeclKind::Const(constant) => match constant.value {
-                        Some(value) if matches!(design.expr_node(value).kind, ExprKind::IncludeStr(_)) => self.consts.text(decl).ok().map(|text| text.to_string()),
+                        Some(value) if matches!(design.expr_node(value).kind, ExprKind::IncludeStr(_)) => self.state.consts.text(decl).ok().map(|text| text.to_string()),
                         Some(value) => self.text_of(scope, value),
                         None => None,
                     },
-                    _ => scope.texts.get(&decl).cloned(),
+                    _ => scope.digital.texts.get(&decl).cloned(),
                 },
                 _ => None,
             },
@@ -162,12 +162,12 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_text_let(&mut self, scope: &mut Scope, binding: DeclId, init: ExprId) -> bool {
         match self.text_of(scope, init) {
             Some(text) => {
-                scope.texts.insert(binding, text);
+                scope.digital.texts.insert(binding, text);
                 true
             }
             None => {
-                let span = self.design.expr_node(init).span;
-                self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                let span = self.state.design.expr_node(init).span;
+                self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                 false
             }
         }
@@ -177,8 +177,8 @@ impl Elaboration<'_, '_> {
     /// are the same. `None` after a diagnostic.
     pub(super) fn lower_text_comparison(&mut self, scope: &Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(left), Some(right)) = (self.text_of(scope, lhs), self.text_of(scope, rhs)) else {
-            let span = self.design.expr_node(lhs).span;
-            self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+            let span = self.state.design.expr_node(lhs).span;
+            self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
             return None;
         };
         Some(self.emit(Expr::Bool((left == right) == (op == BinOp::Eq)), ValueType::Bool, origin))
@@ -202,7 +202,7 @@ impl Elaboration<'_, '_> {
     /// `None` after a diagnostic.
     pub(super) fn inline_emitting_value(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         if self.takes_handle(function) && self.reaches_recursion(function) {
-            let span = self.design.decl_data(function).span;
+            let span = self.state.design.decl_data(function).span;
             self.unfoldable_recursion(scope, function, span, "a recursion through a function that takes a handle is not inlined");
             return None;
         }
@@ -225,31 +225,31 @@ impl Elaboration<'_, '_> {
     /// text, each other param to a local holding its argument), and the body to inline after them.
     /// `None` after a diagnostic.
     pub(super) fn bind_inlined_arguments(&mut self, scope: &mut Scope, function: DeclId, args: &[ExprId]) -> Option<(Vec<LoweredStmt>, BlockNode)> {
-        let data = self.design.decl_data(function).clone();
+        let data = self.state.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let Some(body) = f.body.clone() else {
             // an `extern` function has no body to inline: its call is refused by name, never dropped
-            self.refuse(scope.file, data.span, ValueForm::CallOfFunctionWithNoBodyExtern);
+            self.refuse(scope.values.file, data.span, ValueForm::CallOfFunctionWithNoBodyExtern);
             return None;
         };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
+        let params: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_))).collect();
         let mut out = Vec::new();
         let mut ok = true;
         for (param, arg) in params.iter().zip(args) {
-            let param_name = self.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-            if self.types.handle(*param) {
-                scope.handles.insert(*param, self.handle_argument_target(scope, *arg));
+            let param_name = self.state.design.decl_data(*param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            if self.state.types.handle(*param) {
+                scope.digital.handles.insert(*param, self.handle_argument_target(scope, *arg));
                 continue;
             }
             if matches!(self.typed(*arg), Some(Ty::Str)) {
                 match self.text_of(scope, *arg) {
                     Some(text) => {
-                        scope.texts.insert(*param, text);
+                        scope.digital.texts.insert(*param, text);
                     }
                     None => {
-                        let span = self.design.expr_node(*arg).span;
-                        self.refuse(scope.file, span, ValueForm::StrThatIsNotTextAfterInlining);
+                        let span = self.state.design.expr_node(*arg).span;
+                        self.refuse(scope.values.file, span, ValueForm::StrThatIsNotTextAfterInlining);
                         ok = false;
                     }
                 }
@@ -259,10 +259,10 @@ impl Elaboration<'_, '_> {
                 ok = false;
                 continue;
             };
-            let local = scope.locals.len() as u32;
+            let local = scope.values.locals.len() as u32;
             let ty = self.type_of(value);
-            scope.locals.push(piperine_ir::Local { name: format!("{name}.{param_name}"), ty, mutable: false });
-            scope.local_index.insert(*param, local);
+            scope.values.locals.push(piperine_ir::Local { name: format!("{name}.{param_name}"), ty, mutable: false });
+            scope.values.local_index.insert(*param, local);
             out.push(self.stmt(Stmt::Let { local, init: value }));
         }
         if !ok {

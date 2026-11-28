@@ -21,24 +21,24 @@ impl Elaboration<'_, '_> {
     /// A `noise` call read as a value: `Expr::Noise(k)`. The source is made the first time the call
     /// is read in the frame; `None` after a diagnostic.
     pub(super) fn lower_noise(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
-        if let Some(source) = self.frames[scope.frame].noise_sources.get(&call).copied() {
+        if let Some(source) = self.state.structure.frames[scope.values.frame].noise_sources.get(&call).copied() {
             return Some(self.emit(Expr::Noise(source), ValueType::F64, origin));
         }
-        let span = self.design.expr_node(call).span;
+        let span = self.state.design.expr_node(call).span;
         let [density, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
-        standalone.at_solution = true;
-        standalone.value_input = true;
+        standalone.analog.at_solution = true;
+        standalone.analog.value_input = true;
         let density = self.lower_expr(&mut standalone, *density)?;
         scope.adopt_standalone(&mut standalone);
-        if !standalone.locals.is_empty() {
-            self.refuse(scope.file, span, AnalogForm::ClosureOrOptionBindingInsideNoiseDensity);
+        if !standalone.values.locals.is_empty() {
+            self.refuse(scope.values.file, span, AnalogForm::ClosureOrOptionBindingInsideNoiseDensity);
             return None;
         }
         let group = self.noise_group(scope, rest.first().copied())?;
-        let source = self.structure.noise_sources.len() as u32;
-        self.structure.noise_sources.push(NoiseSource { name: format!("noise{source}"), group, density, origin: origin.clone() });
-        self.frames[scope.frame].noise_sources.insert(call, source);
+        let source = self.state.digital.structure.noise_sources.len() as u32;
+        self.state.digital.structure.noise_sources.push(NoiseSource { name: format!("noise{source}"), group, density, origin: origin.clone() });
+        self.state.structure.frames[scope.values.frame].noise_sources.insert(call, source);
         Some(self.emit(Expr::Noise(source), ValueType::F64, origin))
     }
 
@@ -47,10 +47,10 @@ impl Elaboration<'_, '_> {
     /// module's input the caller gave one), `None` after a diagnostic.
     fn noise_group(&mut self, scope: &mut Scope, arg: Option<ExprId>) -> Option<Option<String>> {
         let Some(arg) = arg else { return Some(None) };
-        let node = self.design.expr_node(arg).clone();
+        let node = self.state.design.expr_node(arg).clone();
         match &node.kind {
             ExprKind::Paren(inner) => return self.noise_group(scope, Some(*inner)),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
@@ -65,7 +65,7 @@ impl Elaboration<'_, '_> {
         match self.text_of(scope, arg) {
             Some(text) => Some(Some(text)),
             None => {
-                self.refuse(scope.file, node.span, AnalogForm::NoiseNameThatIsNotTextLiteral);
+                self.refuse(scope.values.file, node.span, AnalogForm::NoiseNameThatIsNotTextLiteral);
                 None
             }
         }

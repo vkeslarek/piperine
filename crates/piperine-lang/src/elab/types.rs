@@ -89,7 +89,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn ir_constant(&mut self, value: Constant, ty: &ValueType) -> Constant {
         match (value, ty) {
             (Constant::Int(position), ValueType::Enum(_)) => {
-                Constant::Aggregate(self.ir.aggregate(AggregateData { ty: ty.clone(), variant: Some(position as u32), parts: Vec::new() }))
+                Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: ty.clone(), variant: Some(position as u32), parts: Vec::new() }))
             }
             (other, _) => other,
         }
@@ -99,13 +99,13 @@ impl Elaboration<'_, '_> {
     /// design (`TypeArena::over`), before any body is lowered.
     pub(super) fn build_type_arena(&mut self) {
         // a generic declaration has no entry of its own: its fields mention parameters; each instance has one
-        let decls: Vec<DeclId> = self.types.aggregate_types().into_iter().filter(|decl| self.design.decl_data(*decl).generics_span.is_none()).collect();
-        self.type_arena = TypeArena::over(&decls);
+        let decls: Vec<DeclId> = self.state.types.aggregate_types().into_iter().filter(|decl| self.state.design.decl_data(*decl).generics_span.is_none()).collect();
+        self.state.values.type_arena = TypeArena::over(&decls);
         // every instance has its number before any entry is built, so a field of a struct (or of another instance) that
         // holds one, `struct Cell { v: Logic<2> }`, finds the entry of its type
         let instances = self.reached_instances(&decls);
         for (position, nominal) in instances.iter().enumerate() {
-            self.type_arena.instances.insert(nominal.clone(), TypeId((decls.len() + position) as u32));
+            self.state.values.type_arena.instances.insert(nominal.clone(), TypeId((decls.len() + position) as u32));
         }
         for decl in decls {
             let data = self.type_data(decl, &crate::types::Substitution::new());
@@ -120,16 +120,16 @@ impl Elaboration<'_, '_> {
     /// Every instance of a generic struct or enum the check reached: the ones a type of the check holds, the ones the
     /// fields of `decls` hold, and the ones the fields of an instance hold, each once.
     fn reached_instances(&self, decls: &[DeclId]) -> Vec<Nominal> {
-        let mut found = self.types.generic_instances();
+        let mut found = self.state.types.generic_instances();
         for decl in decls {
             for owner in self.field_owners(*decl) {
-                self.types.fields(owner).unwrap_or(&[]).iter().for_each(|field| field.ty.generic_instances(&mut found));
+                self.state.types.fields(owner).unwrap_or(&[]).iter().for_each(|field| field.ty.generic_instances(&mut found));
             }
         }
         let mut next = 0;
         while let Some(nominal) = found.get(next).cloned() {
             for owner in self.field_owners(nominal.decl) {
-                self.types.instance_fields(owner, &nominal).iter().for_each(|field| field.ty.generic_instances(&mut found));
+                self.state.types.instance_fields(owner, &nominal).iter().for_each(|field| field.ty.generic_instances(&mut found));
             }
             next += 1;
         }
@@ -138,9 +138,9 @@ impl Elaboration<'_, '_> {
 
     /// The declarations whose fields make the type `decl`: the struct itself, or each variant of an enum.
     fn field_owners(&self, decl: DeclId) -> Vec<DeclId> {
-        match self.design.decl_data(decl).kind {
+        match self.state.design.decl_data(decl).kind {
             DeclKind::Struct(_) => vec![decl],
-            _ => self.design.decl_data(decl).children.iter().copied().filter(|child| matches!(self.design.decl_data(*child).kind, DeclKind::Variant(_))).collect(),
+            _ => self.state.design.decl_data(decl).children.iter().copied().filter(|child| matches!(self.state.design.decl_data(*child).kind, DeclKind::Variant(_))).collect(),
         }
     }
 
@@ -150,8 +150,8 @@ impl Elaboration<'_, '_> {
             TypeKind::Struct { fields, .. } => vec![fields.iter().map(|(_, ty)| ty.clone()).collect()],
             TypeKind::Enum { variants, .. } => variants.iter().map(|v| v.fields.iter().map(|(_, ty)| ty.clone()).collect()).collect(),
         };
-        self.type_arena.shapes.push(shape);
-        self.ir.type_data(data)
+        self.state.values.type_arena.shapes.push(shape);
+        self.state.builder.type_data(data)
     }
 
     /// The arena entry of every instance of a generic struct or enum the type `ty` holds, an instance's arguments
@@ -166,23 +166,23 @@ impl Elaboration<'_, '_> {
 
     /// The arena entry of the instance `nominal` (nothing when it is registered), added after the ones before it.
     fn register_instance(&mut self, nominal: &Nominal) {
-        if self.type_arena.instance_id(nominal).is_some() {
+        if self.state.values.type_arena.instance_id(nominal).is_some() {
             return;
         }
         let data = self.instance_data(nominal);
         let id = self.add_type_entry(data);
-        self.type_arena.instances.insert(nominal.clone(), id);
+        self.state.values.type_arena.instances.insert(nominal.clone(), id);
     }
 
     /// The entry of the instance `nominal`, named `Pair<f64>` and recording `instance`, its fields the declaration's with
     /// the arguments put in the place of the parameters.
     fn instance_data(&self, nominal: &Nominal) -> TypeData {
-        let substitution = crate::types::Substitution::of(&crate::types::GenericSignature::of(self.design, nominal.decl), &nominal.arguments);
+        let substitution = crate::types::Substitution::of(&crate::types::GenericSignature::of(self.state.design, nominal.decl), &nominal.arguments);
         let mut data = self.type_data(nominal.decl, &substitution);
-        let ty = if matches!(self.design.decl_data(nominal.decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal.clone()) } else { Ty::Struct(nominal.clone()) };
-        data.name = ty.source_name(self.design);
-        data.path = format!("{}{}", data.path, nominal.arguments_name(self.design));
-        data.instance = Some(piperine_ir::GenericInstance { item: self.design.decl_data(nominal.decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()), arguments: nominal.arguments.iter().map(|argument| argument.name(self.design)).collect() });
+        let ty = if matches!(self.state.design.decl_data(nominal.decl).kind, DeclKind::Enum(_)) { Ty::Enum(nominal.clone()) } else { Ty::Struct(nominal.clone()) };
+        data.name = ty.source_name(self.state.design);
+        data.path = format!("{}{}", data.path, nominal.arguments_name(self.state.design));
+        data.instance = Some(piperine_ir::GenericInstance { item: self.state.design.decl_data(nominal.decl).name.as_ref().map_or_else(String::new, |n| n.text.clone()), arguments: nominal.arguments.iter().map(|argument| argument.name(self.state.design)).collect() });
         data
     }
 
@@ -190,7 +190,7 @@ impl Elaboration<'_, '_> {
     /// library declares it, so a project's own `logic::Logic` is not the library's `std::logic::Logic` (a host that
     /// recognises the library's type asks for that path).
     fn declaration_path(&self, decl: DeclId) -> String {
-        let declaration = self.design.decl(decl);
+        let declaration = self.state.design.decl(decl);
         let qualified = declaration.qualified_name();
         if declaration.krate().is_std() { format!("std::{qualified}") } else { qualified }
     }
@@ -198,13 +198,13 @@ impl Elaboration<'_, '_> {
     /// The arena entry of the declaration `decl`: its name, path, origin, fields or variants and the
     /// traits it derives.
     fn type_data(&self, decl: DeclId, substitution: &crate::types::Substitution) -> TypeData {
-        let data = self.design.decl_data(decl);
+        let data = self.state.design.decl_data(decl);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let kind = match &data.kind {
             DeclKind::Struct(s) => TypeKind::Struct { form: Self::fields_form(s.form), fields: self.field_list(decl, substitution) },
             _ => self.enum_kind(decl, substitution),
         };
-        TypeData { name, path: self.declaration_path(decl), origin: self.locator.decl(decl), kind, derives: self.derives_of(decl), instance: None, repr: Default::default() }
+        TypeData { name, path: self.declaration_path(decl), origin: self.state.locator.decl(decl), kind, derives: self.derives_of(decl), instance: None, repr: Default::default() }
     }
 
     /// The source's way of writing fields as the IR's.
@@ -219,7 +219,7 @@ impl Elaboration<'_, '_> {
     /// The fields of the struct or variant `owner` with their IR types; a positional field is named by
     /// its index.
     fn field_list(&self, owner: DeclId, substitution: &crate::types::Substitution) -> Vec<(String, ValueType)> {
-        let fields: &[FieldType] = self.types.fields(owner).unwrap_or(&[]);
+        let fields: &[FieldType] = self.state.types.fields(owner).unwrap_or(&[]);
         fields.iter().enumerate().map(|(index, field)| (field.name.clone().unwrap_or_else(|| index.to_string()), self.field_type(&substitution.apply(&field.ty)))).collect()
     }
 
@@ -246,12 +246,12 @@ impl Elaboration<'_, '_> {
 
     /// The tag and the variants of the enum `decl`.
     fn enum_kind(&self, decl: DeclId, substitution: &crate::types::Substitution) -> TypeKind {
-        let tag = self.types.enum_tag(decl);
-        let variants = self.design.decl_data(decl).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Variant(_)));
+        let tag = self.state.types.enum_tag(decl);
+        let variants = self.state.design.decl_data(decl).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Variant(_)));
         let variants = variants
             .enumerate()
             .map(|(index, variant)| {
-                let data = self.design.decl_data(variant);
+                let data = self.state.design.decl_data(variant);
                 let form = match &data.kind {
                     DeclKind::Variant(v) => Self::fields_form(v.form),
                     _ => FieldsForm::Unit,
@@ -267,7 +267,7 @@ impl Elaboration<'_, '_> {
     /// so the generated Rust type always is `Clone` and `Copy`; a carried type needs `PartialEq`
     /// for its encoding, so `Repr` implies it.
     fn derives_of(&self, decl: DeclId) -> Derives {
-        let listed = |name: &str| self.types.derives(decl, name);
+        let listed = |name: &str| self.state.types.derives(decl, name);
         let repr = listed("Repr");
         Derives {
             clone: true,

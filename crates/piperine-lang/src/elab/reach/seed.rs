@@ -71,10 +71,10 @@ impl Elaboration<'_, '_> {
 
     /// Every typed read of the design that is not the receiver of another.
     fn outermost_chains(&self) -> Vec<ReadChain> {
-        let count = self.design.expr_count();
+        let count = self.state.design.expr_count();
         let mut receivers = BTreeSet::new();
         for index in 0..count {
-            if let ExprKind::Field { expr, .. } = &self.design.expr_node(ExprId(index as u32)).kind {
+            if let ExprKind::Field { expr, .. } = &self.state.design.expr_node(ExprId(index as u32)).kind {
                 receivers.insert(self.peel_receiver(*expr));
             }
         }
@@ -84,10 +84,10 @@ impl Elaboration<'_, '_> {
     /// The declaration each plain name of the design resolves to, by the declaration that owns the name's expression.
     fn plain_reads(&self) -> BTreeMap<DeclId, BTreeSet<DeclId>> {
         let mut reads: BTreeMap<DeclId, BTreeSet<DeclId>> = BTreeMap::new();
-        for index in 0..self.design.expr_count() {
-            let node = self.design.expr_node(ExprId(index as u32));
+        for index in 0..self.state.design.expr_count() {
+            let node = self.state.design.expr_node(ExprId(index as u32));
             let ExprKind::Path(path) = &node.kind else { continue };
-            if let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|segment| segment.res) {
+            if let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|segment| segment.res) {
                 reads.entry(node.owner).or_default().insert(decl);
             }
         }
@@ -97,7 +97,7 @@ impl Elaboration<'_, '_> {
     /// `expr` through parentheses and indexes.
     fn peel_receiver(&self, mut expr: ExprId) -> ExprId {
         loop {
-            match &self.design.expr_node(expr).kind {
+            match &self.state.design.expr_node(expr).kind {
                 ExprKind::Paren(inner) | ExprKind::Index { expr: inner, .. } => expr = *inner,
                 _ => return expr,
             }
@@ -108,7 +108,7 @@ impl Elaboration<'_, '_> {
     fn chain_of(&self, expr: ExprId) -> Option<ReadChain> {
         let mut names = Vec::new();
         let mut at = expr;
-        while let ExprKind::Field { expr: receiver, name, res } = &self.design.expr_node(at).kind {
+        while let ExprKind::Field { expr: receiver, name, res } = &self.state.design.expr_node(at).kind {
             let placement = match res {
                 Resolution::Decl(binding) if self.is_placement_binding(*binding) => Some(*binding),
                 _ => None,
@@ -117,12 +117,12 @@ impl Elaboration<'_, '_> {
             at = self.peel_receiver(*receiver);
         }
         names.reverse();
-        let ExprKind::Path(path) = &self.design.expr_node(at).kind else { return None };
-        let Some(Resolution::Decl(root)) = self.design.path_node(*path).segments.last().map(|segment| segment.res) else { return None };
+        let ExprKind::Path(path) = &self.state.design.expr_node(at).kind else { return None };
+        let Some(Resolution::Decl(root)) = self.state.design.path_node(*path).segments.last().map(|segment| segment.res) else { return None };
         if names.is_empty() || !self.is_placement_binding(root) {
             return None;
         }
-        Some(ReadChain { owner: self.design.expr_node(expr).owner, root, names })
+        Some(ReadChain { owner: self.state.design.expr_node(expr).owner, root, names })
     }
 
     /// The module the placement `binding` places, when the text names it.
@@ -147,7 +147,7 @@ impl Elaboration<'_, '_> {
         }
         let Some(holder) = self.holder_of_last(base, &names) else { return };
         let Some(item) = self.item_named(holder, &names[names.len() - 1].text) else { return };
-        let data = self.design.decl_data(item);
+        let data = self.state.design.decl_data(item);
         if self.is_placement_binding(item) || self.body_let_value(item).is_none() {
             return;
         }
@@ -164,7 +164,7 @@ impl Elaboration<'_, '_> {
         for read in reads.names.get(&let_decl).into_iter().flatten() {
             let text = self.decl_name(*read);
             let own = self.item_named(holder, &text) == Some(*read);
-            let item = matches!(self.design.decl_data(*read).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || (self.body_let_value(*read).is_some() && !self.is_placement_binding(*read));
+            let item = matches!(self.state.design.decl_data(*read).kind, DeclKind::Port(_) | DeclKind::Signal(_)) || (self.body_let_value(*read).is_some() && !self.is_placement_binding(*read));
             if own && item {
                 let mut below: Vec<ReadName> = hops.to_vec();
                 below.push(ReadName { placement: None, text });
@@ -175,7 +175,7 @@ impl Elaboration<'_, '_> {
 
     /// The name `decl` is declared with.
     fn decl_name(&self, decl: DeclId) -> String {
-        self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone())
+        self.state.design.decl_data(decl).name.as_ref().map_or_else(String::new, |n| n.text.clone())
     }
 
     /// The module that holds the item `names` ends on: the one the last hop places, or `base` when the chain has one name.
@@ -189,12 +189,12 @@ impl Elaboration<'_, '_> {
 
     /// The module whose body holds the `let` binding `binding`.
     fn module_holding(&self, binding: DeclId) -> Option<DeclId> {
-        let mut parent = self.design.decl_data(binding).parent;
+        let mut parent = self.state.design.decl_data(binding).parent;
         while let Some(decl) = parent {
-            if matches!(self.design.decl_data(decl).kind, DeclKind::Module(_)) {
+            if matches!(self.state.design.decl_data(decl).kind, DeclKind::Module(_)) {
                 return Some(decl);
             }
-            parent = self.design.decl_data(decl).parent;
+            parent = self.state.design.decl_data(decl).parent;
         }
         None
     }

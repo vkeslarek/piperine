@@ -1,6 +1,5 @@
 AnalogLowering	1
 DigitalLowering	1
-ElaborationState	1
 FunctionLowering	1
 StructureLowering	1
 ValueLowering	1

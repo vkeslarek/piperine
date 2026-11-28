@@ -15,7 +15,7 @@ impl Elaboration<'_, '_> {
     /// The variant of `function` for `half`: the result is the type of the body. `None` after a
     /// diagnostic.
     pub(super) fn lower_function(&mut self, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
-        let data = self.design.decl_data(function).clone();
+        let data = self.state.design.decl_data(function).clone();
         let DeclKind::Fn(f) = &data.kind else { return None };
         let written = self.impl_qualified_name(function);
         // an instance of a generic function is named from the function and its arguments (D8)
@@ -23,32 +23,32 @@ impl Elaboration<'_, '_> {
         self.register_function_types(function);
         let mut scope = Scope::new(data.file);
         // `freq()` in a function is the caller's `freq_`: the sweep's in an analog caller, 0 in a reaction.
-        scope.analog = true;
+        scope.analog.in_analog_code = true;
         let mut params = Vec::new();
         let mut ok = true;
-        let declared = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::FnParam(_)));
+        let declared = data.children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::FnParam(_)));
         for param in declared {
             // An `Option<T>` parameter is two: `name.is` and `name.val` (§3.2), read as the pair
             // of an `Option` local.
             if let Some(Ty::Option(payload)) = self.typed_local(param) {
                 let Some(payload) = self.value_type(&payload) else {
-                    self.refuse(data.file, self.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
+                    self.refuse(data.file, self.state.design.decl_data(param).span, ValueForm::OptionParameterWhosePayloadHasNoValue);
                     ok = false;
                     continue;
                 };
-                let name = self.design.decl_data(param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
-                let is = scope.locals.len() as u32;
+                let name = self.state.design.decl_data(param).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+                let is = scope.values.locals.len() as u32;
                 for (suffix, ty) in [("is", ValueType::Bool), ("val", payload)] {
                     let local = Local { name: format!("{name}.{suffix}"), ty, mutable: false };
-                    scope.locals.push(local.clone());
+                    scope.values.locals.push(local.clone());
                     params.push(local);
                 }
-                scope.options.insert(param, (is, is + 1));
+                scope.values.options.insert(param, (is, is + 1));
                 continue;
             }
             match self.bind_local(&mut scope, param) {
                 Some(index) => {
-                    params.push(scope.locals[index as usize].clone());
+                    params.push(scope.values.locals[index as usize].clone());
                 }
                 None => ok = false,
             }
@@ -72,20 +72,20 @@ impl Elaboration<'_, '_> {
         // Each half runs the whole body and uses only part of what it computes: its own locals are
         // spelled `_name`, so the generated Rust does not warn of the part a half leaves unread.
         if half != Half::Whole {
-            for local in scope.locals.iter_mut().skip(params.len()) {
+            for local in scope.values.locals.iter_mut().skip(params.len()) {
                 local.name = format!("_{}", local.name);
             }
         }
-        Some(FunctionSpec { name: Variants::name(&name, half), origin: self.locator.decl(function), params, ret, locals: scope.locals, body: lowered })
+        Some(FunctionSpec { name: Variants::name(&name, half), origin: self.state.locator.decl(function), params, ret, locals: scope.values.locals, body: lowered })
     }
 
     /// The arena entry of every instance of a generic type the body and the signature of `function` hold, under the
     /// substitution of the instance being lowered (the types of a body that is not generic were registered with the
     /// arena; a generic body names its instances only here, T38).
     fn register_function_types(&mut self, function: DeclId) {
-        let mut types: Vec<Ty> = (0..self.design.expr_count() as u32).map(crate::pom::ExprId).filter(|expr| self.design.expr_node(*expr).owner == function).filter_map(|expr| self.typed(expr)).collect();
-        types.extend(self.design.decl_data(function).children.iter().filter_map(|child| self.typed_local(*child)));
-        if let DeclKind::Fn(signature) = &self.design.decl_data(function).kind {
+        let mut types: Vec<Ty> = (0..self.state.design.expr_count() as u32).map(crate::pom::ExprId).filter(|expr| self.state.design.expr_node(*expr).owner == function).filter_map(|expr| self.typed(expr)).collect();
+        types.extend(self.state.design.decl_data(function).children.iter().filter_map(|child| self.typed_local(*child)));
+        if let DeclKind::Fn(signature) = &self.state.design.decl_data(function).kind {
             types.extend(signature.ret.and_then(|ret| self.typed_written(ret)));
         }
         types.iter().for_each(|ty| self.register_instances(ty));
@@ -94,20 +94,20 @@ impl Elaboration<'_, '_> {
     /// The name of `function` as written; a function of an `impl` with no parameters is named by the type the `impl` is for, `Sq.area`, so
     /// two types giving one method name stay two IR functions.
     pub(super) fn impl_qualified_name(&self, function: DeclId) -> String {
-        let data = self.design.decl_data(function);
+        let data = self.state.design.decl_data(function);
         let own = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let Some(parent) = data.parent else { return own };
         // an `impl` with parameters is told apart by the arguments of its instances
-        let DeclKind::Impl(owner) = &self.design.decl_data(parent).kind else { return own };
+        let DeclKind::Impl(owner) = &self.state.design.decl_data(parent).kind else { return own };
         // an `impl` with parameters is told apart by the arguments of its instances, and a trait `impl` also by its type and
         // its trait arguments (`impl BitAnd for Logic<N>` and `impl BitAnd<UInt<N>, Logic<N>> for Logic<N>` give two `bitand`)
-        if self.design.decl_data(parent).generics_span.is_some() && owner.trait_.is_none() {
+        if self.state.design.decl_data(parent).generics_span.is_some() && owner.trait_.is_none() {
             return own;
         }
         let suffix = self.trait_arguments_suffix(parent);
         // the type as written, under no substitution: the name of an instance is the same wherever it is asked
-        match self.consts.written_as_declared(owner.self_ty) {
-            Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.design)),
+        match self.state.consts.written_as_declared(owner.self_ty) {
+            Some(ty) => format!("{}.{own}{suffix}", ty.source_name(self.state.design)),
             None => match self.nature_target_name(parent) {
                 Some(nature) => format!("{nature}.{own}{suffix}"),
                 None => own,
@@ -118,9 +118,9 @@ impl Elaboration<'_, '_> {
     /// The name of the nature a trait `impl` is written for (`impl Resolve<f64> for Total`): a nature is no written
     /// type, so two `impl`s of one trait for two natures tell their methods apart by it.
     fn nature_target_name(&self, implementation: DeclId) -> Option<String> {
-        let entry = self.impls.impls().iter().find(|entry| entry.decl == implementation)?;
+        let entry = self.state.impls.impls().iter().find(|entry| entry.decl == implementation)?;
         match &entry.target {
-            crate::types::ImplTarget::Declared(decl) => self.design.decl_data(*decl).name.as_ref().map(|n| n.text.clone()),
+            crate::types::ImplTarget::Declared(decl) => self.state.design.decl_data(*decl).name.as_ref().map(|n| n.text.clone()),
             _ => None,
         }
     }
@@ -130,8 +130,8 @@ impl Elaboration<'_, '_> {
     /// arguments tell them apart. Not inlined: it runs once for every instantiation, deep in a recursion.
     #[inline(never)]
     fn trait_arguments_suffix(&self, owner: DeclId) -> String {
-        let arguments = self.impls.impls().iter().find(|entry| entry.decl == owner).map(|entry| entry.trait_arguments.clone()).unwrap_or_default();
-        let written: Vec<String> = arguments.iter().filter_map(|argument| self.consts.written_as_declared(*argument)).map(|ty| ty.source_name(self.design)).collect();
+        let arguments = self.state.impls.impls().iter().find(|entry| entry.decl == owner).map(|entry| entry.trait_arguments.clone()).unwrap_or_default();
+        let written: Vec<String> = arguments.iter().filter_map(|argument| self.state.consts.written_as_declared(*argument)).map(|ty| ty.source_name(self.state.design)).collect();
         if written.is_empty() { String::new() } else { format!("::<{}>", written.join(", ")) }
     }
 
@@ -139,7 +139,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_type(&mut self, file: FileId, ty: TypeId) -> Option<ValueType> {
         let lowered = self.typed_written(ty).and_then(|t| self.value_type(&t));
         if lowered.is_none() {
-            let span = self.design.type_node(ty).span;
+            let span = self.state.design.type_node(ty).span;
             match self.typed_written(ty) {
                 Some(crate::types::Ty::Enum(_)) => self.refuse(file, span, ValueForm::EnumOfOneVariantWhoseTagHas),
                 _ => self.refuse(file, span, ValueForm::TypeThatHasNoValueInIr),

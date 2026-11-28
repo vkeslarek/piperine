@@ -10,6 +10,7 @@
 //! instance tree. Any diagnostic means no `Ir`.
 
 mod aggregate;
+mod analog_state; mod digital_state; mod function_state; mod structure_state; mod value_state;
 mod body; mod bundles; mod carrier_arrays;
 mod carriers;
 mod children;

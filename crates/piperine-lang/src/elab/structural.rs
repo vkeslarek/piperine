@@ -223,10 +223,10 @@ impl ContributionWalk<'_, '_, '_> {
     /// The contributions of the `analog` blocks of `module`, then of every module it hoists, each
     /// beneath its placement.
     fn module(&mut self, module: DeclId) {
-        let DeclKind::Module(data) = &self.elaboration.design.decl_data(module).kind else { return };
+        let DeclKind::Module(data) = &self.elaboration.state.design.decl_data(module).kind else { return };
         let (blocks, calls) = (data.behaviors.clone(), data.instances.clone());
         for block in blocks {
-            if let DeclKind::Behavior(behavior) = &self.elaboration.design.decl_data(block).kind.clone()
+            if let DeclKind::Behavior(behavior) = &self.elaboration.state.design.decl_data(block).kind.clone()
                 && behavior.kind == crate::pom::BehaviorKind::Analog
             {
                 self.statements(&behavior.body);
@@ -247,7 +247,7 @@ impl ContributionWalk<'_, '_, '_> {
     /// The contributions among `stmts` and what they hold, in source order.
     fn statements(&mut self, stmts: &[StmtId]) {
         for stmt in stmts {
-            match self.elaboration.design.stmt_node(*stmt).kind.clone() {
+            match self.elaboration.state.design.stmt_node(*stmt).kind.clone() {
                 StmtKind::Contribution { lhs, rhs } => self.contribution(lhs, rhs),
                 StmtKind::Expr { expr, .. } => self.expression(expr),
                 StmtKind::Let { init: Some(init), .. } => self.expression(init),
@@ -258,7 +258,7 @@ impl ContributionWalk<'_, '_, '_> {
 
     /// The contributions inside `expr`: in a block, an `if` or a `match` it is.
     fn expression(&mut self, expr: ExprId) {
-        crate::stack::Stack::deep(|| match self.elaboration.design.expr_node(expr).kind.clone() {
+        crate::stack::Stack::deep(|| match self.elaboration.state.design.expr_node(expr).kind.clone() {
             ExprKind::Paren(inner) => self.expression(inner),
             ExprKind::Block(block) => self.statements(&block.stmts),
             // A condition over the key params folds: only the arm it selects is written (`lower.rs`).
@@ -299,7 +299,7 @@ impl ContributionWalk<'_, '_, '_> {
 
     /// Records the contribution whose left side is `lhs`, when it names a probe of one or two nodes.
     fn contribution(&mut self, lhs: ExprId, rhs: ExprId) {
-        let design = self.elaboration.design;
+        let design = self.elaboration.state.design;
         let ExprKind::Call { callee, args, .. } = &design.expr_node(lhs).kind else { return };
         let Some(quantity) = self.elaboration.quantity_role(*callee) else { return };
         let mut ends: Vec<Option<DeclId>> = Vec::new();
@@ -321,9 +321,9 @@ impl Elaboration<'_, '_> {
     /// The node `arg` names as an end of a branch: `Some(None)` for ground, `Some(Some(decl))` for
     /// a port or a signal, `None` for anything else.
     pub(super) fn terminal_decl(&self, arg: ExprId) -> Option<Option<DeclId>> {
-        let ExprKind::Path(path) = &self.design.expr_node(arg).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|s| s.res)? {
-            Resolution::Decl(decl) => matches!(self.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)).then_some(Some(decl)),
+        let ExprKind::Path(path) = &self.state.design.expr_node(arg).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|s| s.res)? {
+            Resolution::Decl(decl) => matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_) | DeclKind::Signal(_)).then_some(Some(decl)),
             Resolution::Builtin(builtin) if builtin.info().kind == crate::pom::BuiltinKind::Node => Some(None),
             _ => None,
         }
@@ -331,7 +331,7 @@ impl Elaboration<'_, '_> {
 
     /// The params of `module`, in declaration order.
     pub(super) fn params_of(&self, module: DeclId) -> Vec<DeclId> {
-        self.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Param(_))).collect()
+        self.state.design.decl_data(module).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Param(_))).collect()
     }
 
     /// The contributions `module` writes in its `analog` blocks and `analog` blocks of the modules it
@@ -349,10 +349,10 @@ impl Elaboration<'_, '_> {
     pub(super) fn terminal_in(&self, arg: ExprId, placements: &[ExprId]) -> Option<Option<DeclId>> {
         let Some(decl) = self.terminal_decl(arg)? else { return Some(None) };
         let [outer @ .., call] = placements else { return Some(Some(decl)) };
-        let Some(crate::types::Callee::Module(callee)) = self.types.callee(*call) else { return None };
-        let ports = self.design.decl_data(callee).children.iter().filter(|c| matches!(self.design.decl_data(**c).kind, DeclKind::Port(_)));
+        let Some(crate::types::Callee::Module(callee)) = self.state.types.callee(*call) else { return None };
+        let ports = self.state.design.decl_data(callee).children.iter().filter(|c| matches!(self.state.design.decl_data(**c).kind, DeclKind::Port(_)));
         let position = ports.into_iter().position(|c| *c == decl)?;
-        let ExprKind::Call { args, .. } = &self.design.expr_node(*call).kind else { return None };
+        let ExprKind::Call { args, .. } = &self.state.design.expr_node(*call).kind else { return None };
         self.terminal_in(args.get(position)?.value, outer)
     }
 
@@ -370,7 +370,7 @@ impl Elaboration<'_, '_> {
             let order = self.params_of(*module);
             for param in order.clone() {
                 if self.is_template_param(param) {
-                    self.keys.add(*module, param, &order);
+                    self.state.structure.keys.add(*module, param, &order);
                 }
             }
         }
@@ -384,7 +384,7 @@ impl Elaboration<'_, '_> {
             let order = self.params_of(*module);
             let read: Vec<DeclId> = self.params_read_by_node_choices(*module).into_iter().chain(self.params_read_by_defaults(*module)).collect();
             for param in read {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
     }
@@ -396,8 +396,8 @@ impl Elaboration<'_, '_> {
             let order = self.params_of(*module);
             for contribution in self.potential_capable_contributions(*module) {
                 for condition in &contribution.conditions {
-                    for param in ParamReads::within(self.design, self.types, &contribution.placements).of(*condition).into_iter().flatten() {
-                        self.keys.add(*module, param, &order);
+                    for param in ParamReads::within(self.state.design, self.state.types, &contribution.placements).of(*condition).into_iter().flatten() {
+                        self.state.structure.keys.add(*module, param, &order);
                     }
                 }
             }
@@ -406,42 +406,42 @@ impl Elaboration<'_, '_> {
         for module in modules {
             let order = self.params_of(*module);
             for param in self.params_read_by_initial_values(*module) {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
         // A param read by the length of an array of carriers or nodes is structural too (§8.1.2, QC2).
         for module in modules {
             let order = self.params_of(*module);
             for param in self.params_read_by_array_lengths(*module) {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
         // A param read by the range or the condition of a generation is structural too (§8.2.7, GN-20).
         for module in modules {
             let order = self.params_of(*module);
             for param in self.params_read_by_generation(*module) {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
         // A param read by a const generic argument of a placement is structural too (`Taps::<{ count }>`, GN-20).
         for module in modules {
             let order = self.params_of(*module);
             for param in self.params_read_by_generic_arguments(*module) {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
         // A param read by the head of a placement through a template (`nch(l, w)(d, g, s, b)`, `C1(a, b)`) is structural too (§8.4.6, GN-20).
         for module in modules {
             let order = self.params_of(*module);
             for param in self.params_read_by_template_heads(*module) {
-                self.keys.add(*module, param, &order);
+                self.state.structure.keys.add(*module, param, &order);
             }
         }
         // A param of a child that the parent reads through `inst.name` is fixed by the placement.
         for (module, param) in self.params_read_through_reaches() {
             if modules.contains(&module) {
                 let order = self.params_of(module);
-                self.keys.add(module, param, &order);
+                self.state.structure.keys.add(module, param, &order);
             }
         }
         // A param read by the value a placement gives a key param of its child is a key too.
@@ -452,7 +452,7 @@ impl Elaboration<'_, '_> {
                 let order = self.params_of(*module);
                 for (child, param) in self.params_that_feed_key_params(*module) {
                     let _ = child;
-                    changed |= self.keys.add(*module, param, &order);
+                    changed |= self.state.structure.keys.add(*module, param, &order);
                 }
             }
         }
@@ -461,21 +461,21 @@ impl Elaboration<'_, '_> {
     /// The params of `module` that the condition or the scrutinee of a node chosen at elaboration reads (`v(if k > 0.5 { x } else
     /// { p })`), in its body and its behaviors.
     fn params_read_by_node_choices(&self, module: DeclId) -> Vec<DeclId> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let mut owners = BTreeSet::new();
         let mut pending: Vec<DeclId> = std::iter::once(module).chain(data.behaviors.iter().copied()).collect();
         while let Some(decl) = pending.pop() {
             if owners.insert(decl) {
-                pending.extend(self.design.decl_data(decl).children.iter().copied());
+                pending.extend(self.state.design.decl_data(decl).children.iter().copied());
             }
         }
         let mut found = Vec::new();
-        for index in 0..self.design.expr_count() {
+        for index in 0..self.state.design.expr_count() {
             let expr = ExprId(index as u32);
-            if !owners.contains(&self.design.expr_node(expr).owner) || !matches!(self.typed(expr), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
+            if !owners.contains(&self.state.design.expr_node(expr).owner) || !matches!(self.typed(expr), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
                 continue;
             }
-            match &self.design.expr_node(expr).kind {
+            match &self.state.design.expr_node(expr).kind {
                 ExprKind::If { cond, .. } => self.collect_choice_params(*cond, &mut found, &mut Vec::new()),
                 ExprKind::Match { scrutinee, arms } => {
                     self.collect_choice_params(*scrutinee, &mut found, &mut Vec::new());
@@ -502,7 +502,7 @@ impl Elaboration<'_, '_> {
             if let Some(init) = self.let_initializer(local) {
                 self.collect_choice_params(init, found, followed);
             }
-            if self.types.is_assigned(local) {
+            if self.state.types.is_assigned(local) {
                 for read in self.assignment_reads(local) {
                     self.collect_choice_params(read, found, followed);
                 }
@@ -516,7 +516,7 @@ impl Elaboration<'_, '_> {
         let order = self.params_of(module);
         let mut found = Vec::new();
         for (position, param) in order.iter().enumerate() {
-            if let DeclKind::Param(data) = &self.design.decl_data(*param).kind
+            if let DeclKind::Param(data) = &self.state.design.decl_data(*param).kind
                 && let Some(default) = data.default
             {
                 let mut read = Vec::new();
@@ -530,11 +530,11 @@ impl Elaboration<'_, '_> {
     /// The params of `module` that the length of one of its arrays of carriers or nodes reads (`signal s: [Bit; n]`).
     fn params_read_by_array_lengths(&self, module: DeclId) -> Vec<DeclId> {
         let mut found = Vec::new();
-        for child in &self.design.decl_data(module).children {
-            let Some(mut at) = self.types.carrier_array(*child).or_else(|| self.types.node_array(*child)) else { continue };
+        for child in &self.state.design.decl_data(module).children {
+            let Some(mut at) = self.state.types.carrier_array(*child).or_else(|| self.state.types.node_array(*child)) else { continue };
             while let crate::types::Ty::Array(element, length) = at {
                 if let crate::types::Length::Generic(crate::types::ConstTerm::Expr(expr)) = length {
-                    found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
+                    found.extend(ParamReads::new(self.state.design, self.state.types).of(*expr).into_iter().flatten());
                 }
                 at = element;
             }
@@ -544,12 +544,12 @@ impl Elaboration<'_, '_> {
 
     /// The params of `module` that the range of a generation `for`, or the condition of a generation `if`, reads.
     fn params_read_by_generation(&self, module: DeclId) -> Vec<DeclId> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let mut found = Vec::new();
         // the generation of the body, and of the `digital` blocks, which are written beside the module
-        let mut pending: Vec<DeclId> = self.design.decl_data(module).children.iter().chain(&data.behaviors).copied().collect();
+        let mut pending: Vec<DeclId> = self.state.design.decl_data(module).children.iter().chain(&data.behaviors).copied().collect();
         while let Some(decl) = pending.pop() {
-            let item = self.design.decl_data(decl);
+            let item = self.state.design.decl_data(decl);
             match &item.kind {
                 DeclKind::Generation(crate::pom::GenerationData::For { iter, .. }) => self.collect_params(*iter, &mut found),
                 DeclKind::Generation(crate::pom::GenerationData::If { cond, .. }) => self.collect_params(*cond, &mut found),
@@ -564,27 +564,27 @@ impl Elaboration<'_, '_> {
 
     /// Adds every param `expr` reads, whatever else it reads, to `found`.
     pub(super) fn collect_params(&self, expr: ExprId, found: &mut Vec<DeclId>) {
-        let node = self.design.expr_node(expr);
+        let node = self.state.design.expr_node(expr);
         if let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && matches!(self.design.decl_data(decl).kind, DeclKind::Param(_))
+            && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
+            && matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_))
         {
             found.push(decl);
         }
-        for child in crate::pom::BodyWalk::new(self.design).expression_children(&node.kind) {
+        for child in crate::pom::BodyWalk::new(self.state.design).expression_children(&node.kind) {
             self.collect_params(child, found);
         }
     }
 
     /// The params of `module` that a const generic argument of one of its placements reads (`Taps::<{ count }>`).
     fn params_read_by_generic_arguments(&self, module: DeclId) -> Vec<DeclId> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let mut found = Vec::new();
         for call in &data.instances {
-            let Some(instantiation) = self.types.instantiation(*call) else { continue };
+            let Some(instantiation) = self.state.types.instantiation(*call) else { continue };
             for argument in &instantiation.arguments {
                 if let crate::types::GenericValue::Const(crate::types::ConstTerm::Expr(expr)) = argument {
-                    found.extend(ParamReads::new(self.design, self.types).of(*expr).into_iter().flatten());
+                    found.extend(ParamReads::new(self.state.design, self.state.types).of(*expr).into_iter().flatten());
                 }
             }
         }
@@ -595,10 +595,10 @@ impl Elaboration<'_, '_> {
     /// `nch(l, w)(d, g, s, b)`, whatever function the head calls (§8.4.6). A head that is a param of module type or a template
     /// written in place is not one: the first is structural already, the second is read as a placement's block.
     fn params_read_by_template_heads(&self, module: DeclId) -> Vec<DeclId> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let mut found = Vec::new();
         for call in &data.instances {
-            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via }, .. } = &self.design.expr_node(*call).kind else { continue };
+            let ExprKind::Call { callee, class: crate::pom::CallClass::Instance { module: Some(placed), via }, .. } = &self.state.design.expr_node(*call).kind else { continue };
             match via {
                 Some(via) if via == placed || self.is_module_param(*via) => continue,
                 None if !self.has_an_expression_head(*call) => continue,
@@ -614,13 +614,13 @@ impl Elaboration<'_, '_> {
     /// Electrical = v0`, a port's default).
     fn params_read_by_initial_values(&self, module: DeclId) -> Vec<DeclId> {
         let mut found = Vec::new();
-        for child in &self.design.decl_data(module).children {
-            let init = match &self.design.decl_data(*child).kind {
+        for child in &self.state.design.decl_data(module).children {
+            let init = match &self.state.design.decl_data(*child).kind {
                 DeclKind::Signal(s) => s.init,
-                DeclKind::Port(p) if self.types.carrier(*child).is_some() => p.default,
+                DeclKind::Port(p) if self.state.types.carrier(*child).is_some() => p.default,
                 _ => None,
             };
-            if let Some(params) = init.and_then(|expr| ParamReads::new(self.design, self.types).of(expr)) {
+            if let Some(params) = init.and_then(|expr| ParamReads::new(self.state.design, self.state.types).of(expr)) {
                 found.extend(params);
             }
         }
@@ -630,16 +630,16 @@ impl Elaboration<'_, '_> {
     /// The params of `module` read by a value `module` gives to a key param of a module it
     /// places, as (the placed module, the param of `module`).
     fn params_that_feed_key_params(&self, module: DeclId) -> Vec<(DeclId, DeclId)> {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return Vec::new() };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return Vec::new() };
         let mut out = Vec::new();
         for call in &data.instances {
-            let Some(crate::types::Callee::Module(child)) = self.types.callee(*call) else { continue };
+            let Some(crate::types::Callee::Module(child)) = self.state.types.callee(*call) else { continue };
             if self.hoisted_callee(*call).is_some() {
                 continue;
             }
             for field in self.placement_fields(*call, child) {
                 let Resolution::Decl(given) = field.res else { continue };
-                if !self.keys.is_key(child, given) {
+                if !self.state.structure.keys.is_key(child, given) {
                     continue;
                 }
                 // a template value (`cell: A { r: l }`, `cell: sized(l)`, `cell: if sel { A {} } else { K }`) is a const expression over
@@ -650,7 +650,7 @@ impl Elaboration<'_, '_> {
                     out.extend(read.into_iter().map(|param| (child, param)));
                     continue;
                 }
-                for param in ParamReads::new(self.design, self.types).of(field.value).into_iter().flatten() {
+                for param in ParamReads::new(self.state.design, self.state.types).of(field.value).into_iter().flatten() {
                     out.push((child, param));
                 }
             }
@@ -665,36 +665,36 @@ impl Elaboration<'_, '_> {
     /// values are asked for and is lowered by `lower_pending_bodies`. `None` when a key param has
     /// no value in `values`.
     pub(super) fn request_body(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<(BodyKey, BodyId)> {
-        let keys = self.keys.of(module).to_vec();
+        let keys = self.state.structure.keys.of(module).to_vec();
         if keys.is_empty() && instance.is_none() {
-            return Some((BodyKey::unkeyed(module), self.body_ids.get(&module).copied()?));
+            return Some((BodyKey::unkeyed(module), self.state.structure.body_ids.get(&module).copied()?));
         }
         let mut keyed = Bindings::new();
         for key in &keys {
             self.bind_param(&mut keyed, *key, values.get(*key)?);
         }
         let key = self.body_key(module, instance, values)?;
-        if let Some(id) = self.body_variants.ids.get(&key) {
+        if let Some(id) = self.state.structure.body_variants.ids.get(&key) {
             return Some((key.clone(), *id));
         }
         self.admit_instance_depth(&key)?;
-        let id = BodyId(self.body_variants.next);
-        self.body_variants.next += 1;
-        self.body_variants.ids.insert(key.clone(), id);
-        self.body_variants.pending.push_back((key.clone(), keyed));
+        let id = BodyId(self.state.structure.body_variants.next);
+        self.state.structure.body_variants.next += 1;
+        self.state.structure.body_variants.ids.insert(key.clone(), id);
+        self.state.structure.body_variants.pending.push_back((key.clone(), keyed));
         Some((key, id))
     }
 
     /// The key of the body `module` gets when its params hold `values`. `None` when a key param has no value in `values`.
     pub(super) fn body_key(&self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<BodyKey> {
-        let texts = self.keys.of(module).iter().map(|key| values.get(*key).map(|value| self.key_text(value))).collect::<Option<Vec<_>>>()?;
+        let texts = self.state.structure.keys.of(module).iter().map(|key| values.get(*key).map(|value| self.key_text(value))).collect::<Option<Vec<_>>>()?;
         Some(BodyKey { module, instance: instance.cloned(), values: texts })
     }
 
     /// Lowers every variant requested and not yet lowered, in id order; a variant may request
     /// more, which follow.
     pub(super) fn lower_pending_bodies(&mut self) {
-        while let Some((key, values, id)) = self.body_variants.next_pending() {
+        while let Some((key, values, id)) = self.state.structure.body_variants.next_pending() {
             self.lower_body(key.module, &values, key, id);
         }
     }
@@ -704,19 +704,19 @@ impl Elaboration<'_, '_> {
     pub(super) fn body_plan(&mut self, module: DeclId, instance: Option<&Instance>, values: &Bindings) -> Option<ModulePlan> {
         let (key, _) = self.request_body(module, instance, values)?;
         self.lower_pending_bodies();
-        self.plans.get(&key).cloned()
+        self.state.structure.plans.get(&key).cloned()
     }
 
     /// The name of the body of `key`: the module's, then `~param=value` for each key param.
     pub(super) fn body_name(&self, key: &BodyKey) -> String {
         let name = match &key.instance {
             Some(instance) => instance.name(self),
-            None => self.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
+            None => self.state.design.decl_data(key.module).name.as_ref().map_or_else(String::new, |n| n.text.clone()),
         };
         if key.values.is_empty() {
             return name;
         }
-        let pairs: Vec<String> = self.keys.of(key.module).iter().zip(&key.values).map(|(param, value)| format!("{}={value}", self.design.decl_data(*param).name.as_ref().map_or("", |n| n.text.as_str()))).collect();
+        let pairs: Vec<String> = self.state.structure.keys.of(key.module).iter().zip(&key.values).map(|(param, value)| format!("{}={value}", self.state.design.decl_data(*param).name.as_ref().map_or("", |n| n.text.as_str()))).collect();
         format!("{name}~{}", pairs.join(","))
     }
 }
@@ -729,7 +729,7 @@ impl Elaboration<'_, '_> {
     /// lowered as written.
     pub(super) fn folded_condition(&mut self, keys: &Bindings, placements: &[ExprId], cond: ExprId) -> Option<bool> {
         let bindings = self.fold_bindings(keys, placements, cond)?;
-        match self.consts.value(cond, &bindings) {
+        match self.state.consts.value(cond, &bindings) {
             Ok(Constant::Bool(holds)) => Some(holds),
             _ => None,
         }
@@ -741,7 +741,7 @@ impl Elaboration<'_, '_> {
     /// value of the key params alone, or (beneath a placement) reads no value input, which
     /// the frame lowers as written as it always did.
     fn fold_bindings(&mut self, keys: &Bindings, placements: &[ExprId], expr: ExprId) -> Option<Bindings> {
-        let reads = ParamReads::within(self.design, self.types, placements);
+        let reads = ParamReads::within(self.state.design, self.state.types, placements);
         let params = reads.of(expr)?;
         if keys.is_empty() || !params.iter().all(|param| keys.get(*param).is_some()) || (!placements.is_empty() && !reads.reads_an_input()) {
             return None;
@@ -756,23 +756,23 @@ impl Elaboration<'_, '_> {
     /// The values the value inputs and params of the callee of the placement `call` take, the
     /// arguments read over `caller`, the bindings of the frame the placement is written in.
     fn placement_bindings(&mut self, call: ExprId, caller: &Bindings) -> Option<Bindings> {
-        let Some(crate::types::Callee::Module(callee)) = self.types.callee(call) else { return None };
-        let ExprKind::Call { args, .. } = self.design.expr_node(call).kind.clone() else { return None };
-        let ports: Vec<DeclId> = self.design.decl_data(callee).children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
+        let Some(crate::types::Callee::Module(callee)) = self.state.types.callee(call) else { return None };
+        let ExprKind::Call { args, .. } = self.state.design.expr_node(call).kind.clone() else { return None };
+        let ports: Vec<DeclId> = self.state.design.decl_data(callee).children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_))).collect();
         let mut bound = Bindings::new();
         for (position, port) in ports.iter().enumerate() {
             if self.is_value_input(*port) {
-                let value = self.consts.value(args.get(position)?.value, caller).ok()?;
+                let value = self.state.consts.value(args.get(position)?.value, caller).ok()?;
                 bound.bind(*port, value);
             }
         }
         let fields = self.placement_fields(call, callee);
         for param in self.params_of(callee) {
-            let DeclKind::Param(data) = &self.design.decl_data(param).kind else { continue };
+            let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { continue };
             // a written value reads the caller; a default the params before it (§8.1.16)
             let value = match fields.iter().find(|f| f.res == Resolution::Decl(param)) {
-                Some(field) => self.consts.value(field.value, caller).ok()?,
-                None => self.consts.value(data.default?, &bound).ok()?,
+                Some(field) => self.state.consts.value(field.value, caller).ok()?,
+                None => self.state.consts.value(data.default?, &bound).ok()?,
             };
             bound.bind(param, value);
         }
@@ -788,7 +788,7 @@ impl Elaboration<'_, '_> {
     /// as written, a run-time selector.
     pub(super) fn folded_arm(&mut self, keys: &Bindings, placements: &[ExprId], scrutinee: ExprId, arms: &[Arm]) -> Option<usize> {
         let keys = &self.fold_bindings(keys, placements, scrutinee)?;
-        let subject = self.consts.value(scrutinee, keys).ok()?;
+        let subject = self.state.consts.value(scrutinee, keys).ok()?;
         for (position, arm) in arms.iter().enumerate() {
             if arm.guard.is_some() {
                 return None;
@@ -803,11 +803,11 @@ impl Elaboration<'_, '_> {
     /// Whether the pattern `pat` accepts the constant `subject`; `None` for a pattern that binds
     /// or destructures, which no fold can decide.
     pub(super) fn constant_pattern_holds(&mut self, keys: &Bindings, pat: PatId, subject: Constant) -> Option<bool> {
-        match self.design.pat_node(pat).kind.clone() {
+        match self.state.design.pat_node(pat).kind.clone() {
             PatKind::Wild => Some(true),
-            PatKind::Lit(expr) => Some(self.consts.value(expr, keys).ok()? == subject),
+            PatKind::Lit(expr) => Some(self.state.consts.value(expr, keys).ok()? == subject),
             PatKind::Path(path) => {
-                let res = self.design.path_node(path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
+                let res = self.state.design.path_node(path).segments.last().map_or(Resolution::Unresolved, |s| s.res);
                 Some(self.named_constant(res)? == subject)
             }
             PatKind::Ident { res, sub: None, .. } => Some(self.named_constant(res)? == subject),
@@ -820,11 +820,11 @@ impl Elaboration<'_, '_> {
             }
             PatKind::Range { lo, hi, inclusive } => {
                 let above = match lo {
-                    Some(lo) => Self::at_least(subject, self.consts.value(lo, keys).ok()?)?,
+                    Some(lo) => Self::at_least(subject, self.state.consts.value(lo, keys).ok()?)?,
                     None => true,
                 };
                 let below = match hi {
-                    Some(hi) => Self::at_most(subject, self.consts.value(hi, keys).ok()?, inclusive)?,
+                    Some(hi) => Self::at_most(subject, self.state.consts.value(hi, keys).ok()?, inclusive)?,
                     None => true,
                 };
                 Some(above && below)
@@ -836,9 +836,9 @@ impl Elaboration<'_, '_> {
     /// The value of a `const` or a unit variant a pattern names (its tag); `None` for any other name.
     fn named_constant(&mut self, res: Resolution) -> Option<Constant> {
         let Resolution::Decl(decl) = res else { return None };
-        match self.design.decl_data(decl).kind {
-            DeclKind::Const(_) => self.consts.constant(decl).ok(),
-            DeclKind::Variant(_) => super::compound::EnumLayout::variant_tag(self.design, decl).map(Constant::Int),
+        match self.state.design.decl_data(decl).kind {
+            DeclKind::Const(_) => self.state.consts.constant(decl).ok(),
+            DeclKind::Variant(_) => super::compound::EnumLayout::variant_tag(self.state.design, decl).map(Constant::Int),
             _ => None,
         }
     }
@@ -868,7 +868,7 @@ impl Elaboration<'_, '_> {
     /// selects (after the folds), and whose flow no expression reads (§11 rule 3). Their
     /// contributions are not lowered and their two ends are one node in every instance.
     pub(super) fn merged_branches(&mut self, scope: &Scope, module: DeclId) -> Vec<(Terminal, Terminal)> {
-        let found = self.written_contributions(module, &scope.keys);
+        let found = self.written_contributions(module, &scope.values.keys);
         let read = self.flow_reads_in(module);
         let mut ends: Vec<[Option<DeclId>; 2]> = Vec::new();
         for contribution in &found {
@@ -880,7 +880,7 @@ impl Elaboration<'_, '_> {
         for pair in ends {
             let all_zero = found.iter().filter(|c| c.ends == pair).all(|c| c.quantity == crate::pom::QuantityRole::Potential && c.conditions.is_empty() && self.is_constant_zero(c.rhs));
             if all_zero && !read.contains(&pair) {
-                let terminal = |end: Option<DeclId>| end.and_then(|d| self.frames[0].nodes.get(&d).copied()).unwrap_or(Terminal::Ground);
+                let terminal = |end: Option<DeclId>| end.and_then(|d| self.state.structure.frames[0].nodes.get(&d).copied()).unwrap_or(Terminal::Ground);
                 merged.push((terminal(pair[0]), terminal(pair[1])));
             }
         }
@@ -889,13 +889,13 @@ impl Elaboration<'_, '_> {
 
     /// Whether `expr` folds to the real zero.
     fn is_constant_zero(&mut self, expr: ExprId) -> bool {
-        matches!(self.consts.value(expr, &Bindings::new()), Ok(Constant::Real(value)) if value.get() == 0.0)
+        matches!(self.state.consts.value(expr, &Bindings::new()), Ok(Constant::Real(value)) if value.get() == 0.0)
     }
 
     /// The branches (sorted pairs of ends) whose flow an expression of `module`, or of a module it
     /// hoists, reads: a call of the flow quantity that is not the left side of a contribution.
     fn flow_reads_in(&self, module: DeclId) -> Vec<[Option<DeclId>; 2]> {
-        let written: BTreeSet<ExprId> = (0..self.design.stmt_count() as u32).filter_map(|k| match &self.design.stmt_node(StmtId(k)).kind {
+        let written: BTreeSet<ExprId> = (0..self.state.design.stmt_count() as u32).filter_map(|k| match &self.state.design.stmt_node(StmtId(k)).kind {
             StmtKind::Contribution { lhs, .. } => Some(*lhs),
             _ => None,
         }).collect();
@@ -908,7 +908,7 @@ impl Elaboration<'_, '_> {
     /// the modules it hoists name, the ends read as the body's own module has them.
     fn collect_flow_reads(&self, module: DeclId, placements: &[ExprId], written: &BTreeSet<ExprId>, reads: &mut Vec<[Option<DeclId>; 2]>) {
         for id in self.module_exprs(module) {
-            let node = self.design.expr_node(id);
+            let node = self.state.design.expr_node(id);
             let ExprKind::Call { callee, args, .. } = &node.kind else { continue };
             if written.contains(&id) || self.quantity_role(*callee) != Some(crate::pom::QuantityRole::Flow) {
                 continue;
@@ -922,7 +922,7 @@ impl Elaboration<'_, '_> {
             pair.sort();
             reads.push(pair);
         }
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return };
         for call in &data.instances {
             let Some(callee) = self.hoisted_callee(*call) else { continue };
             if placements.iter().any(|p| self.hoisted_callee(*p) == Some(callee)) || callee == module {
@@ -987,11 +987,11 @@ impl Elaboration<'_, '_> {
     /// of the type of the param's default; `None` when it bound none or after a diagnostic.
     pub(super) fn host_override(&mut self, module: DeclId, path: &str, plans: &[super::body::ParamPlan], index: usize, at: (FileId, crate::msl::Span)) -> Option<Constant> {
         let key = plans[index].decl;
-        if !self.keys.is_key(module, key) {
+        if !self.state.structure.keys.is_key(module, key) {
             return None;
         }
         let top = path.split('.').next().unwrap_or(path);
-        let given = self.overrides.value(top, path, &plans[index].name).cloned()?;
+        let given = self.state.overrides.value(top, path, &plans[index].name).cloned()?;
         // D13: the host has no text for a template; the param is bound in the source.
         if self.is_template_param(key) {
             let message = format!("`{path}.{}` is a module-typed param: it is bound in the source, a host cannot give it the value {given:?}", plans[index].name);

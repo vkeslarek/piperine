@@ -49,33 +49,33 @@ impl Elaboration<'_, '_> {
     /// A `break`, `continue` or `return` node `exit`, typed `()` until a position asks for more.
     pub(super) fn emit_exit(&mut self, exit: Expr, origin: piperine_ir::Origin) -> LoweredExpr {
         let lowered = self.emit(exit.clone(), ValueType::Unit, origin);
-        self.divergences.expressions.insert(lowered.index(), Divergence::Exit(exit));
+        self.state.values.divergences.expressions.insert(lowered.index(), Divergence::Exit(exit));
         lowered
     }
 
     /// Remembers that `expr` diverges and was made of `exit`.
     pub(super) fn note_exit(&mut self, expr: LoweredExpr, exit: Expr) {
-        self.divergences.expressions.insert(expr.index(), Divergence::Exit(exit));
+        self.state.values.divergences.expressions.insert(expr.index(), Divergence::Exit(exit));
     }
 
     /// Remembers the block `block`, made of `stmts` and `value`, when it diverges: its value does,
     /// or it has none and its last statement is a diverging expression.
     pub(super) fn note_block(&mut self, block: LoweredExpr, stmts: &[LoweredStmt], value: Option<LoweredExpr>) {
         let form = match (value, stmts.split_last()) {
-            (Some(tail), _) if self.divergences.diverges(tail) => Divergence::Block { stmts: stmts.to_vec(), tail },
-            (None, Some((last, before))) => match self.divergences.statements.get(&last.index()) {
+            (Some(tail), _) if self.state.values.divergences.diverges(tail) => Divergence::Block { stmts: stmts.to_vec(), tail },
+            (None, Some((last, before))) => match self.state.values.divergences.statements.get(&last.index()) {
                 Some(tail) => Divergence::Block { stmts: before.to_vec(), tail: *tail },
                 None => return,
             },
             _ => return,
         };
-        self.divergences.expressions.insert(block.index(), form);
+        self.state.values.divergences.expressions.insert(block.index(), form);
     }
 
     /// Remembers the `if` `whole` when both its arms diverge.
     pub(super) fn note_branch(&mut self, whole: LoweredExpr, cond: LoweredExpr, then: LoweredExpr, otherwise: LoweredExpr) {
-        if self.divergences.diverges(then) && self.divergences.diverges(otherwise) {
-            self.divergences.expressions.insert(whole.index(), Divergence::Branch { cond, then, otherwise });
+        if self.state.values.divergences.diverges(then) && self.state.values.divergences.diverges(otherwise) {
+            self.state.values.divergences.expressions.insert(whole.index(), Divergence::Branch { cond, then, otherwise });
         }
     }
 
@@ -85,8 +85,8 @@ impl Elaboration<'_, '_> {
         if self.type_of(expr) == *ty {
             return expr;
         }
-        let Some(form) = self.divergences.expressions.get(&expr.index()).cloned() else { return expr };
-        let origin = self.expr_origins[expr.index()].clone();
+        let Some(form) = self.state.values.divergences.expressions.get(&expr.index()).cloned() else { return expr };
+        let origin = self.state.values.expr_origins[expr.index()].clone();
         match form {
             Divergence::Exit(exit) => self.emit(exit, ty.clone(), origin),
             Divergence::Block { stmts, tail } => {

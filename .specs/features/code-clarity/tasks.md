@@ -2433,8 +2433,12 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] `Elaboration` holds the state only; `Scope` has three fields; each table documents what it holds
-- [ ] Gate check passes: Golden
+- [x] `Elaboration` holds the state only; `Scope` has three fields; each table documents what it holds
+  - Note: the field-to-table partition, and how T93 to T97 use it (the views, the accessors, the visibility set for their `git mv`), is design.md's T92 annotation under "Splitting `Elaboration`".
+  - Note: the value table is `ExpressionTables`, not `ValueTables`: `types/value/tables.rs` declares that name and `no_bare_type_name_is_declared_twice` refuses a second. `consts` and `impls` sit at the root of `ElaborationState` with `design`, `types`, `builder` (was `ir`), `locator`, `overrides` and `diagnostics`. The `Scope` flag `analog` is `in_analog_code`, since `scope.analog` now names the `AnalogScope`.
+  - Note: the tables are not in `elaborator.rs` (the Where line) but in one file per concern at the `elab/` root (`value_state.rs`, `function_state.rs`, `analog_state.rs`, `digital_state.rs`, `structure_state.rs`), which T93 to T97 move as `<directory>/state.rs`; `elab/analog/` and `elab/functions/` cannot exist before `analog.rs` and `functions.rs` move.
+  - Note: two in-source tests of `elaborator.rs` read the fields that moved: `elaboration.frames`, `.ir` and `.diagnostics` are `elaboration.state.structure.frames`, `.state.builder` and `.state.diagnostics`, and the test module imports `Frame` and `ValueType`, which the file no longer imports. No assertion changed.
+- [x] Gate check passes: Golden
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: golden

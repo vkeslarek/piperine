@@ -19,16 +19,16 @@ impl Elaboration<'_, '_> {
     /// A `simparam` call read as a value: the packed `Option<f64>` read; `None` after a diagnostic.
     pub(super) fn lower_simparam(&mut self, scope: &mut Scope, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [name] = args else { return None };
-        let span = self.design.expr_node(*name).span;
+        let span = self.state.design.expr_node(*name).span;
         let Some(text) = self.text_of(scope, *name) else {
-            self.refuse(scope.file, span, ValueForm::SimparamNameThatIsNotTextLiteral);
+            self.refuse(scope.values.file, span, ValueForm::SimparamNameThatIsNotTextLiteral);
             return None;
         };
-        let parameter = match self.structure.session_parameters.iter().position(|p| p.name == text) {
+        let parameter = match self.state.digital.structure.session_parameters.iter().position(|p| p.name == text) {
             Some(at) => at,
             None => {
-                self.structure.session_parameters.push(SessionParameter { name: text, origin: origin.clone() });
-                self.structure.session_parameters.len() - 1
+                self.state.digital.structure.session_parameters.push(SessionParameter { name: text, origin: origin.clone() });
+                self.state.digital.structure.session_parameters.len() - 1
             }
         };
         Some(self.emit(Expr::SessionParameter { parameter: parameter as u32 }, ValueType::Option(Box::new(ValueType::F64)), origin))
@@ -36,7 +36,7 @@ impl Elaboration<'_, '_> {
 
     /// The pair an `Option` operation reads of a `simparam` call: each half unpacked from the read.
     pub(super) fn lower_session_pair(&mut self, scope: &mut Scope, call: ExprId, origin: Origin) -> Option<Pair> {
-        let crate::pom::ExprKind::Call { args, .. } = self.design.expr_node(call).kind.clone() else { return None };
+        let crate::pom::ExprKind::Call { args, .. } = self.state.design.expr_node(call).kind.clone() else { return None };
         let args: Vec<ExprId> = args.iter().map(|a| a.value).collect();
         let packed = self.lower_simparam(scope, &args, origin.clone())?;
         let is = self.emit(Expr::OptionPart { option: packed, part: LevelPart::Is }, ValueType::Bool, origin.clone());

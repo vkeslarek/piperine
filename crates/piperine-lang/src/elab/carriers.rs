@@ -156,36 +156,36 @@ impl Elaboration<'_, '_> {
     /// The discrete ports, then the discrete signals, of `module`, as carriers of the frame
     /// `frame`: each added to the structure and named in the frame.
     pub(super) fn lower_carriers(&mut self, frame: usize, module: DeclId) {
-        let mut children = self.design.decl_data(module).children.clone();
+        let mut children = self.state.design.decl_data(module).children.clone();
         // the carriers of the frame's module declared in generation are arrays, one element per iteration (`generation.rs`)
-        children.extend(self.generated.elaborated().filter(|item| matches!(self.design.decl_data(*item).kind, DeclKind::Signal(_))));
+        children.extend(self.state.structure.generated.elaborated().filter(|item| matches!(self.state.design.decl_data(*item).kind, DeclKind::Signal(_))));
         // a bundle port or signal stands for its fields: each leaf is a carrier or a node, the bundle itself neither (`bundles.rs`)
-        let children = self.design.module_items(&children);
-        let discrete = |this: &Self, c: &DeclId| this.types.carrier(*c).is_some() && this.types.node_array(*c).is_none();
-        let ports = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
-        let signals = children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
+        let children = self.state.design.module_items(&children);
+        let discrete = |this: &Self, c: &DeclId| this.state.types.carrier(*c).is_some() && this.state.types.node_array(*c).is_none();
+        let ports = children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_)) && discrete(self, c));
+        let signals = children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Signal(_)) && discrete(self, c));
         for decl in ports.chain(signals).collect::<Vec<_>>() {
             // a carrier the frame already holds is the caller's own, bound at an `out` port of a hoisted module (`hoist.rs`)
-            if let Some(held) = self.frames[frame].carriers.get(&decl).copied() {
+            if let Some(held) = self.state.structure.frames[frame].carriers.get(&decl).copied() {
                 self.give_initial_value(frame, decl, held);
                 continue;
             }
             self.generated_items_complete(decl);
             if self.is_empty_array(frame, decl) {
-                self.frames[frame].empty_arrays.insert(decl);
+                self.state.structure.frames[frame].empty_arrays.insert(decl);
                 self.record_empty_array(frame, decl);
             } else if let Some(carrier) = self.lower_carrier(frame, decl) {
                 let index = self.add_carrier(carrier);
-                self.frames[frame].carriers.insert(decl, index);
-                if frame == 0 && matches!(self.design.decl_data(decl).kind, DeclKind::Port(_)) {
-                    self.structure.port_carriers += 1;
+                self.state.structure.frames[frame].carriers.insert(decl, index);
+                if frame == 0 && matches!(self.state.design.decl_data(decl).kind, DeclKind::Port(_)) {
+                    self.state.digital.structure.port_carriers += 1;
                 }
-                let resolved_nature = match self.consts.typed_carrier(decl).as_ref() {
-                    Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
+                let resolved_nature = match self.state.consts.typed_carrier(decl).as_ref() {
+                    Some(Ty::Carrier { nature, .. }) if self.state.design.is_resolved_nature(*nature) => Some(*nature),
                     _ => None,
                 };
                 if let Some(nature) = resolved_nature {
-                    self.structure.resolved_carriers.push((index, decl, nature));
+                    self.state.digital.structure.resolved_carriers.push((index, decl, nature));
                 }
             }
         }
@@ -194,25 +194,25 @@ impl Elaboration<'_, '_> {
     /// The initial value the `out` port `decl` of a hoisted frame gives the caller's carrier `held` it is bound to (§5.2.6: the
     /// `out` port, not the declaring module, gives it). A carrier that already starts somewhere keeps its value.
     fn give_initial_value(&mut self, frame: usize, decl: DeclId, held: u32) {
-        if self.structure.carriers[held as usize].init.is_some() {
+        if self.state.digital.structure.carriers[held as usize].init.is_some() {
             return;
         }
         if let Some(carrier) = self.lower_carrier(frame, decl) {
-            self.structure.carriers[held as usize].init = carrier.init;
+            self.state.digital.structure.carriers[held as usize].init = carrier.init;
         }
     }
 
     /// Append `carrier` to the body's carriers: its index.
     pub(super) fn add_carrier(&mut self, carrier: Carrier) -> u32 {
-        self.structure.carriers.push(carrier);
-        self.structure.carriers.len() as u32 - 1
+        self.state.digital.structure.carriers.push(carrier);
+        self.state.digital.structure.carriers.len() as u32 - 1
     }
 
     /// The carried value type of a carrier declaration; `None` after a diagnostic.
     pub(super) fn carried_type(&mut self, decl: DeclId) -> Option<ValueType> {
-        let data = self.design.decl_data(decl);
+        let data = self.state.design.decl_data(decl);
         let (file, span) = (data.file, data.span);
-        let carried = match self.consts.typed_carrier(decl).as_ref() {
+        let carried = match self.state.consts.typed_carrier(decl).as_ref() {
             Some(Ty::Carrier { value, .. }) => self.stored_type(value),
             // an array of carriers holds its elements' value type (`carrier_arrays.rs`)
             Some(array @ Ty::Array(..)) => match array.innermost() {
@@ -228,7 +228,7 @@ impl Elaboration<'_, '_> {
     }
 
     fn lower_carrier(&mut self, frame: usize, decl: DeclId) -> Option<Carrier> {
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (role, init) = match &data.kind {
             // A hoisted module's carriers are signals of the enclosing body: its `in` value input
@@ -238,9 +238,9 @@ impl Elaboration<'_, '_> {
             DeclKind::Signal(s) => (CarrierRole::Signal, s.init),
             _ => return None,
         };
-        let resolved = match self.consts.typed_carrier(decl).as_ref() {
-            Some(Ty::Carrier { nature, .. }) if self.design.is_resolved_nature(*nature) => Some(*nature),
-            Some(array) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { nature, .. } if self.design.is_resolved_nature(*nature)) => {
+        let resolved = match self.state.consts.typed_carrier(decl).as_ref() {
+            Some(Ty::Carrier { nature, .. }) if self.state.design.is_resolved_nature(*nature) => Some(*nature),
+            Some(array) if array.is_carrier_element() && matches!(array.innermost(), Ty::Carrier { nature, .. } if self.state.design.is_resolved_nature(*nature)) => {
                 self.refuse(data.file, data.span, DigitalForm::ArrayOfResolvedCarriers);
                 return None;
             }
@@ -250,15 +250,15 @@ impl Elaboration<'_, '_> {
             return self.lower_resolved_carrier(frame, decl, nature, init);
         }
         let ty = self.carried_type(decl)?;
-        let array = match self.types.carrier_array(decl).is_some() {
+        let array = match self.state.types.carrier_array(decl).is_some() {
             true => Some(self.carrier_array_shape(decl, frame)?.0),
             false => None,
         };
         // a generated carrier refused for its gaps keeps no initial value: the refusal is the one diagnostic
-        let init = init.filter(|_| !self.generated.refused.contains(&decl));
+        let init = init.filter(|_| !self.state.structure.generated.refused.contains(&decl));
         let init = match init {
             // a carrier declared in generation: its initial value is one element's, folded for each iteration (§8.2.23)
-            Some(expr) if self.generated.of(decl).is_some() => {
+            Some(expr) if self.state.structure.generated.of(decl).is_some() => {
                 let shape = array.clone()?;
                 Some(self.generated_array_init(decl, expr, &shape, &ty)?)
             }
@@ -287,8 +287,8 @@ impl Elaboration<'_, '_> {
             None if frame == 0 || matches!(data.kind, DeclKind::Signal(_)) => self.default_initial_value(decl, &ty),
             None => None,
         };
-        let name = format!("{}{name}", self.frames[frame].prefix);
-        Some(Carrier { name, ty, role, init, origin: self.locator.decl(decl), count: array.map(|shape| shape.count()) })
+        let name = format!("{}{name}", self.state.structure.frames[frame].prefix);
+        Some(Carrier { name, ty, role, init, origin: self.state.locator.decl(decl), count: array.map(|shape| shape.count()) })
     }
 
     /// The carrier of the resolved port or signal `decl` of the nature `nature`: it reads the nature's `value` and is driven
@@ -296,7 +296,7 @@ impl Elaboration<'_, '_> {
     /// it at `(0, 0)`, of type `X` (§5.2.3); a drive with none starts at the `Default` of `X` when it has one (§5.2.12).
     /// A carrier this module does not drive has no initial value. `None` after a diagnostic.
     fn lower_resolved_carrier(&mut self, frame: usize, decl: DeclId, nature: DeclId, init: Option<ExprId>) -> Option<Carrier> {
-        let data = self.design.decl_data(decl).clone();
+        let data = self.state.design.decl_data(decl).clone();
         let (chosen, picked) = self.chosen_resolve_impl(decl, nature)?;
         let Some(driven) = self.stored_type(&chosen.driven) else {
             self.refuse(data.file, data.span, ValueForm::ResolvedCarrierWhoseDriveTypeHasNo);
@@ -311,14 +311,14 @@ impl Elaboration<'_, '_> {
             None if picked => self.default_constant(&chosen.driven, &driven),
             None => None,
         };
-        let name = format!("{}{}", self.frames[frame].prefix, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
-        Some(Carrier { name, ty, role: CarrierRole::Resolved { driven, port: matches!(data.kind, DeclKind::Port(_)) }, init, origin: self.locator.decl(decl), count: None })
+        let name = format!("{}{}", self.state.structure.frames[frame].prefix, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
+        Some(Carrier { name, ty, role: CarrierRole::Resolved { driven, port: matches!(data.kind, DeclKind::Port(_)) }, init, origin: self.state.locator.decl(decl), count: None })
     }
 
     /// The `impl Resolve` the resolved carrier `decl` of `nature` is driven by, and whether a drive picked it: the one the
     /// first drive picked (§5.2.15), else the nature's only one, else the one whose `X` is `V`.
     pub(super) fn chosen_resolve_impl(&self, decl: DeclId, nature: DeclId) -> Option<(crate::types::ResolveImpl, bool)> {
-        let impls = self.types.resolve_impls(nature).to_vec();
+        let impls = self.state.types.resolve_impls(nature).to_vec();
         let picked = self.concrete_implementation(decl, nature);
         let chosen = match picked {
             Some(implementation) => impls.iter().find(|candidate| candidate.implementation == implementation),
@@ -333,12 +333,12 @@ impl Elaboration<'_, '_> {
     /// bound by `Resolve<X, V>` picked the bound (the checker saw no concrete nature): the instance's nature answers with its
     /// `impl` whose drive type is `X`. `None` when no drive picked one.
     pub(super) fn concrete_implementation(&self, decl: DeclId, nature: DeclId) -> Option<DeclId> {
-        let picked = self.types.carrier_drive_impls(decl).first().copied()?;
-        if !matches!(self.design.decl_data(picked).kind, DeclKind::GenericParam(_)) {
+        let picked = self.state.types.carrier_drive_impls(decl).first().copied()?;
+        if !matches!(self.state.design.decl_data(picked).kind, DeclKind::GenericParam(_)) {
             return Some(picked);
         }
-        let driven = &self.types.resolve_impls(picked).first()?.driven;
-        self.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
+        let driven = &self.state.types.resolve_impls(picked).first()?.driven;
+        self.state.types.resolve_impls(nature).iter().find(|candidate| candidate.driven == *driven).map(|candidate| candidate.implementation)
     }
 
     /// The initial value of a carrier, folded: a constant expression over literals, `const`s and the
@@ -354,7 +354,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn carrier_init_over(&mut self, expr: ExprId, bindings: &Bindings) -> Option<Constant> {
         let bindings = bindings.clone();
         // a composite folds to a constant of the IR's arena (`consts/imported.rs`)
-        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.consts.value(expr, &bindings) };
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &bindings) } else { self.state.consts.value(expr, &bindings) };
         match folded {
             Ok(value) => Some(value),
             Err(fault) => {
@@ -368,7 +368,7 @@ impl Elaboration<'_, '_> {
     /// the `Default::default()` of its type (§3.3.4), when it has one. A type without `Default` (a
     /// `bool`, a number, a `str`) has none here: the checker asks for the written value.
     fn default_initial_value(&mut self, decl: DeclId, stored: &ValueType) -> Option<Constant> {
-        let Some(Ty::Carrier { value, .. }) = self.consts.typed_carrier(decl) else { return None };
+        let Some(Ty::Carrier { value, .. }) = self.state.consts.typed_carrier(decl) else { return None };
         self.default_constant(&value, stored)
     }
 
@@ -384,24 +384,24 @@ impl Elaboration<'_, '_> {
                 (None, vec![one; usize::try_from(*length).ok()?])
             }
             // a type with a hand-written `impl Default` starts at what its `default` returns (`Logic<N>`: every level X)
-            (Ty::Struct(nominal) | Ty::Enum(nominal), _) if self.impls.has_written_default(ty) => return self.written_default(ty, nominal, stored),
-            (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.types.derives(*struct_decl, "Default") => {
-                let fields: Vec<Ty> = self.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
-                let held = self.type_arena.field_types(*id).to_vec();
+            (Ty::Struct(nominal) | Ty::Enum(nominal), _) if self.state.impls.has_written_default(ty) => return self.written_default(ty, nominal, stored),
+            (Ty::Struct(Nominal { decl: struct_decl, .. }), ValueType::Struct(id)) if self.state.types.derives(*struct_decl, "Default") => {
+                let fields: Vec<Ty> = self.state.types.fields(*struct_decl)?.iter().map(|field| field.ty.clone()).collect();
+                let held = self.state.values.type_arena.field_types(*id).to_vec();
                 (None, fields.iter().zip(&held).map(|(field, held)| self.default_constant(field, held)).collect::<Option<Vec<_>>>()?)
             }
             _ => return None,
         };
-        Some(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored.clone(), variant, parts })))
+        Some(Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: stored.clone(), variant, parts })))
     }
 
     /// The constant a hand-written `impl Default` gives the struct `nominal`, held as `stored`: the tail of its `default`,
     /// folded for the arguments of the `impl` (`N` of a `Logic<N>`). `None` when the body is no tail expression that folds.
     fn written_default(&mut self, ty: &Ty, nominal: &Nominal, stored: &ValueType) -> Option<Constant> {
-        let function = *self.impls.builtin_functions("Default", "default", ty).first()?;
-        let DeclKind::Fn(data) = &self.design.decl_data(function).kind else { return None };
+        let function = *self.state.impls.builtin_functions("Default", "default", ty).first()?;
+        let DeclKind::Fn(data) = &self.state.design.decl_data(function).kind else { return None };
         let body = data.body.clone()?;
-        let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.design.stmt_node(*stmt).kind.clone()) else { return None };
+        let Some(crate::pom::StmtKind::Expr { expr, semi: false }) = body.stmts.last().map(|stmt| self.state.design.stmt_node(*stmt).kind.clone()) else { return None };
         let arguments: Vec<super::instances::ConcreteValue> = nominal
             .arguments
             .iter()
@@ -411,73 +411,73 @@ impl Elaboration<'_, '_> {
                 _ => None,
             })
             .collect::<Option<_>>()?;
-        let outer = self.consts.set_substitution(self.instance_substitution(function, &arguments));
+        let outer = self.state.consts.set_substitution(self.instance_substitution(function, &arguments));
         // a unit variant of an enum with no field is its tag, no composite
-        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.consts.value(expr, &Bindings::new()) };
-        self.consts.set_substitution(outer);
+        let folded = if self.typed(expr).is_some_and(|ty| ty.is_composite()) { self.composite_constant(expr, &Bindings::new()) } else { self.state.consts.value(expr, &Bindings::new()) };
+        self.state.consts.set_substitution(outer);
         let value = folded.ok()?;
         Some(self.ir_constant(value, stored))
     }
 
     /// Add the gathered structure of the body `body` to the IR, in the order it was numbered.
     pub(super) fn finish_structure(&mut self, body: BodyId) {
-        let structure = std::mem::take(&mut self.structure);
+        let structure = std::mem::take(&mut self.state.digital.structure);
         for hoisted in structure.hoisted {
-            self.ir.hoisted(body, hoisted);
+            self.state.builder.hoisted(body, hoisted);
         }
         for carrier in structure.carriers {
-            self.ir.carrier(body, carrier);
+            self.state.builder.carrier(body, carrier);
         }
         for array in structure.node_arrays {
-            self.ir.node_array(body, array);
+            self.state.builder.node_array(body, array);
         }
         for array in structure.empty_arrays {
-            self.ir.empty_array(body, array);
+            self.state.builder.empty_array(body, array);
         }
         for drive in structure.drives {
-            self.ir.drive(body, drive);
+            self.state.builder.drive(body, drive);
         }
         for event in structure.events {
-            self.ir.event(body, event);
+            self.state.builder.event(body, event);
         }
         for reaction in structure.reactions {
-            self.ir.reaction(body, reaction);
+            self.state.builder.reaction(body, reaction);
         }
         for stream in structure.streams {
-            self.ir.stream(body, stream);
+            self.state.builder.stream(body, stream);
         }
         for derivative in structure.derivatives {
-            self.ir.derivative(body, derivative);
+            self.state.builder.derivative(body, derivative);
         }
         for delay in structure.delays {
-            self.ir.delay(body, delay);
+            self.state.builder.delay(body, delay);
         }
         for trace in structure.traces {
-            self.ir.trace(body, trace);
+            self.state.builder.trace(body, trace);
         }
         for parameter in structure.session_parameters {
-            self.ir.session_parameter(body, parameter);
+            self.state.builder.session_parameter(body, parameter);
         }
         for source in structure.noise_sources {
-            self.ir.noise_source(body, source);
+            self.state.builder.noise_source(body, source);
         }
         for partial in structure.partial_derivatives {
-            self.ir.partial_derivative(body, partial);
+            self.state.builder.partial_derivative(body, partial);
         }
         for (child, carriers) in structure.child_carriers {
-            self.ir.bind_child_carriers(body, child, carriers);
+            self.state.builder.bind_child_carriers(body, child, carriers);
         }
         for (child, windows) in structure.child_windows {
-            self.ir.bind_child_windows(body, child, windows);
+            self.state.builder.bind_child_windows(body, child, windows);
         }
         for (child, param, value) in structure.child_params {
-            self.ir.child_param(body, child, param, value);
+            self.state.builder.child_param(body, child, param, value);
         }
         for reach in structure.reaches {
-            self.ir.reach(body, reach);
+            self.state.builder.reach(body, reach);
         }
         for inflow in structure.inflows {
-            self.ir.inflow(body, inflow);
+            self.state.builder.inflow(body, inflow);
         }
     }
 }

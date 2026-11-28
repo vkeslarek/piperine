@@ -49,7 +49,7 @@ pub(super) struct Disjunct {
 impl Elaboration<'_, '_> {
     /// Whether the lowered expression `expr` is continuous.
     pub(super) fn continuous(&self, expr: LoweredExpr) -> bool {
-        self.expr_continuous.get(expr.index()).copied().unwrap_or(false)
+        self.state.values.expr_continuous.get(expr.index()).copied().unwrap_or(false)
     }
 
     /// Whether an expression of kind `kind`, whose operands are lowered already, is continuous.
@@ -65,41 +65,41 @@ impl Elaboration<'_, '_> {
             Expr::Same { a, b } => any(&[*a, *b]),
             Expr::LevelCast { expr, .. } => self.continuous(*expr),
             Expr::If { cond, then, otherwise } => any(&[*cond, *then, *otherwise]),
-            Expr::Block { stmts, value } => stmts.iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
-            Expr::Call { function, args } => self.variants.continuous(*function) || any(args),
+            Expr::Block { stmts, value } => stmts.iter().any(|s| self.state.values.stmt_continuous.get(s.index()).copied().unwrap_or(false)) || value.is_some_and(|v| self.continuous(v)),
+            Expr::Call { function, args } => self.state.functions.variants.continuous(*function) || any(args),
             Expr::Math { args, .. } => any(args),
             Expr::Method { receiver, args, .. } => self.continuous(*receiver) || any(args),
             Expr::Closure { body, .. } => self.continuous(*body),
             Expr::Limit { x, f, seed, .. } => any(&[*x, *f]) || seed.is_some_and(|s| self.continuous(s)),
             Expr::Stim { mag, phase, .. } => self.continuous(*mag) || phase.is_some_and(|p| self.continuous(p)),
             Expr::Loop { .. } | Expr::While { .. } | Expr::ForRange { .. } | Expr::Break(_) | Expr::Continue | Expr::Return(_) | Expr::FunctionRef(_) | Expr::CallValue { .. } | Expr::Tuple(_) | Expr::Array(_) | Expr::ArrayRepeat { .. } | Expr::StructOf { .. } | Expr::VariantOf { .. } | Expr::Field { .. } | Expr::Index { .. } | Expr::Length(_) | Expr::IsVariant { .. } | Expr::VariantField { .. } | Expr::OptionPack { .. } | Expr::OptionPart { .. } | Expr::Default(_) => {
-                any(&kind.operands()) || kind.statements().iter().any(|s| self.stmt_continuous.get(s.index()).copied().unwrap_or(false))
+                any(&kind.operands()) || kind.statements().iter().any(|s| self.state.values.stmt_continuous.get(s.index()).copied().unwrap_or(false))
             }
         }
     }
 
     /// The `digital` blocks of `module`, read in `scope`: their reactions, in source order.
     pub(super) fn lower_digital(&mut self, scope: &mut Scope, module: DeclId) {
-        let DeclKind::Module(data) = &self.design.decl_data(module).kind else { return };
+        let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return };
         for block in data.behaviors.clone() {
-            let decl = self.design.decl_data(block).clone();
+            let decl = self.state.design.decl_data(block).clone();
             let DeclKind::Behavior(behavior) = &decl.kind else { continue };
             if behavior.kind != crate::pom::BehaviorKind::Digital {
                 continue;
             }
             for (child, iteration) in self.digital_sequence(&decl.children) {
-                if !matches!(self.design.decl_data(child).kind, DeclKind::Reaction(_)) {
+                if !matches!(self.state.design.decl_data(child).kind, DeclKind::Reaction(_)) {
                     continue;
                 }
                 // a reaction made by a generation `for` reads its loop variables as the constants of its iteration
                 for (variable, value) in &iteration.values {
-                    scope.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
+                    scope.values.unrolled.bind(*variable, piperine_ir::Constant::Int(*value));
                 }
-                scope.ordinals = iteration.ordinals.clone();
+                scope.digital.ordinals = iteration.ordinals.clone();
                 self.lower_reaction(scope, child);
-                scope.ordinals.clear();
+                scope.digital.ordinals.clear();
                 for (variable, _) in &iteration.values {
-                    scope.unrolled.unbind(*variable);
+                    scope.values.unrolled.unbind(*variable);
                 }
             }
         }
@@ -108,9 +108,9 @@ impl Elaboration<'_, '_> {
     /// `on head { body }`: its events and one reaction, or one reaction per disjunct (see the
     /// table of this module).
     fn lower_reaction(&mut self, scope: &Scope, reaction: DeclId) {
-        let data = self.design.decl_data(reaction).clone();
+        let data = self.state.design.decl_data(reaction).clone();
         let DeclKind::Reaction(r) = &data.kind else { return };
-        let origin = self.locator.decl(reaction);
+        let origin = self.state.locator.decl(reaction);
         let mut head = Self::sub_scope(scope);
         let Some(disjuncts) = self.disjuncts(&mut head, r.event) else { return };
         let split = disjuncts.len() > 1 && disjuncts.iter().any(|d| !d.continuous.is_empty());
@@ -122,13 +122,13 @@ impl Elaboration<'_, '_> {
                 on.push(self.add_event(d.source, &d.discrete, d.origin));
             }
             if let Some(stmts) = self.reaction_body(&mut head, &r.body.stmts, &wrap) {
-                self.structure.reactions.push(Reaction { on, stmts, locals: head.locals, origin });
+                self.state.digital.structure.reactions.push(Reaction { on, stmts, locals: head.values.locals, origin });
             }
             return;
         }
-        let span = self.design.expr_node(r.event).span;
-        if !head.locals.is_empty() {
-            self.refuse(scope.file, span, AnalogForm::LetInGuardOfHeadSplitPer);
+        let span = self.state.design.expr_node(r.event).span;
+        if !head.values.locals.is_empty() {
+            self.refuse(scope.values.file, span, AnalogForm::LetInGuardOfHeadSplitPer);
             return;
         }
         // One reaction on every disjunct's event, run once per microstep whichever fired (abi.md
@@ -146,15 +146,15 @@ impl Elaboration<'_, '_> {
         let guard = self.disjunction(&arms);
         let mut body = Self::sub_scope(scope);
         if let Some(stmts) = self.reaction_body_under(&mut body, &r.body.stmts, |_| guard) {
-            self.structure.reactions.push(Reaction { on, stmts, locals: body.locals, origin });
+            self.state.digital.structure.reactions.push(Reaction { on, stmts, locals: body.values.locals, origin });
         }
     }
 
     /// Add the event of `source` guarded by the conjunction of `discrete`: its index.
     pub(super) fn add_event(&mut self, source: EventSource, discrete: &[LoweredExpr], origin: Origin) -> u32 {
         let guard = self.conjunction(discrete);
-        self.structure.events.push(Event { source, guard, origin });
-        self.structure.events.len() as u32 - 1
+        self.state.digital.structure.events.push(Event { source, guard, origin });
+        self.state.digital.structure.events.len() as u32 - 1
     }
 
     /// `a && b && …` over lowered `bool`s, left to right. `None` for no operand.
@@ -179,7 +179,7 @@ impl Elaboration<'_, '_> {
 
     /// The origin an expression already added was given.
     fn ir_origin(&self, expr: LoweredExpr) -> Origin {
-        self.expr_origins[expr.index()].clone()
+        self.state.values.expr_origins[expr.index()].clone()
     }
 
     /// The body of a reaction in `scope`, under `if c₁ && c₂ …` when `wrap` holds continuous
@@ -205,7 +205,7 @@ impl Elaboration<'_, '_> {
 
     /// The disjuncts of the head `expr`. `None` after a diagnostic.
     pub(super) fn disjuncts(&mut self, scope: &mut Scope, expr: ExprId) -> Option<Vec<Disjunct>> {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         let origin = self.expr_origin(expr);
         match &node.kind {
             ExprKind::Paren(inner) => self.disjuncts(scope, *inner),
@@ -224,7 +224,7 @@ impl Elaboration<'_, '_> {
                 }
                 Some(all)
             }
-            ExprKind::MethodCall { recv, .. } => match self.types.builtin(expr) {
+            ExprKind::MethodCall { recv, .. } => match self.state.types.builtin(expr) {
                 Some(Builtin::Changed) if let Some(param) = self.param_of(scope, *recv) => Some(vec![Disjunct { source: EventSource::ParamChanged(param), discrete: Vec::new(), continuous: Vec::new(), origin }]),
                 Some(edge @ (Builtin::Changed | Builtin::Rise | Builtin::Fall)) if let Lookup::Found(element) = self.element_lookup(scope, *recv) => {
                     // `on lines[k].rise()`: the event of that element only; `k` folds (QC4)
@@ -247,11 +247,11 @@ impl Elaboration<'_, '_> {
                 }
                 _ if self.is_event_method(expr) => self.event_method_disjuncts(scope, expr),
                 _ => {
-                    self.refuse(scope.file, node.span, AnalogForm::MethodAsEvent);
+                    self.refuse(scope.values.file, node.span, AnalogForm::MethodAsEvent);
                     None
                 }
             },
-            ExprKind::Call { args, .. } => match self.types.callee(expr) {
+            ExprKind::Call { args, .. } => match self.state.types.callee(expr) {
                 // A function that returns `Event` (§13 rule 7): inlined, its body's event standing here (`event_functions.rs`).
                 Some(Callee::Function(function)) if self.is_event_function(function) => self.event_function_disjuncts(scope, expr, function),
                 // The same through a method: `Trait::fires(x)` and a call through a bound.
@@ -286,8 +286,8 @@ impl Elaboration<'_, '_> {
                 // A module with an `Event` result (`above`, `init`): its result, in its frame.
                 Some(Callee::Module(_)) | None if self.result_callee(expr).is_some() => {
                     let frame = self.frame_of(scope, expr)?;
-                    let module = self.frames[frame].module;
-                    let DeclKind::Module(m) = &self.design.decl_data(module).kind else { return None };
+                    let module = self.state.structure.frames[frame].module;
+                    let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return None };
                     let result = m.result?;
                     let entry = self.enter_frame(scope, frame);
                     let lowered = self.disjuncts(scope, result);
@@ -295,13 +295,13 @@ impl Elaboration<'_, '_> {
                     lowered
                 }
                 _ => {
-                    self.refuse(scope.file, node.span, AnalogForm::CallAsEvent);
+                    self.refuse(scope.values.file, node.span, AnalogForm::CallAsEvent);
                     None
                 }
             },
             // A module-body `let` of an event (`let tick = at(..); tick`): its value, in place;
             // and `settle`, the event of the settle phase (§13 rules 10, 14, 17).
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "settle" => {
                     Some(vec![Disjunct { source: EventSource::Settle, discrete: Vec::new(), continuous: Vec::new(), origin }])
                 }
@@ -310,12 +310,12 @@ impl Elaboration<'_, '_> {
                     self.disjuncts(scope, value)
                 }
                 _ => {
-                    self.refuse(scope.file, node.span, AnalogForm::NameAsEvent);
+                    self.refuse(scope.values.file, node.span, AnalogForm::NameAsEvent);
                     None
                 }
             },
             _ => {
-                self.refuse(scope.file, node.span, AnalogForm::FormOfEvent);
+                self.refuse(scope.values.file, node.span, AnalogForm::FormOfEvent);
                 None
             }
         }
@@ -324,7 +324,7 @@ impl Elaboration<'_, '_> {
     /// The guard `expr` of the disjunct `d`, split at its top-level `&&` into conjuncts, each
     /// added to the discrete or the continuous part. `None` after a diagnostic.
     fn guard(&mut self, scope: &mut Scope, expr: ExprId, d: &mut Disjunct) -> Option<()> {
-        match &self.design.expr_node(expr).kind {
+        match &self.state.design.expr_node(expr).kind {
             ExprKind::Paren(inner) => self.guard(scope, *inner, d),
             ExprKind::Binary { op: BinOp::And, lhs, rhs } => {
                 let (lhs, rhs) = (*lhs, *rhs);
@@ -332,9 +332,9 @@ impl Elaboration<'_, '_> {
                 self.guard(scope, rhs, d)
             }
             _ => {
-                let before = scope.locals.len();
+                let before = scope.values.locals.len();
                 let lowered = self.lower_expr(scope, expr)?;
-                let span = self.design.expr_node(expr).span;
+                let span = self.state.design.expr_node(expr).span;
                 self.add_conjunct(scope, lowered, before, span, d)
             }
         }
@@ -346,8 +346,8 @@ impl Elaboration<'_, '_> {
     pub(super) fn add_conjunct(&mut self, scope: &mut Scope, conjunct: LoweredExpr, locals: usize, span: crate::msl::Span, d: &mut Disjunct) -> Option<()> {
         if self.continuous(conjunct) || self.reads_local(conjunct) {
             d.continuous.push(conjunct);
-        } else if scope.locals.len() > locals {
-            self.refuse(scope.file, span, AnalogForm::LetInDiscretePartOfGuard);
+        } else if scope.values.locals.len() > locals {
+            self.refuse(scope.values.file, span, AnalogForm::LetInDiscretePartOfGuard);
             return None;
         } else {
             d.discrete.push(conjunct);
@@ -360,7 +360,7 @@ impl Elaboration<'_, '_> {
     fn reads_local(&self, expr: LoweredExpr) -> bool {
         let mut pending = vec![expr];
         while let Some(next) = pending.pop() {
-            let Some(kind) = self.ir.expr_kind(next) else { continue };
+            let Some(kind) = self.state.builder.expr_kind(next) else { continue };
             if matches!(kind, Expr::Local(_)) {
                 return true;
             }
@@ -371,11 +371,11 @@ impl Elaboration<'_, '_> {
 
     /// The argument of `cross` or `at`, which belongs to the event: it may bind no local.
     fn event_argument(&mut self, scope: &mut Scope, arg: ExprId) -> Option<LoweredExpr> {
-        let before = scope.locals.len();
+        let before = scope.values.locals.len();
         let lowered = self.lower_expr(scope, arg)?;
-        if scope.locals.len() > before {
-            let span = self.design.expr_node(arg).span;
-            self.refuse(scope.file, span, AnalogForm::LetInArgumentOfEvent);
+        if scope.values.locals.len() > before {
+            let span = self.state.design.expr_node(arg).span;
+            self.refuse(scope.values.file, span, AnalogForm::LetInArgumentOfEvent);
             return None;
         }
         Some(lowered)
@@ -394,10 +394,10 @@ impl Elaboration<'_, '_> {
     /// diagnostic naming `what` (`delay`'s `max` is read the same way, §14.6).
     pub(super) fn optional_constant(&mut self, scope: &mut Scope, arg: Option<ExprId>, what: &str) -> Option<Option<LoweredExpr>> {
         let Some(arg) = arg else { return Some(None) };
-        let node = self.design.expr_node(arg).clone();
+        let node = self.state.design.expr_node(arg).clone();
         match &node.kind {
             ExprKind::Paren(inner) => return self.optional_constant(scope, Some(*inner), what),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(id)) if id.info().name == "None" => return Some(None),
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => return Some(None),
@@ -413,7 +413,7 @@ impl Elaboration<'_, '_> {
             _ => {}
         }
         if !self.constant_or_param(scope, arg) {
-            self.refuse_with(scope.file, node.span, AnalogForm::ThatIsNotConstantOrParam, [what.to_string()]);
+            self.refuse_with(scope.values.file, node.span, AnalogForm::ThatIsNotConstantOrParam, [what.to_string()]);
             return None;
         }
         Some(Some(self.event_argument(scope, arg)?))
@@ -423,17 +423,17 @@ impl Elaboration<'_, '_> {
     /// carrier, probe or local), through operators; an input of a hoisted module is judged by
     /// what its caller gave.
     fn constant_or_param(&mut self, scope: &mut Scope, expr: ExprId) -> bool {
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Lit(_) => true,
             ExprKind::Paren(inner) | ExprKind::Unary { expr: inner, .. } | ExprKind::Cast { expr: inner, .. } => self.constant_or_param(scope, *inner),
             ExprKind::Binary { lhs, rhs, .. } => self.constant_or_param(scope, *lhs) && self.constant_or_param(scope, *rhs),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
                 Some(Resolution::Builtin(_)) => true,
                 Some(Resolution::Decl(decl)) => match self.input_of(scope, decl) {
                     Some(None) => false,
                     Some(Some(given)) => self.in_caller(scope, |this, scope| Some(this.constant_or_param(scope, given))).unwrap_or(false),
-                    None => matches!(self.design.decl_data(decl).kind, DeclKind::Param(_) | DeclKind::Const(_)),
+                    None => matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_) | DeclKind::Const(_)),
                 },
                 _ => false,
             },
@@ -444,33 +444,33 @@ impl Elaboration<'_, '_> {
     /// The index among the params of the body of the param a receiver names, when it is one of the
     /// body's own (frame 0): `r.changed()` and `r.prev()` read its pin (§5.3.1).
     pub(super) fn param_of(&self, scope: &Scope, expr: ExprId) -> Option<u32> {
-        let ExprKind::Path(path) = &self.design.expr_node(self.peel_parens(expr)).kind else { return None };
-        let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
-        if scope.frame != 0 || !matches!(self.design.decl_data(decl).kind, DeclKind::Param(_)) {
+        let ExprKind::Path(path) = &self.state.design.expr_node(self.peel_parens(expr)).kind else { return None };
+        let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
+        if scope.values.frame != 0 || !matches!(self.state.design.decl_data(decl).kind, DeclKind::Param(_)) {
             return None;
         }
-        scope.params.get(&decl).copied()
+        scope.values.params.get(&decl).copied()
     }
 
     /// The carrier of the body a receiver names, in the frame of `scope`.
     pub(super) fn carrier_of(&mut self, scope: &Scope, expr: ExprId) -> Option<u32> {
-        let node = self.design.expr_node(self.peel_parens(expr)).clone();
+        let node = self.state.design.expr_node(self.peel_parens(expr)).clone();
         if let ExprKind::Field { .. } = &node.kind {
             return self.reached_carrier(scope, self.peel_parens(expr));
         }
         if let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && let Some(bound) = scope.handles.get(&decl).copied()
+            && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(bound) = scope.digital.handles.get(&decl).copied()
         {
             return self.carrier_of(scope, bound);
         }
         if let ExprKind::Path(path) = &node.kind
-            && let Some(Resolution::Decl(decl)) = self.design.path_node(*path).segments.last().map(|s| s.res)
-            && let Some(index) = self.frame_carrier(scope.frame, decl)
+            && let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res)
+            && let Some(index) = self.frame_carrier(scope.values.frame, decl)
         {
             return Some(index);
         }
-        self.refuse(scope.file, node.span, AnalogForm::ReceiverThatIsNotCarrierOfThis);
+        self.refuse(scope.values.file, node.span, AnalogForm::ReceiverThatIsNotCarrierOfThis);
         None
     }
 
@@ -516,7 +516,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether carrier `c` holds a `Logic`: the only struct the checker lets reach an edge (`edge_read`).
     fn is_four_state(&self, c: u32) -> bool {
-        matches!(self.structure.carriers[c as usize].ty, ValueType::Struct(_))
+        matches!(self.state.digital.structure.carriers[c as usize].ty, ValueType::Struct(_))
     }
 
     /// The edge of a `Logic<1>` carrier into the level whose planes are `(binary, value)`: `c` is at that level and
@@ -548,7 +548,7 @@ impl Elaboration<'_, '_> {
 
     /// A read of carrier `c`: its value.
     pub(super) fn carrier_read(&mut self, c: u32, origin: Origin) -> LoweredExpr {
-        let carrier = &self.structure.carriers[c as usize];
+        let carrier = &self.state.digital.structure.carriers[c as usize];
         // an array of carriers read whole is the array of its elements' values (CV-24 AC 1)
         let ty = match carrier.count {
             Some(count) => ValueType::Array(Box::new(carrier.ty.clone()), count),
@@ -559,14 +559,14 @@ impl Elaboration<'_, '_> {
 
     /// `c.prev()`: the value of carrier `c` before its most recent change.
     pub(super) fn previous(&mut self, c: u32, origin: Origin) -> LoweredExpr {
-        let ty = self.structure.carriers[c as usize].ty.clone();
+        let ty = self.state.digital.structure.carriers[c as usize].ty.clone();
         self.emit(Expr::Previous(c), ty, origin)
     }
 
     /// The read a built-in method is as a value: `c.prev()` is the carrier's previous value and `p.inflow()`
     /// the flow entering at a port; an edge is an event (`events.rs`), never a value.
     pub(super) fn lower_builtin_read(&mut self, scope: &mut Scope, expr: ExprId, builtin: Builtin, recv: ExprId, base: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         match builtin {
             Builtin::Prev if let Some(param) = self.param_of(scope, recv) => Some(self.emit(Expr::ParamPrevious(param), base, origin)),
             Builtin::Prev => match self.element_lookup(scope, recv) {
@@ -581,14 +581,14 @@ impl Elaboration<'_, '_> {
             // `s.others()`: the resolution of every drive but the body's own (§5.2.7)
             Builtin::Others => {
                 let carrier = self.carrier_of(scope, recv)?;
-                let value = self.structure.carriers[carrier as usize].ty.clone();
-                self.structure.others_read.insert(carrier);
+                let value = self.state.digital.structure.carriers[carrier as usize].ty.clone();
+                self.state.digital.structure.others_read.insert(carrier);
                 Some(self.emit(Expr::Others(carrier), value, origin))
             }
             // An event read is `fired(k)` (`event_reads.rs`, §13 rule 2) before it gets here; an
             // edge that reaches this arm stands where no event read does.
             Builtin::Changed | Builtin::Rise | Builtin::Fall => {
-                self.refuse(scope.file, span, AnalogForm::EventThatIsNotEventRead);
+                self.refuse(scope.values.file, span, AnalogForm::EventThatIsNotEventRead);
                 None
             }
         }

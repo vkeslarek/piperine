@@ -82,11 +82,11 @@ impl Elaboration<'_, '_> {
     /// `Expr::Table` over `x` and the samples. `None` after a diagnostic (`E0703`, `E0704`).
     pub(super) fn lower_table_model(&mut self, scope: &mut Scope, expr: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
         let [x, table, control] = args else {
-            self.refuse(scope.file, self.design.expr_node(expr).span, AnalogForm::TableModelCalledWithOtherThanThree);
+            self.refuse(scope.values.file, self.state.design.expr_node(expr).span, AnalogForm::TableModelCalledWithOtherThanThree);
             return None;
         };
-        let (control_span, table_span) = (self.design.expr_node(*control).span, self.design.expr_node(*table).span);
-        let text = match self.consts.text_of_expression(*control, &Bindings::new()) {
+        let (control_span, table_span) = (self.state.design.expr_node(*control).span, self.state.design.expr_node(*table).span);
+        let text = match self.state.consts.text_of_expression(*control, &Bindings::new()) {
             Ok((_, text)) => text,
             Err(fault) => {
                 self.const_fault(&fault, "the control of a `table_model`");
@@ -96,13 +96,13 @@ impl Elaboration<'_, '_> {
         let parsed = match (ControlText(&text).parse(), self.table_samples(scope, *table)?) {
             (Ok(parsed), samples) => (parsed, samples),
             (Err(why), _) => {
-                self.report(scope.file, Diagnostic::new("E0703", format!("the control string of `table_model` is not of the form of §22.2.15: {why}"), control_span, "the control string"));
+                self.report(scope.values.file, Diagnostic::new("E0703", format!("the control string of `table_model` is not of the form of §22.2.15: {why}"), control_span, "the control string"));
                 return None;
             }
         };
         let (control, samples) = parsed;
         if let Some(why) = Samples(&samples).refusal(control.degree) {
-            self.report(scope.file, Diagnostic::new("E0704", format!("the table of `table_model` is refused: {why}"), table_span, "the table"));
+            self.report(scope.values.file, Diagnostic::new("E0704", format!("the table of `table_model` is refused: {why}"), table_span, "the table"));
             return None;
         }
         let x = self.lower_expr(scope, *x)?;
@@ -112,8 +112,8 @@ impl Elaboration<'_, '_> {
 
     /// The `(abscissa, value)` pairs the constant `table` folds to; `None` after a diagnostic.
     fn table_samples(&mut self, scope: &Scope, table: ExprId) -> Option<Vec<(f64, f64)>> {
-        let span = self.design.expr_node(table).span;
-        let tree = match self.consts.tree(table, &self.frame_bindings(scope.frame).overlaid(&scope.unrolled)) {
+        let span = self.state.design.expr_node(table).span;
+        let tree = match self.state.consts.tree(table, &self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled)) {
             Ok(tree) => tree,
             Err(fault) => {
                 self.const_fault(&fault, "the table of a `table_model`");
@@ -132,7 +132,7 @@ impl Elaboration<'_, '_> {
             _ => None,
         };
         if samples.is_none() {
-            self.refuse(scope.file, span, AnalogForm::TableModelTableThatIsNotArray);
+            self.refuse(scope.values.file, span, AnalogForm::TableModelTableThatIsNotArray);
         }
         samples
     }

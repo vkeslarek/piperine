@@ -132,21 +132,21 @@ impl Elaboration<'_, '_> {
     /// either, a `let`-bound name standing for what it was bound to. `None` after a diagnostic.
     pub(super) fn sequence(&mut self, scope: &Scope, expr: ExprId) -> Option<Sequence> {
         let expr = self.peel_parens(expr);
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         if matches!(self.typed(expr), Some(Ty::Array(..))) {
             return Some(Sequence { source: Source::Array(expr), adaptors: Vec::new() });
         }
         match &node.kind {
             ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } => Some(Sequence { source: Source::Range { lo: *lo, hi: *hi, inclusive: *inclusive }, adaptors: Vec::new() }),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if let Some(init) = scope.let_sources.get(&decl).copied() => self.sequence(scope, init),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if let Some(init) = scope.values.let_sources.get(&decl).copied() => self.sequence(scope, init),
                 _ => {
-                    self.refuse(scope.file, node.span, ValueForm::IteratorThatIsNotChainWrittenWhere);
+                    self.refuse(scope.values.file, node.span, ValueForm::IteratorThatIsNotChainWrittenWhere);
                     None
                 }
             },
             ExprKind::MethodCall { recv, args, .. } => {
-                let method = self.types.method(expr);
+                let method = self.state.types.method(expr);
                 if method == Some(Method::ArrayIter) {
                     return Some(Sequence { source: Source::Array(*recv), adaptors: Vec::new() });
                 }
@@ -157,7 +157,7 @@ impl Elaboration<'_, '_> {
                     (Some(Method::IteratorRev), []) => Adaptor::Rev,
                     (Some(Method::IteratorZip), [other]) => Adaptor::Zip(Box::new(self.sequence(scope, other.value)?)),
                     _ => {
-                        self.refuse(scope.file, node.span, ValueForm::IteratorMethodOutsideAppendix);
+                        self.refuse(scope.values.file, node.span, ValueForm::IteratorMethodOutsideAppendix);
                         return None;
                     }
                 };
@@ -166,7 +166,7 @@ impl Elaboration<'_, '_> {
                 Some(inner)
             }
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::ForOverAnythingButArrayRangeOr);
+                self.refuse(scope.values.file, node.span, ValueForm::ForOverAnythingButArrayRangeOr);
                 None
             }
         }
@@ -185,7 +185,7 @@ impl Elaboration<'_, '_> {
             Source::Array(array) => {
                 let value = self.lower_expr(scope, *array)?;
                 let ValueType::Array(element, count) = self.type_of(value) else {
-                    self.refuse(scope.file, self.design.expr_node(*array).span, ValueForm::ArrayThatIsNotArrayValue);
+                    self.refuse(scope.values.file, self.state.design.expr_node(*array).span, ValueForm::ArrayThatIsNotArrayValue);
                     return None;
                 };
                 let local = self.hold(scope, prelude, "array", value);
@@ -195,7 +195,7 @@ impl Elaboration<'_, '_> {
                 let (low, high) = (self.lower_expr(scope, *lo)?, self.lower_expr(scope, *hi)?);
                 let element = self.type_of(low);
                 if !element.is_integer() {
-                    self.refuse(scope.file, self.design.expr_node(*lo).span, ValueForm::RangeOfAnythingButIntegers);
+                    self.refuse(scope.values.file, self.state.design.expr_node(*lo).span, ValueForm::RangeOfAnythingButIntegers);
                     return None;
                 }
                 let (low_local, high_local) = (self.hold(scope, prelude, "low", low), self.hold(scope, prelude, "high", high));
@@ -224,7 +224,7 @@ impl Elaboration<'_, '_> {
                 Adaptor::Zip(other) => {
                     let other = self.prepare(scope, other, prelude, origin, at)?;
                     if filtered || other.filtered {
-                        self.refuse(scope.file, at, ValueForm::ZipOfIteratorThatWasFiltered);
+                        self.refuse(scope.values.file, at, ValueForm::ZipOfIteratorThatWasFiltered);
                         return None;
                     }
                     length = self.shorter(scope, prelude, length, other.length, origin);
@@ -232,7 +232,7 @@ impl Elaboration<'_, '_> {
                 }
                 Adaptor::Rev => {
                     if filtered {
-                        self.refuse(scope.file, at, ValueForm::RevOfIteratorThatWasFiltered);
+                        self.refuse(scope.values.file, at, ValueForm::RevOfIteratorThatWasFiltered);
                         return None;
                     }
                     stages.push(Stage::Rev(length));
@@ -244,8 +244,8 @@ impl Elaboration<'_, '_> {
 
     /// `value` bound to a fresh immutable local named after `what`, added to `stmts`.
     fn hold(&mut self, scope: &mut Scope, stmts: &mut Vec<LoweredStmt>, what: &str, value: LoweredExpr) -> u32 {
-        let local = scope.locals.len() as u32;
-        scope.locals.push(Local { name: format!("_it${what}{local}"), ty: self.type_of(value), mutable: false });
+        let local = scope.values.locals.len() as u32;
+        scope.values.locals.push(Local { name: format!("_it${what}{local}"), ty: self.type_of(value), mutable: false });
         stmts.push(self.stmt(Stmt::Let { local, init: value }));
         local
     }
@@ -253,13 +253,13 @@ impl Elaboration<'_, '_> {
     /// `value` bound to a fresh assignable local named after `what`, added to `stmts`.
     fn hold_mutable(&mut self, scope: &mut Scope, stmts: &mut Vec<LoweredStmt>, what: &str, value: LoweredExpr) -> u32 {
         let local = self.hold(scope, stmts, what, value);
-        scope.locals[local as usize].mutable = true;
+        scope.values.locals[local as usize].mutable = true;
         local
     }
 
     /// A read of local `local` of `scope`.
     fn read(&mut self, scope: &Scope, local: u32, origin: &Origin) -> LoweredExpr {
-        self.emit(Expr::Local(local), scope.locals[local as usize].ty.clone(), origin.clone())
+        self.emit(Expr::Local(local), scope.values.locals[local as usize].ty.clone(), origin.clone())
     }
 
     /// The number of integers of the range of `element` whose bounds are held in `bounds`, a
@@ -356,7 +356,7 @@ impl Elaboration<'_, '_> {
             }
         };
         let local = self.hold(scope, &mut body.stmts, "item", read);
-        scope.locals[local as usize].ty = ty;
+        scope.values.locals[local as usize].ty = ty;
         self.read(scope, local, origin)
     }
 
@@ -369,28 +369,28 @@ impl Elaboration<'_, '_> {
     /// The closure literal `closure` called with `values`: its parameters bound by statements added
     /// to `body`, then its body lowered. `None` after a diagnostic.
     fn apply(&mut self, scope: &mut Scope, closure: ExprId, values: &[LoweredExpr], body: &mut LoopBody) -> Option<LoweredExpr> {
-        let node = self.design.expr_node(closure).clone();
+        let node = self.state.design.expr_node(closure).clone();
         let ExprKind::Closure { params, body: closure_body, .. } = node.kind else {
-            self.refuse(scope.file, node.span, ValueForm::ClosureArgumentThatIsNotClosureLiteral);
+            self.refuse(scope.values.file, node.span, ValueForm::ClosureArgumentThatIsNotClosureLiteral);
             return None;
         };
         if params.len() != values.len() {
-            self.refuse(scope.file, node.span, ValueForm::ClosureWithAnotherNumberOfParametersThan);
+            self.refuse(scope.values.file, node.span, ValueForm::ClosureWithAnotherNumberOfParametersThan);
             return None;
         }
         for (param, value) in params.iter().zip(values) {
             self.bind_pattern(scope, param.pat, *value, &mut body.stmts)?;
         }
-        scope.nesting += 1;
+        scope.analog.nesting += 1;
         let lowered = self.lower_expr(scope, closure_body);
-        scope.nesting -= 1;
+        scope.analog.nesting -= 1;
         lowered
     }
 
     /// The pattern `pat` bound to `value`: a name, `_` or a tuple of those, the bindings added to
     /// `stmts`. `None` after a diagnostic.
     fn bind_pattern(&mut self, scope: &mut Scope, pat: PatId, value: LoweredExpr, stmts: &mut Vec<LoweredStmt>) -> Option<()> {
-        let node = self.design.pat_node(pat).clone();
+        let node = self.state.design.pat_node(pat).clone();
         match node.kind {
             // a name over an `Option` is its flag and payload (`bind_names`)
             PatKind::Ident { binding, sub: None, .. } => {
@@ -401,10 +401,10 @@ impl Elaboration<'_, '_> {
             PatKind::Wild => Some(()),
             PatKind::Tuple(pats) => {
                 let ValueType::Tuple(parts) = self.type_of(value) else {
-                    self.refuse(scope.file, node.span, ValueForm::TuplePatternOverValueThatIsNot);
+                    self.refuse(scope.values.file, node.span, ValueForm::TuplePatternOverValueThatIsNot);
                     return None;
                 };
-                let origin = self.expr_origins[value.index()].clone();
+                let origin = self.state.values.expr_origins[value.index()].clone();
                 for (k, (sub, part)) in pats.iter().zip(parts).enumerate() {
                     let field = self.emit(Expr::Field { expr: value, index: k as u32 }, part, origin.clone());
                     self.bind_pattern(scope, *sub, field, stmts)?;
@@ -412,7 +412,7 @@ impl Elaboration<'_, '_> {
                 Some(())
             }
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::PatternOtherThanNameOrTupleOf);
+                self.refuse(scope.values.file, node.span, ValueForm::PatternOtherThanNameOrTupleOf);
                 None
             }
         }
@@ -442,8 +442,8 @@ impl Elaboration<'_, '_> {
 
     /// A fresh loop counter local.
     fn position_local(&mut self, scope: &mut Scope) -> u32 {
-        let local = scope.locals.len() as u32;
-        scope.locals.push(Local { name: format!("_it$position{local}"), ty: ValueType::UInt(64), mutable: false });
+        let local = scope.values.locals.len() as u32;
+        scope.values.locals.push(Local { name: format!("_it$position{local}"), ty: ValueType::UInt(64), mutable: false });
         local
     }
 
@@ -452,7 +452,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_sequence_for(&mut self, scope: &mut Scope, pat: PatId, iter: ExprId, body: &BlockNode, origin: Origin) -> Option<LoweredExpr> {
         let sequence = self.sequence(scope, iter)?;
         let mut stmts = Vec::new();
-        let span = self.design.expr_node(iter).span;
+        let span = self.state.design.expr_node(iter).span;
         let prepared = self.prepare(scope, &sequence, &mut stmts, &origin, span)?;
         let counter = self.position_local(scope);
         let j = self.read(scope, counter, &origin);
@@ -469,7 +469,7 @@ impl Elaboration<'_, '_> {
     /// A row of H.5 to H.7 read as a value: `len`, `is_empty`, `contains` of an array or a range,
     /// and the consumers `fold`, `sum`, `count`, `any`, `all`. `None` after a diagnostic.
     pub(super) fn lower_sequence_method(&mut self, scope: &mut Scope, expr: ExprId, method: Method, recv: ExprId, args: &[ExprId], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         match method {
             Method::ArrayLen => {
                 let array = self.lower_expr(scope, recv)?;
@@ -497,7 +497,7 @@ impl Elaboration<'_, '_> {
                     (Method::IteratorAny, [f]) => Consumer::Any(*f),
                     (Method::IteratorAll, [f]) => Consumer::All(*f),
                     _ => {
-                        self.refuse(scope.file, span, ValueForm::IteratorConsumerWithOtherArgumentsThanRow);
+                        self.refuse(scope.values.file, span, ValueForm::IteratorConsumerWithOtherArgumentsThanRow);
                         return None;
                     }
                 };
@@ -511,7 +511,7 @@ impl Elaboration<'_, '_> {
                 self.lower_consumer(scope, stmts, sequence, consumer, ty, origin, span)
             }
             other => {
-                self.refuse_with(scope.file, span, ValueForm::RowReadAsValue, [format!("{:?}", other)]);
+                self.refuse_with(scope.values.file, span, ValueForm::RowReadAsValue, [format!("{:?}", other)]);
                 None
             }
         }
@@ -615,7 +615,7 @@ impl Elaboration<'_, '_> {
     /// `r.is_empty()` of a range (H.6 rule 2): `!(lo < hi)`, `!(lo <= hi)` for `..=`.
     fn lower_range_is_empty(&mut self, scope: &mut Scope, recv: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (Some(lo), Some(hi), inclusive) = self.range_parts(scope, recv)? else {
-            self.refuse(scope.file, self.design.expr_node(recv).span, ValueForm::IsEmptyOfRangeWithMissingBound);
+            self.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::IsEmptyOfRangeWithMissingBound);
             return None;
         };
         let (low, high) = (self.lower_expr(scope, lo)?, self.lower_expr(scope, hi)?);
@@ -628,18 +628,18 @@ impl Elaboration<'_, '_> {
     /// name `let`-bound to one.
     fn range_parts(&mut self, scope: &Scope, expr: ExprId) -> Option<(Option<ExprId>, Option<ExprId>, bool)> {
         let expr = self.peel_parens(expr);
-        let node = self.design.expr_node(expr).clone();
+        let node = self.state.design.expr_node(expr).clone();
         match &node.kind {
             ExprKind::Range { lo, hi, inclusive } => Some((*lo, *hi, *inclusive)),
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if let Some(init) = scope.let_sources.get(&decl).copied() => self.range_parts(scope, init),
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if let Some(init) = scope.values.let_sources.get(&decl).copied() => self.range_parts(scope, init),
                 _ => {
-                    self.refuse(scope.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
+                    self.refuse(scope.values.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
                     None
                 }
             },
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
+                self.refuse(scope.values.file, node.span, ValueForm::RangeThatIsNotWrittenWhereIt);
                 None
             }
         }
@@ -652,7 +652,7 @@ impl Elaboration<'_, '_> {
         let usize_ty = ValueType::UInt(64);
         let array = self.lower_expr(scope, recv)?;
         let ValueType::Array(_, count) = self.type_of(array) else {
-            self.refuse(scope.file, self.design.expr_node(recv).span, ValueForm::ValueThatIsNotArray);
+            self.refuse(scope.values.file, self.state.design.expr_node(recv).span, ValueForm::ValueThatIsNotArray);
             return None;
         };
         let literal = |this: &mut Self, value: bool| this.emit(Expr::Bool(value), ValueType::Bool, origin.clone());

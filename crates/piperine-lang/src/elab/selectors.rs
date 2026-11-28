@@ -78,7 +78,7 @@ impl Elaboration<'_, '_> {
     pub(super) fn enter_arm(scope: &mut Scope, condition: Option<LoweredExpr>, holds: bool) -> bool {
         match condition {
             Some(expr) => {
-                scope.conditions.push(Condition { expr, holds });
+                scope.analog.conditions.push(Condition { expr, holds });
                 true
             }
             None => false,
@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
     /// Leaves the arm `enter_arm` entered, when it pushed a condition.
     pub(super) fn leave_arm(scope: &mut Scope, entered: bool) {
         if entered {
-            scope.conditions.pop();
+            scope.analog.conditions.pop();
         }
     }
 
@@ -96,8 +96,8 @@ impl Elaboration<'_, '_> {
     /// of this file): `E0415` for a potential and a flow contribution that nothing separates. A
     /// branch no contribution reached (a flow read numbered it) keeps the kind it was given.
     pub(super) fn decide_branch_kinds(&mut self, scope: &mut Scope) {
-        for branch in 0..scope.branches.len() {
-            let own: Vec<ContributionRecord> = scope.contributions.iter().filter(|r| r.branch == branch as u32).cloned().collect();
+        for branch in 0..scope.analog.branches.len() {
+            let own: Vec<ContributionRecord> = scope.analog.contributions.iter().filter(|r| r.branch == branch as u32).cloned().collect();
             let of = |quantity: QuantityRole| own.iter().filter(move |r| r.quantity == quantity);
             let (potential, flow) = (of(QuantityRole::Potential).next().is_some(), of(QuantityRole::Flow).next().is_some());
             let kind = match (potential, flow) {
@@ -110,7 +110,7 @@ impl Elaboration<'_, '_> {
                 }
                 _ => BranchKind::Switch,
             };
-            scope.branches[branch].kind = kind;
+            scope.analog.branches[branch].kind = kind;
         }
     }
 
@@ -127,15 +127,15 @@ impl Elaboration<'_, '_> {
 
     /// `(a, b)`: the nodes of a branch as the module names them, `gnd` for ground.
     pub(super) fn branch_name(&self, scope: &Scope, branch: usize) -> String {
-        let ends = &scope.branches[branch];
+        let ends = &scope.analog.branches[branch];
         format!("({}, {})", self.terminal_name(ends.plus), self.terminal_name(ends.minus))
     }
 
     /// The name of the node `terminal` of the body being lowered.
     pub(super) fn terminal_name(&self, terminal: Terminal) -> String {
         let Terminal::Node(index) = terminal else { return "gnd".to_string() };
-        let decl = self.frames[0].nodes.iter().find(|(_, t)| **t == Terminal::Node(index)).map(|(d, _)| *d);
-        match decl.map(|d| self.design.decl_data(d)) {
+        let decl = self.state.structure.frames[0].nodes.iter().find(|(_, t)| **t == Terminal::Node(index)).map(|(d, _)| *d);
+        match decl.map(|d| self.state.design.decl_data(d)) {
             Some(data) if matches!(data.kind, DeclKind::Port(_) | DeclKind::Signal(_)) => data.name.as_ref().map_or_else(|| format!("#{index}"), |n| n.text.clone()),
             _ => format!("#{index}"),
         }
@@ -147,8 +147,8 @@ impl Elaboration<'_, '_> {
     /// enclosing conditions read a probe (§11 rule 3). Run after `decide_branch_kinds`; a branch
     /// of kind `Flow` has no potential contribution, so a probe may select between its flows.
     pub(super) fn check_selector_rule(&mut self, scope: &Scope) {
-        for record in &scope.contributions {
-            if scope.branches[record.branch as usize].kind == BranchKind::Flow {
+        for record in &scope.analog.contributions {
+            if scope.analog.branches[record.branch as usize].kind == BranchKind::Flow {
                 continue;
             }
             let read = record.conditions.iter().find_map(|c| self.selector_reads(scope, c.expr).probe);
@@ -170,7 +170,7 @@ impl Elaboration<'_, '_> {
             if !seen.insert(id) {
                 continue;
             }
-            let Some(kind) = self.ir.expr_kind(id) else { continue };
+            let Some(kind) = self.state.builder.expr_kind(id) else { continue };
             let found = match kind {
                 Expr::Probe { plus, minus } => Some(format!("the probe of ({}, {})", self.terminal_name(*plus), self.terminal_name(*minus))),
                 Expr::Flow { branch } => Some(format!("the flow of the branch {}", self.branch_name(scope, *branch as usize))),
@@ -186,7 +186,7 @@ impl Elaboration<'_, '_> {
             }
             open.extend(Self::operands_of(kind));
             if let Expr::Local(local) = kind {
-                open.extend(scope.local_inits.get(local).copied());
+                open.extend(scope.values.local_inits.get(local).copied());
             }
         }
         reads
@@ -211,12 +211,12 @@ impl Elaboration<'_, '_> {
     /// in reach, §14 rule 9); `Some(None)` when nothing encloses the code, `None` after a diagnostic
     /// (`P0001` for an `if let` arm).
     pub(super) fn standalone_guard(&mut self, scope: &Scope, span: Span, what: &str) -> Option<Option<LoweredExpr>> {
-        if scope.guards.is_empty() {
+        if scope.analog.guards.is_empty() {
             return Some(None);
         }
         let mut standalone = Self::standalone_scope(scope);
         let mut tests: Vec<LoweredExpr> = Vec::new();
-        for guard in &scope.guards.clone() {
+        for guard in &scope.analog.guards.clone() {
             match guard {
                 ArmCondition::If { condition, holds } => {
                     let test = self.lower_expr(&mut standalone, *condition)?;
@@ -225,22 +225,22 @@ impl Elaboration<'_, '_> {
                 }
                 ArmCondition::MatchArm { scrutinee, earlier, pat } => tests.extend(self.standalone_arm_tests(&mut standalone, *scrutinee, earlier, *pat)?),
                 ArmCondition::IfLet => {
-                    self.refuse_with(scope.file, span, ValueForm::UnderIfLet, [what.to_string()]);
+                    self.refuse_with(scope.values.file, span, ValueForm::UnderIfLet, [what.to_string()]);
                     return None;
                 }
                 ArmCondition::Guarded => {
-                    self.refuse_with(scope.file, span, ValueForm::UnderMatchArmWithGuard, [what.to_string()]);
+                    self.refuse_with(scope.values.file, span, ValueForm::UnderMatchArmWithGuard, [what.to_string()]);
                     return None;
                 }
             }
         }
-        if !standalone.locals.is_empty() {
-            self.refuse_with(scope.file, span, ValueForm::UnderConditionThatBindsLocal, [what.to_string()]);
+        if !standalone.values.locals.is_empty() {
+            self.refuse_with(scope.values.file, span, ValueForm::UnderConditionThatBindsLocal, [what.to_string()]);
             return None;
         }
         let mut tests = tests.into_iter();
         let Some(first) = tests.next() else { return Some(None) };
-        let origin = self.expr_origins[first.index()].clone();
+        let origin = self.state.values.expr_origins[first.index()].clone();
         Some(Some(tests.fold(first, |lhs, rhs| self.emit(Expr::Binary { op: piperine_ir::BinaryOp::And, lhs, rhs }, piperine_ir::ValueType::Bool, origin.clone()))))
     }
 }

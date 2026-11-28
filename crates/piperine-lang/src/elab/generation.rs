@@ -100,21 +100,21 @@ impl Elaboration<'_, '_> {
 
     /// Unrolls the generation of `module`, the module of the frame `frame`, over the keys of the frame being lowered.
     pub(super) fn expand_generation_of(&mut self, module: DeclId, frame: usize) {
-        self.generated = GeneratedItems { frame, ..GeneratedItems::default() };
-        let children = self.design.decl_data(module).children.clone();
+        self.state.structure.generated = GeneratedItems { frame, ..GeneratedItems::default() };
+        let children = self.state.design.decl_data(module).children.clone();
         self.expand_items(&children, None);
     }
 
     /// The items `items` of a body or an arm, elaborated under `now` (`None` outside every `for`).
     fn expand_items(&mut self, items: &[DeclId], now: Option<&Iteration>) {
         for item in items {
-            match &self.design.decl_data(*item).kind {
+            match &self.state.design.decl_data(*item).kind {
                 DeclKind::Generation(_) => self.expand_generation_item(*item, now),
                 DeclKind::Binding(_) => {}
                 _ => {
-                    self.generated.sequence.push((*item, now.cloned().unwrap_or_default()));
+                    self.state.structure.generated.sequence.push((*item, now.cloned().unwrap_or_default()));
                     if let Some(now) = now {
-                        self.generated.iterations.entry(*item).or_default().push(now.clone());
+                        self.state.structure.generated.iterations.entry(*item).or_default().push(now.clone());
                     }
                 }
             }
@@ -125,27 +125,27 @@ impl Elaboration<'_, '_> {
     /// generation unrolls them: a `for` around reactions makes one per iteration, iteration by iteration, inside the place of
     /// the `for` in source order (GN-19, §12.1.2).
     pub(super) fn digital_sequence(&mut self, items: &[DeclId]) -> Vec<(DeclId, Iteration)> {
-        let outer = std::mem::take(&mut self.generated.sequence);
+        let outer = std::mem::take(&mut self.state.structure.generated.sequence);
         self.expand_items(items, None);
-        std::mem::replace(&mut self.generated.sequence, outer)
+        std::mem::replace(&mut self.state.structure.generated.sequence, outer)
     }
 
     /// The generation `generation`, written under the iteration `now`.
     fn expand_generation_item(&mut self, generation: DeclId, now: Option<&Iteration>) {
-        let data = self.design.decl_data(generation).clone();
+        let data = self.state.design.decl_data(generation).clone();
         let DeclKind::Generation(kind) = &data.kind else { return };
         let scope_values = self.iteration_bindings(now);
         let inherited = now.cloned().unwrap_or_default();
         match kind {
             GenerationData::For { pat, iter, body } => {
-                let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(*iter).kind else {
-                    self.refuse(data.file, self.design.expr_node(*iter).span, StructureForm::GenerationForOverAnythingButRangeWith);
+                let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.state.design.expr_node(*iter).kind else {
+                    self.refuse(data.file, self.state.design.expr_node(*iter).span, StructureForm::GenerationForOverAnythingButRangeWith);
                     self.mark_untaken(body);
                     return;
                 };
-                let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(*pat).kind else {
-                    if !matches!(self.design.pat_node(*pat).kind, PatKind::Wild) {
-                        self.refuse(data.file, self.design.pat_node(*pat).span, StructureForm::GenerationForWhoseVariableIsNotName);
+                let PatKind::Ident { binding, sub: None, .. } = self.state.design.pat_node(*pat).kind else {
+                    if !matches!(self.state.design.pat_node(*pat).kind, PatKind::Wild) {
+                        self.refuse(data.file, self.state.design.pat_node(*pat).span, StructureForm::GenerationForWhoseVariableIsNotName);
                     }
                     return self.expand_range(generation, body, lo, hi, inclusive, None, now, &scope_values);
                 };
@@ -165,7 +165,7 @@ impl Elaboration<'_, '_> {
                     }
                 }
                 Some(_) => {
-                    self.refuse(data.file, self.design.expr_node(*cond).span, StructureForm::GenerationConditionThatIsNotBool);
+                    self.refuse(data.file, self.state.design.expr_node(*cond).span, StructureForm::GenerationConditionThatIsNotBool);
                     self.mark_untaken(then);
                     self.mark_untaken_else(else_);
                 }
@@ -186,7 +186,7 @@ impl Elaboration<'_, '_> {
         };
         let end = last + i128::from(inclusive);
         if end - first > TRIPS {
-            let data = self.design.decl_data(generation);
+            let data = self.state.design.decl_data(generation);
             let message = format!("a generation `for` of {} iterations: at most {TRIPS} are unrolled", end - first);
             self.report(data.file, crate::msl::Diagnostic::new("E0416", message, data.span, "too many iterations"));
             self.mark_untaken(body);
@@ -208,7 +208,7 @@ impl Elaboration<'_, '_> {
 
     /// The constant of `expr` over `values`, or `None` after a diagnostic.
     fn fold_generation(&mut self, expr: crate::pom::ExprId, values: &Bindings, what: &str) -> Option<Constant> {
-        match self.consts.value(expr, values) {
+        match self.state.consts.value(expr, values) {
             Ok(value) => Some(value),
             Err(fault) => {
                 self.const_fault(&fault, what);
@@ -219,7 +219,7 @@ impl Elaboration<'_, '_> {
 
     /// The keys of the body overlaid with the loop variables of `now`.
     pub(super) fn iteration_bindings(&self, now: Option<&Iteration>) -> Bindings {
-        let mut bindings = self.body_keys.clone();
+        let mut bindings = self.state.structure.body_keys.clone();
         for (variable, value) in now.map(|n| n.values.as_slice()).unwrap_or(&[]) {
             bindings.bind(*variable, Constant::Int(*value));
         }
@@ -229,7 +229,7 @@ impl Elaboration<'_, '_> {
     /// The items of an arm that was not elaborated: each is known, and has no iteration.
     fn mark_untaken(&mut self, items: &[DeclId]) {
         for item in items {
-            match self.design.decl_data(*item).kind.clone() {
+            match self.state.design.decl_data(*item).kind.clone() {
                 DeclKind::Generation(GenerationData::For { body, .. }) => self.mark_untaken(&body),
                 DeclKind::Generation(GenerationData::If { then, else_, .. }) => {
                     self.mark_untaken(&then);
@@ -237,7 +237,7 @@ impl Elaboration<'_, '_> {
                 }
                 DeclKind::Binding(_) => {}
                 _ => {
-                    self.generated.iterations.entry(*item).or_default();
+                    self.state.structure.generated.iterations.entry(*item).or_default();
                 }
             }
         }
@@ -256,17 +256,17 @@ impl Elaboration<'_, '_> {
     /// some iterations skip would leave a gap in its array, which this elaboration refuses, once, by name (`P0001`). An item
     /// outside generation, or in an `if` outside every `for`, has no gap.
     pub(super) fn generated_items_complete(&mut self, decl: DeclId) -> bool {
-        let Some(elaborated) = self.generated.of(decl).map(Vec::len) else { return true };
+        let Some(elaborated) = self.state.structure.generated.of(decl).map(Vec::len) else { return true };
         let loops = self.generation_loops(decl).len();
-        let typed = self.consts.typed_carrier(decl).or_else(|| self.consts.typed_node_array(decl));
-        let frame = self.generated.frame;
+        let typed = self.state.consts.typed_carrier(decl).or_else(|| self.state.consts.typed_node_array(decl));
+        let frame = self.state.structure.generated.frame;
         let Some(shape) = typed.and_then(|ty| self.shape_in(&ty, frame)) else { return true };
         let trips: u64 = shape.dims.iter().take(loops).product();
         if loops == 0 || elaborated as u64 == trips {
             return true;
         }
-        if self.generated.refused.insert(decl) {
-            let data = self.design.decl_data(decl).clone();
+        if self.state.structure.generated.refused.insert(decl) {
+            let data = self.state.design.decl_data(decl).clone();
             self.refuse(data.file, data.span, StructureForm::ItemDeclaredInGenerationIfThatNot);
         }
         false
@@ -275,9 +275,9 @@ impl Elaboration<'_, '_> {
     /// The generation `for`s around `decl`, outermost first.
     pub(super) fn generation_loops(&self, decl: DeclId) -> Vec<DeclId> {
         let mut loops = Vec::new();
-        let mut at = self.design.decl_data(decl).parent;
+        let mut at = self.state.design.decl_data(decl).parent;
         while let Some(current) = at {
-            let data = self.design.decl_data(current);
+            let data = self.state.design.decl_data(current);
             if matches!(data.kind, DeclKind::Generation(GenerationData::For { .. })) {
                 loops.push(current);
             }
@@ -301,15 +301,15 @@ impl Elaboration<'_, '_> {
     /// of the type `ty` the read has (§8.2.23). `E0342` for a `let` of an arm that was not elaborated. `None` after a
     /// diagnostic.
     pub(super) fn lower_generated_let(&mut self, scope: &mut Scope, expr: ExprId, binding: DeclId, ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
-        let item = self.design.decl_data(binding).parent?;
+        let item = self.state.design.decl_data(binding).parent?;
         let value = self.body_let_value(binding)?;
-        let iterations = self.generated.of(item)?.clone();
+        let iterations = self.state.structure.generated.of(item)?.clone();
         if iterations.is_empty() && self.generation_loops(item).is_empty() {
-            self.refer_outside_generation(scope.file, self.design.expr_node(expr).span, binding, None);
+            self.refer_outside_generation(scope.values.file, self.state.design.expr_node(expr).span, binding, None);
             return None;
         }
         let loops = self.generation_loops(item);
-        let fixed: Vec<u32> = self.implicit_ordinals(item, &scope.ordinals).into_iter().map(|ordinal| ordinal as u32).collect();
+        let fixed: Vec<u32> = self.implicit_ordinals(item, &scope.digital.ordinals).into_iter().map(|ordinal| ordinal as u32).collect();
         let reached: Vec<Iteration> = iterations.into_iter().filter(|iteration| GeneratedLevels::new(&loops, iteration).starts_with(&fixed)).collect();
         self.generated_let_level(scope, expr, value, (&loops, fixed.len()), &reached, ty, origin)
     }
@@ -320,22 +320,22 @@ impl Elaboration<'_, '_> {
     fn generated_let_level(&mut self, scope: &mut Scope, expr: ExprId, value: ExprId, (loops, level): (&[DeclId], usize), reached: &[Iteration], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         if level == loops.len() {
             let iteration = reached.first()?;
-            let outer = (scope.unrolled.clone(), std::mem::replace(&mut scope.ordinals, iteration.ordinals.clone()));
+            let outer = (scope.values.unrolled.clone(), std::mem::replace(&mut scope.digital.ordinals, iteration.ordinals.clone()));
             for (variable, constant) in &iteration.values {
-                scope.unrolled.bind(*variable, Constant::Int(*constant));
+                scope.values.unrolled.bind(*variable, Constant::Int(*constant));
             }
             let lowered = self.lower_body_let(scope, value);
-            (scope.unrolled, scope.ordinals) = outer;
+            (scope.values.unrolled, scope.digital.ordinals) = outer;
             return lowered;
         }
         let ValueType::Array(element, length) = &ty else {
-            self.refuse(scope.file, self.design.expr_node(expr).span, StructureForm::LetWrittenInGenerationReadAsNo);
+            self.refuse(scope.values.file, self.state.design.expr_node(expr).span, StructureForm::LetWrittenInGenerationReadAsNo);
             return None;
         };
         let ordinals: BTreeSet<u32> = reached.iter().filter_map(|iteration| GeneratedLevels::new(loops, iteration).at(level)).collect();
         // an arm some iterations skip leaves a gap: the array the type names has an element the generation never made
         if ordinals.len() as u64 != *length || ordinals.iter().enumerate().any(|(position, ordinal)| position as u32 != *ordinal) {
-            self.refuse(scope.file, self.design.expr_node(expr).span, StructureForm::LetDeclaredInGenerationIfThatNot);
+            self.refuse(scope.values.file, self.state.design.expr_node(expr).span, StructureForm::LetDeclaredInGenerationIfThatNot);
             return None;
         }
         let mut parts = Vec::with_capacity(ordinals.len());
@@ -352,13 +352,13 @@ impl Elaboration<'_, '_> {
     pub(super) fn iteration_position(&self, item: DeclId, ordinals: &[u64]) -> Option<usize> {
         let loops = self.generation_loops(item);
         let wanted: Vec<u32> = ordinals.iter().map(|ordinal| u32::try_from(*ordinal).unwrap_or(u32::MAX)).collect();
-        self.generated.of(item)?.iter().position(|iteration| GeneratedLevels::new(&loops, iteration).0 == wanted)
+        self.state.structure.generated.of(item)?.iter().position(|iteration| GeneratedLevels::new(&loops, iteration).0 == wanted)
     }
 
     /// `E0342` for a reference to `decl`, an item written in generation: whose arm was not elaborated, or whose array has no
     /// element at `index`.
     pub(super) fn refer_outside_generation(&mut self, file: crate::pom::FileId, span: crate::msl::Span, decl: DeclId, index: Option<(u64, u64)>) {
-        let name = self.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
+        let name = self.state.design.decl_data(decl).name.as_ref().map_or("", |n| n.text.as_str()).to_string();
         let message = match index {
             Some((at, length)) => format!("the element {at} of the generated array `{name}` does not exist: it has {length} (§8.2.23)"),
             None => format!("`{name}` is declared in an arm of a generation that was not elaborated (§8.2.24)"),

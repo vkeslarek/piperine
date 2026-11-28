@@ -43,9 +43,9 @@ impl Built {
 impl Elaboration<'_, '_> {
     /// The struct or variant declaration `callee` names, when it builds one.
     pub(super) fn constructed_decl(&self, callee: ExprId) -> Option<DeclId> {
-        match &self.design.expr_node(callee).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Struct(_) | DeclKind::Variant(_)) => Some(d),
+        match &self.state.design.expr_node(callee).kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(d)) if matches!(self.state.design.decl_data(d).kind, DeclKind::Struct(_) | DeclKind::Variant(_)) => Some(d),
                 _ => None,
             },
             ExprKind::Paren(inner) => self.constructed_decl(*inner),
@@ -56,11 +56,11 @@ impl Elaboration<'_, '_> {
     /// What building the struct or variant `owner` as a value of `ty` makes, and the types of its
     /// fields.
     fn built_by(&self, owner: DeclId, ty: &ValueType) -> Option<(Built, Vec<ValueType>)> {
-        match (&self.design.decl_data(owner).kind, ty) {
-            (DeclKind::Struct(_), ValueType::Struct(id)) => Some((Built::Struct(*id), self.type_arena.field_types(*id).to_vec())),
+        match (&self.state.design.decl_data(owner).kind, ty) {
+            (DeclKind::Struct(_), ValueType::Struct(id)) => Some((Built::Struct(*id), self.state.values.type_arena.field_types(*id).to_vec())),
             (DeclKind::Variant(_), ValueType::Enum(id)) => {
-                let position = EnumLayout::variant_tag(self.design, owner)? as u32;
-                Some((Built::Variant(*id, position), self.type_arena.variant_field_types(*id, position).to_vec()))
+                let position = EnumLayout::variant_tag(self.state.design, owner)? as u32;
+                Some((Built::Variant(*id, position), self.state.values.type_arena.variant_field_types(*id, position).to_vec()))
             }
             _ => None,
         }
@@ -71,16 +71,16 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_struct_expr(&mut self, scope: &mut Scope, expr: ExprId, path: crate::pom::PathId, fields: &[FieldInit], ty: ValueType, origin: Origin) -> Option<LoweredExpr> {
         let owner = match self.typed(expr) {
             Some(Ty::Struct(Nominal { decl, .. })) => decl,
-            _ => match self.design.path_node(path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(variant)) if matches!(self.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
+            _ => match self.state.design.path_node(path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(variant)) if matches!(self.state.design.decl_data(variant).kind, DeclKind::Variant(_)) => variant,
                 _ => {
-                    self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
+                    self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::StructExpressionThatNamesNeitherStructNor);
                     return None;
                 }
             },
         };
         let (built, wanted) = self.built_by(owner, &ty)?;
-        let layout: Vec<DeclId> = self.types.fields(owner)?.iter().map(|f| f.decl).collect();
+        let layout: Vec<DeclId> = self.state.types.fields(owner)?.iter().map(|f| f.decl).collect();
         let mut written = Vec::with_capacity(fields.len());
         for init in fields {
             let index = match init.res {
@@ -141,8 +141,8 @@ impl Elaboration<'_, '_> {
         for (index, _) in written {
             let init = parts[*index]?;
             let part_ty = self.type_of(init);
-            let local = scope.locals.len() as u32;
-            scope.locals.push(Local { name: format!("field${local}"), ty: part_ty.clone(), mutable: false });
+            let local = scope.values.locals.len() as u32;
+            scope.values.locals.push(Local { name: format!("field${local}"), ty: part_ty.clone(), mutable: false });
             stmts.push(self.stmt(Stmt::Let { local, init }));
             reads[*index] = Some(self.emit(Expr::Local(local), part_ty, origin.clone()));
         }
@@ -155,7 +155,7 @@ impl Elaboration<'_, '_> {
     fn part_types(&self, ty: &ValueType) -> Vec<ValueType> {
         match ty {
             ValueType::Tuple(parts) => parts.clone(),
-            ValueType::Struct(id) => self.type_arena.field_types(*id).to_vec(),
+            ValueType::Struct(id) => self.state.values.type_arena.field_types(*id).to_vec(),
             _ => Vec::new(),
         }
     }
@@ -194,7 +194,7 @@ impl Elaboration<'_, '_> {
         match ty {
             Ty::Tuple(_) => name.parse().ok(),
             Ty::Struct(Nominal { decl, .. }) => {
-                let fields = self.types.fields(*decl)?;
+                let fields = self.state.types.fields(*decl)?;
                 match name.parse::<u32>() {
                     Ok(position) if fields.iter().all(|f| f.name.is_none()) => Some(position),
                     _ => fields.iter().position(|f| f.name.as_deref() == Some(name)).map(|p| p as u32),
@@ -208,12 +208,12 @@ impl Elaboration<'_, '_> {
     /// after a diagnostic.
     pub(super) fn place_of(&mut self, scope: &mut Scope, target: ExprId) -> Option<Place> {
         let peeled = self.peel_parens(target);
-        let node = self.design.expr_node(peeled).clone();
+        let node = self.state.design.expr_node(peeled).clone();
         match &node.kind {
             ExprKind::Field { expr, name, .. } => {
                 let index = self.field_index(&self.typed(*expr)?, &name.text);
                 let Some(index) = index else {
-                    self.refuse(scope.file, node.span, ValueForm::AssignmentToFieldOfTypeThatHas);
+                    self.refuse(scope.values.file, node.span, ValueForm::AssignmentToFieldOfTypeThatHas);
                     return None;
                 };
                 let mut place = self.place_of(scope, *expr)?;
@@ -221,8 +221,8 @@ impl Elaboration<'_, '_> {
                 Some(place)
             }
             ExprKind::Index { expr, index } => {
-                if matches!(self.design.expr_node(*index).kind, ExprKind::Range { .. }) {
-                    self.refuse(scope.file, node.span, ValueForm::AssignmentToRangeIndex);
+                if matches!(self.state.design.expr_node(*index).kind, ExprKind::Range { .. }) {
+                    self.refuse(scope.values.file, node.span, ValueForm::AssignmentToRangeIndex);
                     return None;
                 }
                 let mut place = self.place_of(scope, *expr)?;
@@ -237,12 +237,12 @@ impl Elaboration<'_, '_> {
     /// The type of the place `place` of the local it starts at: the local's type, then through each
     /// field and element. `None` when a step does not apply.
     pub(super) fn place_type(&self, scope: &Scope, place: &Place) -> Option<ValueType> {
-        let mut ty = scope.locals.get(place.local as usize)?.ty.clone();
+        let mut ty = scope.values.locals.get(place.local as usize)?.ty.clone();
         for step in &place.path {
             ty = match (ty, step) {
                 (ValueType::Array(element, _), Projection::Index(_)) => *element,
                 (ValueType::Tuple(parts), Projection::Field(index)) => parts.get(*index as usize)?.clone(),
-                (ValueType::Struct(id), Projection::Field(index)) => self.type_arena.field_types(id).get(*index as usize)?.clone(),
+                (ValueType::Struct(id), Projection::Field(index)) => self.state.values.type_arena.field_types(id).get(*index as usize)?.clone(),
                 _ => return None,
             };
         }
@@ -275,10 +275,10 @@ impl Elaboration<'_, '_> {
 
     /// The value of the constant `expr` as a count. `None` after a diagnostic.
     fn const_count(&mut self, scope: &Scope, expr: ExprId) -> Option<u64> {
-        match self.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
+        match self.state.consts.integer(expr).and_then(|count| u64::try_from(count).ok()) {
             Some(count) => Some(count),
             None => {
-                self.refuse(scope.file, self.design.expr_node(expr).span, ValueForm::LengthOrBoundThatIsNotInteger);
+                self.refuse(scope.values.file, self.state.design.expr_node(expr).span, ValueForm::LengthOrBoundThatIsNotInteger);
                 None
             }
         }
@@ -287,7 +287,7 @@ impl Elaboration<'_, '_> {
     /// `base[index]`: the element, or, for a range index with constant bounds, the array of the
     /// elements in range.
     pub(super) fn lower_index(&mut self, scope: &mut Scope, expr: ExprId, base: ExprId, index: ExprId, origin: Origin) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(expr).span;
+        let span = self.state.design.expr_node(expr).span;
         // one element of an array of carriers is read through the element, never through the array (`elements.rs`)
         match self.element_lookup(scope, expr) {
             Lookup::Found(element) => return Some(self.carrier_element_read(scope, element, origin)),
@@ -296,10 +296,10 @@ impl Elaboration<'_, '_> {
         }
         let whole = self.lower_expr(scope, base)?;
         let ValueType::Array(element, length) = self.type_of(whole) else {
-            self.refuse(scope.file, span, ValueForm::IndexOfValueThatIsNotArray);
+            self.refuse(scope.values.file, span, ValueForm::IndexOfValueThatIsNotArray);
             return None;
         };
-        if let ExprKind::Range { lo, hi, inclusive } = self.design.expr_node(index).kind.clone() {
+        if let ExprKind::Range { lo, hi, inclusive } = self.state.design.expr_node(index).kind.clone() {
             return self.lower_range_index(scope, span, whole, (*element).clone(), length, (lo, hi, inclusive), origin);
         }
         let at = self.lower_expr(scope, index)?;
@@ -320,7 +320,7 @@ impl Elaboration<'_, '_> {
         };
         if low > high || high > length {
             let message = format!("the range index {low}..{high} is outside an array of {length} elements");
-            let file = scope.file;
+            let file = scope.values.file;
             self.report(file, crate::msl::Diagnostic::new("E0104", message, span, "range index out of bounds"));
             return None;
         }
@@ -336,7 +336,7 @@ impl Elaboration<'_, '_> {
     /// The tests of a tuple, tuple-struct or struct pattern over `subject` of the aggregate type
     /// `base`: each sub-pattern over the field it names, the tests joined and the names kept.
     pub(super) fn test_aggregate_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId, base: &ValueType, origin: Origin) -> Option<PatternTest> {
-        let node = self.design.pat_node(pat).clone();
+        let node = self.state.design.pat_node(pat).clone();
         let count = self.part_types(base).len();
         let fields: Vec<(u32, Option<PatId>, Option<DeclId>)> = match &node.kind {
             PatKind::Tuple(pats) | PatKind::TupleStruct { pats, .. } => self.positional(pats, count),
@@ -380,22 +380,22 @@ impl Elaboration<'_, '_> {
     /// sub-pattern holds of the variant's field it names (§1.6.5). The fields are read only where
     /// the variant test holds, as the `&&` that joins them runs them. `None` after a diagnostic.
     pub(super) fn test_variant_pattern(&mut self, scope: &mut Scope, subject: &Subject, pat: PatId, base: &ValueType, origin: Origin) -> Option<PatternTest> {
-        let node = self.design.pat_node(pat).clone();
+        let node = self.state.design.pat_node(pat).clone();
         let ValueType::Enum(id) = base else { return None };
         let path = match &node.kind {
             PatKind::TupleStruct { path, .. } | PatKind::Struct { path, .. } => *path,
             _ => return None,
         };
-        let variant = match self.design.path_node(path).segments.last().map(|s| s.res) {
-            Some(Resolution::Decl(d)) if matches!(self.design.decl_data(d).kind, DeclKind::Variant(_)) => d,
+        let variant = match self.state.design.path_node(path).segments.last().map(|s| s.res) {
+            Some(Resolution::Decl(d)) if matches!(self.state.design.decl_data(d).kind, DeclKind::Variant(_)) => d,
             _ => {
-                self.refuse(scope.file, node.span, ValueForm::PatternWithFieldsThatNamesNoVariant);
+                self.refuse(scope.values.file, node.span, ValueForm::PatternWithFieldsThatNamesNoVariant);
                 return None;
             }
         };
-        let position = EnumLayout::variant_tag(self.design, variant)? as u32;
+        let position = EnumLayout::variant_tag(self.state.design, variant)? as u32;
         let whole = self.read_subject(scope, subject, origin.clone())?;
-        let part_types = self.type_arena.variant_field_types(*id, position).to_vec();
+        let part_types = self.state.values.type_arena.variant_field_types(*id, position).to_vec();
         let fields = match &node.kind {
             PatKind::TupleStruct { pats, .. } => self.positional(pats, part_types.len()),
             PatKind::Struct { fields, .. } => self.named_fields(fields)?,
@@ -433,7 +433,7 @@ impl Elaboration<'_, '_> {
         for (position, pat) in pats.iter().enumerate() {
             if Some(position) == rest_at {
                 let (from, to) = (position, arity - after);
-                if let PatKind::Ident { binding, .. } = self.design.pat_node(*pat).kind {
+                if let PatKind::Ident { binding, .. } = self.state.design.pat_node(*pat).kind {
                     let whole = self.read_subject(scope, subject, origin.clone())?;
                     let parts: Vec<LoweredExpr> = (from..to).map(|k| self.element_read(whole, k as u64, element, &origin)).collect();
                     let rest = self.emit(Expr::Array(parts), ValueType::Array(element.clone(), (to - from) as u64), origin.clone());
@@ -467,9 +467,9 @@ impl Elaboration<'_, '_> {
 
     /// Whether `pat` is `..` or `name @ ..`.
     fn is_rest(&self, pat: PatId) -> bool {
-        match &self.design.pat_node(pat).kind {
+        match &self.state.design.pat_node(pat).kind {
             PatKind::Rest => true,
-            PatKind::Ident { sub: Some(sub), .. } => matches!(self.design.pat_node(*sub).kind, PatKind::Rest),
+            PatKind::Ident { sub: Some(sub), .. } => matches!(self.state.design.pat_node(*sub).kind, PatKind::Rest),
             _ => false,
         }
     }
@@ -488,14 +488,14 @@ impl Elaboration<'_, '_> {
     /// The `(field index, sub-pattern, binding)` of the sub-patterns of a positional pattern over
     /// `count` fields: `..` stands for the fields between the ones before and after it (§1.6.5).
     fn positional(&self, pats: &[PatId], count: usize) -> Vec<(u32, Option<PatId>, Option<DeclId>)> {
-        let rest = pats.iter().position(|p| matches!(self.design.pat_node(*p).kind, PatKind::Rest));
+        let rest = pats.iter().position(|p| matches!(self.state.design.pat_node(*p).kind, PatKind::Rest));
         let mut out = Vec::new();
         for (position, pat) in pats.iter().enumerate() {
             let index = match rest {
                 Some(rest) if position > rest => count - (pats.len() - position),
                 _ => position,
             };
-            if !matches!(self.design.pat_node(*pat).kind, PatKind::Rest) {
+            if !matches!(self.state.design.pat_node(*pat).kind, PatKind::Rest) {
                 out.push((index as u32, Some(*pat), None));
             }
         }
@@ -508,8 +508,8 @@ impl Elaboration<'_, '_> {
         let mut out = Vec::new();
         for field in fields {
             let Resolution::Decl(decl) = field.res else { return None };
-            let owner = self.design.decl_data(decl).parent?;
-            let index = self.types.fields(owner)?.iter().position(|f| f.decl == decl)? as u32;
+            let owner = self.state.design.decl_data(decl).parent?;
+            let index = self.state.types.fields(owner)?.iter().position(|f| f.decl == decl)? as u32;
             out.push((index, field.pat, field.binding));
         }
         Some(out)

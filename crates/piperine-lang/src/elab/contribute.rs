@@ -33,12 +33,12 @@ impl Elaboration<'_, '_> {
     pub(super) fn lower_contribution(&mut self, scope: &mut Scope, out: &mut Vec<LoweredStmt>, lhs: ExprId, rhs: ExprId, span: Span) -> bool {
         let Some((role, plus, minus)) = self.contribution_target(scope, lhs) else { return false };
         if plus == minus {
-            let at = self.design.expr_node(lhs).span;
-            self.report(scope.file, Diagnostic::new("E0241", "a contribution to a branch from a node to itself", at, "both nodes are the same node"));
+            let at = self.state.design.expr_node(lhs).span;
+            self.report(scope.values.file, Diagnostic::new("E0241", "a contribution to a branch from a node to itself", at, "both nodes are the same node"));
             return false;
         }
         // A merged branch is no branch: its two nodes are one (`structural.rs`).
-        if scope.merged.iter().any(|(a, b)| (*a, *b) == (plus, minus) || (*a, *b) == (minus, plus)) {
+        if scope.analog.merged.iter().any(|(a, b)| (*a, *b) == (plus, minus) || (*a, *b) == (minus, plus)) {
             return true;
         }
         // The branch's kind is decided once every contribution is lowered (`selectors.rs`); until
@@ -47,19 +47,19 @@ impl Elaboration<'_, '_> {
             QuantityRole::Flow => BranchKind::Flow,
             QuantityRole::Potential => BranchKind::Potential,
         };
-        let existing = scope.branches.iter().position(|b| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus));
+        let existing = scope.analog.branches.iter().position(|b| (b.plus, b.minus) == (plus, minus) || (b.plus, b.minus) == (minus, plus));
         let (branch, reversed) = match existing {
-            Some(index) => (index as u32, scope.branches[index].plus != plus),
+            Some(index) => (index as u32, scope.analog.branches[index].plus != plus),
             None => {
-                scope.branches.push(Branch { plus, minus, kind });
-                (scope.branches.len() as u32 - 1, false)
+                scope.analog.branches.push(Branch { plus, minus, kind });
+                (scope.analog.branches.len() as u32 - 1, false)
             }
         };
-        scope.contributions.push(ContributionRecord { branch, quantity: role, conditions: scope.conditions.clone(), file: scope.file, span });
+        scope.analog.contributions.push(ContributionRecord { branch, quantity: role, conditions: scope.analog.conditions.clone(), file: scope.values.file, span });
         // A potential contribution is split like a flow one: its `ddt` leaves are `Ddt` addends
         // (amendment A5; abi.md A1 hoists them onto the branch's equation row).
         let mut leaves = Vec::new();
-        let rules = LeafRules { whole_addends: scope.conditions.is_empty(), lets: &scope.addend_lets.clone() };
+        let rules = LeafRules { whole_addends: scope.analog.conditions.is_empty(), lets: &scope.analog.addend_lets.clone() };
         self.flatten(&rules, rhs, false, &mut leaves);
         let Some(addends) = self.addends(scope, &leaves, reversed) else { return false };
         out.push(self.stmt(Stmt::Contribute { branch, quantity: role, addends }));
@@ -68,13 +68,13 @@ impl Elaboration<'_, '_> {
 
     /// The quantity and the terminals the left side names: `i(a, b)`, `v(a)`, `flow(a, b)`.
     fn contribution_target(&mut self, scope: &Scope, lhs: ExprId) -> Option<(QuantityRole, Terminal, Terminal)> {
-        let node = self.design.expr_node(lhs).clone();
+        let node = self.state.design.expr_node(lhs).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else {
-            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
+            self.refuse(scope.values.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let Some(role) = self.quantity_role(*callee) else {
-            self.refuse(scope.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
+            self.refuse(scope.values.file, node.span, AnalogForm::ContributionTargetThatIsNotProbe);
             return None;
         };
         let role = match role {
@@ -89,7 +89,7 @@ impl Elaboration<'_, '_> {
             [plus] => Some((role, plus, Terminal::Ground)),
             [plus, minus] => Some((role, plus, minus)),
             _ => {
-                self.refuse(scope.file, node.span, AnalogForm::ContributionToProbeOfMoreThanTwo);
+                self.refuse(scope.values.file, node.span, AnalogForm::ContributionToProbeOfMoreThanTwo);
                 None
             }
         }
@@ -98,16 +98,16 @@ impl Elaboration<'_, '_> {
     /// The quantity the call of `callee` reads or contributes: a nature's access alias (`i`, `v`)
     /// or the built-in `flow` and `potential`; `None` for anything else.
     pub(super) fn quantity_role(&self, callee: ExprId) -> Option<pom::QuantityRole> {
-        let ExprKind::Path(path) = &self.design.expr_node(callee).kind else { return None };
-        match self.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
-            Resolution::Decl(q) => match &self.design.decl_data(q).kind {
+        let ExprKind::Path(path) = &self.state.design.expr_node(callee).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map_or(Resolution::Unresolved, |s| s.res) {
+            Resolution::Decl(q) => match &self.state.design.decl_data(q).kind {
                 DeclKind::Quantity(data) => Some(data.role),
                 _ => None,
             },
             Resolution::Builtin(id) if id.info().name == "flow" => Some(pom::QuantityRole::Flow),
             Resolution::Builtin(id) if id.info().name == "potential" => Some(pom::QuantityRole::Potential),
             // an access the resolver left ambiguous takes the role the checker read from the node (`v(y)`, `let y = x;`)
-            Resolution::Deferred(_) => self.types.access_role(callee),
+            Resolution::Deferred(_) => self.state.types.access_role(callee),
             _ => None,
         }
     }
@@ -123,7 +123,7 @@ impl Elaboration<'_, '_> {
             out.push(Leaf { negated, expr: inner, ddt: false });
             return;
         }
-        match &self.design.expr_node(inner).kind {
+        match &self.state.design.expr_node(inner).kind {
             ExprKind::Binary { op: BinOp::Add, lhs, rhs } => {
                 self.flatten(rules, *lhs, negated, out);
                 self.flatten(rules, *rhs, negated, out);
@@ -145,7 +145,7 @@ impl Elaboration<'_, '_> {
         if self.whole_addend(rules, inner).is_some() {
             return true;
         }
-        match &self.design.expr_node(inner).kind {
+        match &self.state.design.expr_node(inner).kind {
             ExprKind::Binary { op: BinOp::Add | BinOp::Sub, lhs, rhs } => self.holds_ddt_leaf(rules, *lhs) || self.holds_ddt_leaf(rules, *rhs),
             ExprKind::Unary { op: UnOp::Neg, expr: operand } => self.holds_ddt_leaf(rules, *operand),
             _ => false,
@@ -154,7 +154,7 @@ impl Elaboration<'_, '_> {
 
     /// Whether `expr` is a call of the core module `ddt`.
     pub(super) fn is_ddt(&self, expr: ExprId) -> bool {
-        matches!(self.design.expr_node(expr).kind, ExprKind::Call { .. }) && matches!(self.types.callee(expr), Some(Callee::Core(id)) if id.info().name == "ddt")
+        matches!(self.state.design.expr_node(expr).kind, ExprKind::Call { .. }) && matches!(self.state.types.callee(expr), Some(Callee::Core(id)) if id.info().name == "ddt")
     }
 
     /// The addends of `leaves`: one per `ddt` leaf, one per maximal run of the others. Every
@@ -185,7 +185,7 @@ impl Elaboration<'_, '_> {
 
     /// The argument of a whole-addend `ddt` leaf: a call with one argument (`whole_addend`).
     fn ddt_value(&mut self, scope: &mut Scope, ddt: ExprId) -> Option<LoweredExpr> {
-        let node = self.design.expr_node(ddt).clone();
+        let node = self.state.design.expr_node(ddt).clone();
         let ExprKind::Call { args, .. } = &node.kind else { return None };
         let [x] = &args[..] else { return None };
         self.lower_expr(scope, x.value)

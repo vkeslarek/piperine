@@ -103,14 +103,14 @@ impl Elaboration<'_, '_> {
     /// instance `instance` elaborates them: each drive is judged against the drives before it, in the order lowered.
     pub(super) fn judge_drive_overlaps(&mut self, instance: &str) {
         let mut deferred: Vec<(u32, DeclId)> = Vec::new();
-        for frame in &self.frames {
+        for frame in &self.state.structure.frames {
             for (decl, carrier) in &frame.carriers {
-                if self.types.defers_drive_overlaps(*decl) && !deferred.iter().any(|(held, _)| held == carrier) {
+                if self.state.types.defers_drive_overlaps(*decl) && !deferred.iter().any(|(held, _)| held == carrier) {
                     deferred.push((*carrier, *decl));
                 }
             }
         }
-        let sites = self.structure.drive_sites.clone();
+        let sites = self.state.digital.structure.drive_sites.clone();
         for (carrier, decl) in deferred {
             let of_carrier: Vec<&DriveSite> = sites.iter().filter(|site| site.carrier == carrier).collect();
             for (position, site) in of_carrier.iter().enumerate() {
@@ -147,9 +147,9 @@ impl Elaboration<'_, '_> {
     /// The carrier `decl` as the element `reach` names when it is one element of an array (`g[1][1]`), else its name.
     pub(super) fn shared_element_name(&mut self, decl: DeclId, reach: ElementReach) -> String {
         // a field of an array of bundles names its element before the field (`lanes[1].a`, `pom/bundles.rs`)
-        let naming = self.design.element_naming(decl);
+        let naming = self.state.design.element_naming(decl);
         let ElementReach::Run(first, end) = reach else { return naming.name("") };
-        let shape = self.consts.typed_carrier_array(decl).and_then(|array| self.shape_in(&array, 0));
+        let shape = self.state.consts.typed_carrier_array(decl).and_then(|array| self.shape_in(&array, 0));
         match shape {
             Some(shape) if end == first + 1 => naming.name(&shape.subscripts(first)),
             _ => naming.name(""),

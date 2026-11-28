@@ -14,15 +14,15 @@ impl Elaboration<'_, '_> {
     /// The natures of `modules`' ports and signals, added to the IR before any body.
     pub(super) fn lower_natures(&mut self, modules: &[DeclId]) {
         for module in modules {
-            for child in self.design.decl_data(*module).children.clone() {
-                let ty = match &self.design.decl_data(child).kind {
+            for child in self.state.design.decl_data(*module).children.clone() {
+                let ty = match &self.state.design.decl_data(child).kind {
                     // A discrete carrier's nature (`Bit`) has no quantity: it is no IR nature.
-                    _ if self.types.carrier(child).is_some() => continue,
+                    _ if self.state.types.carrier(child).is_some() => continue,
                     DeclKind::Port(p) => p.ty,
                     DeclKind::Signal(s) => s.ty,
                     _ => continue,
                 };
-                if let Some(nature) = self.design.nature_of(ty) {
+                if let Some(nature) = self.state.design.nature_of(ty) {
                     self.nature(nature);
                 }
             }
@@ -31,10 +31,10 @@ impl Elaboration<'_, '_> {
 
     /// The IR nature of a `nature` declaration, added the first time it is asked for.
     pub(super) fn nature(&mut self, nature: DeclId) -> Option<NatureId> {
-        if let Some(id) = self.natures.get(&nature) {
+        if let Some(id) = self.state.analog.natures.get(&nature) {
             return Some(*id);
         }
-        let data = self.design.decl_data(nature);
+        let data = self.state.design.decl_data(nature);
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let (file, span) = (data.file, data.span);
         let potential = self.quantity(nature, QuantityRole::Potential);
@@ -44,15 +44,15 @@ impl Elaboration<'_, '_> {
             return None;
         };
         self.check_access_names(nature, &potential, flow.as_ref());
-        let id = self.ir.nature(&name, potential, flow);
-        self.natures.insert(nature, id);
+        let id = self.state.builder.nature(&name, potential, flow);
+        self.state.analog.natures.insert(nature, id);
         Some(id)
     }
 
     /// The first quantity declaration of `role` a nature has.
     fn quantity_declaration(&self, nature: DeclId, role: QuantityRole) -> Option<DeclId> {
-        let children = self.design.decl_data(nature).children.clone();
-        children.into_iter().find(|c| matches!(&self.design.decl_data(*c).kind, DeclKind::Quantity(q) if q.role == role))
+        let children = self.state.design.decl_data(nature).children.clone();
+        children.into_iter().find(|c| matches!(&self.state.design.decl_data(*c).kind, DeclKind::Quantity(q) if q.role == role))
     }
 
     /// `E0205` (Part II §4 rule 10): the two `access` names of one nature are equal. Reported at the
@@ -63,9 +63,9 @@ impl Elaboration<'_, '_> {
             return;
         }
         let Some(declaration) = self.quantity_declaration(nature, QuantityRole::Flow) else { return };
-        let data = self.design.decl_data(declaration);
+        let data = self.state.design.decl_data(declaration);
         let (file, span) = (data.file, data.name.as_ref().map_or(data.span, |name| name.span));
-        let nature_name = self.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+        let nature_name = self.state.design.decl_data(nature).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let message = format!("the `potential` and the `flow` of nature `{nature_name}` share the access name `{}`", flow.access);
         self.report(file, Diagnostic::new("E0205", message, span, "the access names of a nature must differ"));
     }
@@ -81,7 +81,7 @@ impl Elaboration<'_, '_> {
     /// and an `abstol` that is not positive are `E0204` (Part II §4 rule 9).
     fn quantity(&mut self, nature: DeclId, role: QuantityRole) -> Option<Quantity> {
         let quantity = self.quantity_declaration(nature, role)?;
-        let data = self.design.decl_data(quantity).clone();
+        let data = self.state.design.decl_data(quantity).clone();
         let DeclKind::Quantity(q) = &data.kind else { return None };
         let name = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let mut access = String::new();
@@ -89,17 +89,17 @@ impl Elaboration<'_, '_> {
         let mut abstol = Real::new(0.0);
         for attr in &q.attrs {
             let attribute = attr.name.text.as_str();
-            let value_span = self.design.expr_node(attr.value).span;
+            let value_span = self.state.design.expr_node(attr.value).span;
             match attribute {
-                "access" => match &self.design.expr_node(attr.value).kind {
-                    ExprKind::Path(path) => access = self.design.path_node(*path).segments.last().map_or_else(String::new, |s| s.name.text.clone()),
+                "access" => match &self.state.design.expr_node(attr.value).kind {
+                    ExprKind::Path(path) => access = self.state.design.path_node(*path).segments.last().map_or_else(String::new, |s| s.name.text.clone()),
                     _ => self.quantity_attribute_fault(data.file, value_span, attribute, "must be an identifier"),
                 },
-                "units" => match &self.design.expr_node(attr.value).kind {
+                "units" => match &self.state.design.expr_node(attr.value).kind {
                     ExprKind::Lit(lit) if lit.str_value().is_some() => units = lit.str_value().unwrap_or_default(),
                     _ => self.quantity_attribute_fault(data.file, value_span, attribute, "must be a string literal"),
                 },
-                "abstol" => match self.consts.value(attr.value, &Bindings::new()) {
+                "abstol" => match self.state.consts.value(attr.value, &Bindings::new()) {
                     Ok(Constant::Real(value)) if value.get() > 0.0 => abstol = value,
                     Ok(Constant::Real(_)) => self.quantity_attribute_fault(data.file, value_span, attribute, "must be greater than zero"),
                     Ok(_) => self.quantity_attribute_fault(data.file, value_span, attribute, "must be a const `f64`"),

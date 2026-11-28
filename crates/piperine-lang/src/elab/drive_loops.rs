@@ -36,7 +36,7 @@ impl Elaboration<'_, '_> {
     /// elaborates them. A loop whose drives the checker judged already (whole carriers only) never reaches here.
     pub(super) fn judge_drive_loops(&mut self, instance: &str) {
         let drives: Vec<(usize, CarrierPart, BTreeSet<CarrierPart>)> = self
-            .structure
+            .state.digital.structure
             .drives
             .iter()
             .enumerate()
@@ -71,9 +71,9 @@ impl Elaboration<'_, '_> {
     /// The carriers of the body of a one-driver nature, each with the declaration it is (frame 0 first).
     fn one_driver_carriers(&self) -> BTreeMap<u32, DeclId> {
         let mut found = BTreeMap::new();
-        for frame in &self.frames {
+        for frame in &self.state.structure.frames {
             for (decl, carrier) in &frame.carriers {
-                if self.types.is_one_driver(*decl) {
+                if self.state.types.is_one_driver(*decl) {
                     found.entry(*carrier).or_insert(*decl);
                 }
             }
@@ -98,13 +98,13 @@ impl Elaboration<'_, '_> {
         let mut parts = BTreeSet::new();
         let mut stack = vec![value];
         while let Some(at) = stack.pop() {
-            let Some(kind) = self.ir.expr_kind(at) else { continue };
+            let Some(kind) = self.state.builder.expr_kind(at) else { continue };
             match kind {
                 Expr::Carrier(carrier) | Expr::Previous(carrier) => {
                     parts.insert(CarrierPart { carrier: *carrier, element: None });
                 }
                 Expr::CarrierElement { carrier, index } | Expr::ElementPrevious { carrier, index } | Expr::ElementChanged { carrier, index } => {
-                    let element = match self.ir.expr_kind(*index) {
+                    let element = match self.state.builder.expr_kind(*index) {
                         Some(Expr::Int(at)) => u64::try_from(*at).ok(),
                         _ => None,
                     };
@@ -114,7 +114,7 @@ impl Elaboration<'_, '_> {
             }
             stack.extend(kind.operands());
             for stmt in kind.statements() {
-                if let Some(stmt) = self.ir.stmt_kind(*stmt) {
+                if let Some(stmt) = self.state.builder.stmt_kind(*stmt) {
                     stack.extend(stmt.operands());
                 }
             }
@@ -124,10 +124,10 @@ impl Elaboration<'_, '_> {
 
     /// The name of `part` as the source writes it: `b[1]`, `g[1][0]`, or the carrier's own name.
     fn part_name(&mut self, carriers: &BTreeMap<u32, DeclId>, part: CarrierPart) -> String {
-        let fallback = self.structure.carriers[part.carrier as usize].name.clone();
+        let fallback = self.state.digital.structure.carriers[part.carrier as usize].name.clone();
         match (carriers.get(&part.carrier), part.element) {
             (Some(decl), Some(at)) => self.shared_element_name(*decl, ElementReach::Run(at, at + 1)),
-            (Some(decl), None) => self.design.decl_data(*decl).name.as_ref().map_or(fallback, |n| n.text.clone()),
+            (Some(decl), None) => self.state.design.decl_data(*decl).name.as_ref().map_or(fallback, |n| n.text.clone()),
             (None, _) => fallback,
         }
     }
@@ -135,10 +135,10 @@ impl Elaboration<'_, '_> {
     /// `E0339` at the first drive of a loop that writes `first`, naming every drive of it.
     fn report_loop(&mut self, first: CarrierPart, carriers: &BTreeMap<u32, DeclId>, names: &[String], instance: &str) {
         let reach = ElementReach::of_element(first.element.is_some(), first.element);
-        let site = self.structure.drive_sites.iter().find(|site| site.carrier == first.carrier && site.reach == reach).map(|site| (site.file, site.span));
+        let site = self.state.digital.structure.drive_sites.iter().find(|site| site.carrier == first.carrier && site.reach == reach).map(|site| (site.file, site.span));
         let (file, span) = match (site, carriers.get(&first.carrier)) {
             (Some(site), _) => site,
-            (None, Some(decl)) => (self.design.decl_data(*decl).file, self.design.decl_data(*decl).span),
+            (None, Some(decl)) => (self.state.design.decl_data(*decl).file, self.state.design.decl_data(*decl).span),
             (None, None) => return,
         };
         let message = format!("undelayed definitions of {} in `{instance}` depend on each other: a loop through one-driver carriers (§8.2.3)", names.join(", "));

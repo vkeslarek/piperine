@@ -11,9 +11,9 @@ impl Elaboration<'_, '_> {
     /// one §3.9.2 makes `E0188`: a `const` initializer that reads a run value, a `const` that
     /// depends on itself, or a `const` without a value outside a trait.
     fn const_item_fault(&self, fault: &ConstFault) -> Option<(String, String)> {
-        let named = |decl: crate::pom::DeclId| self.design.decl_data(decl).name.as_ref().map_or_else(String::new, |name| name.text.clone());
+        let named = |decl: crate::pom::DeclId| self.state.design.decl_data(decl).name.as_ref().map_or_else(String::new, |name| name.text.clone());
         match fault {
-            ConstFault::NoValue { decl } if !self.consts.is_trait_item(*decl) => Some((named(*decl), "it has no value".to_string())),
+            ConstFault::NoValue { decl } if !self.state.consts.is_trait_item(*decl) => Some((named(*decl), "it has no value".to_string())),
             ConstFault::Cyclic { constant, .. } => Some((named(*constant), "it depends on itself".to_string())),
             ConstFault::NotConstant { constant, what, .. } => Some((named(*constant), format!("it reads {what}"))),
             _ => None,
@@ -32,13 +32,13 @@ impl Elaboration<'_, '_> {
     pub(super) fn const_fault(&mut self, fault: &ConstFault, position: &str) {
         let (file, span) = match fault {
             ConstFault::NoValue { decl } => {
-                let data = self.design.decl_data(*decl);
+                let data = self.state.design.decl_data(*decl);
                 (data.file, data.span)
             }
             other => {
-                let expr = other.expr().map(|e| self.design.expr_node(e));
+                let expr = other.expr().map(|e| self.state.design.expr_node(e));
                 let span = expr.map_or_else(Default::default, |e| e.span);
-                let file = expr.map_or(crate::pom::FileId(0), |e| self.design.decl_data(e.owner).file);
+                let file = expr.map_or(crate::pom::FileId(0), |e| self.state.design.decl_data(e.owner).file);
                 (file, span)
             }
         };

@@ -186,11 +186,11 @@ impl Elaboration<'_, '_> {
     /// 1): the host drives a top's node ports and discrete `in` ports, and a value input has no
     /// source to hold it.
     pub(super) fn refuse_value_inputs(&mut self, top: DeclId) -> bool {
-        let data = self.design.decl_data(top);
+        let data = self.state.design.decl_data(top);
         let module = data.name.as_ref().map_or_else(String::new, |n| n.text.clone());
-        let inputs: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.design.decl_data(*c).kind, DeclKind::Port(_)) && self.is_value_input(*c)).collect();
+        let inputs: Vec<DeclId> = data.children.iter().copied().filter(|c| matches!(self.state.design.decl_data(*c).kind, DeclKind::Port(_)) && self.is_value_input(*c)).collect();
         for input in &inputs {
-            let port = self.design.decl_data(*input);
+            let port = self.state.design.decl_data(*input);
             let name = port.name.as_ref().map_or_else(String::new, |n| n.text.clone());
             let (file, span) = (port.file, port.name.as_ref().map_or(port.span, |n| n.span));
             let message = format!("top module `{module}` has the value input `{name}`, which the host cannot drive");

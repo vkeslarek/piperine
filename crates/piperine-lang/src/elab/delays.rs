@@ -21,32 +21,32 @@ impl Elaboration<'_, '_> {
     /// A `delay` call read as a value: `Expr::Delay(k)`. The site is made the first time the call
     /// is read in the frame; `None` after a diagnostic.
     pub(super) fn lower_delay(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
-        if let Some(site) = self.frames[scope.frame].delays.get(&call).copied() {
+        if let Some(site) = self.state.structure.frames[scope.values.frame].delays.get(&call).copied() {
             return Some(self.emit(Expr::Delay(site), ValueType::F64, origin));
         }
-        let span = self.design.expr_node(call).span;
+        let span = self.state.design.expr_node(call).span;
         let [input, time, rest @ ..] = args else { return None };
         let mut standalone = Self::standalone_scope(scope);
-        standalone.at_solution = true;
-        standalone.value_input = true;
+        standalone.analog.at_solution = true;
+        standalone.analog.value_input = true;
         let input = self.lower_expr(&mut standalone, *input)?;
-        let time_span = self.design.expr_node(*time).span;
+        let time_span = self.state.design.expr_node(*time).span;
         let time = self.lower_expr(&mut standalone, *time)?;
         let maximum = self.optional_constant(&mut standalone, rest.first().copied(), "a `delay` max")?;
         scope.adopt_standalone(&mut standalone);
-        if !standalone.locals.is_empty() {
-            self.refuse(scope.file, span, AnalogForm::ClosureOrOptionBindingInsideDelayInput);
+        if !standalone.values.locals.is_empty() {
+            self.refuse(scope.values.file, span, AnalogForm::ClosureOrOptionBindingInsideDelayInput);
             return None;
         }
         if maximum.is_none() && !self.constant_during_an_analysis(time) {
-            let module = self.design.decl_data(self.frames[scope.frame].module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
+            let module = self.state.design.decl_data(self.state.structure.frames[scope.values.frame].module).name.as_ref().map_or_else(String::new, |n| n.text.clone());
             let message = format!("`delay` in module `{module}` has no `max` and its `td` is not constant during an analysis (§14.6.2): give it a `max`, or write `td` over params and constants");
-            self.report(scope.file, Diagnostic::new("E0452", message, time_span, "a `td` that varies, with no `max`"));
+            self.report(scope.values.file, Diagnostic::new("E0452", message, time_span, "a `td` that varies, with no `max`"));
             return None;
         }
-        let site = self.structure.delays.len() as u32;
-        self.structure.delays.push(DelaySite { name: format!("delay{site}"), input, time, maximum, origin: origin.clone() });
-        self.frames[scope.frame].delays.insert(call, site);
+        let site = self.state.digital.structure.delays.len() as u32;
+        self.state.digital.structure.delays.push(DelaySite { name: format!("delay{site}"), input, time, maximum, origin: origin.clone() });
+        self.state.structure.frames[scope.values.frame].delays.insert(call, site);
         Some(self.emit(Expr::Delay(site), ValueType::F64, origin))
     }
 
@@ -59,7 +59,7 @@ impl Elaboration<'_, '_> {
             if !seen.insert(e) {
                 continue;
             }
-            let Some(kind) = self.ir.expr_kind(e) else { return false };
+            let Some(kind) = self.state.builder.expr_kind(e) else { return false };
             match kind {
                 Expr::Real(_) | Expr::Bool(_) | Expr::Int(_) | Expr::Unit | Expr::Param(_) | Expr::SessionParameter { .. } | Expr::Env(Env::Temperature | Env::TemperatureGiven | Env::Analysis(_)) => {}
                 Expr::Probe { .. } | Expr::Flow { .. } | Expr::Env(_) | Expr::Carrier(_) | Expr::Previous(_) | Expr::Fired(_) | Expr::Derivative(_) | Expr::Delay(_) | Expr::Noise(_) | Expr::Stim { .. } | Expr::Limit { .. } | Expr::Local(_) => return false,

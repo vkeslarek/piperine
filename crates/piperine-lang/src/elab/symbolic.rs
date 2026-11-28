@@ -85,11 +85,11 @@ impl Elaboration<'_, '_> {
         while let Some(step) = steps.pop() {
             let flow = match step {
                 Step::Iterate(variable, value) => {
-                    scope.unrolled.bind(variable, Constant::Int(value));
+                    scope.values.unrolled.bind(variable, Constant::Int(value));
                     Flow::Next
                 }
                 Step::Leave(variable) => {
-                    scope.unrolled.unbind(variable);
+                    scope.values.unrolled.unbind(variable);
                     Flow::Next
                 }
                 Step::Statement(stmt) => self.run_statement(scope, stmt)?,
@@ -99,7 +99,7 @@ impl Elaboration<'_, '_> {
                 return Some(value);
             }
         }
-        self.refuse(scope.file, at, AnalogForm::FnWithNoValueInsideDdx);
+        self.refuse(scope.values.file, at, AnalogForm::FnWithNoValueInsideDdx);
         None
     }
 
@@ -107,7 +107,7 @@ impl Elaboration<'_, '_> {
     /// no `;`, is the value when `value`.
     pub(super) fn push_block(&self, steps: &mut Vec<Step>, stmts: &[StmtId], value: bool) {
         for (index, stmt) in stmts.iter().enumerate().rev() {
-            steps.push(match &self.design.stmt_node(*stmt).kind {
+            steps.push(match &self.state.design.stmt_node(*stmt).kind {
                 StmtKind::Expr { expr, semi } => Step::Expression { expr: *expr, value: value && !*semi && index + 1 == stmts.len() },
                 _ => Step::Statement(*stmt),
             });
@@ -116,8 +116,8 @@ impl Elaboration<'_, '_> {
 
     /// A statement that is no expression: a `let` of a name, or a lone `;`.
     fn run_statement(&mut self, scope: &mut Scope, stmt: StmtId) -> Option<Flow> {
-        let node = self.design.stmt_node(stmt).clone();
-        let file = self.design.decl_data(node.owner).file;
+        let node = self.state.design.stmt_node(stmt).clone();
+        let file = self.state.design.decl_data(node.owner).file;
         match &node.kind {
             StmtKind::Empty => Some(Flow::Next),
             StmtKind::Let { pat, init: Some(init), else_: None, .. } => {
@@ -133,18 +133,18 @@ impl Elaboration<'_, '_> {
 
     /// `let name = init;`: the name holds the lowered initializer (an `Option` its pair, a `str` its text).
     pub(super) fn bind_expanded_let(&mut self, scope: &mut Scope, pat: crate::pom::PatId, init: ExprId, span: Span, body: ExpandedBody) -> Option<()> {
-        let PatKind::Ident { binding, sub: None, .. } = self.design.pat_node(pat).kind else {
-            self.refuse_with(scope.file, span, AnalogForm::LetOfPatternThatIsNoName, [body.describes().to_string()]);
+        let PatKind::Ident { binding, sub: None, .. } = self.state.design.pat_node(pat).kind else {
+            self.refuse_with(scope.values.file, span, AnalogForm::LetOfPatternThatIsNoName, [body.describes().to_string()]);
             return None;
         };
         match self.typed_local(binding) {
             Some(Ty::Str) => {
                 let text = self.text_of(scope, init)?;
-                scope.texts.insert(binding, text);
+                scope.digital.texts.insert(binding, text);
             }
             Some(Ty::Option(_)) => {
                 let pair = self.lower_option(scope, init)?;
-                scope.option_values.insert(binding, (pair.is, pair.val));
+                scope.analog.option_values.insert(binding, (pair.is, pair.val));
             }
             _ => self.set_expanded_name(scope, binding, init)?,
         }
@@ -155,11 +155,11 @@ impl Elaboration<'_, '_> {
     fn set_expanded_name(&mut self, scope: &mut Scope, binding: DeclId, source: ExprId) -> Option<()> {
         let folded = self.fold_scalar(scope, source);
         let value = self.lower_expr(scope, source)?;
-        scope.values.insert(binding, value);
+        scope.analog.values.insert(binding, value);
         match folded {
-            Some(constant) => scope.unrolled.bind(binding, constant),
+            Some(constant) => scope.values.unrolled.bind(binding, constant),
             None => {
-                scope.unrolled.unbind(binding);
+                scope.values.unrolled.unbind(binding);
             }
         }
         Some(())
@@ -168,8 +168,8 @@ impl Elaboration<'_, '_> {
     /// An expression statement, or the value of the body when `value`.
     fn run_expression(&mut self, scope: &mut Scope, expr: ExprId, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow> {
         let expr = self.peel_parens(expr);
-        let node = self.design.expr_node(expr).clone();
-        let file = self.design.decl_data(node.owner).file;
+        let node = self.state.design.expr_node(expr).clone();
+        let file = self.state.design.decl_data(node.owner).file;
         match &node.kind {
             ExprKind::Return(Some(returned)) => Some(Flow::Done(self.lower_expr(scope, *returned)?)),
             ExprKind::Assign { .. } => {
@@ -203,40 +203,40 @@ impl Elaboration<'_, '_> {
 
     /// `name = value;` and `name op= value;`: the name of a parameter or a `let` holds the new expression.
     pub(super) fn run_assignment(&mut self, scope: &mut Scope, assignment: ExprId, body: ExpandedBody) -> Option<()> {
-        let node = self.design.expr_node(assignment).clone();
+        let node = self.state.design.expr_node(assignment).clone();
         let ExprKind::Assign { op, lhs, rhs } = node.kind else { return None };
         let target = self.peel_parens(lhs);
-        let named = match &self.design.expr_node(target).kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if scope.values.contains_key(&decl) => Some(decl),
+        let named = match &self.state.design.expr_node(target).kind {
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if scope.analog.values.contains_key(&decl) => Some(decl),
                 _ => None,
             },
             _ => None,
         };
         let Some(decl) = named else {
-            self.refuse_with(scope.file, node.span, AnalogForm::AssignmentToSomethingThatIsNoName, [body.describes().to_string()]);
+            self.refuse_with(scope.values.file, node.span, AnalogForm::AssignmentToSomethingThatIsNoName, [body.describes().to_string()]);
             return None;
         };
         let Some(op) = op else { return self.set_expanded_name(scope, decl, rhs) };
-        if matches!(self.types.callee(assignment), Some(crate::types::Callee::Method(_))) {
-            self.refuse_with(scope.file, node.span, AnalogForm::CompoundAssignmentThroughOperatorOfTypeIn, [body.describes().to_string()]);
+        if matches!(self.state.types.callee(assignment), Some(crate::types::Callee::Method(_))) {
+            self.refuse_with(scope.values.file, node.span, AnalogForm::CompoundAssignmentThroughOperatorOfTypeIn, [body.describes().to_string()]);
             return None;
         }
-        let old = scope.values[&decl];
+        let old = scope.analog.values[&decl];
         let operand = self.lower_expr(scope, rhs)?;
         let (ty, origin) = (self.type_of(old), self.expr_origin(assignment));
         let value = self.emit(Expr::Binary { op: Self::binary_op(op), lhs: old, rhs: operand }, ty, origin);
-        scope.values.insert(decl, value);
-        scope.unrolled.unbind(decl);
+        scope.analog.values.insert(decl, value);
+        scope.values.unrolled.unbind(decl);
         Some(())
     }
 
     /// `if cond { then } else { else_ }` in the body. A condition that folds takes its branch; one that does not forks
     /// the run into the two branches, each followed by the rest of the body.
     fn run_if(&mut self, scope: &mut Scope, cond: ExprId, then: &BlockNode, else_: Option<ExprId>, value: bool, steps: &mut Vec<Step>, at: Span) -> Option<Flow> {
-        let span = self.design.expr_node(cond).span;
-        if matches!(self.design.expr_node(cond).kind, ExprKind::Let { .. }) {
-            self.refuse(scope.file, span, AnalogForm::IfLetInFnCalledInsideDdx);
+        let span = self.state.design.expr_node(cond).span;
+        if matches!(self.state.design.expr_node(cond).kind, ExprKind::Let { .. }) {
+            self.refuse(scope.values.file, span, AnalogForm::IfLetInFnCalledInsideDdx);
             return None;
         }
         if let Some(holds) = self.folded_decision(scope, cond) {
@@ -247,15 +247,15 @@ impl Elaboration<'_, '_> {
             }
             return Some(Flow::Next);
         }
-        scope.forks += 1;
-        if scope.forks > FORKS {
-            self.refuse(scope.file, span, AnalogForm::FnCalledInsideDdxThatForksInto);
+        scope.analog.forks += 1;
+        if scope.analog.forks > FORKS {
+            self.refuse(scope.values.file, span, AnalogForm::FnCalledInsideDdxThatForksInto);
             return None;
         }
         let test = self.lower_expr(scope, cond)?;
         let origin = self.expr_origin(cond);
         let before = Environment::of(scope);
-        scope.decisions += 1;
+        scope.values.decisions += 1;
         let mut taken = steps.clone();
         self.push_block(&mut taken, &then.stmts, value);
         let first = self.run_steps(scope, taken, at);
@@ -267,7 +267,7 @@ impl Elaboration<'_, '_> {
         };
         let second = pushed.and_then(|()| self.run_steps(scope, skipped, at));
         before.restore(scope);
-        scope.decisions -= 1;
+        scope.values.decisions -= 1;
         let (first, second) = (first?, second?);
         let ty = self.type_of(first);
         Some(Flow::Done(self.emit(Expr::If { cond: test, then: first, otherwise: second }, ty, origin)))
@@ -275,11 +275,11 @@ impl Elaboration<'_, '_> {
 
     /// The `else` of an `if`: a block, or the `if` of an `else if`.
     pub(super) fn push_else(&mut self, scope: &Scope, otherwise: ExprId, value: bool, steps: &mut Vec<Step>, body: ExpandedBody) -> Option<()> {
-        match &self.design.expr_node(otherwise).kind {
+        match &self.state.design.expr_node(otherwise).kind {
             ExprKind::Block(block) => self.push_block(steps, &block.stmts, value),
             ExprKind::If { .. } => steps.push(Step::Expression { expr: otherwise, value }),
             _ => {
-                self.refuse_with(scope.file, self.design.expr_node(otherwise).span, AnalogForm::ElseThatIsNoBlockOrIf, [body.describes().to_string()]);
+                self.refuse_with(scope.values.file, self.state.design.expr_node(otherwise).span, AnalogForm::ElseThatIsNoBlockOrIf, [body.describes().to_string()]);
                 return None;
             }
         }
@@ -289,29 +289,29 @@ impl Elaboration<'_, '_> {
     /// `for i in lo..hi { body }` over bounds that fold: the body once per value of `i`, pushed on `steps`.
     pub(super) fn unroll_expanded(&mut self, scope: &mut Scope, pat: crate::pom::PatId, iter: ExprId, body: &BlockNode, steps: &mut Vec<Step>, span: Span, context: ExpandedBody) -> Option<()> {
         let iter = self.peel_parens(iter);
-        let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.design.expr_node(iter).kind else {
-            self.refuse_with(scope.file, span, AnalogForm::ForThatIsNotOverRangeWith, [context.describes().to_string()]);
+        let ExprKind::Range { lo: Some(lo), hi: Some(hi), inclusive } = self.state.design.expr_node(iter).kind else {
+            self.refuse_with(scope.values.file, span, AnalogForm::ForThatIsNotOverRangeWith, [context.describes().to_string()]);
             return None;
         };
-        let variable = match self.design.pat_node(pat).kind {
+        let variable = match self.state.design.pat_node(pat).kind {
             PatKind::Ident { binding, sub: None, .. } => Some(binding),
             PatKind::Wild => None,
             _ => {
-                self.refuse_with(scope.file, span, AnalogForm::ForWhoseVariableIsNoNameIn, [context.describes().to_string()]);
+                self.refuse_with(scope.values.file, span, AnalogForm::ForWhoseVariableIsNoNameIn, [context.describes().to_string()]);
                 return None;
             }
         };
         let (Some(Constant::Int(first)), Some(Constant::Int(last))) = (self.fold_scalar(scope, lo), self.fold_scalar(scope, hi)) else {
-            self.refuse_with(scope.file, span, AnalogForm::ForWhoseBoundsDoNotFoldTo, [context.describes().to_string()]);
+            self.refuse_with(scope.values.file, span, AnalogForm::ForWhoseBoundsDoNotFoldTo, [context.describes().to_string()]);
             return None;
         };
         let end = if inclusive { last + 1 } else { last };
         if end - first > ITERATIONS {
-            self.refuse_with(scope.file, span, AnalogForm::ForOfMoreThanIterationsIn, [context.describes().to_string()]);
+            self.refuse_with(scope.values.file, span, AnalogForm::ForOfMoreThanIterationsIn, [context.describes().to_string()]);
             return None;
         }
-        if self.body_exprs(body).iter().any(|e| matches!(self.design.expr_node(*e).kind, ExprKind::Break(_) | ExprKind::Continue | ExprKind::While { .. } | ExprKind::Loop { .. })) {
-            self.refuse_with(scope.file, span, AnalogForm::BreakContinueOrNestedWhileInLoop, [context.describes().to_string()]);
+        if self.body_exprs(body).iter().any(|e| matches!(self.state.design.expr_node(*e).kind, ExprKind::Break(_) | ExprKind::Continue | ExprKind::While { .. } | ExprKind::Loop { .. })) {
+            self.refuse_with(scope.values.file, span, AnalogForm::BreakContinueOrNestedWhileInLoop, [context.describes().to_string()]);
             return None;
         }
         if let Some(variable) = variable {

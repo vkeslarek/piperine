@@ -20,37 +20,37 @@ use crate::pom::{ExprId, ExprKind, QuantityRole};
 impl Elaboration<'_, '_> {
     /// A `ddx(e, probe)` read as a value: the derivative expression; `None` after a diagnostic.
     pub(super) fn lower_ddx(&mut self, scope: &mut Scope, call: ExprId, args: &[ExprId], origin: Origin) -> Option<LoweredExpr> {
-        let span = self.design.expr_node(call).span;
+        let span = self.state.design.expr_node(call).span;
         let [value, probe] = args else { return None };
         let (unknown, reversed) = self.ddx_variable(scope, *probe)?;
         let mut standalone = Self::standalone_scope(scope);
-        standalone.differentiated = true;
-        standalone.value_input = true;
+        standalone.analog.differentiated = true;
+        standalone.analog.value_input = true;
         // a local the derivative would read is refused by the pass, naming it; the locals of the
         // closure a `limit` takes are never read, `limit` being transparent
         let expr = self.lower_expr(&mut standalone, *value)?;
         scope.adopt_standalone(&mut standalone);
         if self.reads_a_function(expr) {
-            self.refuse(scope.file, span, AnalogForm::CallInsideDdxThatExpandsToNo);
+            self.refuse(scope.values.file, span, AnalogForm::CallInsideDdxThatExpandsToNo);
             return None;
         }
         // the body of the derivative is the one being lowered: it has no id yet and the pass reads none of it
-        let derivative = match Differentiation::new(&mut self.ir, BodyId(0), unknown).of(expr) {
+        let derivative = match Differentiation::new(&mut self.state.builder, BodyId(0), unknown).of(expr) {
             Ok(derivative) => derivative,
             Err(refused) => {
-                self.refuse_with(scope.file, span, AnalogForm::FormWithNoDerivativeRule, [refused.form.to_string()]);
+                self.refuse_with(scope.values.file, span, AnalogForm::FormWithNoDerivativeRule, [refused.form.to_string()]);
                 return None;
             }
         };
         self.adopt_built_expressions();
-        if self.reads_a_flow_leaf(derivative, &scope.flow_leaves.clone()) {
-            self.refuse(scope.file, span, AnalogForm::DdxWhoseDerivativeReadsValueOfFlow);
+        if self.reads_a_flow_leaf(derivative, &scope.analog.flow_leaves.clone()) {
+            self.refuse(scope.values.file, span, AnalogForm::DdxWhoseDerivativeReadsValueOfFlow);
             return None;
         }
         let derivative = if reversed { self.emit(Expr::Unary { op: piperine_ir::UnaryOp::Neg, expr: derivative }, ValueType::F64, origin.clone()) } else { derivative };
-        let probe_span = self.design.expr_node(*probe).span;
-        let name = self.design.file_data(scope.file).text.get(probe_span.range()).unwrap_or("probe").to_string();
-        self.structure.partial_derivatives.push(PartialDerivative { name, origin });
+        let probe_span = self.state.design.expr_node(*probe).span;
+        let name = self.state.design.file_data(scope.values.file).text.get(probe_span.range()).unwrap_or("probe").to_string();
+        self.state.digital.structure.partial_derivatives.push(PartialDerivative { name, origin });
         Some(derivative)
     }
 
@@ -59,7 +59,7 @@ impl Elaboration<'_, '_> {
     /// branch the module gives no potential contribution is a leaf like any other (`flow_leaf_branch`), so a probe
     /// of the same flow contributes 1 and any other quantity is held constant (§14.2.3). `None` is a diagnostic.
     fn ddx_variable(&mut self, scope: &mut Scope, probe: ExprId) -> Option<(Variable, bool)> {
-        let node = self.design.expr_node(probe).clone();
+        let node = self.state.design.expr_node(probe).clone();
         let ExprKind::Call { callee, args, .. } = &node.kind else { return None };
         let mut terminals = Vec::new();
         for arg in args {
@@ -69,7 +69,7 @@ impl Elaboration<'_, '_> {
             [plus] => (plus, Terminal::Ground),
             [plus, minus] => (plus, minus),
             _ => {
-                self.refuse(scope.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
+                self.refuse(scope.values.file, node.span, AnalogForm::ProbeOfMoreThanTwoNodes);
                 return None;
             }
         };
@@ -93,7 +93,7 @@ impl Elaboration<'_, '_> {
             if !seen.insert(e) {
                 continue;
             }
-            let Some(kind) = self.ir.expr_kind(e) else { continue };
+            let Some(kind) = self.state.builder.expr_kind(e) else { continue };
             if matches!(kind, Expr::Flow { branch } if branches.contains(branch)) {
                 return true;
             }
@@ -110,7 +110,7 @@ impl Elaboration<'_, '_> {
             if !seen.insert(e) {
                 continue;
             }
-            let Some(kind) = self.ir.expr_kind(e) else { continue };
+            let Some(kind) = self.state.builder.expr_kind(e) else { continue };
             if matches!(kind, Expr::Call { .. } | Expr::FunctionRef(_)) {
                 return true;
             }
@@ -123,13 +123,13 @@ impl Elaboration<'_, '_> {
     /// up with the builder: the type, the continuity and the origin of each, in id order, which
     /// `emit` keeps parallel to the builder's arena.
     pub(super) fn adopt_built_expressions(&mut self) {
-        for index in self.expr_types.len()..self.ir.expr_count() {
+        for index in self.state.values.expr_types.len()..self.state.builder.expr_count() {
             let id = piperine_ir::ExprId(index as u32);
-            let (Some(kind), Some(ty), Some(origin)) = (self.ir.expr_kind(id).cloned(), self.ir.expr_type(id).cloned(), self.ir.expr_origin(id).cloned()) else { continue };
+            let (Some(kind), Some(ty), Some(origin)) = (self.state.builder.expr_kind(id).cloned(), self.state.builder.expr_type(id).cloned(), self.state.builder.expr_origin(id).cloned()) else { continue };
             let continuous = self.continuous_kind(&kind);
-            self.expr_types.push(ty);
-            self.expr_continuous.push(continuous);
-            self.expr_origins.push(origin);
+            self.state.values.expr_types.push(ty);
+            self.state.values.expr_continuous.push(continuous);
+            self.state.values.expr_origins.push(origin);
         }
     }
 }

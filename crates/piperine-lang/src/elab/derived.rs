@@ -51,7 +51,7 @@ impl Elaboration<'_, '_> {
     /// `lhs op rhs` over two `Option`s with a comparison operator. `None` after a diagnostic.
     pub(super) fn lower_option_comparison(&mut self, scope: &mut Scope, op: BinOp, lhs: ExprId, rhs: ExprId, origin: Origin) -> Option<LoweredExpr> {
         let (left, right) = (self.lower_option(scope, lhs)?, self.lower_option(scope, rhs)?);
-        let span = self.design.expr_node(lhs).span;
+        let span = self.state.design.expr_node(lhs).span;
         let mut stmts = Vec::new();
         let operands = self.hold_operands(scope, &mut stmts, left, right, origin.clone());
         let result = match op {
@@ -65,7 +65,7 @@ impl Elaboration<'_, '_> {
             BinOp::Le => self.option_not_above(&operands, Side::Left),
             BinOp::Ge => self.option_not_above(&operands, Side::Right),
             _ => {
-                self.refuse(scope.file, span, GenericsForm::OperatorOtherThanComparisonOnOptions);
+                self.refuse(scope.values.file, span, GenericsForm::OperatorOtherThanComparisonOnOptions);
                 return None;
             }
         };
@@ -76,8 +76,8 @@ impl Elaboration<'_, '_> {
     fn hold_operands(&mut self, scope: &mut Scope, stmts: &mut Vec<LoweredStmt>, left: Pair, right: Pair, origin: Origin) -> OptionOperands {
         let payload = self.type_of(left.val);
         let mut hold = |this: &mut Self, value: LoweredExpr| {
-            let local = scope.locals.len() as u32;
-            scope.locals.push(Local { name: format!("option$cmp{local}"), ty: this.type_of(value), mutable: false });
+            let local = scope.values.locals.len() as u32;
+            scope.values.locals.push(Local { name: format!("option$cmp{local}"), ty: this.type_of(value), mutable: false });
             stmts.push(this.stmt(Stmt::Let { local, init: value }));
             local
         };

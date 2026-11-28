@@ -112,49 +112,49 @@ impl Elaboration<'_, '_> {
     /// `E0341` (D7).
     pub(super) fn request_instance(&mut self, function: DeclId, arguments: Vec<ConcreteValue>, half: Half) -> Option<(FunctionId, ValueType)> {
         let key = (function, arguments.clone(), half);
-        if let Some(id) = self.variants.ids.get(&key).copied() {
-            return match self.variants.results[id.index()].clone() {
+        if let Some(id) = self.state.functions.variants.ids.get(&key).copied() {
+            return match self.state.functions.variants.results[id.index()].clone() {
                 Some(ret) => Some((id, ret)),
                 // a recursion: the variant is registered, its result is assumed until its body says
-                None if self.variants.open.contains(&id) => {
-                    self.variants.recursive.insert(id);
-                    Some((id, self.variants.assumed[id.index()].clone()))
+                None if self.state.functions.variants.open.contains(&id) => {
+                    self.state.functions.variants.recursive.insert(id);
+                    Some((id, self.state.functions.variants.assumed[id.index()].clone()))
                 }
                 None => None,
             };
         }
-        if self.variants.open.len() > MOST_NESTED_INSTANTIATIONS {
-            let data = self.design.decl_data(function);
+        if self.state.functions.variants.open.len() > MOST_NESTED_INSTANTIATIONS {
+            let data = self.state.design.decl_data(function);
             let (file, span, name) = (data.file, data.span, data.name.as_ref().map_or_else(String::new, |n| n.text.clone()));
             self.report(file, Diagnostic::new("E0341", format!("instantiating `{name}` never ends: the chain of instantiations is deeper than {MOST_NESTED_INSTANTIATIONS} (D7)"), span, "an instantiation chain that does not end"));
             return None;
         }
-        let id = FunctionId(self.variants.results.len() as u32);
+        let id = FunctionId(self.state.functions.variants.results.len() as u32);
         let generic = (!arguments.is_empty()).then(|| {
             let instance = Instance { item: function, arguments: arguments.clone() };
             GenericInstance { item: self.impl_qualified_name(function), arguments: instance.argument_names(self) }
         });
-        self.variants.generic.push(generic);
-        self.variants.ids.insert(key, id);
-        self.variants.results.push(None);
-        self.variants.specs.push(None);
-        self.variants.continuous.push(false);
-        self.variants.assumed.push(self.declared_result(function, half));
-        self.variants.open.insert(id);
+        self.state.functions.variants.generic.push(generic);
+        self.state.functions.variants.ids.insert(key, id);
+        self.state.functions.variants.results.push(None);
+        self.state.functions.variants.specs.push(None);
+        self.state.functions.variants.continuous.push(false);
+        self.state.functions.variants.assumed.push(self.declared_result(function, half));
+        self.state.functions.variants.open.insert(id);
         let spec = crate::stack::Stack::wide(|| self.lower_variant(id, function, &arguments, half));
-        self.variants.open.remove(&id);
+        self.state.functions.variants.open.remove(&id);
         let spec = spec?;
         let ret = spec.ret.clone();
-        self.variants.continuous[id.index()] = self.continuous(spec.body);
-        self.variants.results[id.index()] = Some(ret.clone());
-        self.variants.specs[id.index()] = Some(spec);
+        self.state.functions.variants.continuous[id.index()] = self.continuous(spec.body);
+        self.state.functions.variants.results[id.index()] = Some(ret.clone());
+        self.state.functions.variants.specs[id.index()] = Some(spec);
         Some((id, ret))
     }
 
     /// The result of `function` as its signature declares it (the half's type for an `Option`):
     /// what a recursive call is first taken to give.
     fn declared_result(&self, function: DeclId, half: Half) -> ValueType {
-        let declared = match &self.design.decl_data(function).kind {
+        let declared = match &self.state.design.decl_data(function).kind {
             DeclKind::Fn(f) => f.ret.and_then(|t| self.typed_written(t)),
             _ => None,
         };
@@ -171,15 +171,15 @@ impl Elaboration<'_, '_> {
     /// Each lowering leaves the expressions of the one before unused.
     fn lower_variant(&mut self, id: FunctionId, function: DeclId, arguments: &[ConcreteValue], half: Half) -> Option<FunctionSpec> {
         // the body of an instance reads the type table through its own arguments; the caller's come back after
-        let outer = self.consts.set_substitution(self.instance_substitution(function, arguments));
+        let outer = self.state.consts.set_substitution(self.instance_substitution(function, arguments));
         let lowered = loop {
             let Some(spec) = self.lower_function(function, arguments, half) else { break None };
-            if !self.variants.recursive.contains(&id) || spec.ret == self.variants.assumed[id.index()] {
+            if !self.state.functions.variants.recursive.contains(&id) || spec.ret == self.state.functions.variants.assumed[id.index()] {
                 break Some(spec);
             }
-            self.variants.assumed[id.index()] = spec.ret.clone();
+            self.state.functions.variants.assumed[id.index()] = spec.ret.clone();
         };
-        self.consts.set_substitution(outer);
+        self.state.consts.set_substitution(outer);
         lowered
     }
 
@@ -187,16 +187,16 @@ impl Elaboration<'_, '_> {
     /// is built, and a variant that failed after reaching one that lowered leaves a gap in the
     /// ids: nothing is added.
     pub(super) fn add_functions(&mut self) {
-        if !self.diagnostics.is_empty() {
+        if !self.state.diagnostics.is_empty() {
             return;
         }
-        let generic = std::mem::take(&mut self.variants.generic);
-        for (k, spec) in self.variants.take().into_iter().enumerate() {
+        let generic = std::mem::take(&mut self.state.functions.variants.generic);
+        for (k, spec) in self.state.functions.variants.take().into_iter().enumerate() {
             let Some(spec) = spec else { continue };
-            let id = self.ir.function(spec);
+            let id = self.state.builder.function(spec);
             debug_assert_eq!(id, FunctionId(k as u32), "a failed variant leaves diagnostics, so no Ir is built");
             if let Some(Some(generic)) = generic.get(k) {
-                self.ir.mark_instance(id, generic.clone());
+                self.state.builder.mark_instance(id, generic.clone());
             }
         }
     }

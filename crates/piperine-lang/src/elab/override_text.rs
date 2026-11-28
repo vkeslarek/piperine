@@ -42,7 +42,7 @@ impl LiteralText {
 impl Elaboration<'_, '_> {
     /// The constant the text `text` is for the param `param`, read by the param's type; the reason it is none otherwise.
     pub(super) fn constant_of_text(&mut self, param: DeclId, text: &str) -> Result<Constant, String> {
-        let DeclKind::Param(declared) = &self.design.decl_data(param).kind else { return Err("it is no param".to_string()) };
+        let DeclKind::Param(declared) = &self.state.design.decl_data(param).kind else { return Err("it is no param".to_string()) };
         let ty = self.typed_written(declared.ty).ok_or_else(|| "its type has no text".to_string())?;
         self.constant_as(&ty, text.trim())
     }
@@ -65,20 +65,20 @@ impl Elaboration<'_, '_> {
                 };
                 let bits = piperine_numbers::decimal::DecimalText::nearest(&text.replace('_', ""), format).ok_or_else(|| "it is not a number".to_string())?;
                 if LiteralText::is_out_of_range(format, bits, text) {
-                    return Err(format!("it is outside the range of {}", ty.name(self.design)));
+                    return Err(format!("it is outside the range of {}", ty.name(self.state.design)));
                 }
                 Ok(Constant::FloatBits(bits))
             }
             // an integer wider than 64 bits: decimal, `0x`, `0o` or `0b`, exact (a handle the elaborator copies into the IR)
             Ty::UInt(width) | Ty::Int(width) if *width > 64 => {
                 let signed = matches!(ty, Ty::Int(_));
-                let limbs = piperine_numbers::decimal::DecimalText::integer(text, *width, signed).ok_or_else(|| format!("it is not an integer literal of {} in its range", ty.name(self.design)))?;
-                Ok(self.consts.wide_constant(&piperine_numbers::dynamic::DynamicInteger::from_pattern(*width, signed, &limbs)))
+                let limbs = piperine_numbers::decimal::DecimalText::integer(text, *width, signed).ok_or_else(|| format!("it is not an integer literal of {} in its range", ty.name(self.state.design)))?;
+                Ok(self.state.consts.wide_constant(&piperine_numbers::dynamic::DynamicInteger::from_pattern(*width, signed, &limbs)))
             }
             Ty::UInt(_) | Ty::Int(_) => {
                 let (low, high) = Self::integer_range(ty);
-                let value = LiteralText::integer(text).ok_or_else(|| format!("it is not an integer literal of {}, from {low} to {high}", ty.name(self.design)))?;
-                if (low..=high).contains(&value) { Ok(Constant::Int(value)) } else { Err(format!("it is outside the range of {}, from {low} to {high}", ty.name(self.design))) }
+                let value = LiteralText::integer(text).ok_or_else(|| format!("it is not an integer literal of {}, from {low} to {high}", ty.name(self.state.design)))?;
+                if (low..=high).contains(&value) { Ok(Constant::Int(value)) } else { Err(format!("it is outside the range of {}, from {low} to {high}", ty.name(self.state.design))) }
             }
             Ty::Enum(nominal) => self.variant_constant(ty, nominal.decl, text),
             Ty::Option(inner) => {
@@ -91,7 +91,7 @@ impl Elaboration<'_, '_> {
                 if matches!(inner.as_ref(), Ty::Tuple(_) | Ty::Array(..) | Ty::Struct(_) | Ty::Option(_)) {
                     return Err("the payload is a composite: set its leaves".to_string());
                 }
-                Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored, variant: None, parts })))
+                Ok(Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: stored, variant: None, parts })))
             }
             _ => Err("a composite param is set by its leaves".to_string()),
         }
@@ -109,21 +109,21 @@ impl Elaboration<'_, '_> {
     /// The unit variant of the enum `decl` the text names, bare or as `Enum::Variant`; the variants listed when it names none.
     fn variant_constant(&mut self, ty: &Ty, decl: DeclId, text: &str) -> Result<Constant, String> {
         let variants: Vec<(String, bool)> = self
-            .design
+            .state.design
             .decl_data(decl)
             .children
             .iter()
-            .filter_map(|child| match &self.design.decl_data(*child).kind {
-                DeclKind::Variant(variant) => Some((self.design.decl_data(*child).name.as_ref().map_or_else(String::new, |name| name.text.clone()), variant.form == crate::pom::FieldsForm::Unit)),
+            .filter_map(|child| match &self.state.design.decl_data(*child).kind {
+                DeclKind::Variant(variant) => Some((self.state.design.decl_data(*child).name.as_ref().map_or_else(String::new, |name| name.text.clone()), variant.form == crate::pom::FieldsForm::Unit)),
                 _ => None,
             })
             .collect();
-        let enum_name = self.design.decl_data(decl).name.as_ref().map_or("", |name| name.text.as_str()).to_string();
+        let enum_name = self.state.design.decl_data(decl).name.as_ref().map_or("", |name| name.text.as_str()).to_string();
         let wanted = text.strip_prefix(&format!("{enum_name}::")).unwrap_or(text);
         match variants.iter().position(|(name, unit)| name == wanted && *unit) {
             Some(position) => {
                 let stored = self.stored_type(ty).ok_or_else(|| "its type has no value in the IR".to_string())?;
-                Ok(Constant::Aggregate(self.ir.aggregate(AggregateData { ty: stored, variant: Some(position as u32), parts: Vec::new() })))
+                Ok(Constant::Aggregate(self.state.builder.aggregate(AggregateData { ty: stored, variant: Some(position as u32), parts: Vec::new() })))
             }
             None => {
                 let names: Vec<String> = variants.iter().filter(|(_, unit)| *unit).map(|(name, _)| format!("`{name}`")).collect();

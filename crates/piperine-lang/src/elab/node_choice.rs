@@ -29,16 +29,16 @@ impl Elaboration<'_, '_> {
     /// The node expression the choice `expr` folds to in `scope`: the arm its condition or scrutinee selects, the result of a
     /// block, through every choice nested in them. `None` when `expr` is no choice; `Some(None)` after a diagnostic.
     pub(super) fn chosen_node(&mut self, scope: &Scope, expr: ExprId) -> Option<Option<ExprId>> {
-        if !matches!(self.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_)) {
+        if !matches!(self.state.design.expr_node(expr).kind, ExprKind::If { .. } | ExprKind::Match { .. } | ExprKind::Block(_)) {
             return None;
         }
-        let mut within = ChoiceScope { bindings: self.frame_bindings(scope.frame).overlaid(&scope.unrolled), nodes: BTreeMap::new(), followed: Vec::new() };
+        let mut within = ChoiceScope { bindings: self.frame_bindings(scope.values.frame).overlaid(&scope.values.unrolled), nodes: BTreeMap::new(), followed: Vec::new() };
         let chosen = self.fold_choice(&mut within, expr);
         if chosen.is_none() {
             // a condition that does not fold reads what only the run knows, through a function the checker cannot see into
             let message = "a node chosen by a condition that does not fold at elaboration chooses hardware at run time: a node is hardware, chosen at elaboration or named (§1.4.7)".to_string();
-            let span = self.design.expr_node(expr).span;
-            self.report(scope.file, crate::msl::Diagnostic::new("E0133", message, span, "a node chosen at run time"));
+            let span = self.state.design.expr_node(expr).span;
+            self.report(scope.values.file, crate::msl::Diagnostic::new("E0133", message, span, "a node chosen at run time"));
         }
         Some(chosen)
     }
@@ -46,7 +46,7 @@ impl Elaboration<'_, '_> {
     /// The node expression `expr` names once every choice in it is folded: itself when it is no choice.
     fn fold_choice(&mut self, within: &mut ChoiceScope, expr: ExprId) -> Option<ExprId> {
         let expr = self.peel_parens(expr);
-        match self.design.expr_node(expr).kind.clone() {
+        match self.state.design.expr_node(expr).kind.clone() {
             ExprKind::If { cond, then, else_ } => match self.choice_value(within, cond) {
                 Ok(Constant::Bool(true)) => self.fold_block(within, &then),
                 Ok(Constant::Bool(false)) => self.fold_choice(within, else_?),
@@ -57,7 +57,7 @@ impl Elaboration<'_, '_> {
                 self.fold_choice(within, body)
             }
             ExprKind::Block(block) => self.fold_block(within, &block),
-            ExprKind::Path(path) => match self.design.path_node(path).segments.last().map(|s| s.res) {
+            ExprKind::Path(path) => match self.state.design.path_node(path).segments.last().map(|s| s.res) {
                 Some(Resolution::Decl(local)) if let Some(init) = within.nodes.get(&local).copied() => self.fold_choice(within, init),
                 _ => Some(expr),
             },
@@ -69,16 +69,16 @@ impl Elaboration<'_, '_> {
     fn fold_block(&mut self, within: &mut ChoiceScope, block: &BlockNode) -> Option<ExprId> {
         let (last, statements) = block.stmts.split_last()?;
         for statement in statements {
-            let StmtKind::Let { pat, init: Some(init), .. } = &self.design.stmt_node(*statement).kind else { continue };
-            let PatKind::Ident { binding, sub: None, .. } = &self.design.pat_node(*pat).kind else { continue };
+            let StmtKind::Let { pat, init: Some(init), .. } = &self.state.design.stmt_node(*statement).kind else { continue };
+            let PatKind::Ident { binding, sub: None, .. } = &self.state.design.pat_node(*pat).kind else { continue };
             let (binding, init) = (*binding, *init);
             if matches!(self.typed_local(binding), Some(crate::types::Ty::Node(_) | crate::types::Ty::AnyNode)) {
                 within.nodes.insert(binding, init);
-            } else if let Ok(value) = self.consts.value(init, &within.bindings) {
+            } else if let Ok(value) = self.state.consts.value(init, &within.bindings) {
                 within.bindings.bind(binding, value);
             }
         }
-        match &self.design.stmt_node(*last).kind {
+        match &self.state.design.stmt_node(*last).kind {
             StmtKind::Expr { expr, semi: false } => self.fold_choice(within, *expr),
             _ => None,
         }
@@ -88,7 +88,7 @@ impl Elaboration<'_, '_> {
     /// params and constants is one).
     fn choice_value(&mut self, within: &mut ChoiceScope, expr: ExprId) -> Result<Constant, super::consts::ConstFault> {
         self.bind_read_lets(within, expr);
-        self.consts.value_in_a_scope_of_its_own(expr, &within.bindings)
+        self.state.consts.value_in_a_scope_of_its_own(expr, &within.bindings)
     }
 
     /// Binds every `let` `expr` reads that is not bound yet to the constant of its initializer, the `let`s that initializer reads
@@ -100,7 +100,7 @@ impl Elaboration<'_, '_> {
                 continue;
             }
             within.followed.push(local);
-            if self.types.is_assigned(local) {
+            if self.state.types.is_assigned(local) {
                 if let Some(value) = self.value_where_read(within, local, expr) {
                     within.bindings.bind(local, value);
                 }
@@ -108,7 +108,7 @@ impl Elaboration<'_, '_> {
             }
             let Some(init) = self.let_initializer(local) else { continue };
             self.bind_read_lets(within, init);
-            if let Ok(value) = self.consts.value(init, &within.bindings) {
+            if let Ok(value) = self.state.consts.value(init, &within.bindings) {
                 within.bindings.bind(local, value);
             }
         }
@@ -120,28 +120,28 @@ impl Elaboration<'_, '_> {
     /// when the statement that holds `at` assigns `local` before it (a choice nested in a block with an assignment).
     fn value_where_read(&mut self, within: &mut ChoiceScope, local: DeclId, at: ExprId) -> Option<Constant> {
         let (stmts, from) = self.block_declaring(local)?;
-        let read = self.design.expr_node(at).span;
+        let read = self.state.design.expr_node(at).span;
         let holds = |span: crate::msl::Span| span.start <= read.start && read.end <= span.end;
-        let to = stmts.iter().position(|stmt| holds(self.design.stmt_node(*stmt).span))?;
+        let to = stmts.iter().position(|stmt| holds(self.state.design.stmt_node(*stmt).span))?;
         if to <= from {
             return None;
         }
         let assigned_before = |this: &Self, stmt: crate::pom::StmtId| {
-            crate::pom::BodyWalk::new(this.design).statement_children(stmt).into_iter().any(|child| {
+            crate::pom::BodyWalk::new(this.state.design).statement_children(stmt).into_iter().any(|child| {
                 let mut inside = Vec::new();
-                crate::pom::BodyWalk::new(this.design).descendants_depth_first(child, &mut inside);
-                inside.into_iter().any(|expr| matches!(&this.design.expr_node(expr).kind, ExprKind::Assign { lhs, .. } if this.read_bindings(*lhs).contains(&local) && this.design.expr_node(expr).span.end <= read.start))
+                crate::pom::BodyWalk::new(this.state.design).descendants_depth_first(child, &mut inside);
+                inside.into_iter().any(|expr| matches!(&this.state.design.expr_node(expr).kind, ExprKind::Assign { lhs, .. } if this.read_bindings(*lhs).contains(&local) && this.state.design.expr_node(expr).span.end <= read.start))
             })
         };
         if assigned_before(self, stmts[to]) {
             return None;
         }
         for stmt in &stmts[from..to] {
-            for child in crate::pom::BodyWalk::new(self.design).statement_children(*stmt) {
+            for child in crate::pom::BodyWalk::new(self.state.design).statement_children(*stmt) {
                 self.bind_read_lets(within, child);
             }
         }
-        self.consts.local_after(at, &stmts[from..to], local, &within.bindings)
+        self.state.consts.local_after(at, &stmts[from..to], local, &within.bindings)
     }
 
     /// What the assignments of the `let` `local` read, in the block that declares it: each value assigned and each condition around
@@ -151,24 +151,24 @@ impl Elaboration<'_, '_> {
         let Some((stmts, from)) = self.block_declaring(local) else { return Vec::new() };
         let mut inside = Vec::new();
         for stmt in &stmts[from..] {
-            for child in crate::pom::BodyWalk::new(self.design).statement_children(*stmt) {
-                crate::pom::BodyWalk::new(self.design).descendants_depth_first(child, &mut inside);
+            for child in crate::pom::BodyWalk::new(self.state.design).statement_children(*stmt) {
+                crate::pom::BodyWalk::new(self.state.design).descendants_depth_first(child, &mut inside);
             }
         }
         let within = |outer: crate::msl::Span, inner: crate::msl::Span| outer.start <= inner.start && inner.end <= outer.end;
         let mut reads = Vec::new();
         for assignment in inside.iter().copied() {
-            let ExprKind::Assign { lhs, rhs, .. } = &self.design.expr_node(assignment).kind else { continue };
+            let ExprKind::Assign { lhs, rhs, .. } = &self.state.design.expr_node(assignment).kind else { continue };
             if !self.read_bindings(*lhs).contains(&local) {
                 continue;
             }
             reads.push(*rhs);
-            let at = self.design.expr_node(assignment).span;
-            for around in inside.iter().copied().filter(|expr| within(self.design.expr_node(*expr).span, at)) {
-                match &self.design.expr_node(around).kind {
+            let at = self.state.design.expr_node(assignment).span;
+            for around in inside.iter().copied().filter(|expr| within(self.state.design.expr_node(*expr).span, at)) {
+                match &self.state.design.expr_node(around).kind {
                     ExprKind::While { .. } | ExprKind::Loop { .. } | ExprKind::For { .. } => {
-                        let span = self.design.expr_node(around).span;
-                        reads.extend(inside.iter().filter(|expr| within(span, self.design.expr_node(**expr).span)).flat_map(|expr| Self::conditions_of(&self.design.expr_node(*expr).kind)));
+                        let span = self.state.design.expr_node(around).span;
+                        reads.extend(inside.iter().filter(|expr| within(span, self.state.design.expr_node(**expr).span)).flat_map(|expr| Self::conditions_of(&self.state.design.expr_node(*expr).kind)));
                     }
                     kind => reads.extend(Self::conditions_of(kind)),
                 }
@@ -191,17 +191,17 @@ impl Elaboration<'_, '_> {
     /// The statements of the block that declares the `let` `local` with a name, and the index of its `let` among them: the body
     /// of a function, an `analog` block or a reaction, or a block of an expression of the same owner.
     fn block_declaring(&self, local: DeclId) -> Option<(Vec<crate::pom::StmtId>, usize)> {
-        let declares = |stmt: &crate::pom::StmtId| matches!(&self.design.stmt_node(*stmt).kind, StmtKind::Let { pat, .. } if matches!(&self.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local));
-        let statement = (0..self.design.stmt_count() as u32).map(crate::pom::StmtId).find(|stmt| declares(stmt))?;
-        let owner = self.design.stmt_node(statement).owner;
-        let mut blocks: Vec<Vec<crate::pom::StmtId>> = match &self.design.decl_data(owner).kind {
+        let declares = |stmt: &crate::pom::StmtId| matches!(&self.state.design.stmt_node(*stmt).kind, StmtKind::Let { pat, .. } if matches!(&self.state.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local));
+        let statement = (0..self.state.design.stmt_count() as u32).map(crate::pom::StmtId).find(|stmt| declares(stmt))?;
+        let owner = self.state.design.stmt_node(statement).owner;
+        let mut blocks: Vec<Vec<crate::pom::StmtId>> = match &self.state.design.decl_data(owner).kind {
             crate::pom::DeclKind::Fn(data) => data.body.iter().map(|body| body.stmts.clone()).collect(),
             crate::pom::DeclKind::Behavior(data) => vec![data.body.clone()],
             crate::pom::DeclKind::Reaction(data) => vec![data.body.stmts.clone()],
             _ => Vec::new(),
         };
-        for index in 0..self.design.expr_count() as u32 {
-            let node = self.design.expr_node(ExprId(index));
+        for index in 0..self.state.design.expr_count() as u32 {
+            let node = self.state.design.expr_node(ExprId(index));
             if node.owner != owner {
                 continue;
             }
@@ -215,13 +215,13 @@ impl Elaboration<'_, '_> {
 
     /// The bindings `expr` names, anywhere in it.
     pub(super) fn read_bindings(&self, expr: ExprId) -> Vec<DeclId> {
-        let node = self.design.expr_node(expr);
+        let node = self.state.design.expr_node(expr);
         match &node.kind {
-            ExprKind::Path(path) => match self.design.path_node(*path).segments.last().map(|s| s.res) {
-                Some(Resolution::Decl(decl)) if matches!(self.design.decl_data(decl).kind, crate::pom::DeclKind::Binding(_)) => vec![decl],
+            ExprKind::Path(path) => match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
+                Some(Resolution::Decl(decl)) if matches!(self.state.design.decl_data(decl).kind, crate::pom::DeclKind::Binding(_)) => vec![decl],
                 _ => Vec::new(),
             },
-            kind => crate::pom::BodyWalk::new(self.design).expression_children(kind).into_iter().flat_map(|child| self.read_bindings(child)).collect(),
+            kind => crate::pom::BodyWalk::new(self.state.design).expression_children(kind).into_iter().flat_map(|child| self.read_bindings(child)).collect(),
         }
     }
 
@@ -230,8 +230,8 @@ impl Elaboration<'_, '_> {
         if let Some(value) = self.body_let_value(local) {
             return Some(value);
         }
-        (0..self.design.stmt_count()).find_map(|index| match &self.design.stmt_node(crate::pom::StmtId(index as u32)).kind {
-            StmtKind::Let { pat, init: Some(init), .. } if matches!(&self.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local) => Some(*init),
+        (0..self.state.design.stmt_count()).find_map(|index| match &self.state.design.stmt_node(crate::pom::StmtId(index as u32)).kind {
+            StmtKind::Let { pat, init: Some(init), .. } if matches!(&self.state.design.pat_node(*pat).kind, PatKind::Ident { binding, sub: None, .. } if *binding == local) => Some(*init),
             _ => None,
         })
     }

@@ -49,12 +49,12 @@ impl Elaboration<'_, '_> {
             return reached;
         }
         let (root, steps) = self.place_steps(place);
-        if self.root_decl(scope, root).is_some_and(|d| self.frames.get(scope.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
-            self.element_of_empty_array(scope.file, self.design.expr_node(place).span);
+        if self.root_decl(scope, root).is_some_and(|d| self.state.structure.frames.get(scope.values.frame).is_some_and(|f| f.empty_arrays.contains(&d))) {
+            self.element_of_empty_array(scope.values.file, self.state.design.expr_node(place).span);
             return None;
         }
         let carrier = self.drive_target(scope, root)?;
-        let carried = self.structure.carriers[carrier as usize].clone();
+        let carried = self.state.digital.structure.carriers[carrier as usize].clone();
         // a resolved carrier is written with the type of its drive, not the one it reads (§5.2.15)
         let mut ty = match &carried.role {
             piperine_ir::CarrierRole::Resolved { driven, .. } => driven.clone(),
@@ -64,8 +64,8 @@ impl Elaboration<'_, '_> {
         let (mut element, mut constant) = (None, None);
         if let Some(count) = carried.count {
             let Some(decl) = self.root_decl(scope, root) else { return None };
-            let shape = self.carrier_array_shape(decl, scope.frame)?.0;
-            let span = self.design.expr_node(place).span;
+            let shape = self.carrier_array_shape(decl, scope.values.frame)?.0;
+            let span = self.state.design.expr_node(place).span;
             // a carrier declared inside generation, named inside its loops, is the iteration's element (§8.2.23)
             let generated = self.generated_carrier_levels(scope, root);
             let mut indexes = Vec::new();
@@ -73,7 +73,7 @@ impl Elaboration<'_, '_> {
                 match steps.next() {
                     Some(Step::Index(index)) => indexes.push(index),
                     _ => {
-                        self.refuse(scope.file, span, DigitalForm::CommitOrDefinitionOfWholeArrayOf);
+                        self.refuse(scope.values.file, span, DigitalForm::CommitOrDefinitionOfWholeArrayOf);
                         return None;
                     }
                 }
@@ -99,7 +99,7 @@ impl Elaboration<'_, '_> {
                     path.push(Projection::Field(index));
                     ty = match ty {
                         ValueType::Tuple(parts) => parts.get(index as usize)?.clone(),
-                        ValueType::Struct(id) => self.type_arena.field_types(id).get(index as usize)?.clone(),
+                        ValueType::Struct(id) => self.state.values.type_arena.field_types(id).get(index as usize)?.clone(),
                         _ => return self.refuse_place(scope, place, DigitalForm::FieldOfValueThatIsNoTuple),
                     };
                 }
@@ -113,14 +113,14 @@ impl Elaboration<'_, '_> {
         let mut steps = Vec::new();
         let mut at = self.peel_parens(place);
         loop {
-            match self.design.expr_node(at).kind.clone() {
+            match self.state.design.expr_node(at).kind.clone() {
                 ExprKind::Index { expr, index } => {
                     steps.push(Step::Index(index));
                     at = self.peel_parens(expr);
                 }
                 // a field of a bundle port or signal is the carrier its leaf stands for: the root of the place (`bundles.rs`), and
                 // the element of an array of bundles it is in names the first levels of that leaf (`tx[k].a`, struct of arrays)
-                ExprKind::Field { .. } if let Some(place) = self.design.bundle_place(at).filter(|place| self.design.leaf_owner(place.decl).is_some()) => {
+                ExprKind::Field { .. } if let Some(place) = self.state.design.bundle_place(at).filter(|place| self.state.design.leaf_owner(place.decl).is_some()) => {
                     steps.extend(place.elements.iter().rev().map(|index| Step::Index(*index)));
                     break;
                 }
@@ -140,8 +140,8 @@ impl Elaboration<'_, '_> {
         if let Some(leaf) = self.bundle_leaf(scope, root) {
             return Some(leaf.decl);
         }
-        let ExprKind::Path(path) = &self.design.expr_node(root).kind else { return None };
-        match self.design.path_node(*path).segments.last().map(|s| s.res) {
+        let ExprKind::Path(path) = &self.state.design.expr_node(root).kind else { return None };
+        match self.state.design.path_node(*path).segments.last().map(|s| s.res) {
             Some(crate::pom::Resolution::Decl(decl)) => Some(decl),
             _ => None,
         }
@@ -149,7 +149,7 @@ impl Elaboration<'_, '_> {
 
     /// The refusal of a place step that does not apply: `P0001` naming it, `None`.
     fn refuse_place(&mut self, scope: &Scope, place: ExprId, form: impl Into<RefusedForm>) -> Option<PlaceTarget> {
-        self.refuse(scope.file, self.design.expr_node(place).span, form);
+        self.refuse(scope.values.file, self.state.design.expr_node(place).span, form);
         None
     }
 }
