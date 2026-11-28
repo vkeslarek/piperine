@@ -4,10 +4,10 @@
 
 use piperine_lang::pom::{CrateGraph, CrateId, Design, DeclId, FileId, GraphError, PathId, Reflect, Resolution};
 
-/// Associated test helpers of `crates`, grouped on one fixture type.
-struct CratesFixture;
+/// Builds designs over graphs of crates.
+struct CrateGraphs;
 
-impl CratesFixture {
+impl CrateGraphs {
     fn three() -> (CrateGraph, CrateId, CrateId, CrateId) {
         let mut g = CrateGraph::new();
         let a = g.add_crate("a", "a/lib.msl").unwrap();
@@ -16,8 +16,69 @@ impl CratesFixture {
         (g, a, b, c)
     }
 
-    // ---- PKG-06: `std` is embedded and its prelude is implicit (T7) ----
+    fn with_std(project: &str) -> Design {
+        Design::builder().std_source("lib.msl", STD).source("top.msl", project).build()
+    }
 
+    /// `app -> util` with the roots `app/lib.msl` and `util/lib.msl`, under `base`.
+    fn app_util(base: &std::path::Path) -> CrateGraph {
+        let mut g = CrateGraph::new();
+        let app = g.add_crate("app", base.join("app/lib.msl")).unwrap();
+        let util = g.add_crate("util", base.join("util/lib.msl")).unwrap();
+        g.add_dependency(app, "util", util).unwrap();
+        g
+    }
+
+    fn util_sources(builder: piperine_lang::pom::DesignBuilder) -> piperine_lang::pom::DesignBuilder {
+        builder
+            .source("app/lib.msl", "mod local;\n")
+            .source("app/local.msl", "pub module Local() {}\n")
+            .source("util/lib.msl", "pub mod cells;\n")
+            .source("util/cells.msl", "pub module Cell() {}\nmod deep;\n")
+            .source("util/cells/deep.msl", "pub module Deep() {}\n")
+    }
+
+    /// A design of two crates, `app -> util` (the dependency called `dep`, the crate called `util`),
+    /// over virtual sources, with the given std.
+    fn two(app: &str, util: &str, dep: &str, std: Option<&str>) -> Design {
+        let mut g = CrateGraph::new();
+        let a = g.add_crate("app", "app/lib.msl").unwrap();
+        let u = g.add_crate("util", "util/lib.msl").unwrap();
+        g.add_dependency(a, dep, u).unwrap();
+        let mut b = Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).crates(g);
+        if let Some(std) = std {
+            b = b.std_source("std/lib.msl", std);
+        }
+        b.build()
+    }
+
+    /// `app -> util -> deep` (each depends on the next under its own name), over virtual sources.
+    fn chain(app: &str, util: &str, deep: &str) -> Design {
+        let mut g = CrateGraph::new();
+        let a = g.add_crate("app", "app/lib.msl").unwrap();
+        let u = g.add_crate("util", "util/lib.msl").unwrap();
+        let d = g.add_crate("deep", "deep/lib.msl").unwrap();
+        g.add_dependency(a, "util", u).unwrap();
+        g.add_dependency(u, "deep", d).unwrap();
+        Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).source("deep/lib.msl", deep).crates(g).build()
+    }
+
+    /// `app -> {zeta: b, alpha: c}` over virtual sources; crate order is `app`, `b`, `c`, `std`.
+    fn three_crates(app: &str, b: &str, c: &str) -> Design {
+        let mut g = CrateGraph::new();
+        let a = g.add_crate("app", "app/lib.msl").unwrap();
+        let bb = g.add_crate("b", "b/lib.msl").unwrap();
+        let cc = g.add_crate("c", "c/lib.msl").unwrap();
+        g.add_dependency(a, "zeta", bb).unwrap();
+        g.add_dependency(a, "alpha", cc).unwrap();
+        Design::builder().source("app/lib.msl", app).source("b/lib.msl", b).source("c/lib.msl", c).crates(g).build()
+    }
+}
+
+/// Reads what names resolve to across crates.
+struct CrateResolutions;
+
+impl CrateResolutions {
     /// Every resolution of the first segment of the single-segment paths named `name`.
     fn resolutions(design: &Design, name: &str) -> Vec<Resolution> {
         (0..design.path_count())
@@ -42,48 +103,8 @@ impl CratesFixture {
         d
     }
 
-    fn with_std(project: &str) -> Design {
-        Design::builder().std_source("lib.msl", STD).source("top.msl", project).build()
-    }
-
-    // ---- PKG-04 AC 3 to 7: a design over a crate graph (T9) ----
-
-    /// `app -> util` with the roots `app/lib.msl` and `util/lib.msl`, under `base`.
-    fn app_util(base: &std::path::Path) -> CrateGraph {
-        let mut g = CrateGraph::new();
-        let app = g.add_crate("app", base.join("app/lib.msl")).unwrap();
-        let util = g.add_crate("util", base.join("util/lib.msl")).unwrap();
-        g.add_dependency(app, "util", util).unwrap();
-        g
-    }
-
-    fn util_sources(builder: piperine_lang::pom::DesignBuilder) -> piperine_lang::pom::DesignBuilder {
-        builder
-            .source("app/lib.msl", "mod local;\n")
-            .source("app/local.msl", "pub module Local() {}\n")
-            .source("util/lib.msl", "pub mod cells;\n")
-            .source("util/cells.msl", "pub module Cell() {}\nmod deep;\n")
-            .source("util/cells/deep.msl", "pub module Deep() {}\n")
-    }
-
     fn file_names(c: piperine_lang::pom::Crate<'_>) -> Vec<String> {
         c.files().iter().map(|f| f.name().to_string()).collect()
-    }
-
-    // ---- PKG-05 AC 1 to 10: names resolve across crates (T10) ----
-
-    /// A design of two crates, `app -> util` (the dependency called `dep`, the crate called `util`),
-    /// over virtual sources, with the given std.
-    fn two(app: &str, util: &str, dep: &str, std: Option<&str>) -> Design {
-        let mut g = CrateGraph::new();
-        let a = g.add_crate("app", "app/lib.msl").unwrap();
-        let u = g.add_crate("util", "util/lib.msl").unwrap();
-        g.add_dependency(a, dep, u).unwrap();
-        let mut b = Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).crates(g);
-        if let Some(std) = std {
-            b = b.std_source("std/lib.msl", std);
-        }
-        b.build()
     }
 
     /// Every resolution list of the paths written `text` (segments joined by `::`).
@@ -101,32 +122,6 @@ impl CratesFixture {
         design.decl(d).krate().name().to_string()
     }
 
-    // ---- PKG-05 AC 11 to 16: pub is the only way across a crate (T11) ----
-
-    /// `app -> util -> deep` (each depends on the next under its own name), over virtual sources.
-    fn chain(app: &str, util: &str, deep: &str) -> Design {
-        let mut g = CrateGraph::new();
-        let a = g.add_crate("app", "app/lib.msl").unwrap();
-        let u = g.add_crate("util", "util/lib.msl").unwrap();
-        let d = g.add_crate("deep", "deep/lib.msl").unwrap();
-        g.add_dependency(a, "util", u).unwrap();
-        g.add_dependency(u, "deep", d).unwrap();
-        Design::builder().source("app/lib.msl", app).source("util/lib.msl", util).source("deep/lib.msl", deep).crates(g).build()
-    }
-
-    // ---- PKG-07 AC 3 to 7: reflection over crates (T12) ----
-
-    /// `app -> {zeta: b, alpha: c}` over virtual sources; crate order is `app`, `b`, `c`, `std`.
-    fn three_crates(app: &str, b: &str, c: &str) -> Design {
-        let mut g = CrateGraph::new();
-        let a = g.add_crate("app", "app/lib.msl").unwrap();
-        let bb = g.add_crate("b", "b/lib.msl").unwrap();
-        let cc = g.add_crate("c", "c/lib.msl").unwrap();
-        g.add_dependency(a, "zeta", bb).unwrap();
-        g.add_dependency(a, "alpha", cc).unwrap();
-        Design::builder().source("app/lib.msl", app).source("b/lib.msl", b).source("c/lib.msl", c).crates(g).build()
-    }
-
     fn kinds(suffix: &str) -> String {
         let mut text = KINDS.to_string();
         for key in ["M", "F", "S", "E", "T", "K", "N", "Nat"] {
@@ -134,13 +129,16 @@ impl CratesFixture {
         }
         text
     }
+}
 
-    // ---- PKG-08: a multi-crate design serializes and is validated (T13) ----
+/// A design serialized to JSON, and an edited copy read back.
+struct SerializedDesign;
 
+impl SerializedDesign {
     /// `app -> {zeta: b, alpha: c}`, each crate with a module and a `mod` file, so the JSON holds
     /// crates, dependencies and several files per crate.
     fn serialized() -> (Design, serde_json::Value) {
-        let design = CratesFixture::three_crates("mod local;\npub module A() {}\n", "pub module B() {}\n", "pub module C() {}\n");
+        let design = CrateGraphs::three_crates("mod local;\npub module A() {}\n", "pub module B() {}\n", "pub module C() {}\n");
         let json = serde_json::to_value(&design).unwrap();
         (design, json)
     }
@@ -154,7 +152,7 @@ impl CratesFixture {
 
 #[test]
 fn graph_keeps_crates_and_edges_as_given() {
-    let (mut g, a, b, c) = CratesFixture::three();
+    let (mut g, a, b, c) = CrateGraphs::three();
     assert_eq!((a, b, c), (CrateId(0), CrateId(1), CrateId(2)));
     g.add_dependency(a, "util", b).unwrap();
     g.add_dependency(a, "cells", c).unwrap();
@@ -170,7 +168,7 @@ fn graph_keeps_crates_and_edges_as_given() {
 
 #[test]
 fn graph_rejects_invalid_and_reserved_names() {
-    let (mut g, a, b, _) = CratesFixture::three();
+    let (mut g, a, b, _) = CrateGraphs::three();
     let before = g.clone();
     for name in ["9a", "a-b", "fn", "module", "std", ""] {
         assert!(!CrateGraph::is_crate_name(name), "{name:?}");
@@ -184,7 +182,7 @@ fn graph_rejects_invalid_and_reserved_names() {
 
 #[test]
 fn graph_rejects_a_cycle_and_names_it() {
-    let (mut g, a, b, c) = CratesFixture::three();
+    let (mut g, a, b, c) = CrateGraphs::three();
     g.add_dependency(a, "b", b).unwrap();
     g.add_dependency(b, "c", c).unwrap();
     let before = g.clone();
@@ -197,7 +195,7 @@ fn graph_rejects_a_cycle_and_names_it() {
 
 #[test]
 fn graph_rejects_a_repeated_dependency_name() {
-    let (mut g, a, b, c) = CratesFixture::three();
+    let (mut g, a, b, c) = CrateGraphs::three();
     g.add_dependency(a, "util", b).unwrap();
     let before = g.clone();
     assert_eq!(g.add_dependency(a, "util", c), Err(GraphError::DuplicateDependency { krate: "a".into(), name: "util".into() }));
@@ -208,7 +206,7 @@ fn graph_rejects_a_repeated_dependency_name() {
 
 #[test]
 fn graph_rejects_a_foreign_id() {
-    let (mut g, a, _, _) = CratesFixture::three();
+    let (mut g, a, _, _) = CrateGraphs::three();
     let before = g.clone();
     let past = CrateId(3);
     assert_eq!(g.add_dependency(past, "x", a), Err(GraphError::UnknownCrate { id: past }));
@@ -233,9 +231,9 @@ const STD_BIT: &str = "pub mod prelude { pub nature Bit { value: f64 } }\n";
 #[test]
 fn embedded_std_builds_clean_and_has_a_prelude() {
     let empty = Design::builder().build();
-    assert_eq!(CratesFixture::codes(&empty), Vec::<String>::new());
+    assert_eq!(CrateResolutions::codes(&empty), Vec::<String>::new());
     let design = Design::builder().source("top.msl", "").build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
     let files = design.files();
     assert!(files.last().unwrap().krate().is_std(), "the embedded library is the last file");
     let prelude = (0..design.decl_count()).map(|i| DeclId(i as u32)).find(|d| {
@@ -247,31 +245,31 @@ fn embedded_std_builds_clean_and_has_a_prelude() {
 
 #[test]
 fn prelude_items_resolve_without_an_import() {
-    let design = CratesFixture::with_std("const X: u32 = P;\nmod m { const Y: u32 = P; }\n");
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::resolutions(&design, "P");
+    let design = CrateGraphs::with_std("const X: u32 = P;\nmod m { const Y: u32 = P; }\n");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::resolutions(&design, "P");
     assert_eq!(found.len(), 2);
     for res in found {
-        assert_eq!(CratesFixture::declared_in(&design, res), "lib.msl");
+        assert_eq!(CrateResolutions::declared_in(&design, res), "lib.msl");
     }
     // The type namespace: a port `p: Bit` resolves to the prelude's `pub nature Bit`.
     let design = Design::builder().std_source("lib.msl", STD_BIT).source("top.msl", "module M(p: Bit) {}\nmod m { module N(q: Bit) {} }\n").build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let found = CratesFixture::resolutions(&design, "Bit");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = CrateResolutions::resolutions(&design, "Bit");
     assert_eq!(found.len(), 2);
     for res in found {
-        assert_eq!(CratesFixture::declared_in(&design, res), "lib.msl");
-        assert_eq!(design.decl(CratesFixture::decl_of(res)).name(), Some("Bit"));
+        assert_eq!(CrateResolutions::declared_in(&design, res), "lib.msl");
+        assert_eq!(design.decl(CrateResolutions::decl_of(res)).name(), Some("Bit"));
     }
 }
 
 #[test]
 fn only_pub_items_of_std_prelude_are_implicit() {
     for name in ["HIDDEN", "TOP", "D"] {
-        let design = CratesFixture::with_std(&format!("const X: u32 = {name};\n"));
-        assert_eq!(CratesFixture::codes(&design), ["E0161"], "{name}");
+        let design = CrateGraphs::with_std(&format!("const X: u32 = {name};\n"));
+        assert_eq!(CrateResolutions::codes(&design), ["E0161"], "{name}");
     }
-    assert_eq!(CratesFixture::codes(&CratesFixture::with_std("const X: u32 = P;\n")), Vec::<String>::new());
+    assert_eq!(CrateResolutions::codes(&CrateGraphs::with_std("const X: u32 = P;\n")), Vec::<String>::new());
 }
 
 #[test]
@@ -281,28 +279,28 @@ fn std_source_replaces_the_embedded_library() {
         .std_source("prelude.msl", "pub const MINE: u32 = 1;\n")
         .source("top.msl", "const X: u32 = MINE;\n")
         .build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
     let std_files: Vec<String> = design.files().iter().filter(|f| f.krate().is_std()).map(|f| f.name().to_string()).collect();
     assert_eq!(std_files, ["root.msl", "prelude.msl"], "the first given file is the root; nothing embedded remains");
-    assert_eq!(CratesFixture::declared_in(&design, CratesFixture::resolutions(&design, "MINE")[0]), "prelude.msl");
+    assert_eq!(CrateResolutions::declared_in(&design, CrateResolutions::resolutions(&design, "MINE")[0]), "prelude.msl");
 }
 
 #[test]
 fn a_namespace_item_hides_a_prelude_item() {
-    let design = CratesFixture::with_std("const P: u32 = 9;\nmod m { const P: u32 = 8; const Z: u32 = P; }\nconst W: u32 = P;\n");
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::resolutions(&design, "P");
+    let design = CrateGraphs::with_std("const P: u32 = 9;\nmod m { const P: u32 = 8; const Z: u32 = P; }\nconst W: u32 = P;\n");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::resolutions(&design, "P");
     assert_eq!(found.len(), 2);
     for res in found {
-        assert_eq!(CratesFixture::declared_in(&design, res), "top.msl");
+        assert_eq!(CrateResolutions::declared_in(&design, res), "top.msl");
     }
     // A local `nature Bit` wins over the prelude's, in a port type, with no diagnostic.
     let design = Design::builder().std_source("lib.msl", STD_BIT).source("top.msl", "nature Bit { value: f64 }\nmodule M(p: Bit) {}\nmod m { nature Bit { value: f64 } module N(q: Bit) {} }\n").build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let found = CratesFixture::resolutions(&design, "Bit");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = CrateResolutions::resolutions(&design, "Bit");
     assert_eq!(found.len(), 2);
     for res in found {
-        assert_eq!(CratesFixture::declared_in(&design, res), "top.msl");
+        assert_eq!(CrateResolutions::declared_in(&design, res), "top.msl");
     }
 }
 
@@ -319,18 +317,18 @@ fn std_files_are_numbered_last() {
 fn std_files_see_the_prelude() {
     let std = "pub mod prelude { pub const P: u32 = 1; }\npub mod other { pub const Z: u32 = P; }\n";
     let design = Design::builder().std_source("lib.msl", std).source("top.msl", "").build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::resolutions(&design, "P");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::resolutions(&design, "P");
     assert_eq!(found.len(), 1);
-    assert_eq!(CratesFixture::declared_in(&design, found[0]), "lib.msl");
+    assert_eq!(CrateResolutions::declared_in(&design, found[0]), "lib.msl");
     // A module in `std`'s own `lib.msl` with a port `p: Bit` sees the prelude's nature.
     let std = "pub mod prelude { pub nature Bit { value: f64 } }\npub module Mine(p: Bit) {}\n";
     let design = Design::builder().std_source("lib.msl", std).source("top.msl", "").build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let found = CratesFixture::resolutions(&design, "Bit");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = CrateResolutions::resolutions(&design, "Bit");
     assert_eq!(found.len(), 1);
-    assert_eq!(CratesFixture::declared_in(&design, found[0]), "lib.msl");
-    assert!(design.decl(CratesFixture::decl_of(found[0])).name() == Some("Bit"));
+    assert_eq!(CrateResolutions::declared_in(&design, found[0]), "lib.msl");
+    assert!(design.decl(CrateResolutions::decl_of(found[0])).name() == Some("Bit"));
 }
 
 // ---- PKG-04 AC 1 and 2, PKG-07 AC 1 and 2: the design holds its crates (T8) ----
@@ -359,7 +357,7 @@ fn a_reserved_root_file_stem_is_reported_and_never_names_std() {
         let design = Design::builder().source(file, "").build();
         let names: Vec<_> = design.crates().iter().map(|c| c.name().to_string()).collect();
         assert_eq!(names, [name, "std"], "{file}");
-        assert_eq!(CratesFixture::codes(&design), ["E0171"], "{file}");
+        assert_eq!(CrateResolutions::codes(&design), ["E0171"], "{file}");
         let stem = file.trim_end_matches(".msl");
         let found = &design.diagnostics()[0];
         assert!(found.diagnostic.message.contains(&format!("`{stem}`")), "{}", found.diagnostic.message);
@@ -423,14 +421,14 @@ fn declarations_and_files_know_their_crate() {
 
 #[test]
 fn graph_crates_become_design_crates_in_order() {
-    let design = CratesFixture::util_sources(Design::builder()).crates(CratesFixture::app_util(std::path::Path::new(""))).build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
+    let design = CrateGraphs::util_sources(Design::builder()).crates(CrateGraphs::app_util(std::path::Path::new(""))).build();
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
     let crates = design.crates();
     assert_eq!(crates.iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "util", "std"]);
     assert!(crates[0].is_root() && !crates[1].is_root() && crates[2].is_std());
     // Files are numbered crate by crate in graph order, std last.
-    assert_eq!(CratesFixture::file_names(crates[0]), ["app/lib.msl", "local.msl"]);
-    assert_eq!(CratesFixture::file_names(crates[1]), ["util/lib.msl", "cells.msl", "deep.msl"]);
+    assert_eq!(CrateResolutions::file_names(crates[0]), ["app/lib.msl", "local.msl"]);
+    assert_eq!(CrateResolutions::file_names(crates[1]), ["util/lib.msl", "cells.msl", "deep.msl"]);
     let json = serde_json::to_value(&design).unwrap();
     assert_eq!(json["crates"][0]["dependencies"], serde_json::json!([{ "name": "util", "krate": 1 }]));
     assert_eq!(json["crates"][1]["dependencies"], serde_json::json!([]));
@@ -442,8 +440,8 @@ fn graph_crates_become_design_crates_in_order() {
 
 #[test]
 fn mod_files_load_beside_their_own_crate_root() {
-    let design = CratesFixture::util_sources(Design::builder()).crates(CratesFixture::app_util(std::path::Path::new(""))).build();
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
+    let design = CrateGraphs::util_sources(Design::builder()).crates(CrateGraphs::app_util(std::path::Path::new(""))).build();
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
     for (module, file, krate) in [("Local", "local.msl", "app"), ("Cell", "cells.msl", "util"), ("Deep", "deep.msl", "util")] {
         let m = design.module(module).unwrap();
         assert_eq!((m.file().name(), m.krate().name()), (file, krate), "{module}");
@@ -452,7 +450,7 @@ fn mod_files_load_beside_their_own_crate_root() {
 
 #[test]
 fn an_unreadable_crate_root_is_one_e0161() {
-    let design = Design::builder().source("app/lib.msl", "module A() {}\n").crates(CratesFixture::app_util(std::path::Path::new(""))).build();
+    let design = Design::builder().source("app/lib.msl", "module A() {}\n").crates(CrateGraphs::app_util(std::path::Path::new(""))).build();
     let found: Vec<_> = design.diagnostics().iter().collect();
     assert_eq!(found.len(), 1, "{found:?}");
     assert_eq!(found[0].diagnostic.code, "E0161");
@@ -466,14 +464,14 @@ fn an_unreadable_crate_root_is_one_e0161() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("app")).unwrap();
     std::fs::write(dir.path().join("app/lib.msl"), "module A() {}\n").unwrap();
-    let disk = Design::load_crates(CratesFixture::app_util(dir.path()));
-    assert_eq!(CratesFixture::codes(&disk), ["E0161"]);
+    let disk = Design::load_crates(CrateGraphs::app_util(dir.path()));
+    assert_eq!(CrateResolutions::codes(&disk), ["E0161"]);
     assert!(disk.diagnostics()[0].diagnostic.message.contains("util"));
 }
 
 #[test]
 fn every_crate_keeps_its_authored_tree() {
-    let design = CratesFixture::util_sources(Design::builder()).crates(CratesFixture::app_util(std::path::Path::new(""))).build();
+    let design = CrateGraphs::util_sources(Design::builder()).crates(CrateGraphs::app_util(std::path::Path::new(""))).build();
     for file in design.files() {
         assert_eq!(file.to_ast(), piperine_lang::msl::parser::SourceParser::parse(file.text()).file, "{}", file.name());
     }
@@ -506,21 +504,21 @@ fn disk_and_memory_graphs_build_the_same_design() {
         std::fs::create_dir_all(dir.path().join(path).parent().unwrap()).unwrap();
         std::fs::write(dir.path().join(path), text).unwrap();
     }
-    let disk = Design::load_crates(CratesFixture::app_util(dir.path()));
-    let memory = CratesFixture::util_sources(Design::builder()).crates(CratesFixture::app_util(std::path::Path::new(""))).build();
+    let disk = Design::load_crates(CrateGraphs::app_util(dir.path()));
+    let memory = CrateGraphs::util_sources(Design::builder()).crates(CrateGraphs::app_util(std::path::Path::new(""))).build();
     assert_eq!(disk.dump(), memory.dump());
     assert_eq!(disk.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>(), memory.crates().iter().map(|c| (c.name().to_string(), c.files().len())).collect::<Vec<_>>());
-    assert_eq!(CratesFixture::codes(&disk), CratesFixture::codes(&memory));
+    assert_eq!(CrateResolutions::codes(&disk), CrateResolutions::codes(&memory));
 }
 
 #[test]
 fn a_dependency_name_starts_a_path() {
-    let design = CratesFixture::two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::path_res(&design, "util::K");
+    let design = CrateGraphs::two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::path_res(&design, "util::K");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0][0], Resolution::Decl(design.crates()[1].root().decl().id()), "the first segment is the root namespace of util");
-    assert_eq!(CratesFixture::krate_of(&design, found[0][1]), "util");
+    assert_eq!(CrateResolutions::krate_of(&design, found[0][1]), "util");
     assert_eq!(design.decl(match found[0][1] { Resolution::Decl(d) => d, _ => unreachable!() }).name(), Some("K"));
 }
 
@@ -528,16 +526,16 @@ fn a_dependency_name_starts_a_path() {
 fn use_forms_of_a_dependency_resolve() {
     let util = "pub mod a { pub const K: u32 = 1; pub const L: u32 = 2; }\n";
     let app = "use util::a::*;\nuse util::a::{K as K2, L as L2};\nuse util as u;\nconst X: u32 = K + K2 + u::a::L + L2;\n";
-    let design = CratesFixture::two(app, util, "util", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    assert_eq!(CratesFixture::krate_of(&design, CratesFixture::path_res(&design, "u::a::L")[0][2]), "util");
+    let design = CrateGraphs::two(app, util, "util", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::krate_of(&design, CrateResolutions::path_res(&design, "u::a::L")[0][2]), "util");
 }
 
 #[test]
 fn an_instance_links_to_a_module_of_a_dependency() {
     let app = "use util::cells::Cell;\nmodule Top() { let c = Cell(); }\n";
-    let design = CratesFixture::two(app, "pub mod cells { pub module Cell() {} }\n", "util", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
+    let design = CrateGraphs::two(app, "pub mod cells { pub module Cell() {} }\n", "util", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
     let module = design.module("Top").unwrap().instance("c").unwrap().module().unwrap();
     assert_eq!(module.krate().name(), "util");
     assert_eq!(Some(module), design.module("Cell"));
@@ -545,22 +543,22 @@ fn an_instance_links_to_a_module_of_a_dependency() {
 
 #[test]
 fn crate_names_the_root_of_the_containing_crate() {
-    let design = CratesFixture::two("pub const A: u32 = 2;\n", "pub const A: u32 = 1;\npub mod m { pub const B: u32 = crate::A; }\n", "util", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::path_res(&design, "crate::A");
+    let design = CrateGraphs::two("pub const A: u32 = 2;\n", "pub const A: u32 = 1;\npub mod m { pub const B: u32 = crate::A; }\n", "util", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::path_res(&design, "crate::A");
     assert_eq!(found.len(), 1);
     assert_eq!(found[0][0], Resolution::Decl(design.crates()[1].root().decl().id()));
-    assert_eq!(CratesFixture::krate_of(&design, found[0][1]), "util");
+    assert_eq!(CrateResolutions::krate_of(&design, found[0][1]), "util");
 }
 
 #[test]
 fn a_renamed_dependency_resolves_by_its_dependency_name() {
     let util = "pub const K: u32 = 1;\n";
-    let design = CratesFixture::two("const X: u32 = cells::K;\n", util, "cells", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    assert_eq!(CratesFixture::krate_of(&design, CratesFixture::path_res(&design, "cells::K")[0][1]), "util");
-    let design = CratesFixture::two("const X: u32 = util::K;\n", util, "cells", None);
-    assert_eq!(CratesFixture::codes(&design), ["E0161"], "the crate's own name is not in scope");
+    let design = CrateGraphs::two("const X: u32 = cells::K;\n", util, "cells", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::krate_of(&design, CrateResolutions::path_res(&design, "cells::K")[0][1]), "util");
+    let design = CrateGraphs::two("const X: u32 = util::K;\n", util, "cells", None);
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"], "the crate's own name is not in scope");
 }
 
 #[test]
@@ -570,12 +568,12 @@ fn a_local_name_wins_over_a_dependency_in_a_path() {
         "mod util { pub const K: u32 = 5; pub struct T {} }\nconst X: u32 = util::K;\nfn f(x: util::T) {}\n",
         "mod inner { pub const K: u32 = 5; pub struct T {} }\nuse inner as util;\nconst X: u32 = util::K;\nfn f(x: util::T) {}\n",
     ] {
-        let design = CratesFixture::two(app, util, "util", None);
-        assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{app}");
+        let design = CrateGraphs::two(app, util, "util", None);
+        assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{app}");
         for text in ["util::K", "util::T"] {
-            let found = CratesFixture::path_res(&design, text);
+            let found = CrateResolutions::path_res(&design, text);
             assert_eq!(found.len(), 1, "{text}");
-            assert_eq!(CratesFixture::krate_of(&design, found[0][1]), "app", "{text} in {app}");
+            assert_eq!(CrateResolutions::krate_of(&design, found[0][1]), "app", "{text} in {app}");
         }
     }
 }
@@ -590,8 +588,8 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
         "mod util { pub const K: u32 = 5; }\nfn f() { use util::K; }\n",
         "mod inner { pub const K: u32 = 5; }\nuse inner as util;\nuse util::K;\n",
     ] {
-        let design = CratesFixture::two(app, util, "util", None);
-        assert_eq!(CratesFixture::codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
+        let design = CrateGraphs::two(app, util, "util", None);
+        assert_eq!(CrateResolutions::codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
         let d = &design.diagnostics()[0].diagnostic;
         // The span is the `use` path: the text of `util` (or `util::K`) in the `use` line.
         let text = design.files()[design.diagnostics()[0].file.index()].text();
@@ -599,7 +597,7 @@ fn a_use_path_that_names_a_local_and_a_dependency_is_e0163() {
         assert!(at.starts_with("util") && app.contains(&format!("use {at}")), "the span is the `use` path: {at:?}");
         let help = d.help.as_deref().unwrap_or("");
         assert!(help.contains("package = \"") && help.contains("crate::util"), "{help}");
-        for res in CratesFixture::path_res(&design, "util::K").into_iter().chain(CratesFixture::path_res(&design, "util")).chain(CratesFixture::path_res(&design, "util::*")) {
+        for res in CrateResolutions::path_res(&design, "util::K").into_iter().chain(CrateResolutions::path_res(&design, "util")).chain(CrateResolutions::path_res(&design, "util::*")) {
             assert!(res.iter().all(|r| *r == Resolution::Unresolved), "the use path stays unresolved: {res:?}");
         }
     }
@@ -611,15 +609,15 @@ fn an_e0163_labels_the_local_item_it_clashes_with() {
     // as well as at the `use` path; an import that renames another item is not the item
     let util = "pub const K: u32 = 1;\n";
     let app = "mod util { pub const K: u32 = 5; }\nuse util::K;\n";
-    let design = CratesFixture::two(app, util, "util", None);
+    let design = CrateGraphs::two(app, util, "util", None);
     let d = &design.diagnostics()[0].diagnostic;
     let text = design.files()[design.diagnostics()[0].file.index()].text();
     assert_eq!(d.secondary.len(), 1, "{:?}", d.secondary);
     let (span, label) = &d.secondary[0];
     assert_eq!(&text[span.range()], "mod util { pub const K: u32 = 5; }");
     assert_eq!(label, "the local item `util`");
-    let renamed = CratesFixture::two("mod inner { pub const K: u32 = 5; }\nuse inner as util;\nuse util::K;\n", util, "util", None);
-    assert_eq!(CratesFixture::codes(&renamed), ["E0163"]);
+    let renamed = CrateGraphs::two("mod inner { pub const K: u32 = 5; }\nuse inner as util;\nuse util::K;\n", util, "util", None);
+    assert_eq!(CrateResolutions::codes(&renamed), ["E0163"]);
     assert!(renamed.diagnostics()[0].diagnostic.secondary.is_empty(), "an import that renames `inner` is not a local item called `util`");
 }
 
@@ -637,22 +635,22 @@ fn only_a_type_namespace_local_clashes_with_a_dependency() {
         "fn f() -> u32 { const util: u32 = 1; util::K }\n",
         "fn util() {}\nuse util::*;\nconst X: u32 = K;\n",
     ] {
-        let design = CratesFixture::two(app, util, "util", None);
-        assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{app}: {:?}", design.diagnostics());
-        let found: Vec<_> = CratesFixture::path_res(&design, "util::K").into_iter().chain(CratesFixture::path_res(&design, "K")).collect();
+        let design = CrateGraphs::two(app, util, "util", None);
+        assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{app}: {:?}", design.diagnostics());
+        let found: Vec<_> = CrateResolutions::path_res(&design, "util::K").into_iter().chain(CrateResolutions::path_res(&design, "K")).collect();
         assert!(!found.is_empty(), "{app}");
         for res in found {
-            assert_eq!(CratesFixture::krate_of(&design, *res.last().unwrap()), "util", "{app}: {res:?}");
+            assert_eq!(CrateResolutions::krate_of(&design, *res.last().unwrap()), "util", "{app}: {res:?}");
         }
     }
     // Every type-namespace item clashes in a `use` and wins in an ordinary path.
     for local in ["mod util { pub const K: u32 = 5; }", "struct util {}", "enum util { A }", "nature util { value: f64 }", "module util() {}", "trait util {}"] {
-        let in_use = CratesFixture::two(&format!("{local}\nuse util::K;\n"), util, "util", None);
-        assert_eq!(CratesFixture::codes(&in_use), ["E0163"], "{local}: {:?}", in_use.diagnostics());
-        let in_path = CratesFixture::two(&format!("{local}\nconst X: u32 = util::K;\n"), util, "util", None);
+        let in_use = CrateGraphs::two(&format!("{local}\nuse util::K;\n"), util, "util", None);
+        assert_eq!(CrateResolutions::codes(&in_use), ["E0163"], "{local}: {:?}", in_use.diagnostics());
+        let in_path = CrateGraphs::two(&format!("{local}\nconst X: u32 = util::K;\n"), util, "util", None);
         // The local item wins; `K` is not in it, which is an ordinary E0161 (not a clash).
-        assert!(CratesFixture::codes(&in_path).iter().all(|c| c == "E0161"), "{local}: {:?}", in_path.diagnostics());
-        assert_eq!(CratesFixture::krate_of(&in_path, CratesFixture::path_res(&in_path, "util::K")[0][0]), "app", "{local}");
+        assert!(CrateResolutions::codes(&in_path).iter().all(|c| c == "E0161"), "{local}: {:?}", in_path.diagnostics());
+        assert_eq!(CrateResolutions::krate_of(&in_path, CrateResolutions::path_res(&in_path, "util::K")[0][0]), "app", "{local}");
     }
 }
 
@@ -668,130 +666,130 @@ fn an_import_that_reported_e0163_is_an_errored_binding_that_reports_once() {
         // In a block.
         "mod util { pub const K: u32 = 5; }\nfn f() -> u32 { use util::K; K }\n",
     ] {
-        let design = CratesFixture::two(app, util, "util", None);
-        assert_eq!(CratesFixture::codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
+        let design = CrateGraphs::two(app, util, "util", None);
+        assert_eq!(CrateResolutions::codes(&design), ["E0163"], "{app}: {:?}", design.diagnostics());
     }
     // A name that no clash import binds still reports.
-    let design = CratesFixture::two("mod util { pub const K: u32 = 5; }\nuse util::K;\nconst X: u32 = Z;\n", util, "util", None);
-    assert_eq!(CratesFixture::codes(&design), ["E0163", "E0161"]);
+    let design = CrateGraphs::two("mod util { pub const K: u32 = 5; }\nuse util::K;\nconst X: u32 = Z;\n", util, "util", None);
+    assert_eq!(CrateResolutions::codes(&design), ["E0163", "E0161"]);
 }
 
 #[test]
 fn crate_prefix_names_the_local_one_in_a_clash() {
-    let design = CratesFixture::two("mod util { pub const K: u32 = 5; }\nuse crate::util::K;\nconst X: u32 = K;\n", "pub const K: u32 = 1;\n", "util", None);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    assert_eq!(CratesFixture::krate_of(&design, CratesFixture::path_res(&design, "K")[0][0]), "app");
+    let design = CrateGraphs::two("mod util { pub const K: u32 = 5; }\nuse crate::util::K;\nconst X: u32 = K;\n", "pub const K: u32 = 1;\n", "util", None);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::krate_of(&design, CrateResolutions::path_res(&design, "K")[0][0]), "app");
 }
 
 const STD_P: &str = "pub mod prelude { pub const P: u32 = 1; pub mod util { pub const K: u32 = 9; } }\n";
 
 #[test]
 fn std_is_a_dependency_of_every_crate() {
-    let design = CratesFixture::two("const X: u32 = std::prelude::P;\n", "pub const Y: u32 = std::prelude::P;\n", "util", Some(STD_P));
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::path_res(&design, "std::prelude::P");
+    let design = CrateGraphs::two("const X: u32 = std::prelude::P;\n", "pub const Y: u32 = std::prelude::P;\n", "util", Some(STD_P));
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::path_res(&design, "std::prelude::P");
     assert_eq!(found.len(), 2);
     for res in found {
         assert_eq!(res[0], Resolution::Decl(design.std_crate().root().decl().id()));
-        assert_eq!(CratesFixture::krate_of(&design, res[2]), "std");
+        assert_eq!(CrateResolutions::krate_of(&design, res[2]), "std");
     }
 }
 
 #[test]
 fn the_prelude_reaches_every_crate() {
-    let design = CratesFixture::two("const X: u32 = P;\n", "pub const Y: u32 = P;\nmod deep { pub const Z: u32 = P; }\n", "util", Some(STD_P));
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    let found = CratesFixture::path_res(&design, "P");
+    let design = CrateGraphs::two("const X: u32 = P;\n", "pub const Y: u32 = P;\nmod deep { pub const Z: u32 = P; }\n", "util", Some(STD_P));
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    let found = CrateResolutions::path_res(&design, "P");
     assert_eq!(found.len(), 3);
     for res in found {
-        assert_eq!(CratesFixture::krate_of(&design, res[0]), "std");
+        assert_eq!(CrateResolutions::krate_of(&design, res[0]), "std");
     }
     // A port `p: Bit` in the root crate, in a dependency and deep in a module reaches the nature.
     let std = "pub mod prelude { pub nature Bit { value: f64 } }\n";
-    let design = CratesFixture::two("module A(p: Bit) {}\n", "pub module B(p: Bit) {}\nmod deep { pub module C(p: Bit) {} }\n", "util", Some(std));
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
-    let found = CratesFixture::path_res(&design, "Bit");
+    let design = CrateGraphs::two("module A(p: Bit) {}\n", "pub module B(p: Bit) {}\nmod deep { pub module C(p: Bit) {} }\n", "util", Some(std));
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new(), "{:?}", design.diagnostics());
+    let found = CrateResolutions::path_res(&design, "Bit");
     assert_eq!(found.len(), 3);
     for res in found {
-        assert_eq!(CratesFixture::krate_of(&design, res[0]), "std");
+        assert_eq!(CrateResolutions::krate_of(&design, res[0]), "std");
     }
 }
 
 #[test]
 fn a_dependency_name_hides_a_prelude_item() {
     // `std::prelude` has a `pub mod util`, and `util` is also a dependency: the dependency wins.
-    let design = CratesFixture::two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", Some(STD_P));
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    assert_eq!(CratesFixture::krate_of(&design, CratesFixture::path_res(&design, "util::K")[0][1]), "util");
+    let design = CrateGraphs::two("const X: u32 = util::K;\n", "pub const K: u32 = 1;\n", "util", Some(STD_P));
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::krate_of(&design, CrateResolutions::path_res(&design, "util::K")[0][1]), "util");
 }
 
 #[test]
 fn a_crate_that_is_no_dependency_is_e0161_with_help() {
     // A dependency of a dependency, and the crate's own name.
     for app in ["const X: u32 = deep::K;\n", "pub const A: u32 = 1;\nconst X: u32 = app::A;\n"] {
-        let design = CratesFixture::chain(app, "pub const K: u32 = 1;\n", "pub const K: u32 = 1;\n");
-        assert_eq!(CratesFixture::codes(&design), ["E0161"], "{app}");
+        let design = CrateGraphs::chain(app, "pub const K: u32 = 1;\n", "pub const K: u32 = 1;\n");
+        assert_eq!(CrateResolutions::codes(&design), ["E0161"], "{app}");
         let help = design.diagnostics()[0].diagnostic.help.clone().unwrap_or_default();
         assert_eq!(help, "name it under [dependencies] in Piperine.toml", "{app}");
     }
     // A later segment that is missing gets no such help; neither does a plain unknown name.
     for app in ["const X: u32 = util::Missing;\n", "const X: u32 = nowhere::K;\n"] {
-        let design = CratesFixture::chain(app, "pub const K: u32 = 1;\n", "");
-        assert_eq!(CratesFixture::codes(&design), ["E0161"], "{app}");
+        let design = CrateGraphs::chain(app, "pub const K: u32 = 1;\n", "");
+        assert_eq!(CrateResolutions::codes(&design), ["E0161"], "{app}");
         assert_eq!(design.diagnostics()[0].diagnostic.help, None, "{app}");
     }
 }
 
 #[test]
 fn a_private_item_of_another_crate_is_e0161() {
-    let design = CratesFixture::chain("const X: u32 = util::K;\n", "const K: u32 = 1;\n", "");
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("const X: u32 = util::K;\n", "const K: u32 = 1;\n", "");
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
     assert!(design.diagnostics()[0].diagnostic.message.contains("private"), "{}", design.diagnostics()[0].diagnostic.message);
 }
 
 #[test]
 fn a_pub_item_in_a_private_namespace_is_e0161() {
-    let design = CratesFixture::chain("const X: u32 = util::inner::K;\n", "mod inner { pub const K: u32 = 1; }\n", "");
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("const X: u32 = util::inner::K;\n", "mod inner { pub const K: u32 = 1; }\n", "");
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
     let message = &design.diagnostics()[0].diagnostic.message;
     assert!(message.contains("`inner`") && message.contains("private"), "the message names `inner`: {message}");
 }
 
 #[test]
 fn super_at_a_crate_root_is_e0161() {
-    let design = CratesFixture::chain("pub const A: u32 = 1;\n", "pub const K: u32 = super::A;\n", "");
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
-    let design = CratesFixture::chain("const X: u32 = super::A;\n", "", "");
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("pub const A: u32 = 1;\n", "pub const K: u32 = super::A;\n", "");
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("const X: u32 = super::A;\n", "", "");
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
 }
 
 #[test]
 fn a_glob_of_a_dependency_brings_only_pub_items() {
     let util = "pub const A: u32 = 1;\nconst B: u32 = 2;\n";
-    let design = CratesFixture::chain("use util::*;\nconst X: u32 = A;\n", util, "");
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    assert_eq!(CratesFixture::krate_of(&design, CratesFixture::path_res(&design, "A")[0][0]), "util");
-    let design = CratesFixture::chain("use util::*;\nconst Y: u32 = B;\n", util, "");
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("use util::*;\nconst X: u32 = A;\n", util, "");
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    assert_eq!(CrateResolutions::krate_of(&design, CrateResolutions::path_res(&design, "A")[0][0]), "util");
+    let design = CrateGraphs::chain("use util::*;\nconst Y: u32 = B;\n", util, "");
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
 }
 
 #[test]
 fn a_pub_use_re_exports_across_crates() {
     let deep = "pub const K: u32 = 1;\n";
     // app does not depend on deep: it reaches K through util's `pub use`, by path and by import.
-    let design = CratesFixture::chain("use util::K;\nconst X: u32 = K;\nconst Y: u32 = util::K;\n", "pub use deep::K;\n", deep);
-    assert_eq!(CratesFixture::codes(&design), Vec::<String>::new());
-    for res in CratesFixture::path_res(&design, "K").into_iter().chain(CratesFixture::path_res(&design, "util::K")) {
-        assert_eq!(CratesFixture::krate_of(&design, *res.last().unwrap()), "deep");
+    let design = CrateGraphs::chain("use util::K;\nconst X: u32 = K;\nconst Y: u32 = util::K;\n", "pub use deep::K;\n", deep);
+    assert_eq!(CrateResolutions::codes(&design), Vec::<String>::new());
+    for res in CrateResolutions::path_res(&design, "K").into_iter().chain(CrateResolutions::path_res(&design, "util::K")) {
+        assert_eq!(CrateResolutions::krate_of(&design, *res.last().unwrap()), "deep");
     }
     // Without `pub` the import is private to util.
-    let design = CratesFixture::chain("const X: u32 = util::K;\n", "use deep::K;\n", deep);
-    assert_eq!(CratesFixture::codes(&design), ["E0161"]);
+    let design = CrateGraphs::chain("const X: u32 = util::K;\n", "use deep::K;\n", deep);
+    assert_eq!(CrateResolutions::codes(&design), ["E0161"]);
 }
 
 #[test]
 fn a_crate_lists_its_declared_dependencies() {
-    let design = CratesFixture::three_crates("", "", "");
+    let design = CrateGraphs::three_crates("", "", "");
     let app = design.root_crate();
     let deps = app.dependencies();
     assert_eq!(deps.iter().map(|(n, c)| (*n, c.name())).collect::<Vec<_>>(), [("zeta", "b"), ("alpha", "c")]);
@@ -808,7 +806,7 @@ const KINDS: &str = "pub module {M}() {}\npub fn {F}() -> u32 { 1 }\npub struct 
 
 #[test]
 fn collections_list_the_root_crate_and_a_crate_lists_its_own() {
-    let design = CratesFixture::three_crates(&CratesFixture::kinds("app"), &CratesFixture::kinds("b"), &CratesFixture::kinds("c"));
+    let design = CrateGraphs::three_crates(&CrateResolutions::kinds("app"), &CrateResolutions::kinds("b"), &CrateResolutions::kinds("c"));
     let names = |v: Vec<Option<&str>>| v.into_iter().map(|n| n.unwrap_or("-").to_string()).collect::<Vec<_>>();
     assert_eq!(names(design.modules().iter().map(|x| x.name()).collect()), ["Mapp"]);
     assert_eq!(names(design.functions().iter().map(|x| x.name()).collect()), ["Fapp"]);
@@ -836,20 +834,20 @@ fn by_name_lookups_prefer_the_root_crate_then_crate_order() {
     let some = |s: &str| Some(s.to_string());
     // The name in every crate: the root crate's.
     let src = "pub module X() {}\npub fn f() -> u32 { 1 }\npub struct S { x: u32 }\npub nature Nat { value: f64 }\n";
-    let design = CratesFixture::three_crates(src, src, src);
+    let design = CrateGraphs::three_crates(src, src, src);
     assert_eq!(home(design.module("X").map(|m| m.decl())), some("app"));
     assert_eq!(home(design.function("f").map(|m| m.decl())), some("app"));
     assert_eq!(home(design.struct_named("S").map(|m| m.decl())), some("app"));
     assert_eq!(home(design.nature("Nat").map(|m| m.decl())), some("app"));
     // Not in the root crate: the first crate in order, which is `b`, not the dependency named `alpha`.
-    let design = CratesFixture::three_crates("", src, src);
+    let design = CrateGraphs::three_crates("", src, src);
     assert_eq!(home(design.module("X").map(|m| m.decl())), some("b"));
     assert_eq!(home(design.function("f").map(|m| m.decl())), some("b"));
     assert_eq!(home(design.struct_named("S").map(|m| m.decl())), some("b"));
     assert_eq!(home(design.nature("Nat").map(|m| m.decl())), some("b"));
     assert_eq!(home(design.find("X")), some("b"));
     // Only the later dependency has it.
-    let design = CratesFixture::three_crates("", "", src);
+    let design = CrateGraphs::three_crates("", "", src);
     assert_eq!(home(design.module("X").map(|m| m.decl())), some("c"));
     // A dependency before std: a name in `c` and in std is `c`'s.
     let std = "pub mod prelude {}\npub module X() {}\n";
@@ -866,7 +864,7 @@ fn by_name_lookups_prefer_the_root_crate_then_crate_order() {
 
 #[test]
 fn crates_are_found_by_name() {
-    let design = CratesFixture::three_crates("", "", "");
+    let design = CrateGraphs::three_crates("", "", "");
     assert_eq!(design.crates().iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "b", "c", "std"]);
     assert_eq!(design.krate("b").unwrap().id(), CrateId(1));
     assert_eq!(design.krate("std").unwrap(), design.std_crate());
@@ -887,7 +885,7 @@ fn crates_are_found_by_name() {
 #[test]
 fn crate_find_inverts_qualified_name() {
     let src = "pub mod a { pub module M(out o: f64) { let w = 1.0; } pub mod b { pub fn deep() -> u32 { 1 } } }\npub struct S { x: u32 }\nimpl S { pub const X: u32 = 1; }\npub enum E { V }\n";
-    let design = CratesFixture::three_crates("", src, "pub struct S { y: u32 }\n");
+    let design = CrateGraphs::three_crates("", src, "pub struct S { y: u32 }\n");
     let b = design.krate("b").unwrap();
     let mut seen = 0;
     for d in b.decls() {
@@ -918,8 +916,8 @@ fn crate_find_inverts_qualified_name() {
 
 #[test]
 fn a_multi_crate_design_round_trips_through_json() {
-    let (design, json) = CratesFixture::serialized();
-    assert_eq!(CratesFixture::codes(&design).len(), 1, "the missing `local` file is one diagnostic: {:?}", CratesFixture::codes(&design));
+    let (design, json) = SerializedDesign::serialized();
+    assert_eq!(CrateResolutions::codes(&design).len(), 1, "the missing `local` file is one diagnostic: {:?}", CrateResolutions::codes(&design));
     let back = Design::from_json(&json.to_string()).expect("a valid multi-crate design reads back");
     assert!(back == design);
     assert_eq!(back.crates().iter().map(|c| c.name()).collect::<Vec<_>>(), ["app", "b", "c", "std"]);
@@ -942,7 +940,7 @@ fn a_multi_crate_design_round_trips_through_json() {
 
 #[test]
 fn from_json_rejects_out_of_range_crate_links() {
-    let (_, good) = CratesFixture::serialized();
+    let (_, good) = SerializedDesign::serialized();
     let big = serde_json::json!(99_999);
     let cases: [(&str, &dyn Fn(&mut serde_json::Value)); 6] = [
         ("a file's crate", &|v| v["files"][0]["krate"] = big.clone()),
@@ -953,77 +951,77 @@ fn from_json_rejects_out_of_range_crate_links() {
         ("a crate's root declaration", &|v| v["crates"][1]["root"] = big.clone()),
     ];
     for (what, f) in cases {
-        let problems = CratesFixture::edited(&good, f).err().unwrap_or_else(|| panic!("{what} out of range was accepted"));
+        let problems = SerializedDesign::edited(&good, f).err().unwrap_or_else(|| panic!("{what} out of range was accepted"));
         assert!(problems.iter().any(|p| p.contains("99999")), "{what}: the error does not name the link: {problems:?}");
     }
 }
 
 #[test]
 fn from_json_rejects_a_dependency_cycle() {
-    let (_, good) = CratesFixture::serialized();
+    let (_, good) = SerializedDesign::serialized();
     // b -> app closes app -> b -> app.
-    let two = CratesFixture::edited(&good, |v| v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "back", "krate": 0 }]));
+    let two = SerializedDesign::edited(&good, |v| v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "back", "krate": 0 }]));
     let problems = two.err().expect("a two-crate cycle was accepted");
     assert!(problems.iter().any(|p| p == "dependency cycle: app -> b -> app"), "{problems:?}");
     // A crate that depends on itself.
-    let one = CratesFixture::edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "me", "krate": 2 }]));
+    let one = SerializedDesign::edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "me", "krate": 2 }]));
     assert!(one.err().expect("a self dependency was accepted").iter().any(|p| p.contains("cycle")));
     // A longer loop: app -> b -> c -> app.
-    let three = CratesFixture::edited(&good, |v| {
+    let three = SerializedDesign::edited(&good, |v| {
         v["crates"][1]["dependencies"] = serde_json::json!([{ "name": "c", "krate": 2 }]);
         v["crates"][2]["dependencies"] = serde_json::json!([{ "name": "app", "krate": 0 }]);
     });
     assert!(three.err().expect("a three-crate cycle was accepted").iter().any(|p| p.contains("cycle")));
     // A diamond is no cycle (the visited set must not report it).
-    let diamond = CratesFixture::edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([]));
+    let diamond = SerializedDesign::edited(&good, |v| v["crates"][2]["dependencies"] = serde_json::json!([]));
     assert!(diamond.is_ok());
 }
 
 #[test]
 fn from_json_rejects_a_crate_whose_root_is_not_its_own() {
-    let (design, good) = CratesFixture::serialized();
+    let (design, good) = SerializedDesign::serialized();
     let b_root = good["crates"][1]["root"].clone();
     // The root declaration of another crate's file.
-    let other = CratesFixture::edited(&good, |v| v["crates"][2]["root"] = b_root.clone());
+    let other = SerializedDesign::edited(&good, |v| v["crates"][2]["root"] = b_root.clone());
     assert!(other.is_err(), "crate c with the root declaration of crate b was accepted");
     // The root file of another crate.
     let b_file = good["crates"][1]["root_file"].clone();
-    let file = CratesFixture::edited(&good, |v| v["crates"][2]["root_file"] = b_file.clone());
+    let file = SerializedDesign::edited(&good, |v| v["crates"][2]["root_file"] = b_file.clone());
     assert!(file.is_err(), "crate c rooted at the file of crate b was accepted");
     // A file tagged with another crate.
-    let tagged = CratesFixture::edited(&good, |v| {
+    let tagged = SerializedDesign::edited(&good, |v| {
         let at = v["crates"][1]["root_file"].as_u64().unwrap() as usize;
         v["files"][at]["krate"] = serde_json::json!(2);
     });
     assert!(tagged.is_err(), "a file of crate b tagged as crate c was accepted");
     // A root declaration that is not a namespace.
     let module = design.module("A").unwrap().decl().id();
-    let not_ns = CratesFixture::edited(&good, |v| v["crates"][0]["root"] = serde_json::json!(module.0));
+    let not_ns = SerializedDesign::edited(&good, |v| v["crates"][0]["root"] = serde_json::json!(module.0));
     assert!(not_ns.is_err(), "a module as a crate's root was accepted");
 }
 
 #[test]
 fn from_json_rejects_a_crate_table_that_breaks_the_graph_rules() {
-    let (design, good) = CratesFixture::serialized();
+    let (design, good) = SerializedDesign::serialized();
     let last = design.crates().len() - 1;
     // The root and std crates swapped: std is not last, the root is not first.
-    let swapped = CratesFixture::edited(&good, |v| {
+    let swapped = SerializedDesign::edited(&good, |v| {
         v["root_crate"] = serde_json::json!(last);
         v["std_crate"] = serde_json::json!(0);
     });
     assert!(swapped.is_err(), "a swapped root and std crate were accepted");
     // The root crate is not the first one.
-    let moved = CratesFixture::edited(&good, |v| v["root_crate"] = serde_json::json!(1));
+    let moved = SerializedDesign::edited(&good, |v| v["root_crate"] = serde_json::json!(1));
     assert!(moved.is_err(), "a root crate that is not the first was accepted");
     // std is not the last crate.
-    let early = CratesFixture::edited(&good, |v| v["std_crate"] = serde_json::json!(1));
+    let early = SerializedDesign::edited(&good, |v| v["std_crate"] = serde_json::json!(1));
     assert!(early.is_err(), "a std crate that is not the last was accepted");
     // The last crate is not named `std`.
-    let renamed = CratesFixture::edited(&good, |v| v["crates"][last]["name"] = serde_json::json!("lib"));
+    let renamed = SerializedDesign::edited(&good, |v| v["crates"][last]["name"] = serde_json::json!("lib"));
     assert!(renamed.is_err(), "a std crate not named `std` was accepted");
     // A dependency name that is no identifier, a keyword, or `std`.
     for bad in ["not a name", "fn", "std", "", "9x"] {
-        let named = CratesFixture::edited(&good, |v| v["crates"][0]["dependencies"][0]["name"] = serde_json::json!(bad));
+        let named = SerializedDesign::edited(&good, |v| v["crates"][0]["dependencies"][0]["name"] = serde_json::json!(bad));
         let problems = named.err().unwrap_or_else(|| panic!("the dependency name {bad:?} was accepted"));
         assert!(problems.iter().any(|p| p.contains("dependency")), "{bad:?}: {problems:?}");
     }
@@ -1031,7 +1029,7 @@ fn from_json_rejects_a_crate_table_that_breaks_the_graph_rules() {
 
 #[test]
 fn from_json_never_panics_on_a_corrupted_crate_field() {
-    let (_, good) = CratesFixture::serialized();
+    let (_, good) = SerializedDesign::serialized();
     let leaves = ["root_crate", "std_crate"];
     let mut edits: Vec<Box<dyn Fn(&mut serde_json::Value)>> = Vec::new();
     for key in leaves {
@@ -1047,7 +1045,7 @@ fn from_json_never_panics_on_a_corrupted_crate_field() {
         edits.push(Box::new(move |v| v["files"][1]["krate"] = serde_json::json!(value)));
     }
     for f in &edits {
-        if let Ok(design) = CratesFixture::edited(&good, f) {
+        if let Ok(design) = SerializedDesign::edited(&good, f) {
             for c in design.crates() {
                 let _ = (c.root().name(), c.files(), c.dependencies(), c.decls(), c.modules(), c.name());
             }

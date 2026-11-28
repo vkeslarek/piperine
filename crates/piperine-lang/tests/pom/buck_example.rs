@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 
 use piperine_lang::pom::{CrateGraph, Design, ExprKind, Reference, Reflect, Resolution};
 
-/// Associated test helpers of `buck_example`, grouped on one fixture type.
-struct BuckExampleFixture;
+/// The buck example package on disk: its directory, name, files and design.
+struct BuckPackage;
 
-impl BuckExampleFixture {
+impl BuckPackage {
     fn package_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck")
     }
@@ -38,7 +38,7 @@ impl BuckExampleFixture {
         for entry in std::fs::read_dir(dir).expect("readable source directory").flatten() {
             let path = entry.path();
             if path.is_dir() {
-                BuckExampleFixture::msl_files(&path, out);
+                BuckPackage::msl_files(&path, out);
             } else if path.extension().is_some_and(|e| e == "msl") {
                 out.push(path);
             }
@@ -47,9 +47,9 @@ impl BuckExampleFixture {
 
     /// The package built from disk as a one-crate graph named by its manifest, over the embedded std.
     fn buck() -> Design {
-        let dir = BuckExampleFixture::package_dir();
+        let dir = BuckPackage::package_dir();
         let manifest = std::fs::read_to_string(dir.join("Piperine.toml")).expect("examples/buck/Piperine.toml");
-        let name = BuckExampleFixture::package_name(&manifest).expect("a [package] name in Piperine.toml");
+        let name = BuckPackage::package_name(&manifest).expect("a [package] name in Piperine.toml");
         let mut graph = CrateGraph::new();
         graph.add_crate(&name, dir.join("src/lib.msl")).expect("a valid crate name");
         Design::load_crates(graph)
@@ -58,24 +58,24 @@ impl BuckExampleFixture {
 
 #[test]
 fn the_package_is_a_package() {
-    let dir = BuckExampleFixture::package_dir();
+    let dir = BuckPackage::package_dir();
     let manifest = std::fs::read_to_string(dir.join("Piperine.toml")).unwrap();
-    assert_eq!(BuckExampleFixture::package_name(&manifest).as_deref(), Some("buck"));
+    assert_eq!(BuckPackage::package_name(&manifest).as_deref(), Some("buck"));
     assert!(dir.join("src/lib.msl").is_file(), "the crate root is src/lib.msl (E0175)");
     assert!(dir.join("SPEC.md").is_file(), "the specification the model cites");
 }
 
 #[test]
 fn the_package_passes_check() {
-    let problems = BuckExampleFixture::buck().check();
+    let problems = BuckPackage::buck().check();
     assert!(problems.is_empty(), "{problems:?}");
 }
 
 #[test]
 fn every_source_file_is_loaded() {
-    let design = BuckExampleFixture::buck();
+    let design = BuckPackage::buck();
     let mut on_disk = Vec::new();
-    BuckExampleFixture::msl_files(&BuckExampleFixture::package_dir().join("src"), &mut on_disk);
+    BuckPackage::msl_files(&BuckPackage::package_dir().join("src"), &mut on_disk);
     let root = design.root_crate();
     assert_eq!(root.name(), "buck");
     assert_eq!(root.files().len(), on_disk.len(), "a file under src/ that no `mod` names: {on_disk:?}");
@@ -83,7 +83,7 @@ fn every_source_file_is_loaded() {
 
 #[test]
 fn no_member_stays_unresolved() {
-    let design = BuckExampleFixture::buck();
+    let design = BuckPackage::buck();
     let mut unresolved = Vec::new();
     for decl in design.root_crate().decls() {
         for expr in decl.exprs() {
@@ -101,7 +101,7 @@ fn no_member_stays_unresolved() {
 
 #[test]
 fn the_hierarchy_reads_back_as_written() {
-    let design = BuckExampleFixture::buck();
+    let design = BuckPackage::buck();
     let placed = |module: &str| -> Vec<(String, String)> {
         let m = design.module(module).unwrap_or_else(|| panic!("module {module}"));
         m.instances()
@@ -137,7 +137,7 @@ fn the_hierarchy_reads_back_as_written() {
 
 #[test]
 fn the_package_uses_the_std_items_it_showcases() {
-    let design = BuckExampleFixture::buck();
+    let design = BuckPackage::buck();
     let mut missing = Vec::new();
     for name in ["carriers::Electrical", "carriers::Bit", "convert::A2D", "monitor::Never", "analog::transition", "io::log", "values::impl Bit.rise"] {
         let referenced = design.std_crate().find(name).is_some_and(|item| {

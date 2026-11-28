@@ -571,7 +571,6 @@ crates/piperine-lang/tests/pom/body.rs::stmt_kind_name	1
 crates/piperine-lang/tests/pom/buck_example.rs::package_dir	1
 crates/piperine-lang/tests/pom/classify.rs::arg_and_field_handles_expose_name_value_target	1
 crates/piperine-lang/tests/pom/classify.rs::instance_pub_member_resolves	1
-crates/piperine-lang/tests/pom/classify.rs::member_res	1
 crates/piperine-lang/tests/pom/corpus.rs::every_spec_block_round_trips_to_its_ast	1
 crates/piperine-lang/tests/pom/crates.rs::a_glob_of_a_dependency_brings_only_pub_items	1
 crates/piperine-lang/tests/pom/crates.rs::a_pub_item_in_a_private_namespace_is_e0161	1
@@ -612,7 +611,6 @@ crates/piperine-lang/tests/pom/resolve.rs::extern_c_fn_is_not_intrinsic	1
 crates/piperine-lang/tests/pom/resolve.rs::ident_patterns	1
 crates/piperine-lang/tests/pom/resolve.rs::k_b_resolves_to_std_constants	1
 crates/piperine-lang/tests/pom/resolve.rs::m_and_dtemp_are_ordinary_names	1
-crates/piperine-lang/tests/pom/resolve.rs::member_res	1
 crates/piperine-lang/tests/pom/resolve.rs::self_assoc_resolves_through_a_user_supertrait	1
 crates/piperine-lang/tests/pom/resolve.rs::self_assoc_resolves_through_repr_supertrait	1
 crates/piperine-lang/tests/pom/resolve.rs::std_lib	1

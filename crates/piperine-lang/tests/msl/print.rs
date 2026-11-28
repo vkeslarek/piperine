@@ -9,27 +9,13 @@
 use piperine_lang::msl::ast::File;
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang::msl::Printer;
+use piperine_lang_fixtures::fragments::FragmentSource;
 use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
 
-/// Associated test helpers of `print`, grouped on one fixture type.
-struct PrintFixture;
+/// Every source of the specification corpus that parses as a file.
+struct PrintCorpus;
 
-impl PrintFixture {
-    /// A fragment wrapped into the smallest context that parses it with no
-    /// diagnostics: a file as it is, a module body, an `analog` body, a reaction
-    /// body or a function body. `None` when no context accepts it.
-    fn fragment_source(text: &str) -> Option<String> {
-        [
-            text.to_string(),
-            format!("module Fragment() {{\n{text}\n}}"),
-            format!("analog for Fragment {{\n{text}\n}}"),
-            format!("digital for Fragment {{\non event {{\n{text}\n}}\n}}"),
-            format!("fn fragment() {{\n{text}\n}}"),
-        ]
-        .into_iter()
-        .find(|src| SourceParser::parse(src).diagnostics.is_empty())
-    }
-
+impl PrintCorpus {
     /// Every source of the corpus that parses as a file: its label and text.
     fn sources() -> Vec<(String, String)> {
         let mut out = Vec::new();
@@ -37,19 +23,40 @@ impl PrintFixture {
             let label = format!("{}:{}", b.file, b.line);
             match b.class {
                 BlockClass::Valid => out.push((label, b.text)),
-                BlockClass::Fragment => out.extend(PrintFixture::fragment_source(&b.text).map(|s| (label, s))),
+                BlockClass::Fragment => out.extend(FragmentSource::wrapped(&b.text).map(|s| (label, s))),
                 BlockClass::CompileFail => {}
             }
         }
         out
     }
+}
 
+/// Parses a source and prints it back, asserting the tree and the text are fixed points.
+struct PrintAndParse;
+
+impl PrintAndParse {
     fn parsed(label: &str, src: &str) -> File {
         let r = SourceParser::parse(src);
         assert!(r.diagnostics.is_empty(), "{label}: {:?}\n{src}", r.diagnostics);
         r.file
     }
 
+    /// `src` printed, re-parsed and printed again: the tree is equal and the text
+    /// is a fixed point.
+    fn assert_roundtrip(label: &str, src: &str) -> String {
+        let first = PrintAndParse::parsed(label, src);
+        let text = Printer::print(&first);
+        let second = PrintAndParse::parsed(&format!("{label} (printed)"), &text);
+        assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
+        assert_eq!(text, Printer::print(&second), "{label}: not idempotent");
+        text
+    }
+}
+
+/// Reads the doc-comment lines and the attributes of a text.
+struct DocumentationText;
+
+impl DocumentationText {
     /// The trimmed doc-comment lines of a text, in order.
     fn doc_lines(text: &str) -> Vec<String> {
         text.lines()
@@ -89,29 +96,18 @@ impl PrintFixture {
         }
         out
     }
-
-    /// `src` printed, re-parsed and printed again: the tree is equal and the text
-    /// is a fixed point.
-    fn assert_roundtrip(label: &str, src: &str) -> String {
-        let first = PrintFixture::parsed(label, src);
-        let text = Printer::print(&first);
-        let second = PrintFixture::parsed(&format!("{label} (printed)"), &text);
-        assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
-        assert_eq!(text, Printer::print(&second), "{label}: not idempotent");
-        text
-    }
 }
 
 #[test]
 fn roundtrip_ast_equal_over_corpus() {
-    let sources = PrintFixture::sources();
+    let sources = PrintCorpus::sources();
     // 90 `rust` blocks plus the fragments some context accepts.
     assert!(sources.len() >= 90, "{} sources", sources.len());
     println!("round-tripped {} corpus sources", sources.len());
     for (label, src) in &sources {
-        let first = PrintFixture::parsed(label, src);
+        let first = PrintAndParse::parsed(label, src);
         let text = Printer::print(&first);
-        let second = PrintFixture::parsed(&format!("{label} (printed)"), &text);
+        let second = PrintAndParse::parsed(&format!("{label} (printed)"), &text);
         // `File: PartialEq` ignores spans, so this is `strip_spans(a) == strip_spans(b)`.
         assert!(first == second, "{label}: the printed text parses to another tree:\n{text}");
     }
@@ -119,9 +115,9 @@ fn roundtrip_ast_equal_over_corpus() {
 
 #[test]
 fn print_is_idempotent_over_corpus() {
-    for (label, src) in &PrintFixture::sources() {
-        let once = Printer::print(&PrintFixture::parsed(label, src));
-        let twice = Printer::print(&PrintFixture::parsed(&format!("{label} (printed)"), &once));
+    for (label, src) in &PrintCorpus::sources() {
+        let once = Printer::print(&PrintAndParse::parsed(label, src));
+        let twice = Printer::print(&PrintAndParse::parsed(&format!("{label} (printed)"), &once));
         assert_eq!(once, twice, "{label}: printing is not idempotent");
     }
 }
@@ -178,16 +174,16 @@ extern \"osdi\" module M(
     pub signal s: Bit;
 }
 ";
-    let first = PrintFixture::parsed("fixture", src);
+    let first = PrintAndParse::parsed("fixture", src);
     let text = Printer::print(&first);
-    assert_eq!(PrintFixture::doc_lines(src), PrintFixture::doc_lines(&text), "doc comments, in order:\n{text}");
-    assert_eq!(PrintFixture::attributes(src), PrintFixture::attributes(&text), "attributes, in order:\n{text}");
-    assert!(PrintFixture::parsed("fixture (printed)", &text) == first);
+    assert_eq!(DocumentationText::doc_lines(src), DocumentationText::doc_lines(&text), "doc comments, in order:\n{text}");
+    assert_eq!(DocumentationText::attributes(src), DocumentationText::attributes(&text), "attributes, in order:\n{text}");
+    assert!(PrintAndParse::parsed("fixture (printed)", &text) == first);
     // And over the whole corpus: no doc comment or attribute is lost.
-    for (label, src) in &PrintFixture::sources() {
-        let text = Printer::print(&PrintFixture::parsed(label, src));
-        assert_eq!(PrintFixture::doc_lines(src), PrintFixture::doc_lines(&text), "{label}: doc comments");
-        assert_eq!(PrintFixture::attributes(src), PrintFixture::attributes(&text), "{label}: attributes");
+    for (label, src) in &PrintCorpus::sources() {
+        let text = Printer::print(&PrintAndParse::parsed(label, src));
+        assert_eq!(DocumentationText::doc_lines(src), DocumentationText::doc_lines(&text), "{label}: doc comments");
+        assert_eq!(DocumentationText::attributes(src), DocumentationText::attributes(&text), "{label}: attributes");
     }
 }
 
@@ -201,7 +197,7 @@ fn string_literals_are_printed_verbatim() {
         ("nested block", "fn f() { if c { let s = \"x\n\ty  \n\nz\"; } }"),
         ("in a call", "fn f() { g(\"one\ntwo\", \"three\"); }"),
     ] {
-        let text = PrintFixture::assert_roundtrip(label, src);
+        let text = PrintAndParse::assert_roundtrip(label, src);
         // The literal's bytes appear unchanged in the output.
         let lit = &src[src.find('"').unwrap()..=src.find('"').map(|i| i + src[i + 1..].find('"').unwrap() + 1).unwrap()];
         assert!(text.contains(lit), "{label}: {lit:?} not verbatim in\n{text}");
@@ -213,10 +209,10 @@ fn block_doc_comments_are_kept() {
     // Appendix A.4 / Rust: `/** */` and `/*! */` are doc comments, outer and
     // inner, and printing keeps them.
     let src = "/*! inner\n   more */\n/** outer */\nfn f() {}\n/** a\n    b */\nstruct S { /** field */ a: u8 }\n";
-    let first = PrintFixture::parsed("block docs", src);
+    let first = PrintAndParse::parsed("block docs", src);
     assert_eq!(first.inner_docs.len(), 1);
     assert_eq!(first.items[0].meta.docs.len(), 1);
-    let text = PrintFixture::assert_roundtrip("block docs", src);
+    let text = PrintAndParse::assert_roundtrip("block docs", src);
     assert!(text.contains("/*! inner\n   more */"), "{text}");
     assert!(text.contains("/** outer */"), "{text}");
     assert!(text.contains("/** a\n    b */"), "{text}");
@@ -232,10 +228,10 @@ fn long_chains_print_without_overflow() {
         .stack_size(8 << 20)
         .spawn(|| {
             let sum = format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(4000));
-            let text = PrintFixture::assert_roundtrip("sum 4000", &sum);
+            let text = PrintAndParse::assert_roundtrip("sum 4000", &sum);
             assert!(text.len() > 500);
             let chain = format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(4000));
-            PrintFixture::assert_roundtrip("else-if 4000", &chain);
+            PrintAndParse::assert_roundtrip("else-if 4000", &chain);
             for src in [
                 format!("fn f() -> f64 {{ 1{} }}", "+1".repeat(5000)),
                 format!("fn f() {{ if a {{}} {}}}", "else if a {} ".repeat(5000)),
@@ -253,7 +249,7 @@ fn long_chains_print_without_overflow() {
 fn inherited_lexical_forms_roundtrip() {
     // Raw strings print as the equal cooked string; `1.`, `let ... else` and
     // non-ASCII identifiers print back as written.
-    let text = PrintFixture::assert_roundtrip(
+    let text = PrintAndParse::assert_roundtrip(
         "lexical forms",
         "fn café() -> f64 { let Some(x) = o else { return 1.; }; let s = r#\"a\\b\"q\"#; x + 1. }",
     );
@@ -265,12 +261,12 @@ fn raw_identifiers_print_with_their_prefix() {
     // POL-10 AC 3: `r#out` prints as `r#out`; the reparse equals the first
     // tree (the `raw` flag is part of tree equality) and a second print is the same.
     let src = "module M() {\n    signal r#out: Bit;\n    let x = r#out;\n    r#out = x;\n}\nfn r#on(r#flip: u8) -> u8 { r#flip }";
-    let first = PrintFixture::parsed("raw", src);
+    let first = PrintAndParse::parsed("raw", src);
     let text = Printer::print(&first);
     for word in ["r#out", "r#on", "r#flip"] {
         assert!(text.contains(word), "{word} missing from:\n{text}");
     }
-    let second = PrintFixture::parsed("raw (printed)", &text);
+    let second = PrintAndParse::parsed("raw (printed)", &text);
     assert!(first == second, "reparse differs:\n{text}");
     assert_eq!(Printer::print(&second), text);
 }
@@ -281,13 +277,13 @@ fn field_shorthand_prints_as_written() {
     // reparses to its own tree.
     let short = "module T() { let x = R(a, b) { r }; let y = R { r, c: 1p }; }";
     let long = "module T() { let x = R(a, b) { r: r }; let y = R { r: r, c: 1p }; }";
-    let (s, l) = (PrintFixture::parsed("short", short), PrintFixture::parsed("long", long));
+    let (s, l) = (PrintAndParse::parsed("short", short), PrintAndParse::parsed("long", long));
     let (st, lt) = (Printer::print(&s), Printer::print(&l));
     assert!(st.contains("{ r }") && st.contains("{ r, c: 1p }"), "{st}");
     assert!(lt.contains("{ r: r }") && lt.contains("{ r: r, c: 1p }"), "{lt}");
     assert!(s != l, "the two forms are different trees");
-    assert!(PrintFixture::parsed("short2", &st) == s && PrintFixture::parsed("long2", &lt) == l);
-    assert_eq!(Printer::print(&PrintFixture::parsed("short3", &st)), st);
+    assert!(PrintAndParse::parsed("short2", &st) == s && PrintAndParse::parsed("long2", &lt) == l);
+    assert_eq!(Printer::print(&PrintAndParse::parsed("short3", &st)), st);
 }
 
 #[test]
@@ -340,7 +336,7 @@ digital for M {
         on x { } }
 }
 ";
-    let first = PrintFixture::parsed("docs", src);
+    let first = PrintAndParse::parsed("docs", src);
     let text = Printer::print(&first);
     for doc in [
         "/// a let", "/// a call", "/// a block", "/// pot", "/// flow", "/// value", "/// def", "/// gen",
@@ -348,7 +344,7 @@ digital for M {
     ] {
         assert!(text.contains(doc), "{doc} lost in:\n{text}");
     }
-    let second = PrintFixture::parsed("docs (printed)", &text);
+    let second = PrintAndParse::parsed("docs (printed)", &text);
     assert!(first == second, "the printed text parses to another tree:\n{text}");
     assert_eq!(Printer::print(&second), text);
 }
@@ -358,11 +354,11 @@ fn raw_strings_print_as_written() {
     // POL-13 AC 6: a raw string keeps its spelling, hashes and body.
     for lit in [r##"r#"a"b\c"#"##, r#"r"x\y""#, r###"r##"q"#q"##"###, r#"r"""#] {
         let src = format!("fn f() {{ let s = {lit}; }}");
-        let text = PrintFixture::assert_roundtrip(lit, &src);
+        let text = PrintAndParse::assert_roundtrip(lit, &src);
         assert!(text.contains(lit), "{lit} is not written back in\n{text}");
     }
     // An ordinary string stays ordinary.
-    let text = PrintFixture::assert_roundtrip("plain", r#"fn f() { let s = "a\"b"; }"#);
+    let text = PrintAndParse::assert_roundtrip("plain", r#"fn f() { let s = "a\"b"; }"#);
     assert!(text.contains(r#""a\"b""#), "{text}");
 }
 
@@ -378,8 +374,8 @@ fn the_printer_and_the_object_model_hold_no_removed_form() {
             assert!(!text.contains(removed), "{file} still names `{removed}`");
         }
     }
-    for (label, src) in PrintFixture::sources() {
-        let printed = Printer::print(&PrintFixture::parsed(&label, &src));
+    for (label, src) in PrintCorpus::sources() {
+        let printed = Printer::print(&PrintAndParse::parsed(&label, &src));
         let (tokens, _) = piperine_lang::msl::lexer::Lexer::lex(&printed);
         let marker = tokens.iter().find(|(t, _)| matches!(t, piperine_lang::msl::lexer::Token::Kw(piperine_lang::msl::lexer::Kw::Mut | piperine_lang::msl::lexer::Kw::Ref | piperine_lang::msl::lexer::Kw::Move)));
         assert!(marker.is_none(), "{label}: the printer wrote a marker: {marker:?}");

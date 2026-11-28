@@ -91,19 +91,10 @@ fn a_contribution_to_a_branch_from_a_node_to_itself_under_an_if_is_e0241() {
     assert_eq!(&src[span.start..span.end], "i(p, p)");
 }
 
-/// Associated test helpers of `structure`, grouped on one fixture type.
-struct StructureFixture;
+/// Reads the bodies, contributions and children of an elaborated IR.
+struct StructureReading;
 
-impl StructureFixture {
-    /// What elaboration says of `analog` as the body of `Device`: the codes, and the text the first
-    /// diagnostic's span covers.
-    fn refusal(analog: &str) -> (Vec<String>, String, String) {
-        let src = Device::source(analog);
-        let err = SourceElaboration::run(&src, "Top").expect_err("the selector rule refuses it");
-        let span = err[0].diagnostic.primary.0;
-        (SourceElaboration::codes(&err), src[span.start..span.end].to_string(), err[0].diagnostic.message.clone())
-    }
-
+impl StructureReading {
     /// The names of the bodies of `ir`, in id order.
     fn body_names(ir: &Ir) -> Vec<String> {
         ir.bodies().map(|b| b.name().to_string()).collect()
@@ -111,29 +102,45 @@ impl StructureFixture {
 
     /// The body of `ir` named `name`.
     fn body<'a>(ir: &'a Ir, name: &str) -> piperine_ir::Body<'a> {
-        ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body {name} among {:?}", StructureFixture::body_names(ir)))
-    }
-
-    /// A source whose module `Short(a, b, c)` writes `analog`, placed between `s` and `t` (and a third
-    /// node `u` for `c`), in `Top`.
-    fn shorted(analog: &str, ends: &str) -> String {
-        format!("module Short(a: Electrical, b: Electrical, c: Electrical) {{ k: f64 = 1.0; }}\nanalog for Short {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal t: Electrical; signal u: Electrical; let m = Short {{ }}({ends}); }}")
+        ir.bodies().find(|b| b.name() == name).unwrap_or_else(|| panic!("no body {name} among {:?}", StructureReading::body_names(ir)))
     }
 
     /// The rows of the contributions of body `M`: (quantity, operators of the addends, negations).
     fn rows(ir: &Ir) -> Vec<(QuantityRole, Vec<(piperine_ir::Operator, bool)>)> {
-        StructureFixture::body(ir, "M").contributions().iter().map(|c| (c.quantity, c.addends.iter().map(|a| (a.operator, a.negated)).collect())).collect()
-    }
-
-    /// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
-    fn charge_device(items: &str, analog: &str, digital: &str) -> String {
-        format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit = false; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+        StructureReading::body(ir, "M").contributions().iter().map(|c| (c.quantity, c.addends.iter().map(|a| (a.operator, a.negated)).collect())).collect()
     }
 
     /// The node slots of the authored child `name` of the body `body`.
     fn child_slots(ir: &Ir, body: &str, name: &str) -> Vec<piperine_ir::Terminal> {
         let body = ir.bodies().find(|b| b.name() == body).expect("the body");
         body.children().iter().find(|c| c.name == name).expect("the child").nodes.clone()
+    }
+}
+
+/// The source texts of designs whose devices short nodes or hold charge.
+struct StructureSources;
+
+impl StructureSources {
+    /// A source whose module `Short(a, b, c)` writes `analog`, placed between `s` and `t` (and a third
+    /// node `u` for `c`), in `Top`.
+    fn shorted(analog: &str, ends: &str) -> String {
+        format!("module Short(a: Electrical, b: Electrical, c: Electrical) {{ k: f64 = 1.0; }}\nanalog for Short {{ {analog} }}\nmodule Top() {{ signal s: Electrical; signal t: Electrical; signal u: Electrical; let m = Short {{ }}({ends}); }}")
+    }
+
+    /// A device `M(p, n, in clk: Bit, out r: Bit<f64>)` with `items` in its body and `analog` as its `analog` block.
+    fn charge_device(items: &str, analog: &str, digital: &str) -> String {
+        format!("module M(p: Electrical, n: Electrical, in clk: Bit, out r: Bit<f64> = 0.0) {{ c: f64 = 1p; {items} }}\nanalog for M {{ {analog} }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal s: Electrical; signal ck: Bit = false; signal r: Bit<f64>; let m = M {{ }}(s, gnd, ck, r); }}")
+    }
+}
+
+impl Device {
+    /// What elaboration says of `analog` as the body of `Device`: the codes, and the text the first
+    /// diagnostic's span covers.
+    fn refusal(analog: &str) -> (Vec<String>, String, String) {
+        let src = Device::source(analog);
+        let err = SourceElaboration::run(&src, "Top").expect_err("the selector rule refuses it");
+        let span = err[0].diagnostic.primary.0;
+        (SourceElaboration::codes(&err), src[span.start..span.end].to_string(), err[0].diagnostic.message.clone())
     }
 }
 
@@ -149,7 +156,7 @@ fn a_probe_in_the_selector_of_a_potential_capable_branch_is_e0414() {
         "let hot = v(p) > 0.5; if hot { v(p, n) +> 1.0; }",
         "if en { v(p, n) +> 1.0; } else if v(p) > 0.5 { i(p, n) +> 1.0; }",
     ] {
-        let (codes, at, message) = StructureFixture::refusal(analog);
+        let (codes, at, message) = Device::refusal(analog);
         assert_eq!(codes, ["E0414"], "{analog}");
         assert!(at.trim_end_matches(';').ends_with("+> 1.0"), "{analog}: at the contribution, got `{at}`");
         assert!(message.contains("(p, n)") && message.contains("the probe of (p, gnd)"), "{analog}: {message}");
@@ -223,10 +230,10 @@ fn two_instances_with_different_key_values_get_two_bodies() {
     // every unkeyed body; the same value twice shares one body.
     let src = format!("{SWITCH}module Top() {{ signal s: Electrical; signal t: Electrical; signal u: Electrical;\n let a = Sw {{ short: 1.0 }}(s, gnd); let b = Sw {{ short: 0.0 }}(t, gnd); let c = Sw {{ short: 1.0 }}(u, gnd); }}");
     let ir = SourceElaboration::ir(&src, "Top");
-    let names = StructureFixture::body_names(&ir);
+    let names = StructureReading::body_names(&ir);
     assert_eq!(names.iter().filter(|n| n.starts_with("Sw~short=")).count(), 2, "{names:?}");
     assert_eq!(names[0], "Top", "the unkeyed body keeps its id: {names:?}");
-    let kinds: Vec<BranchKind> = names.iter().filter(|n| n.starts_with("Sw~")).map(|n| StructureFixture::body(&ir, n).branches()[0].kind).collect();
+    let kinds: Vec<BranchKind> = names.iter().filter(|n| n.starts_with("Sw~")).map(|n| StructureReading::body(&ir, n).branches()[0].kind).collect();
     assert_eq!(kinds, [BranchKind::Potential, BranchKind::Flow]);
     let bodies_of: Vec<&str> = ["Top.a", "Top.b", "Top.c"].iter().map(|p| ir.instance_at(p).expect("an instance").body().name()).collect();
     assert_eq!(bodies_of[0], bodies_of[2]);
@@ -243,7 +250,7 @@ fn a_parent_param_feeding_a_key_param_is_a_key() {
     let structural: Vec<(&str, bool)> = pair.params().iter().map(|p| (p.name.as_str(), p.structural)).collect();
     assert_eq!(structural, [("gate", true), ("other", false)]);
     assert!(pair.name().contains("gate=") && !pair.name().contains("other"), "{}", pair.name());
-    assert!(StructureFixture::body_names(&ir).iter().any(|n| n.starts_with("Sw~short=")));
+    assert!(StructureReading::body_names(&ir).iter().any(|n| n.starts_with("Sw~short=")));
 }
 
 #[test]
@@ -251,7 +258,7 @@ fn a_design_without_key_params_keeps_its_body_ids() {
     // No key param: every body is lowered in first-reach order and keeps its plain name, as before
     // the variants existed.
     let ir = Device::ir("i(p, n) +> v(p, n) / 1k;");
-    assert_eq!(StructureFixture::body_names(&ir), ["Top", "M"]);
+    assert_eq!(StructureReading::body_names(&ir), ["Top", "M"]);
     assert!(ir.bodies().all(|b| b.params().iter().all(|p| !p.structural)));
 }
 
@@ -260,13 +267,13 @@ fn a_fixed_zero_potential_branch_merges_its_nodes() {
     // AS-02 AC 4 (§11 rule 3): `v(a, b) +> 0.0` is a fixed potential branch of the constant zero
     // with no flow read: its nodes merge, so the bound circuit has one node fewer than with
     // `v(a, b) +> 1.0`. A param selector that folds to the zero contribution merges too.
-    let merged = SourceElaboration::ir(&StructureFixture::shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
-    let driven = SourceElaboration::ir(&StructureFixture::shorted("v(a, b) +> 1.0;", "s, t, u"), "Top");
+    let merged = SourceElaboration::ir(&StructureSources::shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
+    let driven = SourceElaboration::ir(&StructureSources::shorted("v(a, b) +> 1.0;", "s, t, u"), "Top");
     assert_eq!(merged.nodes().count() + 1, driven.nodes().count());
-    let body = StructureFixture::body(&merged, "Short");
+    let body = StructureReading::body(&merged, "Short");
     assert_eq!(body.merges().len(), 1);
     assert!(body.branches().is_empty(), "the merged branch is no branch");
-    let folded = SourceElaboration::ir(&StructureFixture::shorted("if k > 0.5 { v(a, b) +> 0.0; } else { v(a, b) +> 1.0; }", "s, t, u"), "Top");
+    let folded = SourceElaboration::ir(&StructureSources::shorted("if k > 0.5 { v(a, b) +> 0.0; } else { v(a, b) +> 1.0; }", "s, t, u"), "Top");
     assert_eq!(folded.nodes().count() + 1, driven.nodes().count(), "the folded arm is the zero");
 }
 
@@ -274,7 +281,7 @@ fn a_fixed_zero_potential_branch_merges_its_nodes() {
 fn params_only_selectors_enabling_both_kinds_are_e0415() {
     // §11 rule 2: the selectors depend on `k` only and both are true for `k` = 1, so a potential and
     // a flow contribution are enabled together: E0415 at elaboration, naming the branch.
-    let src = StructureFixture::shorted("if k > 0.5 { v(a, b) +> 1.0; } if k > 0.5 { i(a, b) +> 1.0; }", "s, t, u");
+    let src = StructureSources::shorted("if k > 0.5 { v(a, b) +> 1.0; } if k > 0.5 { i(a, b) +> 1.0; }", "s, t, u");
     let err = SourceElaboration::run(&src, "Top").expect_err("both kinds enabled");
     assert_eq!(SourceElaboration::codes(&err), ["E0415"]);
     assert!(err[0].diagnostic.message.contains("(a, b)"), "{}", err[0].diagnostic.message);
@@ -287,9 +294,9 @@ fn params_only_selectors_enabling_both_kinds_are_e0415() {
 fn a_zero_potential_branch_whose_flow_is_read_is_not_merged() {
     // §11 rule 3, last bullet: a probed short keeps its flow unknown like any potential source: `i(c)`
     // is driven by the flow of `(a, b)`, so the branch stays and the nodes do not merge.
-    let ir = SourceElaboration::ir(&StructureFixture::shorted("v(a, b) +> 0.0; i(c, gnd) +> i(a, b);", "s, t, u"), "Top");
-    assert!(StructureFixture::body(&ir, "Short").merges().is_empty());
-    assert_eq!(StructureFixture::body(&ir, "Short").branches().len(), 2);
+    let ir = SourceElaboration::ir(&StructureSources::shorted("v(a, b) +> 0.0; i(c, gnd) +> i(a, b);", "s, t, u"), "Top");
+    assert!(StructureReading::body(&ir, "Short").merges().is_empty());
+    assert_eq!(StructureReading::body(&ir, "Short").branches().len(), 2);
     assert_eq!(ir.nodes().count(), 3);
 }
 
@@ -297,7 +304,7 @@ fn a_zero_potential_branch_whose_flow_is_read_is_not_merged() {
 fn a_merge_with_ground_binds_the_node_to_ground() {
     // `Short(s, gnd, u)`: merging a node with ground removes the node and binds the instance's port
     // to ground.
-    let ir = SourceElaboration::ir(&StructureFixture::shorted("v(a, b) +> 0.0;", "s, gnd, u"), "Top");
+    let ir = SourceElaboration::ir(&StructureSources::shorted("v(a, b) +> 0.0;", "s, gnd, u"), "Top");
     assert_eq!(ir.nodes().count(), 2, "`s` is gone, `t` and `u` are left");
     assert!(ir.node_at("Top.s").is_none());
     assert!(ir.is_ground_alias("Top.s"), "the name the author wrote still says what it became: ground");
@@ -308,7 +315,7 @@ fn a_merge_with_ground_binds_the_node_to_ground() {
 fn a_merged_node_keeps_its_authored_path_as_an_alias_of_its_survivor() {
     // F3 (the navigability rule): `v(a, b) +> 0.0` joins `s` and `t`; both names the author wrote
     // still resolve, to the one node that stands for them.
-    let ir = SourceElaboration::ir(&StructureFixture::shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
+    let ir = SourceElaboration::ir(&StructureSources::shorted("v(a, b) +> 0.0;", "s, t, u"), "Top");
     let (s, t) = (ir.node_at("Top.s").expect("`s` survives"), ir.node_at("Top.t").expect("`t` is an alias of it"));
     assert_eq!(s.id(), t.id());
     assert!(!ir.is_ground_alias("Top.t"));
@@ -319,24 +326,24 @@ fn a_merged_node_keeps_its_authored_path_as_an_alias_of_its_survivor() {
 fn a_body_let_of_ddt_read_as_an_addend_gives_the_inline_rows() {
     // AS-07 AC 3 (§8.2.25): a body `let` that binds `ddt(x)` and is read only as an addend is its
     // expression at the read: the same rows as the inline form, a `Ddt` addend and no site.
-    let inline = SourceElaboration::ir(&StructureFixture::charge_device("", "i(p, n) +> ddt(c * v(p, n)) + v(p, n) / 1k;", ""), "Top");
-    let through = SourceElaboration::ir(&StructureFixture::charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> q + v(p, n) / 1k;", ""), "Top");
-    assert_eq!(StructureFixture::rows(&through), StructureFixture::rows(&inline));
-    assert!(StructureFixture::body(&through, "M").derivatives().is_empty() && StructureFixture::body(&inline, "M").derivatives().is_empty());
-    assert_eq!(StructureFixture::rows(&inline)[0].1, [(piperine_ir::Operator::Ddt, false), (piperine_ir::Operator::Direct, false)]);
+    let inline = SourceElaboration::ir(&StructureSources::charge_device("", "i(p, n) +> ddt(c * v(p, n)) + v(p, n) / 1k;", ""), "Top");
+    let through = SourceElaboration::ir(&StructureSources::charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> q + v(p, n) / 1k;", ""), "Top");
+    assert_eq!(StructureReading::rows(&through), StructureReading::rows(&inline));
+    assert!(StructureReading::body(&through, "M").derivatives().is_empty() && StructureReading::body(&inline, "M").derivatives().is_empty());
+    assert_eq!(StructureReading::rows(&inline)[0].1, [(piperine_ir::Operator::Ddt, false), (piperine_ir::Operator::Direct, false)]);
     // Read anywhere else (here also as a factor) it is a site, and the contribution reads its rate.
-    let site = SourceElaboration::ir(&StructureFixture::charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> 2.0 * q;", ""), "Top");
-    assert_eq!(StructureFixture::body(&site, "M").derivatives().len(), 1);
-    assert_eq!(StructureFixture::rows(&site)[0].1, [(piperine_ir::Operator::Direct, false)]);
+    let site = SourceElaboration::ir(&StructureSources::charge_device("let q = ddt(c * v(p, n));", "i(p, n) +> 2.0 * q;", ""), "Top");
+    assert_eq!(StructureReading::body(&site, "M").derivatives().len(), 1);
+    assert_eq!(StructureReading::rows(&site)[0].1, [(piperine_ir::Operator::Direct, false)]);
 }
 
 #[test]
 fn a_ddt_read_in_analog_and_in_an_event_is_one_site() {
     // AS-07 AC 4 (§8.3.3): `let dv = ddt(v(p))` read in the `analog` block and in a reaction is one
     // instance: one derivative site whose rate both reads name.
-    let src = StructureFixture::charge_device("let dv = ddt(v(p));", "i(p, n) +> 2.0 * dv;", "on clk.rise() { r <- dv; }");
+    let src = StructureSources::charge_device("let dv = ddt(v(p));", "i(p, n) +> 2.0 * dv;", "on clk.rise() { r <- dv; }");
     let ir = SourceElaboration::ir(&src, "Top");
-    assert_eq!(StructureFixture::body(&ir, "M").derivatives().len(), 1);
+    assert_eq!(StructureReading::body(&ir, "M").derivatives().len(), 1);
 }
 
 #[test]
@@ -377,7 +384,7 @@ fn an_override_of_a_key_param_lowers_its_variant() {
     }
     let plain = Elaborator::new(&design).run_with("Top", &Overrides::new(&[("Top.m.nothing".to_string(), 0.0)])).expect("elaborates");
     assert_eq!(plain.instance_at("Top.m").expect("m").body().name(), "Sw~short=1.0", "the default variant: the binding names no key param");
-    assert_eq!(StructureFixture::body_names(&Elaborator::new(&design).run("Top").expect("elaborates")), StructureFixture::body_names(&plain));
+    assert_eq!(StructureReading::body_names(&Elaborator::new(&design).run("Top").expect("elaborates")), StructureReading::body_names(&plain));
 }
 
 #[test]
@@ -405,7 +412,7 @@ fn two_placements_with_equal_arguments_are_two_instances() {
     // (`Lag$0.y` and `Lag$1.y`) and its own equation, not one memoized by its arguments.
     let src = format!("{LAG}module Top() {{ signal a: Electrical; signal o: Electrical; }}\nanalog for Top {{ v(o) +> Lag(v(a)) + Lag(v(a)); }}");
     let ir = SourceElaboration::ir(&src, "Top");
-    let top = StructureFixture::body(&ir, "Top");
+    let top = StructureReading::body(&ir, "Top");
     let names: Vec<&str> = top.nodes().iter().map(|n| n.name.as_str()).collect();
     assert_eq!(names, ["a", "o", "Lag$0.y", "Lag$1.y"], "one node per placement, after the body's own");
     assert_eq!(top.hoisted().iter().map(|h| h.name.as_str()).collect::<Vec<_>>(), ["Lag$0", "Lag$1"]);
@@ -519,10 +526,10 @@ fn a_childs_own_signal_is_bound_to_own_in_the_authored_child() {
     // AS-16 AC 1 (S4, Q1): `Leaf` has the port `a` (slot 0, the parent's `s`) and its own `signal x`
     // (slot 1): the authored child names its own node `own1`, never ground.
     let ir = SourceElaboration::ir("module Leaf(a: Electrical) { signal x: Electrical; }\nmodule Top() { signal s: Electrical; let leaf = Leaf(s); }", "Top");
-    assert_eq!(StructureFixture::child_slots(&ir, "Top", "leaf"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
+    assert_eq!(StructureReading::child_slots(&ir, "Top", "leaf"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
     // A node the child's body gains from a hoisted placement is its own too: the slot after the signal.
     let ir = SourceElaboration::ir("module Gate(x: f64) { signal y: Electrical; }\nanalog for Gate { v(y) +> x; }\nmodule Leaf(a: Electrical) { signal x: Electrical; let g = Gate(1.0); }\nmodule Top() { signal s: Electrical; let leaf = Leaf(s); }", "Top");
-    let slots = StructureFixture::child_slots(&ir, "Top", "leaf");
+    let slots = StructureReading::child_slots(&ir, "Top", "leaf");
     assert_eq!(slots[0], piperine_ir::Terminal::Node(0));
     assert!(slots[1..].iter().enumerate().all(|(i, t)| *t == piperine_ir::Terminal::Own(i as u32 + 1)), "every slot after the port is own: {slots:?}");
 }
@@ -534,7 +541,7 @@ fn a_node_a_child_reaches_into_a_grandchild_is_named_own_too() {
     // still passes the check.
     let src = "module Leaf(a: Electrical) { pub signal x: Electrical; }\nanalog for Leaf { v(x) +> v(a); }\nmodule Mid(a: Electrical) { let g = Leaf(a); }\nanalog for Mid { i(g.x, gnd) +> v(g.x) / 1k; }\nmodule Top() { signal s: Electrical; let mid = Mid(s); }";
     let ir = SourceElaboration::ir(src, "Top");
-    assert_eq!(StructureFixture::child_slots(&ir, "Top", "mid"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
+    assert_eq!(StructureReading::child_slots(&ir, "Top", "mid"), [piperine_ir::Terminal::Node(0), piperine_ir::Terminal::Own(1)]);
     assert_eq!(ir.check(), vec![], "the check passes");
 }
 

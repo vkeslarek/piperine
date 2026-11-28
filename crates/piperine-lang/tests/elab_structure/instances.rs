@@ -47,10 +47,10 @@ fn a_raw_signal_name_is_a_node_without_the_prefix() {
 
 const LEAF: &str = "module Leaf(p: Electrical, q: Electrical) { signal inner: Electrical; }\n";
 
-/// Associated test helpers of `instances`, grouped on one fixture type.
-struct InstancesFixture;
+/// The paths of the instances of an IR.
+struct InstancePaths;
 
-impl InstancesFixture {
+impl InstancePaths {
     /// The paths of the instances, in table order.
     fn instance_paths(ir: &piperine_ir::Ir) -> Vec<String> {
         ir.instances().map(|i| i.path().to_string()).collect()
@@ -62,7 +62,7 @@ fn one_body_per_module_one_instance_per_placement() {
     let src = format!("{LEAF}module Mid(p: Electrical) {{ let x = Leaf {{ }}(p, gnd); }}\nmodule Top() {{ signal s: Electrical; let a = Leaf {{ }}(s, gnd); let m = Mid {{ }}(s); }}");
     let ir = SourceElaboration::ir(&src, "Top");
     assert_eq!(ir.bodies().count(), 3, "Top, Leaf and Mid: one body per module");
-    assert_eq!(InstancesFixture::instance_paths(&ir).len(), 4, "Top, Top.a, Top.m and Top.m.x: one instance per placement");
+    assert_eq!(InstancePaths::instance_paths(&ir).len(), 4, "Top, Top.a, Top.m and Top.m.x: one instance per placement");
     assert_eq!(ir.instance_at("Top.a").unwrap().body().id(), ir.instance_at("Top.m.x").unwrap().body().id(), "a module under two parents is one body");
 }
 
@@ -78,7 +78,7 @@ fn a_module_under_two_parents_is_one_body() {
 fn instances_come_in_pre_order() {
     let src = format!("{LEAF}module Mid() {{ signal s: Electrical; let x = Leaf {{ }}(s, gnd); let y = Leaf {{ }}(s, gnd); }}\nmodule Top() {{ let a = Mid {{ }}(); let b = Mid {{ }}(); }}");
     let ir = SourceElaboration::ir(&src, "Top");
-    assert_eq!(InstancesFixture::instance_paths(&ir), ["Top", "Top.a", "Top.a.x", "Top.a.y", "Top.b", "Top.b.x", "Top.b.y"]);
+    assert_eq!(InstancePaths::instance_paths(&ir), ["Top", "Top.a", "Top.a.x", "Top.a.y", "Top.b", "Top.b.x", "Top.b.y"]);
     // Children, too, in source order.
     assert_eq!(ir.top().children().map(|c| c.name().to_string()).collect::<Vec<_>>(), ["a", "b"]);
 }
@@ -127,7 +127,7 @@ fn a_node_init_is_recorded_on_body_and_design() {
 fn an_unnamed_placement_is_module_hash_k() {
     let src = format!("{LEAF}module Top() {{ signal s: Electrical; let a = {{ Leaf {{ }}(s, gnd) }}; let named = Leaf {{ }}(s, gnd); let b = {{ Leaf {{ }}(s, gnd) }}; }}");
     let ir = SourceElaboration::ir(&src, "Top");
-    assert_eq!(InstancesFixture::instance_paths(&ir), ["Top", "Top.Leaf#0", "Top.named", "Top.Leaf#2"].map(String::from), "k counts the placements of the module in source order, named ones included");
+    assert_eq!(InstancePaths::instance_paths(&ir), ["Top", "Top.Leaf#0", "Top.named", "Top.Leaf#2"].map(String::from), "k counts the placements of the module in source order, named ones included");
 }
 
 #[test]

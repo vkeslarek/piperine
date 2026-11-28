@@ -15,10 +15,7 @@ use piperine_lang_fixtures::elaboration::SourceElaboration;
 #[derive(Debug, Clone, Copy)]
 struct Expect(Constant);
 
-/// Associated test helpers of `explicit`, grouped on one fixture type.
-struct ExplicitFixture;
-
-impl ExplicitFixture {
+impl Expect {
     fn int(v: i128) -> Expect {
         Expect(Constant::Int(v))
     }
@@ -26,7 +23,12 @@ impl ExplicitFixture {
     fn boolean(v: bool) -> Expect {
         Expect(Constant::Bool(v))
     }
+}
 
+/// The source text of a design whose `Amp` module holds one `analog` statement.
+struct AmplifierSource;
+
+impl AmplifierSource {
     /// One `analog` statement of `Amp` over a known real, and `Top` placing it.
     fn analog_source(statement: &str) -> String {
         format!("module Amp(p: Electrical) {{ }}\nanalog for Amp {{ {statement} }}\nmodule Top() {{ signal s: Electrical; let a = Amp(s); }}")
@@ -77,18 +79,18 @@ impl Table {
 fn known_values_fold_by_the_level_rules() {
     Table::check(&[
         // §3.3.2: arithmetic and comparison over known operands
-        ("u8", "1u8 + 2u8", ExplicitFixture::int(3)),
-        ("bool", "3u8 == 3u8", ExplicitFixture::boolean(true)),
-        ("u8", "5u8 & 3u8", ExplicitFixture::int(1)),
-        ("u8", "5u8 | 2u8", ExplicitFixture::int(7)),
-        ("u8", "1u8 << 3u32", ExplicitFixture::int(8)),
+        ("u8", "1u8 + 2u8", Expect::int(3)),
+        ("bool", "3u8 == 3u8", Expect::boolean(true)),
+        ("u8", "5u8 & 3u8", Expect::int(1)),
+        ("u8", "5u8 | 2u8", Expect::int(7)),
+        ("u8", "1u8 << 3u32", Expect::int(8)),
         // §3.3.12: `&&` and `||` over known operands
-        ("bool", "true && false", ExplicitFixture::boolean(false)),
-        ("bool", "false || true", ExplicitFixture::boolean(true)),
+        ("bool", "true && false", Expect::boolean(false)),
+        ("bool", "false || true", Expect::boolean(true)),
         // §3.3.3: an `if` on a known condition takes one arm
-        ("u8", "if true { 5u8 } else { 6u8 }", ExplicitFixture::int(5)),
+        ("u8", "if true { 5u8 } else { 6u8 }", Expect::int(5)),
         // a method of the catalogue over a known value folds
-        ("u8", "4u8.max(3u8)", ExplicitFixture::int(4)),
+        ("u8", "4u8.max(3u8)", Expect::int(4)),
     ]);
 }
 
@@ -97,13 +99,13 @@ fn width_is_the_level_count_of_each_repr_type() {
     // §2: 1 for `bool`, `N` for `uN` and `iN`, 64 for `f64`, the tag width `ceil(log2 V)` of an
     // enum of `V` unit variants (rule 5); a const `u32`
     Table::check(&[
-        ("u32", "bool::WIDTH", ExplicitFixture::int(1)),
-        ("u32", "u12::WIDTH", ExplicitFixture::int(12)),
-        ("u32", "i7::WIDTH", ExplicitFixture::int(7)),
-        ("u32", "u64::WIDTH", ExplicitFixture::int(64)),
-        ("u32", "f64::WIDTH", ExplicitFixture::int(64)),
-        ("u32", "Mode::WIDTH", ExplicitFixture::int(2)),
-        ("u32", "u8::WIDTH + 1u32", ExplicitFixture::int(9)),
+        ("u32", "bool::WIDTH", Expect::int(1)),
+        ("u32", "u12::WIDTH", Expect::int(12)),
+        ("u32", "i7::WIDTH", Expect::int(7)),
+        ("u32", "u64::WIDTH", Expect::int(64)),
+        ("u32", "f64::WIDTH", Expect::int(64)),
+        ("u32", "Mode::WIDTH", Expect::int(2)),
+        ("u32", "u8::WIDTH + 1u32", Expect::int(9)),
     ]);
 }
 
@@ -126,13 +128,13 @@ fn unknown_decides_no_structure_because_it_is_no_value() {
 fn a_known_real_goes_through_each_analog_form() {
     // US-06 AC 3: a real through a contribution, a math function, `ddt`, `ac_stim` and `limit` elaborates
     for statement in ["v(p) +> 1.0;", "v(p) +> 2.0.sqrt();", "i(p) +> ddt(1.0);", "v(p) +> ac_stim(1.0);", "v(p) +> limit(1.0, |n, o| n);"] {
-        SourceElaboration::ir(&ExplicitFixture::analog_source(statement), "Top");
+        SourceElaboration::ir(&AmplifierSource::analog_source(statement), "Top");
     }
 }
 
 #[test]
 fn analog_has_no_refusal_of_a_flag() {
     // EU-02 AC 4 (C7): no source in `analog` is `E0150` or `P0001` for being unknown
-    let design = SourceElaboration::design(&ExplicitFixture::analog_source("v(p) +> Unknown;"));
+    let design = SourceElaboration::design(&AmplifierSource::analog_source("v(p) +> Unknown;"));
     assert_eq!(SourceElaboration::codes(design.diagnostics()), ["E0161"]);
 }

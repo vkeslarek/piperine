@@ -12,10 +12,10 @@ use piperine_lang::pom::{
 use piperine_lang_fixtures::lowering::LoweringCodes;
 use piperine_lang_fixtures::pom::PomSource;
 
-/// Associated test helpers of `body`, grouped on one fixture type.
-struct BodyFixture;
+/// The names of the kinds of expressions, patterns, types and statements of a design.
+struct KindNames;
 
-impl BodyFixture {
+impl KindNames {
     fn expr_kind_name(k: &ExprKind) -> &'static str {
         match k {
             ExprKind::Lit(_) => "Lit",
@@ -93,9 +93,14 @@ impl BodyFixture {
     }
 
     fn expr_kinds(d: &Design) -> BTreeSet<&'static str> {
-        (0..d.expr_count()).map(|i| BodyFixture::expr_kind_name(&d.expr_node(ExprId(i as u32)).kind)).collect()
+        (0..d.expr_count()).map(|i| KindNames::expr_kind_name(&d.expr_node(ExprId(i as u32)).kind)).collect()
     }
+}
 
+/// Asserts a source round-trips through the design.
+struct BodyRoundTrip;
+
+impl BodyRoundTrip {
     /// Parse `src`, build it, rebuild the tree from the arenas and demand the same
     /// tree, spans included (`Loc` equality ignores spans, `Debug` prints them).
     fn assert_round_trips(src: &str) {
@@ -145,7 +150,7 @@ fn every_expression_form_has_its_kind() {
     for (expected, snippet) in forms {
         let design = PomSource::build(&format!("const X: u32 = {snippet};"));
         assert!(LoweringCodes::of(&design).is_empty(), "`{snippet}` must parse cleanly: {:?}", design.diagnostics());
-        let kinds = BodyFixture::expr_kinds(&design);
+        let kinds = KindNames::expr_kinds(&design);
         assert!(kinds.contains(expected), "`{snippet}` yields no {expected} node, only {kinds:?}");
         assert!(!kinds.contains("Error"), "`{snippet}` must not yield an Error node");
         seen.insert(expected);
@@ -154,7 +159,7 @@ fn every_expression_form_has_its_kind() {
     // The outermost node of a whole-value form is the form itself.
     let design = PomSource::build("const X: u32 = a + b;");
     let value = design.find("X").and_then(|d| d.as_const()).and_then(|c| c.value()).unwrap();
-    assert_eq!(BodyFixture::expr_kind_name(value.kind()), "Binary");
+    assert_eq!(KindNames::expr_kind_name(value.kind()), "Binary");
     assert_eq!(value.text(), "a + b");
 }
 
@@ -162,7 +167,7 @@ fn every_expression_form_has_its_kind() {
 fn error_expressions_become_error_nodes() {
     let design = PomSource::build("const X: u32 = emit!(1);");
     assert!(!design.diagnostics().is_empty());
-    assert!(BodyFixture::expr_kinds(&design).contains("Error"));
+    assert!(KindNames::expr_kinds(&design).contains("Error"));
 }
 
 #[test]
@@ -194,18 +199,18 @@ const X: u32 = {
 };";
     let design = PomSource::build(src);
     let stmts: BTreeSet<_> =
-        (0..design.stmt_count()).map(|i| BodyFixture::stmt_kind_name(&design.stmt_node(StmtId(i as u32)).kind)).collect();
+        (0..design.stmt_count()).map(|i| KindNames::stmt_kind_name(&design.stmt_node(StmtId(i as u32)).kind)).collect();
     assert_eq!(
         stmts.into_iter().collect::<Vec<_>>(),
         ["Commit", "Contribution", "Empty", "Expr", "Item", "Let", "Reaction", "Signal"]
     );
-    let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| BodyFixture::pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
+    let pats: BTreeSet<_> = (0..design.pat_count()).map(|i| KindNames::pat_kind_name(&design.pat_node(PatId(i as u32)).kind)).collect();
     assert_eq!(
         pats.into_iter().collect::<Vec<_>>(),
         ["Array", "Ident", "Lit", "Or", "Path", "Range", "Rest", "Struct", "Tuple", "TupleStruct", "Wild"]
     );
     let types: BTreeSet<_> =
-        (0..design.type_count()).map(|i| BodyFixture::type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();
+        (0..design.type_count()).map(|i| KindNames::type_kind_name(&design.type_node(TypeId(i as u32)).kind)).collect();
     assert_eq!(types.into_iter().collect::<Vec<_>>(), ["Array", "Flip", "Infer", "Path", "Tuple"]);
 
     // One Binding per bound identifier, owned by the const, in source order.
@@ -408,10 +413,10 @@ fn value_bodies_round_trip() {
         "m(1) { w: 2 }", "a::b::<T>::c", "self::a", "super::a", "crate::a",
     ];
     for form in forms {
-        BodyFixture::assert_round_trips(&format!("const X: u32 = {form};"));
+        BodyRoundTrip::assert_round_trips(&format!("const X: u32 = {form};"));
     }
     // Statements, patterns and types.
-    BodyFixture::assert_round_trips(
+    BodyRoundTrip::assert_round_trips(
         "\
 const X: u32 = {
     let a = 1;
@@ -470,7 +475,7 @@ fn fns_consts_metas_and_generics_round_trip() {
         "",
         "  // a comment\n",
     ] {
-        BodyFixture::assert_round_trips(src);
+        BodyRoundTrip::assert_round_trips(src);
     }
 }
 
@@ -479,7 +484,7 @@ fn function_pointer_type_round_trips() {
     // POL-09 AC 4: a function-pointer type lowers to `TypeKind::FnPtr`
     // (params and return as type nodes) and converts back to the parsed tree.
     let src = "fn apply(f: fn(f64) -> f64, g: fn(), h: fn([u8; 2]) -> u8) {}\nstruct S { r: fn(f64) -> f64 }";
-    BodyFixture::assert_round_trips(src);
+    BodyRoundTrip::assert_round_trips(src);
     let design = PomSource::build(src);
     assert!(PomSource::codes(&design).is_empty(), "{:?}", PomSource::codes(&design));
     let ptrs: Vec<_> = (0..design.type_count())

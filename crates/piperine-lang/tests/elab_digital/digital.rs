@@ -10,6 +10,7 @@ use piperine_ir::{Body, CarrierRole, Constant, Ir, ValueType};
 use piperine_lang_fixtures::buck::BuckSource;
 use piperine_lang_fixtures::elaboration::SourceElaboration;
 
+
 /// Reading the elaborated IR of a test.
 struct Read<'a> {
     ir: &'a Ir,
@@ -36,30 +37,20 @@ impl<'a> Read<'a> {
     }
 }
 
-/// Associated test helpers of `digital`, grouped on one fixture type.
-struct DigitalFixture;
+/// The declarations of buck modules as written in `examples/buck/src`, ports and body items.
+struct BuckDeclarations;
 
-impl DigitalFixture {
+impl BuckDeclarations {
     /// The declaration of the buck module `name` of `file`: its ports and its body items as written (a port that no
     /// body item drives would need an initial value of its own, §3.3.4).
     fn ports_of(file: &str, name: &str) -> String {
         BuckSource::item(file, &format!("pub module {name}("))
     }
 
-    /// The structural print of `body` alone: its header and the lines under it.
-    fn body_text(ir: &Ir, body: &str) -> String {
-        let text = ir.print_structural();
-        let head = format!("body {body}\n");
-        let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
-        let rest = &text[start..];
-        let end = rest[1..].find("\nbody ").or_else(|| rest[1..].find("\nfn ")).or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 2);
-        rest[..end].to_string()
-    }
-
     /// The buck's `Controller` (examples/buck/src/top.msl) as written, over the buck's own constants,
     /// enums and `target_codes`, its children declared with the buck's ports and no body.
     fn controller() -> String {
-        let children = [("control.msl", "SetpointReg"), ("control.msl", "RefRamp"), ("control.msl", "Pid"), ("supervisor.msl", "Supervisor"), ("dpwm.msl", "Dpwm")].map(|(file, name)| DigitalFixture::ports_of(file, name));
+        let children = [("control.msl", "SetpointReg"), ("control.msl", "RefRamp"), ("control.msl", "Pid"), ("supervisor.msl", "Supervisor"), ("dpwm.msl", "Dpwm")].map(|(file, name)| BuckDeclarations::ports_of(file, name));
         format!(
             "{}\n{}\n{}\n{}\n{}\n{}",
             BuckSource::spec(),
@@ -70,34 +61,20 @@ impl DigitalFixture {
             BuckSource::item("top.msl", "pub module Controller("),
         )
     }
+}
 
-    /// A known or unknown `bool`: `None` is unknown (§3.3).
-    /// The value of a lowered event guard over the previous and the present value of the carrier
-    /// `c` it reads. Any other form is a failure of the test, never a guess.
-    fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
-        use piperine_ir::{BinaryOp, Expr, UnaryOp};
-        let value = |e| DigitalFixture::guard_value(ir, e, c, prev, cur);
-        match ir.expr(e) {
-            Expr::Bool(b) => *b,
-            Expr::Carrier(k) if *k == c => cur,
-            Expr::Previous(k) if *k == c => prev,
-            Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
-            Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
-            Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
-            other => panic!("a form an edge guard does not hold: {other:?}"),
-        }
-    }
+/// Slices the structural print of a body: the body alone and one of its reactions.
+struct ReactionPrint;
 
-    /// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
-    /// `digital` block.
-    fn edges(digital: &str) -> String {
-        format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit = false) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit = false; signal d: Bit<u8> = 0; signal q: Bit; let m = M(n, c, d, q); }}")
-    }
-
-    /// The text of a golden print of `crates/piperine-ir/tests/golden/buck/` (`ir-rust` T29): the
-    /// slice transcribed by hand from the buck's `.msl`, without the flag the explicit model removed.
-    fn golden(name: &str) -> String {
-        BuckSource::golden(name)
+impl ReactionPrint {
+    /// The structural print of `body` alone: its header and the lines under it.
+    fn body_text(ir: &Ir, body: &str) -> String {
+        let text = ir.print_structural();
+        let head = format!("body {body}\n");
+        let start = text.find(&head).unwrap_or_else(|| panic!("no `{head}` in:\n{text}"));
+        let rest = &text[start..];
+        let end = rest[1..].find("\nbody ").or_else(|| rest[1..].find("\nfn ")).or_else(|| rest[1..].find("\ninstance ")).map_or(rest.len(), |at| at + 2);
+        rest[..end].to_string()
     }
 
     /// The lines of the reaction `R<k>` of a body print: its header, its locals and its statements.
@@ -108,20 +85,49 @@ impl DigitalFixture {
         let end = rest[1..].find("\n  reaction ").or_else(|| rest[1..].find("\nbody ")).map_or(rest.len(), |at| at + 2);
         rest[..end].trim_end().to_string()
     }
+}
 
-    /// `examples/buck` as a one-crate graph over the embedded standard library, as
-    /// `tests/types_buck.rs` loads it.
-    fn buck_design() -> piperine_lang::pom::Design {
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-        let mut graph = piperine_lang::pom::CrateGraph::new();
-        graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
-        piperine_lang::pom::Design::load_crates(graph)
+/// Evaluates a lowered event guard over the previous and present value of a carrier.
+struct GuardEvaluation;
+
+impl GuardEvaluation {
+    /// A known or unknown `bool`: `None` is unknown (§3.3).
+    /// The value of a lowered event guard over the previous and the present value of the carrier
+    /// `c` it reads. Any other form is a failure of the test, never a guess.
+    fn guard_value(ir: &Ir, e: piperine_ir::ExprId, c: u32, prev: bool, cur: bool) -> bool {
+        use piperine_ir::{BinaryOp, Expr, UnaryOp};
+        let value = |e| GuardEvaluation::guard_value(ir, e, c, prev, cur);
+        match ir.expr(e) {
+            Expr::Bool(b) => *b,
+            Expr::Carrier(k) if *k == c => cur,
+            Expr::Previous(k) if *k == c => prev,
+            Expr::Unary { op: UnaryOp::Not, expr } => !value(*expr),
+            Expr::Binary { op: BinaryOp::And, lhs, rhs } => value(*lhs) && value(*rhs),
+            Expr::Binary { op: BinaryOp::Or, lhs, rhs } => value(*lhs) || value(*rhs),
+            other => panic!("a form an edge guard does not hold: {other:?}"),
+        }
     }
+}
 
+/// The source text of a module with edge-triggered digital behavior, placed by `Top`.
+struct EdgeSource;
+
+impl EdgeSource {
+    /// A module `M` with a node, two carriers in and one out, placed by `Top`, and `digital` as its
+    /// `digital` block.
+    fn edges(digital: &str) -> String {
+        format!("module M(a: Electrical, in c: Bit, in d: Bit<u8>, out q: Bit = false) {{ }}\ndigital for M {{ {digital} }}\nmodule Top() {{ signal n: Electrical; signal c: Bit = false; signal d: Bit<u8> = 0; signal q: Bit; let m = M(n, c, d, q); }}")
+    }
+}
+
+/// The designs and tops the invariant tests run over.
+struct InvariantCases;
+
+impl InvariantCases {
     /// Every design and top of the invariants: the buck's tops over one loaded package, then the
     /// stdlib's.
     fn invariant_cases() -> Vec<(String, piperine_lang::pom::Design, String)> {
-        let mut cases: Vec<(String, piperine_lang::pom::Design, String)> = BUCK_TOPS.iter().map(|t| (format!("buck {t}"), DigitalFixture::buck_design(), t.to_string())).collect();
+        let mut cases: Vec<(String, piperine_lang::pom::Design, String)> = BUCK_TOPS.iter().map(|t| (format!("buck {t}"), BuckSource::library_design(), t.to_string())).collect();
         cases.extend(STD_TOPS.iter().map(|(name, src)| (format!("std {name}"), SourceElaboration::design(src), "Top".to_string())));
         cases
     }
@@ -131,7 +137,7 @@ impl DigitalFixture {
 fn carriers_follow_ports_then_signals() {
     // DIG-09 AC 1, C75: `RefRamp` (examples/buck/src/control.msl) as written, its ports in
     // declaration order, `reference` with its initial value 0.
-    let ir = SourceElaboration::ir(&DigitalFixture::ports_of("control.msl", "RefRamp"), "RefRamp");
+    let ir = SourceElaboration::ir(&BuckDeclarations::ports_of("control.msl", "RefRamp"), "RefRamp");
     let read = Read { ir: &ir };
     use CarrierRole::{In, Out, Signal};
     assert_eq!(
@@ -163,7 +169,7 @@ fn carriers_follow_ports_then_signals() {
     );
     // A node port among carrier ports stays a node: `Adc(ain: Electrical, in sample: Bit, ..)`
     // has one node and three carriers; a carrier is never a node and a node never a carrier.
-    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", DigitalFixture::ports_of("sense.msl", "Adc"));
+    let src = format!("{}\nmodule Top() {{ signal a: Electrical; signal s: Bit = false; signal c: Bit<u10>; signal d: Bit; let adc = Adc(a, s, c, d); }}", BuckDeclarations::ports_of("sense.msl", "Adc"));
     let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let adc = read.body("Adc");
@@ -290,7 +296,7 @@ fn a_definition_is_a_drive() {
         let after = drive.after.expect("each definition has its `after`");
         assert_eq!(ir.expr(after), &piperine_ir::Expr::Param(0), "`after tpd` reads the param `tpd`");
     }
-    let text = DigitalFixture::body_text(&ir, "GateDriver");
+    let text = ReactionPrint::body_text(&ir, "GateDriver");
     assert!(text.contains("  drive hs_gate = (hs_cmd & (!ls_cmd)) after tpd\n  drive ls_gate = (ls_cmd & (!hs_cmd)) after tpd\n"), "{text}");
     // An undelayed definition has no `after`: `RefRamp`'s `at_target = reference == target;`, a
     // comparison of two carrier reads.
@@ -300,7 +306,7 @@ fn a_definition_is_a_drive() {
     assert_eq!(body.drives().len(), 1);
     assert_eq!(body.drives()[0].after, None);
     assert_eq!(ir.expr_type(body.drives()[0].value), &ValueType::Bool);
-    assert!(DigitalFixture::body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
+    assert!(ReactionPrint::body_text(&ir, "RefRamp").contains("  drive at_target = (reference == target)\n"));
 }
 
 #[test]
@@ -308,7 +314,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     // DIG-09 AC 3, C77: `RefRamp(done, run, target_codes(setpoint), ..)` in
     // `Controller` adds the signal carrier `ramp.target` to `Controller` with its drive, and binds
     // the child's port `target` to it (§8.2.9).
-    let ir = SourceElaboration::ir(&DigitalFixture::controller(), "Controller");
+    let ir = SourceElaboration::ir(&BuckDeclarations::controller(), "Controller");
     let read = Read { ir: &ir };
     let body = read.body("Controller");
     let at = body.carriers().iter().position(|c| c.name == "ramp.target").expect("the carrier `ramp.target`");
@@ -317,7 +323,7 @@ fn an_expression_at_an_in_port_is_a_carrier_and_a_drive() {
     let drives: Vec<_> = body.drives().iter().filter(|d| d.carrier == at as u32).collect();
     assert_eq!(drives.len(), 1, "one drive of `ramp.target`");
     assert_eq!(drives[0].after, None);
-    assert!(DigitalFixture::body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", DigitalFixture::body_text(&ir, "Controller"));
+    assert!(ReactionPrint::body_text(&ir, "Controller").contains("  drive ramp.target = target_codes(setpoint)\n"), "{}", ReactionPrint::body_text(&ir, "Controller"));
     let ramp = body.children().iter().position(|c| c.name == "ramp").expect("the child `ramp`");
     let setpoint = body.carriers().iter().position(|c| c.name == "setpoint").map(|i| i as u32);
     let (done, run, reference, at_target) = ["done", "run", "reference", "at_target"].map(|n| body.carriers().iter().position(|c| c.name == n).map(|i| i as u32)).into();
@@ -336,7 +342,7 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     let values = std::fs::read_to_string(format!("{}/std/values.msl", env!("CARGO_MANIFEST_DIR"))).expect("std/values.msl");
     assert!(values.contains("self.changed() && !self.prev() && self"), "the stdlib `rise` is the oracle");
     assert!(values.contains("self.changed() && self.prev() && !self"), "the stdlib `fall` is the oracle");
-    let src = DigitalFixture::edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
+    let src = EdgeSource::edges("on c.changed() { q <- true; }\non c.rise() { q <- true; }\non c.fall() { q <- false; }\non cross(v(a) - 0.5) { q <- true; }\non d.changed() && d.prev() == 3 { q <- true; }");
     let ir = SourceElaboration::ir(&src, "Top");
     let read = Read { ir: &ir };
     let m = read.body("M");
@@ -359,8 +365,8 @@ fn changed_rise_fall_and_cross_lower_to_events() {
     // §22.1 (D9): rise on false to true, fall on true to false; neither on any other change.
     let (lo, hi) = (false, true);
     for (prev, cur, rises, falls) in [(lo, hi, true, false), (hi, lo, false, true), (lo, lo, false, false), (hi, hi, false, false)] {
-        assert_eq!(DigitalFixture::guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
-        assert_eq!(DigitalFixture::guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
+        assert_eq!(GuardEvaluation::guard_value(&ir, rise, c, prev, cur), rises, "rise on {prev:?} -> {cur:?}");
+        assert_eq!(GuardEvaluation::guard_value(&ir, fall, c, prev, cur), falls, "fall on {prev:?} -> {cur:?}");
     }
     // `cross(e)` watches `e`.
     let EventSource::Cross { e: watched, .. } = events[3].source else { panic!("a cross: {:?}", events[3].source) };
@@ -540,7 +546,7 @@ fn a_reaction_body_lowers_in_source_order() {
         other => panic!("a commit: {other:?}"),
     }).collect();
     assert_eq!(commits, [(carrier("code"), true), (carrier("done"), true), (carrier("done"), true)], "code, then done twice, each `after`");
-    assert!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Adc"), 0).ends_with("    code <- q after tconv\n    done <- true after tconv\n    done <- false after (tconv + tstrobe)"));
+    assert!(ReactionPrint::reaction_text(&ReactionPrint::body_text(&ir, "Adc"), 0).ends_with("    code <- q after tconv\n    done <- true after tconv\n    done <- false after (tconv + tstrobe)"));
 
     // `Pid` (control.msl), statement by statement: the hand transcription of `ir-rust` T29 with
     // its one listed difference, `DUTY_MAX as i32` folded to `2880i32` (DIG-08 AC 2).
@@ -548,10 +554,10 @@ fn a_reaction_body_lowers_in_source_order() {
     let ir = SourceElaboration::ir(&src, "Pid");
     // `Pid` reads `run`, `reference` and `meas` directly (explicit-unknowns T24, T31): the fixture, the earlier
     // transcription, is read without its flag (`golden`) and joins `windup` with `&&` and `||`
-    let expected = DigitalFixture::reaction_text(&DigitalFixture::golden("pid"), 0)
+    let expected = ReactionPrint::reaction_text(&BuckSource::golden("pid"), 0)
         .replace("(2880u12 as i32)", "2880i32")
         .replace("(((u > u_max) & (e > 0i16)) | ((u < 0i32) & (e < 0i16)))", "(((u > u_max) && (e > 0i16)) || ((u < 0i32) && (e < 0i16)))");
-    assert_eq!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Pid"), 0), expected);
+    assert_eq!(ReactionPrint::reaction_text(&ReactionPrint::body_text(&ir, "Pid"), 0), expected);
 
     // `Dpwm`'s reaction (dpwm.msl), statement by statement against the same transcription; the
     // `Never` monitor beside it is a placement, not part of the reaction (its `require` is
@@ -565,14 +571,14 @@ fn a_reaction_body_lowers_in_source_order() {
     let ir = SourceElaboration::ir(&src, "Dpwm");
     // `Dpwm` reads `run`, `duty`, `oc` and `sink_oc` directly (explicit-unknowns T24, T31): the fixture is read without
     // its flag, and its `&` and `|` over values that may be unknown are `&&` and `||` over plain ones
-    let expected = DigitalFixture::reaction_text(&DigitalFixture::golden("dpwm"), 0)
+    let expected = ReactionPrint::reaction_text(&BuckSource::golden("dpwm"), 0)
         .replace("\"dithered_width~01\"(duty, (frame + 1u3))", "dithered_width(duty, (frame + 1u3))")
         .replace("((!wrap) & (hs_cut | (hs & oc)))", "((!wrap) && (hs_cut || (hs && oc)))")
         .replace("((!wrap) & (ls_cut | (ls & sink_oc)))", "((!wrap) && (ls_cut || (ls && sink_oc)))")
         .replace("((enabled & (!hs_trip)) & (next < w))", "((enabled && (!hs_trip)) && (next < w))")
         .replace("(hs & (!hs_next))", "(hs && (!hs_next))")
         .replace("((((enabled & (!hs_next)) & (!ls_trip)) & (next >= (off_at + 4u9))) & (next < 396u9))", "((((enabled && (!hs_next)) && (!ls_trip)) && (next >= (off_at + 4u9))) && (next < 396u9))");
-    assert_eq!(DigitalFixture::reaction_text(&DigitalFixture::body_text(&ir, "Dpwm"), 0), expected);
+    assert_eq!(ReactionPrint::reaction_text(&ReactionPrint::body_text(&ir, "Dpwm"), 0), expected);
 }
 
 #[test]
@@ -584,7 +590,7 @@ fn a_module_with_only_a_digital_block_has_no_analog_statements() {
     assert!(osc.analog().is_none(), "no analog statements");
     assert!(osc.branches().is_empty() && osc.nodes().is_empty());
     assert_eq!(osc.reactions().len(), 1);
-    assert!(!DigitalFixture::body_text(&ir, "Osc").contains("analog"));
+    assert!(!ReactionPrint::body_text(&ir, "Osc").contains("analog"));
 }
 
 #[test]
@@ -652,13 +658,13 @@ const STD_TOPS: &[(&str, &str)] = &[
 fn elaborating_twice_gives_the_same_print() {
     // DIG-09 AC 12, C87: two elaborations of one design, and of the design loaded twice, print
     // equal, origins included.
-    for (case, design, top) in DigitalFixture::invariant_cases() {
+    for (case, design, top) in InvariantCases::invariant_cases() {
         let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
         let (first, second) = (run(&design), run(&design));
         assert_eq!(first.print_structural(), second.print_structural(), "{case}");
         assert_eq!(first.to_string(), second.to_string(), "{case}");
     }
-    let (a, b) = (DigitalFixture::buck_design(), DigitalFixture::buck_design());
+    let (a, b) = (BuckSource::library_design(), BuckSource::library_design());
     let run = |d: &piperine_lang::pom::Design| piperine_lang::elab::Elaborator::new(d).run("Buck").unwrap_or_else(|e| panic!("{:?}", SourceElaboration::codes(&e)));
     assert_eq!(run(&a).to_string(), run(&b).to_string(), "the buck loaded twice");
 }
@@ -667,7 +673,7 @@ fn elaborating_twice_gives_the_same_print() {
 fn the_design_is_not_written() {
     // DIG-09 AC 13, C88: `Design::dump()` is equal before and after elaboration, the POM's
     // placements of hoisted modules (`let gate = transition(..)`) included.
-    for (case, design, top) in DigitalFixture::invariant_cases() {
+    for (case, design, top) in InvariantCases::invariant_cases() {
         let before = design.dump();
         let diagnostics = design.diagnostics().to_vec();
         piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
@@ -679,7 +685,7 @@ fn the_design_is_not_written() {
 #[test]
 fn every_ir_passes_check() {
     // DIG-09 AC 14, C89: every `Ir` returned has an empty `check()`.
-    for (case, design, top) in DigitalFixture::invariant_cases() {
+    for (case, design, top) in InvariantCases::invariant_cases() {
         let ir = piperine_lang::elab::Elaborator::new(&design).run(&top).unwrap_or_else(|e| panic!("{case}: {:?}", SourceElaboration::codes(&e)));
         assert!(ir.check().is_empty(), "{case}: {:?}", ir.check());
     }

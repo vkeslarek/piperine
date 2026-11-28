@@ -11,10 +11,10 @@
 use piperine_lang::msl::parser::SourceParser;
 use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecBlock, SpecCorpus};
 
-/// Associated test helpers of `corpus`, grouped on one fixture type.
-struct CorpusFixture;
+/// Counts the blocks of the specification corpus of one class.
+struct BlockCount;
 
-impl CorpusFixture {
+impl BlockCount {
     fn count(blocks: &[SpecBlock], class: BlockClass) -> usize {
         blocks.iter().filter(|b| b.class == class).count()
     }
@@ -25,11 +25,11 @@ fn every_valid_spec_block_parses_clean() {
     let blocks = SpecCorpus::corpus();
     println!(
         "corpus: {} rust, {} rust,compile_fail, {} rust,fragment",
-        CorpusFixture::count(&blocks, BlockClass::Valid),
-        CorpusFixture::count(&blocks, BlockClass::CompileFail),
-        CorpusFixture::count(&blocks, BlockClass::Fragment)
+        BlockCount::count(&blocks, BlockClass::Valid),
+        BlockCount::count(&blocks, BlockClass::CompileFail),
+        BlockCount::count(&blocks, BlockClass::Fragment)
     );
-    assert!(CorpusFixture::count(&blocks, BlockClass::Valid) > 0, "the corpus is not empty");
+    assert!(BlockCount::count(&blocks, BlockClass::Valid) > 0, "the corpus is not empty");
     let mut failures = Vec::new();
     for b in &blocks {
         let diags: Vec<String> = match b.class {

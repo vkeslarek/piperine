@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::refusals::ElaborationRefusals;
 use piperine_lang_fixtures::elaboration_forms::IrReading;
 
 
@@ -187,20 +188,6 @@ fn a_bound_that_writes_the_trait_arguments_picks_the_impl_of_that_list() {
     assert_eq!(IrFunctions::names(&ir), ["as_real::<Cell>", "Cell.to::<f64>", "as_byte::<Cell>", "Cell.to::<u8>"]);
 }
 
-/// A call of an `extern "intrinsic"` function, written in each position a function body or a behavior has, and what
-/// elaborating it reports.
-struct ExternCalls;
-
-impl ExternCalls {
-    /// The `(code, message)` of each diagnostic of elaborating `src`'s `Top`; empty when it elaborates.
-    fn found(src: &str) -> Vec<(String, String)> {
-        match SourceElaboration::run(src, "Top") {
-            Ok(_) => Vec::new(),
-            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
-        }
-    }
-}
-
 #[test]
 fn a_pattern_call_lowers_in_any_position() {
     // replaces `a_generic_extern_call_is_never_dropped_in_any_position` (T45, GAPS L68): `matches_bits` is lowered, never
@@ -221,7 +208,7 @@ fn a_pattern_call_lowers_in_any_position() {
     for tail in tails {
         for position in positions {
             let src = format!("{tail}\n{position}\n");
-            let found = ExternCalls::found(&src);
+            let found = ElaborationRefusals::of(&src);
             assert!(found.is_empty(), "{tail}\n{position}\n{found:?}");
         }
     }
@@ -237,7 +224,7 @@ fn a_logic_call_in_a_function_tail_lowers() {
         "module Top() { signal o: Electrical; }\nanalog for Top { v(o) +> if g().is_high() { 1.0 } else { 0.0 }; }",
         "module Top() { signal o: Electrical; let b = g(); }\nanalog for Top { v(o) +> if b.is_high() { 1.0 } else { 0.0 }; }",
     ] {
-        let found = ExternCalls::found(&format!("{tail}\n{position}\n"));
+        let found = ElaborationRefusals::of(&format!("{tail}\n{position}\n"));
         assert!(found.is_empty(), "{position}\n{found:?}");
     }
 }
@@ -288,7 +275,7 @@ fn encode_and_decode_of_every_layout_lower_through_the_level_cast() {
 fn cast_between_widths_is_e0127_naming_both_types() {
     // §22.1.3 rule 2 as amended by T55: `cast` is `std/values.msl`'s generic function whose `where A::WIDTH == B::WIDTH` is
     // false for a cast between types of different widths, so the instantiation is `E0127` naming `cast::<Mode, u8>`
-    let found = ExternCalls::found("#[derive(Repr)] enum Mode { Idle, Run, Halt }\nmodule Top() { }\nanalog for Top { let a = cast::<Mode, u8>(Mode::Run); }\n");
+    let found = ElaborationRefusals::of("#[derive(Repr)] enum Mode { Idle, Run, Halt }\nmodule Top() { }\nanalog for Top { let a = cast::<Mode, u8>(Mode::Run); }\n");
     assert!(found.iter().any(|(code, message)| code == "E0127" && message.contains("Mode") && message.contains("u8")), "{found:?}");
 }
 

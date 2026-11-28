@@ -802,10 +802,10 @@ fn f() -> f64 {
     assert!(stmts[2].docs().is_empty());
 }
 
-/// Fixtures of the test `generation_if_items_cover_every_arm`, hoisted out of its body.
-struct GenerationIfItemsFixture;
+/// The names of declarations.
+struct DeclarationNames;
 
-impl GenerationIfItemsFixture {
+impl DeclarationNames {
     fn names<'a>(v: Vec<piperine_lang::pom::Decl<'a>>) -> Vec<Option<&'a str>> {
         v.iter().map(|d| d.name()).collect()
     }
@@ -823,8 +823,8 @@ fn generation_if_items_cover_every_arm() {
     assert_eq!(named, [("Signal", Some("x")), ("Signal", Some("y")), ("Signal", Some("w")), ("Signal", Some("z"))]);
     // `arms()` is unchanged: three arms.
     assert_eq!(g.arms().len(), 3);
-    assert_eq!(GenerationIfItemsFixture::names(g.arms()[1].items()), [Some("y"), Some("w")]);
+    assert_eq!(DeclarationNames::names(g.arms()[1].items()), [Some("y"), Some("w")]);
     // A `for` lists its body.
     let design = PomSource::build("module G() { for i in 0..2 { signal a: Bit; signal b: Bit; } }");
-    assert_eq!(GenerationIfItemsFixture::names(design.module("G").unwrap().generations()[0].items()), [Some("a"), Some("b")]);
+    assert_eq!(DeclarationNames::names(design.module("G").unwrap().generations()[0].items()), [Some("a"), Some("b")]);
 }

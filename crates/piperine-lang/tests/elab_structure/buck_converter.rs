@@ -9,28 +9,21 @@ use piperine_ir::Ir;
 use piperine_lang_fixtures::buck::BuckSource;
 use piperine_lang_fixtures::elaboration::SourceElaboration;
 
-/// Associated test helpers of `buck_converter`, grouped on one fixture type.
-struct BuckConverterFixture;
+/// The buck converter elaborated to an IR.
+struct BuckElaboration;
 
-impl BuckConverterFixture {
-    /// `examples/buck` as a one-crate graph over the embedded standard library.
-    fn buck_design() -> piperine_lang::pom::Design {
-        let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/buck");
-        let mut graph = piperine_lang::pom::CrateGraph::new();
-        graph.add_crate("buck", dir.join("src/lib.msl")).expect("a valid crate name");
-        piperine_lang::pom::Design::load_crates(graph)
-    }
-
+impl BuckElaboration {
     fn buck_ir() -> Ir {
-        let design = BuckConverterFixture::buck_design();
+        let design = BuckSource::library_design();
         assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
         piperine_lang::elab::Elaborator::new(&design).run("Buck").unwrap_or_else(|e| panic!("{:?}", SourceElaboration::codes(&e)))
     }
+}
 
-    fn fixture(name: &str) -> String {
-        BuckSource::golden(name)
-    }
+/// Compares an elaborated print with a hand fixture, naming each listed difference once.
+struct FixtureComparison;
 
+impl FixtureComparison {
     /// The lines of the item of a print whose header line is `header` (`body Osc`, `fn name(..`): the
     /// header and the indented lines under it.
     fn item(print: &str, header: &str) -> Vec<String> {
@@ -84,24 +77,24 @@ const GATE_DRIVER_INITIAL_VALUES: [(&str, &str); 2] = [("carrier hs_gate: bool o
 fn six_slice_bodies_equal_their_hand_built_fixtures() {
     // DIG-14 AC 1, C128. Osc prints exactly and GateDriver by its two initial values; the others differ by the rise guard
     // (SetpointReg `wr`, RefRamp `tick`, Adc `sample`, Pid `tick`) and Pid also by the fold.
-    let ir = BuckConverterFixture::buck_ir();
+    let ir = BuckElaboration::buck_ir();
     let print = ir.print_structural();
-    let pid = vec![BuckConverterFixture::stdlib_rise_guard("tick"), BuckConverterFixture::pair(PID_FOLD)];
+    let pid = vec![FixtureComparison::stdlib_rise_guard("tick"), FixtureComparison::pair(PID_FOLD)];
     let cases: [(&str, &str, Vec<(String, String)>); 6] = [
         ("osc", "Osc", vec![]),
-        ("gate_driver", "GateDriver", GATE_DRIVER_INITIAL_VALUES.map(BuckConverterFixture::pair).to_vec()),
-        ("setpoint_reg", "SetpointReg", vec![BuckConverterFixture::stdlib_rise_guard("wr")]),
-        ("ref_ramp", "RefRamp", vec![BuckConverterFixture::stdlib_rise_guard("tick")]),
-        ("adc", "Adc", vec![BuckConverterFixture::stdlib_rise_guard("sample")]),
+        ("gate_driver", "GateDriver", GATE_DRIVER_INITIAL_VALUES.map(FixtureComparison::pair).to_vec()),
+        ("setpoint_reg", "SetpointReg", vec![FixtureComparison::stdlib_rise_guard("wr")]),
+        ("ref_ramp", "RefRamp", vec![FixtureComparison::stdlib_rise_guard("tick")]),
+        ("adc", "Adc", vec![FixtureComparison::stdlib_rise_guard("sample")]),
         ("pid", "Pid", pid),
     ];
     for (file, body, differences) in cases {
         let header = format!("body {body}");
-        let mut expected = BuckConverterFixture::item(&BuckConverterFixture::fixture(file), &header);
+        let mut expected = FixtureComparison::item(&BuckSource::golden(file), &header);
         for difference in &differences {
-            expected = BuckConverterFixture::replace_once(&expected, difference);
+            expected = FixtureComparison::replace_once(&expected, difference);
         }
-        BuckConverterFixture::assert_same(body, &expected, &BuckConverterFixture::item(&print, &header));
+        FixtureComparison::assert_same(body, &expected, &FixtureComparison::item(&print, &header));
     }
 }
 
@@ -111,7 +104,7 @@ struct Extra(&'static str);
 #[test]
 fn dpwm_and_a2d_differ_only_as_listed() {
     // DIG-14 AC 2, C129.
-    let ir = BuckConverterFixture::buck_ir();
+    let ir = BuckElaboration::buck_ir();
     let print = ir.print_structural();
 
     // Dpwm adds the `Never` monitor the source places (child, its carrier, the drive of that
@@ -121,12 +114,12 @@ fn dpwm_and_a2d_differ_only_as_listed() {
         Extra("  child no_shoot_through: Never  nodes ()  params ()  carriers (clk, no_shoot_through.bad)"),
         Extra("  drive no_shoot_through.bad = (hs & ls)"),
     ];
-    let elaborated = BuckConverterFixture::item(&print, "body Dpwm");
-    let expected = BuckConverterFixture::replace_once(&BuckConverterFixture::item(&BuckConverterFixture::fixture("dpwm"), "body Dpwm"), &BuckConverterFixture::stdlib_rise_guard("clk"));
-    BuckConverterFixture::assert_same("Dpwm", &expected, &BuckConverterFixture::without(&elaborated, &dpwm_extras));
+    let elaborated = FixtureComparison::item(&print, "body Dpwm");
+    let expected = FixtureComparison::replace_once(&FixtureComparison::item(&BuckSource::golden("dpwm"), "body Dpwm"), &FixtureComparison::stdlib_rise_guard("clk"));
+    FixtureComparison::assert_same("Dpwm", &expected, &FixtureComparison::without(&elaborated, &dpwm_extras));
     // Its two functions are the fixture's.
-    BuckConverterFixture::assert_same("dithered_width", &BuckConverterFixture::item(&BuckConverterFixture::fixture("dpwm"), "fn dithered_width"), &BuckConverterFixture::item(&print, "fn dithered_width"));
-    BuckConverterFixture::assert_same("rev3", &BuckConverterFixture::item(&BuckConverterFixture::fixture("dpwm"), "fn rev3"), &BuckConverterFixture::item(&print, "fn rev3"));
+    FixtureComparison::assert_same("dithered_width", &FixtureComparison::item(&BuckSource::golden("dpwm"), "fn dithered_width"), &FixtureComparison::item(&print, "fn dithered_width"));
+    FixtureComparison::assert_same("rev3", &FixtureComparison::item(&BuckSource::golden("dpwm"), "fn rev3"), &FixtureComparison::item(&print, "fn rev3"));
 
     // A2D (the fixture `comparator`) adds the `init` of each `above`: two signals and an event for
     // each, numbered after the cross, so the second cross is E2 where the fixture has E1. Each
@@ -144,16 +137,16 @@ fn dpwm_and_a2d_differ_only_as_listed() {
         Extra("    if (fired(E2) || (fired(E3) && (((vth - (hyst / 2.0)) - probe(a, gnd)) > 0.0))) { d <- false } else { () }"),
     ];
     let fixture_reactions = [Extra("  reaction R0 on (E0)"), Extra("    d <- true"), Extra("  reaction R1 on (E1)"), Extra("    d <- false")];
-    let mut survivors = BuckConverterFixture::without(&BuckConverterFixture::item(&print, "body A2D"), &a2d_extras);
+    let mut survivors = FixtureComparison::without(&FixtureComparison::item(&print, "body A2D"), &a2d_extras);
     survivors = survivors.iter().map(|l| if l.starts_with("  event E2 cross") { l.replacen("  event E2 cross", "  event E1 cross", 1) } else { l.clone() }).collect();
-    BuckConverterFixture::assert_same("A2D", &BuckConverterFixture::without(&BuckConverterFixture::item(&BuckConverterFixture::fixture("comparator"), "body A2D"), &fixture_reactions), &survivors);
+    FixtureComparison::assert_same("A2D", &FixtureComparison::without(&FixtureComparison::item(&BuckSource::golden("comparator"), "body A2D"), &fixture_reactions), &survivors);
 }
 
 #[test]
 fn the_buck_elaborates_with_no_diagnostic_and_a_sound_ir() {
     // DIG-15 AC 1, C143: 22 bodies, the 20 modules of the package and the stdlib's `A2D` and
     // `Never`; `transition`, `above` and `init` are hoisted and have none.
-    let design = BuckConverterFixture::buck_design();
+    let design = BuckSource::library_design();
     assert!(design.diagnostics().is_empty(), "{:?}", SourceElaboration::codes(design.diagnostics()));
     let ir = piperine_lang::elab::Elaborator::new(&design).run("Buck").unwrap_or_else(|e| panic!("{:?}", SourceElaboration::codes(&e)));
     assert!(ir.check().is_empty(), "{:?}", ir.check());
@@ -173,5 +166,5 @@ fn the_buck_ir_is_pinned() {
     // DIG-15 AC 2, C144.
     let path = format!("{}/tests/fixtures/elab/buck.txt", env!("CARGO_MANIFEST_DIR"));
     let golden = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    assert_eq!(BuckConverterFixture::buck_ir().print_structural(), golden, "the elaborated Buck differs from tests/fixtures/elab/buck.txt");
+    assert_eq!(BuckElaboration::buck_ir().print_structural(), golden, "the elaborated Buck differs from tests/fixtures/elab/buck.txt");
 }

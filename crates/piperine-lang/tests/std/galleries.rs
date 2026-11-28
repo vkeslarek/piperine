@@ -48,10 +48,10 @@ const TABLE: [Row; 18] = [
     Row { section: "F.5", fixtures: &["Capacitor", "Switch"], std_items: &["carriers::Electrical", "carriers::Bit"] },
 ];
 
-/// Associated test helpers of `galleries`, grouped on one fixture type.
-struct GalleriesFixture;
+/// The gallery fixtures on disk and the specification text they are checked against.
+struct GalleryText;
 
-impl GalleriesFixture {
+impl GalleryText {
     fn fixture_dir() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/gallery")
     }
@@ -67,7 +67,7 @@ impl GalleriesFixture {
             if block.class != BlockClass::Valid {
                 continue;
             }
-            let text = GalleriesFixture::spec_text(&block.file);
+            let text = GalleryText::spec_text(&block.file);
             let section = text
                 .lines()
                 .take(block.line - 1)
@@ -83,14 +83,14 @@ impl GalleriesFixture {
     }
 
     fn fixture(model: &str) -> String {
-        std::fs::read_to_string(GalleriesFixture::fixture_dir().join(format!("{model}.msl"))).unwrap_or_else(|e| panic!("fixture {model}.msl: {e}"))
+        std::fs::read_to_string(GalleryText::fixture_dir().join(format!("{model}.msl"))).unwrap_or_else(|e| panic!("fixture {model}.msl: {e}"))
     }
 
     /// The trimmed lines of every `rust` fence of `docs/spec/`, and the code spans of Appendix D's
     /// table "Models referenced from the normative parts".
     fn spec_lines() -> BTreeSet<String> {
         let mut lines: BTreeSet<String> = SpecCorpus::corpus().iter().flat_map(|b| b.text.lines().map(|l| l.trim().to_string()).collect::<Vec<_>>()).collect();
-        let d = GalleriesFixture::spec_text("appendix_d_gallery_analog.md");
+        let d = GalleryText::spec_text("appendix_d_gallery_analog.md");
         let start = d.find("**Models referenced from the normative parts.**").expect("Appendix D lists the models it assumes");
         let end = start + d[start..].find("> **Resolution.**").expect("the table ends at the Resolution note");
         for (i, part) in d[start..end].split('`').enumerate() {
@@ -125,7 +125,7 @@ impl GalleriesFixture {
         for row in table {
             let fence = fences.iter().find(|(s, _)| s == row.section).map(|(_, t)| t.as_str()).unwrap_or("");
             for model in row.fixtures {
-                if !GalleriesFixture::uses(fence, model) || GalleriesFixture::defines(fence, model) {
+                if !GalleryText::uses(fence, model) || GalleryText::defines(fence, model) {
                     bad.push((row.section.to_string(), model.to_string()));
                 }
             }
@@ -134,7 +134,7 @@ impl GalleriesFixture {
     }
 
     fn fence_texts() -> Vec<(String, String)> {
-        GalleriesFixture::galleries().into_iter().map(|g| (g.section, g.block.text)).collect()
+        GalleryText::galleries().into_iter().map(|g| (g.section, g.block.text)).collect()
     }
 
     /// The root file of one gallery: the fence, then the fixtures of its row.
@@ -142,7 +142,7 @@ impl GalleriesFixture {
         let mut text = fence.to_string();
         for model in fixtures {
             text.push('\n');
-            text.push_str(&GalleriesFixture::fixture(model));
+            text.push_str(&GalleryText::fixture(model));
         }
         text
     }
@@ -150,7 +150,12 @@ impl GalleriesFixture {
     fn fixtures_of(section: &str) -> &'static [&'static str] {
         TABLE.iter().find(|r| r.section == section).unwrap_or_else(|| panic!("a row for {section}")).fixtures
     }
+}
 
+/// Builds a design of a gallery and reads its diagnostics.
+struct GalleryDesign;
+
+impl GalleryDesign {
     /// The gallery built against the embedded library.
     fn build(text: &str) -> Design {
         Design::builder().source("top.msl", text).build()
@@ -162,7 +167,7 @@ impl GalleriesFixture {
     }
 
     fn gallery_design(g: &Gallery) -> Design {
-        GalleriesFixture::build(&GalleriesFixture::assemble(&g.block.text, GalleriesFixture::fixtures_of(&g.section)))
+        GalleryDesign::build(&GalleryText::assemble(&g.block.text, GalleryText::fixtures_of(&g.section)))
     }
 
     /// The diagnostics of the design, one line each: the fence's file and line, the code, the text of
@@ -227,7 +232,7 @@ struct Gallery {
 
 #[test]
 fn gallery_fixtures_exist() {
-    let mut on_disk: Vec<String> = std::fs::read_dir(GalleriesFixture::fixture_dir())
+    let mut on_disk: Vec<String> = std::fs::read_dir(GalleryText::fixture_dir())
         .expect("tests/fixtures/gallery exists")
         .map(|e| e.expect("entry").file_name().to_string_lossy().into_owned())
         .collect();
@@ -236,23 +241,23 @@ fn gallery_fixtures_exist() {
     want.sort();
     assert_eq!(on_disk, want, "one fixture file for each of the twelve models, and no other");
     for model in MODELS {
-        assert!(GalleriesFixture::defines(&GalleriesFixture::fixture(model), model), "{model}.msl declares {model}");
+        assert!(GalleryText::defines(&GalleryText::fixture(model), model), "{model}.msl declares {model}");
     }
 }
 
 #[test]
 fn every_fixture_line_is_spec_text() {
-    let known = GalleriesFixture::spec_lines();
+    let known = GalleryText::spec_lines();
     for model in MODELS {
-        let foreign = GalleriesFixture::foreign_lines(&GalleriesFixture::fixture(model), &known);
+        let foreign = GalleryText::foreign_lines(&GalleryText::fixture(model), &known);
         assert!(foreign.is_empty(), "{model}.msl has lines that are in no `rust` fence and no code span of Appendix D's table: {foreign:?}");
     }
-    assert_eq!(GalleriesFixture::foreign_lines("module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}\nmodule NotInTheSpec_x9() {}\n", &known), vec!["module NotInTheSpec_x9() {}".to_string()], "an invented line is named");
+    assert_eq!(GalleryText::foreign_lines("module Switch(a: Electrical, b: Electrical, in ctl: Bit) {}\nmodule NotInTheSpec_x9() {}\n", &known), vec!["module NotInTheSpec_x9() {}".to_string()], "an invented line is named");
 }
 
 #[test]
 fn the_fixture_table_covers_every_gallery() {
-    let fences = GalleriesFixture::galleries();
+    let fences = GalleryText::galleries();
     assert_eq!(fences.len(), 20, "Appendices D, E and F hold 20 gallery fences (E.7 and the first three nets of F.4 run with `Resolve`; the typed bus of F.4.4 names no library item and stays a fragment, the Book listing digital#20 runs it)");
     let from_spec: BTreeSet<&str> = fences.iter().map(|g| g.section.as_str()).collect();
     let from_table: BTreeSet<&str> = TABLE.iter().map(|r| r.section).collect();
@@ -270,13 +275,13 @@ fn the_fixture_table_covers_every_gallery() {
 
 #[test]
 fn the_fixture_table_names_only_used_models() {
-    assert_eq!(GalleriesFixture::table_misuse(&TABLE, &GalleriesFixture::fence_texts()), Vec::<(String, String)>::new());
+    assert_eq!(GalleryText::table_misuse(&TABLE, &GalleryText::fence_texts()), Vec::<(String, String)>::new());
     let bad = [
         Row { section: "D.3", fixtures: &["Vco"], std_items: &[] },
         Row { section: "D.1", fixtures: &["Tx"], std_items: &[] },
     ];
     assert_eq!(
-        GalleriesFixture::table_misuse(&bad, &GalleriesFixture::fence_texts()),
+        GalleryText::table_misuse(&bad, &GalleryText::fence_texts()),
         vec![("D.3".to_string(), "Vco".to_string()), ("D.1".to_string(), "Tx".to_string())],
         "a model the fence defines (Vco in D.3) and a model it does not use (Tx in D.1) are named as pairs"
     );
@@ -285,16 +290,16 @@ fn the_fixture_table_names_only_used_models() {
 #[test]
 fn every_gallery_builds_with_no_diagnostics() {
     let mut all = Vec::new();
-    for g in GalleriesFixture::galleries() {
-        all.extend(GalleriesFixture::diagnostic_lines(&GalleriesFixture::gallery_design(&g), &g));
+    for g in GalleryText::galleries() {
+        all.extend(GalleryDesign::diagnostic_lines(&GalleryDesign::gallery_design(&g), &g));
     }
     assert!(all.is_empty(), "{} diagnostics:\n{}", all.len(), all.join("\n"));
 }
 
 #[test]
 fn every_gallery_passes_check() {
-    for g in GalleriesFixture::galleries() {
-        let problems = GalleriesFixture::gallery_design(&g).check();
+    for g in GalleryText::galleries() {
+        let problems = GalleryDesign::gallery_design(&g).check();
         assert!(problems.is_empty(), "{}:{}: {problems:?}", g.block.file, g.block.line);
     }
 }
@@ -302,27 +307,27 @@ fn every_gallery_passes_check() {
 #[test]
 fn no_gallery_has_an_unresolved_member() {
     let mut all = Vec::new();
-    for g in GalleriesFixture::galleries() {
-        all.extend(GalleriesFixture::unresolved_members(&GalleriesFixture::gallery_design(&g), &g));
+    for g in GalleryText::galleries() {
+        all.extend(GalleryDesign::unresolved_members(&GalleryDesign::gallery_design(&g), &g));
     }
     assert!(all.is_empty(), "{}", all.join("\n"));
 }
 
 #[test]
 fn every_gallery_references_its_std_items() {
-    for g in GalleriesFixture::galleries() {
+    for g in GalleryText::galleries() {
         let row = TABLE.iter().find(|r| r.section == g.section).expect("a row");
-        let missing = GalleriesFixture::unreferenced_std_items(&GalleriesFixture::gallery_design(&g), row.std_items);
+        let missing = GalleryDesign::unreferenced_std_items(&GalleryDesign::gallery_design(&g), row.std_items);
         assert!(missing.is_empty(), "{} ({}:{}) does not reference the std items {missing:?}", g.section, g.block.file, g.block.line);
     }
 }
 
 #[test]
 fn the_gate_builds_20_fences() {
-    let fences = GalleriesFixture::galleries();
-    let built = fences.iter().map(|g| GalleriesFixture::gallery_design(g)).count();
-    assert_eq!(GalleriesFixture::require_20(built), Ok(()));
-    assert!(GalleriesFixture::require_20(19).is_err() && GalleriesFixture::require_20(21).is_err(), "another number fails the gate");
+    let fences = GalleryText::galleries();
+    let built = fences.iter().map(|g| GalleryDesign::gallery_design(g)).count();
+    assert_eq!(GalleryDesign::require_20(built), Ok(()));
+    assert!(GalleryDesign::require_20(19).is_err() && GalleryDesign::require_20(21).is_err(), "another number fails the gate");
 }
 
 #[test]
@@ -331,21 +336,21 @@ fn a_dirty_gallery_is_reported_by_fence() {
         section: "D.1".to_string(),
         block: SpecBlock { file: "appendix_x.md".to_string(), line: 42, class: BlockClass::Valid, text: "module M(p: Electrical) {}\nconst X: f64 = NoSuchName;\n".to_string() },
     };
-    let design = GalleriesFixture::build(&g.block.text);
-    let lines = GalleriesFixture::diagnostic_lines(&design, &g);
+    let design = GalleryDesign::build(&g.block.text);
+    let lines = GalleryDesign::diagnostic_lines(&design, &g);
     assert!(lines.iter().any(|l| l.starts_with("appendix_x.md:42: E0161 `NoSuchName`")), "{lines:?}");
     let g2 = Gallery {
         section: "D.1".to_string(),
         block: SpecBlock { file: "appendix_y.md".to_string(), line: 7, class: BlockClass::Valid, text: "module M(in c: Bit) { }\ndigital for M { on c.nosuchmethod() { } }\n".to_string() },
     };
-    let unresolved = GalleriesFixture::unresolved_members(&GalleriesFixture::build(&g2.block.text), &g2);
+    let unresolved = GalleryDesign::unresolved_members(&GalleryDesign::build(&g2.block.text), &g2);
     assert!(unresolved.iter().any(|l| l.starts_with("appendix_y.md:7: unresolved member") && l.contains("nosuchmethod")), "{unresolved:?}");
 }
 
 #[test]
 fn galleries_fail_against_an_empty_prelude() {
-    for g in GalleriesFixture::galleries() {
-        let design = GalleriesFixture::build_against_empty_prelude(&GalleriesFixture::assemble(&g.block.text, GalleriesFixture::fixtures_of(&g.section)));
+    for g in GalleryText::galleries() {
+        let design = GalleryDesign::build_against_empty_prelude(&GalleryText::assemble(&g.block.text, GalleryText::fixtures_of(&g.section)));
         let e0161 = design.diagnostics().iter().filter(|d| d.diagnostic.code == "E0161").count();
         assert!(e0161 >= 1, "{} ({}:{}) builds without E0161 against an empty prelude", g.section, g.block.file, g.block.line);
     }
@@ -404,13 +409,13 @@ fn the_fences_composite_values_lifted_are_checked() {
     // modules as the top: none of its refusals names a form `composite-values` lifted. (E.3 is stopped by
     // its const generics first, `generics` L30; E.4 writes the guarded arm and the payload enum of section 2.)
     let mut held = Vec::new();
-    for g in GalleriesFixture::galleries() {
+    for g in GalleryText::galleries() {
         let Some((_, forms)) = LIFTED_FENCES.iter().find(|(section, _)| *section == g.section) else { continue };
         for form in *forms {
             assert!(g.block.text.contains(form), "{}: the fence no longer writes `{form}`", g.section);
         }
-        let text = GalleriesFixture::assemble(&g.block.text, GalleriesFixture::fixtures_of(&g.section));
-        let design = GalleriesFixture::build(&text);
+        let text = GalleryText::assemble(&g.block.text, GalleryText::fixtures_of(&g.section));
+        let design = GalleryDesign::build(&text);
         for module in ModuleNames::declared_in(&text) {
             let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
             for diagnostic in refused {
@@ -456,12 +461,12 @@ fn the_fences_generics_lifted_are_checked() {
     // struct or enum) is held to the type checker, each of its modules as the top: none of its refusals names a form
     // `generics` lifted
     let mut held = Vec::new();
-    for g in GalleriesFixture::galleries() {
+    for g in GalleryText::galleries() {
         if !GenericDeclarations::written_in(&g.block.text) {
             continue;
         }
-        let text = GalleriesFixture::assemble(&g.block.text, GalleriesFixture::fixtures_of(&g.section));
-        let design = GalleriesFixture::build(&text);
+        let text = GalleryText::assemble(&g.block.text, GalleryText::fixtures_of(&g.section));
+        let design = GalleryDesign::build(&text);
         for module in ModuleNames::declared_in(&text) {
             let Err(refused) = piperine_lang::types::Types::check(&design, &module) else { continue };
             for diagnostic in refused {
@@ -499,12 +504,12 @@ fn the_fences_generics_phase_c_lifted_are_checked() {
     // each of its modules as the top: it checks clean, with no diagnostic at all (the generic "not supported yet" included), but for the bundle (L25) and the bundle literal, each `P0001` by name and pinned exactly
     let mut held = Vec::new();
     let mut refusals: Vec<String> = Vec::new();
-    for g in GalleriesFixture::galleries() {
+    for g in GalleryText::galleries() {
         if !GenericModules::written_in(&g.block.text) {
             continue;
         }
-        let text = GalleriesFixture::assemble(&g.block.text, GalleriesFixture::fixtures_of(&g.section));
-        let design = GalleriesFixture::build(&text);
+        let text = GalleryText::assemble(&g.block.text, GalleryText::fixtures_of(&g.section));
+        let design = GalleryDesign::build(&text);
         for module in ModuleNames::declared_in(&text) {
             if let Err(refused) = piperine_lang::types::Types::check(&design, &module) {
                 refusals.extend(refused.iter().map(|diagnostic| format!("{} as `{module}`: {}: {}", g.section, diagnostic.diagnostic.code, diagnostic.diagnostic.message)));
@@ -520,7 +525,7 @@ fn the_fences_generics_phase_c_lifted_are_checked() {
 /// copies it into a file `piperine fmt --check` accepts.
 #[test]
 fn every_gallery_fence_is_in_the_formatters_form() {
-    let fences = GalleriesFixture::galleries();
+    let fences = GalleryText::galleries();
     assert_eq!(fences.len(), 20, "the galleries hold 20 fences");
     for gallery in fences {
         let text = format!("{}\n", gallery.block.text.trim_end());
@@ -536,11 +541,11 @@ const GENERIC_LIBRARY: [&str; 15] = ["Short", "since", "idt", "idtmod", "zi_nd",
 fn the_fences_of_the_generic_library_are_checked() {
     // GN-31 AC 2: every gallery fence that writes an item of the generic library is held to the checker, whole-model, with no
     // diagnostic: none of them is left refused for a form of the `generics` feature (T113 holds the items themselves)
-    let fences: Vec<Gallery> = GalleriesFixture::galleries().into_iter().filter(|g| GENERIC_LIBRARY.iter().any(|item| GalleriesFixture::uses(&g.block.text, item))).collect();
-    let used: BTreeSet<&str> = GENERIC_LIBRARY.iter().copied().filter(|item| fences.iter().any(|g| GalleriesFixture::uses(&g.block.text, item))).collect();
+    let fences: Vec<Gallery> = GalleryText::galleries().into_iter().filter(|g| GENERIC_LIBRARY.iter().any(|item| GalleryText::uses(&g.block.text, item))).collect();
+    let used: BTreeSet<&str> = GENERIC_LIBRARY.iter().copied().filter(|item| fences.iter().any(|g| GalleryText::uses(&g.block.text, item))).collect();
     assert!(used.contains("idtmod"), "the fences write at least `idtmod` (D.3): {used:?}");
     for g in fences {
-        let found = piperine_lang::types::Types::check_model(&GalleriesFixture::gallery_design(&g)).err().unwrap_or_default();
+        let found = piperine_lang::types::Types::check_model(&GalleryDesign::gallery_design(&g)).err().unwrap_or_default();
         let lines: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
         assert!(lines.is_empty(), "{} ({}:{}) is held to the checker: {lines:?}", g.section, g.block.file, g.block.line);
     }

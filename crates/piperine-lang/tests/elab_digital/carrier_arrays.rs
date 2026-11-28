@@ -7,6 +7,7 @@
 use piperine_ir::{Constant, Ir, ValueType};
 use piperine_lang::pom::{DeclKind, Reflect};
 use piperine_lang_fixtures::elaboration::SourceElaboration;
+use piperine_lang_fixtures::refusals::ElaborationRefusals;
 
 /// What a test reads of an elaborated body.
 struct Read<'a> {
@@ -364,17 +365,9 @@ fn arrays_and_elements_bind_windows_of_child_ports() {
 struct Refusals;
 
 impl Refusals {
-    /// What elaborating `Top` of `src` refuses; empty when it elaborates.
-    fn of(src: &str) -> Vec<(String, String)> {
-        match SourceElaboration::run(src, "Top") {
-            Ok(_) => Vec::new(),
-            Err(found) => found.iter().map(|d| (d.diagnostic.code.to_string(), d.diagnostic.message.clone())).collect(),
-        }
-    }
-
     /// Asserts `src` is refused with the one code `code` whose message contains each of `named`.
     fn assert_one(src: &str, code: &str, named: &[&str]) {
-        let found = Self::of(src);
+        let found = ElaborationRefusals::of(src);
         assert_eq!(found.iter().map(|(code, _)| code.as_str()).collect::<Vec<_>>(), [code], "{src}\n{found:?}");
         for text in named {
             assert!(found[0].1.contains(text), "`{text}` is named: {}", found[0].1);
@@ -394,15 +387,15 @@ fn a_generic_length_array_is_judged_per_element_at_each_instance() {
     Refusals::assert_one(&format!("{}{top}", module("b[0] = clk;")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
     // the same module at a length one drive covers is clean, and a length of two names the one element left
     Refusals::assert_one(&format!("{}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}", module("b[0] = clk;")), "E0187", &["`b[1]`", "`M::<2>`"]);
-    CarrierArraysFixture::elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
+    CleanElaboration::elaborates(&format!("{}module Top(in clk: Bit) {{ let m = M::<1>(clk); }}", module("b[0] = clk;")));
     // an element handed to an `out` port of a child names its element too
     Refusals::assert_one(&format!("{CELL}{}{top}", module("let c = Cell(clk, b[0]);")), "E0187", &["`b[1..4]`", "`M::<4>`"]);
 }
 
-/// Associated test helpers of `carrier_arrays`, grouped on one fixture type.
-struct CarrierArraysFixture;
+/// Asserts that a source elaborates with no diagnostic.
+struct CleanElaboration;
 
-impl CarrierArraysFixture {
+impl CleanElaboration {
     /// Elaborates `src` and asserts it holds no diagnostic.
     fn elaborates(src: &str) {
         SourceElaboration::ir(src, "Top");
@@ -414,7 +407,7 @@ fn a_param_length_array_is_judged_per_element_at_each_variant() {
     // §3.3.4, §8.1.2: `[Bit; n]` folds per body variant, so `Wide~n=4` with only `b[0]` driven is E0187 naming `b[1..4]`
     let module = "module Wide(in clk: Bit) { n: u32 = 2; signal b: [Bit; n]; b[0] = clk; }\n";
     Refusals::assert_one(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 4 }}(clk); }}"), "E0187", &["`b[1..4]`", "`Wide~n=4`"]);
-    CarrierArraysFixture::elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
+    CleanElaboration::elaborates(&format!("{module}module Top(in clk: Bit) {{ let w = Wide {{ n: 1 }}(clk); }}"));
 }
 
 #[test]
@@ -423,15 +416,15 @@ fn a_generation_index_names_the_elements_it_reaches() {
     // over every element is clean
     let top = |range: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in {range} {{ let c = Cell(clk, y[k]); }} }}");
     Refusals::assert_one(&top("0..2"), "E0187", &["`y[2..4]`"]);
-    CarrierArraysFixture::elaborates(&top("0..4"));
+    CleanElaboration::elaborates(&top("0..4"));
     // a definition inside generation drives the elements its iterations name: E0187 names the two it leaves (the refusal it
     // was is gone, generics finding 14), and a loop over every element is clean
     Refusals::assert_one("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..2 { y[k] = clk; } }", "E0187", &["`y[2..4]`", "`Top`"]);
-    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
+    CleanElaboration::elaborates("module Top(in clk: Bit) { signal y: [Bit; 4]; for k in 0..4 { y[k] = clk; } }");
     // and in a generic module, at its length
     let generic = "module M<const N: usize>(in clk: Bit) { signal y: [Bit; N]; for k in 0..2 { let c = Cell(clk, y[k]); } }\n";
     Refusals::assert_one(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<4>(clk); }}"), "E0187", &["`y[2..4]`", "`M::<4>`"]);
-    CarrierArraysFixture::elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
+    CleanElaboration::elaborates(&format!("{CELL}{generic}module Top(in clk: Bit) {{ let m = M::<2>(clk); }}"));
 }
 
 #[test]
@@ -440,7 +433,7 @@ fn an_initial_value_over_elements_no_out_port_holds_is_clean_and_over_every_elem
     // only once every element is handed; a generic length is judged at each instance
     let module = |handed: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal y: [Bit; N] = [false; N]; {handed} }}\n");
     let top = |length: u32| format!("module Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
-    CarrierArraysFixture::elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
+    CleanElaboration::elaborates(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(2)));
     Refusals::assert_one(&format!("{CELL}{}{}", module("let c = Cell(clk, y[0]);"), top(1)), "E0223", &["`y`", "`M::<1>`"]);
 }
 
@@ -450,7 +443,7 @@ fn an_initial_value_beside_definitions_of_every_element_is_e0338_at_the_instance
     // E0338 only at the instance whose elements the definitions all name
     let src = |length: u32| format!("module M<const N: usize>(in clk: Bit) {{ signal b: [Bit; N] = [false; N]; b[0] = clk; b[1] = !clk; }}\nmodule Top(in clk: Bit) {{ let m = M::<{length}>(clk); }}");
     Refusals::assert_one(&src(2), "E0338", &["`b`", "`M::<2>`"]);
-    CarrierArraysFixture::elaborates(&src(4));
+    CleanElaboration::elaborates(&src(4));
 }
 
 #[test]
@@ -459,11 +452,11 @@ fn a_nested_array_with_a_generic_inner_length_judges_shared_elements_per_instanc
     // clean at `M::<2>`; a second definition of `g[1][1]` is E0335 naming the element and the instance
     let module = |extra: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; g[1][0] = clk; g[0][1] = clk; g[0][0] = clk; g[1][1] = clk; {extra} }}\n");
     let top = "module Top(in clk: Bit) { let m = M::<2>(clk); }";
-    CarrierArraysFixture::elaborates(&format!("{}{top}", module("")));
+    CleanElaboration::elaborates(&format!("{}{top}", module("")));
     Refusals::assert_one(&format!("{}{top}", module("g[1][1] = !clk;")), "E0335", &["`g[1][1]`", "`M::<2>`"]);
     // §5.2, §8.2.20: a definition and a commit of different elements compose; of one element they are E0221 at the instance
     let committed = |element: &str| format!("module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2] = [[false; N]; 2]; g[1][0] = clk; }}\ndigital<N> for M<N> {{ on clk.rise() {{ {element} <- true; }} }}\n{top}");
-    CarrierArraysFixture::elaborates(&committed("g[0][1]"));
+    CleanElaboration::elaborates(&committed("g[0][1]"));
     Refusals::assert_one(&committed("g[1][0]"), "E0221", &["`g[1][0]`", "`M::<2>`"]);
     // §5.2.6: an element handed to an `out` port and defined here is E0220 at the instance; a different element is clean
     let handed = |element: &str| format!("{CELL}module M<const N: usize>(in clk: Bit) {{ signal g: [[Bit; N]; 2]; let c = Cell(clk, g[1][0]); g[0][0] = clk; g[0][1] = clk; g[1][1] = clk; {element} = !clk; }}\n{top}");
@@ -475,24 +468,24 @@ fn drives_written_in_generation_are_judged_where_generation_is_unrolled() {
     // §8.2.20, §8.2.23: `for k in 0..2 { b[k] = a; }` defines `b[0]` and `b[1]`, so `b[2]` and `b[3]` defined beside it are
     // clean, and `b[1]` defined again is E0335 naming it
     let fixed = |extra: &str| format!("module Top(in clk: Bit) {{ signal b: [Bit; 4]; for k in 0..2 {{ b[k] = clk; }} b[3] = !clk; b[2] = clk; {extra} }}");
-    CarrierArraysFixture::elaborates(&fixed(""));
+    CleanElaboration::elaborates(&fixed(""));
     Refusals::assert_one(&fixed("b[1] = !clk;"), "E0335", &["`b[1]`", "`Top`"]);
     // §8.2.24: two definitions in exclusive arms of an `if` are one drive; one in every iteration of a loop is two
-    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
-    CarrierArraysFixture::elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
+    CleanElaboration::elaborates("module Top(in clk: Bit) { mode: usize = 2; signal y: Bit; if mode > 1 { y = clk; } else { y = !clk; } }");
+    CleanElaboration::elaborates("module Top(in clk: Bit) { signal y: [Bit; 2]; for k in 0..2 { if k == 0 { y[k] = clk; } else { y[k] = !clk; } } }");
     Refusals::assert_one("module Top(in clk: Bit) { signal y: Bit; for k in 0..2 { y = clk; } }", "E0335", &["`y`", "`Top`"]);
     // §5.2.6: placements in a loop hand `y[0]` and `y[1]`; `y[2]` and `y[3]` defined here are clean, `y[1]` is E0220
     let handed = |extra: &str| format!("{CELL}module Top(in clk: Bit) {{ signal y: [Bit; 4]; for k in 0..2 {{ let c = Cell(clk, y[k]); }} y[3] = clk; y[2] = clk; {extra} }}");
-    CarrierArraysFixture::elaborates(&handed(""));
+    CleanElaboration::elaborates(&handed(""));
     Refusals::assert_one(&handed("y[1] = clk;"), "E0220", &["`y[1]`", "`Top`"]);
     // §5.2: a definition in a loop and a commit of another element compose; of the same element they are E0221
     let committed = |element: &str| format!("module Top(in clk: Bit) {{ signal y: [Bit; 2] = [false; 2]; for k in 0..1 {{ y[k] = clk; }} }}\ndigital for Top {{ on clk.rise() {{ {element} <- true; }} }}");
-    CarrierArraysFixture::elaborates(&committed("y[1]"));
+    CleanElaboration::elaborates(&committed("y[1]"));
     Refusals::assert_one(&committed("y[0]"), "E0221", &["`y[0]`", "`Top`"]);
     // §8.2.21, §8.2.24: an initial value beside a definition in an arm not taken stays the carrier's value (clean); in the
     // taken arm it is E0338 at the instance, and with no initial value an untaken definition leaves `y` undriven (E0187)
     let arm = |mode: u32, init: &str| format!("module Top(in clk: Bit) {{ mode: usize = {mode}; signal y: Bit{init}; if mode > 1 {{ y = clk; }} }}");
-    CarrierArraysFixture::elaborates(&arm(0, " = false"));
+    CleanElaboration::elaborates(&arm(0, " = false"));
     Refusals::assert_one(&arm(2, " = false"), "E0338", &["`y`", "`Top~mode=2`"]);
     Refusals::assert_one(&arm(0, ""), "E0187", &["`y`", "`Top~mode=0`"]);
 }
@@ -523,7 +516,7 @@ fn a_loop_of_definitions_through_elements_is_e0339_naming_the_elements() {
     Refusals::assert_one("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 2]; signal c: [Bit<u8>; 2]; b[0] = clk; b[1] = c[1]; c[0] = clk; c[1] = b[1] + 1; }", "E0339", &["`b[1]`, `c[1]`"]);
     Refusals::assert_one("module Top(in clk: Bit<u8>) { signal y: Bit<u8>; for k in 0..1 { y = y + clk; } }", "E0339", &["`y`", "`Top`"]);
     // a chain through elements is no loop
-    CarrierArraysFixture::elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
+    CleanElaboration::elaborates("module Top(in clk: Bit<u8>) { signal b: [Bit<u8>; 3]; b[0] = clk; b[1] = b[0] + 1; b[2] = b[1]; }");
 }
 
 #[test]

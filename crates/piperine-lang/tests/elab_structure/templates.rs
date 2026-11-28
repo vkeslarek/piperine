@@ -170,10 +170,10 @@ fn a_cell_of_a_generated_bank_is_read_through_its_indexes() {
     assert_eq!(top.node(reached).expect("a bound node").path(), "Top.bank.cells[1][2].sn");
 }
 
-/// Associated test helpers of `templates`, grouped on one fixture type.
-struct TemplatesFixture;
+/// The source texts of designs built on template modules: a bank over a callable param, a swappable pair and a generic cell.
+struct TemplateSources;
 
-impl TemplatesFixture {
+impl TemplateSources {
     /// A cell with a `pub` storage node and `pub` param `cs`, and a bank that places it through the callable param `cell` and reads
     /// the cell in its own analog block (`items` is the read).
     fn own_bank(visibility: &str, items: &str) -> String {
@@ -214,7 +214,7 @@ impl TemplatesFixture {
 #[test]
 fn inst_name_in_the_module_that_places_the_template_reads_the_concrete_module() {
     // §8.4.8: `v(c0.sn)` in the bank's own analog block names the storage node of the `Dram` the template places
-    let ir = SourceElaboration::ir(&TemplatesFixture::own_bank("", "i(a, gnd) +> v(c0.sn);"), "Top");
+    let ir = SourceElaboration::ir(&TemplateSources::own_bank("", "i(a, gnd) +> v(c0.sn);"), "Top");
     let bank = ir.instance_at("Top.bank").expect("the bank");
     let reached = bank.body().nodes().iter().position(|node| node.name == "c0.sn").expect("the bank reaches `c0.sn`");
     assert_eq!(bank.node(reached).expect("a bound node").path(), "Top.bank.c0.sn");
@@ -293,7 +293,7 @@ fn the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl() {
     // §8.4.5, §3.1.4: `fet.gain()` through `N: Mosfet + Fn(..)` runs the `impl Mosfet` of the module the template names, in a body
     // `let` and straight in the `analog` block; each placement keeps its own model's answer
     for analog in ["let gain = fet.gain(); potential(s) +> gain;", "potential(s) +> fet.gain();"] {
-        let printed = SourceElaboration::ir(&TemplatesFixture::mosfet_pair("", analog), "Top").print_structural();
+        let printed = SourceElaboration::ir(&TemplateSources::mosfet_pair("", analog), "Top").print_structural();
         let body_of = |model: &str| printed.split("\nbody ").find(|body| body.starts_with(&format!("\"Pair::<module `{model}`>"))).unwrap_or_else(|| panic!("no body for {model}: {printed}")).to_string();
         let (square, linear) = (body_of("Square"), body_of("Linear"));
         assert!(square.contains("direct 6.0") || square.contains("let gain = 6.0"), "{analog}: {square}");
@@ -306,14 +306,14 @@ fn the_trait_of_a_combined_bound_dispatches_to_the_template_modules_impl() {
 fn a_template_of_a_generic_module_names_its_arguments() {
     // §8.4.3 (GN-21 AC 1): `G::<2> { k: 3.0 }(x)` placed in place, from a `const` of type `G<2>`, and through a param of a
     // callable bound each place the instance `G::<2>(x) { k: 3.0 }` places
-    let direct = SourceElaboration::ir(&TemplatesFixture::generic_cell("module Top() { signal x: Electrical; let c = G::<2>(x) { k: 3.0 }; }"), "Top");
+    let direct = SourceElaboration::ir(&TemplateSources::generic_cell("module Top() { signal x: Electrical; let c = G::<2>(x) { k: 3.0 }; }"), "Top");
     let written = [
         "module Top() { signal x: Electrical; let c = G::<2> { k: 3.0 }(x); }",
         "const T: G<2> = G::<2> { k: 3.0 };\nmodule Top() { signal x: Electrical; let c = T(x); }",
         "module H<C: Fn(Electrical)>(a: Electrical) { cell: C; pub let c = cell(a); }\nmodule Top() { signal x: Electrical; pub let h = H::<_>(x) { cell: G::<2> { k: 3.0 } }; }",
     ];
     for tail in written {
-        let ir = SourceElaboration::ir(&TemplatesFixture::generic_cell(tail), "Top");
+        let ir = SourceElaboration::ir(&TemplateSources::generic_cell(tail), "Top");
         let path = if tail.contains("H::<_>") { "Top.h.c" } else { "Top.c" };
         let instance = ir.instance_at(path).unwrap_or_else(|| panic!("{tail}: no instance at {path}"));
         assert_eq!(instance.body().name(), "G::<2>", "{tail}");
@@ -327,7 +327,7 @@ fn two_templates_of_one_generic_module_with_different_arguments_are_two_values()
     // arguments are one value
     let bank = "module H<C: Fn(Electrical)>(a: Electrical) { cell: C; let c = cell(a); }\n\
         module Top() { signal x: Electrical; let two = H::<_>(x) { cell: G::<2> { k: 3.0 } }; let three = H::<_>(x) { cell: G::<3> { k: 3.0 } }; let again = H::<_>(x) { cell: G::<2> { k: 3.0 } }; }";
-    let ir = SourceElaboration::ir(&TemplatesFixture::generic_cell(bank), "Top");
+    let ir = SourceElaboration::ir(&TemplateSources::generic_cell(bank), "Top");
     let body = |path: &str| ir.instance_at(path).map(|i| i.body().name().to_string());
     assert_eq!(body("Top.two.c").as_deref(), Some("G::<2>"));
     assert_eq!(body("Top.three.c").as_deref(), Some("G::<3>"));
@@ -338,10 +338,10 @@ fn two_templates_of_one_generic_module_with_different_arguments_are_two_values()
 #[test]
 fn a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_arguments() {
     // §8.4.3: the `where` of `G` is discharged for the template's arguments (`E0304`), and an argument nothing gives is `E0181`
-    let zero = TemplatesFixture::generic_cell("const T: G<0> = G::<0> { k: 3.0 };\nmodule Top() { signal x: Electrical; let c = T(x); }");
+    let zero = TemplateSources::generic_cell("const T: G<0> = G::<0> { k: 3.0 };\nmodule Top() { signal x: Electrical; let c = T(x); }");
     let found = SourceElaboration::codes(&SourceElaboration::run(&zero, "Top").expect_err("N = 0 breaks the where"));
     assert_eq!(found, ["E0304"]);
-    let open = TemplatesFixture::generic_cell("module Top() { signal x: Electrical; let c = G { k: 3.0 }(x); }");
+    let open = TemplateSources::generic_cell("module Top() { signal x: Electrical; let c = G { k: 3.0 }(x); }");
     let found = SourceElaboration::run(&open, "Top").expect_err("N is never given");
     assert_eq!(SourceElaboration::codes(&found), ["E0181"], "{found:?}");
 }
@@ -350,7 +350,7 @@ fn a_template_of_a_generic_module_obeys_its_where_and_names_its_missing_argument
 fn a_param_default_dispatches_the_trait_of_a_template_param() {
     // §8.1.16, §8.4.5: `level: f64 = fet.gain()` reads the earlier param `fet` and runs the `impl Mosfet` of the module its template
     // names, folded per placement: 3.0 * 2.0 for `Square`, 3.0 * 0.5 for `Linear`
-    let ir = SourceElaboration::ir(&TemplatesFixture::mosfet_pair("level: f64 = fet.gain();", "potential(s) +> level;"), "Top");
+    let ir = SourceElaboration::ir(&TemplateSources::mosfet_pair("level: f64 = fet.gain();", "potential(s) +> level;"), "Top");
     let level = |path: &str| ir.instance_at(path).unwrap_or_else(|| panic!("no instance {path}")).param(1).copied();
     assert_eq!(level("Top.a"), Some(Constant::Real(Real::new(3.0 * 2.0))));
     assert_eq!(level("Top.b"), Some(Constant::Real(Real::new(3.0 * 0.5))));

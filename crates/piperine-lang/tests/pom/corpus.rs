@@ -8,10 +8,10 @@ use piperine_lang::pom::Design;
 use serde_json::{Value, json};
 use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
 
-/// Associated test helpers of `corpus`, grouped on one fixture type.
-struct CorpusFixture;
+/// Asserts a design reproduces its parse losslessly, naming the first difference.
+struct LosslessDesign;
 
-impl CorpusFixture {
+impl LosslessDesign {
     /// The first line where two trees differ, spans included, with a little context.
     fn first_difference(a: &impl std::fmt::Debug, b: &impl std::fmt::Debug) -> Option<String> {
         let (a, b) = (format!("{a:#?}"), format!("{b:#?}"));
@@ -24,11 +24,16 @@ impl CorpusFixture {
     /// Rebuild the first file of `design` and demand the parsed tree, spans included.
     fn assert_lossless(design: &Design, parsed: &piperine_lang::msl::ast::File, at: &str) {
         let rebuilt = design.files()[0].to_ast();
-        if let Some(diff) = CorpusFixture::first_difference(&rebuilt, parsed) {
+        if let Some(diff) = LosslessDesign::first_difference(&rebuilt, parsed) {
             panic!("{at}: the rebuilt tree differs from the parsed one at {diff}");
         }
     }
+}
 
+/// The JSON of a design and its corrupted forms.
+struct DesignJson;
+
+impl DesignJson {
     /// A well-formed design with a path, an expression, a statement item and a
     /// resolution slot, as JSON, to corrupt one link at a time.
     fn design_json() -> Value {
@@ -40,7 +45,7 @@ impl CorpusFixture {
 
     /// Corrupt the design with `edit` and return what `check()` reports.
     fn corrupted(edit: impl FnOnce(&mut Value)) -> Vec<String> {
-        let mut json = CorpusFixture::design_json();
+        let mut json = DesignJson::design_json();
         edit(&mut json);
         let design: Design = serde_json::from_value(json).expect("a corrupted design still deserializes");
         design.check()
@@ -67,7 +72,7 @@ fn every_spec_block_round_trips_to_its_ast() {
             }
         }
         let design = Design::builder().source("block.msl", block.text.as_str()).build();
-        CorpusFixture::assert_lossless(&design, &parsed.file, &format!("{}:{}", block.file, block.line));
+        LosslessDesign::assert_lossless(&design, &parsed.file, &format!("{}:{}", block.file, block.line));
         compared += 1;
     }
     println!("compared {compared} fences ({skipped} not file-parsable or compile_fail)");
@@ -86,7 +91,7 @@ fn a_loaded_file_rebuilds_to_its_own_tree() {
     for file in files {
         let parsed = SourceParser::parse(file.text()).file;
         let rebuilt = file.to_ast();
-        if let Some(diff) = CorpusFixture::first_difference(&rebuilt, &parsed) {
+        if let Some(diff) = LosslessDesign::first_difference(&rebuilt, &parsed) {
             panic!("{}: differs at {diff}", file.name());
         }
     }
@@ -133,7 +138,7 @@ struct ;
     let parsed = SourceParser::parse(src);
     assert!(!parsed.diagnostics.is_empty());
     let design = Design::builder().source("top.msl", src).build();
-    CorpusFixture::assert_lossless(&design, &parsed.file, "the hand-written source");
+    LosslessDesign::assert_lossless(&design, &parsed.file, "the hand-written source");
 }
 
 #[test]
@@ -160,39 +165,39 @@ fn every_spec_block_builds_with_consistent_invariants() {
 #[test]
 fn check_reports_every_kind_of_broken_link() {
     // An id past the end of its arena.
-    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Path": 9999 }));
-    assert!(CorpusFixture::reports(&p, "path 9999"), "{p:?}");
-    let p = CorpusFixture::corrupted(|j| j["stmts"][0]["kind"] = json!({ "Item": 9999 }));
-    assert!(CorpusFixture::reports(&p, "decl 9999"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Path": 9999 }));
+    assert!(DesignJson::reports(&p, "path 9999"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["stmts"][0]["kind"] = json!({ "Item": 9999 }));
+    assert!(DesignJson::reports(&p, "decl 9999"), "{p:?}");
     // An owner that does not exist.
-    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["owner"] = json!(9999));
-    assert!(CorpusFixture::reports(&p, "owner"), "{p:?}");
-    let p = CorpusFixture::corrupted(|j| j["types"][0]["owner"] = json!(9999));
-    assert!(CorpusFixture::reports(&p, "owner"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["exprs"][0]["owner"] = json!(9999));
+    assert!(DesignJson::reports(&p, "owner"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["types"][0]["owner"] = json!(9999));
+    assert!(DesignJson::reports(&p, "owner"), "{p:?}");
     // A resolved link that points at no declaration.
-    let p = CorpusFixture::corrupted(|j| j["paths"][0]["segments"][0]["res"] = json!({ "Decl": 9999 }));
-    assert!(CorpusFixture::reports(&p, "resolution"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["paths"][0]["segments"][0]["res"] = json!({ "Decl": 9999 }));
+    assert!(DesignJson::reports(&p, "resolution"), "{p:?}");
     // A declaration listed under two parents, or twice under one.
-    let p = CorpusFixture::corrupted(|j| {
+    let p = DesignJson::corrupted(|j| {
         let child = j["decls"][0]["children"][0].clone();
         j["decls"][0]["children"].as_array_mut().unwrap().push(child);
     });
-    assert!(CorpusFixture::reports(&p, "twice"), "{p:?}");
+    assert!(DesignJson::reports(&p, "twice"), "{p:?}");
     // Parent and child disagree.
-    let p = CorpusFixture::corrupted(|j| j["decls"][1]["parent"] = json!(2));
+    let p = DesignJson::corrupted(|j| j["decls"][1]["parent"] = json!(2));
     assert!(!p.is_empty());
     // Two declarations that are each other's parent: no root reaches them.
-    let p = CorpusFixture::corrupted(|j| {
+    let p = DesignJson::corrupted(|j| {
         j["decls"][0]["children"] = json!([]);
         j["decls"][1]["parent"] = json!(2);
         j["decls"][1]["children"] = json!([2]);
         j["decls"][2]["parent"] = json!(1);
         j["decls"][2]["children"] = json!([1]);
     });
-    assert!(CorpusFixture::reports(&p, "not reachable from any root"), "{p:?}");
+    assert!(DesignJson::reports(&p, "not reachable from any root"), "{p:?}");
     // A child expression past the end of the arena.
-    let p = CorpusFixture::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
-    assert!(CorpusFixture::reports(&p, "expression 9999"), "{p:?}");
+    let p = DesignJson::corrupted(|j| j["exprs"][0]["kind"] = json!({ "Unary": { "op": "Neg", "expr": 9999 } }));
+    assert!(DesignJson::reports(&p, "expression 9999"), "{p:?}");
 }
 
 #[test]
@@ -248,5 +253,5 @@ digital for M {
     let parsed = SourceParser::parse(src);
     assert!(parsed.diagnostics.is_empty(), "{:?}", parsed.diagnostics);
     let design = Design::builder().source("top.msl", src).build();
-    CorpusFixture::assert_lossless(&design, &parsed.file, "docs at every position");
+    LosslessDesign::assert_lossless(&design, &parsed.file, "docs at every position");
 }

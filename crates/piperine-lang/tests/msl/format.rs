@@ -14,12 +14,13 @@ use piperine_lang::msl::Span;
 use piperine_lang::msl::comments::{Anchor, Comment, Comments};
 use piperine_lang::msl::format::Formatter;
 use piperine_lang::msl::parser::SourceParser;
+use piperine_lang_fixtures::fragments::FragmentSource;
 use piperine_lang_fixtures::spec_corpus::{BlockClass, SpecCorpus};
 
-/// Associated test helpers of `format`, grouped on one fixture type.
-struct FormatFixture;
+/// Locates spans of a source and the anchors its comments attach to.
+struct CommentAnchors;
 
-impl FormatFixture {
+impl CommentAnchors {
     /// The span from the first `from` of `src` to the end of the first `to` after it.
     fn between(src: &str, from: &str, to: &str) -> Span {
         let start = src.find(from).unwrap_or_else(|| panic!("`{from}` is in the source"));
@@ -34,37 +35,34 @@ impl FormatFixture {
         let attached = Comments::of(src).attach(&parsed.file, src);
         (attached.anchors().to_vec(), attached.verbatim().to_vec())
     }
+}
 
+/// The formatted text of a source.
+struct FormattedSource;
+
+impl FormattedSource {
     /// The formatted text of `src`, which must format.
     fn formatted(src: &str) -> String {
         Formatter::format(src).unwrap_or_else(|d| panic!("{d:?}\n{src}"))
     }
+}
 
-    // ---- the corpus (CLI-23 AC 10) ----------------------------------------------------------------
+/// The root of the repository.
+struct RepositoryRoot;
 
+impl RepositoryRoot {
     fn repo() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
+}
 
-    /// A fragment wrapped into the smallest context that parses it with no
-    /// diagnostics, as `msl_print` wraps one: a file as it is, a module body, an
-    /// `analog` body, a reaction body or a function body. `None` when no context
-    /// accepts it.
-    fn fragment_source(text: &str) -> Option<String> {
-        [
-            text.to_string(),
-            format!("module Fragment() {{\n{text}\n}}"),
-            format!("analog for Fragment {{\n{text}\n}}"),
-            format!("digital for Fragment {{\non event {{\n{text}\n}}\n}}"),
-            format!("fn fragment() {{\n{text}\n}}"),
-        ]
-        .into_iter()
-        .find(|src| SourceParser::parse(src).diagnostics.is_empty())
-    }
+/// Finds the files of a directory tree by extension.
+struct MslFiles;
 
+impl MslFiles {
     /// Every `.msl` file under `dir`, recursively, in path order.
     fn msl_files(dir: &Path) -> Vec<PathBuf> {
-        FormatFixture::msl_files_with(dir, "msl")
+        MslFiles::msl_files_with(dir, "msl")
     }
 
     /// The files of `dir` with the extension `extension`, recursively, in path order.
@@ -75,17 +73,22 @@ impl FormatFixture {
         entries.sort();
         for path in entries {
             if path.is_dir() {
-                out.extend(FormatFixture::msl_files_with(&path, extension));
+                out.extend(MslFiles::msl_files_with(&path, extension));
             } else if path.extension().is_some_and(|e| e == extension) {
                 out.push(path);
             }
         }
         out
     }
+}
 
+/// The `msl` blocks of the Book, decoded.
+struct BookBlocks;
+
+impl BookBlocks {
     /// The `msl` blocks of the Book, decoded, read with the string functions of `tests/book.rs`.
     fn book_blocks() -> Vec<String> {
-        let html = std::fs::read_to_string(FormatFixture::repo().join("docs/book/content.html")).expect("docs/book/content.html exists");
+        let html = std::fs::read_to_string(RepositoryRoot::repo().join("docs/book/content.html")).expect("docs/book/content.html exists");
         let decode = |t: &str| t.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&#39;", "'").replace("&amp;", "&");
         let mut out = Vec::new();
         let mut rest = html.as_str();
@@ -100,17 +103,22 @@ impl FormatFixture {
         }
         out
     }
+}
 
+/// Every source the formatter is checked over, with its label.
+struct FormatCorpus;
+
+impl FormatCorpus {
     /// Every source of the corpus with its label: the standard library, the
     /// gallery fixtures, `examples/buck`, `examples/rc` and the MSL twins of
     /// `tests/e2e/twins/` (each must parse), the MSL files of the test projects and
     /// fixtures of the other crates that parse (some are broken on purpose), the
     /// specification's blocks and the Book's `msl` blocks wrapped as fragments.
     fn sources() -> Vec<(String, String)> {
-        let repo = FormatFixture::repo();
+        let repo = RepositoryRoot::repo();
         let mut out = Vec::new();
         for dir in ["crates/piperine-lang/std", "crates/piperine-lang/tests/fixtures/gallery", "examples/buck", "examples/rc", "tests/e2e/twins"] {
-            let files = FormatFixture::msl_files(&repo.join(dir));
+            let files = MslFiles::msl_files(&repo.join(dir));
             assert!(!files.is_empty(), "{dir} holds MSL files");
             for path in files {
                 let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
@@ -120,7 +128,7 @@ impl FormatFixture {
             }
         }
         for dir in ["crates/piperine-cli/tests/projects", "crates/piperine-parity/tests"] {
-            for path in FormatFixture::msl_files(&repo.join(dir)) {
+            for path in MslFiles::msl_files(&repo.join(dir)) {
                 let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
                 if SourceParser::parse(&text).diagnostics.is_empty() {
                     out.push((path.strip_prefix(&repo).unwrap_or(&path).display().to_string(), text));
@@ -129,11 +137,11 @@ impl FormatFixture {
         }
         for b in SpecCorpus::corpus() {
             if b.class != BlockClass::CompileFail {
-                out.extend(FormatFixture::fragment_source(&b.text).map(|s| (format!("docs/spec/{}:{}", b.file, b.line), s)));
+                out.extend(FragmentSource::wrapped(&b.text).map(|s| (format!("docs/spec/{}:{}", b.file, b.line), s)));
             }
         }
-        for (n, text) in FormatFixture::book_blocks().into_iter().enumerate() {
-            out.extend(FormatFixture::fragment_source(&text).map(|s| (format!("docs/book block {n}"), s)));
+        for (n, text) in BookBlocks::book_blocks().into_iter().enumerate() {
+            out.extend(FragmentSource::wrapped(&text).map(|s| (format!("docs/book block {n}"), s)));
         }
         out
     }
@@ -203,24 +211,24 @@ fn f(x: i32) -> i32 {
 }
 // ending the file
 ";
-    let module = FormatFixture::between(src, "module M(", "\n}");
-    let analog_close = FormatFixture::between(src, "analog for M", "}");
+    let module = CommentAnchors::between(src, "module M(", "\n}");
+    let analog_close = CommentAnchors::between(src, "analog for M", "}");
     let analog_close = Span::new(analog_close.end - 1, analog_close.end);
     let fn_close = Span::new(src.rfind('}').expect("a brace"), src.rfind('}').expect("a brace") + 1);
     let expected = vec![
         Anchor::Before(module),
-        Anchor::Before(FormatFixture::between(src, "in a", "Electrical")),
-        Anchor::After(FormatFixture::between(src, "out b", "Electrical")),
-        Anchor::Before(FormatFixture::between(src, "r: f64", ";")),
-        Anchor::After(FormatFixture::between(src, "r: f64", ";")),
+        Anchor::Before(CommentAnchors::between(src, "in a", "Electrical")),
+        Anchor::After(CommentAnchors::between(src, "out b", "Electrical")),
+        Anchor::Before(CommentAnchors::between(src, "r: f64", ";")),
+        Anchor::After(CommentAnchors::between(src, "r: f64", ";")),
         Anchor::Inside(analog_close),
-        Anchor::Before(FormatFixture::between(src, "let y", ";")),
-        Anchor::After(FormatFixture::between(src, "let y", ";")),
-        Anchor::Before(FormatFixture::between(src, "0 => 1", ",")),
+        Anchor::Before(CommentAnchors::between(src, "let y", ";")),
+        Anchor::After(CommentAnchors::between(src, "let y", ";")),
+        Anchor::Before(CommentAnchors::between(src, "0 => 1", ",")),
         Anchor::Inside(fn_close),
         Anchor::Inside(Span::new(src.len(), src.len())),
     ];
-    let (got, verbatim) = FormatFixture::anchors(src);
+    let (got, verbatim) = CommentAnchors::anchors(src);
     assert_eq!(got, expected);
     assert!(verbatim.is_empty(), "every comment of this source has an anchor: {verbatim:?}");
 }
@@ -245,14 +253,14 @@ fn f(a: f64, b: f64, c: bool) -> f64 {
     y
 }
 ";
-    let let_y = FormatFixture::between(src, "let y", ";");
-    let let_z = FormatFixture::between(src, "let z", ";");
-    let let_w = FormatFixture::between(src, "let w", "};");
-    let (got, verbatim) = FormatFixture::anchors(src);
+    let let_y = CommentAnchors::between(src, "let y", ";");
+    let let_z = CommentAnchors::between(src, "let z", ";");
+    let let_w = CommentAnchors::between(src, "let w", "};");
+    let (got, verbatim) = CommentAnchors::anchors(src);
     assert_eq!(
         got,
         vec![
-            Anchor::After(FormatFixture::between(src, "let x", ";")),
+            Anchor::After(CommentAnchors::between(src, "let x", ";")),
             Anchor::Verbatim(let_y),
             Anchor::Verbatim(let_z),
             Anchor::Verbatim(let_w),
@@ -312,7 +320,7 @@ fn f(a: f64) -> f64 {
 
 /* 6 ending the file */
 ";
-    let out = FormatFixture::formatted(SIX);
+    let out = FormattedSource::formatted(SIX);
     assert_eq!(out, expected);
     let texts = vec![
         "// 1 before the item",
@@ -332,7 +340,7 @@ fn f(a: f64) -> f64 {
 #[test]
 fn the_guard_refuses_a_text_that_lost_a_comment() {
     let src = "fn f() {\n    let x = 1; // one\n    // two\n    x\n}\n";
-    let good = FormatFixture::formatted(src);
+    let good = FormattedSource::formatted(src);
     assert_eq!(Formatter::guard(src, good.clone()), Ok(good.clone()));
 
     let lost = good.replace("    // two\n", "");
@@ -341,7 +349,7 @@ fn the_guard_refuses_a_text_that_lost_a_comment() {
     assert_eq!(refused.len(), 1);
     assert_eq!(refused[0].code, "P0004");
     assert!(refused[0].message.starts_with("internal error"), "{}", refused[0].message);
-    assert_eq!(refused[0].span(), FormatFixture::between(src, "// two", "two"));
+    assert_eq!(refused[0].span(), CommentAnchors::between(src, "// two", "two"));
 
     // AC 2's half of the guard: a text whose tree differs is refused too.
     let changed = good.replace("let x = 1;", "let x = 2;");
@@ -374,7 +382,7 @@ const CASES: &[&str] = &[
 #[test]
 fn the_formatted_tree_equals_the_sources() {
     for src in CASES {
-        let out = FormatFixture::formatted(src);
+        let out = FormattedSource::formatted(src);
         let (before, after) = (SourceParser::parse(src), SourceParser::parse(&out));
         assert!(after.diagnostics.is_empty(), "{:?}\n{out}", after.diagnostics);
         assert!(before.file == after.file, "the formatted text parses to another tree:\n{src}\n---\n{out}");
@@ -385,8 +393,8 @@ fn the_formatted_tree_equals_the_sources() {
 #[test]
 fn formatting_twice_changes_nothing() {
     for src in CASES {
-        let once = FormatFixture::formatted(src);
-        assert_eq!(FormatFixture::formatted(&once), once, "formatting is not idempotent on:\n{src}");
+        let once = FormattedSource::formatted(src);
+        assert_eq!(FormattedSource::formatted(&once), once, "formatting is not idempotent on:\n{src}");
         assert_eq!(Formatter::check(&once), Ok(true));
     }
     assert_eq!(Formatter::check(SIX), Ok(false), "an unformatted text is not formatted");
@@ -432,7 +440,7 @@ fn f(a: i32) -> i32 {
     }
 }
 ";
-    assert_eq!(FormatFixture::formatted(OWN_LINE), expected);
+    assert_eq!(FormattedSource::formatted(OWN_LINE), expected);
 }
 
 /// CLI-23 AC 5 (C182): a comment on a node's last line.
@@ -442,7 +450,7 @@ const TRAILING: &str = "fn f() {\n    let x = 1;   // why\n    x\n}\nfn g() -> f
 fn a_trailing_comment_stays_on_its_line() {
     // AC 5: after the node, on the node's last line, one space before it.
     let expected = "fn f() {\n    let x = 1; // why\n    x\n}\n\nfn g() -> f64 {\n    1.0\n} // one line in the source\n";
-    assert_eq!(FormatFixture::formatted(TRAILING), expected);
+    assert_eq!(FormattedSource::formatted(TRAILING), expected);
 }
 
 /// CLI-23 AC 6 (C183): a comment as the last line of a block, and as the only
@@ -483,7 +491,7 @@ fn g(c: bool) {
     }
 }
 ";
-    assert_eq!(FormatFixture::formatted(ENDING), expected);
+    assert_eq!(FormattedSource::formatted(ENDING), expected);
 }
 
 /// CLI-23 AC 7 (C185): a statement holding a comment no anchor reaches.
@@ -510,7 +518,7 @@ fn f(a: f64, b: f64) -> f64 {
     z
 }
 ";
-    assert_eq!(FormatFixture::formatted(INNER), expected);
+    assert_eq!(FormattedSource::formatted(INNER), expected);
 }
 
 /// CLI-23 AC 8 (C186): blank lines between statements and between members.
@@ -556,7 +564,7 @@ module M() {
     c: f64 = 3.0;
 }
 ";
-    assert_eq!(FormatFixture::formatted(BLANKS), expected);
+    assert_eq!(FormattedSource::formatted(BLANKS), expected);
 }
 
 /// CLI-23 AC 9 (C187): a source that does not parse gives the parser's
@@ -574,7 +582,7 @@ fn a_source_that_does_not_parse_gives_diagnostics_and_no_text() {
 /// the formatted text equals the source's, file by file.
 #[test]
 fn the_corpus_keeps_every_comment() {
-    let sources = FormatFixture::sources();
+    let sources = FormatCorpus::sources();
     let mut comments = 0;
     let mut verbatim = 0;
     for (label, src) in &sources {
@@ -593,7 +601,7 @@ fn the_corpus_keeps_every_comment() {
 /// parses to the source's tree, spans aside.
 #[test]
 fn the_corpus_keeps_every_tree() {
-    for (label, src) in FormatFixture::sources() {
+    for (label, src) in FormatCorpus::sources() {
         let out = Formatter::format(&src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
         let (before, after) = (SourceParser::parse(&src), SourceParser::parse(&out));
         assert!(after.diagnostics.is_empty(), "{label}: {:?}", after.diagnostics);
@@ -605,7 +613,7 @@ fn the_corpus_keeps_every_tree() {
 /// the first's text.
 #[test]
 fn the_corpus_is_stable_under_a_second_format() {
-    for (label, src) in FormatFixture::sources() {
+    for (label, src) in FormatCorpus::sources() {
         let once = Formatter::format(&src).unwrap_or_else(|d| panic!("{label}: {d:?}"));
         let twice = Formatter::format(&once).unwrap_or_else(|d| panic!("{label} (formatted): {d:?}"));
         assert_eq!(twice, once, "{label}: a second format changes the text");
@@ -627,7 +635,7 @@ impl Tree {
 /// PI-11 AC 1: every file of `crates/piperine-lang/std/` is the formatter's output for itself.
 #[test]
 fn every_stdlib_file_is_in_the_formatters_form() {
-    let files = FormatFixture::msl_files(&FormatFixture::repo().join("crates/piperine-lang/std"));
+    let files = MslFiles::msl_files(&RepositoryRoot::repo().join("crates/piperine-lang/std"));
     assert!(!files.is_empty(), "the standard library holds MSL files");
     for path in files {
         let text = std::fs::read_to_string(&path).expect("an MSL file is UTF-8");
@@ -642,11 +650,11 @@ fn every_stdlib_file_is_in_the_formatters_form() {
 /// it), so the formatter has something to change; the output is the file as shipped.
 #[test]
 fn formatting_keeps_the_printed_tree_of_every_shipped_source() {
-    let before = FormatFixture::repo().join("crates/piperine-lang/tests/fixtures/preformat");
+    let before = RepositoryRoot::repo().join("crates/piperine-lang/tests/fixtures/preformat");
     let mut changed = 0;
-    for fixture in FormatFixture::msl_files_with(&before, "pre") {
+    for fixture in MslFiles::msl_files_with(&before, "pre") {
         let relative = fixture.strip_prefix(&before).expect("under the fixtures").with_extension("");
-        let shipped = FormatFixture::repo().join(&relative);
+        let shipped = RepositoryRoot::repo().join(&relative);
         let text = std::fs::read_to_string(&fixture).expect("a fixture is UTF-8");
         let formatted = Formatter::format(&text).unwrap_or_else(|d| panic!("{}: {d:?}", fixture.display()));
         assert_eq!(Tree::printed(&formatted), Tree::printed(&text), "{}: formatting changed the printed tree", relative.display());

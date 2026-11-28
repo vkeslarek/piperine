@@ -6,24 +6,12 @@
 
 use std::path::{Path, PathBuf};
 
-/// Associated test helpers of `docs`, grouped on one fixture type.
-struct DocsFixture;
+/// Reads the Rust sources of the `pom` module and its public names.
+struct PomSourceTree;
 
-impl DocsFixture {
+impl PomSourceTree {
     fn repo() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-
-    /// Every `docs/pom/*.md` as (file name, text), sorted by name.
-    fn pom_docs() -> Vec<(String, String)> {
-        let dir = DocsFixture::repo().join("docs/pom");
-        let mut files: Vec<_> = std::fs::read_dir(&dir)
-            .unwrap_or_else(|e| panic!("{} cannot be read: {e}", dir.display()))
-            .map(|e| e.unwrap().path())
-            .filter(|p| p.extension().is_some_and(|e| e == "md"))
-            .collect();
-        files.sort();
-        files.iter().map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(p).unwrap())).collect()
     }
 
     /// Every `.rs` file under `dir`, recursively.
@@ -32,7 +20,7 @@ impl DocsFixture {
         for entry in std::fs::read_dir(dir).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                out.extend(DocsFixture::rust_files(&path));
+                out.extend(PomSourceTree::rust_files(&path));
             } else if path.extension().is_some_and(|e| e == "rs") {
                 out.push(path);
             }
@@ -53,7 +41,7 @@ impl DocsFixture {
     /// `pub fn` of an `impl X` block, and every `fn` of `pub trait X`.
     fn reflect_methods() -> Vec<(String, String)> {
         let mut out = Vec::new();
-        for file in DocsFixture::rust_files(&DocsFixture::repo().join("crates/piperine-lang/src/pom/reflect")) {
+        for file in PomSourceTree::rust_files(&PomSourceTree::repo().join("crates/piperine-lang/src/pom/reflect")) {
             let text = std::fs::read_to_string(&file).unwrap();
             let mut owner: Option<(String, bool)> = None; // (type, inside a trait)
             for line in text.lines() {
@@ -81,6 +69,42 @@ impl DocsFixture {
         out
     }
 
+    /// The names of every `pub struct|enum|trait` and every `pub fn` under `src/pom`, and in
+    /// `src/msl/ast.rs` (the literal and operator types the POM re-exports).
+    fn pom_public_names() -> std::collections::BTreeSet<String> {
+        let mut names = std::collections::BTreeSet::new();
+        let mut files = PomSourceTree::rust_files(&PomSourceTree::repo().join("crates/piperine-lang/src/pom"));
+        files.push(PomSourceTree::repo().join("crates/piperine-lang/src/msl/ast.rs"));
+        for file in files {
+            for line in std::fs::read_to_string(file).unwrap().lines() {
+                if let Some(t) = PomSourceTree::public_type_name(line) {
+                    names.insert(t.to_string());
+                }
+                if let Some(rest) = line.trim_start().strip_prefix("pub fn ").or_else(|| line.trim_start().strip_prefix("pub const fn ")) {
+                    names.insert(rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect());
+                }
+            }
+        }
+        names
+    }
+}
+
+/// Reads the pages and sections of `docs/pom`.
+struct PomDocs;
+
+impl PomDocs {
+    /// Every `docs/pom/*.md` as (file name, text), sorted by name.
+    fn pom_docs() -> Vec<(String, String)> {
+        let dir = PomSourceTree::repo().join("docs/pom");
+        let mut files: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("{} cannot be read: {e}", dir.display()))
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.extension().is_some_and(|e| e == "md"))
+            .collect();
+        files.sort();
+        files.iter().map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read_to_string(p).unwrap())).collect()
+    }
+
     /// The text of the `### `Name`` section of `reflection.md` (up to the next `### ` heading).
     fn section<'a>(page: &'a str, name: &str) -> &'a str {
         let head = format!("### `{name}`");
@@ -92,54 +116,6 @@ impl DocsFixture {
         &rest[..end]
     }
 
-    /// The names of the productions of Appendix B.3.2: the `name ::=` lines of its code block.
-    fn b32_productions() -> Vec<String> {
-        let text = std::fs::read_to_string(DocsFixture::repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
-        let start = text.find("### B.3.2").expect("B.3.2 heading");
-        let end = text[start..].find("### B.3.3").map_or(text.len(), |i| start + i);
-        text[start..end]
-            .lines()
-            .filter_map(|l| {
-                let (name, rest) = l.split_once(char::is_whitespace)?;
-                (rest.trim_start().starts_with("::=") && !name.starts_with("//")).then(|| name.to_string())
-            })
-            .collect()
-    }
-
-    /// The rows `(number, construct)` of Appendix B.1.2: the lines `| N | construct | ..` of its table.
-    fn b12_constructs() -> Vec<(usize, String)> {
-        let text = std::fs::read_to_string(DocsFixture::repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
-        let start = text.find("### B.1.2").expect("B.1.2 heading");
-        let end = text[start + 1..].find("\n##").map_or(text.len(), |i| start + 1 + i);
-        text[start..end]
-            .lines()
-            .filter_map(|l| {
-                let mut cells = l.split('|').map(str::trim).skip(1);
-                let number: usize = cells.next()?.parse().ok()?;
-                Some((number, cells.next()?.to_string()))
-            })
-            .collect()
-    }
-
-    /// The names of every `pub struct|enum|trait` and every `pub fn` under `src/pom`, and in
-    /// `src/msl/ast.rs` (the literal and operator types the POM re-exports).
-    fn pom_public_names() -> std::collections::BTreeSet<String> {
-        let mut names = std::collections::BTreeSet::new();
-        let mut files = DocsFixture::rust_files(&DocsFixture::repo().join("crates/piperine-lang/src/pom"));
-        files.push(DocsFixture::repo().join("crates/piperine-lang/src/msl/ast.rs"));
-        for file in files {
-            for line in std::fs::read_to_string(file).unwrap().lines() {
-                if let Some(t) = DocsFixture::public_type_name(line) {
-                    names.insert(t.to_string());
-                }
-                if let Some(rest) = line.trim_start().strip_prefix("pub fn ").or_else(|| line.trim_start().strip_prefix("pub const fn ")) {
-                    names.insert(rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_').collect());
-                }
-            }
-        }
-        names
-    }
-
     /// The lines of the `## heading` section of a page.
     fn page_section<'a>(page: &'a str, heading: &str) -> Vec<&'a str> {
         let mut lines = page.lines().skip_while(|l| l.trim_end() != heading);
@@ -149,18 +125,18 @@ impl DocsFixture {
 
     /// The table rows (`| .. |` lines) of the `## heading` section of a page, as trimmed cells.
     fn section_rows(page: &str, heading: &str) -> Vec<Vec<String>> {
-        DocsFixture::page_section(page, heading).into_iter().filter(|l| l.starts_with('|')).map(|l| l.split('|').map(|c| c.trim().to_string()).skip(1).collect()).collect()
+        PomDocs::page_section(page, heading).into_iter().filter(|l| l.starts_with('|')).map(|l| l.split('|').map(|c| c.trim().to_string()).skip(1).collect()).collect()
     }
 
     fn page_of(name: &str) -> String {
-        DocsFixture::pom_docs().into_iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("docs/pom/{name}")).1
+        PomDocs::pom_docs().into_iter().find(|(n, _)| n == name).unwrap_or_else(|| panic!("docs/pom/{name}")).1
     }
 
     /// The number of the section of `docs/spec` whose table defines each code (the
     /// code is the first cell of a row), as in `3.4` for `### 3.4 Files and imports`.
     fn spec_definitions() -> std::collections::BTreeMap<String, String> {
         let mut out = std::collections::BTreeMap::new();
-        let dir = DocsFixture::repo().join("docs/spec");
+        let dir = PomSourceTree::repo().join("docs/spec");
         for entry in std::fs::read_dir(dir).unwrap() {
             let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
             let mut section = String::new();
@@ -180,10 +156,44 @@ impl DocsFixture {
         }
         out
     }
+}
+
+/// Reads the productions and constructs of the specification appendices.
+struct SpecAppendix;
+
+impl SpecAppendix {
+    /// The names of the productions of Appendix B.3.2: the `name ::=` lines of its code block.
+    fn b32_productions() -> Vec<String> {
+        let text = std::fs::read_to_string(PomSourceTree::repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
+        let start = text.find("### B.3.2").expect("B.3.2 heading");
+        let end = text[start..].find("### B.3.3").map_or(text.len(), |i| start + i);
+        text[start..end]
+            .lines()
+            .filter_map(|l| {
+                let (name, rest) = l.split_once(char::is_whitespace)?;
+                (rest.trim_start().starts_with("::=") && !name.starts_with("//")).then(|| name.to_string())
+            })
+            .collect()
+    }
+
+    /// The rows `(number, construct)` of Appendix B.1.2: the lines `| N | construct | ..` of its table.
+    fn b12_constructs() -> Vec<(usize, String)> {
+        let text = std::fs::read_to_string(PomSourceTree::repo().join("docs/spec/appendix_b_grammar.md")).unwrap();
+        let start = text.find("### B.1.2").expect("B.1.2 heading");
+        let end = text[start + 1..].find("\n##").map_or(text.len(), |i| start + 1 + i);
+        text[start..end]
+            .lines()
+            .filter_map(|l| {
+                let mut cells = l.split('|').map(str::trim).skip(1);
+                let number: usize = cells.next()?.parse().ok()?;
+                Some((number, cells.next()?.to_string()))
+            })
+            .collect()
+    }
 
     /// The `(name, kind)` of every `row(..)` of `BUILTINS` in `src/pom/builtin.rs`.
     fn builtin_rows() -> Vec<(String, String)> {
-        let text = std::fs::read_to_string(DocsFixture::repo().join("crates/piperine-lang/src/pom/builtin.rs")).unwrap();
+        let text = std::fs::read_to_string(PomSourceTree::repo().join("crates/piperine-lang/src/pom/builtin.rs")).unwrap();
         text.lines()
             .filter_map(|l| {
                 let rest = l.trim_start().strip_prefix("row(\"")?;
@@ -197,13 +207,13 @@ impl DocsFixture {
 
 #[test]
 fn every_public_pom_type_has_a_heading() {
-    let docs = DocsFixture::pom_docs();
+    let docs = PomDocs::pom_docs();
     let headings: Vec<&str> = docs.iter().flat_map(|(_, t)| t.lines()).filter(|l| l.starts_with("### `")).collect();
     let mut checked = 0;
     let mut missing = Vec::new();
-    for file in DocsFixture::rust_files(&DocsFixture::repo().join("crates/piperine-lang/src/pom")) {
+    for file in PomSourceTree::rust_files(&PomSourceTree::repo().join("crates/piperine-lang/src/pom")) {
         let text = std::fs::read_to_string(&file).unwrap();
-        for name in text.lines().filter_map(DocsFixture::public_type_name) {
+        for name in text.lines().filter_map(PomSourceTree::public_type_name) {
             checked += 1;
             if !headings.iter().any(|h| h.starts_with(&format!("### `{name}`"))) {
                 missing.push(format!("{name} ({})", file.file_name().unwrap().to_string_lossy()));
@@ -216,13 +226,13 @@ fn every_public_pom_type_has_a_heading() {
 
 #[test]
 fn every_reflection_method_is_documented() {
-    let docs = DocsFixture::pom_docs();
+    let docs = PomDocs::pom_docs();
     let page = &docs.iter().find(|(n, _)| n == "reflection.md").expect("docs/pom/reflection.md").1;
-    let methods = DocsFixture::reflect_methods();
+    let methods = PomSourceTree::reflect_methods();
     assert!(methods.len() > 200, "the scrape found only {} methods", methods.len());
     let mut missing = Vec::new();
     for (owner, name) in &methods {
-        if !page.contains(&format!("`{name}(")) || !DocsFixture::section(page, owner).contains(&format!("`{name}(")) {
+        if !page.contains(&format!("`{name}(")) || !PomDocs::section(page, owner).contains(&format!("`{name}(")) {
             missing.push(format!("{owner}::{name}"));
         }
     }
@@ -231,17 +241,17 @@ fn every_reflection_method_is_documented() {
 
 #[test]
 fn every_b3_production_is_mapped() {
-    let productions = DocsFixture::b32_productions();
+    let productions = SpecAppendix::b32_productions();
     assert!(productions.len() >= 30, "the scrape found only {productions:?}");
     for known in ["nature_decl", "module_decl", "instance", "reaction", "gen<X>", "attr_link"] {
         assert!(productions.iter().any(|p| p == known), "{known} is read from B.3.2: {productions:?}");
     }
-    let docs = DocsFixture::pom_docs();
+    let docs = PomDocs::pom_docs();
     let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
     let mut types = Vec::new();
-    for file in DocsFixture::rust_files(&DocsFixture::repo().join("crates/piperine-lang/src/pom")) {
+    for file in PomSourceTree::rust_files(&PomSourceTree::repo().join("crates/piperine-lang/src/pom")) {
         let text = std::fs::read_to_string(file).unwrap();
-        types.extend(text.lines().filter_map(DocsFixture::public_type_name).map(str::to_string));
+        types.extend(text.lines().filter_map(PomSourceTree::public_type_name).map(str::to_string));
     }
     let rows: Vec<&str> = page.lines().filter(|l| l.starts_with('|')).collect();
     let mut unmapped = Vec::new();
@@ -264,15 +274,15 @@ fn every_b3_production_is_mapped() {
 
 #[test]
 fn every_b1_construct_is_mapped() {
-    let constructs = DocsFixture::b12_constructs();
+    let constructs = SpecAppendix::b12_constructs();
     assert_eq!(constructs.len(), 60, "B.1.2 lists 60 constructs (explicit-unknowns removed `resolve`, `Unknown` and `level`; generics phase D removed `m` and `dtemp`): {constructs:?}");
     assert_eq!(constructs.iter().map(|(n, _)| *n).collect::<Vec<_>>(), (1..=60).collect::<Vec<_>>());
-    let docs = DocsFixture::pom_docs();
+    let docs = PomDocs::pom_docs();
     let page = &docs.iter().find(|(n, _)| n == "mapping.md").expect("docs/pom/mapping.md").1;
-    let section = DocsFixture::page_section(page, "## Constructs of B.1");
+    let section = PomDocs::page_section(page, "## Constructs of B.1");
     assert!(!section.is_empty(), "mapping.md has a `## Constructs of B.1` section");
     let rows: Vec<Vec<&str>> = section.iter().filter(|l| l.starts_with('|')).map(|l| l.split('|').map(str::trim).skip(1).collect()).collect();
-    let names = DocsFixture::pom_public_names();
+    let names = PomSourceTree::pom_public_names();
     let mut unmapped = Vec::new();
     for (number, construct) in &constructs {
         let row = rows.iter().find(|r| r.first().and_then(|c| c.parse::<usize>().ok()) == Some(*number));
@@ -293,10 +303,10 @@ fn every_b1_construct_is_mapped() {
 #[test]
 fn place_has_no_parenthesized_form_in_the_docs() {
     // B.3.2 note 4: a `place` takes no parentheses.
-    let mapping = DocsFixture::page_of("mapping.md");
+    let mapping = PomDocs::page_of("mapping.md");
     let row = mapping.lines().find(|l| l.starts_with("| `place` |")).expect("a `place` row in mapping.md");
     assert!(!row.contains("(s)") && !row.contains("Paren"), "the `place` row still has a parenthesized form: {row}");
-    let reflection = DocsFixture::page_of("reflection.md");
+    let reflection = PomDocs::page_of("reflection.md");
     let writers = reflection.lines().find(|l| l.starts_with("| `writers(self)` |")).expect("the `Signal::writers` row");
     assert!(!writers.contains("(s)"), "`Signal::writers` still names the parenthesized place: {writers}");
 }
@@ -304,7 +314,7 @@ fn place_has_no_parenthesized_form_in_the_docs() {
 #[test]
 fn every_code_the_pom_reports_is_documented() {
     let mut codes = std::collections::BTreeSet::new();
-    for file in DocsFixture::rust_files(&DocsFixture::repo().join("crates/piperine-lang/src/pom")) {
+    for file in PomSourceTree::rust_files(&PomSourceTree::repo().join("crates/piperine-lang/src/pom")) {
         let text = std::fs::read_to_string(file).unwrap();
         let bytes = text.as_bytes();
         // Every string literal `"E` followed by four digits and a closing quote: a code, whether it is
@@ -317,7 +327,7 @@ fn every_code_the_pom_reports_is_documented() {
         }
     }
     assert!(codes.len() >= 17 && codes.contains("E0125") && codes.contains("E0263"), "the scrape found only {codes:?}");
-    let rows = DocsFixture::section_rows(&DocsFixture::page_of("resolution.md"), "## Diagnostics");
+    let rows = PomDocs::section_rows(&PomDocs::page_of("resolution.md"), "## Diagnostics");
     let documented: std::collections::BTreeSet<String> = rows.iter().filter_map(|r| r.first()).map(|c| c.trim_matches('`').to_string()).collect();
     let missing: Vec<_> = codes.difference(&documented).collect();
     assert!(missing.is_empty(), "the Diagnostics table of resolution.md has no row for: {missing:?}");
@@ -325,7 +335,7 @@ fn every_code_the_pom_reports_is_documented() {
     // that is the section the spec defines it in.
     let header = &rows[0];
     let col = header.iter().position(|c| c == "Defined in").expect("a `Defined in` column");
-    let defined = DocsFixture::spec_definitions();
+    let defined = PomDocs::spec_definitions();
     for row in rows.iter().skip(2).filter(|r| r.first().is_some_and(|c| c.starts_with("`E"))) {
         let code = row[0].trim_matches('`');
         let cell = row[col].trim_matches('`');
@@ -336,9 +346,9 @@ fn every_code_the_pom_reports_is_documented() {
 
 #[test]
 fn every_builtin_row_is_documented() {
-    let rows = DocsFixture::builtin_rows();
+    let rows = SpecAppendix::builtin_rows();
     assert!(rows.len() >= 59 && rows.iter().any(|(n, k)| n == "ddt" && k == "Module"), "the scrape found only {rows:?}");
-    let table = DocsFixture::section_rows(&DocsFixture::page_of("resolution.md"), "## The built-in table");
+    let table = PomDocs::section_rows(&PomDocs::page_of("resolution.md"), "## The built-in table");
     let mut missing = Vec::new();
     for (name, kind) in &rows {
         let named = table.iter().any(|r| r.first().is_some_and(|c| c.as_str() == format!("`{kind}`")) && r.get(1).is_some_and(|c| c.contains(&format!("`{name}`"))));
@@ -352,7 +362,7 @@ fn every_builtin_row_is_documented() {
 #[test]
 fn msl_fences_parse_clean() {
     let mut fences = 0;
-    for (file, text) in DocsFixture::pom_docs() {
+    for (file, text) in PomDocs::pom_docs() {
         let mut open: Option<(usize, String)> = None;
         for (i, line) in text.lines().enumerate() {
             match &mut open {
@@ -381,10 +391,10 @@ fn msl_fences_parse_clean() {
 
 #[test]
 fn mkdocs_nav_lists_every_pom_page() {
-    let yml = std::fs::read_to_string(DocsFixture::repo().join("mkdocs.yml")).unwrap();
+    let yml = std::fs::read_to_string(PomSourceTree::repo().join("mkdocs.yml")).unwrap();
     let nav = &yml[yml.find("\nnav:").expect("mkdocs.yml has a nav") + 1..];
     assert!(nav.contains("Object model"), "the nav has an `Object model` section");
-    let pages = DocsFixture::pom_docs();
+    let pages = PomDocs::pom_docs();
     assert!(pages.len() >= 5, "docs/pom holds {} pages", pages.len());
     for (file, _) in pages {
         assert!(nav.lines().any(|l| l.trim_end().ends_with(&format!("pom/{file}"))), "mkdocs.yml nav does not list docs/pom/{file}");
@@ -395,13 +405,13 @@ fn mkdocs_nav_lists_every_pom_page() {
 fn docs_describe_crates_and_no_prelude_sources() {
     // PKG-09 AC 1: the scope order names the dependency names and the `std` prelude, and no page
     // talks about prelude sources.
-    for (name, text) in DocsFixture::pom_docs() {
+    for (name, text) in PomDocs::pom_docs() {
         let lower = text.to_lowercase();
         assert!(!lower.contains("prelude source"), "{name} mentions prelude sources");
         assert!(!text.contains(".prelude("), "{name} mentions `.prelude(`");
     }
-    let resolution = DocsFixture::page_of("resolution.md");
-    let order = DocsFixture::page_section(&resolution, "## Scope order").join("\n");
+    let resolution = PomDocs::page_of("resolution.md");
+    let order = PomDocs::page_section(&resolution, "## Scope order").join("\n");
     assert!(order.contains("dependency names"), "the scope order does not name the dependency names");
     assert!(order.contains("`std::prelude`"), "the scope order does not name the `std` prelude");
     let dependencies = order.find("dependency names").unwrap();
@@ -409,14 +419,14 @@ fn docs_describe_crates_and_no_prelude_sources() {
     assert!(dependencies < prelude, "dependency names come before the prelude in the scope order");
     assert!(resolution.contains("### Crates and the standard library"), "resolution.md lacks the crates section");
     assert!(!resolution.contains("### Imports and the prelude"), "resolution.md still has the section this replaced");
-    assert!(DocsFixture::page_of("index.md").contains(".crates("), "the build line of the overview does not show `.crates(graph)`");
-    assert!(DocsFixture::page_of("model.md").lines().any(|l| l.trim_end() == "## Crates"), "model.md lacks a `## Crates` storage section");
+    assert!(PomDocs::page_of("index.md").contains(".crates("), "the build line of the overview does not show `.crates(graph)`");
+    assert!(PomDocs::page_of("model.md").lines().any(|l| l.trim_end() == "## Crates"), "model.md lacks a `## Crates` storage section");
 }
 
 #[test]
 fn mapping_has_a_crate_row() {
     // PKG-09 AC 2: a row maps a crate to `CrateData`, `Crate` and the lookups that reach it.
-    let mapping = DocsFixture::page_of("mapping.md");
+    let mapping = PomDocs::page_of("mapping.md");
     let row = mapping.lines().find(|l| l.starts_with("| `crate` |")).expect("a `crate` row in mapping.md");
     for needed in ["`CrateData`", "`Crate`", "design.krate(", "design.crates()", "Crate::dependency"] {
         assert!(row.contains(needed), "the `crate` row lacks {needed}: {row}");
@@ -426,7 +436,7 @@ fn mapping_has_a_crate_row() {
 #[test]
 fn resolution_doc_describes_intrinsics() {
     // STD-17 AC 2: the page names `extern "intrinsic"` and `is_intrinsic` where it describes E0125.
-    let page = DocsFixture::page_of("resolution.md");
+    let page = PomDocs::page_of("resolution.md");
     let row = page.lines().find(|l| l.starts_with("| `E0125` |")).expect("the E0125 row");
     assert!(row.contains("extern \"intrinsic\"") && row.contains("`std`"), "{row}");
     let shape = page.lines().find(|l| l.contains("is_intrinsic")).expect("a line naming `is_intrinsic`");
@@ -436,7 +446,7 @@ fn resolution_doc_describes_intrinsics() {
 #[test]
 fn resolution_doc_describes_the_supertrait_rule() {
     // STD-17 AC 3: `Self::NAME` in a trait resolves through the supertraits.
-    let page = DocsFixture::page_of("resolution.md");
+    let page = PomDocs::page_of("resolution.md");
     let line = page.lines().find(|l| l.contains("Self::NAME") && l.contains("supertrait")).expect("a line on `Self::NAME` and supertraits");
     assert!(line.contains("trait"), "{line}");
 }
@@ -444,7 +454,7 @@ fn resolution_doc_describes_the_supertrait_rule() {
 #[test]
 fn members_doc_lists_the_blanket_step() {
     // STD-17 AC 4: the Members table ends the carrier row with the blanket implementation.
-    let page = DocsFixture::page_of("resolution.md");
+    let page = PomDocs::page_of("resolution.md");
     let row = page.lines().find(|l| l.starts_with("| a carrier of a nature")).expect("the carrier row of the Members table");
     assert!(row.contains("blanket") && row.contains("impl<T: Repr>"), "{row}");
     assert!(row.rfind("blanket") > row.rfind("value type"), "the blanket step comes last: {row}");
@@ -455,14 +465,14 @@ fn members_doc_lists_the_blanket_step() {
 #[test]
 fn the_builtin_table_doc_has_no_const_row() {
     // STD-17 AC 1: the table has no `Const` row and the page says where the constants went.
-    let page = DocsFixture::page_of("resolution.md");
-    let table = DocsFixture::section_rows(&page, "## The built-in table");
+    let page = PomDocs::page_of("resolution.md");
+    let table = PomDocs::section_rows(&page, "## The built-in table");
     assert!(!table.is_empty(), "the built-in table is found");
     assert!(table.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "no `Const` row");
     let sentence = page.split_whitespace().collect::<Vec<_>>().join(" ");
     assert!(sentence.contains("`std::constants`") && sentence.contains("six constants"), "the page says the six constants are items of `std::constants`");
-    let model = DocsFixture::page_of("model.md");
-    let kinds = DocsFixture::section_rows(&model, "### `BuiltinKind`");
+    let model = PomDocs::page_of("model.md");
+    let kinds = PomDocs::section_rows(&model, "### `BuiltinKind`");
     assert!(kinds.iter().all(|r| r.first().is_none_or(|c| c.as_str() != "`Const`")), "BuiltinKind has no `Const` variant row");
 }
 
@@ -490,10 +500,10 @@ impl DocAheadOfTheCode {
     /// Either way the entry is stale and its owner has delivered.
     fn offences(&self) -> Vec<String> {
         let mut found = Vec::new();
-        if !DocsFixture::page_of(self.page).contains(self.statement) {
+        if !PomDocs::page_of(self.page).contains(self.statement) {
             found.push(format!("docs/pom/{} no longer says {}: drop the entry (owner {})", self.page, self.statement, self.owner));
         }
-        let source = std::fs::read_to_string(DocsFixture::repo().join(self.source)).unwrap_or_else(|e| panic!("{}: {e}", self.source));
+        let source = std::fs::read_to_string(PomSourceTree::repo().join(self.source)).unwrap_or_else(|e| panic!("{}: {e}", self.source));
         if !source.contains(self.form) {
             found.push(format!("{} no longer has `{}`: rewrite docs/pom/{} and drop the entry (owner {})", self.source, self.form, self.page, self.owner));
         }
@@ -508,6 +518,6 @@ fn the_pom_docs_that_wait_for_the_code_stay_honest() {
     // and a stale entry (the form gone or the page rewritten) fails here instead of hiding a divergence.
     let found: Vec<String> = DocAheadOfTheCode::WAITING.iter().flat_map(DocAheadOfTheCode::offences).collect();
     assert!(found.is_empty(), "{found:#?}");
-    let note = DocsFixture::page_of("mapping.md");
+    let note = PomDocs::page_of("mapping.md");
     assert!(note.contains("`resolved-nets` T16"), "the mapping note names the owners of the forms it keeps");
 }

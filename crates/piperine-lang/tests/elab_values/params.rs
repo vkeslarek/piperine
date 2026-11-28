@@ -43,10 +43,10 @@ impl Case {
     }
 }
 
-/// Associated test helpers of `params`, grouped on one fixture type.
-struct ParamsFixture;
+/// The constants the param tests expect.
+struct ExpectedConstants;
 
-impl ParamsFixture {
+impl ExpectedConstants {
     fn real(value: f64) -> Constant {
         Constant::Real(Real::new(value))
     }
@@ -63,10 +63,10 @@ fn a_const_read_is_folded_once() {
     let (p, q) = (case.default_of("p"), case.default_of("q"));
     let k_b_over_q = 1.380649e-23_f64 / 1.602176634e-19;
     let b = k_b_over_q * k_b_over_q + k_b_over_q;
-    assert_eq!(eval.value(p, &Bindings::new()), Ok(ParamsFixture::real(b)), "bit-exact against Rust's own f64 arithmetic");
-    assert_eq!(eval.value(q, &Bindings::new()), Ok(ParamsFixture::real(b * 2.0)));
+    assert_eq!(eval.value(p, &Bindings::new()), Ok(ExpectedConstants::real(b)), "bit-exact against Rust's own f64 arithmetic");
+    assert_eq!(eval.value(q, &Bindings::new()), Ok(ExpectedConstants::real(b * 2.0)));
     assert_eq!(eval.evaluations(), 4, "K_B, Q, A and B, once each however many reads");
-    assert_eq!(eval.value(p, &Bindings::new()), Ok(ParamsFixture::real(b)));
+    assert_eq!(eval.value(p, &Bindings::new()), Ok(ExpectedConstants::real(b)));
     assert_eq!(eval.evaluations(), 4, "a third read folds nothing");
 }
 
@@ -75,7 +75,7 @@ fn functions_methods_and_logic_fold() {
     let case = Case::new();
     let types = Types::check(&case.design, "Top").expect("the source is in the subset");
     let mut eval = ConstEval::new(&case.design, &types);
-    assert_eq!(eval.value(case.default_of("r"), &Bindings::new()), Ok(ParamsFixture::real(9.0 + 2.0_f64.sqrt())));
+    assert_eq!(eval.value(case.default_of("r"), &Bindings::new()), Ok(ExpectedConstants::real(9.0 + 2.0_f64.sqrt())));
     assert_eq!(eval.value(case.default_of("s"), &Bindings::new()), Ok(Constant::Bool(true)));
 }
 
@@ -84,7 +84,7 @@ fn division_by_zero_is_inf_not_an_error() {
     let case = Case::new();
     let types = Types::check(&case.design, "Top").expect("the source is in the subset");
     let mut eval = ConstEval::new(&case.design, &types);
-    assert_eq!(eval.value(case.default_of("t"), &Bindings::new()), Ok(ParamsFixture::real(f64::INFINITY)));
+    assert_eq!(eval.value(case.default_of("t"), &Bindings::new()), Ok(ExpectedConstants::real(f64::INFINITY)));
 }
 
 #[test]
@@ -104,8 +104,8 @@ fn a_param_read_with_no_binding_is_not_constant() {
     }
     // Bound: the same expression folds.
     let mut bindings = Bindings::new();
-    bindings.bind(param("a"), ParamsFixture::real(4.0));
-    assert_eq!(eval.value(default("b"), &bindings), Ok(ParamsFixture::real(8.0)));
+    bindings.bind(param("a"), ExpectedConstants::real(4.0));
+    assert_eq!(eval.value(default("b"), &bindings), Ok(ExpectedConstants::real(8.0)));
 }
 
 #[test]

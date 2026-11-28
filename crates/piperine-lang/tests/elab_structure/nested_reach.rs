@@ -8,10 +8,10 @@ use piperine_lang::elab::{Elaborator, Overrides};
 use piperine_lang_fixtures::elaboration::SourceElaboration;
 use piperine_lang_fixtures::nested_reach::{MIXED_LETS, MODELS, READS};
 
-/// Associated test helpers of `nested_reach`, grouped on one fixture type.
-struct NestedReachFixture;
+/// The source text of a top that reads a node reached below one of its placements.
+struct ReachingTop;
 
-impl NestedReachFixture {
+impl ReachingTop {
     /// The top that reads `reach` below the placement `placement`, with `reads` as its `analog` block.
     fn top(placement: &str, reads: &str) -> String {
         format!("module Top() {{ signal a: Electrical; signal o: Electrical; {placement} }}\nanalog for Top {{ potential(a) +> 1.0; {reads} }}\n")
@@ -23,7 +23,7 @@ fn a_node_is_reached_three_and_four_levels_below_the_reader() {
     // §8.2.8: `R.sn` names the storage node of the cell `R` places, whatever the depth of the chain: the reader's reached node
     // takes the name of the path and is the cell's own node, one node with every reached node on the way
     for (placement, reach, form) in READS {
-        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> v({reach}.sn);"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> v({reach}.sn);"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().nodes().iter().position(|node| node.name == format!("{reach}.sn")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.sn`"));
         assert_eq!(reader.node(at).expect("a bound node").path(), format!("Top.{reach}.sn"), "{form}");
@@ -45,7 +45,7 @@ fn a_param_and_a_let_over_the_params_read_the_value_the_placement_gives_three_an
         ("let p = Tower(a);", "p.rows.cells[1]", 2.0, "3 by name in generation, `1.0 + j`"),
         ("let p = Tall(a);", "p.tower.rows.cells[1]", 2.0, "4 by name in generation, `1.0 + j`"),
     ] {
-        let printed = |item: &str| SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))), "Top").print_structural();
+        let printed = |item: &str| SourceElaboration::ir(&format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.{item};"))), "Top").print_structural();
         // the top's own drive `potential(a) +> 1.0` prints `direct 1.0` once: the read adds one more only at `k = 1.0`
         let own = usize::from(k == 1.0);
         assert_eq!(printed("k").matches(&format!("direct {k:?}")).count(), own + 1, "{form}: `{reach}.k` lowers to {k:?}: {}", printed("k"));
@@ -58,7 +58,7 @@ fn a_let_over_the_solve_reaches_the_node_it_reads_three_and_four_levels_below_th
     // §8.2.8, §8.2.25 (GAPS L81): `R.vs` is `v(sn)` evaluated in the reader's context, so the reader reaches the cell's `sn`
     // though it names only `vs`
     for (placement, reach, form) in READS {
-        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.vs;"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.vs;"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().nodes().iter().position(|node| node.name == format!("{reach}.sn")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.sn` for `vs`"));
         assert_eq!(reader.node(at).expect("a bound node").path(), format!("Top.{reach}.sn"), "{form}");
@@ -69,7 +69,7 @@ fn a_let_over_the_solve_reaches_the_node_it_reads_three_and_four_levels_below_th
 fn a_carrier_is_reached_three_and_four_levels_below_the_reader() {
     // §8.2.8 (GAPS L81): `R.q` names the carrier of the cell `R` places: the reader's reached carrier is bound to the cell's net
     for (placement, reach, form) in READS {
-        let ir = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.q;"))), "Top");
+        let ir = SourceElaboration::ir(&format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.q;"))), "Top");
         let reader = ir.instance_at("Top").expect("the top");
         let at = reader.body().carriers().iter().position(|carrier| carrier.name == format!("{reach}.q")).unwrap_or_else(|| panic!("{form}: `Top` reaches `{reach}.q`"));
         assert_eq!(reader.net(at).expect("a bound net").path(), format!("Top.{reach}.q"), "{form}");
@@ -81,8 +81,8 @@ fn a_reach_is_the_same_wherever_the_models_and_the_top_are_written() {
     // §8.2: the items of a design appear in any order: the top written before the models it places binds the same nodes and nets
     for (placement, reach, form) in READS {
         let reads = format!("potential(o) +> v({reach}.sn) + {reach}.vs + {reach}.q + {reach}.twice;");
-        let forward = SourceElaboration::ir(&format!("{MODELS}{}", NestedReachFixture::top(placement, &reads)), "Top");
-        let reverse = SourceElaboration::ir(&format!("{}{MODELS}", NestedReachFixture::top(placement, &reads)), "Top");
+        let forward = SourceElaboration::ir(&format!("{MODELS}{}", ReachingTop::top(placement, &reads)), "Top");
+        let reverse = SourceElaboration::ir(&format!("{}{MODELS}", ReachingTop::top(placement, &reads)), "Top");
         let names = |ir: &Ir| {
             let reader = ir.instance_at("Top").expect("the top");
             let nodes: Vec<String> = reader.body().nodes().iter().enumerate().map(|(at, node)| format!("{}={}", node.name, reader.node(at).map_or_else(String::new, |n| n.path().to_string()))).collect();
@@ -124,7 +124,7 @@ fn a_missing_or_private_item_is_e0343_three_and_four_levels_below_the_reader() {
     // at elaboration where a template does, never a silent reach
     for (placement, reach, form) in READS {
         for item in ["missing", "hidden"] {
-            let src = format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};")));
+            let src = format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.{item};")));
             let design = SourceElaboration::design(&src);
             let mut codes: Vec<String> = design.diagnostics().iter().map(|d| d.diagnostic.code.to_string()).collect();
             if codes.is_empty() {
@@ -154,15 +154,15 @@ fn a_reach_refused_for_its_cause_reports_that_cause_once() {
     // is one `P0001` naming the cause, with no second diagnostic after it
     for (src, cause) in [
         (
-            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n{}", NestedReachFixture::top("let p = GenNode(a);", "potential(o) +> v(p.mid.c0.sn);")),
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let mid = Level2(a); }}\n{}", ReachingTop::top("let p = GenNode(a);", "potential(o) +> v(p.mid.c0.sn);")),
             "a node declared in generation of a module a parent reads through",
         ),
         (
-            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let c0 = Cell(a); }}\n{}", NestedReachFixture::top("let p = GenNode(a);", "potential(o) +> v(p.c0.sn);")),
+            format!("{MODELS}module GenNode(a: Electrical) {{ for j in 0..2 {{ pub signal s: Electrical; }} pub let c0 = Cell(a); }}\n{}", ReachingTop::top("let p = GenNode(a);", "potential(o) +> v(p.c0.sn);")),
             "a node declared in generation of a module a parent reads through",
         ),
         (
-            format!("{MODELS}module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n{}", NestedReachFixture::top("let h = HW(1.0);", "potential(o) +> v(h.w.c0.sn);")),
+            format!("{MODELS}module HW(x: f64) -> f64 {{ signal n: Electrical; pub let w = Level2(n); x }}\n{}", ReachingTop::top("let h = HW(1.0);", "potential(o) +> v(h.w.c0.sn);")),
             "a hoisted module that holds a placement of a module that is not hoisted",
         ),
     ] {
@@ -182,7 +182,7 @@ fn a_let_over_the_solve_three_and_four_levels_below_the_reader_is_elaborated_in_
     let models = MODELS.replace("pub let vs = v(sn);", "pub let vs = v(sn); pub let vs2 = vs + v(a);");
     for (placement, reach, form) in READS.iter().filter(|(placement, _, _)| !placement.contains("::<_>")) {
         for item in ["vs", "vs2"] {
-            let design = SourceElaboration::design(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let design = SourceElaboration::design(&format!("{models}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.{item};"))));
             let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
             let ir = result.unwrap_or_else(|d| panic!("{form}: {item}: {d:?}"));
             let reader = ir.instance_at("Top").expect("the top");
@@ -211,7 +211,7 @@ fn every_read_whose_hops_the_text_names_is_elaborated_in_one_pass() {
         let depth = if form.starts_with('4') { 4 } else { 3 };
         for (item, read) in [("sn", format!("v({reach}.sn)")), ("vs", format!("{reach}.vs")), ("q", format!("{reach}.q")), ("k", format!("{reach}.k")), ("twice", format!("{reach}.twice"))] {
             let expected = if through_type_parameter && item == "vs" { depth } else { 1 };
-            let passes = elaborate(&format!("{MODELS}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {read};"))));
+            let passes = elaborate(&format!("{MODELS}{}", ReachingTop::top(placement, &format!("potential(o) +> {read};"))));
             assert_eq!(passes, expected, "{form}: `{read}`");
         }
     }
@@ -244,7 +244,7 @@ fn a_refusal_of_another_cause_hides_no_refusal_of_a_read() {
         ("let g = GenNode(a); let r = TopH(a);", "v(g.mid.c0.sn) + v(r.m.h.n)", "a node declared in generation of a module a parent reads through"),
         ("let h = HW(1.0); let r = MidH(a);", "v(h.w.c0.sn) + v(r.h.n)", "a hoisted module that holds a placement of a module that is not hoisted"),
     ] {
-        let found = SourceElaboration::run(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reads};"))), "Top").expect_err("both reads are refused");
+        let found = SourceElaboration::run(&format!("{models}{}", ReachingTop::top(placement, &format!("potential(o) +> {reads};"))), "Top").expect_err("both reads are refused");
         let messages: Vec<String> = found.iter().map(|d| format!("{} {}", d.diagnostic.code, d.diagnostic.message)).collect();
         assert_eq!(messages.len(), 2, "{reads}: {messages:?}");
         assert!(messages[0].starts_with("P0001") && messages[0].contains(earlier), "{reads}: the earlier cause first: {messages:?}");
@@ -272,7 +272,7 @@ fn a_let_over_the_solve_and_a_param_reads_the_value_the_placement_gives_one_thre
         ("let p = GPlane::<_>(a) { cell: Cell { k: 7.0, g: 1.5 } };", "p.grid.row.cells[1]", 7.0, 1.5, 4),
     ] {
         for (item, lowered) in [("deep", format!("({k:?} * probe(")), ("gated", format!("if ({k:?} > 0.5) {{ probe(")), ("gi", format!("({g:?} * probe("))] {
-            let design = SourceElaboration::design(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {reach}.{item};"))));
+            let design = SourceElaboration::design(&format!("{models}{}", ReachingTop::top(placement, &format!("potential(o) +> {reach}.{item};"))));
             let (result, statistics) = Elaborator::new(&design).run_with_statistics("Top", &Overrides::none());
             let printed = result.unwrap_or_else(|d| panic!("{reach}.{item}: {d:?}")).print_structural();
             let read = printed.lines().find(|line| line.contains("b1.potential +> direct")).unwrap_or_else(|| panic!("{reach}.{item}: the read of `o`: {printed}"));
@@ -324,7 +324,7 @@ fn a_placement_with_a_false_where_or_a_missing_param_is_reported_once_through_a_
         ("let p = WR(a);", "v(p.sn)", "E0319"),
         ("let p = WRL3(a);", "v(p.mid.c0.sn)", "E0319"),
     ] {
-        let found = SourceElaboration::run(&format!("{models}{}", NestedReachFixture::top(placement, &format!("potential(o) +> {read};"))), "Top").expect_err("the placement is refused");
+        let found = SourceElaboration::run(&format!("{models}{}", ReachingTop::top(placement, &format!("potential(o) +> {read};"))), "Top").expect_err("the placement is refused");
         assert_eq!(SourceElaboration::codes(&found), [code], "`{read}` under `{placement}`: {:?}", found.iter().map(|d| d.diagnostic.message.clone()).collect::<Vec<_>>());
     }
 }

@@ -5,6 +5,7 @@
 
 use piperine_lang::pom::{BUILTINS, BuiltinKind, builtin};
 use piperine_lang_fixtures::pom::PomSource;
+use piperine_lang_fixtures::prelude_design::PreludeDesign;
 
 #[test]
 fn builtin_table_has_every_core_primitive() {
@@ -89,23 +90,12 @@ fn the_core_rows_are_unchanged() {
 }
 
 
-use piperine_lang::pom::{Design, DesignBuilder, DesignDiagnostic, PathId, Reflect, Resolution};
+use piperine_lang::pom::{Design, DesignBuilder, PathId, Reflect, Resolution};
 
-/// Associated test helpers of `resolve`, grouped on one fixture type.
-struct ResolveFixture;
+/// Reads what paths, locals and patterns of a design resolve to.
+struct NameResolutions;
 
-impl ResolveFixture {
-    /// The diagnostics of one code.
-    fn with_code<'a>(design: &'a Design, code: &str) -> Vec<&'a DesignDiagnostic> {
-        design.diagnostics().iter().filter(|d| d.diagnostic.code == code).collect()
-    }
-
-    /// The text of the primary span of a diagnostic of the root file.
-    fn primary_text<'a>(design: &'a Design, d: &DesignDiagnostic) -> &'a str {
-        let file = &design.files()[d.file.index()];
-        &file.text()[d.diagnostic.span().range()]
-    }
-
+impl NameResolutions {
     /// The per-segment resolutions of every path whose segments, joined by `::`,
     /// read `joined`, in arena order.
     fn resolutions(design: &Design, joined: &str) -> Vec<Vec<Resolution>> {
@@ -118,7 +108,7 @@ impl ResolveFixture {
 
     /// The single path written `joined`: its resolutions.
     fn one(design: &Design, joined: &str) -> Vec<Resolution> {
-        let mut all = ResolveFixture::resolutions(design, joined);
+        let mut all = NameResolutions::resolutions(design, joined);
         assert_eq!(all.len(), 1, "exactly one path `{joined}`");
         all.remove(0)
     }
@@ -135,11 +125,37 @@ impl ResolveFixture {
         Resolution::Decl(found[0].id())
     }
 
-    // ---- core names (POL-03) -----------------------------------------------------------------------
+    /// Every plain identifier pattern named `name`: its id, resolution and binding declaration.
+    fn ident_patterns(design: &Design, name: &str) -> Vec<(PatId, Resolution, piperine_lang::pom::DeclId)> {
+        (0..design.pat_count())
+            .filter_map(|i| {
+                let id = PatId(i as u32);
+                match design.pat(id).kind() {
+                    PatKind::Ident { name: n, res, binding, .. } if n.text == name => Some((id, *res, *binding)),
+                    _ => None,
+                }
+            })
+            .collect()
+    }
 
+    fn is_binding(design: &Design, binding: piperine_lang::pom::DeclId) -> bool {
+        design.decl(binding).as_binding().expect("a Binding declaration").is_binding()
+    }
+
+    /// The function named `name`, in any crate of the design.
+    fn function<'d>(design: &'d Design, name: &str) -> piperine_lang::pom::Function<'d> {
+        let all = design.crates().into_iter().flat_map(|c| c.decls()).filter_map(|d| d.as_function());
+        all.into_iter().find(|f| f.name() == Some(name)).unwrap_or_else(|| panic!("a function `{name}`"))
+    }
+}
+
+/// Reads the builtin catalogue against the specification.
+struct BuiltinCatalogue;
+
+impl BuiltinCatalogue {
     /// The built-in kind a path of one segment resolved to, for every path spelled `name`.
     fn builtin_kinds(design: &Design, name: &str) -> Vec<Option<BuiltinKind>> {
-        ResolveFixture::resolutions(design, name)
+        NameResolutions::resolutions(design, name)
             .into_iter()
             .map(|segments| match segments.as_slice() {
                 [Resolution::Builtin(b)] => Some(b.info().kind),
@@ -166,49 +182,18 @@ impl ResolveFixture {
     }
 
     fn catalogue_trait(name: &str) -> bool {
-        ResolveFixture::appendix_h_names("## H.8").iter().any(|t| t == name)
+        BuiltinCatalogue::appendix_h_names("## H.8").iter().any(|t| t == name)
     }
+}
 
-    /// Every plain identifier pattern named `name`: its id, resolution and binding declaration.
-    fn ident_patterns(design: &Design, name: &str) -> Vec<(PatId, Resolution, piperine_lang::pom::DeclId)> {
-        (0..design.pat_count())
-            .filter_map(|i| {
-                let id = PatId(i as u32);
-                match design.pat(id).kind() {
-                    PatKind::Ident { name: n, res, binding, .. } if n.text == name => Some((id, *res, *binding)),
-                    _ => None,
-                }
-            })
-            .collect()
-    }
+/// Adds source items to the standard library of a design builder.
+struct StdLibraryBuilder;
 
-    fn is_binding(design: &Design, binding: piperine_lang::pom::DeclId) -> bool {
-        design.decl(binding).as_binding().expect("a Binding declaration").is_binding()
-    }
-
+impl StdLibraryBuilder {
     /// `items` as the `pub` content of `std::prelude` (what `.prelude(name, items)` used to register).
     /// It is a second std file so the fixture's own `//!` comments stay legal.
     fn std_lib(builder: DesignBuilder, items: &str) -> DesignBuilder {
         builder.std_source("lib.msl", "pub mod prelude;\n").std_source("prelude.msl", items)
-    }
-
-    /// The function named `name`, in any crate of the design.
-    fn function<'d>(design: &'d Design, name: &str) -> piperine_lang::pom::Function<'d> {
-        let all = design.crates().into_iter().flat_map(|c| c.decls()).filter_map(|d| d.as_function());
-        all.into_iter().find(|f| f.name() == Some(name)).unwrap_or_else(|| panic!("a function `{name}`"))
-    }
-
-    /// What the field access or method call with this text resolves to, in the root crate.
-    fn member_res(design: &Design, text: &str) -> Resolution {
-        use piperine_lang::pom::{ExprId, ExprKind};
-        let e = (0..design.expr_count())
-            .map(|i| design.expr(ExprId(i as u32)))
-            .find(|e| e.text() == text && !e.enclosing().file().krate().is_std() && matches!(e.kind(), ExprKind::Field { .. } | ExprKind::MethodCall { .. }))
-            .unwrap_or_else(|| panic!("member expression `{text}`"));
-        match e.kind() {
-            ExprKind::Field { res, .. } | ExprKind::MethodCall { res, .. } => *res,
-            _ => unreachable!(),
-        }
     }
 }
 
@@ -216,9 +201,9 @@ impl ResolveFixture {
 fn core_name_redefined_is_e0457() {
     let src = "fn ddt(x: f64) -> f64 { x }\nmodule temperature() {}\nmod inner { struct bound_step {} }\nfn idt() {}\nfn f64x() {}\nstruct u8 {}\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0457");
+    let found = PreludeDesign::with_code(&design, "E0457");
     assert_eq!(found.len(), 3, "{found:?}");
-    let at: Vec<&str> = found.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let at: Vec<&str> = found.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["ddt", "temperature", "bound_step"]);
     assert_eq!(found[0].diagnostic.span().start as usize, src.find("ddt").unwrap());
     assert_eq!(found[2].diagnostic.span().start as usize, src.find("bound_step").unwrap());
@@ -232,9 +217,9 @@ fn continuation_variables_are_builtin_functions() {
         assert_eq!((info.kind, info.section), (BuiltinKind::Fn, "§14.4"), "{name}");
     }
     let design = PomSource::build("fn g() -> f64 { gmin() * source_scale() }");
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     for name in ["gmin", "source_scale"] {
-        let Resolution::Builtin(id) = ResolveFixture::one(&design, name)[0] else { panic!("`{name}` resolves to the built-in") };
+        let Resolution::Builtin(id) = NameResolutions::one(&design, name)[0] else { panic!("`{name}` resolves to the built-in") };
         assert_eq!(id.name(), name);
     }
 }
@@ -243,8 +228,8 @@ fn continuation_variables_are_builtin_functions() {
 fn continuation_variable_redefined_is_e0457() {
     let src = "fn gmin() -> f64 { 0.0 }\nmod inner { module source_scale() {} }\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0457");
-    let at: Vec<&str> = found.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let found = PreludeDesign::with_code(&design, "E0457");
+    let at: Vec<&str> = found.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["gmin", "source_scale"], "{found:?}");
 }
 
@@ -252,7 +237,7 @@ fn continuation_variable_redefined_is_e0457() {
 fn duplicate_member_name_is_e0330() {
     let src = "module M(a: f64, a: f64) { p: f64 = 1.0; signal p: f64; let q = 1; let q = 2; }\nmodule N(x: f64) { signal y: f64; signal z: f64; }\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0330");
+    let found = PreludeDesign::with_code(&design, "E0330");
     assert_eq!(found.len(), 3, "{found:?}");
     assert_eq!(PomSource::codes(&design).iter().filter(|c| *c == "E0330").count(), 3);
     let first = |name: &str, nth: usize| src.match_indices(name).nth(nth).unwrap().0;
@@ -288,59 +273,59 @@ mod c {
 use a::deep::g;
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     let root = Resolution::Decl(design.root().id());
-    let ns_a = ResolveFixture::decl(&design, "a");
+    let ns_a = NameResolutions::decl(&design, "a");
     // Simple, with `super`: every segment resolves to what it names.
-    assert_eq!(ResolveFixture::one(&design, "super::a::f"), [root, ns_a, ResolveFixture::decl(&design, "a::f")]);
+    assert_eq!(NameResolutions::one(&design, "super::a::f"), [root, ns_a, NameResolutions::decl(&design, "a::f")]);
     // Alias, with `crate`.
-    assert_eq!(ResolveFixture::one(&design, "crate::a::K"), [root, ns_a, ResolveFixture::decl(&design, "a::K")]);
+    assert_eq!(NameResolutions::one(&design, "crate::a::K"), [root, ns_a, NameResolutions::decl(&design, "a::K")]);
     // Group leaves, and a glob's prefix names the namespace it imports.
-    assert_eq!(ResolveFixture::one(&design, "super::a::S"), [root, ns_a, ResolveFixture::decl(&design, "a::S")]);
-    let deep = [root, ns_a, ResolveFixture::decl(&design, "a::deep")];
-    assert_eq!(ResolveFixture::resolutions(&design, "super::a::deep"), [deep, deep]);
+    assert_eq!(NameResolutions::one(&design, "super::a::S"), [root, ns_a, NameResolutions::decl(&design, "a::S")]);
+    let deep = [root, ns_a, NameResolutions::decl(&design, "a::deep")];
+    assert_eq!(NameResolutions::resolutions(&design, "super::a::deep"), [deep, deep]);
     // `self::` reaches an import of the same namespace; an alias is a name like any other.
-    assert_eq!(ResolveFixture::one(&design, "self::f"), [ResolveFixture::decl(&design, "b"), ResolveFixture::decl(&design, "a::f")]);
-    assert_eq!(ResolveFixture::one(&design, "Kay"), [ResolveFixture::decl(&design, "a::K")]);
+    assert_eq!(NameResolutions::one(&design, "self::f"), [NameResolutions::decl(&design, "b"), NameResolutions::decl(&design, "a::f")]);
+    assert_eq!(NameResolutions::one(&design, "Kay"), [NameResolutions::decl(&design, "a::K")]);
     // A `pub use` glob re-exports: `b::h` reaches `a::deep::h` from `c`.
-    assert_eq!(ResolveFixture::one(&design, "super::b::h"), [root, ResolveFixture::decl(&design, "b"), ResolveFixture::decl(&design, "a::deep::h")]);
+    assert_eq!(NameResolutions::one(&design, "super::b::h"), [root, NameResolutions::decl(&design, "b"), NameResolutions::decl(&design, "a::deep::h")]);
     // A path relative to the namespace that writes it.
-    assert_eq!(ResolveFixture::one(&design, "a::deep::g"), [ns_a, ResolveFixture::decl(&design, "a::deep"), ResolveFixture::decl(&design, "a::deep::g")]);
+    assert_eq!(NameResolutions::one(&design, "a::deep::g"), [ns_a, NameResolutions::decl(&design, "a::deep"), NameResolutions::decl(&design, "a::deep::g")]);
 }
 
 #[test]
 fn prelude_source_items_are_visible_everywhere() {
     let prelude = "pub enum Mode { A, B }\npub struct Shared {}\nstruct Hidden {}\npub const LIMIT: u32 = 3;\n";
     let src = "use Mode::A;\nmod m { use Shared; mod deep { fn f(x: Shared) -> u32 { let y: Mode = Mode::B; LIMIT } } }\nuse Hidden;\n";
-    let design = ResolveFixture::std_lib(Design::builder(), prelude).source("top.msl", src).build();
+    let design = StdLibraryBuilder::std_lib(Design::builder(), prelude).source("top.msl", src).build();
     // From the root and from a nested namespace, without any `use` of the prelude.
     let mode = Resolution::Decl(
         (0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == "Mode")).unwrap(),
     );
-    let a = ResolveFixture::one(&design, "Mode::A");
+    let a = NameResolutions::one(&design, "Mode::A");
     assert_eq!(a[0], mode);
     assert!(matches!(a[1], Resolution::Decl(_)));
     // Names read in a signature, a type and a body of a nested namespace, with no `use`.
     let shared = Resolution::Decl((0..design.decl_count()).map(|i| piperine_lang::pom::DeclId(i as u32)).find(|d| design.decl_data(*d).name.as_ref().is_some_and(|n| n.text == "Shared")).unwrap());
-    assert_eq!(ResolveFixture::resolutions(&design, "Shared"), [[shared], [shared]], "the `use` in `m` and the parameter type in `deep`");
-    let limit = &ResolveFixture::resolutions(&design, "LIMIT")[0];
+    assert_eq!(NameResolutions::resolutions(&design, "Shared"), [[shared], [shared]], "the `use` in `m` and the parameter type in `deep`");
+    let limit = &NameResolutions::resolutions(&design, "LIMIT")[0];
     assert_eq!(limit.len(), 1);
     let Resolution::Decl(limit) = limit[0] else { panic!("LIMIT resolves") };
     assert_eq!(design.decl_data(limit).kind.label(), "Const");
     assert_eq!(design.decl_data(limit).file, design.files().iter().find(|f| f.name() == "prelude.msl").unwrap().id(), "the prelude's const, not a guess");
-    assert_eq!(ResolveFixture::resolutions(&design, "Mode"), [[mode]], "the type annotation");
-    assert_eq!(ResolveFixture::resolutions(&design, "Mode::B")[0][0], mode);
+    assert_eq!(NameResolutions::resolutions(&design, "Mode"), [[mode]], "the type annotation");
+    assert_eq!(NameResolutions::resolutions(&design, "Mode::B")[0][0], mode);
     // Only the `pub` items are visible: `Hidden` is not found.
-    assert_eq!(ResolveFixture::one(&design, "Hidden"), [Resolution::Unresolved]);
-    let missing = ResolveFixture::with_code(&design, "E0161");
+    assert_eq!(NameResolutions::one(&design, "Hidden"), [Resolution::Unresolved]);
+    let missing = PreludeDesign::with_code(&design, "E0161");
     assert_eq!(missing.len(), 1, "{missing:?}");
-    assert_eq!(ResolveFixture::primary_text(&design, missing[0]), "Hidden");
+    assert_eq!(PreludeDesign::primary_text(&design, missing[0]), "Hidden");
     // The same through the embedded library: its natures are there for the asking.
     let design = Design::builder().source("top.msl", "use Electrical;\nuse Bit;\n").build();
     // (Whether the library builds clean by itself is `embedded_std_builds_clean`'s question.)
     let root_file = design.root().file().id();
     assert!(design.diagnostics().iter().all(|d| d.file != root_file), "{:?}", design.diagnostics());
-    for r in ResolveFixture::resolutions(&design, "Electrical") {
+    for r in NameResolutions::resolutions(&design, "Electrical") {
         let Resolution::Decl(electrical) = r[0] else { panic!("Electrical resolves") };
         assert!(design.decl_data(electrical).file != design.root().file().id());
     }
@@ -362,20 +347,20 @@ use a::open;
 use a::nothing;
 ";
     let design = PomSource::build(src);
-    let errors = ResolveFixture::with_code(&design, "E0161");
+    let errors = PreludeDesign::with_code(&design, "E0161");
     assert_eq!(errors.len(), 2, "{errors:?}");
     // The private item is linked, and one error says so at the import path.
-    assert_eq!(ResolveFixture::one(&design, "a::secret"), [ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::secret")]);
+    assert_eq!(NameResolutions::one(&design, "a::secret"), [NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::secret")]);
     assert!(errors[0].diagnostic.message.contains("private"), "{:?}", errors[0]);
-    assert_eq!(ResolveFixture::primary_text(&design, errors[0]), "a::secret");
+    assert_eq!(PreludeDesign::primary_text(&design, errors[0]), "a::secret");
     // Absent is another error: nothing to link.
-    assert_eq!(ResolveFixture::one(&design, "a::nothing"), [ResolveFixture::decl(&design, "a"), Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "a::nothing"), [NameResolutions::decl(&design, "a"), Resolution::Unresolved]);
     assert!(!errors[1].diagnostic.message.contains("private"), "{:?}", errors[1]);
-    assert_eq!(ResolveFixture::primary_text(&design, errors[1]), "a::nothing");
+    assert_eq!(PreludeDesign::primary_text(&design, errors[1]), "a::nothing");
     // The public one and the accesses from inside the declaring namespace are clean.
-    assert_eq!(ResolveFixture::one(&design, "a::open"), [ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::open")]);
-    assert_eq!(ResolveFixture::one(&design, "super::secret"), [ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::secret")]);
-    assert_eq!(ResolveFixture::one(&design, "self::secret"), [ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::secret")]);
+    assert_eq!(NameResolutions::one(&design, "a::open"), [NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::open")]);
+    assert_eq!(NameResolutions::one(&design, "super::secret"), [NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::secret")]);
+    assert_eq!(NameResolutions::one(&design, "self::secret"), [NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::secret")]);
 }
 
 #[test]
@@ -387,11 +372,11 @@ use a::*;
 mod c { use super::dup as x; use super::only as y; }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     // The local `dup` is found, not the glob's; the glob still supplies what is not local.
     let root = Resolution::Decl(design.root().id());
-    assert_eq!(ResolveFixture::one(&design, "super::dup"), [root, ResolveFixture::decl(&design, "dup")]);
-    assert_eq!(ResolveFixture::one(&design, "super::only"), [root, ResolveFixture::decl(&design, "a::only")]);
+    assert_eq!(NameResolutions::one(&design, "super::dup"), [root, NameResolutions::decl(&design, "dup")]);
+    assert_eq!(NameResolutions::one(&design, "super::only"), [root, NameResolutions::decl(&design, "a::only")]);
 }
 
 #[test]
@@ -409,38 +394,38 @@ fn f<T: Tr>(x: T, t: Sub, w: Pair) -> Mode { x }
 struct Holder<U: Tr = Pair> { u: U, e: Mode }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
-    let at = |path: &str, nth: usize| -> Resolution { ResolveFixture::resolutions(&design, path).remove(nth)[0] };
-    assert_eq!(at("Volt", 0), ResolveFixture::decl(&design, "Volt"));
-    assert_eq!(at("Mode", 0), ResolveFixture::decl(&design, "Mode"));
-    assert_eq!(at("Pair", 0), ResolveFixture::decl(&design, "Pair"));
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let at = |path: &str, nth: usize| -> Resolution { NameResolutions::resolutions(&design, path).remove(nth)[0] };
+    assert_eq!(at("Volt", 0), NameResolutions::decl(&design, "Volt"));
+    assert_eq!(at("Mode", 0), NameResolutions::decl(&design, "Mode"));
+    assert_eq!(at("Pair", 0), NameResolutions::decl(&design, "Pair"));
     // A trait as a bound, in a generic parameter list and a default.
-    assert_eq!(ResolveFixture::resolutions(&design, "Tr").len(), 3);
-    assert!(ResolveFixture::resolutions(&design, "Tr").iter().all(|r| r[0] == ResolveFixture::decl(&design, "Tr")));
+    assert_eq!(NameResolutions::resolutions(&design, "Tr").len(), 3);
+    assert!(NameResolutions::resolutions(&design, "Tr").iter().all(|r| r[0] == NameResolutions::decl(&design, "Tr")));
     // A module is a type (section 3.4.5), also inside an array type.
-    assert_eq!(ResolveFixture::resolutions(&design, "Sub").len(), 2);
-    assert!(ResolveFixture::resolutions(&design, "Sub").iter().all(|r| r[0] == ResolveFixture::decl(&design, "Sub")));
+    assert_eq!(NameResolutions::resolutions(&design, "Sub").len(), 2);
+    assert!(NameResolutions::resolutions(&design, "Sub").iter().all(|r| r[0] == NameResolutions::decl(&design, "Sub")));
     // A generic parameter resolves to its parameter declaration, not to an item.
     let n = design.module("M").unwrap().decl().children().into_iter().find(|c| c.name() == Some("N")).unwrap();
-    assert_eq!(ResolveFixture::resolutions(&design, "N"), [[Resolution::Decl(n.id())]]);
+    assert_eq!(NameResolutions::resolutions(&design, "N"), [[Resolution::Decl(n.id())]]);
     let t = design.find("f").unwrap().children().into_iter().find(|c| c.name() == Some("T")).unwrap();
-    assert_eq!(ResolveFixture::resolutions(&design, "T"), [[Resolution::Decl(t.id())]]);
+    assert_eq!(NameResolutions::resolutions(&design, "T"), [[Resolution::Decl(t.id())]]);
     let u = design.find("Holder").unwrap().children().into_iter().find(|c| c.name() == Some("U")).unwrap();
-    assert_eq!(ResolveFixture::resolutions(&design, "U"), [[Resolution::Decl(u.id())]]);
+    assert_eq!(NameResolutions::resolutions(&design, "U"), [[Resolution::Decl(u.id())]]);
     // Outside the declaration its generics are not names.
     let outside = PomSource::build("fn g<T>(x: T) {}\nfn h(y: T) {}");
-    let errors = ResolveFixture::with_code(&outside, "E0161");
+    let errors = PreludeDesign::with_code(&outside, "E0161");
     assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(ResolveFixture::primary_text(&outside, errors[0]), "T");
+    assert_eq!(PreludeDesign::primary_text(&outside, errors[0]), "T");
 }
 
 #[test]
 fn builtin_names_resolve_to_table_entries() {
     let src = "fn f(a: f64, b: u8, c: Option<f64>, d: [u128; 4]) {}\ntrait Tr<T: Repr> {}\n";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     for (name, section) in [("f64", "§1"), ("u8", "§1"), ("Option", "§1"), ("u128", "§1"), ("Repr", "§2")] {
-        let all = ResolveFixture::resolutions(&design, name);
+        let all = NameResolutions::resolutions(&design, name);
         assert!(!all.is_empty(), "`{name}` is written");
         for r in all {
             let Resolution::Builtin(id) = r[0] else { panic!("`{name}` is a built-in") };
@@ -451,16 +436,16 @@ fn builtin_names_resolve_to_table_entries() {
     // A declaration shadows the table; so does an import.
     // Core primitives are names of expressions too.
     let exprs = PomSource::build("fn g() -> f64 { ddt(temperature()) }");
-    assert!(ResolveFixture::with_code(&exprs, "E0161").is_empty(), "{:?}", exprs.diagnostics());
+    assert!(PreludeDesign::with_code(&exprs, "E0161").is_empty(), "{:?}", exprs.diagnostics());
     for (name, section) in [("ddt", "§14.5"), ("temperature", "§14.4")] {
-        let Resolution::Builtin(id) = ResolveFixture::one(&exprs, name)[0] else { panic!("`{name}` is a built-in") };
+        let Resolution::Builtin(id) = NameResolutions::one(&exprs, name)[0] else { panic!("`{name}` is a built-in") };
         assert_eq!((id.name().as_str(), id.info().section), (name, section));
     }
     let shadow = PomSource::build("struct Option {}\nmod m { pub struct f64 {} }\nuse m::f64;\nfn g(a: Option, b: f64) {}");
-    assert!(ResolveFixture::with_code(&shadow, "E0161").is_empty(), "{:?}", shadow.diagnostics());
-    assert_eq!(ResolveFixture::one(&shadow, "Option"), [ResolveFixture::decl(&shadow, "Option")]);
-    let imported = ResolveFixture::resolutions(&shadow, "f64");
-    assert_eq!(imported.last().unwrap(), &[ResolveFixture::decl(&shadow, "m::f64")]);
+    assert!(PreludeDesign::with_code(&shadow, "E0161").is_empty(), "{:?}", shadow.diagnostics());
+    assert_eq!(NameResolutions::one(&shadow, "Option"), [NameResolutions::decl(&shadow, "Option")]);
+    let imported = NameResolutions::resolutions(&shadow, "f64");
+    assert_eq!(imported.last().unwrap(), &[NameResolutions::decl(&shadow, "m::f64")]);
 }
 
 #[test]
@@ -472,29 +457,29 @@ impl S { fn dup(self) -> Self { self } }
 impl Tr for S { fn make() -> Self { S { a: 1 } } }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     // In arena order: the trait's `Self`, then the inherent impl's, then the trait impl's.
-    let selfs = ResolveFixture::resolutions(&design, "Self");
+    let selfs = NameResolutions::resolutions(&design, "Self");
     assert_eq!(selfs.len(), 3);
-    assert_eq!(selfs[0], [ResolveFixture::decl(&design, "Tr")]);
-    assert_eq!(selfs[1], [ResolveFixture::decl(&design, "S")]);
-    assert_eq!(selfs[2], [ResolveFixture::decl(&design, "S")]);
+    assert_eq!(selfs[0], [NameResolutions::decl(&design, "Tr")]);
+    assert_eq!(selfs[1], [NameResolutions::decl(&design, "S")]);
+    assert_eq!(selfs[2], [NameResolutions::decl(&design, "S")]);
     // The impl's own header: the trait and the self type.
-    assert_eq!(ResolveFixture::resolutions(&design, "Tr").len(), 1);
-    assert_eq!(ResolveFixture::resolutions(&design, "Tr")[0], [ResolveFixture::decl(&design, "Tr")]);
+    assert_eq!(NameResolutions::resolutions(&design, "Tr").len(), 1);
+    assert_eq!(NameResolutions::resolutions(&design, "Tr")[0], [NameResolutions::decl(&design, "Tr")]);
     // `Self` outside an impl or a trait names nothing.
     let stray = PomSource::build("fn f() -> Self {}");
-    assert_eq!(ResolveFixture::with_code(&stray, "E0161").len(), 1);
+    assert_eq!(PreludeDesign::with_code(&stray, "E0161").len(), 1);
 }
 
 #[test]
 fn shadowed_local_resolves_to_previous_binding() {
     let design = PomSource::build("fn f() -> u32 { let x = 1; let x = x + 1; x }");
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     let bindings: Vec<_> = design.find("f").unwrap().children().into_iter().filter(|c| c.name() == Some("x")).map(|c| c.id()).collect();
     assert_eq!(bindings.len(), 2);
     // In source order: the right-hand `x` is the first local, the tail `x` the second.
-    assert_eq!(ResolveFixture::resolutions(&design, "x"), [[Resolution::Decl(bindings[0])], [Resolution::Decl(bindings[1])]]);
+    assert_eq!(NameResolutions::resolutions(&design, "x"), [[Resolution::Decl(bindings[0])], [Resolution::Decl(bindings[1])]]);
 }
 
 #[test]
@@ -513,21 +498,21 @@ fn f(p: u32, opt: Option<u32>) -> u32 {
     let design = PomSource::build(src);
     // Each binder's name resolves inside its scope and not after it.
     for name in ["c", "a", "i", "q", "w"] {
-        assert_eq!(ResolveFixture::resolutions(&design, name), [[ResolveFixture::local(&design, "f", name)], [Resolution::Unresolved]], "`{name}`");
+        assert_eq!(NameResolutions::resolutions(&design, name), [[NameResolutions::local(&design, "f", name)], [Resolution::Unresolved]], "`{name}`");
     }
-    let outside = ResolveFixture::with_code(&design, "E0161");
-    let texts: Vec<_> = outside.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let outside = PreludeDesign::with_code(&design, "E0161");
+    let texts: Vec<_> = outside.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(texts, ["c", "a", "i", "q", "w"]);
     // Function parameters are names of the whole body, and of nothing outside it.
-    assert!(ResolveFixture::resolutions(&design, "p").iter().all(|r| r[0] == ResolveFixture::local(&design, "f", "p")));
-    assert!(ResolveFixture::resolutions(&design, "opt").iter().all(|r| r[0] == ResolveFixture::local(&design, "f", "opt")));
+    assert!(NameResolutions::resolutions(&design, "p").iter().all(|r| r[0] == NameResolutions::local(&design, "f", "p")));
+    assert!(NameResolutions::resolutions(&design, "opt").iter().all(|r| r[0] == NameResolutions::local(&design, "f", "opt")));
     // `Some(a)` names the built-in variant; `None` is a pattern binding, not a reference.
-    assert!(ResolveFixture::resolutions(&design, "Some").iter().all(|r| matches!(r[0], Resolution::Builtin(_))));
+    assert!(NameResolutions::resolutions(&design, "Some").iter().all(|r| matches!(r[0], Resolution::Builtin(_))));
     // Items of a function body are names of that body; an inner item sees no local of the outer one.
     let nested = PomSource::build("fn outer() { let x = 1; fn inner() -> u32 { x } inner(); helper(); fn helper() {} }");
-    let errors = ResolveFixture::with_code(&nested, "E0161");
+    let errors = PreludeDesign::with_code(&nested, "E0161");
     assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(ResolveFixture::primary_text(&nested, errors[0]), "x");
+    assert_eq!(PreludeDesign::primary_text(&nested, errors[0]), "x");
 }
 
 #[test]
@@ -536,14 +521,14 @@ fn unresolved_path_is_one_e0161() {
     let design = PomSource::build(src);
     // The build completed: the declarations are all there.
     assert!(design.find("f").is_some() && design.find("S").is_some() && design.find("K").is_some());
-    let errors = ResolveFixture::with_code(&design, "E0161");
-    let texts: Vec<_> = errors.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let errors = PreludeDesign::with_code(&design, "E0161");
+    let texts: Vec<_> = errors.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(texts, ["missing", "Nope", "gone::far"]);
-    assert_eq!(ResolveFixture::one(&design, "missing"), [Resolution::Unresolved]);
-    assert_eq!(ResolveFixture::one(&design, "gone::far"), [Resolution::Unresolved, Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "missing"), [Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "gone::far"), [Resolution::Unresolved, Resolution::Unresolved]);
     // The same path read twice is two paths, so two errors.
     let twice = PomSource::build("fn g() { nope; nope; }");
-    assert_eq!(ResolveFixture::with_code(&twice, "E0161").len(), 2);
+    assert_eq!(PreludeDesign::with_code(&twice, "E0161").len(), 2);
 }
 
 #[test]
@@ -556,7 +541,7 @@ fn ddt() {}
 mod nofile;
 ";
     let prelude = "pub fn pf() { prelude_missing; }\n";
-    let design = ResolveFixture::std_lib(Design::builder(), prelude).source("top.msl", src).build();
+    let design = StdLibraryBuilder::std_lib(Design::builder(), prelude).source("top.msl", src).build();
     let found: Vec<(u32, usize, String)> = design.diagnostics().iter().map(|d| (d.file.0, d.diagnostic.span().start, d.diagnostic.code.to_string())).collect();
     let mut sorted = found.clone();
     sorted.sort();
@@ -582,7 +567,7 @@ analog<G> for M<G> {
 }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").unwrap();
     let child = |name: &str| {
         let found = m.decl().children().into_iter().find(|c| c.name() == Some(name)).or_else(|| {
@@ -593,12 +578,12 @@ analog<G> for M<G> {
     };
     // The block reads a port, a param, a signal, a body `let`, a signal in a generation and a generic.
     for (read, declared) in [("pin", "pin"), ("rp", "rp"), ("sg", "sg"), ("gs", "gs")] {
-        assert_eq!(ResolveFixture::resolutions(&design, read), [[child(declared)]], "`{read}`");
+        assert_eq!(NameResolutions::resolutions(&design, read), [[child(declared)]], "`{read}`");
     }
     // `G` is written twice: in the target `M<G>` and in the body.
-    assert_eq!(ResolveFixture::resolutions(&design, "G"), [[child("G")], [child("G")]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "lt").len(), 1);
-    let Resolution::Decl(lt) = ResolveFixture::resolutions(&design, "lt")[0][0] else { panic!("`lt` resolves") };
+    assert_eq!(NameResolutions::resolutions(&design, "G"), [[child("G")], [child("G")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "lt").len(), 1);
+    let Resolution::Decl(lt) = NameResolutions::resolutions(&design, "lt")[0][0] else { panic!("`lt` resolves") };
     assert_eq!(design.decl_data(lt).kind.label(), "Binding");
     // The `G` of `analog<G> for M<G>` is the module's generic by position.
     let g = child("G");
@@ -609,9 +594,9 @@ analog<G> for M<G> {
     assert_eq!(design.path(*arg_path).segments()[0].res, g);
     // Names of one module are no names of another.
     let other = PomSource::build("module A() { signal a: f64; }\nmodule B() { signal b: f64; }\nanalog for B { a; }");
-    let errors = ResolveFixture::with_code(&other, "E0161");
+    let errors = PreludeDesign::with_code(&other, "E0161");
     assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(ResolveFixture::primary_text(&other, errors[0]), "a");
+    assert_eq!(PreludeDesign::primary_text(&other, errors[0]), "a");
 }
 
 #[test]
@@ -629,21 +614,21 @@ module M(pin: f64) {
 }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     let m = design.module("M").unwrap();
     let named = |name: &str| m.decl().children().into_iter().find(|c| c.name() == Some(name)).map(|c| Resolution::Decl(c.id())).unwrap();
     // Read before the declaration: the parameter, the signal and the let binding.
-    assert_eq!(ResolveFixture::resolutions(&design, "late"), [[named("late")]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "later_sig"), [[named("later_sig")]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "tail"), [[named("tail")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "late"), [[named("late")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "later_sig"), [[named("later_sig")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "tail"), [[named("tail")]]);
     let let_b = design.decl_data(m.decl().children().into_iter().find(|c| c.kind().label() == "Let" && c.children().iter().any(|x| x.name() == Some("b"))).unwrap().id()).children[0];
-    assert_eq!(ResolveFixture::resolutions(&design, "b"), [[Resolution::Decl(let_b)]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "pin"), [[named("pin")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "b"), [[Resolution::Decl(let_b)]]);
+    assert_eq!(NameResolutions::resolutions(&design, "pin"), [[named("pin")]]);
     // A generation's loop variable is a name of the generation only.
     let loopvar = PomSource::build("module L() { for k in 0..2 { signal g: f64 = k; } early: f64 = k; }");
-    let errors = ResolveFixture::with_code(&loopvar, "E0161");
+    let errors = PreludeDesign::with_code(&loopvar, "E0161");
     assert_eq!(errors.len(), 1, "{errors:?}");
-    assert_eq!(ResolveFixture::primary_text(&loopvar, errors[0]), "k");
+    assert_eq!(PreludeDesign::primary_text(&loopvar, errors[0]), "k");
 }
 
 #[test]
@@ -658,7 +643,7 @@ impl Mode { fn first() -> Mode { Mode::A } }
 fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
 ";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
     let inner = |outer: &str, name: &str| -> Resolution {
         let owner = design.find(outer).unwrap_or_else(|| panic!("`{outer}`"));
         let impls: Vec<_> = (0..design.decl_count())
@@ -669,29 +654,29 @@ fn f() -> u32 { Mode::B(1); S::K + S::make() + S::X + Tr::run() }
         Resolution::Decl(found.unwrap_or_else(|| panic!("`{name}` in an impl of `{outer}`")))
     };
     // A variant of an enum, with the enum as the first segment.
-    let mode = ResolveFixture::decl(&design, "Mode");
+    let mode = NameResolutions::decl(&design, "Mode");
     let variant = |n: &str| Resolution::Decl(design.decl_data(design.find("Mode").unwrap().id()).children.iter().copied().find(|c| design.decl_data(*c).name.as_ref().is_some_and(|x| x.text == n)).unwrap());
-    assert_eq!(ResolveFixture::resolutions(&design, "Mode::A"), [[mode, variant("A")]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "Mode::B"), [[mode, variant("B")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "Mode::A"), [[mode, variant("A")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "Mode::B"), [[mode, variant("B")]]);
     // An associated const or fn of an impl of the type, inherent or of a trait.
-    let s = ResolveFixture::decl(&design, "S");
-    assert_eq!(ResolveFixture::resolutions(&design, "S::K"), [[s, inner("S", "K")]]);
-    assert_eq!(ResolveFixture::resolutions(&design, "S::make"), [[s, inner("S", "make")]]);
+    let s = NameResolutions::decl(&design, "S");
+    assert_eq!(NameResolutions::resolutions(&design, "S::K"), [[s, inner("S", "K")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "S::make"), [[s, inner("S", "make")]]);
     // The const of `impl Tr for S`, not the trait's declaration.
-    assert_eq!(ResolveFixture::resolutions(&design, "S::X"), [[s, inner("S", "X")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "S::X"), [[s, inner("S", "X")]]);
     assert_ne!(inner("S", "X"), inner("Tr", "X"));
     // `Self::K` in an impl: Self is the struct, K its const.
-    assert_eq!(ResolveFixture::resolutions(&design, "Self::K"), [[s, inner("S", "K")]]);
+    assert_eq!(NameResolutions::resolutions(&design, "Self::K"), [[s, inner("S", "K")]]);
     // `Trait::item` names the trait's own item.
     let tr = design.find("Tr").unwrap();
     let trait_run = tr.children().into_iter().find(|c| c.name() == Some("run")).unwrap();
-    assert_eq!(ResolveFixture::resolutions(&design, "Tr::run"), [[ResolveFixture::decl(&design, "Tr"), Resolution::Decl(trait_run.id())]]);
+    assert_eq!(NameResolutions::resolutions(&design, "Tr::run"), [[NameResolutions::decl(&design, "Tr"), Resolution::Decl(trait_run.id())]]);
     // An item the type does not have is one error at the whole path.
     let missing = PomSource::build("struct S {}\nenum E { A }\nfn f() { S::nope; E::B; }");
-    let errors = ResolveFixture::with_code(&missing, "E0161");
-    let at: Vec<_> = errors.iter().map(|d| ResolveFixture::primary_text(&missing, d)).collect();
+    let errors = PreludeDesign::with_code(&missing, "E0161");
+    let at: Vec<_> = errors.iter().map(|d| PreludeDesign::primary_text(&missing, d)).collect();
     assert_eq!(at, ["S::nope", "E::B"]);
-    assert_eq!(ResolveFixture::one(&missing, "S::nope"), [ResolveFixture::decl(&missing, "S"), Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&missing, "S::nope"), [NameResolutions::decl(&missing, "S"), Resolution::Unresolved]);
 }
 
 #[test]
@@ -724,19 +709,19 @@ fn k() { { use a::x as y; } y(); }
 fn h() { use a::nothing; }
 ";
     let design = PomSource::build(src);
-    let (ns_a, x) = (ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::x"));
+    let (ns_a, x) = (NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::x"));
     // Used before the `use` item in the same block: the item is block-wide.
-    assert_eq!(ResolveFixture::one(&design, "early"), [x]);
-    assert_eq!(ResolveFixture::resolutions(&design, "a::x"), [[ns_a, x], [ns_a, x]]);
-    assert_eq!(ResolveFixture::one(&design, "Kay"), [ResolveFixture::decl(&design, "a::K")]);
-    assert_eq!(ResolveFixture::one(&design, "g"), [ResolveFixture::decl(&design, "a::deep::g")]);
+    assert_eq!(NameResolutions::one(&design, "early"), [x]);
+    assert_eq!(NameResolutions::resolutions(&design, "a::x"), [[ns_a, x], [ns_a, x]]);
+    assert_eq!(NameResolutions::one(&design, "Kay"), [NameResolutions::decl(&design, "a::K")]);
+    assert_eq!(NameResolutions::one(&design, "g"), [NameResolutions::decl(&design, "a::deep::g")]);
     let e = design.decl_data(design.find("a::E").unwrap().id()).children[0];
-    assert_eq!(ResolveFixture::one(&design, "P"), [Resolution::Decl(e)]);
+    assert_eq!(NameResolutions::one(&design, "P"), [Resolution::Decl(e)]);
     // The name does not leave the block that imports it.
-    assert_eq!(ResolveFixture::one(&design, "y"), [Resolution::Unresolved]);
-    assert_eq!(ResolveFixture::one(&design, "a::nothing"), [ns_a, Resolution::Unresolved]);
-    let errors = ResolveFixture::with_code(&design, "E0161");
-    let at: Vec<&str> = errors.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    assert_eq!(NameResolutions::one(&design, "y"), [Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "a::nothing"), [ns_a, Resolution::Unresolved]);
+    let errors = PreludeDesign::with_code(&design, "E0161");
+    let at: Vec<&str> = errors.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["y", "a::nothing"], "{errors:?}");
 }
 
@@ -746,7 +731,7 @@ fn h() { use a::nothing; }
 fn access_name_resolves_to_its_quantity() {
     let src = "nature Volt { potential: Voltage { access: v, units: \"V\" } }\nmodule M(p: Volt) { signal s: f64; s = v(p); }\n";
     let design = PomSource::build(src);
-    assert!(design.diagnostics().iter().all(|d| d.diagnostic.code != "E0161" || ResolveFixture::primary_text(&design, d) != "v"), "{:?}", design.diagnostics());
+    assert!(design.diagnostics().iter().all(|d| d.diagnostic.code != "E0161" || PreludeDesign::primary_text(&design, d) != "v"), "{:?}", design.diagnostics());
     let nature = design.nature("Volt").unwrap();
     let quantity = nature.quantities()[0].decl().id();
     let access: Vec<_> = (0..design.path_count()).map(|i| design.path(PathId(i as u32))).filter(|p| p.text() == "v").collect();
@@ -761,11 +746,11 @@ fn raw_identifier_names_drop_the_prefix() {
     // the prefix.
     let src = "nature Bit { value: bool }\nmodule M() {\n    signal r#out: Bit;\n    let x = r#out;\n}\n";
     let design = PomSource::build(src);
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", PomSource::codes(&design));
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", PomSource::codes(&design));
     let m = design.module("M").expect("module M");
     let sig = m.signal("out").expect("the signal is named `out`");
     assert_eq!(sig.name(), Some("out"));
-    let read = ResolveFixture::one(&design, "out");
+    let read = NameResolutions::one(&design, "out");
     assert!(matches!(read[0], Resolution::Decl(d) if d == sig.decl().id()), "{read:?}");
     let parsed = piperine_lang::msl::parser::SourceParser::parse(src).file;
     assert_eq!(design.files()[0].to_ast(), parsed);
@@ -791,15 +776,15 @@ module Top() {
     let instances = top.instances();
     assert_eq!(instances.len(), 1, "{:?}", design.diagnostics());
     assert_eq!(instances[0].module(), Some(module));
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
-    assert!(ResolveFixture::with_code(&design, "E0401").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0401").is_empty(), "{:?}", design.diagnostics());
 }
 
 #[test]
 fn str_is_a_builtin_type() {
     let design = PomSource::build("const S: str = \"x\";\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::builtin_kinds(&design, "str"), [Some(BuiltinKind::Type)]);
+    assert_eq!(BuiltinCatalogue::builtin_kinds(&design, "str"), [Some(BuiltinKind::Type)]);
 }
 
 #[test]
@@ -811,7 +796,7 @@ digital for M { on at(1.0) { let c = gnd; } }
 ";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::builtin_kinds(&design, "gnd"), [Some(BuiltinKind::Node); 3]);
+    assert_eq!(BuiltinCatalogue::builtin_kinds(&design, "gnd"), [Some(BuiltinKind::Node); 3]);
 }
 
 #[test]
@@ -821,21 +806,21 @@ fn m_and_dtemp_are_ordinary_names() {
     // module as anywhere else
     let declared = PomSource::build("module M(m: f64) { let a = m; }\n");
     assert!(declared.diagnostics().is_empty(), "{:?}", declared.diagnostics());
-    assert!(matches!(ResolveFixture::one(&declared, "m")[0], Resolution::Decl(_)), "{:?}", ResolveFixture::one(&declared, "m"));
+    assert!(matches!(NameResolutions::one(&declared, "m")[0], Resolution::Decl(_)), "{:?}", NameResolutions::one(&declared, "m"));
     let design = PomSource::build("module N() { let b = dtemp; let c = m; }\n");
-    let found = ResolveFixture::with_code(&design, "E0161");
-    let at: Vec<&str> = found.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let found = PreludeDesign::with_code(&design, "E0161");
+    let at: Vec<&str> = found.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["dtemp", "m"], "{:?}", design.diagnostics());
     assert!(builtin("m").is_none() && builtin("dtemp").is_none(), "no row for either name");
-    assert_eq!(ResolveFixture::one(&design, "dtemp"), [Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "dtemp"), [Resolution::Unresolved]);
 }
 
 #[test]
 fn core_names_cannot_be_redeclared() {
     let src = "fn gnd() {}\ntrait Nature {}\nstruct str {}\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0457");
-    let at: Vec<&str> = found.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let found = PreludeDesign::with_code(&design, "E0457");
+    let at: Vec<&str> = found.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["gnd", "Nature", "str"], "{:?}", design.diagnostics());
 }
 
@@ -859,8 +844,8 @@ const OPERATOR_TRAITS: [&str; 6] = ["BitAnd", "BitOr", "BitXor", "Not", "Shl", "
 
 #[test]
 fn catalogue_traits_and_types_resolve() {
-    let traits = ResolveFixture::appendix_h_names("## H.8");
-    let types = ResolveFixture::appendix_h_names("## H.9");
+    let traits = BuiltinCatalogue::appendix_h_names("## H.8");
+    let types = BuiltinCatalogue::appendix_h_names("## H.9");
     assert!(traits.len() >= 7 && types.len() >= 6, "{traits:?} {types:?}");
     // A derive name resolves like a bound: to the trait row it names (D2).
     let derived = PomSource::build("#[derive(Default)]\nstruct S { a: f64 }\n#[derive(PartialOrd, Debug, Hash, PartialEq, Repr)]\nstruct U;\ntrait Mine {}\n#[derive(Mine)]\nstruct V;\n");
@@ -897,11 +882,11 @@ fn catalogue_traits_and_types_resolve() {
     let design = PomSource::build(&src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     for t in &traits {
-        let kinds = ResolveFixture::builtin_kinds(&design, t);
+        let kinds = BuiltinCatalogue::builtin_kinds(&design, t);
         assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Some(BuiltinKind::Trait)), "trait `{t}`: {kinds:?}");
     }
     for t in &types {
-        let kinds = ResolveFixture::builtin_kinds(&design, t);
+        let kinds = BuiltinCatalogue::builtin_kinds(&design, t);
         assert!(!kinds.is_empty() && kinds.iter().all(|k| *k == Some(BuiltinKind::Type)), "type `{t}`: {kinds:?}");
     }
 }
@@ -914,19 +899,19 @@ fn builtin_table_matches_appendix_h() {
     };
     let own = |names: &[&str]| -> BTreeSet<String> { names.iter().map(|s| s.to_string()).collect() };
     // Traits: Appendix H's list, plus the language's own `Repr`, `Nature`, `Fn` and `Resolve`.
-    let mut traits: BTreeSet<String> = ResolveFixture::appendix_h_names("## H.8").into_iter().collect();
+    let mut traits: BTreeSet<String> = BuiltinCatalogue::appendix_h_names("## H.8").into_iter().collect();
     traits.extend(own(&["Repr", "Nature", "Fn", "Resolve"]));
     traits.extend(own(&OPERATOR_TRAITS));
     assert_eq!(rows(BuiltinKind::Trait), traits);
     // Types: every H.9 type has a row; the others are the sized families, `usize`/`isize`, `Event` and `Analysis`.
     let types = rows(BuiltinKind::Type);
-    let catalogue: BTreeSet<String> = ResolveFixture::appendix_h_names("## H.9").into_iter().collect();
+    let catalogue: BTreeSet<String> = BuiltinCatalogue::appendix_h_names("## H.9").into_iter().collect();
     assert!(catalogue.is_subset(&types), "missing: {:?}", catalogue.difference(&types).collect::<Vec<_>>());
     let extra = own(&["uN", "iN", "fN", "usize", "isize", "Event", "Analysis"]);
     let unexplained: Vec<_> = types.iter().filter(|t| !catalogue.contains(*t) && !extra.contains(*t)).collect();
     assert!(unexplained.is_empty(), "{unexplained:?}");
     // Every row of the catalogue is under the `App. H` label, apart from the §1 types.
-    for b in piperine_lang::pom::BUILTINS.iter().filter(|b| b.kind == BuiltinKind::Trait && ResolveFixture::catalogue_trait(b.name)) {
+    for b in piperine_lang::pom::BUILTINS.iter().filter(|b| b.kind == BuiltinKind::Trait && BuiltinCatalogue::catalogue_trait(b.name)) {
         assert_eq!(b.section, "App. H", "{}", b.name);
     }
 }
@@ -938,13 +923,13 @@ fn use_self_imports_the_namespace() {
     let src = "mod a { pub const K: f64 = 1.0; }\nuse a::{self, K};\nconst Z: f64 = a::K + K;\n";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    let k = ResolveFixture::decl(&design, "a::K");
-    let ns_a = ResolveFixture::decl(&design, "a");
+    let k = NameResolutions::decl(&design, "a::K");
+    let ns_a = NameResolutions::decl(&design, "a");
     // The `a::K` of the import and the one of the expression, and the bare `K`.
-    for path in ResolveFixture::resolutions(&design, "a::K") {
+    for path in NameResolutions::resolutions(&design, "a::K") {
         assert_eq!(path, [ns_a, k]);
     }
-    assert_eq!(ResolveFixture::one(&design, "K"), [k]);
+    assert_eq!(NameResolutions::one(&design, "K"), [k]);
 }
 
 #[test]
@@ -956,10 +941,10 @@ const Z: f64 = aa::K + n::J + JJ;
 ";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::one(&design, "aa::K"), [ResolveFixture::decl(&design, "a"), ResolveFixture::decl(&design, "a::K")]);
-    assert_eq!(ResolveFixture::one(&design, "JJ"), [ResolveFixture::decl(&design, "a::n::J")]);
-    for path in ResolveFixture::resolutions(&design, "n::J") {
-        assert_eq!(path, [ResolveFixture::decl(&design, "a::n"), ResolveFixture::decl(&design, "a::n::J")]);
+    assert_eq!(NameResolutions::one(&design, "aa::K"), [NameResolutions::decl(&design, "a"), NameResolutions::decl(&design, "a::K")]);
+    assert_eq!(NameResolutions::one(&design, "JJ"), [NameResolutions::decl(&design, "a::n::J")]);
+    for path in NameResolutions::resolutions(&design, "n::J") {
+        assert_eq!(path, [NameResolutions::decl(&design, "a::n"), NameResolutions::decl(&design, "a::n::J")]);
     }
 }
 
@@ -983,13 +968,13 @@ fn repr_members_resolve_through_a_bound() {
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let member = |joined: &str, name: &str| {
-        let res = ResolveFixture::one(&design, joined);
+        let res = NameResolutions::one(&design, joined);
         assert!(matches!(res[0], Resolution::Decl(_)), "{joined}: {res:?}");
         let Resolution::Builtin(b) = res[1] else { panic!("{joined}: {res:?}") };
         assert_eq!((b.info().kind, b.info().name), (BuiltinKind::Member, name), "{joined}");
     };
     member("B::decode", "Repr::decode");
-    for width in ResolveFixture::resolutions(&design, "A::WIDTH").into_iter().chain(ResolveFixture::resolutions(&design, "B::WIDTH")) {
+    for width in NameResolutions::resolutions(&design, "A::WIDTH").into_iter().chain(NameResolutions::resolutions(&design, "B::WIDTH")) {
         let Resolution::Builtin(b) = width[1] else { panic!("{width:?}") };
         assert_eq!(b.info().name, "Repr::WIDTH");
     }
@@ -1001,11 +986,11 @@ fn repr_members_resolve_through_a_bound() {
 fn unknown_repr_member_is_e0161() {
     let src = "fn f<A: Repr>(a: A) { A::NOPE; }\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0161");
+    let found = PreludeDesign::with_code(&design, "E0161");
     assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
     assert_eq!(design.diagnostics().len(), 1);
-    assert_eq!(ResolveFixture::primary_text(&design, found[0]), "A::NOPE");
-    assert_eq!(ResolveFixture::one(&design, "A::NOPE")[1], Resolution::Unresolved);
+    assert_eq!(PreludeDesign::primary_text(&design, found[0]), "A::NOPE");
+    assert_eq!(NameResolutions::one(&design, "A::NOPE")[1], Resolution::Unresolved);
 }
 
 #[test]
@@ -1014,15 +999,15 @@ fn member_through_a_builtin_bound_is_deferred() {
     let src = "trait Tr { fn run() {} }\nfn f<T: PartialOrd>(a: T) { T::foo; }\nfn g<T: Repr + PartialEq>(a: T) { T::foo; T::WIDTH; }\nfn h<T: Tr>() { T::run(); }\n";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    let foo = ResolveFixture::resolutions(&design, "T::foo");
+    let foo = NameResolutions::resolutions(&design, "T::foo");
     assert_eq!(foo.len(), 2);
     for res in &foo {
         assert_eq!(res[1], Resolution::Deferred(DeferReason::BuiltinTraitMember));
     }
     // A member `Repr` has still resolves, beside another built-in bound.
-    assert!(matches!(ResolveFixture::one(&design, "T::WIDTH")[1], Resolution::Builtin(_)));
+    assert!(matches!(NameResolutions::one(&design, "T::WIDTH")[1], Resolution::Builtin(_)));
     // A user trait bound resolves to the trait's own item.
-    assert_eq!(ResolveFixture::one(&design, "T::run")[1], ResolveFixture::decl(&design, "Tr::run"));
+    assert_eq!(NameResolutions::one(&design, "T::run")[1], NameResolutions::decl(&design, "Tr::run"));
 }
 
 // ---- E0162: one name per table per namespace (POL-04) ------------------------------------------
@@ -1031,8 +1016,8 @@ fn member_through_a_builtin_bound_is_deferred() {
 fn duplicate_item_is_e0162_and_both_are_kept() {
     let src = "module M() {}\nmodule M() {}\nstruct N;\nconst N: f64 = 1.0;\nmod a {}\nmod a {}\nstruct T { x: f64 }\nenum T { A }\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0162");
-    let at: Vec<(&str, usize)> = found.iter().map(|d| (ResolveFixture::primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
+    let found = PreludeDesign::with_code(&design, "E0162");
+    let at: Vec<(&str, usize)> = found.iter().map(|d| (PreludeDesign::primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
     let nth = |needle: &str, n: usize| src.match_indices(needle).nth(n).unwrap().0;
     assert_eq!(at, [("M", nth("M()", 1)), ("N", nth("N:", 0)), ("a", nth("a {}", 1)), ("T", nth("enum T", 0) + 5)], "{:?}", design.diagnostics());
     assert_eq!(design.diagnostics().len(), 4, "{:?}", design.diagnostics());
@@ -1053,8 +1038,8 @@ mod m { use super::a::K; use super::b::K; }
 mod n { pub const J: f64 = 1.0; use super::a::K as J; }
 ";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0162");
-    let at: Vec<&str> = found.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let found = PreludeDesign::with_code(&design, "E0162");
+    let at: Vec<&str> = found.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(at, ["a::K", "super::b::K", "super::a::K"], "{:?}", design.diagnostics());
     assert_eq!(design.diagnostics().len(), 3, "{:?}", design.diagnostics());
 }
@@ -1068,12 +1053,12 @@ mod idle { use super::a::*; use super::b::*; }
 mod busy { use super::a::*; use super::b::*; const Z: f64 = K; }
 ";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0162");
+    let found = PreludeDesign::with_code(&design, "E0162");
     assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::primary_text(&design, found[0]), "K");
+    assert_eq!(PreludeDesign::primary_text(&design, found[0]), "K");
     assert_eq!(found[0].diagnostic.span().start as usize, src.rfind("K;").unwrap());
     assert_eq!(design.diagnostics().len(), 1, "no E0161 beside it: {:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::one(&design, "K"), [Resolution::Unresolved]);
+    assert_eq!(NameResolutions::one(&design, "K"), [Resolution::Unresolved]);
 }
 
 #[test]
@@ -1085,7 +1070,7 @@ mod v { use super::a::*; use super::u::*; const Z: f64 = K; }
 ";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::one(&design, "K"), [ResolveFixture::decl(&design, "a::K")]);
+    assert_eq!(NameResolutions::one(&design, "K"), [NameResolutions::decl(&design, "a::K")]);
 }
 
 #[test]
@@ -1109,15 +1094,15 @@ fn identifier_pattern_naming_none_is_a_path() {
     let src = "fn f(o: Option<u32>) -> Option<u32> { match o { None => None, Some(x) => Some(x) } }\n";
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    let found = ResolveFixture::ident_patterns(&design, "None");
+    let found = NameResolutions::ident_patterns(&design, "None");
     assert_eq!(found.len(), 1);
     let (_, res, binding) = found[0];
     assert_eq!(res, Resolution::Builtin(builtin("None").unwrap()));
-    assert!(!ResolveFixture::is_binding(&design, binding));
+    assert!(!NameResolutions::is_binding(&design, binding));
     // The arm's scope holds no name `None`: the body's `None` is the built-in too.
-    assert_eq!(ResolveFixture::one(&design, "None"), [Resolution::Builtin(builtin("None").unwrap())]);
+    assert_eq!(NameResolutions::one(&design, "None"), [Resolution::Builtin(builtin("None").unwrap())]);
     // `x` stays a binding.
-    assert!(ResolveFixture::is_binding(&design, ResolveFixture::ident_patterns(&design, "x")[0].2));
+    assert!(NameResolutions::is_binding(&design, NameResolutions::ident_patterns(&design, "x")[0].2));
 }
 
 #[test]
@@ -1138,16 +1123,16 @@ fn f(n: u32, e: E, u: U, a: Analysis) -> u32 {
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     for (name, expected) in [
-        ("ZERO", ResolveFixture::decl(&design, "ZERO")),
-        ("A", ResolveFixture::decl(&design, "E::A")),
-        ("U", ResolveFixture::decl(&design, "U")),
+        ("ZERO", NameResolutions::decl(&design, "ZERO")),
+        ("A", NameResolutions::decl(&design, "E::A")),
+        ("U", NameResolutions::decl(&design, "U")),
         ("Dc", Resolution::Builtin(builtin("Dc").unwrap())),
     ] {
-        let found = ResolveFixture::ident_patterns(&design, name);
+        let found = NameResolutions::ident_patterns(&design, name);
         assert_eq!(found.len(), 1, "{name}");
         let (id, res, binding) = found[0];
         assert_eq!(res, expected, "{name}");
-        assert!(!ResolveFixture::is_binding(&design, binding), "{name}");
+        assert!(!NameResolutions::is_binding(&design, binding), "{name}");
         if let Resolution::Decl(d) = res {
             let referenced = design.decl(d).references().iter().any(|r| matches!(r, Reference::Pattern(p) if p.id() == id));
             assert!(referenced, "{name} is listed in references()");
@@ -1172,15 +1157,15 @@ fn f(o: Option<u32>, e: E) -> u32 {
     let design = PomSource::build(src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     for name in ["y", "m", "r", "whole", "nothing", "g", "B", "local"] {
-        for (_, res, binding) in ResolveFixture::ident_patterns(&design, name) {
+        for (_, res, binding) in NameResolutions::ident_patterns(&design, name) {
             assert_eq!(res, Resolution::Unresolved, "{name}");
-            assert!(ResolveFixture::is_binding(&design, binding), "{name}");
+            assert!(NameResolutions::is_binding(&design, binding), "{name}");
         }
     }
     // A later use resolves to the binding the pattern made.
     for name in ["whole", "nothing", "local"] {
-        let (_, _, binding) = *ResolveFixture::ident_patterns(&design, name).last().unwrap();
-        let uses = ResolveFixture::resolutions(&design, name);
+        let (_, _, binding) = *NameResolutions::ident_patterns(&design, name).last().unwrap();
+        let uses = NameResolutions::resolutions(&design, name);
         assert_eq!(uses.last().unwrap(), &[Resolution::Decl(binding)], "{name}");
     }
 }
@@ -1197,12 +1182,12 @@ fn f() { signal u: f64; let z = u; }
 ";
     let design = PomSource::build(src);
     // The parser reports each misplaced `signal`; each later use is an unresolved name.
-    assert_eq!(ResolveFixture::with_code(&design, "E0404").len(), 2, "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::with_code(&design, "E0121").len(), 1, "{:?}", design.diagnostics());
-    let missing: Vec<&str> = ResolveFixture::with_code(&design, "E0161").iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    assert_eq!(PreludeDesign::with_code(&design, "E0404").len(), 2, "{:?}", design.diagnostics());
+    assert_eq!(PreludeDesign::with_code(&design, "E0121").len(), 1, "{:?}", design.diagnostics());
+    let missing: Vec<&str> = PreludeDesign::with_code(&design, "E0161").iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(missing, ["s", "t", "u"], "{:?}", design.diagnostics());
     for name in ["s", "t", "u"] {
-        assert_eq!(ResolveFixture::one(&design, name), [Resolution::Unresolved], "{name}");
+        assert_eq!(NameResolutions::one(&design, name), [Resolution::Unresolved], "{name}");
     }
     // No module lists them; the declarations stay in the tree with no module.
     let signals: Vec<_> = design.module("M").unwrap().signals().iter().map(|s| s.name().unwrap().to_string()).collect();
@@ -1219,8 +1204,8 @@ fn duplicate_items_in_a_block_are_e0162() {
     // later name (two `fn` of one name included: the parser's E0143 covers namespaces only).
     let src = "fn f() { fn g() {} fn g() {} struct S; struct S; const A: u8 = 1; const A: u8 = 2; }\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0162");
-    let at: Vec<(&str, usize)> = found.iter().map(|d| (ResolveFixture::primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
+    let found = PreludeDesign::with_code(&design, "E0162");
+    let at: Vec<(&str, usize)> = found.iter().map(|d| (PreludeDesign::primary_text(&design, d), d.diagnostic.span().start as usize)).collect();
     let nth = |needle: &str, n: usize| src.match_indices(needle).nth(n).unwrap().0;
     assert_eq!(at, [("g", nth("g()", 1)), ("S", nth("S;", 1)), ("A", nth("A:", 1))], "{:?}", design.diagnostics());
     assert_eq!(design.diagnostics().len(), 3, "{:?}", design.diagnostics());
@@ -1249,7 +1234,7 @@ const INTRINSIC: &str = "pub extern \"intrinsic\" fn pnjlim(new: f64, old: f64, 
 #[test]
 fn intrinsic_fn_is_accepted_in_std() {
     // STD-04 AC 1: no diagnostic for an `extern "intrinsic" fn` of the crate `std`.
-    let design = ResolveFixture::std_lib(Design::builder(), INTRINSIC).source("top.msl", "").build();
+    let design = StdLibraryBuilder::std_lib(Design::builder(), INTRINSIC).source("top.msl", "").build();
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
 }
 
@@ -1258,9 +1243,9 @@ fn intrinsic_fn_outside_std_is_e0125() {
     // STD-04 AC 2: E0125 at the function's name, with a help line.
     let src = "extern \"intrinsic\" fn f(x: f64) -> f64;\n";
     let design = PomSource::build(src);
-    let found = ResolveFixture::with_code(&design, "E0125");
+    let found = PreludeDesign::with_code(&design, "E0125");
     assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::primary_text(&design, found[0]), "f");
+    assert_eq!(PreludeDesign::primary_text(&design, found[0]), "f");
     assert_eq!(found[0].diagnostic.span().start as usize, src.find("f(").unwrap());
     assert!(found[0].diagnostic.help.as_deref().is_some_and(|h| h.contains("only the standard library declares intrinsic functions")), "{:?}", found[0].diagnostic.help);
     assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
@@ -1270,8 +1255,8 @@ fn intrinsic_fn_outside_std_is_e0125() {
 fn intrinsic_fn_with_a_body_is_e0125() {
     // STD-04 AC 3: a body is wrong even in `std`.
     let std_src = "pub extern \"intrinsic\" fn f(x: f64) -> f64 { x }\n";
-    let design = ResolveFixture::std_lib(Design::builder(), std_src).source("top.msl", "").build();
-    let found = ResolveFixture::with_code(&design, "E0125");
+    let design = StdLibraryBuilder::std_lib(Design::builder(), std_src).source("top.msl", "").build();
+    let found = PreludeDesign::with_code(&design, "E0125");
     assert_eq!(found.len(), 1, "{:?}", design.diagnostics());
     assert_eq!(found[0].diagnostic.span().start as usize, std_src.find("f(").unwrap());
     assert_eq!(design.diagnostics().len(), 1, "{:?}", design.diagnostics());
@@ -1280,12 +1265,12 @@ fn intrinsic_fn_with_a_body_is_e0125() {
 #[test]
 fn is_intrinsic_reads_the_abi() {
     // STD-04 AC 4.
-    let design = ResolveFixture::std_lib(Design::builder(), &format!("{INTRINSIC}pub fn plain(x: f64) -> f64 {{ x }}\n"))
+    let design = StdLibraryBuilder::std_lib(Design::builder(), &format!("{INTRINSIC}pub fn plain(x: f64) -> f64 {{ x }}\n"))
         .source("top.msl", "extern \"C\" fn c(x: f64) -> f64;\n")
         .build();
-    assert!(ResolveFixture::function(&design, "pnjlim").is_intrinsic());
-    assert!(!ResolveFixture::function(&design, "plain").is_intrinsic());
-    assert!(!ResolveFixture::function(&design, "c").is_intrinsic());
+    assert!(NameResolutions::function(&design, "pnjlim").is_intrinsic());
+    assert!(!NameResolutions::function(&design, "plain").is_intrinsic());
+    assert!(!NameResolutions::function(&design, "c").is_intrinsic());
 }
 
 #[test]
@@ -1293,15 +1278,15 @@ fn extern_c_fn_is_not_intrinsic() {
     // STD-04 AC 5: no diagnostic, and not intrinsic.
     let design = PomSource::build("extern \"C\" fn g(x: f64) -> f64;\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::function(&design, "g").abi(), Some("C"));
-    assert!(!ResolveFixture::function(&design, "g").is_intrinsic());
+    assert_eq!(NameResolutions::function(&design, "g").abi(), Some("C"));
+    assert!(!NameResolutions::function(&design, "g").is_intrinsic());
 }
 
 #[test]
 fn a_call_to_an_intrinsic_resolves() {
     // STD-04 AC 6: the call is `CallClass::Function` and the callee is the std declaration.
     use piperine_lang::pom::{CallClass, ExprId, ExprKind};
-    let design = ResolveFixture::std_lib(Design::builder(), INTRINSIC).source("top.msl", "fn g(a: f64) -> f64 { pnjlim(a, a, a, a) }\n").build();
+    let design = StdLibraryBuilder::std_lib(Design::builder(), INTRINSIC).source("top.msl", "fn g(a: f64) -> f64 { pnjlim(a, a, a, a) }\n").build();
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let call = (0..design.expr_count())
         .map(|i| design.expr(ExprId(i as u32)))
@@ -1309,7 +1294,7 @@ fn a_call_to_an_intrinsic_resolves() {
         .expect("the call");
     let ExprKind::Call { class, callee, .. } = call.kind() else { unreachable!() };
     assert_eq!(*class, CallClass::Function);
-    let target = ResolveFixture::function(&design, "pnjlim").decl().id();
+    let target = NameResolutions::function(&design, "pnjlim").decl().id();
     assert_eq!(design.expr(*callee).resolution(), Resolution::Decl(target));
 }
 
@@ -1319,8 +1304,8 @@ fn self_assoc_resolves_through_repr_supertrait() {
     let design = PomSource::build("trait Known: Repr { fn w(self) -> u32 { Self::WIDTH } }\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let member = piperine_lang::pom::builtin_member("Repr", "WIDTH").expect("Repr::WIDTH is a member row");
-    let res = ResolveFixture::one(&design, "Self::WIDTH");
-    assert_eq!(res, [ResolveFixture::decl(&design, "Known"), Resolution::Builtin(member)]);
+    let res = NameResolutions::one(&design, "Self::WIDTH");
+    assert_eq!(res, [NameResolutions::decl(&design, "Known"), Resolution::Builtin(member)]);
 }
 
 #[test]
@@ -1328,7 +1313,7 @@ fn self_assoc_resolves_through_a_user_supertrait() {
     // STD-05 AC 2.
     let design = PomSource::build("trait Base { const K: u32 = 1; }\ntrait Sub: Base { fn k(self) -> u32 { Self::K } }\n");
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::one(&design, "Self::K"), [ResolveFixture::decl(&design, "Sub"), ResolveFixture::decl(&design, "Base::K")]);
+    assert_eq!(NameResolutions::one(&design, "Self::K"), [NameResolutions::decl(&design, "Sub"), NameResolutions::decl(&design, "Base::K")]);
 }
 
 #[test]
@@ -1340,9 +1325,9 @@ fn self_assoc_missing_everywhere_is_e0161() {
         "trait Alone { fn k(self) -> u32 { Self::NOPE } }\n",
     ] {
         let design = PomSource::build(src);
-        let found = ResolveFixture::with_code(&design, "E0161");
+        let found = PreludeDesign::with_code(&design, "E0161");
         assert_eq!(found.len(), 1, "{src}: {:?}", design.diagnostics());
-        assert_eq!(ResolveFixture::primary_text(&design, found[0]), "Self::NOPE", "{src}");
+        assert_eq!(PreludeDesign::primary_text(&design, found[0]), "Self::NOPE", "{src}");
         assert_eq!(design.diagnostics().len(), 1, "{src}: {:?}", design.diagnostics());
     }
 }
@@ -1358,10 +1343,10 @@ fn blanket_method_resolves_on_a_carrier() {
     // STD-06 AC 1: no built-in, no nature impl, a blanket `impl<T: Repr> Known for T`.
     let design = PomSource::build(&format!("{BLANKET}module M(p: Lvl) {{ let a = p.known(); }}\n"));
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::member_res(&design, "p.known()"), ResolveFixture::decl(&design, "Known::known"));
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.known()"), NameResolutions::decl(&design, "Known::known"));
     // An unbounded blanket `impl<T> Known for T` reads the same.
     let unbounded = PomSource::build("trait Known { fn known(self) -> bool; }\nimpl<T> Known for T { fn known(self) -> bool { true } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let a = p.known(); }\n");
-    assert_eq!(ResolveFixture::member_res(&unbounded, "p.known()"), ResolveFixture::decl(&unbounded, "Known::known"));
+    assert_eq!(PreludeDesign::member_resolution(&unbounded, "p.known()"), NameResolutions::decl(&unbounded, "Known::known"));
 }
 
 #[test]
@@ -1372,17 +1357,17 @@ fn a_blanket_trait_out_of_scope_never_links() {
     let body = |vis: &str| format!("mod a {{ {vis}trait Hidden {{ fn zz(self) -> bool; }} impl<T: Repr> Hidden for T {{ fn zz(self) -> bool {{ true }} }} }}\nnature Lvl {{ value: f64 }}\n");
     for vis in ["", "pub "] {
         let design = PomSource::build(&format!("{}module M(p: Lvl) {{ let x = p.zz(); }}\n", body(vis)));
-        assert_eq!(ResolveFixture::member_res(&design, "p.zz()"), Resolution::Unresolved, "`{vis}trait` of another namespace, not imported");
+        assert_eq!(PreludeDesign::member_resolution(&design, "p.zz()"), Resolution::Unresolved, "`{vis}trait` of another namespace, not imported");
     }
     // Imported by name or by glob: in scope.
     let named = PomSource::build(&format!("{}use a::Hidden;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
-    assert_eq!(ResolveFixture::member_res(&named, "p.zz()"), ResolveFixture::decl(&named, "a::Hidden::zz"));
+    assert_eq!(PreludeDesign::member_resolution(&named, "p.zz()"), NameResolutions::decl(&named, "a::Hidden::zz"));
     let glob = PomSource::build(&format!("{}use a::*;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", body("pub ")));
-    assert_eq!(ResolveFixture::member_res(&glob, "p.zz()"), ResolveFixture::decl(&glob, "a::Hidden::zz"));
+    assert_eq!(PreludeDesign::member_resolution(&glob, "p.zz()"), NameResolutions::decl(&glob, "a::Hidden::zz"));
     // Declared in the namespace of the call, though the call sits in a nested module's namespace
     // that did not import it: not in scope there.
     let nested = PomSource::build(&format!("{}mod b {{ module M(p: super::Lvl) {{ let x = p.zz(); }} }}\n", body("pub ")));
-    assert_eq!(ResolveFixture::member_res(&nested, "p.zz()"), Resolution::Unresolved);
+    assert_eq!(PreludeDesign::member_resolution(&nested, "p.zz()"), Resolution::Unresolved);
 }
 
 #[test]
@@ -1392,10 +1377,10 @@ fn a_local_item_named_like_a_prelude_trait_keeps_its_methods() {
     let std = "pub trait Known { fn known(self) -> bool; fn known_or(self, d: bool) -> bool; fn is_known(self) -> bool; }\n\
         impl<T: Repr> Known for T { fn known(self) -> bool { true } fn known_or(self, d: bool) -> bool { true } fn is_known(self) -> bool { true } }\n";
     for item in ["struct Known { x: f64 }", "module Known() {}"] {
-        let design = ResolveFixture::std_lib(Design::builder(), std).source("top.msl", &format!("nature Lvl {{ value: f64 }}\n{item}\nmodule M(p: Lvl) {{ let a = p.known(); let b = p.known_or(true); let c = p.is_known(); }}\n")).build();
+        let design = StdLibraryBuilder::std_lib(Design::builder(), std).source("top.msl", &format!("nature Lvl {{ value: f64 }}\n{item}\nmodule M(p: Lvl) {{ let a = p.known(); let b = p.known_or(true); let c = p.is_known(); }}\n")).build();
         for call in ["p.known()", "p.known_or(true)", "p.is_known()"] {
             let want = Resolution::Decl(design.std_crate().find(&format!("prelude::Known::{}", &call[2..call.find('(').unwrap()])).expect("std declares it").id());
-            assert_eq!(ResolveFixture::member_res(&design, call), want, "{item}: {call}");
+            assert_eq!(PreludeDesign::member_resolution(&design, call), want, "{item}: {call}");
         }
     }
 }
@@ -1405,7 +1390,7 @@ fn a_trait_imported_under_an_alias_is_in_scope() {
     // N2: `use a::Hidden as H;` binds `H`, and the trait's methods are in scope all the same.
     let src = format!("{}use a::Hidden as H;\nmodule M(p: Lvl) {{ let x = p.zz(); }}\n", "mod a { pub trait Hidden { fn zz(self) -> bool; } impl<T: Repr> Hidden for T { fn zz(self) -> bool { true } } }\nnature Lvl { value: f64 }\n");
     let design = PomSource::build(&src);
-    assert_eq!(ResolveFixture::member_res(&design, "p.zz()"), ResolveFixture::decl(&design, "a::Hidden::zz"));
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.zz()"), NameResolutions::decl(&design, "a::Hidden::zz"));
 }
 
 #[test]
@@ -1416,7 +1401,7 @@ fn two_visible_blankets_keep_declaration_order() {
         "trait A { fn zz(self) -> bool; }\ntrait B { fn zz(self) -> bool; }\nimpl<T: Repr> A for T { fn zz(self) -> bool { true } }\nimpl<T: Repr> B for T { fn zz(self) -> bool { false } }\nnature Lvl { value: f64 }\nmodule M(p: Lvl) { let x = p.zz(); }\n",
     );
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::member_res(&design, "p.zz()"), ResolveFixture::decl(&design, "A::zz"));
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.zz()"), NameResolutions::decl(&design, "A::zz"));
 }
 
 #[test]
@@ -1424,7 +1409,7 @@ fn blanket_method_resolves_on_self_in_a_nature_impl() {
     // STD-06 AC 2.
     let design = PomSource::build(&format!("{BLANKET}impl Lvl {{ fn again(self) -> bool {{ self.known() }} }}\n"));
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::member_res(&design, "self.known()"), ResolveFixture::decl(&design, "Known::known"));
+    assert_eq!(PreludeDesign::member_resolution(&design, "self.known()"), NameResolutions::decl(&design, "Known::known"));
 }
 
 #[test]
@@ -1432,7 +1417,7 @@ fn a_nature_impl_wins_over_a_blanket() {
     // STD-06 AC 3.
     let design = PomSource::build(&format!("{BLANKET}impl Lvl {{ fn known(self) -> bool {{ false }} }}\nmodule M(p: Lvl) {{ let a = p.known(); }}\n"));
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
-    assert_eq!(ResolveFixture::member_res(&design, "p.known()"), ResolveFixture::decl(&design, "impl Lvl.known"));
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.known()"), NameResolutions::decl(&design, "impl Lvl.known"));
 }
 
 #[test]
@@ -1445,11 +1430,11 @@ fn an_unlinked_member_keeps_its_slot() {
     let design = PomSource::build(&src);
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     // A name no trait has.
-    assert_eq!(ResolveFixture::member_res(&design, "p.nothing()"), Resolution::Unresolved);
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.nothing()"), Resolution::Unresolved);
     // A blanket bounded by a trait that is not `Repr` is not searched.
-    assert_eq!(ResolveFixture::member_res(&design, "p.two()"), Resolution::Unresolved);
+    assert_eq!(PreludeDesign::member_resolution(&design, "p.two()"), Resolution::Unresolved);
     // A value receiver needs its type: no trait solving.
-    assert_eq!(ResolveFixture::member_res(&design, "v.known()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
+    assert_eq!(PreludeDesign::member_resolution(&design, "v.known()"), Resolution::Deferred(piperine_lang::pom::DeferReason::ReceiverTypeUnknown));
 }
 
 #[test]
@@ -1474,8 +1459,8 @@ module M(p: Lvl) { let a = p.known(); let b = p.known_or(1.0); let c = p.is_know
 fn k_b_resolves_to_std_constants() {
     // STD-15 AC 2: a model naming `K_B` reaches the constant of `std::constants`.
     let design = Design::builder().source("top.msl", "const X: f64 = K_B;\n").build();
-    assert!(ResolveFixture::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
-    let all = ResolveFixture::resolutions(&design, "K_B");
+    assert!(PreludeDesign::with_code(&design, "E0161").is_empty(), "{:?}", design.diagnostics());
+    let all = NameResolutions::resolutions(&design, "K_B");
     assert!(!all.is_empty(), "`K_B` is written");
     for r in all {
         let Resolution::Decl(id) = r[0] else { panic!("K_B resolves to a declaration") };
@@ -1491,14 +1476,14 @@ fn a_model_constant_hides_the_prelude_constant() {
     // Built over the embedded std, where the prelude really carries `Q` and `PI`.
     let src = "const Q: f64 = 1.0;\nconst Y: f64 = Q;\nmod m { const PI: f64 = 3.0; const Z: f64 = PI; }\n";
     let design = Design::builder().source("top.msl", src).build();
-    assert!(ResolveFixture::with_code(&design, "E0457").is_empty(), "{:?}", design.diagnostics());
+    assert!(PreludeDesign::with_code(&design, "E0457").is_empty(), "{:?}", design.diagnostics());
     assert!(design.diagnostics().is_empty(), "{:?}", design.diagnostics());
     let in_root = |res: Resolution| match res {
         Resolution::Decl(id) => design.files()[design.decl_data(id).file.index()].text() == src,
         _ => false,
     };
     // The std declares its own `Q`/`PI` paths too: the root's use is the one resolving into the root.
-    let hits = |name: &str| ResolveFixture::resolutions(&design, name).iter().filter(|p| in_root(p[0])).count();
+    let hits = |name: &str| NameResolutions::resolutions(&design, name).iter().filter(|p| in_root(p[0])).count();
     assert_eq!(hits("Q"), 1, "the root's `Q` resolves to the root declaration, not the prelude's");
     assert_eq!(hits("PI"), 1, "the root's `PI` resolves to `m::PI`, not the prelude's");
 }
@@ -1520,8 +1505,8 @@ fn a_body_let_gives_its_module_only_the_names_of_its_own_pattern() {
                let e = w;\n\
                }\n";
     let design = PomSource::build(src);
-    let errors = ResolveFixture::with_code(&design, "E0161");
-    let names: Vec<&str> = errors.iter().map(|d| ResolveFixture::primary_text(&design, d)).collect();
+    let errors = PreludeDesign::with_code(&design, "E0161");
+    let names: Vec<&str> = errors.iter().map(|d| PreludeDesign::primary_text(&design, d)).collect();
     assert_eq!(names, ["v", "w"], "{:?}", design.diagnostics());
     let module = design.module("M").expect("M").decl();
     let bindings: Vec<&str> = module.children().into_iter().flat_map(|l| l.children()).filter_map(|b| b.name()).collect();
@@ -1530,12 +1515,12 @@ fn a_body_let_gives_its_module_only_the_names_of_its_own_pattern() {
         // `c` reads `p`, `q`, `a` and `b` as the module's own bindings
         if ["p", "q", "a", "b"].contains(&name) {
             let binding = module.children().into_iter().flat_map(|l| l.children()).find(|b| b.name() == Some(name)).expect(name).id();
-            assert_eq!(ResolveFixture::one(&design, name), [Resolution::Decl(binding)], "`{name}` in `c`");
+            assert_eq!(NameResolutions::one(&design, name), [Resolution::Decl(binding)], "`{name}` in `c`");
         }
     }
     // inside its arm, `v` and `w` resolve to the arm's own binding, not to a member
     for name in ["v", "w"] {
-        let all = ResolveFixture::resolutions(&design, name);
+        let all = NameResolutions::resolutions(&design, name);
         assert_eq!(all.len(), 2, "`{name}` is read in its arm and in a later `let`");
         let Resolution::Decl(binding) = all[0][0] else { panic!("`{name}` in its arm resolves: {:?}", all[0]) };
         assert_eq!(design.decl(binding).name(), Some(name));
