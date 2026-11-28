@@ -77,8 +77,7 @@ crates/piperine-solver/src/analyses/sp.rs::SpSolver::new	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::calculate_gain	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::calculate_output_resistance	-
 crates/piperine-solver/src/analyses/tf.rs::TransferFunctionSolver::new	-
-crates/piperine-solver/src/analyses/transient.rs::TransientSolver::device_attempt	-
-crates/piperine-solver/src/analyses/transient.rs::TransientSolver::solve	-
+crates/piperine-solver/src/analyses/transient/attempt.rs::TransientSolver::device_attempt	-
 crates/piperine-solver/src/protocol/transient.rs::Protocol::transient_loop	-
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::closure	-
 crates/piperine-transpile/src/print/analog.rs::AnalogPrinter::reads	-

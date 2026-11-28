@@ -2261,8 +2261,9 @@ T152 → T153 → T154 → T155
 
 **Done when**:
 
-- [ ] Every public path is unchanged; the transient and parity-baseline targets pass unedited
-- [ ] Gate check passes: Quick, and `cargo test -p piperine-api -p piperine-cli --test twins`
+- [x] Every public path is unchanged; the transient and parity-baseline targets pass unedited
+  - `transient.rs` stays the module root and re-exports every item at its old path (`Keep`, `Reentry`, `TransientAnalysisOptions`, `ScheduledSet`, `TransientSystem`, `UicClamp`; `DeviceRun`, `DeviceMark` crate-wide); it holds `TransientSolver`, its setup, recording and `solve`. `solve` reads as `reentry_point` → `scheduled_commits` → `check_reentry_binding` → `sides` → `run_protocol` (with `RunStart::enter` and `HostCommits::commit`) → `finish_solve`. `device_attempt` (110 lines) keeps its long_functions row, re-keyed to `transient/attempt.rs`; `solve`'s row is deleted (no longer long). The allowance rows of the moved items are re-keyed to their new files with the same counts; the 11 undocumented rows of the file are deleted (the items are documented).
+- [x] Gate check passes: Quick, and `cargo test -p piperine-api -p piperine-cli --test twins`
 
 **Tests**: integration (the existing targets of the touched crates, unedited)
 **Gate**: quick
