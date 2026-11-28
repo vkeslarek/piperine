@@ -248,13 +248,34 @@ impl<'a> NoiseSolver<'a> {
 
         let integrated_noise = self.integrate_noise(&frequencies, &out_noise_sq);
 
+        let (contributions, output_power, input_power) = Self::contributions(&frequencies, psd_map, &input_gain_squared);
+
+        Ok(NoiseAnalysisResult {
+            frequencies,
+            integrated_noise,
+            output_total: output_power.sqrt(),
+            input_noise_sq: (!input_gain_squared.is_empty())
+                .then(|| out_noise_sq.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect()),
+            input_total: (!input_gain_squared.is_empty()).then(|| input_power.sqrt()),
+            out_noise_sq,
+            contributions,
+        })
+    }
+
+    /// The contribution of each noise source (its band-integrated power and its density), and the band powers of the
+    /// output and, with an input (`input_gain_squared` not empty), of the input-referred noise.
+    fn contributions(
+        frequencies: &[f64],
+        psd_map: HashMap<(String, String), (NoiseKind, Vec<f64>)>,
+        input_gain_squared: &[f64],
+    ) -> (Vec<crate::core::result::NoiseContribution>, f64, f64) {
         let mut contributions = Vec::new();
         let (mut output_power, mut input_power) = (0.0, 0.0);
         for ((element, source), (kind, psd)) in psd_map {
-            output_power += Integrator::power_law(&frequencies, &psd);
+            output_power += Integrator::power_law(frequencies, &psd);
             if !input_gain_squared.is_empty() {
-                let referred: Vec<f64> = psd.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect();
-                input_power += Integrator::power_law(&frequencies, &referred);
+                let referred: Vec<f64> = psd.iter().zip(input_gain_squared).map(|(n, gain)| n / gain).collect();
+                input_power += Integrator::power_law(frequencies, &referred);
             }
             let mut integrated_sq = 0.0;
             if frequencies.len() > 1 {
@@ -271,17 +292,7 @@ impl<'a> NoiseSolver<'a> {
                 psd,
             });
         }
-
-        Ok(NoiseAnalysisResult {
-            frequencies,
-            integrated_noise,
-            output_total: output_power.sqrt(),
-            input_noise_sq: (!input_gain_squared.is_empty())
-                .then(|| out_noise_sq.iter().zip(&input_gain_squared).map(|(n, gain)| n / gain).collect()),
-            input_total: (!input_gain_squared.is_empty()).then(|| input_power.sqrt()),
-            out_noise_sq,
-            contributions,
-        })
+        (contributions, output_power, input_power)
     }
 
     /// Adds `val` to the PSD series of `key` at frequency index `i`: a second input of the same

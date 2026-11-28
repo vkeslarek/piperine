@@ -171,9 +171,13 @@ impl WholeReads {
 
 /// What one call reads: the pins' bindings, the store's bytes, the ambient values and the analog samples.
 struct CellReader<'r> {
+    /// The bindings of the instance's pins.
     pins: &'r [Binding],
+    /// The microstep's snapshot.
     store: &'r Store,
+    /// The ambient values (time, horizon, `STATIC`).
     ambient: &'r Ambient,
+    /// The continuous values the analog side sampled.
     samples: &'r [f64],
 }
 
@@ -297,9 +301,13 @@ struct SettledCycle {
 /// D, the discrete functions (abi.md §4): the plan, the store they read and write, the functions still to run, and
 /// what the run observes. Every write through it observes a change and dirties the functions that read the net.
 pub struct FunctionRun<'a> {
+    /// The plan whose functions run.
     plan: &'a DigitalPlan,
+    /// The nets the functions read and write.
     store: &'a mut Store,
+    /// The functions still to run: a write dirties the readers of its net.
     dirty: &'a mut DirtySet,
+    /// What the run observes: every change a write makes.
     observer: &'a mut Obs,
 }
 
@@ -642,18 +650,27 @@ impl Job {
 /// `Resolution::due`, the element a pin has, P1 per element), each kept as a `Planned` commit. The first
 /// commit it refuses is the call's failure: every later one is refused too.
 struct CommitCheck<'c> {
+    /// The reaction call whose commits are checked.
     job: &'c Job,
+    /// The instant of the microstep the call runs in.
     at: Instant,
+    /// The instance's path, for the faults.
     path: &'c str,
+    /// The bindings of the instance's pins.
     pins: &'c [Binding],
     /// The statements the reaction declares.
     statements: Vec<Statement>,
     /// The names of the instance's pins, in pin order.
     pin_names: Vec<String>,
+    /// Every net's spec.
     nets: &'c [NetSpec],
+    /// The analyzed plan: which nets have writers.
     analysis: &'c Analysis,
+    /// The session resolution: seconds per tick.
     resolution: &'c Resolution,
+    /// The commits that passed, in call order.
     made: Vec<Planned>,
+    /// The first commit refused, if any.
     failure: Option<DigitalError>,
 }
 
@@ -773,15 +790,23 @@ impl CommitCheck<'_> {
 /// microstep's ambient values and analog samples, and where their commits go: the queue, the settle commits, and what
 /// the run observes. `call` numbers the commits of the microstep (C2).
 pub struct ReactionRun<'a> {
+    /// The plan whose devices react.
     pub plan: &'a mut DigitalPlan,
     /// The microstep's snapshot (R2).
     pub store: &'a Store,
+    /// The continuous values the analog side sampled.
     pub samples: &'a [f64],
+    /// The microstep's ambient values.
     pub ambient: &'a Ambient,
+    /// The instant of the microstep.
     pub at: Instant,
+    /// Where the commits are queued.
     pub queue: &'a mut Queue,
+    /// What the run observes.
     pub observer: &'a mut Obs,
+    /// The commit counter of the microstep (C2).
     pub call: &'a mut u32,
+    /// The settle commits the reactions hold for the settle phase.
     pub settle_commits: &'a mut SettleCommits,
 }
 

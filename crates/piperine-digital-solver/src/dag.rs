@@ -44,27 +44,32 @@ impl Dag {
         // net that one function writes and another reads are an edge only when they share an element
         let edges: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |_| true)).collect();
 
-        // abi.md §9 D1: every directed cycle passes through a RELAX net. Take the edges through
-        // RELAX nets away; what remains must have no cycle.
-        let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(&functions, &readers, f, |net| !nets[net.0 as usize].relax)).collect();
+        Self::refuse_cycles_outside_relax(&functions, &readers, nets)?;
+
+        let comps = Self::components(&edges);
+        let steps = Self::group_steps(&functions, &readers, nets, &comps, &edges)?;
+        let order = Self::order_groups(&comps, &edges, steps);
+        Ok(Dag { functions, order, readers })
+    }
+
+    /// abi.md §9 D1: every directed cycle passes through a RELAX net. Takes the edges through RELAX nets away; what
+    /// remains must have no cycle, else the `cycle` bind error naming its functions.
+    fn refuse_cycles_outside_relax(functions: &[FnNode], readers: &[Vec<usize>], nets: &[NetSpec]) -> Result<(), DigitalError> {
+        let strict: Vec<Vec<usize>> = functions.iter().map(|f| Self::successors(functions, readers, f, |net| !nets[net.0 as usize].relax)).collect();
         for members in Self::components(&strict) {
             if members.len() > 1 || strict[members[0]].contains(&members[0]) {
                 let what = members.iter().map(|m| functions[*m].name.clone()).collect();
                 return Err(DigitalError::Bind { rule: "cycle", what });
             }
         }
+        Ok(())
+    }
 
-        let comps = Self::components(&edges);
-        let mut comp_of = vec![0usize; functions.len()];
-        for (c, members) in comps.iter().enumerate() {
-            for m in members {
-                comp_of[*m] = c;
-            }
-        }
-
-        // a group of several functions, or one that feeds itself, is a cycle
+    /// The step of each group of `comps`: a function that feeds nothing of its own group runs; a group of several
+    /// functions, or one that feeds itself, is a cycle and relaxes the RELAX nets it writes and reads (none: the `cycle` error).
+    fn group_steps(functions: &[FnNode], readers: &[Vec<usize>], nets: &[NetSpec], comps: &[Vec<usize>], edges: &[Vec<usize>]) -> Result<Vec<Option<Step>>, DigitalError> {
         let mut steps: Vec<Option<Step>> = Vec::with_capacity(comps.len());
-        for members in &comps {
+        for members in comps {
             let cyclic = members.len() > 1 || edges[members[0]].contains(&members[0]);
             if !cyclic {
                 steps.push(Some(Step::Run(members[0])));
@@ -90,8 +95,17 @@ impl Dag {
             relaxed.sort();
             steps.push(Some(Step::Relax { fns: members.clone(), nets: relaxed }));
         }
+        Ok(steps)
+    }
 
-        // topological order of the groups, ties broken by the smallest member
+    /// The topological order of the groups, ties broken by the smallest member.
+    fn order_groups(comps: &[Vec<usize>], edges: &[Vec<usize>], mut steps: Vec<Option<Step>>) -> Vec<Step> {
+        let mut comp_of = vec![0usize; edges.len()];
+        for (c, members) in comps.iter().enumerate() {
+            for m in members {
+                comp_of[*m] = c;
+            }
+        }
         let mut indegree = vec![0usize; comps.len()];
         let mut succ: Vec<Vec<usize>> = vec![Vec::new(); comps.len()];
         for (f, to) in edges.iter().enumerate() {
@@ -115,7 +129,7 @@ impl Dag {
                 }
             }
         }
-        Ok(Dag { functions, order, readers })
+        order
     }
 
     /// The functions that read a part of a net `f` writes, through the nets `through` admits, in increasing order.

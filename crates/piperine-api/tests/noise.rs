@@ -116,7 +116,7 @@ mod ground_spellings {
     use super::resolution::Twin;
 
     #[test]
-    fn a_node_named_vss_is_an_output() {
+    fn a_node_named_like_a_ground_alias_is_an_output() {
         let session = Twin::open_file("tests/fixtures/noise_vss.msl", "vss", None).unwrap_or_else(|f| panic!("{f}"));
         assert!(session.noise_probe().is_some());
     }

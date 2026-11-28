@@ -98,9 +98,13 @@ impl TransientSolver<'_> {
 /// One scheduled write the protocol commits during the run: at `time`, the bytes of the net `net`,
 /// `what` naming the param or net the host wrote.
 pub(super) struct HostCommit {
+    /// The time the write is committed at, seconds.
     time: f64,
+    /// The param or net the host wrote, for the faults.
     what: String,
+    /// The net written.
     net: u32,
+    /// The bytes written.
     bytes: Vec<u8>,
 }
 

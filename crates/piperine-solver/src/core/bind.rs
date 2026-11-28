@@ -555,9 +555,13 @@ impl Nets {
 /// One instance once its pins are bound: its two shares of the one placement, the site of each pin, and the net
 /// of each discrete or event pin.
 struct InstanceBinding {
+    /// The instance's path.
     path: String,
+    /// The analog share of the placement.
     analog: Handle,
+    /// The digital share of the placement.
     digital: Handle,
+    /// The site of each pin, in shape order.
     sites: Vec<Site>,
     /// The net index of each discrete or event pin.
     nets: Vec<Option<usize>>,
@@ -642,7 +646,9 @@ impl InstanceBinding {
 /// What one instance hands its pins while they are bound: its path, its `PORT` connections in order (and how many
 /// a pin took), and the bytes and shared nets of the `PARAM` values given, by prototype pin.
 struct InstanceInput<'s> {
+    /// The instance's path.
     path: &'s str,
+    /// The `PORT` connections not yet taken.
     ports: std::slice::Iter<'s, Port>,
     /// How many of `ports` a `PORT` pin took.
     taken: usize,
@@ -669,20 +675,29 @@ impl InstanceInput<'_> {
 /// by one builds — the nets, the continuous pins' holds and tolerances, the param nets, the analysis flags. Each
 /// pin is bound by its kind and its role (`PORT`, `PARAM`, `GLOBAL`, `PRIVATE`).
 pub(crate) struct Bind<'a> {
+    /// The array nets the builder declared.
     arrays: Vec<ArrayDecl>,
     /// The shared param nets by name, with their seeds.
     shared: HashMap<String, ParamValue>,
     /// The session parameters by name, for `NAMED` globals.
     session: HashMap<String, ParamValue>,
+    /// The netlist the continuous pins connect into.
     netlist: &'a mut Netlist,
+    /// The session resolution: seconds per tick.
     resolution: f64,
+    /// The circuit temperature, kelvin.
     temperature: f64,
+    /// The nets bound so far.
     nets: Nets,
+    /// The continuous pins with `init`.
     holds: Vec<Hold>,
+    /// The smallest non-zero `abstol` of the pins on each node.
     vntol: HashMap<NodeIdentifier, f64>,
+    /// The flow `abstol` of the pins of each branch unknown that has one.
     branch_abstol: HashMap<BranchIdentifier, f64>,
     /// The net of `(instance path, PARAM pin name)`.
     params: HashMap<(String, String), NetId>,
+    /// The analysis-kind globals some pin reads: the constant, its net and the bytes that mean "this analysis runs".
     analyses: Vec<(u32, NetId, Vec<u8>)>,
 }
 

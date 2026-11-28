@@ -93,7 +93,7 @@ Where they concentrate, and the owner each group lacks:
 | F13 | `api/src/request.rs` | 6 | TOML field readers (`span`, `number`, `i64_of`, `is_identifier`) | `Keys` (exists) |
 | F14 | `solver/src/analyses/test_devices.rs` | 20 | test doubles, `#[cfg(test)]` at `analyses/mod.rs:24`; counted here because the file is under `src/` | move to test support with the other devices (§3.5) |
 
-**Exceptions the language requires** (the list CC-04 asks for; 11 functions today, and the test functions):
+**Exceptions the language requires** (the list CC-04 asks for; 13 functions today, and the test functions):
 
 | Function | Why it cannot move |
 |---|---|
@@ -101,6 +101,7 @@ Where they concentrate, and the owner each group lacks:
 | `abi/src/thunk.rs:156,162,229,235,258,264,316,322` `create`, `create_with`, `destroy`, `destroy_with`, `eval`, `eval_with`, `react`, `react_with` | `extern "C"` functions whose addresses fill the ABI's function table |
 | `abi/src/caller.rs:209,215` `trampoline`, `element_trampoline` | `extern "C"` callbacks |
 | the exported `piperine_abi_1` symbol of generated code | the ABI's one exported symbol (printed by `piperine-transpile` into the generated source, not a Rust item of the tree) |
+| `abi/src/thunk.rs` `module`, `library` | generated code spells `piperine_abi::thunk::{library, module}` and `module::<T>(..)`; the five transpile goldens pin them, and design.md "What may move" lets a golden move only in T132/T137. Recorded as exceptions by Phase 11 fix round 1 (P11-4). Owner: user review at T155 / device-abi-simplification |
 | every `#[test] fn` (4 496) | the test harness needs a free function |
 
 Nothing else needs to stay free. `const fn row(..)` table builders (`pom/builtin.rs:36`, `types/catalogue.rs:58-62`) become associated `const fn`s of the row type.

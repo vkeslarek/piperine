@@ -396,6 +396,7 @@ type TransientProtocol<'s, 'a> = Protocol<DigitalSide, TransientSide<'s, 'a>>;
 /// nothing (an operating point at the start time); and the host writes made since the capture,
 /// written again at the re-entry.
 struct RunStart {
+    /// The captured step and the state of the instances it carries, or nothing.
     resume: Option<(TransientStep, std::sync::Arc<ReentryState>)>,
     /// The `(net, bytes)` of each host write the captured state does not hold.
     rewrites: Vec<(u32, Vec<u8>)>,
@@ -432,8 +433,11 @@ impl RunStart {
 
 /// What the protocol hands back when a run ends: its outcome, its statistics, the analog side's run.
 struct RunEnd {
+    /// How the run ended, or its failure.
     outcome: Result<Ended>,
+    /// What the steps of the run came to.
     statistics: StepStatistics,
+    /// The analog side's run.
     run: DeviceRun,
 }
 
@@ -579,6 +583,8 @@ impl TransientSolver<'_> {
 
 /// The analog side's state a run hands the protocol: its run and the discrete side's settled state.
 struct TransientRun {
+    /// The analog side's run.
     run: DeviceRun,
+    /// The discrete side's settled state.
     settled: Settled,
 }

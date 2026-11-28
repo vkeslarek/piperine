@@ -335,71 +335,10 @@ impl TransientSolver<'_> {
             return Err(e);
         }
         run.attempts += 1;
-        if run.attempts > self.options.max_steps {
-            let st = &run.st;
-            let progress = (st.origin + st.current_time - self.options.start_time)
-                / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
-            return Err(piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Transient,
-                format!(
-                    "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
-                     ({:.2}% of the run) with dt = {:.3e} s \
-                     (accepted {}, rejected {}, dt_min floor hits {}, \
-                     smallest dt seen {:.3e} s). \
-                     The timestep has collapsed: the circuit is either stiff \
-                     at a switching edge or has a discontinuity the stepper \
-                     cannot land on. Raise `max_steps` to let it run longer, \
-                     raise `dt_min` to make the floor fail instead of crawl, \
-                     or soften the discontinuity.",
-                    self.options.max_steps,
-                    st.origin + st.current_time,
-                    self.options.stop_time,
-                    progress * 100.0,
-                    st.dt,
-                    st.steps_accepted,
-                    st.steps_rejected(),
-                    st.dt_min_floor_hits,
-                    if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
-                ),
-            ));
-        }
-        let stop = run.st.stop;
-        let t_next = if landing {
-            to
-        } else if (stop - to).abs() < run.spt {
-            stop
-        } else if run.locates {
-            // A design with a `CROSS` watch steps on the tick grid: a located crossing lands
-            // on a tick (§15 T4). No parity oracle has one, so the deviation below stays theirs.
-            to
-        } else if (run.proposed - to).abs() < run.spt {
-            run.proposed
-        } else {
-            to
-        };
-        run.attempted = t_next;
+        self.refuse_exhausted_budget(run)?;
+        let t_next = Self::target_time(run, to, landing);
+        let prediction = self.predict(run, t_next)?;
         let st = &mut run.st;
-        if t_next <= st.current_time {
-            // A zero-length step integrates nothing (a `DDT` stamps no companion
-            // at `h <= 0`): never attempted, never accepted.
-            return Err(piperine_analog_solver::error::Error::simple(
-                piperine_analog_solver::error::SolverDomain::Transient,
-                format!("a step to t = {:e} s does not advance from t = {:e} s", st.origin + t_next, st.origin + st.current_time),
-            ));
-        }
-        let prediction = StepPrediction {
-            t_next,
-            dt_actual: t_next - st.current_time,
-            dt_proposed: st.dt,
-            kind: if run.retaking { StepKind::Retake } else { StepKind::of(st.sets_just_applied) },
-        };
-        self.system.jump = if st.sets_just_applied {
-            JumpPosition::Reads
-        } else if self.system.last_read_jump {
-            JumpPosition::After
-        } else {
-            JumpPosition::None
-        };
         let outcome = self.execute_timestep(st.origin, st.current_time, prediction.dt_actual, st.last_step_accepted);
         if let Ok(Some(snapshot)) = outcome {
             let kind = prediction.kind;
@@ -429,6 +368,87 @@ impl TransientSolver<'_> {
             run.failed = Some(run.floor_error(e, t_next, prediction.kind.reads_jump()));
         }
         Ok(Attempt::Rejected)
+    }
+
+    /// What the step to `t_next` is expected to be, and the jump position the system reads it from. A step that does not
+    /// advance is the solver's error.
+    fn predict(&mut self, run: &mut DeviceRun, t_next: f64) -> crate::core::result::Result<StepPrediction> {
+        run.attempted = t_next;
+        let st = &mut run.st;
+        if t_next <= st.current_time {
+            // A zero-length step integrates nothing (a `DDT` stamps no companion
+            // at `h <= 0`): never attempted, never accepted.
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                format!("a step to t = {:e} s does not advance from t = {:e} s", st.origin + t_next, st.origin + st.current_time),
+            ));
+        }
+        let prediction = StepPrediction {
+            t_next,
+            dt_actual: t_next - st.current_time,
+            dt_proposed: st.dt,
+            kind: if run.retaking { StepKind::Retake } else { StepKind::of(st.sets_just_applied) },
+        };
+        self.system.jump = if st.sets_just_applied {
+            JumpPosition::Reads
+        } else if self.system.last_read_jump {
+            JumpPosition::After
+        } else {
+            JumpPosition::None
+        };
+        Ok(prediction)
+    }
+
+    /// The failure of a run whose attempts passed `max_steps`: the timestep has collapsed, and the report says where.
+    fn refuse_exhausted_budget(&self, run: &DeviceRun) -> crate::core::result::Result<()> {
+        if run.attempts > self.options.max_steps {
+            let st = &run.st;
+            let progress = (st.origin + st.current_time - self.options.start_time)
+                / (self.options.stop_time - self.options.start_time).max(f64::MIN_POSITIVE);
+            return Err(piperine_analog_solver::error::Error::simple(
+                piperine_analog_solver::error::SolverDomain::Transient,
+                format!(
+                    "exceeded the {} step budget at t = {:.6e} s of {:.6e} s \
+                     ({:.2}% of the run) with dt = {:.3e} s \
+                     (accepted {}, rejected {}, dt_min floor hits {}, \
+                     smallest dt seen {:.3e} s). \
+                     The timestep has collapsed: the circuit is either stiff \
+                     at a switching edge or has a discontinuity the stepper \
+                     cannot land on. Raise `max_steps` to let it run longer, \
+                     raise `dt_min` to make the floor fail instead of crawl, \
+                     or soften the discontinuity.",
+                    self.options.max_steps,
+                    st.origin + st.current_time,
+                    self.options.stop_time,
+                    progress * 100.0,
+                    st.dt,
+                    st.steps_accepted,
+                    st.steps_rejected(),
+                    st.dt_min_floor_hits,
+                    if st.dt_min_seen.is_finite() { st.dt_min_seen } else { 0.0 },
+                ),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The time of the step toward `to`: `to` itself on a landing; the stop when `to` is within a tick of it; else the
+    /// controller's own proposal when it lies within a tick of `to`.
+    fn target_time(run: &DeviceRun, to: f64, landing: bool) -> f64 {
+        let stop = run.st.stop;
+        if landing {
+            to
+        } else if (stop - to).abs() < run.spt {
+            stop
+        } else if run.locates {
+            // A design with a `CROSS` watch steps on the tick grid: a located crossing lands
+            // on a tick (§15 T4). No parity oracle has one, so the deviation below stays theirs.
+            to
+        } else if (run.proposed - to).abs() < run.spt {
+            run.proposed
+        } else {
+            to
+        }
     }
 
     /// Accepts the converged attempt: `accept_step`'s bookkeeping without the

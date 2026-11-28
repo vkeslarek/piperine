@@ -74,6 +74,15 @@ pub struct ParamStampCollector<'a> {
     force_fallback: bool,
 }
 
+/// A stamp position: a right-side row or a matrix entry.
+#[derive(Hash, Eq, PartialEq)]
+enum StampPosition {
+    /// The right side of a row.
+    Rhs(usize),
+    /// The matrix entry at (row, column).
+    Matrix(usize, usize),
+}
+
 impl<'a> ParamStampCollector<'a> {
     /// The finite-difference step for a parameter of `value`.
     fn step(value: f64) -> f64 {
@@ -104,58 +113,9 @@ impl<'a> ParamStampCollector<'a> {
         dp: f64,
         ref_map: &HashMap<usize, AnalogReference>,
     ) -> Vec<Stamp<AnalogReference, f64>> {
-        /// A stamp position: a right-side row or a matrix entry.
-        #[derive(Hash, Eq, PartialEq)]
-        enum Key {
-            /// The right side of a row.
-            Rhs(usize),
-            /// The matrix entry at (row, column).
-            Matrix(usize, usize),
-        }
-        let mut nom: HashMap<Key, f64> = HashMap::new();
-        let accum = |stamps: &[Stamp<AnalogReference, f64>], into: &mut HashMap<Key, f64>| {
-            for s in stamps {
-                match s {
-                    Stamp::Rhs(r, v) => {
-                        if let Some(i) = r.idx() {
-                            *into.entry(Key::Rhs(i)).or_default() += *v;
-                        }
-                    }
-                    Stamp::Matrix(r, c, v) => {
-                        if let (Some(ri), Some(ci)) = (r.idx(), c.idx()) {
-                            *into.entry(Key::Matrix(ri, ci)).or_default() += *v;
-                        }
-                    }
-                }
-            }
-        };
-        accum(nominal, &mut nom);
-        let mut pert: HashMap<Key, f64> = HashMap::new();
-        accum(perturbed, &mut pert);
-
-        let mut contrib: HashMap<usize, f64> = HashMap::new();
-        let apply = |key: &Key, delta: f64, contrib: &mut HashMap<usize, f64>| {
-            if delta == 0.0 {
-                return;
-            }
-            match key {
-                // Residual = A·V − b → −Δb contributes −delta.
-                Key::Rhs(i) => *contrib.entry(*i).or_default() -= delta,
-                // ΔA contributes ΔA·V_op.
-                Key::Matrix(ri, ci) => {
-                    let vj = op.get(*ci).copied().unwrap_or(0.0);
-                    *contrib.entry(*ri).or_default() += delta * vj;
-                }
-            }
-        };
-        for (key, pv) in &pert {
-            apply(key, pv - nom.get(key).copied().unwrap_or(0.0), &mut contrib);
-        }
-        for (key, nv) in &nom {
-            if !pert.contains_key(key) {
-                apply(key, -nv, &mut contrib);
-            }
-        }
+        let nom = Self::tally(nominal);
+        let pert = Self::tally(perturbed);
+        let contrib = Self::row_contributions(&nom, &pert, op);
 
         let mut out: Vec<Stamp<AnalogReference, f64>> = Vec::new();
         for (i, c) in contrib {
@@ -167,6 +127,107 @@ impl<'a> ParamStampCollector<'a> {
             }
         }
         out
+    }
+
+    /// The stamps summed per position, ground entries dropped.
+    fn tally(stamps: &[Stamp<AnalogReference, f64>]) -> HashMap<StampPosition, f64> {
+        let mut into: HashMap<StampPosition, f64> = HashMap::new();
+        for s in stamps {
+            match s {
+                Stamp::Rhs(r, v) => {
+                    if let Some(i) = r.idx() {
+                        *into.entry(StampPosition::Rhs(i)).or_default() += *v;
+                    }
+                }
+                Stamp::Matrix(r, c, v) => {
+                    if let (Some(ri), Some(ci)) = (r.idx(), c.idx()) {
+                        *into.entry(StampPosition::Matrix(ri, ci)).or_default() += *v;
+                    }
+                }
+            }
+        }
+        into
+    }
+
+    /// The change of each row of the residual `A·V − b` between the `nominal` and `perturbed` stamps at `op`: a changed
+    /// right side `Δb` contributes `−Δb` and a changed matrix entry `ΔA` contributes `ΔA·V_op`.
+    fn row_contributions(nominal: &HashMap<StampPosition, f64>, perturbed: &HashMap<StampPosition, f64>, op: &[f64]) -> HashMap<usize, f64> {
+        let mut contrib: HashMap<usize, f64> = HashMap::new();
+        let apply = |key: &StampPosition, delta: f64, contrib: &mut HashMap<usize, f64>| {
+            if delta == 0.0 {
+                return;
+            }
+            match key {
+                // Residual = A·V − b → −Δb contributes −delta.
+                StampPosition::Rhs(i) => *contrib.entry(*i).or_default() -= delta,
+                // ΔA contributes ΔA·V_op.
+                StampPosition::Matrix(ri, ci) => {
+                    let vj = op.get(*ci).copied().unwrap_or(0.0);
+                    *contrib.entry(*ri).or_default() += delta * vj;
+                }
+            }
+        };
+        for (key, pv) in perturbed {
+            apply(key, pv - nominal.get(key).copied().unwrap_or(0.0), &mut contrib);
+        }
+        for (key, nv) in nominal {
+            if !perturbed.contains_key(key) {
+                apply(key, -nv, &mut contrib);
+            }
+        }
+        contrib
+    }
+
+    /// The net of the parameter `req` names, refusing what a sensitivity is not defined for: an unknown instance or
+    /// parameter, a `STRUCTURAL` one, one that is not Real-typed.
+    fn requested_net(bound: &Bound, req: &ParamRequest) -> Result<NetId> {
+        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
+        let Some(inst) = bound.names.instances.iter().position(|p| *p == req.label) else {
+            return Err(sens(format!("no instance `{}`", req.label)));
+        };
+        let shape = bound.analog.plan().shape(inst);
+        let params: Vec<&str> = shape.pins.iter().filter(|p| p.role == role::PARAM).map(|p| p.name.as_str()).collect();
+        let Some(pin) = shape.pins.iter().find(|p| p.role == role::PARAM && p.name.as_str() == req.param) else {
+            return Err(sens(format!(
+                "`{}` declares no parameter `{}`; available: {}",
+                req.label,
+                req.param,
+                if params.is_empty() { "(none)".to_string() } else { params.join(", ") }
+            )));
+        };
+        if pin.flags & pin_flag::STRUCTURAL != 0 {
+            return Err(sens(format!(
+                "`{}.{}` is STRUCTURAL — sensitivities are only defined for params a host may write during a run",
+                req.label, req.param
+            )));
+        }
+        let real = pin.layout.fields.iter().next().is_some_and(|f| f.leaf == leaf::F64);
+        if !real {
+            return Err(sens(format!("`{}.{}` is not Real-typed — only Real parameters are differentiable", req.label, req.param)));
+        }
+        let net = bound.names.params[&(req.label.clone(), req.param.clone())];
+        Ok(net)
+    }
+
+    /// The analytic derivative: the declared partials chained from the param's net to every pin it reaches, handed to
+    /// each instance's `param_stamps`. Empty when no declared path reaches a term.
+    fn analytic_stamps(bound: &mut Bound, net: NetId, op: &[f64], amb: Ambient) -> Result<Vec<Stamp<AnalogReference, f64>>> {
+        let derivs = Self::net_derivatives(bound, net)?;
+        let mut stamps = Vec::new();
+        for j in 0..bound.names.instances.len() {
+            let wrt: Vec<(u32, f64)> = bound.names.pins[j]
+                .iter()
+                .enumerate()
+                .filter_map(|(pi, site)| match site {
+                    Site::Net(n) => derivs.get(n).map(|d| (pi as u32, *d)),
+                    _ => None,
+                })
+                .collect();
+            if !wrt.is_empty() {
+                stamps.extend(bound.analog.param_stamps(j, &wrt, op, amb)?);
+            }
+        }
+        Ok(stamps)
     }
 
     /// The derivative of every net's bytes with respect to the param on `net`: 1 on the
@@ -265,50 +326,12 @@ impl<'a> ParamStampCollector<'a> {
     fn collect_device(&mut self, req: &ParamRequest, op: &[f64]) -> Result<ParamDerivative> {
         let tolerances = self.context.tolerances.clone();
         let ref_map = Self::index_refs(self.circuit.netlist().all_references());
-        let sens = |detail: String| Error::simple(SolverDomain::Sens, detail);
         let bound = &mut self.circuit.abi;
-        let Some(inst) = bound.names.instances.iter().position(|p| *p == req.label) else {
-            return Err(sens(format!("no instance `{}`", req.label)));
-        };
-        let shape = bound.analog.plan().shape(inst);
-        let params: Vec<&str> = shape.pins.iter().filter(|p| p.role == role::PARAM).map(|p| p.name.as_str()).collect();
-        let Some(pin) = shape.pins.iter().find(|p| p.role == role::PARAM && p.name.as_str() == req.param) else {
-            return Err(sens(format!(
-                "`{}` declares no parameter `{}`; available: {}",
-                req.label,
-                req.param,
-                if params.is_empty() { "(none)".to_string() } else { params.join(", ") }
-            )));
-        };
-        if pin.flags & pin_flag::STRUCTURAL != 0 {
-            return Err(sens(format!(
-                "`{}.{}` is STRUCTURAL — sensitivities are only defined for params a host may write during a run",
-                req.label, req.param
-            )));
-        }
-        let real = pin.layout.fields.iter().next().is_some_and(|f| f.leaf == leaf::F64);
-        if !real {
-            return Err(sens(format!("`{}.{}` is not Real-typed — only Real parameters are differentiable", req.label, req.param)));
-        }
-        let net = bound.names.params[&(req.label.clone(), req.param.clone())];
+        let net = Self::requested_net(bound, req)?;
         let amb = Ambient { time: 0.0, freq: 0.0, is_static: true, gmin: tolerances.gmin, source_scale: 1.0 };
 
         if !self.force_fallback {
-            let derivs = Self::net_derivatives(bound, net)?;
-            let mut stamps = Vec::new();
-            for j in 0..bound.names.instances.len() {
-                let wrt: Vec<(u32, f64)> = bound.names.pins[j]
-                    .iter()
-                    .enumerate()
-                    .filter_map(|(pi, site)| match site {
-                        Site::Net(n) => derivs.get(n).map(|d| (pi as u32, *d)),
-                        _ => None,
-                    })
-                    .collect();
-                if !wrt.is_empty() {
-                    stamps.extend(bound.analog.param_stamps(j, &wrt, op, amb)?);
-                }
-            }
+            let stamps = Self::analytic_stamps(bound, net, op, amb)?;
             if !stamps.is_empty() {
                 return Ok(ParamDerivative {
                     label: req.label.clone(),

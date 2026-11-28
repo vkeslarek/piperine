@@ -328,23 +328,7 @@ where
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
-            let stamps = system.assemble(&self.state)?;
-            self.compute_residual(&stamps);
-
-            self.linear_system.reset();
-            self.linear_system.apply_stamps(stamps);
-            let current_guess = self
-                .linear_system
-                .solve_with_backend(&self.symbolic)
-                .map_err(|cause| {
-                    self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
-                })?;
-
-            if current_guess.iter().any(|x| !x.is_finite()) {
-                system.convergence_failed_callback(&self.state, iter, &current_guess.view());
-
-                return Err(self.singular("the linear solve returned a non-finite value"));
-            }
+            let current_guess = self.iterate(system, iter)?;
 
             debug!("New guess: {:?}", current_guess);
 
@@ -365,12 +349,50 @@ where
             self.commit(&current_guess.view())?;
         }
 
+        Err(self.exhausted_after(system, max_iter, Vec::new()))
+    }
+
+    /// One iteration's assembly and linear solve: stamps the system at the latest row, folds the residual and returns the
+    /// new guess; a singular Jacobian or a non-finite solution is the solver's error.
+    fn iterate(
+        &mut self,
+        system: &mut dyn NonLinearSystem<A, E>,
+        iter: usize,
+    ) -> crate::error::Result<Array1<E>> {
+        let stamps = system.assemble(&self.state)?;
+        self.compute_residual(&stamps);
+
+        self.linear_system.reset();
+        self.linear_system.apply_stamps(stamps);
+        let current_guess = self
+            .linear_system
+            .solve_with_backend(&self.symbolic)
+            .map_err(|cause| {
+                self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
+            })?;
+
+        if current_guess.iter().any(|x| !x.is_finite()) {
+            system.convergence_failed_callback(&self.state, iter, &current_guess.view());
+
+            return Err(self.singular("the linear solve returned a non-finite value"));
+        }
+        Ok(current_guess)
+    }
+
+    /// The solver's error after `max_iter` iterations that did not converge: counts them, tells the system and names
+    /// the unknowns `failing` and the devices still limiting.
+    fn exhausted_after(
+        &mut self,
+        system: &mut dyn NonLinearSystem<A, E>,
+        max_iter: usize,
+        failing: Vec<usize>,
+    ) -> Error {
         self.last_iterations = max_iter;
         self.total_iterations += max_iter;
         if let Some(latest) = self.state.latest() {
             system.convergence_failed_callback(&self.state, max_iter, &latest);
         }
-        Err(Self::exhausted(max_iter, Vec::new(), &system.limiting_report()))
+        Self::exhausted(max_iter, failing, &system.limiting_report())
     }
 
     pub fn current_guess(&self) -> Option<ArrayView1<'_, E>> {
@@ -452,17 +474,7 @@ where
         tolerances: &Tolerances,
         policy: &Policy,
     ) -> crate::error::Result<Array1<f64>> {
-        // Seed: first-order extrapolation when the driver armed the
-        // predictor and two history rows exist (CP-16); else the latest
-        // accepted point; else zeros (cold start).
-        let predictor = self.predictor_ratio.take();
-        let guess = match (predictor, self.state.view(0), self.state.view(1)) {
-            (Some(r), Some(x0), Some(x1)) if r.is_finite() => {
-                &x0 + &((&x0 - &x1) * r)
-            }
-            (_, Some(x0), _) => x0.to_owned(),
-            _ => Array1::zeros(self.state.size()),
-        };
+        let guess = self.seed_guess();
         self.state.push(&guess.view());
         self.timer.enable(policy.trace.timing);
 
@@ -475,40 +487,11 @@ where
             system.before_iter_callback(&self.state, iter);
             debug!("Newton Iteration {}", iter + 1);
 
-            let assembly_started = self.timer.start();
-            let mut stamps = std::mem::take(&mut self.stamps);
-            system.assemble_into(&self.state, &mut stamps)?;
-            self.compute_residual(&stamps);
-
-            self.linear_system.reset();
-            self.linear_system.apply_stamps_from(&stamps);
-            self.stamps = stamps;
-            self.timer.add(assembly_started, TimedPart::Assembly);
-
-            let solve_started = self.timer.start();
-            let solved = self.linear_system.solve_with_backend(&self.symbolic);
-            self.timer.add(solve_started, TimedPart::Solve);
-            let mut current_guess = solved.map_err(|cause| {
-                self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
-            })?;
-
-            if current_guess.iter().any(|x| !x.is_finite()) {
-                system.convergence_failed_callback(&self.state, iter, &current_guess.view());
-                return Err(self.singular("the linear solve returned a non-finite value"));
-            }
+            let mut current_guess = self.iterate_timed(system, iter)?;
 
             debug!("New guess: {:?}", current_guess);
 
-            // Damping through the strategy.
-            if let Some(prev) = self.state.latest() {
-                let context = DampContext {
-                    static_solve: system.static_solve(),
-                    iteration: iter,
-                    limiting: system.any_limiting_report(),
-                    nodes: &self.nodes,
-                };
-                strategy.damp_update(prev, current_guess.view_mut(), &context);
-            }
+            self.damp(system, strategy, iter, &mut current_guess);
 
             // Device limiting gate: the strategy checks update+residual;
             // limiting_report is a system-level check done per iteration.
@@ -529,27 +512,79 @@ where
                 return Ok(current_guess);
             }
 
-            if iter + 1 == max_iter
-                && let Some(previous) = self.state.latest()
-            {
-                failing = tolerances.failing(
-                    previous,
-                    &current_guess.view(),
-                    system.netlist(),
-                    &self.residual,
-                    &self.scale,
-                );
+            if iter + 1 == max_iter {
+                failing = self.failing_unknowns(system, tolerances, &current_guess);
             }
 
             self.commit(&current_guess.view())?;
         }
 
-        self.last_iterations = max_iter;
-        self.total_iterations += max_iter;
-        if let Some(latest) = self.state.latest() {
-            system.convergence_failed_callback(&self.state, max_iter, &latest);
+        Err(self.exhausted_after(system, max_iter, failing))
+    }
+
+    /// Damping through the strategy: moves `guess` from the latest row by what the strategy allows at `iter`.
+    fn damp(&self, system: &mut dyn NonLinearSystem<A, f64>, strategy: &dyn NewtonStrategy, iter: usize, guess: &mut Array1<f64>) {
+        if let Some(prev) = self.state.latest() {
+            let context = DampContext {
+                static_solve: system.static_solve(),
+                iteration: iter,
+                limiting: system.any_limiting_report(),
+                nodes: &self.nodes,
+            };
+            strategy.damp_update(prev, guess.view_mut(), &context);
         }
-        Err(Self::exhausted(max_iter, failing, &system.limiting_report()))
+    }
+
+    /// The unknowns of `guess` that fail the tolerances against the latest row, for the report of an exhausted solve.
+    fn failing_unknowns(&self, system: &dyn NonLinearSystem<A, f64>, tolerances: &Tolerances, guess: &Array1<f64>) -> Vec<usize> {
+        match self.state.latest() {
+            Some(previous) => tolerances.failing(previous, &guess.view(), system.netlist(), &self.residual, &self.scale),
+            None => Vec::new(),
+        }
+    }
+
+    /// The seed of a strategy solve: first-order extrapolation when the driver armed the
+    /// predictor and two history rows exist (CP-16); else the latest
+    /// accepted point; else zeros (cold start).
+    fn seed_guess(&mut self) -> Array1<f64> {
+        let predictor = self.predictor_ratio.take();
+        match (predictor, self.state.view(0), self.state.view(1)) {
+            (Some(r), Some(x0), Some(x1)) if r.is_finite() => {
+                &x0 + &((&x0 - &x1) * r)
+            }
+            (_, Some(x0), _) => x0.to_owned(),
+            _ => Array1::zeros(self.state.size()),
+        }
+    }
+
+    /// [`iterate`](Self::iterate) with the assembly and the sparse solve timed apart (and the stamp buffer reused).
+    fn iterate_timed(
+        &mut self,
+        system: &mut dyn NonLinearSystem<A, f64>,
+        iter: usize,
+    ) -> crate::error::Result<Array1<f64>> {
+        let assembly_started = self.timer.start();
+        let mut stamps = std::mem::take(&mut self.stamps);
+        system.assemble_into(&self.state, &mut stamps)?;
+        self.compute_residual(&stamps);
+
+        self.linear_system.reset();
+        self.linear_system.apply_stamps_from(&stamps);
+        self.stamps = stamps;
+        self.timer.add(assembly_started, TimedPart::Assembly);
+
+        let solve_started = self.timer.start();
+        let solved = self.linear_system.solve_with_backend(&self.symbolic);
+        self.timer.add(solve_started, TimedPart::Solve);
+        let current_guess = solved.map_err(|cause| {
+            self.singular(&format!("the Jacobian is singular ({})", Self::cause_text(&cause)))
+        })?;
+
+        if current_guess.iter().any(|x| !x.is_finite()) {
+            system.convergence_failed_callback(&self.state, iter, &current_guess.view());
+            return Err(self.singular("the linear solve returned a non-finite value"));
+        }
+        Ok(current_guess)
     }
 }
 

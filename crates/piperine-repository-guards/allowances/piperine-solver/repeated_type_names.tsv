@@ -1,6 +1,5 @@
 crates/piperine-solver/src/analyses/context.rs::AnalysisKind	1
 crates/piperine-solver/src/analyses/context.rs::Context	1
-crates/piperine-solver/src/analyses/sensitivity.rs::Key	1
 crates/piperine-solver/src/analyses/transient/step_control.rs::Rejection	1
 crates/piperine-solver/src/core/bind.rs::Bound	1
 crates/piperine-solver/src/core/bind.rs::Nets	1
