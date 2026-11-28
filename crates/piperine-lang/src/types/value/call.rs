@@ -2,10 +2,12 @@
 //! after each argument is checked against its parameter; a closure takes its parameter types
 //! from the function type of the parameter it is passed to.
 
+use std::ops::ControlFlow;
+
 use crate::refusal::forms::ValueForm;
 use crate::refusal::RefusedForm;
 use crate::msl::Span;
-use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, FileId, LitKind, PatKind, Resolution};
+use crate::pom::{Arg, CallClass, DeclId, DeclKind, DeferReason, ExprId, ExprKind, ExprNode, FileId, LitKind, PatKind, Resolution};
 
 use crate::types::catalogue::{Catalogue, Lookup};
 use crate::types::check::Context;
@@ -131,7 +133,7 @@ impl ExpressionTyping<'_, '_> {
         if let Some(owner) = self.generic_impl_of(function) {
             return self.associated_call(expr, callee, function, owner, args);
         }
-        let (params, ret) = self.signature(function)?;
+        let (params, ret) = self.expressions().signature(function)?;
         self.finish_call(expr, callee, function, params, ret, args, true)
     }
 
@@ -299,7 +301,7 @@ impl ExpressionTyping<'_, '_> {
     pub(super) fn method_call(&mut self, expr: ExprId) -> Option<Ty> {
         let node = self.state.design.expr_node(expr).clone();
         let file = self.file_of_expr(expr);
-        let ExprKind::MethodCall { recv, method, generics, args, res } = &node.kind else { return None };
+        let ExprKind::MethodCall { recv, method, generics, args, .. } = &node.kind else { return None };
         let name = method.text.as_str();
         if generics.is_some() {
             self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
@@ -312,37 +314,9 @@ impl ExpressionTyping<'_, '_> {
         if self.modules().untyped_template_receiver(*recv, args) {
             return None;
         }
-        // The built-in a stdlib item resolved to, or the built-in row of the language.
-        let builtin = match res {
-            Resolution::Decl(f) => match self.carriers().stdlib_builtin(*f) {
-                Some(builtin) => Some(builtin),
-                // a method the project writes in an `impl` or a trait is typed from its signature
-                None if self.is_project_method(*f) => None,
-                None => {
-                    let replaced = matches!(name, "rise" | "fall");
-                    if replaced {
-                        self.refuse_with(file, node.span, ValueForm::MethodDefinedByProjectCheckerKnowsOnly, [name.to_string(), name.to_string()]);
-                    } else {
-                        self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
-                    }
-                    return None;
-                }
-            },
-            Resolution::Builtin(id) => match id.info().name {
-                "prev" => Some(Builtin::Prev),
-                "changed" => Some(Builtin::Changed),
-                "inflow" => return self.analog().inflow_read(expr, *recv, args),
-                "others" => return self.carriers().others_read(expr, *recv, args),
-                _ => {
-                    self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
-                    return None;
-                }
-            },
-            Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
-            Resolution::Deferred(_) => {
-                self.refuse_with(file, node.span, ValueForm::Method, [name.to_string()]);
-                return None;
-            }
+        let builtin = match self.method_builtin(expr, &node, file) {
+            ControlFlow::Continue(builtin) => builtin,
+            ControlFlow::Break(ty) => return ty,
         };
         // `r.changed()` and `r.prev()` on a param (§5.3.1): the param's history, not a carrier's.
         if matches!(name, "changed" | "prev") && self.modules().param_receiver(*recv).is_some() {
@@ -372,6 +346,14 @@ impl ExpressionTyping<'_, '_> {
             return self.method_call_of(expr, *recv, &carrier, function, args);
         }
         let recv_ty = self.infer(*recv)?;
+        self.method_on_value(expr, &node, recv_ty, file)
+    }
+
+    /// A method call on a value whose type is `recv_ty`: the methods the bounds of a type parameter give, the project's own on a
+    /// struct or an enum, then the rows of the Appendix H catalogue.
+    fn method_on_value(&mut self, expr: ExprId, node: &ExprNode, recv_ty: Ty, file: FileId) -> Option<Ty> {
+        let ExprKind::MethodCall { recv, method, args, .. } = &node.kind else { return None };
+        let name = method.text.as_str();
         // §3 rule 9: a value of a type parameter has the methods its bounds give
         if let Ty::Param(param) = recv_ty {
             return self.generics().parameter_method(param, name, method.span, args, file, (expr, *recv));
@@ -385,39 +367,85 @@ impl ExpressionTyping<'_, '_> {
         let (row, params, result) = match Catalogue::method(&recv_ty, name) {
             Lookup::Row(row, params, result) => (row, params, result),
             Lookup::Payload(row) => return self.payload_row(expr, row, &recv_ty, args),
-            miss => {
-                if let Some(function) = self.method_of(&recv_ty, name) {
-                    return self.method_call_of(expr, *recv, &recv_ty, function, args);
-                }
-                let type_name = recv_ty.name(self.state.design);
-                // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
-                let copy_method = name == "clone" && !self.project_defines(name);
-                // a struct or an enum has the project's methods and no others (§3.1.7), so a miss is absent
-                let own_only = matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_));
-                if copy_method || own_only || (matches!(miss, Lookup::Absent) && !self.project_defines(name) && !CARRIER_METHODS.contains(&name)) {
-                    let message = format!("no method `{name}` on `{type_name}`");
-                    let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
-                    let help = if copy_method {
-                        Some(crate::msl::diag::COPY_HELP)
-                    } else if REMOVED_FLAG_METHODS.contains(&name) {
-                        Some(crate::msl::diag::UNKNOWN_HELP)
-                    } else {
-                        None
-                    };
-                    self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
-                } else {
-                    self.refuse_with(file, method.span, ValueForm::MethodOn, [name.to_string(), type_name.to_string()]);
-                }
-                for arg in args {
-                    self.infer(arg.value);
-                }
-                return None;
-            }
+            miss => return self.method_not_found(expr, &node, &recv_ty, miss, file),
         };
         // An argument of the receiver's type takes it when it is a literal (DIG-01 AC 2).
         self.apply(expr, &params, args)?;
         self.state.result.methods.insert(expr, row);
         Some(result)
+    }
+
+    /// The built-in a stdlib item resolved to, or the built-in row of the language: `Continue` with it (`None` for a method
+    /// typed from a signature or from the catalogue), or `Break` with the type of a call that is read or refused here.
+    fn method_builtin(&mut self, expr: ExprId, node: &ExprNode, file: FileId) -> ControlFlow<Option<Ty>, Option<Builtin>> {
+        let ExprKind::MethodCall { recv, method, args, res, .. } = &node.kind else { return ControlFlow::Continue(None) };
+        let (recv, name, span) = (*recv, method.text.as_str(), node.span);
+        let builtin = match res {
+            Resolution::Decl(f) => match self.carriers().stdlib_builtin(*f) {
+                Some(builtin) => Some(builtin),
+                // a method the project writes in an `impl` or a trait is typed from its signature
+                None if self.is_project_method(*f) => None,
+                None => {
+                    let replaced = matches!(name, "rise" | "fall");
+                    if replaced {
+                        self.refuse_with(file, span, ValueForm::MethodDefinedByProjectCheckerKnowsOnly, [name.to_string(), name.to_string()]);
+                    } else {
+                        self.refuse_with(file, span, ValueForm::Method, [name.to_string()]);
+                    }
+                    return ControlFlow::Break(None);
+                }
+            },
+            Resolution::Builtin(id) => match id.info().name {
+                "prev" => Some(Builtin::Prev),
+                "changed" => Some(Builtin::Changed),
+                "inflow" => return ControlFlow::Break(self.analog().inflow_read(expr, recv, args)),
+                "others" => return ControlFlow::Break(self.carriers().others_read(expr, recv, args)),
+                _ => {
+                    self.refuse_with(file, span, ValueForm::Method, [name.to_string()]);
+                    return ControlFlow::Break(None);
+                }
+            },
+            Resolution::Deferred(DeferReason::ReceiverTypeUnknown) | Resolution::Unresolved => None,
+            Resolution::Deferred(_) => {
+                self.refuse_with(file, span, ValueForm::Method, [name.to_string()]);
+                return ControlFlow::Break(None);
+            }
+        };
+        ControlFlow::Continue(builtin)
+    }
+
+    /// A method no row of the catalogue has for the type of its receiver: the project's own method of that name, or `E0161` (or
+    /// `P0001` for one the catalogue may still gain) naming it, with the arguments typed all the same.
+    fn method_not_found(&mut self, expr: ExprId, node: &ExprNode, recv_ty: &Ty, miss: Lookup, file: FileId) -> Option<Ty> {
+        let ExprKind::MethodCall { recv, method, args, .. } = &node.kind else { return None };
+        let recv = *recv;
+        let name = method.text.as_str();
+        if let Some(function) = self.method_of(recv_ty, name) {
+            return self.method_call_of(expr, recv, recv_ty, function, args);
+        }
+        let type_name = recv_ty.name(self.state.design);
+        // `clone` is no method of any type (§1.4.6): a value is copied where it is used.
+        let copy_method = name == "clone" && !self.project_defines(name);
+        // a struct or an enum has the project's methods and no others (§3.1.7), so a miss is absent
+        let own_only = matches!(recv_ty, Ty::Struct(_) | Ty::Enum(_));
+        if copy_method || own_only || (matches!(miss, Lookup::Absent) && !self.project_defines(name) && !CARRIER_METHODS.contains(&name)) {
+            let message = format!("no method `{name}` on `{type_name}`");
+            let diagnostic = crate::msl::Diagnostic::new("E0161", message, method.span, format!("`{type_name}` has no such method (Appendix H)"));
+            let help = if copy_method {
+                Some(crate::msl::diag::COPY_HELP)
+            } else if REMOVED_FLAG_METHODS.contains(&name) {
+                Some(crate::msl::diag::UNKNOWN_HELP)
+            } else {
+                None
+            };
+            self.report(file, help.map_or(diagnostic.clone(), |help| diagnostic.with_help(help)));
+        } else {
+            self.refuse_with(file, method.span, ValueForm::MethodOn, [name.to_string(), type_name.to_string()]);
+        }
+        for arg in args {
+            self.infer(arg.value);
+        }
+        return None;
     }
 
     /// A row of H.3 or H.4 that takes a closure, a message or a value of the payload's type:
@@ -505,7 +533,7 @@ impl ExpressionTyping<'_, '_> {
                 continue;
             };
             if let Some(annotation) = param.ty
-                && let Some(written) = self.lower_type(annotation)
+                && let Some(written) = self.expressions().lower_type(annotation)
                 && written != *ty
             {
                 let span = self.state.design.type_node(annotation).span;
@@ -513,7 +541,7 @@ impl ExpressionTyping<'_, '_> {
             }
             self.state.result.locals.insert(*binding, ty.clone());
         }
-        let written = ret.and_then(|annotation| self.lower_type(annotation).map(|ty| (annotation, ty)));
+        let written = ret.and_then(|annotation| self.expressions().lower_type(annotation).map(|ty| (annotation, ty)));
         if let (Some(result), Some((annotation, written))) = (result, &written)
             && written != result
         {

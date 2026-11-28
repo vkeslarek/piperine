@@ -53,7 +53,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// parameter itself (the concrete `impl` is the instance's nature's, found by `X` when the instance is lowered).
     fn of_parameter(&mut self, parameter: DeclId) -> Vec<ResolveImpl> {
         let Some(arguments) = GenericSignature::resolve_bound(self.checker.state.design, parameter) else { return Vec::new() };
-        let types: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+        let types: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.expressions().lower_type(*argument)).collect();
         match types.as_deref() {
             Some([value]) => vec![ResolveImpl { implementation: parameter, driven: value.clone(), value: value.clone() }],
             Some([driven, value]) => vec![ResolveImpl { implementation: parameter, driven: driven.clone(), value: value.clone() }],
@@ -74,9 +74,9 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
         let picked = match impls.as_slice() {
             [] => return None,
             [only] => {
-                let mark = self.checker.diagnostics_mark();
+                let mark = self.checker.state.diagnostics.count();
                 self.checker.expressions().check_as(value, &only.driven, "E0180");
-                self.checker.annotate_since(mark, "E0180", &format!(": a drive of `{nature_name}` is a `{}` (its `impl Resolve`, §5.2.15)", only.driven.name(design)));
+                self.checker.state.diagnostics.annotate_since(mark, "E0180", &format!(": a drive of `{nature_name}` is a `{}` (its `impl Resolve`, §5.2.15)", only.driven.name(design)));
                 only.clone()
             }
             several => {
@@ -122,7 +122,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
     /// The `impl` of `entry` with its argument types, `None` when an argument has no type or the
     /// list is neither `<V>` nor `<X, V>` (`E0203` reports the latter).
     fn typed(&mut self, entry: &ImplEntry) -> Option<ResolveImpl> {
-        let types: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+        let types: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| self.checker.expressions().lower_type(*argument)).collect();
         match types?.as_slice() {
             [value] => Some(ResolveImpl { implementation: entry.decl, driven: value.clone(), value: value.clone() }),
             [driven, value] => Some(ResolveImpl { implementation: entry.decl, driven: driven.clone(), value: value.clone() }),
@@ -174,7 +174,7 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
         if matches!(design.type_resolution(value), Resolution::Decl(parameter) if matches!(design.decl_data(parameter).kind, DeclKind::GenericParam(_))) {
             return None;
         }
-        self.checker.lower_type(value)
+        self.checker.expressions().lower_type(value)
     }
 
     /// The `resolve` of the `impl` `decl`: the only function, `fn resolve<const N: usize>(drives: [X; N]) -> V`.
@@ -197,13 +197,13 @@ impl<'checker, 'design> ResolveImpls<'checker, 'design> {
             self.refuse(function_file, function_span, &format!("{head}: `resolve` takes one const parameter `N: usize`, the number of drives (§4 rule 8)"));
             return;
         };
-        let counts_drives = matches!(&design.decl_data(*length).kind, DeclKind::GenericParam(GenericParamData::Const { ty, .. }) if matches!(self.checker.lower_type(*ty), Some(Ty::UInt(64))));
+        let counts_drives = matches!(&design.decl_data(*length).kind, DeclKind::GenericParam(GenericParamData::Const { ty, .. }) if matches!(self.checker.expressions().lower_type(*ty), Some(Ty::UInt(64))));
         if !counts_drives {
             self.refuse(function_file, function_span, &format!("{head}: the const parameter of `resolve` is `usize` (§4 rule 8)"));
             return;
         }
         self.check_purity(function, head);
-        let Some((parameters, result)) = self.checker.declared_signature(function) else { return };
+        let Some((parameters, result)) = self.checker.expressions().declared_signature(function) else { return };
         let takes_drives = matches!(parameters.as_slice(), [Ty::Array(element, Length::Generic(ConstTerm::Param(counted)))] if **element == typed.driven && counted == length);
         if !takes_drives {
             self.refuse(function_file, function_span, &format!("{head}: `resolve` takes one parameter `[{}; N]`, the drives (§4 rule 8)", typed.driven.name(design)));

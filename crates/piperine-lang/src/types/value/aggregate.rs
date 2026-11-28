@@ -3,7 +3,7 @@
 //! indexing.
 //!
 //! A `struct` is a nominal value type ([`Ty::Struct`]): its fields are typed once, on first use,
-//! into [`FieldType`]s kept in `Checker::layouts`. A type that contains itself, directly or
+//! into [`FieldType`]s kept in `Types::layouts`. A type that contains itself, directly or
 //! through structs, enums, tuples, arrays and `Option`, is `E0186` (§1.3.8).
 
 use crate::refusal::RefusedForm;
@@ -98,7 +98,7 @@ impl ExpressionTyping<'_, '_> {
                 ok = false;
                 continue;
             }
-            match self.lower_type(data.ty) {
+            match self.expressions().lower_type(data.ty) {
                 Some(ty) if self.is_field_type(&ty) => fields.push(FieldType { name, decl: child, ty }),
                 Some(ty) => {
                     let what = ty.name(self.state.design);
@@ -121,7 +121,7 @@ impl ExpressionTyping<'_, '_> {
 
     /// `(A, B)` and `(A,)` (§1.2.4).
     pub(in crate::types) fn tuple_type(&mut self, items: &[TypeId]) -> Option<Ty> {
-        let types: Option<Vec<Ty>> = items.iter().map(|t| self.lower_type(*t)).collect();
+        let types: Option<Vec<Ty>> = items.iter().map(|t| self.expressions().lower_type(*t)).collect();
         let types = types?;
         for (ty, node) in types.iter().zip(items) {
             if !ty.is_value() {
@@ -136,7 +136,7 @@ impl ExpressionTyping<'_, '_> {
     /// `[T; N]` (§1.2.5): `N` is a const expression the checker folds, else `E0188`; one that reads a module
     /// param stays an expression the elaborator folds per body variant (§8.1.2, QC2).
     pub(in crate::types) fn array_type(&mut self, file: FileId, span: Span, elem: TypeId, len: ExprId) -> Option<Ty> {
-        let element = self.lower_type(elem);
+        let element = self.expressions().lower_type(elem);
         let length = self.array_length(file, span, len)?;
         let element = element?;
         // an array of carriers or of nodes (CV-23): `Ty::Array` over a `Carrier` or a `Node` element, which no value is

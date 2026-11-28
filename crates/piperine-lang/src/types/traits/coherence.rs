@@ -93,7 +93,7 @@ impl TraitTyping<'_, '_> {
             // for a built-in trait the one argument that tells two `impl`s apart is the `Rhs` (H.10 rule 2), or the source of a `From`
             let mut arguments = |entry: &crate::types::ImplEntry| -> Option<Vec<Ty>> {
                 let listed = if written.is_some() { &entry.trait_arguments[..entry.trait_arguments.len().min(1)] } else { &entry.trait_arguments[..] };
-                listed.iter().map(|argument| self.lower_type(*argument)).collect()
+                listed.iter().map(|argument| self.expressions().lower_type(*argument)).collect()
             };
             let given = arguments(&current);
             let before = arguments(earlier);
@@ -136,7 +136,7 @@ impl TraitTyping<'_, '_> {
         }
         let Some(Resolution::Decl(trait_decl)) = self.state.design.path_node(path).segments.last().map(|segment| segment.res) else { return };
         let (file, span) = (self.state.design.decl_data(decl).file, self.state.design.decl_data(decl).span);
-        let Some(self_ty) = self.lower_type(data.self_ty) else { return };
+        let Some(self_ty) = self.expressions().lower_type(data.self_ty) else { return };
         let trait_name = self.state.design.decl_data(trait_decl).name.as_ref().map_or_else(String::new, |n| n.text.clone());
         let head = format!("`impl {trait_name} for {}`", self_ty.source_name(self.state.design));
         self.impl_crate_rule(decl, trait_decl, data.self_ty, &head, file, span);
@@ -216,13 +216,13 @@ impl TraitTyping<'_, '_> {
         let Some(substitution) = substitution else { return };
         let (wanted, found) = match (&self.state.design.decl_data(required).kind, &self.state.design.decl_data(defined).kind) {
             (DeclKind::Fn(_), DeclKind::Fn(_)) => {
-                let (Some((wanted_params, wanted_ret)), Some((found_params, found_ret))) = (self.declared_signature(required), self.declared_signature(defined)) else { return };
+                let (Some((wanted_params, wanted_ret)), Some((found_params, found_ret))) = (self.expressions().declared_signature(required), self.expressions().declared_signature(defined)) else { return };
                 let wanted = Ty::Fn(wanted_params.iter().map(|ty| self.generics().substitute(substitution, ty)).collect(), Box::new(self.generics().substitute(substitution, &wanted_ret)));
                 (wanted, Ty::Fn(found_params, Box::new(found_ret)))
             }
             (DeclKind::Const(wanted), DeclKind::Const(found)) => {
                 let (wanted, found) = (wanted.ty, found.ty);
-                let (Some(wanted), Some(found)) = (self.lower_type(wanted), self.lower_type(found)) else { return };
+                let (Some(wanted), Some(found)) = (self.expressions().lower_type(wanted), self.expressions().lower_type(found)) else { return };
                 (self.generics().substitute(substitution, &wanted), found)
             }
             _ => {

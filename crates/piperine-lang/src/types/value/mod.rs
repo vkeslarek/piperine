@@ -13,10 +13,12 @@ pub(super) mod enums;
 mod exits;
 mod expr;
 pub(super) mod flow;
+mod functions;
 pub(super) mod intrinsic;
 mod iterators;
 pub(super) mod lengths;
 mod literals;
+mod lowering;
 mod loops;
 mod methods;
 mod operators;
@@ -25,12 +27,10 @@ pub(super) mod tables;
 pub(super) mod widths;
 
 use std::ops::{Deref, DerefMut};
-
 use crate::types::check::Checker;
 
-/// Types value expressions (§1.5, §3): the owner of the methods of `types/value/`. It borrows the whole checker, because
-/// typing is mutually recursive (an expression holds a pattern holds an expression) and reaching a declaration re-enters
-/// the declaration worklist.
+/// Types value expressions (§1.5, §3): the owner of the methods of `types/value/`. It borrows the whole checker: typing is
+/// mutually recursive and reaching a declaration re-enters the declaration worklist.
 pub(in crate::types) struct ExpressionTyping<'c, 'd> {
     /// The checker this view types through.
     checker: &'c mut Checker<'d>,

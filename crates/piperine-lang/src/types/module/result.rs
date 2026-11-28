@@ -17,7 +17,7 @@ impl ModuleTyping<'_, '_> {
         let data = self.state.design.decl_data(decl);
         let (file, name_span) = (data.file, data.name.as_ref().map_or(data.span, |n| n.span));
         match (module.ret, module.result) {
-            (Some(ret), Some(result)) => match self.lower_type(ret) {
+            (Some(ret), Some(result)) => match self.expressions().lower_type(ret) {
                 Some(ty) => self.expressions().check_as(result, &ty, "E0301"),
                 None => {
                     self.carriers().infer_event_position(result);
@@ -40,7 +40,7 @@ impl ModuleTyping<'_, '_> {
     pub(super) fn placement_type(&mut self, module: DeclId) -> Option<Ty> {
         let DeclKind::Module(m) = &self.state.design.decl_data(module).kind else { return None };
         match m.ret {
-            Some(ret) => self.lower_type(ret),
+            Some(ret) => self.expressions().lower_type(ret),
             None => Some(Ty::module(module)),
         }
     }
@@ -194,6 +194,6 @@ impl ModuleTyping<'_, '_> {
             _ => return None,
         };
         let DeclKind::Module(data) = &self.state.design.decl_data(module).kind else { return None };
-        self.lower_type(data.ret?)
+        self.expressions().lower_type(data.ret?)
     }
 }

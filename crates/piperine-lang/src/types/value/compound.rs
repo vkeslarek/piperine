@@ -24,7 +24,7 @@ impl ExpressionTyping<'_, '_> {
         let args = self.state.design.path_node(path).segments.last().and_then(|s| s.args.clone());
         match &args {
             Some(GenericArgsNode::Angle { args, .. }) if args.len() == 1 => match &args[0] {
-                GenericArgNode::Type(t) => Some(Ty::Option(Box::new(self.lower_type(*t)?))),
+                GenericArgNode::Type(t) => Some(Ty::Option(Box::new(self.expressions().lower_type(*t)?))),
                 GenericArgNode::Const(_) => {
                     self.refuse(file, span, ValueForm::OptionOfConstArgument);
                     None

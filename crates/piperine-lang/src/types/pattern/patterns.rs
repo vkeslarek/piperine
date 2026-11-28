@@ -117,7 +117,7 @@ impl PatternTyping<'_, '_> {
             self.refuse(file, span, PatternForm::LetWithPatternAndNoValue);
             return;
         };
-        let annotated = ty.map(|t| self.lower_type(t));
+        let annotated = ty.map(|t| self.expressions().lower_type(t));
         let value = match annotated {
             Some(Some(t)) => {
                 self.expressions().check(init, &t);
@@ -296,7 +296,7 @@ impl PatternTyping<'_, '_> {
                 }
                 DeclKind::Const(c) => {
                     self.reach(d);
-                    let found = self.lower_type(c.ty)?;
+                    let found = self.expressions().lower_type(c.ty)?;
                     if found != *scrut {
                         self.mismatch(file, span, scrut, &found);
                         return None;

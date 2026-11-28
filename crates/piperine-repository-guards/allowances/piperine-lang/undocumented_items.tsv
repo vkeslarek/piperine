@@ -436,9 +436,6 @@ crates/piperine-lang/src/types/catalogue.rs::Arg::ty	1
 crates/piperine-lang/src/types/catalogue.rs::CoreParam::ty	1
 crates/piperine-lang/src/types/catalogue.rs::CoreResult::ty	1
 crates/piperine-lang/src/types/catalogue.rs::Res::ty	1
-crates/piperine-lang/src/types/check.rs::Checker::declaration	1
-crates/piperine-lang/src/types/check.rs::Checker::file_of_expr	1
-crates/piperine-lang/src/types/check.rs::Checker::lower_type_node	1
 crates/piperine-lang/src/types/analog/continuity.rs::AnalogTyping::continuous_now	1
 crates/piperine-lang/src/types/analog/continuity.rs::Continuity::new	1
 crates/piperine-lang/src/types/generics/inference.rs::GenericsSolver::argument_types	1

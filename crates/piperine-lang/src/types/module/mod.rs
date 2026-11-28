@@ -1,5 +1,6 @@
 //! Typing of module bodies (§8): [`ModuleTyping`] and the state it keeps.
 
+mod body;
 mod bundle;
 mod bundle_handles;
 mod generation;

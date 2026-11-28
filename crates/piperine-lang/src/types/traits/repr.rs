@@ -67,7 +67,7 @@ impl TraitTyping<'_, '_> {
     /// `[bool; WIDTH]` and returns `Option<Self>`. Each is `E0187` naming `Repr` and the type.
     pub(super) fn repr_impl_rules(&mut self, decl: DeclId, self_ty: TypeId) {
         let (file, span) = (self.state.design.decl_data(decl).file, self.state.design.decl_data(decl).span);
-        let Some(own) = self.lower_type(self_ty) else { return };
+        let Some(own) = self.expressions().lower_type(self_ty) else { return };
         let head = format!("`impl Repr for {}`", own.source_name(self.state.design));
         for name in ["WIDTH", "encode", "decode"] {
             if self.state.traits.item(decl, name).is_none() {
@@ -90,7 +90,7 @@ impl TraitTyping<'_, '_> {
         let expected = [("encode", Ty::Fn(vec![own.clone()], Box::new(levels.clone()))), ("decode", Ty::Fn(vec![levels], Box::new(Ty::Option(Box::new(own.clone())))))];
         for (name, wanted) in expected {
             let Some(item) = self.state.traits.item(decl, name) else { continue };
-            let Some((params, ret)) = self.declared_signature(item) else { continue };
+            let Some((params, ret)) = self.expressions().declared_signature(item) else { continue };
             let found = Ty::Fn(params, Box::new(ret));
             if !found.fits(&wanted) {
                 let (item_file, item_span) = (self.state.design.decl_data(item).file, self.state.design.decl_data(item).span);

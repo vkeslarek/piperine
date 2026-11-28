@@ -76,7 +76,7 @@ impl ModuleTyping<'_, '_> {
     /// `name: T = default where cond;` — `T` is `f64`, `bool`, an integer, a unit enum, an `Option` (PI-01 to PI-03), a module (its value a template
     /// `Name { params }`, PI-04) or a struct, tuple or array of plain data (CV-18); `where` is `bool` (`E0318`).
     pub(in crate::types) fn param(&mut self, decl: DeclId, param: &ParamData) {
-        let ty = self.lower_type(param.ty).and_then(|ty| match ty {
+        let ty = self.expressions().lower_type(param.ty).and_then(|ty| match ty {
             Ty::F64 | Ty::Bool | Ty::Module(_) => Some(ty),
             // an array of templates (`pair: [Cell; 2]`, §8.4.1): each element a template, the param structural as one template is
             Ty::Array(ref element, _) if matches!(**element, Ty::Module(_)) => Some(ty),
@@ -207,13 +207,13 @@ impl ModuleTyping<'_, '_> {
             return;
         };
         self.state.modules.lets_open.insert(*binding, data.value);
-        let reported = self.reported();
+        let reported = self.state.diagnostics.count();
         let ty = self.carriers().infer_event_position(data.value);
         self.state.modules.lets_open.remove(binding);
         // a template whose value was refused (a choice of two modules, `E0180`) holds no template to place: its reads and
         // calls add nothing to that diagnostic
         let ty = match ty {
-            Some(Ty::Module(_)) if self.reported() > reported && !self.binds_an_instance(*binding) => None,
+            Some(Ty::Module(_)) if self.state.diagnostics.count() > reported && !self.binds_an_instance(*binding) => None,
             other => other,
         };
         if let Some(closure) = self.expressions().closure_expr(data.value) {
@@ -725,7 +725,7 @@ impl ModuleTyping<'_, '_> {
                 _ => None,
             };
             // a param of a generic module's type `T` takes the type the placement gave `T`
-            let declared = param.and_then(|t| self.lower_type(t)).map(|ty| substitution.map_or(ty.clone(), |given| given.apply(&ty)));
+            let declared = param.and_then(|t| self.expressions().lower_type(t)).map(|ty| substitution.map_or(ty.clone(), |given| given.apply(&ty)));
             match declared {
                 Some(ty @ (Ty::F64 | Ty::Bool | Ty::Module(_))) => self.expressions().check(field.value, &ty),
                 // a value of `T` bound to an `Option<T>` param is `Some` of it (§3.2.3, PI-03 AC 2)

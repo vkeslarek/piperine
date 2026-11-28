@@ -216,7 +216,7 @@ impl TraitTyping<'_, '_> {
     /// one type argument the turbofish gives. `None` after a diagnostic when it gives none.
     fn option_owner_type(&mut self, file: FileId, span: Span, args: Option<&crate::pom::GenericArgsNode>) -> Option<Ty> {
         match args {
-            Some(crate::pom::GenericArgsNode::Angle { args, .. }) if let [crate::pom::GenericArgNode::Type(payload)] = args.as_slice() => Some(Ty::Option(Box::new(self.lower_type(*payload)?))),
+            Some(crate::pom::GenericArgsNode::Angle { args, .. }) if let [crate::pom::GenericArgNode::Type(payload)] = args.as_slice() => Some(Ty::Option(Box::new(self.expressions().lower_type(*payload)?))),
             _ => {
                 self.refuse(file, span, GenericsForm::OptionDefaultWithoutPayloadTypeWrittenAs);
                 None

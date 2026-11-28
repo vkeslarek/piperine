@@ -244,7 +244,7 @@ impl GenericsSolver<'_, '_> {
     /// const parameter, which a lone name may also spell (`Delay<u8, N>`, §3.8.5).
     pub(in crate::types) fn generic_argument(&mut self, parameter: &GenericParameter, node: &GenericArgNode, file: FileId) -> Option<GenericValue> {
         match (&parameter.kind, node) {
-            (ParameterKind::Type | ParameterKind::Nature, GenericArgNode::Type(ty)) => self.lower_type(*ty).map(GenericValue::Type),
+            (ParameterKind::Type | ParameterKind::Nature, GenericArgNode::Type(ty)) => self.expressions().lower_type(*ty).map(GenericValue::Type),
             (ParameterKind::Const(_), GenericArgNode::Const(expr)) => self.const_term(*expr, file).map(GenericValue::Const),
             (ParameterKind::Const(_), GenericArgNode::Type(ty)) => match self.const_parameter_named_by(*ty) {
                 Some(named) => Some(GenericValue::Const(ConstTerm::Param(named))),
@@ -267,7 +267,7 @@ impl GenericsSolver<'_, '_> {
     pub(in crate::types) fn default_argument(&mut self, parameter: &GenericParameter, earlier: &Substitution, file: FileId) -> Option<GenericValue> {
         match parameter.default.as_ref()? {
             ParameterDefault::Type(ty) => {
-                let lowered = self.lower_type(*ty)?;
+                let lowered = self.expressions().lower_type(*ty)?;
                 Some(GenericValue::Type(earlier.apply(&lowered)))
             }
             ParameterDefault::Const(expr) => {

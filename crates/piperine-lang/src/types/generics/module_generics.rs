@@ -122,7 +122,7 @@ impl GenericsSolver<'_, '_> {
             let Resolution::Decl(param) = field.res else { continue };
             let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { continue };
             let outer = std::mem::replace(&mut self.state.generics.generic_item, Some(module));
-            let declared = self.lower_type(data.ty);
+            let declared = self.expressions().lower_type(data.ty);
             self.state.generics.generic_item = outer;
             let Some(declared @ Ty::Param(parameter)) = declared else { continue };
             if !self.bounds_of(parameter).iter().any(|bound| matches!(bound, crate::types::Bound::Callable { .. })) {

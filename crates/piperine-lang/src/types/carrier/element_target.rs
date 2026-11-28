@@ -230,8 +230,9 @@ impl CarrierTyping<'_, '_> {
     /// The element a drive written at `place` reaches of the carrier `carrier`, `written` as its place names it: a drive
     /// written inside generation, or of a carrier declared there, is [`Element::Unfolded`], since which iterations and
     /// arms elaborate it, and so which elements it reaches, is known per instance only (§8.2.23, §8.2.24).
-    pub(in crate::types) fn judged_element(&self, place: ExprId, carrier: DeclId, written: Element) -> Element {
-        let generated = self.inside_generation(self.state.design.expr_node(place).owner) || self.inside_generation(carrier);
+    pub(in crate::types) fn judged_element(&mut self, place: ExprId, carrier: DeclId, written: Element) -> Element {
+        let owner = self.state.design.expr_node(place).owner;
+        let generated = self.modules().inside_generation(owner) || self.modules().inside_generation(carrier);
         if generated && written != Element::Any { Element::Unfolded } else { written }
     }
 

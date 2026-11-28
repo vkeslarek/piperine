@@ -24,7 +24,7 @@ impl ModuleTyping<'_, '_> {
             }
             _ => {
                 let outer = std::mem::replace(&mut self.state.modules.naming_bundle, true);
-                let lowered = self.lower_type(ty);
+                let lowered = self.expressions().lower_type(ty);
                 self.state.modules.naming_bundle = outer;
                 lowered
             }

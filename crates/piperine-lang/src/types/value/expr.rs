@@ -6,7 +6,7 @@ use crate::refusal::forms::ValueForm;
 use crate::refusal::RefusedForm;
 use crate::msl::lexer::NumberLiteral;
 use crate::msl::{Diagnostic, Span};
-use crate::pom::{BinOp, BlockNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
+use crate::pom::{BinOp, BlockNode, ExprNode, FileId, BuiltinKind, DeclKind, ExprId, ExprKind, GenericParamData, LitKind, PatKind, Resolution, StmtId, StmtKind, StructClass, UnOp};
 use crate::stack::Stack;
 
 use crate::types::check::Context;
@@ -59,116 +59,135 @@ impl ExpressionTyping<'_, '_> {
                     return;
                 }
             }
-            // Where the expected type flows into the parts of the expression: the value of a
-            // block or of the arms of an `if` is where a mismatch is reported.
-            let found = match &node.kind {
-                ExprKind::Paren(inner) => {
-                    self.check_as(*inner, expected, code);
-                    Some(expected.clone())
-                }
-                ExprKind::Block(block) => self.statements_as(&block.stmts, Some(expected), code),
-                ExprKind::Closure { .. } => self.closure(expr, expected),
-                ExprKind::If { cond, then, else_: Some(else_) } => {
-                    self.condition(*cond);
-                    let before = self.state.values.flow.assigned.clone();
-                    self.statements_as(&then.stmts, Some(expected), code);
-                    let after_then = self.state.values.flow.end_branch(&before);
-                    self.check_as(*else_, expected, code);
-                    self.state.values.flow.assigned = Assigned::join([after_then, self.state.values.flow.assigned.clone()]);
-                    Some(expected.clone())
-                }
-                // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
-                ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) && expected.is_float() => {
-                    self.checker.mismatch_coded(file, node.span, code, &expected.name(self.checker.state.design), "an integer literal");
-                    Some(expected.clone())
-                }
-                ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
-                // The expected aggregate type flows into the parts of a tuple and an array.
-                ExprKind::Tuple(items) => self.tuple_expression(items, Some(expected)),
-                ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
-                ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
-                ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
-                // `Name { params }` where a module type is expected: a template value (PI-04); a module's bare name is
-                // `Name {}` (§8.4.1 amendment)
-                ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.modules().template_value(expr, *module, fields, Some(expected)),
-                ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.modules().bare_module(expr) => self.modules().template_value(expr, module, &[], Some(expected)),
-                // `None` and `Some(e)` where an `Option<T>` is expected.
-                ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
-                ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
-                    Ty::Option(inner) => self.some(expr, args, Some(inner)),
-                    _ => self.some(expr, args, None),
-                },
-                // An integer literal where an integer type is expected takes that type (§1 rule 7).
-                ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) => {
-                    let LitKind::Int(text) = &lit.kind else { return };
-                    self.integer_literal(file, node.span, text, Some(expected), false)
-                }
-                // `1.5` where a float type is expected takes that type (§1.4.2); one past the type's range is `E0909`.
-                ExprKind::Lit(lit) if expected.is_float() && matches!(&lit.kind, LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix().is_empty()) => {
-                    let LitKind::Float { raw, .. } = &lit.kind else { return };
-                    self.check_float_literal(file, node.span, raw, expected);
-                    Some(expected.clone())
-                }
-                // `-1.5` where a float type other than `f64` is expected: the minus takes the expected type.
-                ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_other_float() && self.bare_float_literal(*operand) => {
-                    self.check_as(*operand, expected, code);
-                    Some(expected.clone())
-                }
-                // `-256` where an `i16` is expected: the minus takes the expected type, and a literal
-                // operand may reach the magnitude of the type's minimum.
-                ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_integer() => {
-                    match self.integer_literal_text(*operand) {
-                        Some(text) => {
-                            let span = self.state.design.expr_node(*operand).span;
-                            let found = self.integer_literal(file, span, &text, Some(expected), true);
-                            if let Some(found) = &found
-                                && found != expected
-                            {
-                                self.mismatch(file, span, expected, found);
-                            }
-                            self.state.result.exprs[operand.index()] = Some(expected.clone());
-                        }
-                        None => self.check(*operand, expected),
-                    }
-                    Some(expected.clone())
-                }
-                // An operator whose result has its operands' type passes the expected integer type
-                // down to both, with the rule's code (`count <- count + 1.0` is `E0432`); a shift
-                // passes it to its left operand only.
-                ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() || expected.is_other_float() => {
-                    self.check_as(*lhs, expected, code);
-                    self.check_as(*rhs, expected, code);
-                    Some(expected.clone())
-                }
-                ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, lhs, rhs } if expected.is_integer() => {
-                    self.check_as(*lhs, expected, code);
-                    self.shift_amount(*rhs);
-                    Some(expected.clone())
-                }
-                ExprKind::Unary { op: UnOp::Not, expr: operand } if expected.is_integer() => {
-                    self.check_as(*operand, expected, code);
-                    Some(expected.clone())
-                }
-                // a call, a struct expression and a constructor name may take the arguments of a generic type from the type expected
-                ExprKind::Call { .. } | ExprKind::Struct { .. } | ExprKind::Path(_) => {
-                    self.state.values.call_expected = Some((expr, expected.clone()));
-                    self.infer(expr)
-                }
-                _ => self.infer(expr),
-            };
-            if let Some(found) = found
-                && !self.generics().compatible(expr, &found, expected)
-                && found != Ty::Never
-            {
-                if self.state.result.event_reads.contains(&expr) {
-                    self.carriers().event_where_another_type_is_expected(expr, expected);
-                } else {
-                    let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
-                    self.mismatch_coded(file, node.span, code, &expected_name, &found_name);
-                }
-            }
+            let found = self.expected_flow(expr, &node, file, expected, code);
+            self.report_found_mismatch(expr, file, node.span, found, expected, code);
             self.state.result.exprs[expr.index()] = Some(expected.clone());
         })
+    }
+
+    /// Where the expected type flows into the parts of `expr`, which is `node`: the value of a block or of the arms of an
+    /// `if` is where a mismatch is reported. The type the expression is found to have, or `None` after a diagnostic.
+    fn expected_flow(&mut self, expr: ExprId, node: &ExprNode, file: FileId, expected: &Ty, code: &'static str) -> Option<Ty> {
+        match &node.kind {
+            ExprKind::Paren(inner) => {
+                self.check_as(*inner, expected, code);
+                Some(expected.clone())
+            }
+            ExprKind::Block(block) => self.statements_as(&block.stmts, Some(expected), code),
+            ExprKind::Closure { .. } => self.closure(expr, expected),
+            ExprKind::If { cond, then, else_: Some(else_) } => self.if_as(*cond, then, *else_, expected, code),
+            // `100` where an `f64` is required: an integer literal never converts (§1 rule 7).
+            ExprKind::Lit(lit) if matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) && expected.is_float() => {
+                self.checker.mismatch_coded(file, node.span, code, &expected.name(self.checker.state.design), "an integer literal");
+                Some(expected.clone())
+            }
+            ExprKind::Match { .. } => self.match_expr(expr, Some(expected)),
+            // The expected aggregate type flows into the parts of a tuple and an array.
+            ExprKind::Tuple(items) => self.tuple_expression(items, Some(expected)),
+            ExprKind::Array(items) => self.array_expression(expr, items, Some(expected)),
+            ExprKind::ArrayRepeat { elem, len } => self.array_repeat(expr, *elem, *len, Some(expected)),
+            ExprKind::Loop { body } => self.loop_expr(body, Some(expected)),
+            // `Name { params }` where a module type is expected: a template value (PI-04); a module's bare name is
+            // `Name {}` (§8.4.1 amendment)
+            ExprKind::Struct { class: StructClass::Template(module), fields, .. } if matches!(expected, Ty::Module(_)) => self.modules().template_value(expr, *module, fields, Some(expected)),
+            ExprKind::Path(_) if matches!(expected, Ty::Module(_)) && let Some(module) = self.modules().bare_module(expr) => self.modules().template_value(expr, module, &[], Some(expected)),
+            // `None` and `Some(e)` where an `Option<T>` is expected.
+            ExprKind::Path(_) if matches!(expected, Ty::Option(_)) && self.is_none_literal(expr) => Some(expected.clone()),
+            ExprKind::Call { args, .. } if matches!(self.callee_resolution_of_call(expr), Some(Resolution::Builtin(id)) if id.info().name == "Some") => match expected {
+                Ty::Option(inner) => self.some(expr, args, Some(inner)),
+                _ => self.some(expr, args, None),
+            },
+            // An integer literal where an integer type is expected takes that type (§1 rule 7).
+            ExprKind::Lit(lit) if expected.is_integer() && matches!(&lit.kind, LitKind::Int(text) if !FloatText::is(text)) => {
+                let LitKind::Int(text) = &lit.kind else { return None };
+                self.integer_literal(file, node.span, text, Some(expected), false)
+            }
+            // `1.5` where a float type is expected takes that type (§1.4.2); one past the type's range is `E0909`.
+            ExprKind::Lit(lit) if expected.is_float() && matches!(&lit.kind, LitKind::Float { raw, .. } if NumberLiteral::new(raw).float_suffix().is_empty()) => {
+                let LitKind::Float { raw, .. } = &lit.kind else { return None };
+                self.check_float_literal(file, node.span, raw, expected);
+                Some(expected.clone())
+            }
+            // `-1.5` where a float type other than `f64` is expected: the minus takes the expected type.
+            ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_other_float() && self.bare_float_literal(*operand) => {
+                self.check_as(*operand, expected, code);
+                Some(expected.clone())
+            }
+            // `-256` where an `i16` is expected: the minus takes the expected type, and a literal
+            // operand may reach the magnitude of the type's minimum.
+            ExprKind::Unary { op: UnOp::Neg, expr: operand } if expected.is_integer() => {
+                self.negated_integer_as(file, *operand, expected);
+                Some(expected.clone())
+            }
+            // An operator whose result has its operands' type passes the expected integer type
+            // down to both, with the rule's code (`count <- count + 1.0` is `E0432`); a shift
+            // passes it to its left operand only.
+            ExprKind::Binary { op: BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Rem | BinOp::BitAnd | BinOp::BitOr | BinOp::BitXor, lhs, rhs } if expected.is_integer() || expected.is_other_float() => {
+                self.check_as(*lhs, expected, code);
+                self.check_as(*rhs, expected, code);
+                Some(expected.clone())
+            }
+            ExprKind::Binary { op: BinOp::Shl | BinOp::Shr, lhs, rhs } if expected.is_integer() => {
+                self.check_as(*lhs, expected, code);
+                self.shift_amount(*rhs);
+                Some(expected.clone())
+            }
+            ExprKind::Unary { op: UnOp::Not, expr: operand } if expected.is_integer() => {
+                self.check_as(*operand, expected, code);
+                Some(expected.clone())
+            }
+            // a call, a struct expression and a constructor name may take the arguments of a generic type from the type expected
+            ExprKind::Call { .. } | ExprKind::Struct { .. } | ExprKind::Path(_) => {
+                self.state.values.call_expected = Some((expr, expected.clone()));
+                self.infer(expr)
+            }
+            _ => self.infer(expr),
+        }
+    }
+
+    /// An `if` with an `else` where `expected` is the type of both branches: the condition, then each branch against `expected`.
+    fn if_as(&mut self, cond: ExprId, then: &BlockNode, else_: ExprId, expected: &Ty, code: &'static str) -> Option<Ty> {
+        self.condition(cond);
+        let before = self.state.values.flow.assigned.clone();
+        self.statements_as(&then.stmts, Some(expected), code);
+        let after_then = self.state.values.flow.end_branch(&before);
+        self.check_as(else_, expected, code);
+        self.state.values.flow.assigned = Assigned::join([after_then, self.state.values.flow.assigned.clone()]);
+        Some(expected.clone())
+    }
+
+    /// `-256` where an `i16` is expected: the minus takes the expected type, and a literal operand may reach the magnitude of the
+    /// type's minimum.
+    fn negated_integer_as(&mut self, file: FileId, operand: ExprId, expected: &Ty) {
+        match self.integer_literal_text(operand) {
+            Some(text) => {
+                let span = self.state.design.expr_node(operand).span;
+                let found = self.integer_literal(file, span, &text, Some(expected), true);
+                if let Some(found) = &found
+                    && found != expected
+                {
+                    self.mismatch(file, span, expected, found);
+                }
+                self.state.result.exprs[operand.index()] = Some(expected.clone());
+            }
+            None => self.check(operand, expected),
+        }
+    }
+
+    /// `found`, the type `expr` was found to have where `expected` was wanted, is a mismatch of `expr` unless the two are
+    /// compatible; an event read is the carrier concern's to report.
+    fn report_found_mismatch(&mut self, expr: ExprId, file: FileId, span: Span, found: Option<Ty>, expected: &Ty, code: &'static str) {
+    if let Some(found) = found
+        && !self.generics().compatible(expr, &found, expected)
+        && found != Ty::Never
+    {
+        if self.state.result.event_reads.contains(&expr) {
+            self.carriers().event_where_another_type_is_expected(expr, expected);
+        } else {
+            let (expected_name, found_name) = (expected.name(self.state.design), found.name(self.state.design));
+            self.mismatch_coded(file, span, code, &expected_name, &found_name);
+        }
+    }
     }
 
     /// The function a plain path names, if it names one.
@@ -183,7 +202,7 @@ impl ExpressionTyping<'_, '_> {
     fn function_value(&mut self, expr: ExprId) -> Option<Ty> {
         let decl = self.function_named(expr)?;
         self.reach(decl);
-        let (params, ret) = self.signature(decl)?;
+        let (params, ret) = self.expressions().signature(decl)?;
         Some(Ty::Fn(params, Box::new(ret)))
     }
 
@@ -455,7 +474,7 @@ impl ExpressionTyping<'_, '_> {
     /// `expr as T`: between any two of the integer types and `f64`, and from `bool` to an integer
     /// type (§1 rule 1); any other pair is `E0182` naming both types (§1.4.5).
     fn cast(&mut self, operand: ExprId, ty: crate::pom::TypeId) -> Option<Ty> {
-        let target = self.lower_type(ty);
+        let target = self.expressions().lower_type(ty);
         // `c0.n as f64`: `as` gives its result a type, never its operand (§1.4.5), so an item read through a template there has
         // no type the checker can give (§8.4.8, `E0181`)
         if self.modules().untyped_template_operand(operand) {
@@ -640,11 +659,11 @@ impl ExpressionTyping<'_, '_> {
                 match kind {
                     DeclKind::Const(c) => {
                         self.reach(decl);
-                        self.lower_type(c.ty)
+                        self.expressions().lower_type(c.ty)
                     }
-                    DeclKind::Param(p) => self.lower_type(p.ty),
+                    DeclKind::Param(p) => self.expressions().lower_type(p.ty),
                     // §3.8.3: a const parameter is a const expression of its declared type wherever it is in scope
-                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.lower_type(ty),
+                    DeclKind::GenericParam(GenericParamData::Const { ty, .. }) => self.expressions().lower_type(ty),
                     // a bundle is no value (§7 rule 9)
                     DeclKind::Port(_) | DeclKind::Signal(_) if self.state.design.is_bundle_owner(decl) => self.modules().bundle_as_value(expr),
                     DeclKind::Port(p) => self.carriers().read_type(decl, p.ty),
@@ -793,7 +812,7 @@ impl ExpressionTyping<'_, '_> {
             return;
         }
         let annotated = match ty {
-            Some(t) => match self.lower_type(t).filter(|ty| {
+            Some(t) => match self.expressions().lower_type(t).filter(|ty| {
                 let carriers = ty.is_carrier_element() && matches!(ty, Ty::Array(..));
                 if carriers {
                     self.checker.refuse(file, self.checker.state.design.type_node(t).span, ValueForm::ArrayOfCarriersAsLetType);

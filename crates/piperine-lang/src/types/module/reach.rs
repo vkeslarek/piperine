@@ -216,7 +216,7 @@ impl ModuleTyping<'_, '_> {
             ExprKind::Path(path) => {
                 let Some(Resolution::Decl(decl)) = self.state.design.path_node(*path).segments.last().map(|s| s.res) else { return None };
                 let DeclKind::Param(p) = self.state.design.decl_data(decl).kind.clone() else { return None };
-                self.lower_type(p.ty).map(|ty| (decl, ty))
+                self.expressions().lower_type(p.ty).map(|ty| (decl, ty))
             }
             _ => None,
         }
@@ -248,7 +248,7 @@ impl ModuleTyping<'_, '_> {
         match self.state.design.decl_data(item).kind.clone() {
             DeclKind::Port(p) => self.carriers().read_type(item, p.ty),
             DeclKind::Signal(s) => self.carriers().read_type(item, s.ty),
-            DeclKind::Param(p) => self.lower_type(p.ty),
+            DeclKind::Param(p) => self.expressions().lower_type(p.ty),
             _ => {
                 let module = self.module_of_let(item)?;
                 self.check_ahead(module);

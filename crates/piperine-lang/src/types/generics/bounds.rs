@@ -46,7 +46,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                     Ty::Param(nature) | Ty::Node(nature) | Ty::Carrier { nature, .. } => *nature,
                     _ => return false,
                 };
-                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.expressions().lower_type(*argument)).collect();
                 let Some(wanted) = wanted else { return false };
                 let Some(driven) = wanted.first() else { return false };
                 crate::types::analog::nature::ResolveImpls::new(self.checker).of(nature).iter().any(|entry| entry.driven == *driven && wanted.get(1).is_none_or(|value| entry.value == *value))
@@ -55,7 +55,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 if matches!(ty, Ty::Param(param) if self.checker.generics().bounds_of(*param).contains(bound)) {
                     return true;
                 }
-                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.lower_type(*argument)).collect();
+                let wanted: Option<Vec<Ty>> = arguments.iter().map(|argument| self.checker.expressions().lower_type(*argument)).collect();
                 let Some(wanted) = wanted else { return false };
                 let table = std::rc::Rc::clone(&self.checker.state.traits);
                 let checker = &mut *self.checker;
@@ -63,7 +63,7 @@ impl<'c, 'd> BoundCheck<'c, 'd> {
                 // a bound with no arguments asks for the trait whatever it is written with
                 entries.iter().any(|entry| {
                     wanted.is_empty() || {
-                        let given: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| checker.lower_type(*argument)).collect();
+                        let given: Option<Vec<Ty>> = entry.trait_arguments.iter().map(|argument| checker.expressions().lower_type(*argument)).collect();
                         given.is_some_and(|given| given == wanted)
                     }
                 })
@@ -122,7 +122,7 @@ impl GenericsSolver<'_, '_> {
             return self.modules().bundle_type(input);
         }
         let outer = self.state.modules.replace_naming_bundle(true);
-        let lowered = self.lower_type(input);
+        let lowered = self.expressions().lower_type(input);
         self.state.modules.replace_naming_bundle(outer);
         lowered
     }
@@ -132,7 +132,7 @@ impl GenericsSolver<'_, '_> {
     pub(super) fn callable_type(&mut self, inputs: &[TypeId], output: Option<TypeId>) -> Option<Ty> {
         let inputs: Option<Vec<Ty>> = inputs.iter().map(|input| self.bound_input_type(*input)).collect();
         let output = match output {
-            Some(output) => self.lower_type(output)?,
+            Some(output) => self.expressions().lower_type(output)?,
             None => Ty::Unit,
         };
         Some(Ty::Fn(inputs?, Box::new(output)))
@@ -153,14 +153,14 @@ impl GenericsSolver<'_, '_> {
     pub(in crate::types) fn fn_bound_failed(&mut self, callee: ExprId) -> bool {
         let Some(Resolution::Decl(decl)) = self.expressions().callee_resolution(callee) else { return false };
         let DeclKind::Param(data) = &self.state.design.decl_data(decl).kind else { return false };
-        matches!(self.lower_type(data.ty), Some(Ty::Param(parameter)) if crate::types::GenericSignature::is_callable(self.state.design, parameter))
+        matches!(self.expressions().lower_type(data.ty), Some(Ty::Param(parameter)) if crate::types::GenericSignature::is_callable(self.state.design, parameter))
     }
 
     /// The function type the `Fn(P)` bound of a param's type gives it: a param `cell: C` of a generic module whose `C` is bound by
     /// `Fn(P)` holds a template of a module, called with the connections of `P` (§8.4.1, §8.4.4).
     pub(in crate::types) fn module_param_callable(&mut self, param: DeclId) -> Option<Ty> {
         let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { return None };
-        match self.lower_type(data.ty)? {
+        match self.expressions().lower_type(data.ty)? {
             Ty::Param(parameter) => self.callable_of(parameter),
             _ => None,
         }
@@ -227,7 +227,7 @@ impl GenericsSolver<'_, '_> {
     /// a consumer, §7 rules 3 to 5), in order.
     fn callable_views(&mut self, param: DeclId) -> Vec<BundleView> {
         let DeclKind::Param(data) = &self.state.design.decl_data(param).kind else { return Vec::new() };
-        let Some(Ty::Param(parameter)) = self.lower_type(data.ty) else { return Vec::new() };
+        let Some(Ty::Param(parameter)) = self.expressions().lower_type(data.ty) else { return Vec::new() };
         let inputs = self.callable_bound(parameter).map(|(inputs, _)| inputs).unwrap_or_default();
         inputs.iter().map(|input| BundleView::of_port(self.state.design, None, *input)).collect()
     }
@@ -286,7 +286,7 @@ impl GenericsSolver<'_, '_> {
         if let Some((function, trait_arguments)) = self.trait_method_of(param, name) {
             // the arguments the bound writes for the trait's own parameters (`C: Convert<f64>`) replace them in the
             // signature, and the elaborator picks the `impl` of that argument list (GN-04)
-            let wanted: Option<Vec<Ty>> = trait_arguments.iter().map(|argument| self.lower_type(*argument)).collect();
+            let wanted: Option<Vec<Ty>> = trait_arguments.iter().map(|argument| self.expressions().lower_type(*argument)).collect();
             if let (Some(wanted), Some(trait_decl)) = (wanted.filter(|wanted| !wanted.is_empty()), self.state.design.decl_data(function).parent) {
                 let signature = self.generic_signature(trait_decl);
                 let mut bound = Substitution::new();

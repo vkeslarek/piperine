@@ -92,7 +92,7 @@ impl CarrierTyping<'_, '_> {
             self.no_repr(file, node.span, &format!("enum `{name}`"));
             return None;
         }
-        let value = self.lower_type(ty)?;
+        let value = self.expressions().lower_type(ty)?;
         match &value {
             Ty::Event => {
                 let message = "`Event` has no `Repr`: it is never carried, committed or stored (§13 rule 8)".to_string();
@@ -127,7 +127,7 @@ impl CarrierTyping<'_, '_> {
     pub(in crate::types) fn port_type(&mut self, ty: TypeId) -> Option<Ty> {
         let node = self.state.design.type_node(ty).clone();
         let file = self.state.design.decl_data(node.owner).file;
-        match self.lower_type(ty)? {
+        match self.expressions().lower_type(ty)? {
             Ty::Node(nature) => {
                 let rules = NatureRules::of(self.state.design, nature);
                 if rules.flow || rules.signal_flow {
@@ -273,8 +273,8 @@ impl CarrierTyping<'_, '_> {
                 ("fN", Some(w)) => Ty::float(u32::from(w)),
                 ("bool", _) => Some(Ty::Bool),
                 ("str", _) => Some(Ty::Str),
-                ("uN", Some(w)) => self.integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
-                ("iN", Some(w)) => self.integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
+                ("uN", Some(w)) => self.expressions().integer_type(file, span, Ty::UInt, u128::from(w), &id.name()),
+                ("iN", Some(w)) => self.expressions().integer_type(file, span, Ty::Int, u128::from(w), &id.name()),
                 ("usize", _) => Some(Ty::UInt(64)),
                 ("isize", _) => Some(Ty::Int(64)),
                 _ => None,

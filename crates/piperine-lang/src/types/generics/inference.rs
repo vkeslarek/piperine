@@ -127,7 +127,7 @@ impl GenericsSolver<'_, '_> {
         let file = self.file_of_expr(expr);
         let span = self.state.design.expr_node(expr).span;
         let signature = self.generic_signature(function);
-        let (params, ret) = self.declared_signature(function)?;
+        let (params, ret) = self.expressions().declared_signature(function)?;
         let mut inference = Inference::new(&signature);
         self.explicit_arguments(&mut inference, &signature, callee, function, file, span)?;
         self.argument_types(&mut inference, &params, args);
