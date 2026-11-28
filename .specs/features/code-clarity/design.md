@@ -284,6 +284,12 @@ Target counts after the merges (CC-12 AC 3), each merged target one `mod` per fo
 
 375 link steps become 73, and 75 with the two targets phases 14 and 17 add (`std_declarations`, `named_variadics`). `parity` holds the twelve `parity_*` targets as modules; T88 checks ngspice's per-twin caching survives one process and stops if a comparison would be skipped.
 
+**Departures of phase 12 (T86 to T89), recorded here because the table does not say them:**
+
+- `piperine-lang`: the crate held 31 `types_*` and 27 `elab_*` targets (the table counts 30 and 26). Three targets the table names nowhere went to a home of the 15: `buck_example` is a module of `pom`, `book` and `spec_codes` are modules of `spec_structure`. `elab_buck` is the module `buck_converter` of `elab_structure`, because its support module `buck` keeps that name. The `Checked` fixture of T86's text (one `design_of`/`diagnostics`/`snippet`) is not made by the merges: the fourteen copies differ in signature and close with the other free helpers in T91.
+- `piperine-parity`: the 62 targets were 41 `source_*`, 12 `parity_*`, `harness`, `boundary`, `backend`, `backends`, `bench`, `deviation`, `project`, `run_errors` and `twins`; `backend`, `backends` and `deviation` are modules of `parity`, `bench` and `twins` of `harness`, `project` and `run_errors` of `boundary`. Two edits of test code follow from one process holding the modules: the writers of `harness::two_processes_share_one_cache` are started with the module-qualified test name, and the corpus guard reads `tests/parity/*.rs` (leaving out `backend`, `backends` and `deviation`, which its `parity_*` filter never covered).
+- root: the 23 `book_*` targets are the 21 chapters and the two guards; the guards are the modules `inventory_guard` and `claims_guard` of `book`. The Book inventory resolver reads `piperine/book::<module>::<fn>` from the `main.rs` target, and `ROOT_TARGET_EXEMPTIONS` is empty (the root of `book` names `piperine::`).
+
 Kept on the user's answers: `parity_*` and `tests/scenarios.rs` both stay (Q9). Layer deduplication (T2 of §3.3) removes only `transpile/tests/commits.rs`'s four tests whose twins in `parity/tests/source_commits.rs` run by default; the pairs whose source side is a buck target (`test = false`) keep the hand-built side.
 
 ### `Refusal` — B4 (rule 2, R1 to R7)
